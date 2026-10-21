@@ -60,27 +60,37 @@ export async function weightedAverageCosts(
             ) AS rate
        FROM items i
        LEFT JOIN (
-         SELECT pi.item_id, SUM(pi.quantity) AS qty, SUM(pi.taxable_value) AS value
+         SELECT pi.item_id, SUM(pi.quantity) AS qty,
+                SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)) AS value
            FROM purchase_items pi
            JOIN purchases pu ON pu.id = pi.purchase_id
+           JOIN items it ON it.id = pi.item_id AND it.item_type = 'goods'
           WHERE pu.business_id = $1
             AND COALESCE(pu.status, '') NOT IN ('cancelled', 'draft')
             AND pu.bill_date <= $3::date
             AND pi.quantity > 0
-            AND pi.taxable_value > 0
+            AND COALESCE(pi.acquisition_cost, pi.taxable_value) > 0
+            AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'
+            AND pi.itc_type IS DISTINCT FROM 'capital_goods'
           GROUP BY pi.item_id
        ) p ON p.item_id = i.id
        LEFT JOIN (
-         SELECT pi.item_id, SUM(pi.quantity) AS qty, SUM(pi.taxable_value) AS value
+         SELECT pi.item_id, SUM(pi.quantity) AS qty,
+                SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)) AS value
            FROM purchase_items pi
            JOIN purchases pu ON pu.id = pi.purchase_id
+           JOIN items it ON it.id = pi.item_id AND it.item_type = 'goods'
           WHERE pu.business_id = $1
             AND $4::uuid IS NOT NULL
             AND pu.branch_id = $4::uuid
             AND COALESCE(pu.status, '') NOT IN ('cancelled', 'draft')
             AND pu.bill_date <= $3::date
             AND pi.quantity > 0
-            AND pi.taxable_value > 0
+            AND COALESCE(pi.acquisition_cost, pi.taxable_value) > 0
+            AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'
+            AND pi.itc_type IS DISTINCT FROM 'capital_goods'
           GROUP BY pi.item_id
        ) bp ON bp.item_id = i.id
       WHERE i.business_id = $1 AND i.id = ANY($2::uuid[])`,

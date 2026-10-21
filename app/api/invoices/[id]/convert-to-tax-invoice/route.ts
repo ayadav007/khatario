@@ -151,7 +151,7 @@ export async function POST(
       }
     }
 
-    const items: CreateInvoiceItemInput[] = itemsRes.rows.map((it: any) => ({
+    const items: CreateInvoiceItemInput[] = itemsRes.rows.filter((it: any) => it.charge_line !== true).map((it: any) => ({
       item_id: it.item_id || null,
       variant_id: it.variant_id || null,
       item_name: it.item_name,
@@ -165,6 +165,30 @@ export async function POST(
       location_id: locationId,
     }));
 
+    const chargeRows = await client.query<{
+      purpose: string | null;
+      amount: string;
+      classification: string;
+      hsn_sac: string | null;
+      tax_rate: string | null;
+    }>(
+      `SELECT purpose, amount::text, classification, hsn_sac, tax_rate::text
+         FROM invoice_charges WHERE invoice_id = $1 AND business_id = $2 ORDER BY sort_order`,
+      [proformaId, businessId]
+    );
+    const bareCharge = Number(proforma.additional_charges) || 0;
+    if (chargeRows.rows.length === 0 && bareCharge > 0.004) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error:
+            'This additional charge has no GST classification. Mark it as part of the goods, or as its own supply with an HSN/SAC and a rate.',
+          code: 'CHARGE_UNCLASSIFIED',
+        },
+        { status: 400 }
+      );
+    }
+
     const payload: CreateInvoiceInput & Record<string, unknown> = {
       business_id: businessId,
       created_by: userId,
@@ -175,7 +199,13 @@ export async function POST(
       status: 'final',
       document_type: 'tax_invoice',
       items,
-      additional_charges: Number(proforma.additional_charges) || 0,
+      charges: chargeRows.rows.map((row) => ({
+        purpose: row.purpose,
+        amount: Number(row.amount) || 0,
+        classification: row.classification,
+        hsn_sac: row.hsn_sac,
+        tax_rate: row.tax_rate == null ? null : Number(row.tax_rate),
+      })),
       round_off: Number(proforma.round_off) || 0,
       enable_round_off: proforma.enable_round_off ?? false,
       notes: proforma.notes,

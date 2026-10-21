@@ -491,12 +491,14 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_additional_charges'}}
+          {{#unless invoice.charges_included}}
           {{#if (gt invoice.additional_charges 0)}}
           <tr>
             <td colspan="{{itemTableColspan}}" class="text-right">Additional Charges</td>
             <td class="text-right">+ {{formatCurrency invoice.additional_charges}}</td>
           </tr>
           {{/if}}
+          {{/unless}}
         {{/ifSetting}}
         {{#ifSetting 'show_cgst'}}
           {{#unless invoice.is_igst}}

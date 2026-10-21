@@ -18,6 +18,7 @@ import {
 } from '@/lib/bank/reconciliation-ui-helpers';
 import { AlertTriangle, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { BrsStatementPanel } from '@/components/bank/BrsStatementPanel';
+import { BankAccountsCard } from '@/components/settings/business-profile/BankAccountsCard';
 
 const REC_NOTE_STORAGE_PREFIX = 'bank-reconciliation-note:';
 
@@ -554,6 +555,8 @@ function BankReconciliationPageContent() {
           ← Import statement
         </Link>
       </header>
+
+      <BankAccountsCard businessId={business.id} userId={user?.id} onChanged={() => void loadAccounts()} />
 
       <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
         <label className="text-sm">

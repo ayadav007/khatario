@@ -96,7 +96,11 @@ d('GET /api/purchases lists cancelled bills (real DB)', () => {
     const qs = new URLSearchParams({ business_id: FOREIGN, limit: '50', ...params });
     const res = await listPurchases(
       new NextRequest(`http://localhost/api/purchases?${qs}`, {
-        headers: { 'x-authenticated-user-id': U, 'x-authenticated-business-id': B },
+        headers: {
+          'x-authenticated-user-id': U,
+          'x-authenticated-business-id': B,
+          'x-authenticated-session-version': '1',
+        },
       })
     );
     const json = (await res.json()) as any;
@@ -123,7 +127,7 @@ d('GET /api/purchases lists cancelled bills (real DB)', () => {
       [BR, BR2, B, FBR, FOREIGN]
     );
     await pool.query(
-      `INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Clerk', $3, false)`,
+      `INSERT INTO users (id, business_id, name, phone, is_primary_admin, auth_session_version) VALUES ($1, $2, 'Clerk', $3, false, 1)`,
       [U, B, `95${Date.now().toString().slice(-8)}`]
     );
     await pool.query(

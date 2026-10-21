@@ -99,6 +99,34 @@ export async function GET(
     );
 
     purchase.items = itemsResult.rows;
+    const chargesResult = await pool.query(
+      `SELECT id, purpose, classification, taxable_value, tax_rate, tax_amount,
+              cgst_amount, sgst_amount, igst_amount, hsn_sac
+         FROM purchase_charges
+        WHERE purchase_id = $1 AND business_id = $2
+        ORDER BY sort_order, id`,
+      [purchaseId, purchase.business_id]
+    );
+    purchase.charges = chargesResult.rows;
+    if (purchase.charges.length > 0) {
+      const allocationResult = await pool.query(
+        `SELECT a.purchase_charge_id, a.amount, pi.item_id, pi.quantity
+           FROM purchase_charge_allocations a
+           JOIN purchase_items pi ON pi.id = a.purchase_item_id
+          WHERE a.purchase_charge_id = ANY($1::uuid[])
+          ORDER BY a.purchase_charge_id, pi.id`,
+        [purchase.charges.map((charge: { id: string }) => charge.id)]
+      );
+      const allocationsByCharge = new Map<string, Array<{ item_id: string; amount: string; quantity: string }>>();
+      for (const row of allocationResult.rows) {
+        const list = allocationsByCharge.get(row.purchase_charge_id) || [];
+        list.push({ item_id: row.item_id, amount: row.amount, quantity: row.quantity });
+        allocationsByCharge.set(row.purchase_charge_id, list);
+      }
+      for (const charge of purchase.charges) {
+        charge.allocations = allocationsByCharge.get(charge.id) || [];
+      }
+    }
 
     const returned = await pool.query(
       `SELECT pri.item_id, pri.description, SUM(pri.qty)::float8 AS qty
@@ -118,6 +146,23 @@ export async function GET(
       const key = purchaseReturnLineKey(item.item_id, item.item_name);
       item.returned_qty = alreadyReturned.get(key) || 0;
     }
+    const priorSlices = await pool.query(
+      `SELECT pri.item_id, pri.qty::float8 AS qty
+         FROM purchase_return_items pri
+         JOIN purchase_returns pr ON pr.id = pri.return_id
+        WHERE pr.purchase_id = $1 AND pr.business_id = $2
+          AND COALESCE(pr.status, 'final') <> 'cancelled'
+          AND pri.item_id IS NOT NULL
+        ORDER BY pr.created_at, pri.sort_order, pri.id`,
+      [purchaseId, purchase.business_id]
+    );
+    const priorReturnQuantities: Record<string, number[]> = {};
+    for (const row of priorSlices.rows) {
+      const list = priorReturnQuantities[row.item_id] || [];
+      list.push(Number(row.qty) || 0);
+      priorReturnQuantities[row.item_id] = list;
+    }
+    purchase.prior_return_quantities = priorReturnQuantities;
 
     // PHASE 4.3: Calculate credit metrics for supplier (if applicable)
     let creditMetrics = null;

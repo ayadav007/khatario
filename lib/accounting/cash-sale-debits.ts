@@ -1,6 +1,10 @@
-export type CashSalePayment = { mode?: string | null; amount?: number | null };
+export type CashSalePayment = {
+  mode?: string | null;
+  amount?: number | null;
+  settlementAccountId?: string | null;
+};
 
-export type CashSaleDebit = { mode: string; amount: number };
+export type CashSaleDebit = { mode: string; amount: number; settlementAccountId?: string | null };
 
 function money(n: number): number {
   return Math.round(n * 100) / 100;
@@ -15,14 +19,17 @@ export function cashSaleDebitLines(
   grandTotal: number,
   payments: CashSalePayment[],
 ): CashSaleDebit[] | null {
-  const grouped = new Map<string, number>();
+  const grouped = new Map<string, CashSaleDebit>();
   for (const payment of payments) {
     const amount = money(Number(payment.amount) || 0);
     if (amount <= 0) continue;
     const mode = String(payment.mode || 'cash').trim().toLowerCase() || 'cash';
-    grouped.set(mode, money((grouped.get(mode) || 0) + amount));
+    const settlementAccountId = payment.settlementAccountId || undefined;
+    const key = `${mode}|${settlementAccountId || ''}`;
+    const prev = grouped.get(key) || { mode, amount: 0, ...(settlementAccountId ? { settlementAccountId } : {}) };
+    grouped.set(key, { ...prev, amount: money(prev.amount + amount) });
   }
-  const lines = [...grouped.entries()].map(([mode, amount]) => ({ mode, amount }));
+  const lines = [...grouped.values()];
   if (lines.length === 0) return null;
   const sum = money(lines.reduce((total, line) => total + line.amount, 0));
   if (Math.abs(sum - money(Number(grandTotal) || 0)) > 0.01) return null;

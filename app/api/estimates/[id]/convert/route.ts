@@ -7,6 +7,7 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { InvoiceCreateServiceError } from '@/lib/invoices/invoice-create-service';
 import { convertLinesToInvoice, todayIsoDate } from '@/lib/invoices/convert-to-invoice';
+import { chargeFromSourceHeader, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
@@ -125,6 +126,16 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate has no items' }, { status: 400 });
     }
 
+    let charges;
+    try {
+      charges = chargeFromSourceHeader(estimate);
+    } catch (error) {
+      if (error instanceof InvoiceChargeError) {
+        throw new InvoiceCreateServiceError(error.message, 400, error.code);
+      }
+      throw error;
+    }
+
     const result = await convertLinesToInvoice(client, {
       businessId: estimate.business_id,
       userId,
@@ -151,6 +162,7 @@ export async function POST(
           tax_rate: r.tax_rate,
         };
       }),
+      charges,
     });
 
     await client.query(

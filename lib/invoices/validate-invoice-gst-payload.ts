@@ -1,5 +1,10 @@
 import type { CreateInvoiceInput } from '@/lib/invoices/invoice-create-service';
-import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
+import {
+  authoritativeInvoiceTotals,
+  InvoiceChargeError,
+  type InvoiceChargeInput,
+} from '@/lib/invoices/invoice-charges';
+import { isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
 
 const GST_TOLERANCE = 0.05;
 
@@ -52,45 +57,19 @@ export function computeInvoiceTotals(
       lut_declaration: exportFields.lut_declaration,
       place_of_supply_state_code: body.place_of_supply_state_code,
     });
-  let subtotal = 0;
-  let discountTotal = 0;
-  let cgstTotal = 0;
-  let sgstTotal = 0;
-  let igstTotal = 0;
+  const totals = authoritativeInvoiceTotals({
+    items,
+    charges: (body as CreateInvoiceInput & { charges?: InvoiceChargeInput[] }).charges,
+    additionalCharges: body.additional_charges,
+    intraState,
+    zeroRated,
+    pricesIncludeGst: body.prices_include_gst === true,
+    documentDate: body.invoice_date,
+    roundOff: body.round_off,
+    enableRoundOff: body.enable_round_off,
+  });
 
-  for (const item of items) {
-    const line = computeLineGst(item, intraState, zeroRated, body.prices_include_gst === true);
-    subtotal += line.taxable;
-    discountTotal += line.itemDiscount;
-    cgstTotal += line.cgst;
-    sgstTotal += line.sgst;
-    igstTotal += line.igst;
-  }
-  subtotal = round2(subtotal);
-  discountTotal = round2(discountTotal);
-  cgstTotal = round2(cgstTotal);
-  sgstTotal = round2(sgstTotal);
-  igstTotal = round2(igstTotal);
-  const taxTotal = round2(cgstTotal + sgstTotal + igstTotal);
-
-  const additional = Number(body.additional_charges) || 0;
-  const grandTotalRaw = round2(subtotal + taxTotal + additional);
-  let roundOff = Number(body.round_off) || 0;
-  if (body.enable_round_off && !body.round_off) {
-    roundOff = round2(Math.round(grandTotalRaw) - grandTotalRaw);
-  }
-  const grandTotal = round2(grandTotalRaw + roundOff);
-
-  return {
-    subtotal,
-    taxTotal,
-    discountTotal,
-    cgstTotal,
-    sgstTotal,
-    igstTotal,
-    grandTotal,
-    roundOff,
-  };
+  return totals;
 }
 
 /** Server-side GST reconciliation for offline sales payloads. */
@@ -110,7 +89,33 @@ export function validateInvoiceGstPayload(
     grand_total?: number;
   };
 } {
-  const totals = computeInvoiceTotals(body, businessStateCode);
+  let totals: ReturnType<typeof computeInvoiceTotals>;
+  try {
+    totals = computeInvoiceTotals(body, businessStateCode);
+  } catch (error) {
+    if (error instanceof InvoiceChargeError) {
+      return {
+        ok: false,
+        reason: error.message,
+        serverTotals: {
+          subtotal: 0,
+          taxTotal: 0,
+          discountTotal: 0,
+          cgstTotal: 0,
+          sgstTotal: 0,
+          igstTotal: 0,
+          grandTotal: 0,
+          roundOff: 0,
+        },
+        clientTotals: {
+          subtotal: body.subtotal,
+          tax_total: body.tax_total,
+          grand_total: body.grand_total,
+        },
+      };
+    }
+    throw error;
+  }
 
   const mismatch =
     (body.subtotal !== undefined &&

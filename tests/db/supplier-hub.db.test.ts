@@ -87,7 +87,7 @@ import { PATCH as patchListing } from '@/app/api/suppliers/hub/published-listing
 import { POST as linkedCustomer } from '@/app/api/suppliers/hub/linked-customer/route';
 import { GET as linkGET, DELETE as linkDELETE } from '@/app/api/suppliers/hub/link/route';
 import { POST as connectPOST } from '@/app/api/suppliers/hub/connection-requests/route';
-import { PATCH as connectPATCH } from '@/app/api/suppliers/hub/connection-requests/[id]/route';
+import { GET as connectGET, PATCH as connectPATCH } from '@/app/api/suppliers/hub/connection-requests/[id]/route';
 import { GET as supplierItemsGET, POST as supplierItemsPOST } from '@/app/api/suppliers/[id]/items/route';
 import { GET as hubHomeGET } from '@/app/api/suppliers/hub/home/route';
 import { GET as areaReportGET } from '@/app/api/suppliers/dashboard/analytics/route';
@@ -116,6 +116,7 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     'content-type': 'application/json',
     'x-authenticated-user-id': user,
     'x-authenticated-business-id': biz,
+    'x-authenticated-session-version': '1',
   });
   const post = (url: string, user: string, biz: string, body: object) =>
     new NextRequest(`http://localhost${url}`, { method: 'POST', headers: headers(user, biz), body: JSON.stringify(body) });
@@ -1045,5 +1046,66 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     expect(r.cities).toEqual([]);
     expect(r.pivot_matrix).toEqual([]);
     expect(r.hidden_shops.states).toBe(1);
+  });
+
+  it('accept asks before attaching a customer that only shares an email', async () => {
+    const email = `hub-${tag}@example.com`;
+    const oldCustomer = randomUUID();
+    await query(`UPDATE businesses SET email = $2 WHERE id = $1`, [C, email]);
+    await query(
+      `INSERT INTO customers (id, business_id, name, email) VALUES ($1, $2, 'Old Shop', $3)`,
+      [oldCustomer, B, email]
+    );
+    await query(
+      `INSERT INTO business_discovery (business_id, visibility) VALUES ($1, 'directory')
+       ON CONFLICT (business_id) DO UPDATE SET visibility = 'directory'`,
+      [B]
+    );
+
+    const ask = await connectPOST(post('/api/suppliers/hub/connection-requests', UC, C, { supplier_business_id: B }));
+    expect(ask.status).toBe(201);
+    const { request: connReq } = await ask.json();
+
+    const preview = await connectGET(
+      call('GET', `/api/suppliers/hub/connection-requests/${connReq.id}`, UB, B),
+      { params: { id: connReq.id } }
+    );
+    expect(preview.status).toBe(200);
+    const shown = await preview.json();
+    const match = shown.matches.find((m: { id: string }) => m.id === oldCustomer);
+    expect(match?.reasons).toContain('email');
+
+    const blocked = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${connReq.id}`, UB, B, { action: 'accept' }),
+      { params: { id: connReq.id } }
+    );
+    expect(blocked.status).toBe(409);
+    expect((await blocked.json()).code).toBe('CUSTOMER_DECISION_REQUIRED');
+    expect((await queryOne(`SELECT linked_business_id FROM customers WHERE id = $1`, [oldCustomer])).linked_business_id).toBeNull();
+    expect((await queryOne(`SELECT status FROM supplier_connection_requests WHERE id = $1`, [connReq.id])).status).toBe('pending');
+
+    const wrong = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${connReq.id}`, UB, B, {
+        action: 'accept',
+        customer_decision: { choice: 'link', customer_id: randomUUID() },
+      }),
+      { params: { id: connReq.id } }
+    );
+    expect(wrong.status).toBe(400);
+
+    const accepted = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${connReq.id}`, UB, B, {
+        action: 'accept',
+        customer_decision: { choice: 'link', customer_id: oldCustomer },
+      }),
+      { params: { id: connReq.id } }
+    );
+    expect(accepted.status).toBe(200);
+    expect((await queryOne(`SELECT linked_business_id FROM customers WHERE id = $1`, [oldCustomer])).linked_business_id).toBe(C);
+    const created = await queryOne(
+      `SELECT COUNT(*)::int AS n FROM customers WHERE business_id = $1 AND linked_business_id = $2 AND id <> $3`,
+      [B, C, oldCustomer]
+    );
+    expect(created.n).toBe(0);
   });
 });

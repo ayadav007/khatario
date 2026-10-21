@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows } from '@/lib/db';
 import { gstRatesForCode } from '@/lib/gst/rate-schedule';
+import { searchHsnCatalog } from '@/lib/gst/hsn-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,47 +35,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    // Search in multiple ways:
-    // 1. Exact code match
-    // 2. Description contains search term
-    // 3. Keywords array contains search term
-    // 4. Full-text search on description
-
-    const searchQuery = `
-      SELECT
-        code,
-        description,
-        gst_rate,
-        category,
-        is_service
-      FROM hsn_sac_master
-      WHERE
-        code ILIKE $1
-        OR description ILIKE $2
-        OR $3 = ANY(keywords)
-        OR to_tsvector('english', description) @@ plainto_tsquery('english', $4)
-      ORDER BY
-        CASE WHEN code = $5 THEN 0 ELSE 1 END,
-        CASE WHEN code ILIKE $1 AND $4 ~ '^[0-9]+$' THEN 0 ELSE 1 END,
-        ts_rank(to_tsvector('english', description), plainto_tsquery('english', $4)) DESC,
-        CASE WHEN description ILIKE $6 THEN 0 ELSE 1 END,
-        length(code) ASC
-      LIMIT $7
-    `;
-
-    const searchPattern = `%${searchTerm}%`;
-    const exactMatch = searchTerm;
-    const prefixMatch = `${searchTerm}%`;
-
-    const results = await queryRows<HSNResult>(searchQuery, [
-      prefixMatch,
-      searchPattern,
-      searchTerm,
-      searchTerm,
-      exactMatch,
-      prefixMatch,
-      limit,
-    ]);
+    const results: HSNResult[] = searchHsnCatalog(searchTerm, limit).map((row) => ({
+      code: row.code,
+      description: row.description,
+      gst_rate: null,
+      category: row.isService ? 'Services' : '',
+      is_service: row.isService,
+    }));
 
     const withRates = results.flatMap((result): HSNLookupRow[] => {
       const rates = result.is_service ? [] : gstRatesForCode(result.code);

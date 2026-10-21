@@ -517,6 +517,12 @@ export async function createInvoiceForStoreOrder(
     const delivery = parseFloat(String(o.delivery_charge)) || 0;
     const discount = parseFloat(String(o.discount_amount)) || 0;
     const additional = roundMoney(delivery - discount);
+    if (Math.abs(additional) > 0.004) {
+      throw new StoreInvoiceError(
+        'This store order has a delivery or discount amount with no GST classification. It was not invoiced.',
+        'CHARGE_UNCLASSIFIED'
+      );
+    }
 
     let createdBy = actorUserId || null;
     if (createdBy) {
@@ -565,7 +571,6 @@ export async function createInvoiceForStoreOrder(
         status: 'final',
         document_type: 'tax_invoice',
         prices_include_gst: pricesIncludeGst,
-        additional_charges: additional,
         billing_address: o.customer_address,
         notes: `Online store order ${o.order_number} (${payLabel})`,
         channel: 'online_store',

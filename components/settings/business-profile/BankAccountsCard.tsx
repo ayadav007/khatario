@@ -16,7 +16,12 @@ type BankAccount = {
   account_type?: string | null;
   is_active?: boolean;
   notes?: string | null;
+  ledger_account_id?: string | null;
+  ledger_account_code?: string | null;
+  ledger_account_name?: string | null;
 };
+
+type LinkableLedger = { id: string; account_code: string; account_name: string };
 
 const EMPTY_FORM = {
   account_name: '',
@@ -27,6 +32,10 @@ const EMPTY_FORM = {
   account_type: 'current',
   is_active: true,
   notes: '',
+  ledger_account_id: '',
+  create_ledger: false,
+  opening_balance: '',
+  opening_balance_date: '',
 };
 
 function maskAccount(n: string): string {
@@ -34,9 +43,18 @@ function maskAccount(n: string): string {
   return s.length > 4 ? `XXXX ${s.slice(-4)}` : s;
 }
 
-export function BankAccountsCard({ businessId, userId }: { businessId?: string | null; userId?: string | null }) {
+export function BankAccountsCard({
+  businessId,
+  userId,
+  onChanged,
+}: {
+  businessId?: string | null;
+  userId?: string | null;
+  onChanged?: () => void;
+}) {
   const toast = useToastContext();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [linkableLedgers, setLinkableLedgers] = useState<LinkableLedger[]>([]);
   const [loading, setLoading] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
@@ -49,7 +67,10 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
     try {
       const res = await fetch(`/api/bank-accounts?business_id=${businessId}&user_id=${userId ?? ''}`);
       const data = await res.json();
-      if (res.ok) setAccounts(data.accounts || []);
+      if (res.ok) {
+        setAccounts(data.accounts || []);
+        setLinkableLedgers(data.linkable_ledgers || []);
+      }
     } catch (error) {
       console.error('[Bank Accounts] Error fetching bank accounts:', error);
     } finally {
@@ -78,6 +99,10 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
       account_type: a.account_type || 'current',
       is_active: a.is_active !== false,
       notes: a.notes || '',
+      ledger_account_id: a.ledger_account_id || '',
+      create_ledger: false,
+      opening_balance: '',
+      opening_balance_date: '',
     });
     setFormOpen(true);
   };
@@ -94,13 +119,31 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
       toast.warning('Account name, account number and bank name are required');
       return;
     }
+    if (!editing && !form.create_ledger && !form.ledger_account_id) {
+      toast.warning('Link a chart account, or create a bank ledger for this account');
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/bank-accounts', {
         method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          editing ? { id: editing.id, business_id: businessId, ...form } : { business_id: businessId, ...form }
+          editing
+            ? {
+                id: editing.id,
+                business_id: businessId,
+                ...form,
+                ledger_account_id: form.ledger_account_id || undefined,
+                opening_balance: form.opening_balance === '' ? 0 : Number(form.opening_balance),
+              }
+            : {
+                business_id: businessId,
+                ...form,
+                ledger_account_id: form.create_ledger ? undefined : form.ledger_account_id,
+                opening_balance: form.opening_balance === '' ? 0 : Number(form.opening_balance),
+                opening_balance_date: form.opening_balance_date || undefined,
+              }
         ),
       });
       const data = await res.json();
@@ -111,6 +154,7 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
       toast.success(`Bank account ${editing ? 'updated' : 'added'}`);
       close();
       await load();
+      onChanged?.();
     } catch (error) {
       console.error('Error saving bank account:', error);
       toast.error('Failed to save bank account');
@@ -127,6 +171,7 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
       if (res.ok) {
         toast.success('Bank account deleted');
         void load();
+        onChanged?.();
       } else {
         const data = await res.json();
         toast.error(`Failed to delete bank account: ${data.error}`);
@@ -201,6 +246,50 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="type-label mb-1.5 block">Chart of accounts</label>
+                <select
+                  className="input"
+                  value={form.create_ledger ? '__create__' : form.ledger_account_id}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm({
+                      ...form,
+                      create_ledger: value === '__create__',
+                      ledger_account_id: value === '__create__' ? '' : value,
+                    });
+                  }}
+                >
+                  <option value="">Select a bank ledger…</option>
+                  {editing?.ledger_account_id &&
+                  !linkableLedgers.some((ledger) => ledger.id === editing.ledger_account_id) ? (
+                    <option value={editing.ledger_account_id}>
+                      {editing.ledger_account_code} — {editing.ledger_account_name}
+                    </option>
+                  ) : null}
+                  {linkableLedgers.map((ledger) => (
+                    <option key={ledger.id} value={ledger.id}>
+                      {ledger.account_code} — {ledger.account_name}
+                    </option>
+                  ))}
+                  {!editing ? <option value="__create__">Create a new bank ledger</option> : null}
+                </select>
+                <p className="mt-1 text-xs text-text-secondary">
+                  Import and reconciliation use this ledger. An opening balance is posted only to the ledger you pick.
+                </p>
+              </div>
+              {!editing ? (
+                <Input
+                  label="Opening balance"
+                  type="number"
+                  step="0.01"
+                  value={form.opening_balance}
+                  onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
+                  placeholder="Leave blank if the chart account already has one"
+                />
+              ) : null}
+            </div>
             <label className="flex cursor-pointer items-center gap-2">
               <input
                 type="checkbox"
@@ -250,7 +339,16 @@ export function BankAccountsCard({ businessId, userId }: { businessId?: string |
                     ) : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-text-secondary">
-                    {[a.account_name, a.ifsc_code, a.branch_name].filter(Boolean).join(' · ')}
+                    {[
+                      a.ledger_account_name
+                        ? `Ledger ${a.ledger_account_code} ${a.ledger_account_name}`
+                        : 'Not linked to a ledger',
+                      a.account_name,
+                      a.ifsc_code,
+                      a.branch_name,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-1">

@@ -5,7 +5,14 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { ExpenseValidationError, ON_ACCOUNT_MODES } from '@/lib/accounting/expense-posting';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
-import { deleteExpenseByReversal, repostExpense, type ExpenseRow } from '@/lib/accounting/expense-corrections';
+import {
+  deleteExpenseByReversal,
+  expenseVersionSql,
+  ExpenseEditConflictError,
+  EXPENSE_EDIT_CONFLICT,
+  repostExpense,
+  type ExpenseRow,
+} from '@/lib/accounting/expense-corrections';
 import { checkGstin } from '@/lib/tax/gstin';
 import { parseRegistrationStatus } from '@/lib/gst/rule47a';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
@@ -15,11 +22,12 @@ export const dynamic = 'force-dynamic';
 async function loadExpense(id: string, businessId: string): Promise<ExpenseRow | null> {
   return db.queryOne<ExpenseRow>(
     `SELECT id, business_id, branch_id, category_id, amount, description,
-            to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, reference_number,
+            to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, settlement_account_id, reference_number,
             cgst_amount, sgst_amount, igst_amount, itc_eligible, is_reverse_charge,
             tds_section, tds_amount, supplier_id, supplier_gstin,
             to_char(supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
-            supplier_registration_status
+            supplier_registration_status,
+            ${expenseVersionSql('updated_at')} AS updated_at
        FROM expenses WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [id, businessId]
   );
@@ -70,6 +78,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       description: body.description !== undefined ? body.description : old.description,
       expense_date: body.expense_date ? String(body.expense_date).slice(0, 10) : old.expense_date,
       payment_mode: body.payment_mode !== undefined ? body.payment_mode : old.payment_mode,
+      settlement_account_id:
+        body.settlement_account_id !== undefined ? body.settlement_account_id || null : old.settlement_account_id,
       reference_number: body.reference_number !== undefined ? body.reference_number : old.reference_number,
       cgst_amount: body.cgst_amount !== undefined ? String(Number(body.cgst_amount) || 0) : old.cgst_amount,
       sgst_amount: body.sgst_amount !== undefined ? String(Number(body.sgst_amount) || 0) : old.sgst_amount,
@@ -146,7 +156,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         old,
         next,
         tax,
-        expenseAccountId: category?.account_id ?? null,
+        expectedUpdatedAt: Object.prototype.hasOwnProperty.call(body, 'expected_updated_at')
+          ? body.expected_updated_at
+          : undefined,
       });
       if (!ok) {
         await client.query('ROLLBACK');
@@ -160,6 +172,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
+      if (e instanceof ExpenseEditConflictError) {
+        return NextResponse.json({ error: e.message, code: EXPENSE_EDIT_CONFLICT }, { status: 409 });
+      }
       if (e instanceof ExpenseValidationError) {
         return NextResponse.json({ error: e.message, code: 'EXPENSE_INVALID' }, { status: 400 });
       }

@@ -31,33 +31,19 @@ export async function PATCH(
   try {
     const requestId = params.id;
     const body = await request.json();
-    const actor = await resolveActorContext(request, body);
-    let businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    if (actor) {
-      businessId = actor.businessId;
+    // Who acts, and for which business, comes only from the verified session — never the body.
+    const actor = await resolveActorContext(request);
+    if (!actor) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+    const businessId = actor.businessId;
+    const updated_by_user_id = actor.userId;
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const { action, approved_by, rejection_reason, hold_reason, comments } = body;
-    const updated_by_user_id = body.updated_by_user_id ?? actor?.userId;
+    const { action, rejection_reason, hold_reason, comments } = body;
 
     if (!action || !['approve', 'reject', 'cancel', 'hold', 'grant_exception'].includes(action)) {
       return NextResponse.json(
         { error: 'action must be approve, reject, cancel, hold, or grant_exception' },
-        { status: 400 }
-      );
-    }
-
-    if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
         { status: 400 }
       );
     }
@@ -167,7 +153,7 @@ export async function PATCH(
          SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
          FROM employees e
          WHERE lr.id = $2 AND lr.employee_id = e.id AND e.business_id = $3`,
-        [approved_by || null, requestId, businessId]
+        [updated_by_user_id, requestId, businessId]
       );
 
       await syncApprovedLeaveToAttendance({
@@ -192,7 +178,7 @@ export async function PATCH(
          SET status = 'rejected', approved_by = $1, rejection_reason = $2, rejected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
          FROM employees e
          WHERE lr.id = $3 AND lr.employee_id = e.id AND e.business_id = $4`,
-        [approved_by || null, rejection_reason || null, requestId, businessId]
+        [updated_by_user_id, rejection_reason || null, requestId, businessId]
       );
     } else if (action === 'cancel') {
       if (leaveRequest.status === 'approved') {

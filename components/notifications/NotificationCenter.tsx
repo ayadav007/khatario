@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Bell, X, Check, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -96,14 +95,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
             aria-hidden
           />
           {/*
-            Mobile: fixed panel inset from viewport edges (escapes overflow-x-hidden shell).
-            Desktop: anchored dropdown under the bell.
+            Do not use Card here. Card sets max-w-full, and this panel is absolutely
+            positioned against the bell button, so 100% width collapses to the icon
+            and overflow-hidden clips the list.
+            Mobile: fixed panel inset from the viewport (escapes overflow-x-hidden).
+            Desktop: explicit width, anchored under the bell.
           */}
-          <Card
-            padding="md"
-            className="fixed z-[70] flex max-h-[min(70dvh,32rem)] w-auto flex-col overflow-hidden shadow-lg
+          <div
+            role="dialog"
+            aria-label="Notifications"
+            className="fixed z-[70] flex max-h-[min(70dvh,32rem)] w-auto min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface p-4 shadow-lg dark:border-border-dark dark:bg-surface-dark
               left-3 right-3 top-[calc(env(safe-area-inset-top,0px)+3.75rem)]
-              lg:absolute lg:left-auto lg:right-0 lg:top-full lg:mt-2 lg:w-96 lg:max-h-[600px]"
+              lg:absolute lg:left-auto lg:right-0 lg:top-full lg:mt-2 lg:w-96 lg:max-w-[min(24rem,calc(100vw-1.5rem))] lg:max-h-[600px]"
           >
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-200 pb-3 lg:mb-4 lg:pb-4">
               <h3 className="text-base font-semibold text-text-primary lg:text-lg">Notifications</h3>
@@ -207,7 +210,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                 })
               )}
             </div>
-          </Card>
+          </div>
         </>
       )}
     </div>

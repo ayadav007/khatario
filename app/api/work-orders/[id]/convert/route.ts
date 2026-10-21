@@ -91,6 +91,7 @@ export const POST = withPremiumSubscriptionApi<{ id: string }>(
         }
       }
 
+      // Labour and other work-order charges are already source lines. Do not also pass a header charge.
       const result = await convertLinesToInvoice(client, {
         businessId: ctx.businessId,
         userId: ctx.userId,

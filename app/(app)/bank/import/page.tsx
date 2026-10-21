@@ -9,12 +9,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { BankImportPreview, NormalizedBankRow } from '@/lib/bank/types';
 import { Trash2, Upload } from 'lucide-react';
+import { BankAccountsCard } from '@/components/settings/business-profile/BankAccountsCard';
 
 export default function BankImportPage() {
   const { business, user } = useAuth();
   const toast = useToastContext();
   const [accounts, setAccounts] = useState<
-    { id: string; account_name: string; bank_name: string; account_number: string }[]
+    { id: string; account_name: string; bank_name: string; account_number: string; ledger_account_id?: string | null }[]
   >([]);
   const [bankAccountId, setBankAccountId] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -31,8 +32,9 @@ export default function BankImportPage() {
     );
     const j = await res.json();
     if (res.ok && Array.isArray(j.accounts)) {
-      setAccounts(j.accounts);
-      if (j.accounts.length === 1) setBankAccountId(j.accounts[0].id);
+      const linked = j.accounts.filter((a: { ledger_account_id?: string | null }) => a.ledger_account_id);
+      setAccounts(linked);
+      if (linked.length === 1) setBankAccountId(linked[0].id);
     }
   }, [business?.id, user?.id]);
 
@@ -140,6 +142,8 @@ export default function BankImportPage() {
   subtitle="Upload CSV or PDF, review extracted rows, then confirm to save. Nothing is stored until you confirm."
 />
       </header>
+
+      <BankAccountsCard businessId={business.id} userId={user?.id} onChanged={() => void loadAccounts()} />
 
       <div className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-white p-4 shadow-sm">
         <label className="block text-sm">

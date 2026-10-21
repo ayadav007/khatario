@@ -17,68 +17,155 @@ export function execFor(client?: PoolClient): Exec {
   return client ? (sql, params) => client.query(sql, params) : (sql, params) => db.query(sql, params);
 }
 
+export type CustomerMatchReason = 'gstin' | 'phone' | 'email';
+
+export type CustomerMatch = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  gstin: string | null;
+  city: string | null;
+  reasons: CustomerMatchReason[];
+};
+
+export type BuyerLinkPreview = {
+  buyer: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    city: string | null;
+    state: string | null;
+    gstin: string | null;
+    logo_url: string | null;
+  };
+  already_linked: { id: string; name: string } | null;
+  matches: CustomerMatch[];
+};
+
+/** The supplier chose an existing customer, or a new one, before the link is saved. */
+export type CustomerLinkChoice = { choice: 'link'; customerId: string } | { choice: 'create' };
+
+export class CustomerLinkError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'CustomerLinkError';
+    this.status = status;
+  }
+}
+
+function identityKeys(row: { gstin?: string | null; phone?: string | null; email?: string | null }) {
+  const gstin = String(row.gstin || '').trim().toUpperCase();
+  const digits = String(row.phone || '').replace(/\D/g, '').slice(-10);
+  return {
+    gstin,
+    phone: digits.length === 10 ? digits : '',
+    email: String(row.email || '').trim().toLowerCase(),
+  };
+}
+
 /**
- * Make sure supplier B has a customer record linked to buyer A and return its id.
- * Reuses B's existing customer for A when it matches by GSTIN, then phone, then email;
- * otherwise creates one from A's business details.
+ * Customers on the supplier's books who are not yet linked, and who share the buyer's
+ * GSTIN, phone, or email. Names are not compared.
  */
-export async function ensureVendorCustomerLink(
+export async function previewVendorCustomerLink(
   vendorBusinessId: string,
   buyerBusinessId: string,
   client?: PoolClient
-): Promise<string> {
+): Promise<BuyerLinkPreview> {
   const exec = execFor(client);
+  const buyerRes = await exec(
+    `SELECT id, name, email, phone, city, state, gstin, logo_url FROM businesses WHERE id = $1`,
+    [buyerBusinessId]
+  );
+  const buyer = buyerRes.rows[0];
+  if (!buyer) throw new CustomerLinkError('Buyer business not found', 400);
 
   const linked = await exec(
-    `SELECT id FROM customers
+    `SELECT id, name FROM customers
       WHERE business_id = $1 AND linked_business_id = $2 AND deleted_at IS NULL
       LIMIT 1`,
     [vendorBusinessId, buyerBusinessId]
   );
-  if (linked.rows[0]) return String(linked.rows[0].id);
 
-  const buyerRes = await exec(
-    `SELECT name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin
-       FROM businesses WHERE id = $1`,
-    [buyerBusinessId]
-  );
-  const buyer = buyerRes.rows[0];
-  if (!buyer) throw new Error('Buyer business not found');
-
-  const gstin = String(buyer.gstin || '').trim().toUpperCase();
-  const phoneDigits = String(buyer.phone || '').replace(/\D/g, '').slice(-10);
-  const email = String(buyer.email || '').trim().toLowerCase();
-
-  const match = await exec(
-    `SELECT id FROM customers
+  const keys = identityKeys(buyer);
+  const found = await exec(
+    `SELECT id, name, phone, email, gstin, city,
+            ($2 <> '' AND UPPER(TRIM(COALESCE(gstin, ''))) = $2) AS match_gstin,
+            ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $3) AS match_phone,
+            ($4 <> '' AND LOWER(TRIM(COALESCE(email, ''))) = $4) AS match_email
+       FROM customers
       WHERE business_id = $1
         AND deleted_at IS NULL
         AND linked_business_id IS NULL
         AND (
-          ($2 <> '' AND UPPER(TRIM(gstin)) = $2)
+          ($2 <> '' AND UPPER(TRIM(COALESCE(gstin, ''))) = $2)
           OR ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $3)
-          OR ($4 <> '' AND LOWER(TRIM(email)) = $4)
+          OR ($4 <> '' AND LOWER(TRIM(COALESCE(email, ''))) = $4)
         )
       ORDER BY
         CASE
-          WHEN $2 <> '' AND UPPER(TRIM(gstin)) = $2 THEN 0
+          WHEN $2 <> '' AND UPPER(TRIM(COALESCE(gstin, ''))) = $2 THEN 0
           WHEN $3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $3 THEN 1
           ELSE 2
         END,
-        COALESCE(is_active, true) DESC,
-        created_at ASC
-      LIMIT 1`,
-    [vendorBusinessId, gstin, phoneDigits.length === 10 ? phoneDigits : '', email]
+        name ASC
+      LIMIT 20`,
+    [vendorBusinessId, keys.gstin, keys.phone, keys.email]
   );
-  if (match.rows[0]) {
-    const id = String(match.rows[0].id);
-    await exec(
-      `UPDATE customers SET linked_business_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-      [id, buyerBusinessId]
-    );
-    return id;
-  }
 
+  return {
+    buyer: {
+      id: String(buyer.id),
+      name: buyer.name || 'This shop',
+      phone: buyer.phone || null,
+      email: buyer.email || null,
+      city: buyer.city || null,
+      state: buyer.state || null,
+      gstin: buyer.gstin || null,
+      logo_url: buyer.logo_url || null,
+    },
+    already_linked: linked.rows[0]
+      ? { id: String(linked.rows[0].id), name: linked.rows[0].name || 'Customer' }
+      : null,
+    matches: found.rows.map((row) => {
+      const reasons: CustomerMatchReason[] = [];
+      if (row.match_gstin) reasons.push('gstin');
+      if (row.match_phone) reasons.push('phone');
+      if (row.match_email) reasons.push('email');
+      return {
+        id: String(row.id),
+        name: row.name || 'Customer',
+        phone: row.phone || null,
+        email: row.email || null,
+        gstin: row.gstin || null,
+        city: row.city || null,
+        reasons,
+      };
+    }),
+  };
+}
+
+async function insertBuyerAsCustomer(
+  exec: Exec,
+  vendorBusinessId: string,
+  buyerBusinessId: string,
+  buyer: {
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    state_code?: string | null;
+    pincode?: string | null;
+    gstin?: string | null;
+  }
+): Promise<string> {
+  const gstin = String(buyer.gstin || '').trim().toUpperCase();
   const address = [buyer.address_line1, buyer.address_line2].filter(Boolean).join(', ') || null;
   const created = await exec(
     `INSERT INTO customers (
@@ -102,6 +189,90 @@ export async function ensureVendorCustomerLink(
     ]
   );
   return String(created.rows[0].id);
+}
+
+/**
+ * Make sure supplier B has a customer record linked to buyer A and return its id.
+ *
+ * A caller that passes `choice` has already asked the supplier: `link` attaches that
+ * existing customer, `create` always inserts a new one. Without a choice, an existing
+ * link is reused; otherwise the first unlinked customer with the same GSTIN, phone, or
+ * email is attached, and a new customer is created only when nothing matches.
+ */
+export async function ensureVendorCustomerLink(
+  vendorBusinessId: string,
+  buyerBusinessId: string,
+  client?: PoolClient,
+  choice?: CustomerLinkChoice
+): Promise<string> {
+  const exec = execFor(client);
+
+  const linked = await exec(
+    `SELECT id FROM customers
+      WHERE business_id = $1 AND linked_business_id = $2 AND deleted_at IS NULL
+      LIMIT 1`,
+    [vendorBusinessId, buyerBusinessId]
+  );
+  if (linked.rows[0]) return String(linked.rows[0].id);
+
+  const buyerRes = await exec(
+    `SELECT name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin
+       FROM businesses WHERE id = $1`,
+    [buyerBusinessId]
+  );
+  const buyer = buyerRes.rows[0];
+  if (!buyer) throw new CustomerLinkError('Buyer business not found');
+
+  if (choice?.choice === 'create') {
+    return insertBuyerAsCustomer(exec, vendorBusinessId, buyerBusinessId, buyer);
+  }
+
+  if (choice?.choice === 'link') {
+    const preview = await previewVendorCustomerLink(vendorBusinessId, buyerBusinessId, client);
+    const match = preview.matches.find((row) => row.id === choice.customerId);
+    if (!match) {
+      throw new CustomerLinkError('That customer is not a match for this shop. Choose one of the matches, or create a new customer.');
+    }
+    await exec(
+      `UPDATE customers SET linked_business_id = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND business_id = $3 AND deleted_at IS NULL AND linked_business_id IS NULL`,
+      [choice.customerId, buyerBusinessId, vendorBusinessId]
+    );
+    return choice.customerId;
+  }
+
+  const keys = identityKeys(buyer);
+  const match = await exec(
+    `SELECT id FROM customers
+      WHERE business_id = $1
+        AND deleted_at IS NULL
+        AND linked_business_id IS NULL
+        AND (
+          ($2 <> '' AND UPPER(TRIM(COALESCE(gstin, ''))) = $2)
+          OR ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $3)
+          OR ($4 <> '' AND LOWER(TRIM(COALESCE(email, ''))) = $4)
+        )
+      ORDER BY
+        CASE
+          WHEN $2 <> '' AND UPPER(TRIM(COALESCE(gstin, ''))) = $2 THEN 0
+          WHEN $3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $3 THEN 1
+          ELSE 2
+        END,
+        COALESCE(is_active, true) DESC,
+        created_at ASC
+      LIMIT 1`,
+    [vendorBusinessId, keys.gstin, keys.phone, keys.email]
+  );
+  if (match.rows[0]) {
+    const id = String(match.rows[0].id);
+    await exec(
+      `UPDATE customers SET linked_business_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [id, buyerBusinessId]
+    );
+    return id;
+  }
+
+  return insertBuyerAsCustomer(exec, vendorBusinessId, buyerBusinessId, buyer);
 }
 
 /**

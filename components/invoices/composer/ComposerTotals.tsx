@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Check, ListPlus, Plus, X } from 'lucide-react';
 import type { ComposerCharge, ComposerPayment, ComposerTotals } from './types';
 import { fx, inr, Kbd, NumberInput, PAYMENT_MODES, Switch } from './ui';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 type Props = {
   totals: ComposerTotals;
@@ -75,7 +76,7 @@ export function TotalsPanel({
   };
 
   const setMode = (mode: string) => {
-    if (first) setPayments([{ ...first, mode }, ...payments.slice(1)]);
+    if (first) setPayments([{ ...first, mode, settlementAccountId: '' }, ...payments.slice(1)]);
     else setPayments([newPayment(0, mode)]);
   };
 
@@ -102,22 +103,60 @@ export function TotalsPanel({
           ))}
 
         {charges.map((c) => (
-          <div key={c.id} className="flex items-center gap-2">
-            <input
-              value={c.purpose}
-              onChange={(e) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, purpose: e.target.value } : x)))}
-              className={clsx(smallInput, 'min-w-0 flex-1')}
-              placeholder="Charge name (e.g. Freight)"
-              disabled={readOnly}
-            />
-            <NumberInput
-              value={c.amount}
-              onValue={(n) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, amount: n } : x)))}
-              className={clsx(smallInput, 'w-24 text-right')}
-              placeholder="0"
-              disabled={readOnly}
-            />
-            {!readOnly && <IconX onClick={() => setCharges(charges.filter((x) => x.id !== c.id))} />}
+          <div key={c.id} className="space-y-1">
+            <div className="flex items-center gap-2">
+              <input
+                value={c.purpose}
+                onChange={(e) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, purpose: e.target.value } : x)))}
+                className={clsx(smallInput, 'min-w-0 flex-1')}
+                placeholder="Charge name (e.g. Freight)"
+                disabled={readOnly}
+              />
+              <select
+                aria-label="Charge classification"
+                value={c.classification || ''}
+                disabled={readOnly}
+                onChange={(e) =>
+                  setCharges(
+                    charges.map((x) =>
+                      x.id === c.id
+                        ? { ...x, classification: e.target.value as ComposerCharge['classification'] }
+                        : x
+                    )
+                  )
+                }
+                className={clsx(smallInput, 'w-40')}
+              >
+                <option value="">Classify</option>
+                <option value="follows_goods">Part of the goods</option>
+                <option value="separate_supply">Separate supply</option>
+              </select>
+              <NumberInput
+                value={c.amount}
+                onValue={(n) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, amount: n } : x)))}
+                className={clsx(smallInput, 'w-24 text-right')}
+                placeholder="0"
+                disabled={readOnly}
+              />
+              {!readOnly && <IconX onClick={() => setCharges(charges.filter((x) => x.id !== c.id))} />}
+            </div>
+            {c.classification === 'separate_supply' && !readOnly && (
+              <div className="flex gap-2">
+                <input
+                  value={c.hsnSac || ''}
+                  onChange={(e) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, hsnSac: e.target.value } : x)))}
+                  className={clsx(smallInput, 'min-w-0 flex-1')}
+                  placeholder="HSN / SAC"
+                  aria-label="Charge HSN or SAC"
+                />
+                <NumberInput
+                  value={c.taxPercent ?? 0}
+                  onValue={(n) => setCharges(charges.map((x) => (x.id === c.id ? { ...x, taxPercent: n } : x)))}
+                  className={clsx(smallInput, 'w-24 text-right')}
+                  placeholder="GST %"
+                />
+              </div>
+            )}
           </div>
         ))}
 
@@ -223,6 +262,18 @@ export function TotalsPanel({
                   </button>
                 ))}
               </div>
+              {(first?.amount || 0) > 0 ? (
+                <div className="mt-2">
+                  <SettlementAccountField
+                    mode={first?.mode || 'cash'}
+                    value={first?.settlementAccountId || ''}
+                    onChange={(settlementAccountId) => {
+                      if (!first) return;
+                      setPayments([{ ...first, settlementAccountId }, ...payments.slice(1)]);
+                    }}
+                  />
+                </div>
+              ) : null}
             </>
           ) : (
             <ul className="space-y-1 rounded-lg border border-border bg-slate-50/60 p-2 text-sm dark:bg-slate-800/40">

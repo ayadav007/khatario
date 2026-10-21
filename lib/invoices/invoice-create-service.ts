@@ -18,7 +18,7 @@ import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
-import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
+import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
@@ -65,6 +65,7 @@ export interface CreateInvoiceInput {
   subtotal?: number;
   tax_total?: number;
   additional_charges?: number;
+  charges?: InvoiceChargeInput[];
   round_off?: number;
   grand_total?: number;
   notes?: string | null;
@@ -80,6 +81,7 @@ export interface CreateInvoiceInput {
     mode?: string;
     date?: string;
     reference?: string;
+    settlement_account_id?: string | null;
   }>;
   paid_amount?: number;
   balance_amount?: number;
@@ -474,22 +476,15 @@ export async function createInvoiceInTransaction(
   }
   if (compliance.placeOfSupply) body.place_of_supply_state_code = compliance.placeOfSupply;
 
-  const totals = computeInvoiceTotals(body, businessStateCode);
-  const exportFields = body as CreateInvoiceInput & {
-    is_export?: boolean | null;
-    supply_type?: string | null;
-    export_type?: string | null;
-    lut_declaration?: boolean | null;
-  };
-  const zeroRated =
-    !taxPolicy.collectTax ||
-    isZeroRatedWithoutTax({
-      is_export: exportFields.is_export,
-      supply_type: exportFields.supply_type,
-      export_type: exportFields.export_type,
-      lut_declaration: exportFields.lut_declaration,
-      place_of_supply_state_code: body.place_of_supply_state_code,
-    });
+  let totals: ReturnType<typeof computeInvoiceTotals>;
+  try {
+    totals = computeInvoiceTotals(body, businessStateCode);
+  } catch (error) {
+    if (error instanceof InvoiceChargeError) {
+      throw new InvoiceCreateServiceError(error.message, 400, error.code);
+    }
+    throw error;
+  }
   const paymentEntries = body.payments ?? [];
   let paidAmount = body.paid_amount ?? 0;
   if (paymentEntries.length > 0) {
@@ -535,7 +530,7 @@ export async function createInvoiceInTransaction(
       paymentStatus,
       totals.subtotal,
       totals.discountTotal,
-      Number(body.additional_charges) || 0,
+      totals.additionalCharges,
       totals.taxTotal,
       totals.roundOff,
       totals.grandTotal,
@@ -578,15 +573,8 @@ export async function createInvoiceInTransaction(
     const item = items[i];
     const qty = Number(item.quantity) || 0;
     const unitPrice = Number(item.unit_price) || 0;
-    const taxRate = taxPolicy.collectTax ? Number(item.tax_rate) || 0 : 0;
-    const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
-    const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
-    const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
-      item,
-      intraState,
-      zeroRated,
-      body.prices_include_gst === true
-    );
+    const taxRate = totals.lines[i].taxRate;
+    const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = totals.lines[i];
 
     await client.query(
       `
@@ -632,6 +620,13 @@ export async function createInvoiceInTransaction(
     }
   }
 
+  await persistInvoiceCharges(client, {
+    invoiceId,
+    businessId: business_id,
+    totals,
+    goodsLineCount: items.length,
+  });
+
   if (isDraft) {
     return {
       invoice,
@@ -653,6 +648,7 @@ export async function createInvoiceInTransaction(
     mode: string;
     date: string | Date;
     reference?: string;
+    settlementAccountId?: string | null;
   }> = [];
 
   if (paymentEntries.length > 0) {
@@ -663,9 +659,9 @@ export async function createInvoiceInTransaction(
         `
         INSERT INTO payments (
           business_id, branch_id, type, customer_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
+          amount, payment_mode, payment_date, notes, settlement_account_id
         )
-        VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8)
+        VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8, $9)
         RETURNING id
         `,
         [
@@ -679,6 +675,7 @@ export async function createInvoiceInTransaction(
           p.reference
             ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}`
             : `Payment for Invoice ${invoiceNumber}`,
+          p.settlement_account_id || null,
         ]
       );
       insertedPayments.push({
@@ -687,6 +684,7 @@ export async function createInvoiceInTransaction(
         mode: p.mode || 'cash',
         date: p.date || body.invoice_date,
         reference: p.reference,
+        settlementAccountId: p.settlement_account_id || null,
       });
     }
   }
@@ -730,6 +728,7 @@ export async function createInvoiceInTransaction(
         type: 'receivable',
         customerId: body.customer_id,
         paymentMode: p.mode,
+        settlementAccountId: p.settlementAccountId,
         referenceNumber: invoiceNumber,
         description: `Receipt against Invoice ${invoiceNumber}${p.reference ? ` (Ref: ${p.reference})` : ''}`,
         branchId: finalBranchId,

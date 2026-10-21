@@ -4,6 +4,7 @@ import { resolveBranchId } from '@/lib/branch-helpers';
 import { requireTenantBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { InvoiceCreateServiceError } from '@/lib/invoices/invoice-create-service';
 import { convertLinesToInvoice, todayIsoDate } from '@/lib/invoices/convert-to-invoice';
+import { chargeFromSourceHeader, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
 import { ensureSalesOrderFulfilment } from '@/lib/fulfilment/service';
 import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
 import { periodGuardResponse } from '@/lib/http/period-guards';
@@ -170,6 +171,16 @@ export async function POST(
       );
     }
 
+    let charges;
+    try {
+      charges = chargeFromSourceHeader(salesOrder);
+    } catch (error) {
+      if (error instanceof InvoiceChargeError) {
+        throw new InvoiceCreateServiceError(error.message, 400, error.code);
+      }
+      throw error;
+    }
+
     const result = await convertLinesToInvoice(client, {
       businessId: salesOrder.business_id,
       userId,
@@ -195,6 +206,7 @@ export async function POST(
         discount_percent: row.discount_percent,
         tax_rate: row.tax_rate,
       })),
+      charges,
     });
 
     for (const { row, quantity } of convertPlan) {

@@ -16,14 +16,19 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
     try {
       const { reason } = (body ?? {}) as { reason?: string };
 
-      await query(
-        `UPDATE sales_orders 
-       SET status = 'cancelled', 
+      // Only a WhatsApp order still waiting for verification can be rejected here.
+      const result = await query(
+        `UPDATE sales_orders
+       SET status = 'cancelled',
            notes = $1,
-           updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $2 AND business_id = $3`,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND business_id = $3
+         AND whatsapp_conversation_id IS NOT NULL AND status = 'draft' AND converted_invoice_id IS NULL`,
         [reason || 'Payment could not be verified', orderId, businessId],
       );
+      if (!result.rowCount) {
+        return NextResponse.json({ error: 'This order is no longer waiting for verification' }, { status: 409 });
+      }
 
       return NextResponse.json({ success: true, message: 'Order rejected' });
     } catch (error: any) {

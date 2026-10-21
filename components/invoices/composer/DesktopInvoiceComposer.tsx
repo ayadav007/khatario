@@ -238,7 +238,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     const mode = PAYMENT_MODES[index];
     if (!mode) return;
     const first = p.payments[0];
-    p.setPayments(first ? [{ ...first, mode: mode.id }] : [newPayment(0, mode.id)]);
+    p.setPayments(first ? [{ ...first, mode: mode.id, settlementAccountId: '' }] : [newPayment(0, mode.id)]);
   };
 
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});

@@ -56,9 +56,19 @@ function post(body: Record<string, unknown>, headers: Record<string, string> = {
     body: JSON.stringify(body),
   });
 }
-const session = { 'x-authenticated-user-id': USER, 'x-authenticated-business-id': BIZ };
+const session = {
+  'x-authenticated-user-id': USER,
+  'x-authenticated-business-id': BIZ,
+  'x-authenticated-session-version': '1',
+};
 
 beforeEach(() => {
+  const { queryOne } = jest.requireMock('@/lib/db') as { queryOne: jest.Mock };
+  queryOne.mockImplementation(async (sql: string) => {
+    if (String(sql).includes('auth_session_version')) return { auth_session_version: '1' };
+    if (String(sql).includes('FROM items')) return { id: ITEM };
+    return null;
+  });
   mockQuantity.mockReset().mockResolvedValue({ id: 'adj-1' });
   mockValue.mockReset().mockResolvedValue({ id: 'adj-2' });
   mockAuthorize.mockReset().mockResolvedValue(undefined);
@@ -70,14 +80,14 @@ beforeEach(() => {
 it('authorizes and records the session user', async () => {
   const res = await POST(post(ADJUSTMENT, session));
   expect(res.status).toBe(201);
-  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create');
+  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create', { businessId: BIZ });
   expect(mockQuantity).toHaveBeenCalledWith(expect.objectContaining({ businessId: BIZ, createdBy: USER }));
 });
 
 it('ignores a created_by or user_id in the body', async () => {
   const res = await POST(post({ ...ADJUSTMENT, created_by: ADMIN, user_id: ADMIN }, session));
   expect(res.status).toBe(201);
-  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create');
+  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create', { businessId: BIZ });
   expect(mockAuthorize).not.toHaveBeenCalledWith(ADMIN, expect.anything(), expect.anything());
   expect(mockQuantity.mock.calls[0][0].createdBy).toBe(USER);
 });
@@ -108,12 +118,11 @@ it('records the session user on value adjustments', async () => {
   expect(mockValue.mock.calls[0][0].createdBy).toBe(USER);
 });
 
-it('keeps the 400 when there is no session user, even with created_by in the body', async () => {
+it('rejects a request with no session user, even with created_by in the body', async () => {
   const res = await POST(
     post({ ...ADJUSTMENT, created_by: ADMIN }, { 'x-authenticated-business-id': BIZ }),
   );
-  expect(res.status).toBe(400);
-  expect((await res.json()).error).toBe('created_by (user_id) is required for authorization');
+  expect(res.status).toBe(401);
   expect(mockAuthorize).not.toHaveBeenCalled();
   expect(mockQuantity).not.toHaveBeenCalled();
 });

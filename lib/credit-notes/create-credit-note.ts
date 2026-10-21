@@ -119,6 +119,17 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let invoice: any = null;
+  type ItemPool = {
+    qty: number;
+    taxable: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    tax: number;
+    taxRate: number;
+  };
+  const originalByItem = new Map<string, ItemPool>();
+  const creditedByItem = new Map<string, ItemPool>();
   const invoicedByItem = new Map<string, { qty: number; taxRate: number }>();
   if (invoice_id) {
     const invRes = await client.query(
@@ -150,23 +161,66 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     }
 
     const invItems = await client.query(
-      `SELECT item_id, SUM(quantity)::numeric AS qty, MAX(tax_rate)::numeric AS tax_rate
-         FROM invoice_items WHERE invoice_id = $1 AND item_id IS NOT NULL GROUP BY item_id`,
+      `SELECT item_id,
+              SUM(quantity)::numeric AS qty,
+              SUM(taxable_value)::numeric AS taxable,
+              SUM(cgst_amount)::numeric AS cgst,
+              SUM(sgst_amount)::numeric AS sgst,
+              SUM(igst_amount)::numeric AS igst,
+              SUM(tax_amount)::numeric AS tax,
+              MIN(tax_rate)::numeric AS min_rate,
+              MAX(tax_rate)::numeric AS max_rate
+         FROM invoice_items
+        WHERE invoice_id = $1 AND item_id IS NOT NULL AND COALESCE(charge_line, false) = false
+        GROUP BY item_id`,
       [invoice_id],
     );
     const credited = await client.query(
-      `SELECT cni.item_id, SUM(cni.qty)::numeric AS qty
+      `SELECT cni.item_id,
+              SUM(cni.qty)::numeric AS qty,
+              SUM(cni.line_total - cni.tax_amount)::numeric AS taxable,
+              SUM(cni.tax_amount)::numeric AS tax
          FROM credit_note_items cni
          JOIN credit_notes cn ON cn.id = cni.credit_note_id
         WHERE cn.invoice_id = $1 AND cn.business_id = $2 AND cn.status = 'active' AND cni.item_id IS NOT NULL
         GROUP BY cni.item_id`,
       [invoice_id, business_id],
     );
-    const creditedQty = new Map(credited.rows.map((r) => [r.item_id, Number(r.qty) || 0]));
+    const creditedRows = new Map(credited.rows.map((r) => [r.item_id, r]));
     for (const r of invItems.rows) {
+      if (Math.abs(Number(r.min_rate) - Number(r.max_rate)) > 0.001) {
+        throw new CreditNoteCreateError(
+          400,
+          'MIXED_ITEM_RATES',
+          'This item is on the invoice at more than one GST rate. Credit each rate on its own line.',
+        );
+      }
+      const prior = creditedRows.get(r.item_id);
+      const original: ItemPool = {
+        qty: Number(r.qty) || 0,
+        taxable: Number(r.taxable) || 0,
+        cgst: Number(r.cgst) || 0,
+        sgst: Number(r.sgst) || 0,
+        igst: Number(r.igst) || 0,
+        tax: Number(r.tax) || 0,
+        taxRate: Number(r.max_rate) || 0,
+      };
+      originalByItem.set(r.item_id, original);
+      const priorTax = Number(prior?.tax) || 0;
+      const priorTaxable = Number(prior?.taxable) || 0;
+      const taxBase = original.tax > 0 ? original.tax : 1;
+      creditedByItem.set(r.item_id, {
+        qty: Number(prior?.qty) || 0,
+        taxable: priorTaxable,
+        cgst: round2(original.cgst * (priorTax / taxBase)),
+        sgst: round2(original.sgst * (priorTax / taxBase)),
+        igst: round2(original.igst * (priorTax / taxBase)),
+        tax: priorTax,
+        taxRate: original.taxRate,
+      });
       invoicedByItem.set(r.item_id, {
-        qty: (Number(r.qty) || 0) - (creditedQty.get(r.item_id) || 0),
-        taxRate: Number(r.tax_rate) || 0,
+        qty: original.qty - (Number(prior?.qty) || 0),
+        taxRate: original.taxRate,
       });
     }
   }
@@ -181,6 +235,42 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     const discount = round2(
       discountPercent > 0 ? (gross * discountPercent) / 100 : Number(item.discount_amount ?? item.discount) || 0,
     );
+    const linkedId = item.item_id || '';
+    const original = linkedId ? originalByItem.get(linkedId) : undefined;
+    const already = linkedId ? creditedByItem.get(linkedId) : undefined;
+    if (original && already && invoice_id) {
+      const openQty = original.qty - already.qty;
+      const closes = qty >= openQty - 1e-9;
+      const share = original.qty > 0 ? qty / original.qty : 0;
+      const taxable = closes ? round2(original.taxable - already.taxable) : round2(original.taxable * share);
+      const taxAmount = closes ? round2(original.tax - already.tax) : round2(original.tax * share);
+      const head = (amount: number) =>
+        closes && already.qty <= 1e-9
+          ? amount
+          : original.tax > 0
+            ? round2(amount * (taxAmount / original.tax))
+            : 0;
+      const cgst = head(original.cgst);
+      const sgst = head(original.sgst);
+      const igst = head(original.igst);
+      already.qty = round2(already.qty + qty);
+      already.taxable = round2(already.taxable + taxable);
+      already.tax = round2(already.tax + taxAmount);
+      const taxRate = zeroRated ? 0 : original.taxRate;
+      return {
+        item,
+        qty,
+        unitPrice: qty > 0 ? round2(taxable / qty) : 0,
+        discount: 0,
+        taxRate,
+        taxable: zeroRated ? taxable : taxable,
+        cgst: zeroRated ? 0 : cgst,
+        sgst: zeroRated ? 0 : sgst,
+        igst: zeroRated ? 0 : igst,
+        taxAmount: zeroRated ? 0 : taxAmount,
+        lineTotal: round2(taxable + (zeroRated ? 0 : taxAmount)),
+      };
+    }
     const linked = item.item_id ? invoicedByItem.get(item.item_id) : undefined;
     const taxRate = linked ? linked.taxRate : Number(item.tax_rate) || 0;
     const line = computeLineGst({ quantity: 1, unit_price: gross - discount, tax_rate: taxRate }, intraState, zeroRated);

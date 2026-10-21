@@ -13,3 +13,6 @@ Before VPS deploy, nginx changes or Android APK builds, read `docs/SERVER_INFRAS
 
 ## Tooling
 Library docs, Playwright e2e and Strix usage: see `.cursor/rules/ide-mcp.mdc`.
+
+## QA
+Before any QA, test-audit, or regression task, read `docs/qa/README.md` and follow `.cursor/rules/qa-governance.mdc`. Do not start a new module or recreate inventories when that index already records the next task.

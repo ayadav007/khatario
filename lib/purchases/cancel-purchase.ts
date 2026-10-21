@@ -12,6 +12,7 @@ import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { RULE37_REAVAIL, RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { reverseHistoricalLandedCost, LandedCostError } from '@/lib/inventory/landed-cost-application';
 
 export class PurchaseCancelError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -138,6 +139,29 @@ export async function cancelFinalPurchase(
   } catch (e) {
     throw new PurchaseCancelError(400, 'PURCHASE_NO_BRANCH', (e as Error)?.message || 'Purchase has no valid branch for stock reversal');
   }
+  const landed = await client.query<{ source_id: string }>(
+    `SELECT source_id
+       FROM acquisition_cost_applications
+      WHERE business_id = $1 AND purchase_id = $2 AND reversed_amount < amount - 0.004
+      ORDER BY id
+      FOR UPDATE`,
+    [p.businessId, p.purchaseId]
+  );
+  for (const row of landed.rows) {
+    try {
+      await reverseHistoricalLandedCost(client, {
+        businessId: p.businessId,
+        adjustmentId: row.source_id,
+        reason: 'Purchase cancelled',
+      });
+    } catch (error) {
+      if (error instanceof LandedCostError) {
+        throw new PurchaseCancelError(409, error.code, error.message);
+      }
+      throw error;
+    }
+  }
+
   const stockMovements = await reverseReceivedStock(client, {
     businessId: p.businessId,
     purchaseId: p.purchaseId,

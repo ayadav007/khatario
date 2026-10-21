@@ -639,12 +639,9 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
       discount: 10,
       grand: 148,
     });
-    const invoiceId = await createInvoiceForStoreOrder(id, B, A);
-    const row = await invoiceRow(invoiceId!);
-    expect(row.additional_charges).toBeCloseTo(30, 2);
-    expect(row.grand_total).toBeCloseTo(148, 2);
-    expect(row.tax_total).toBeCloseTo(18, 2);
-    expect(row.subtotal).toBeCloseTo(100, 2);
+    const invoiceId = await createInvoiceForStoreOrder(id, B, A).catch((error: { code?: string }) => error);
+    expect(invoiceId).toMatchObject({ code: 'CHARGE_UNCLASSIFIED' });
+    expect((await pool.query(`SELECT invoice_id FROM store_orders WHERE id = $1`, [id])).rows[0].invoice_id).toBeNull();
 
     const mixed = await seedOrder({
       lines: [

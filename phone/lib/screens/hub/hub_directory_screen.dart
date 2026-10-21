@@ -12,6 +12,16 @@ import 'hub_common.dart';
 import 'new_arrivals_screen.dart';
 import 'supply_orders_screen.dart';
 
+String _matchWhy(Map<String, dynamic> match) {
+  const labels = {'gstin': 'Same GSTIN', 'phone': 'Same phone', 'email': 'Same email'};
+  final reasons = match['reasons'];
+  final why = reasons is List ? reasons.map((r) => labels[r] ?? '$r').join(' · ') : '';
+  final bits = [why, match['email']?.toString(), match['phone']?.toString(), match['gstin']?.toString()]
+      .where((s) => s != null && s.isNotEmpty)
+      .join(' · ');
+  return bits;
+}
+
 /// Find suppliers in the Suppliers Hub and ask to connect.
 class HubDirectoryScreen extends StatefulWidget {
   const HubDirectoryScreen({super.key, required this.session});
@@ -317,6 +327,81 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
     }
   }
 
+  Future<void> _accept(Map<String, dynamic> r) async {
+    final id = r['id']?.toString();
+    if (id == null) return;
+    setState(() => _busyId = id);
+    Map<String, dynamic> preview;
+    try {
+      preview = await widget.session.api.getJson('/api/suppliers/hub/connection-requests/$id');
+    } on ApiException catch (e) {
+      if (mounted) hubSnack(context, e.message);
+      if (mounted) setState(() => _busyId = null);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busyId = null);
+
+    final buyer = preview['buyer'] is Map ? Map<String, dynamic>.from(preview['buyer'] as Map) : <String, dynamic>{};
+    final name = buyer['name']?.toString() ?? 'this shop';
+    final already = preview['already_linked'] is Map;
+    final matches = <Map<String, dynamic>>[
+      for (final row in (preview['matches'] as List? ?? const []))
+        if (row is Map) Map<String, dynamic>.from(row),
+    ];
+
+    final decision = await showKSheet<Map<String, dynamic>>(
+      context,
+      title: 'Connect $name',
+      scrollable: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              already
+                  ? 'This shop is already a customer. Accepting keeps that record.'
+                  : matches.isEmpty
+                      ? 'Nothing on your books matches this shop. Create a customer only if you want to connect.'
+                      : 'A customer on your books matches this shop. Connect that customer, or create a new one.',
+              style: AppText.body,
+            ),
+            const SizedBox(height: AppSpace.md),
+            if (!already)
+              for (final m in matches) ...[
+                Text(_matchWhy(m), style: AppText.caption),
+                const SizedBox(height: 6),
+                KButton(
+                  label: 'Connect to ${m['name'] ?? 'this customer'}',
+                  onPressed: () => Navigator.pop(ctx, {'choice': 'link', 'customer_id': m['id']}),
+                ),
+                const SizedBox(height: AppSpace.sm),
+              ],
+            if (!already)
+              matches.isEmpty
+                  ? KButton(label: 'Create $name', onPressed: () => Navigator.pop(ctx, {'choice': 'create'}))
+                  : KButton.secondary(label: 'Create $name', onPressed: () => Navigator.pop(ctx, {'choice': 'create'})),
+            if (already) KButton(label: 'Accept connection', onPressed: () => Navigator.pop(ctx, <String, dynamic>{})),
+          ],
+        ),
+      ),
+    );
+    if (decision == null || !mounted) return;
+    setState(() => _busyId = id);
+    try {
+      final body = <String, dynamic>{'action': 'accept'};
+      if (decision.isNotEmpty) body['customer_decision'] = decision;
+      await widget.session.api.patchJson('/api/suppliers/hub/connection-requests/$id', body);
+      if (mounted) hubSnack(context, 'Connected');
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) hubSnack(context, e.message);
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Future<void> _resolve(Map<String, dynamic> r, String action) async {
     setState(() => _busyId = r['id']?.toString());
     try {
@@ -373,7 +458,7 @@ class _ConnectionRequestsScreenState extends State<ConnectionRequestsScreen> {
                           if (_tab == 'incoming') ...[
                             Expanded(child: KButton.secondary(label: 'Decline', height: 40, onPressed: _busyId != null ? null : () => _resolve(r, 'decline'))),
                             const SizedBox(width: AppSpace.sm),
-                            Expanded(child: KButton(label: 'Accept', height: 40, loading: _busyId == r['id'], onPressed: () => _resolve(r, 'accept'))),
+                            Expanded(child: KButton(label: 'Accept', height: 40, loading: _busyId == r['id'], onPressed: () => _accept(r))),
                           ] else
                             Expanded(child: KButton.secondary(label: 'Withdraw', height: 40, onPressed: _busyId != null ? null : () => _resolve(r, 'cancel'))),
                         ]),

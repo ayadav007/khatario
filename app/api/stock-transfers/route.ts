@@ -5,7 +5,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,8 +129,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const {
       transfer_number,
       transfer_date,
@@ -140,11 +143,9 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    const created_by = body.created_by || getUserIdFromRequest(request, body);
-
-    if (!business_id || !transfer_number || !from_location_id || !to_location_id || !items) {
+    if (!transfer_number || !from_location_id || !to_location_id || !items) {
       return NextResponse.json(
-        { error: 'business_id, transfer_number, from_location_id, to_location_id, and items are required' },
+        { error: 'transfer_number, from_location_id, to_location_id, and items are required' },
         { status: 400 }
       );
     }
@@ -152,13 +153,6 @@ export async function POST(request: NextRequest) {
     if (from_location_id === to_location_id) {
       return NextResponse.json(
         { error: 'Source and destination locations cannot be the same' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
         { status: 400 }
       );
     }
@@ -186,6 +180,31 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    const locationIds = [from_location_id, to_location_id];
+    const ownedWarehouses = await db.queryRows<{ id: string }>(
+      `SELECT id FROM warehouses WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+      [business_id, locationIds]
+    );
+    if (ownedWarehouses.length !== new Set(locationIds).size) {
+      return NextResponse.json(
+        { error: 'Warehouse not found', code: 'WAREHOUSE_NOT_FOUND' },
+        { status: 400 }
+      );
+    }
+    const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length !== (items as unknown[]).length) {
+      return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
+    }
+    const ownedItems = await db.queryRows<{ id: string }>(
+      `SELECT id FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+      [business_id, requestedItemIds]
+    );
+    if (ownedItems.length !== new Set(requestedItemIds).size) {
+      return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
     }
 
     const pool = getPool();

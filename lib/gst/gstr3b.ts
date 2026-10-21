@@ -546,6 +546,12 @@ export class GSTR3BGenerator {
       .sort((a, b) => a.place_of_supply.localeCompare(b.place_of_supply));
 
     // Table 3.1(d) and 4A(1)-(3): inward documents for the period.
+    // A physical purchase return is not in this query. Its ITC reversal is already a credit
+    // on 1110–1112 (voucher type purchase_return), and 4A(5) / ledger_basis.itc read that
+    // ledger net. Subtracting purchase_returns here would remove the same GST twice.
+    // A supplier credit note is a purchases row (document_type supplier_credit_note) and is
+    // signed below; its ITC reversal is the same input-GST credit, voucher type
+    // supplier_credit_note. The regular bucket is not deducted again inside other_itc.
     const inward = await pool.query(
       `SELECT
          CASE WHEN p.is_reverse_charge AND p.supplier_state_code = '96' THEN 'import_service'

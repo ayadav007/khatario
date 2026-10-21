@@ -18,6 +18,7 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | `test-plan.md` | Scenarios, roles, and commands. S09–S12 and everything not listed as PASS or FAIL in the scenario table are still NOT TESTED. |
 | `audit-gaps.md` | Phase 1 gaps: hidden actions, dynamic templates, middleware-public APIs, missing requirements. Still open unless a later result file closes a specific gap. |
 | `phase-2a-invoice-results.md` | Authoritative invoice evidence: baseline failures, fixes, rerun, and the soft-delete regression check. |
+| `sales-invoice-calculation-phase-1-closure.md` | Closure of the sales-invoice additional-charge calculation only. Separate from the route-scan Phase 1 above. Purchase, expense, RCM, and GTA are not included. |
 | `phase-3a-security-results.md` | Phase 3A authentication, tenant isolation, role, and subscription evidence. The four list-handler failures are fixed in Phase 3B. |
 | `phase-3b-security-fix-results.md` | Fix and regression for the four list handlers that trusted a query identity. |
 | `phase-3c-identity-audit-results.md` | Phase 3C search and the first tested batch of other identity fallbacks. Seven dashboard GET handlers failed. The original FAIL stays here. |
@@ -42,6 +43,7 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 ## Completed work
 
 - Phase 1: 385 page templates, 947 route handlers, 827 action labels, 33 functional areas. Nothing in that pass was executed.
+- Sales-invoice calculation Phase 1: the additional-charge contract in `sales-invoice-calculation-phase-1-closure.md`. 26 tests passed on `kh_phase2_test`. One browser bill matched ₹12,980.00 on screen. Conversion clicks and a visual PDF total stay NOT TESTED. This is not the route-scan Phase 1, and it does not start purchase, expense, RCM, or GTA work.
 - Phase 2A: S01, S02, S06, S07, S08 passed. S03, S04, S05 failed on `kh_phase2_test`.
 - Phase 2B: those three defects were fixed. S01–S08 passed again. Command and evidence are in the results file.
 - Soft-delete check: a new invoice cannot use a soft-deleted item; an active item still can; an older invoice remains readable; the rejected resale does not clear `deleted_at`. Command: `npx jest tests/db/phase2a-invoice-s01-s08.db.test.ts --runInBand --forceExit` (11 passed).

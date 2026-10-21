@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useBadges } from '@/contexts/BadgeContext';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 interface RecordPaymentModalProps {
   invoiceId: string;
@@ -27,6 +28,7 @@ export function RecordPaymentModal({
   const { refreshBadgeCounts } = useBadges();
   const [amount, setAmount] = useState<string>(balanceAmount.toString());
   const [paymentMode, setPaymentMode] = useState<string>('cash');
+  const [settlementAccountId, setSettlementAccountId] = useState('');
   const [reference, setReference] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [tdsAmount, setTdsAmount] = useState<string>('');
@@ -58,6 +60,7 @@ export function RecordPaymentModal({
         body: JSON.stringify({
           amount: paymentAmount,
           payment_mode: paymentMode,
+          settlement_account_id: settlementAccountId || null,
           reference: reference || null,
           payment_date: paymentDate,
           tds_amount: tds,
@@ -218,7 +221,10 @@ export function RecordPaymentModal({
             </label>
             <select
               value={paymentMode}
-              onChange={(e) => setPaymentMode(e.target.value)}
+              onChange={(e) => {
+                setPaymentMode(e.target.value);
+                setSettlementAccountId('');
+              }}
               className="input w-full"
               required
               disabled={loading}
@@ -226,11 +232,20 @@ export function RecordPaymentModal({
               <option value="cash">Cash</option>
               <option value="bank_transfer">Bank Transfer</option>
               <option value="upi">UPI</option>
-              <option value="card">Card</option>
+              <option value="neft">NEFT</option>
+              <option value="rtgs">RTGS</option>
               <option value="cheque">Cheque</option>
+              <option value="debit_card">Debit card</option>
+              <option value="credit_card">Credit card</option>
               <option value="other">Other</option>
             </select>
           </div>
+          <SettlementAccountField
+            mode={paymentMode}
+            value={settlementAccountId}
+            onChange={setSettlementAccountId}
+            disabled={loading}
+          />
 
           {/* Reference */}
           <div>

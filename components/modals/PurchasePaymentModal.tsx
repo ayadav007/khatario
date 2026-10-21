@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { X, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 interface PurchasePaymentModalProps {
   purchaseId: string;
@@ -38,6 +39,7 @@ export function PurchasePaymentModal({
   const { user, business } = useAuth();
   const [amount, setAmount] = useState<string>(balanceAmount.toString());
   const [paymentMode, setPaymentMode] = useState<string>('cash');
+  const [settlementAccountId, setSettlementAccountId] = useState('');
   const [reference, setReference] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
@@ -124,6 +126,7 @@ export function PurchasePaymentModal({
           body: JSON.stringify({
             amount: paymentAmount,
             payment_mode: paymentMode,
+            settlement_account_id: settlementAccountId || null,
             reference: reference || null,
             payment_date: paymentDate,
             user_id: user?.id,
@@ -274,7 +277,10 @@ export function PurchasePaymentModal({
             </label>
             <select
               value={paymentMode}
-              onChange={(e) => setPaymentMode(e.target.value)}
+              onChange={(e) => {
+                setPaymentMode(e.target.value);
+                setSettlementAccountId('');
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               required
               disabled={loading}
@@ -285,9 +291,17 @@ export function PurchasePaymentModal({
               <option value="upi">UPI</option>
               <option value="credit_card">Credit Card</option>
               <option value="debit_card">Debit Card</option>
+              <option value="neft">NEFT</option>
+              <option value="rtgs">RTGS</option>
               <option value="other">Other</option>
             </select>
           </div>
+          <SettlementAccountField
+            mode={paymentMode}
+            value={settlementAccountId}
+            onChange={setSettlementAccountId}
+            disabled={loading}
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

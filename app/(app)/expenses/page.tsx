@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { PageHeader } from '@/components/layout/PageHeader';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Filter, Calendar, DollarSign, Tag } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -17,6 +17,7 @@ import {
 } from '@/lib/accounting-ui/errors';
 import { buildReversalUrl, REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
 import { RcmCoverageNotice } from '@/components/gst/RcmCoverageNotice';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 interface Expense {
   id: string;
@@ -24,6 +25,7 @@ interface Expense {
   description: string;
   expense_date: string;
   payment_mode: string;
+  settlement_account_id?: string | null;
   category_name: string | null;
   category_id: string | null;
   cgst_amount?: number;
@@ -35,6 +37,34 @@ interface Expense {
   tds_section?: string | null;
   tds_amount?: number;
   supplier_id?: string | null;
+  supplier_gstin?: string | null;
+  supply_received_on?: string | null;
+  supplier_registration_status?: string | null;
+  updated_at?: string | null;
+}
+
+function formFromExpense(expense?: Expense | null) {
+  const num = (v: unknown) => (Number(v) > 0 ? String(v) : '');
+  return {
+    category_id: expense?.category_id || '',
+    amount: expense ? String(expense.amount) : '',
+    description: expense?.description || '',
+    expense_date: expense ? String(expense.expense_date).slice(0, 10) : new Date().toISOString().split('T')[0],
+    payment_mode: expense?.payment_mode || 'cash',
+    settlement_account_id: expense?.settlement_account_id || '',
+    reference_number: expense?.reference_number || '',
+    supplier_id: expense?.supplier_id || '',
+    cgst_amount: num(expense?.cgst_amount),
+    sgst_amount: num(expense?.sgst_amount),
+    igst_amount: num(expense?.igst_amount),
+    itc_eligible: expense ? expense.itc_eligible !== false : true,
+    is_reverse_charge: !!expense?.is_reverse_charge,
+    supplier_registration_status: expense?.supplier_registration_status || 'unknown',
+    supply_received_on: expense?.supply_received_on ? String(expense.supply_received_on).slice(0, 10) : '',
+    supplier_gstin: expense?.supplier_gstin || '',
+    tds_section: expense?.tds_section || '',
+    tds_amount: num(expense?.tds_amount),
+  };
 }
 
 interface ExpenseCategory {
@@ -365,28 +395,19 @@ function AddExpenseModal({
   onSuccess: () => void;
 }) {
   const toast = useToastContext();
-  const num = (v: unknown) => (Number(v) > 0 ? String(v) : '');
-  const [formData, setFormData] = useState({
-    category_id: expense?.category_id || '',
-    amount: expense ? String(expense.amount) : '',
-    description: expense?.description || '',
-    expense_date: expense ? String(expense.expense_date).slice(0, 10) : new Date().toISOString().split('T')[0],
-    payment_mode: expense?.payment_mode || 'cash',
-    reference_number: expense?.reference_number || '',
-    supplier_id: expense?.supplier_id || '',
-    cgst_amount: num(expense?.cgst_amount),
-    sgst_amount: num(expense?.sgst_amount),
-    igst_amount: num(expense?.igst_amount),
-    itc_eligible: expense ? expense.itc_eligible !== false : true,
-    is_reverse_charge: !!expense?.is_reverse_charge,
-    supplier_registration_status: (expense as { supplier_registration_status?: string } | null)?.supplier_registration_status || 'unknown',
-    supply_received_on: '',
-    supplier_gstin: '',
-    tds_section: expense?.tds_section || '',
-    tds_amount: num(expense?.tds_amount),
-  });
+  const [formData, setFormData] = useState(() => formFromExpense(expense));
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(expense?.updated_at ?? null);
+  const [editConflict, setEditConflict] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [previewLines, setPreviewLines] = useState<
+    Array<{ role: string; account_code: string; account_name: string; debit: number; credit: number }>
+  >([]);
+  const [previewOnAccount, setPreviewOnAccount] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
+  const idempotencyKey = useRef(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `exp-${Date.now()}`);
 
   useEffect(() => {
     if (!businessId) return;
@@ -404,6 +425,74 @@ function AddExpenseModal({
   }, [businessId, userId]);
 
   const isOnAccount = ['on_account'].includes(formData.payment_mode);
+
+  useEffect(() => {
+    const amount = parseFloat(formData.amount);
+    if (!(amount > 0) || !formData.category_id) {
+      setPreviewLines([]);
+      setPreviewError(null);
+      setPreviewBlocked(false);
+      return;
+    }
+    const controller = new AbortController();
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch('/api/expenses/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              category_id: formData.category_id,
+              amount,
+              payment_mode: formData.payment_mode,
+              settlement_account_id: formData.settlement_account_id || null,
+              description: formData.description,
+              cgst_amount: parseFloat(formData.cgst_amount) || 0,
+              sgst_amount: parseFloat(formData.sgst_amount) || 0,
+              igst_amount: parseFloat(formData.igst_amount) || 0,
+              itc_eligible: formData.itc_eligible,
+              is_reverse_charge: formData.is_reverse_charge,
+              tds_section: formData.tds_section,
+              tds_amount: parseFloat(formData.tds_amount) || 0,
+            }),
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok) {
+            setPreviewLines([]);
+            setPreviewError(data?.error || 'This expense cannot be previewed.');
+            setPreviewBlocked(response.status === 400);
+            return;
+          }
+          setPreviewLines(data.lines || []);
+          setPreviewOnAccount(!!data.on_account);
+          setPreviewError(null);
+          setPreviewBlocked(false);
+        } catch (err) {
+          if ((err as { name?: string }).name === 'AbortError') return;
+          setPreviewError(null);
+          setPreviewBlocked(false);
+        }
+      })();
+    }, 250);
+    return () => {
+      window.clearTimeout(handle);
+      controller.abort();
+    };
+  }, [
+    formData.category_id,
+    formData.amount,
+    formData.payment_mode,
+    formData.settlement_account_id,
+    formData.description,
+    formData.cgst_amount,
+    formData.sgst_amount,
+    formData.igst_amount,
+    formData.itc_eligible,
+    formData.is_reverse_charge,
+    formData.tds_section,
+    formData.tds_amount,
+  ]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -431,14 +520,18 @@ function AddExpenseModal({
           igst_amount: igst,
           tds_amount: tds,
           tds_section: tds > 0 ? formData.tds_section || 'OTHER' : null,
+          settlement_account_id: formData.settlement_account_id || null,
+          ...(expense
+            ? { expected_updated_at: expectedUpdatedAt }
+            : { idempotency_key: idempotencyKey.current }),
         }),
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => null);
-        throw new Error(
-          describeAccountingError(response.status, err, { context: 'expense', fallback: 'Failed to save expense' }).message
-        );
+        const view = describeAccountingError(response.status, err, { context: 'expense', fallback: 'Failed to save expense' });
+        if (err?.code === 'EXPENSE_EDIT_CONFLICT') setEditConflict(view.message);
+        throw new Error(view.message);
       }
 
       toast.success(expense ? 'Expense updated' : 'Expense added successfully!');
@@ -448,6 +541,29 @@ function AddExpenseModal({
       toast.error(error instanceof Error ? error.message : 'Failed to add expense. Please try again.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function reloadLatest() {
+    if (!expense) return;
+    setReloading(true);
+    try {
+      const response = await fetch(`/api/expenses/${expense.id}`);
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.expense) {
+        throw new Error(
+          describeAccountingError(response.status, data, { context: 'expense', fallback: 'Could not reload this expense' }).message
+        );
+      }
+      const latest = data.expense as Expense;
+      setFormData(formFromExpense(latest));
+      setExpectedUpdatedAt(latest.updated_at ?? null);
+      setEditConflict(null);
+      toast.success('Loaded the latest saved expense.');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Could not reload this expense');
+    } finally {
+      setReloading(false);
     }
   }
 
@@ -461,6 +577,7 @@ function AddExpenseModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
             <select
               value={formData.category_id}
+              required
               onChange={(e) => {
                 const cat = categories.find((c) => c.id === e.target.value);
                 setFormData({ ...formData, category_id: e.target.value, itc_eligible: !cat?.itc_blocked });
@@ -475,7 +592,7 @@ function AddExpenseModal({
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              Map categories to P&amp;L accounts under Manage Categories — the ledger uses that account when you pick a category.
+              Choose a category mapped to an operating expense account. Purchases, cost of goods, stock losses, assets, and liabilities are not posted from this screen.
             </p>
           </div>
 
@@ -634,6 +751,7 @@ function AddExpenseModal({
                 setFormData({
                   ...formData,
                   payment_mode: e.target.value,
+                  settlement_account_id: '',
                   supplier_id: e.target.value === 'on_account' ? formData.supplier_id : '',
                 })
               }
@@ -644,8 +762,19 @@ function AddExpenseModal({
               <option value="bank_transfer">Paid — Bank transfer</option>
               <option value="card">Paid — Card</option>
               <option value="cheque">Paid — Cheque</option>
+              <option value="neft">Paid — NEFT</option>
+              <option value="rtgs">Paid — RTGS</option>
+              <option value="debit_card">Paid — Debit card</option>
+              <option value="credit_card">Paid — Credit card</option>
               <option value="on_account">Bill received, not paid yet (on account)</option>
             </select>
+            <div className="mt-3">
+              <SettlementAccountField
+                mode={formData.payment_mode}
+                value={formData.settlement_account_id}
+                onChange={(settlement_account_id) => setFormData({ ...formData, settlement_account_id })}
+              />
+            </div>
             <p className="text-xs text-gray-500 mt-1">
               Use &quot;Bill received, not paid yet&quot; when you have the bill but will pay later (books: Dr
               expense, Cr Accounts Payable). Then record a payment under Payments → Out to the same supplier.
@@ -687,6 +816,54 @@ function AddExpenseModal({
             />
           </div>
 
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+            <p className="text-sm font-medium text-gray-800">Journal preview</p>
+            {previewError ? (
+              <p className="text-sm text-red-700">{previewError}</p>
+            ) : previewLines.length === 0 ? (
+              <p className="text-xs text-gray-500">Choose a category and enter an amount to see the debit and credit accounts.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-600">
+                  {previewOnAccount
+                    ? 'This bill stays unpaid. Accounts Payable is credited and the supplier balance increases by the amount after TDS.'
+                    : 'This expense is paid now. Cash or bank is credited and the supplier balance does not increase.'}
+                </p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {previewLines.map((line) => (
+                      <tr key={`${line.role}-${line.account_code}`}>
+                        <td className="py-0.5 pr-2 text-gray-700">
+                          {line.account_code} {line.account_name}
+                        </td>
+                        <td className="py-0.5 text-right tabular-nums">
+                          {line.debit > 0 ? line.debit.toFixed(2) : ''}
+                        </td>
+                        <td className="py-0.5 text-right tabular-nums">
+                          {line.credit > 0 ? line.credit.toFixed(2) : ''}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+
+          {editConflict && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm text-amber-950">{editConflict}</p>
+              <button
+                type="button"
+                onClick={reloadLatest}
+                disabled={reloading || saving}
+                className="px-3 py-1.5 text-sm border border-amber-400 rounded-lg bg-white hover:bg-amber-100 disabled:opacity-50"
+              >
+                {reloading ? 'Reloading...' : 'Reload latest expense'}
+              </button>
+            </div>
+          )}
+
           <div className="flex space-x-3 pt-4">
             <button
               type="button"
@@ -697,7 +874,7 @@ function AddExpenseModal({
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || previewBlocked}
               className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50"
             >
               {saving ? 'Adding...' : 'Add Expense'}

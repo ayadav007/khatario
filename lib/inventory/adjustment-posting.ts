@@ -69,13 +69,19 @@ export async function postInventoryAdjustment(
     itemId: string;
     narration: string;
     quantityAdjustment: boolean;
+    /** Purchase-linked landed cost credits the account that still holds the expense. */
+    counterCodes?: string[];
   }
 ): Promise<{ itcReversed: number }> {
   const amount = round2(Math.abs(p.amount));
   if (amount === 0) return { itcReversed: 0 };
 
   const inventory = await accountIdByCode(client, p.businessId, '1104');
-  const counter = await firstAccount(client, p.businessId, counterAccountCodes(p.reason, p.isDecrease));
+  const counter = await firstAccount(
+    client,
+    p.businessId,
+    p.counterCodes && p.counterCodes.length > 0 ? p.counterCodes : counterAccountCodes(p.reason, p.isDecrease)
+  );
   if (!inventory || !counter) {
     throw new Error('Inventory (1104) or stock adjustment ledger account not found; initialise the chart of accounts');
   }

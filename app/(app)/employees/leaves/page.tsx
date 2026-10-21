@@ -86,9 +86,6 @@ export default function LeavesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          // leave_requests.approved_by → employees(id); console users share id with linked employee row
-          approved_by: user.id,
-          updated_by_user_id: user.id,
           rejection_reason: rejectionReason,
         }),
       });

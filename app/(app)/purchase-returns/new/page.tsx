@@ -14,8 +14,11 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import {
+  applyIncidentalFreightRefund,
   formLinesFromPurchase,
+  incidentalAllocationsFromCharges,
   scaleLinkedReturnLine,
+  type IncidentalAllocationRefund,
   type PurchaseReturnFormLine,
 } from '@/lib/purchases/purchase-return-lines';
 
@@ -79,6 +82,10 @@ export default function NewPurchaseReturnPage() {
 
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [refundIncidental, setRefundIncidental] = useState(false);
+  const [incidentalAvailable, setIncidentalAvailable] = useState(false);
+  const [incidentalAllocations, setIncidentalAllocations] = useState<IncidentalAllocationRefund[]>([]);
+  const [priorReturnQuantities, setPriorReturnQuantities] = useState<Record<string, number[]>>({});
   const [linesLoading, setLinesLoading] = useState(false);
   const linkedPurchaseRef = useRef<Purchase | null>(null);
   const appliedPurchaseIdRef = useRef('');
@@ -148,6 +155,10 @@ export default function NewPurchaseReturnPage() {
       appliedPurchaseIdRef.current = '';
       linkedPurchaseRef.current = null;
       setReturnItems([]);
+      setIncidentalAvailable(false);
+      setRefundIncidental(false);
+      setIncidentalAllocations([]);
+      setPriorReturnQuantities({});
     }
   }, [formData.purchase_id]);
 
@@ -215,6 +226,9 @@ export default function NewPurchaseReturnPage() {
         const error = await safeJsonParse(response);
         toast.error(getApiErrorMessage(error, 'Could not load items from this purchase'));
         setReturnItems([]);
+        setIncidentalAvailable(false);
+        setIncidentalAllocations([]);
+        setPriorReturnQuantities({});
         return;
       }
       const data = await response.json();
@@ -246,6 +260,11 @@ export default function NewPurchaseReturnPage() {
         setSelectedSupplier((prev) => prev || suppliers.find((s) => s.id === purchase.supplier_id) || null);
       }
 
+      const allocations = incidentalAllocationsFromCharges(purchase.charges || []);
+      setIncidentalAvailable(allocations.length > 0);
+      setIncidentalAllocations(allocations);
+      setPriorReturnQuantities(purchase.prior_return_quantities || {});
+      setRefundIncidental(false);
       setReturnItems(loadedItems);
       if (loadedItems.length === 0) {
         toast.error('This purchase has no items to return.');
@@ -260,6 +279,9 @@ export default function NewPurchaseReturnPage() {
       console.error('Error loading purchase items:', error);
       toast.error('Could not load items from this purchase');
       setReturnItems([]);
+      setIncidentalAvailable(false);
+      setIncidentalAllocations([]);
+      setPriorReturnQuantities({});
     } finally {
       setLinesLoading(false);
     }
@@ -360,14 +382,32 @@ export default function NewPurchaseReturnPage() {
   };
 
   const calculateTotals = () => {
-    const subtotal = returnItems.reduce((sum, item) => sum + item.taxable_value, 0);
-    const taxTotal = returnItems.reduce((sum, item) => sum + item.tax_amount, 0);
-    const cgstTotal = returnItems.reduce((sum, item) => sum + item.cgst_amount, 0);
-    const sgstTotal = returnItems.reduce((sum, item) => sum + item.sgst_amount, 0);
-    const igstTotal = returnItems.reduce((sum, item) => sum + item.igst_amount, 0);
-    const grandTotal = returnItems.reduce((sum, item) => sum + item.line_total, 0);
-
-    return { subtotal, taxTotal, cgstTotal, sgstTotal, igstTotal, grandTotal };
+    const goodsSubtotal = returnItems.reduce((sum, item) => sum + item.taxable_value, 0);
+    const goodsTax = returnItems.reduce((sum, item) => sum + item.tax_amount, 0);
+    const goods = {
+      subtotal: goodsSubtotal,
+      cgst_total: returnItems.reduce((sum, item) => sum + item.cgst_amount, 0),
+      sgst_total: returnItems.reduce((sum, item) => sum + item.sgst_amount, 0),
+      igst_total: returnItems.reduce((sum, item) => sum + item.igst_amount, 0),
+      tax_total: goodsTax,
+      grand_total: returnItems.reduce((sum, item) => sum + item.line_total, 0),
+    };
+    const priced = refundIncidental
+      ? applyIncidentalFreightRefund(goods, {
+          allocations: incidentalAllocations,
+          lines: returnItems.map((item) => ({ item_id: item.item_id, qty: Number(item.qty) || 0 })),
+          priorQuantities: new Map(Object.entries(priorReturnQuantities)),
+        })
+      : goods;
+    return {
+      subtotal: priced.subtotal,
+      taxTotal: priced.tax_total,
+      cgstTotal: priced.cgst_total,
+      sgstTotal: priced.sgst_total,
+      igstTotal: priced.igst_total,
+      grandTotal: priced.grand_total,
+      freightTaxable: Math.round((priced.subtotal - goodsSubtotal) * 100) / 100,
+    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -420,6 +460,7 @@ export default function NewPurchaseReturnPage() {
       sgst_total: totals.sgstTotal,
       igst_total: totals.igstTotal,
       grand_total: totals.grandTotal,
+      refund_incidental_charges: incidentalAvailable && refundIncidental,
       created_by: user?.id,
     };
 
@@ -549,6 +590,21 @@ export default function NewPurchaseReturnPage() {
                 ))}
               </select>
             </div>
+
+            {incidentalAvailable && (
+              <label className="md:col-span-2 flex items-start gap-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={refundIncidental}
+                  onChange={(e) => setRefundIncidental(e.target.checked)}
+                />
+                <span>
+                  Supplier refunded the incidental freight. Leave this off when the freight stays with you.
+                  Goods taxable values are unchanged either way.
+                </span>
+              </label>
+            )}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -715,6 +771,12 @@ export default function NewPurchaseReturnPage() {
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-medium">₹{totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
+              {totals.freightTaxable > 0.004 && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Includes incidental freight</span>
+                  <span>₹{totals.freightTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               {totals.cgstTotal > 0 && (
                 <>
                   <div className="flex justify-between">

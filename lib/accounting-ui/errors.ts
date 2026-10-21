@@ -108,6 +108,20 @@ export function describeAccountingError(
       return { message: 'This journal entry has already been reversed.' };
     case 'JOURNAL_REVERSED':
       return { message: 'This journal entry has been reversed and can no longer be edited.' };
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return {
+        message:
+          'This submission was already used for a different expense. The new bill was not saved. Close this form and add it again.',
+      };
+    case 'IDEMPOTENCY_REQUEST_CANCELLED':
+      return {
+        message: 'This submission was already cancelled. The bill was not saved again. Close this form and add a new expense.',
+      };
+    case 'EXPENSE_EDIT_CONFLICT':
+      return {
+        message:
+          'Another edit to this expense was saved. Your changes are still on this form. Reload the latest expense before saving again.',
+      };
     default:
       break;
   }

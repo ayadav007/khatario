@@ -322,12 +322,21 @@ export default function GSTR9Page() {
           {data?.table_8 && (
             <Section title="Table 8: Other ITC related information">
               <div className="mb-4 p-3 bg-slate-50 text-primary-800 text-xs rounded border border-primary-200 font-medium uppercase tracking-wider">
-                GSTR-2A/2B values are read-only reference from returns. No auto-reconciliation applied.
+                {(data.validation?.warnings ?? []).some((w: string) => w.includes('internal books estimate'))
+                  ? 'Months with an imported GSTR-2B use that portal value. Months without one show an internal books estimate, not the portal Table 8A.'
+                  : 'GSTR-2A/2B values are read-only reference from returns. No auto-reconciliation applied.'}
               </div>
               <TaxTable 
                 onOverride={handleOverride}
                 rows={[
-                  { id: '8A', label: 'ITC as per GSTR-2B', data: data.table_8.A, path: 'table_8.A' },
+                  {
+                    id: '8A',
+                    label: (data.validation?.warnings ?? []).some((w: string) => w.includes('internal books estimate'))
+                      ? 'ITC as per GSTR-2B where imported; other months are an internal books estimate'
+                      : 'ITC as per GSTR-2B',
+                    data: data.table_8.A,
+                    path: 'table_8.A',
+                  },
                   { id: '8B', label: 'ITC as per sum total of 6(B) and 6(H) above', data: data.table_8.B, path: 'table_8.B' },
                   { id: '8C', label: 'ITC on inward supplies received during FY but availed in next FY', data: data.table_8.C, path: 'table_8.C' },
                   { id: '8D', label: 'Difference [A - (B + C)]', data: data.table_8.D, path: 'table_8.D', isBold: true },

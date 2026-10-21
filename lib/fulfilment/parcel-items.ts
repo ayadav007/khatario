@@ -60,7 +60,9 @@ export async function loadOrderLineRefs(db: Db, businessId: string, source: Sour
                    WHERE r.business_id = $2 AND r.removed_before_dispatch AND r.status IN ('received', 'closed')
                      AND ri.invoice_item_id = ii.id), 0))::float8 AS quantity
              FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-            WHERE ii.invoice_id = $1 AND i.business_id = $2 ORDER BY ii.sort_order, ii.id`;
+            WHERE ii.invoice_id = $1 AND i.business_id = $2
+              AND COALESCE(ii.charge_line, false) = false
+            ORDER BY ii.sort_order, ii.id`;
   const r = await db.query<OrderLineRef>(sql, [source.id, businessId]);
   return r.rows.filter((l) => l.quantity > 1e-9);
 }

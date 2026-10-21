@@ -13,6 +13,18 @@ describe('cashSaleDebitLines', () => {
     ]);
   });
 
+  it('keeps two UPI receipts on different banks apart', () => {
+    expect(
+      cashSaleDebitLines(300, [
+        { mode: 'upi', amount: 100, settlementAccountId: 'hdfc' },
+        { mode: 'upi', amount: 200, settlementAccountId: 'sbi' },
+      ]),
+    ).toEqual([
+      { mode: 'upi', amount: 100, settlementAccountId: 'hdfc' },
+      { mode: 'upi', amount: 200, settlementAccountId: 'sbi' },
+    ]);
+  });
+
   it('adds two lines of the same mode', () => {
     expect(
       cashSaleDebitLines(300, [

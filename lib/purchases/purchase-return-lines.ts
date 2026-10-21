@@ -1,3 +1,5 @@
+import { nextCostShare } from '@/lib/purchases/acquisition-cost';
+
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 const q3 = (n: number) => Math.round((Number(n) || 0) * 1000) / 1000;
 
@@ -356,3 +358,93 @@ export function scaleLinkedReturnLine(line: PurchaseReturnFormLine, rawQty: numb
 }
 
 export { lineKey as purchaseReturnLineKey };
+
+/**
+ * One incidental-freight allocation. GST is taken from the charge's own CGST, SGST or IGST
+ * in proportion to the taxable share. It is not calculated from acquisition cost.
+ */
+export type IncidentalAllocationRefund = {
+  item_id: string;
+  amount: number;
+  quantity: number;
+  taxable_value: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+};
+
+type ChargeForRefund = {
+  classification?: string | null;
+  taxable_value?: unknown;
+  cgst_amount?: unknown;
+  sgst_amount?: unknown;
+  igst_amount?: unknown;
+  allocations?: Array<{ item_id?: string | null; amount?: unknown; quantity?: unknown }>;
+};
+
+/** Incidental allocations only. An independent service is not refunded with the freight checkbox. */
+export function incidentalAllocationsFromCharges(charges: ChargeForRefund[]): IncidentalAllocationRefund[] {
+  const allocations: IncidentalAllocationRefund[] = [];
+  for (const charge of charges) {
+    if (charge.classification !== 'incidental_to_goods') continue;
+    for (const allocation of charge.allocations || []) {
+      if (!allocation.item_id) continue;
+      allocations.push({
+        item_id: allocation.item_id,
+        amount: Number(allocation.amount) || 0,
+        quantity: Number(allocation.quantity) || 0,
+        taxable_value: Number(charge.taxable_value) || 0,
+        cgst_amount: Number(charge.cgst_amount) || 0,
+        sgst_amount: Number(charge.sgst_amount) || 0,
+        igst_amount: Number(charge.igst_amount) || 0,
+      });
+    }
+  }
+  return allocations;
+}
+
+/**
+ * Add the incidental freight still allocable to this return onto document totals.
+ * The share follows the same quantity slices as acquisition cost. GST follows the
+ * charge tax, scaled by taxable share over the charge taxable value.
+ * When no allocation matches a returned line, the goods totals are returned unchanged.
+ */
+export function applyIncidentalFreightRefund(
+  totals: ReturnTotals,
+  args: {
+    allocations: IncidentalAllocationRefund[];
+    lines: Array<{ item_id: string | null; qty: number }>;
+    priorQuantities: ReadonlyMap<string, readonly number[]>;
+  }
+): ReturnTotals {
+  let subtotal = totals.subtotal;
+  let cgst = totals.cgst_total;
+  let sgst = totals.sgst_total;
+  let igst = totals.igst_total;
+  let applied = false;
+  for (const charge of args.allocations) {
+    const line = args.lines.find((row) => row.item_id === charge.item_id && row.qty > 0);
+    if (!line) continue;
+    applied = true;
+    const priors = [...(args.priorQuantities.get(charge.item_id) || [])];
+    const share = nextCostShare(Number(charge.amount) || 0, Number(charge.quantity) || 0, priors, line.qty);
+    const base = Number(charge.taxable_value) || 0;
+    const ratio = base > 0.004 ? share / base : 0;
+    const full =
+      Math.abs(share - base) < 0.02 && priors.length === 0 && line.qty >= Number(charge.quantity) - 1e-9;
+    subtotal = r2(subtotal + share);
+    cgst = r2(cgst + (full ? Number(charge.cgst_amount) || 0 : r2((Number(charge.cgst_amount) || 0) * ratio)));
+    sgst = r2(sgst + (full ? Number(charge.sgst_amount) || 0 : r2((Number(charge.sgst_amount) || 0) * ratio)));
+    igst = r2(igst + (full ? Number(charge.igst_amount) || 0 : r2((Number(charge.igst_amount) || 0) * ratio)));
+  }
+  if (!applied) return totals;
+  const tax = r2(cgst + sgst + igst);
+  return {
+    subtotal,
+    cgst_total: cgst,
+    sgst_total: sgst,
+    igst_total: igst,
+    tax_total: tax,
+    grand_total: r2(subtotal + tax),
+  };
+}

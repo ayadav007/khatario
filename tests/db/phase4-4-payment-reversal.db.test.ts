@@ -806,7 +806,11 @@ d('Phase 4.4 payment reversal (real DB)', () => {
 
     const reportReq = (p: string) =>
       new NextRequest(`http://localhost${p}`, {
-        headers: { 'x-authenticated-user-id': A, 'x-authenticated-business-id': B },
+        headers: {
+          'x-authenticated-user-id': A,
+          'x-authenticated-business-id': B,
+          'x-authenticated-session-version': '1',
+        },
       });
     const fy = Number(PAY_DATE.slice(5, 7)) >= 4 ? Number(PAY_DATE.slice(0, 4)) : Number(PAY_DATE.slice(0, 4)) - 1;
     const incoming = async () => {

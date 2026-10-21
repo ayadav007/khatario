@@ -4,6 +4,8 @@ import {
   InvoiceCreateServiceError,
   type CreateInvoiceItemInput,
 } from '@/lib/invoices/invoice-create-service';
+import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
+import { calendarDateOnly } from '@/lib/closing-stock-period-lock';
 import { isPeriodLocked } from '@/lib/period-lock-utils';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
 
@@ -15,9 +17,6 @@ export interface RecurringRunSummary {
   skipped: string[];
   error?: string;
 }
-
-const toDateStr = (v: unknown): string | null =>
-  v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 
 /**
  * Raises every due invoice. Each run date is its own transaction guarded by the unique
@@ -47,12 +46,12 @@ export async function runRecurringInvoices(
       summary.error = `Unsupported frequency ${rec.frequency}`;
       continue;
     }
-    const startDate = toDateStr(rec.start_date)!;
+    const startDate = calendarDateOnly(rec.start_date)!;
     const anchorDay = Number(startDate.slice(8, 10));
     const runs = dueRunDates({
-      nextRun: toDateStr(rec.next_run_date)!,
+      nextRun: calendarDateOnly(rec.next_run_date)!,
       today: p.today,
-      endDate: toDateStr(rec.end_date),
+      endDate: calendarDateOnly(rec.end_date),
       frequency: rec.frequency,
       interval: rec.interval_value,
       anchorDay,
@@ -108,11 +107,30 @@ export async function runRecurringInvoices(
                 `SELECT item_id, variant_id, item_name, description, hsn_sac, quantity::float8 AS quantity, unit,
                         unit_price::float8 AS unit_price, discount_percent::float8 AS discount_percent,
                         tax_rate::float8 AS tax_rate
-                   FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order`,
+                   FROM invoice_items
+                  WHERE invoice_id = $1 AND COALESCE(charge_line, false) = false
+                  ORDER BY sort_order`,
                 [rec.template_invoice_id]
               )
             ).rows;
           }
+        }
+        const storedCharges = Array.isArray(rec.charges) ? (rec.charges as InvoiceChargeInput[]) : [];
+        let charges = storedCharges.filter((charge) => Number(charge.amount) > 0);
+        if (charges.length === 0 && rec.template_invoice_id) {
+          charges = (
+            await client.query(
+              `SELECT purpose, amount::float8 AS amount, classification, hsn_sac, tax_rate::float8 AS tax_rate
+                 FROM invoice_charges WHERE invoice_id = $1 AND business_id = $2 ORDER BY sort_order`,
+              [rec.template_invoice_id, rec.business_id]
+            )
+          ).rows;
+        }
+        const chargeNames = new Set(charges.map((charge) => String(charge.purpose || '').trim().toLowerCase()));
+        if (chargeNames.size > 0) {
+          items = items.filter(
+            (item) => item.item_id || !chargeNames.has(String(item.item_name || '').trim().toLowerCase())
+          );
         }
         if (items.length === 0) throw new InvoiceCreateServiceError('Recurring invoice has no items', 400, 'NO_ITEMS');
 
@@ -144,6 +162,7 @@ export async function runRecurringInvoices(
             notes: [rec.notes, rec.terms].filter(Boolean).join('\n\n') || null,
             place_of_supply_state_code: placeOfSupply,
             prices_include_gst: pricesIncludeGst,
+            charges,
           },
           { allowDraft: true }
         );

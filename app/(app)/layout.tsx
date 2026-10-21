@@ -38,6 +38,7 @@ import { ModuleShellGuard } from '@/components/layout/ModuleShellGuard';
 import { WebAccessGate } from '@/components/layout/WebAccessGate';
 import { DesktopZoomShortcuts } from '@/components/desktop/DesktopZoomShortcuts';
 import { ReturnReviewDialogHost } from '@/components/gst/ReturnReviewDialog';
+import { isInsidePhoneApp } from '@/lib/capacitor/platform';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -66,6 +67,9 @@ function AppRouteLayoutInner({
   const [posMode, setPosMode] = useState(false);
   const posAllowed = usePlanFeature('settings_pos_mode');
   const accessibilityOn = usePlanFeature('accessibility');
+  // Inside the phone app's web view the app draws the title bar and tabs, so the site drops its own.
+  const [inPhoneApp, setInPhoneApp] = useState(false);
+  useEffect(() => setInPhoneApp(isInsidePhoneApp()), []);
 
   useEffect(() => {
     const syncPosMode = () => setPosMode(posAllowed && getPosMode());
@@ -89,6 +93,7 @@ function AppRouteLayoutInner({
   const isConversationsPage = pathname?.includes('/whatsapp/conversations') ?? false;
   /** Full-bleed chat chrome (no TopBar/banners); BottomNav still shows on mobile for agents. */
   const isFullWidthPage = isConversationsPage;
+  const showChrome = !inPhoneApp;
   const showDateRange =
     pathname === '/dashboard' || pathname === '/hr/dashboard';
   const isInvoicePage = pathname === '/invoices/new';
@@ -126,24 +131,26 @@ function AppRouteLayoutInner({
           <NetworkStatusBanner />
           <SyncStatusBanner />
           <DynamicTitle />
-          <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
-            <Sidebar />
-          </Suspense>
+          {showChrome && (
+            <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
+              <Sidebar />
+            </Suspense>
+          )}
           <div
             className={clsx(
               'flex min-h-screen min-w-0 max-w-full flex-col overflow-x-hidden transition-all duration-300 ease-in-out',
-              sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+              showChrome && (sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64')
             )}
           >
-            {!isFullWidthPage && (
+            {showChrome && !isFullWidthPage && (
               <Suspense fallback={null}>
                 <TopBar showDateRange={showDateRange} />
               </Suspense>
             )}
-            {!isFullWidthPage && <SubscriptionBanner />}
-            {!isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
-            {!isFullWidthPage && <ShellVersionBanner />}
-            <PromotionBanner />
+            {showChrome && !isFullWidthPage && <SubscriptionBanner />}
+            {showChrome && !isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
+            {showChrome && !isFullWidthPage && <ShellVersionBanner />}
+            {showChrome && <PromotionBanner />}
             <div className="flex min-h-0 min-w-0 flex-1 items-stretch overflow-x-hidden">
               <main
                 className={clsx(
@@ -159,15 +166,15 @@ function AppRouteLayoutInner({
                 <DesktopZoomShortcuts />
                 <WebAccessGate><ModuleShellGuard>{children}</ModuleShellGuard></WebAccessGate>
               </main>
-              {!isFullWidthPage && <TodoScheduleRail />}
+              {showChrome && !isFullWidthPage && <TodoScheduleRail />}
             </div>
           </div>
-          <BottomNav />
-          <PromotionModal />
+          {showChrome && <BottomNav />}
+          {showChrome && <PromotionModal />}
           <ReturnReviewDialogHost />
-          <ProductTour />
-          <TrialExtensionModal />
-          {!isFullWidthPage && !isDocumentComposer ? (
+          {showChrome && <ProductTour />}
+          {showChrome && <TrialExtensionModal />}
+          {showChrome && !isFullWidthPage && !isDocumentComposer ? (
             <AssistantWidget mode="app" channel="trial_app" bottomOffset={76} mobileBottomOffset={90} />
           ) : null}
         </div>

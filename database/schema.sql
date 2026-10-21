@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     subtotal DECIMAL(12,2) DEFAULT 0,
     discount_total DECIMAL(12,2) DEFAULT 0,
     additional_charges DECIMAL(12,2) DEFAULT 0,
+    charges_included BOOLEAN NOT NULL DEFAULT false,
     tax_total DECIMAL(12,2) DEFAULT 0,
     cgst_total DECIMAL(12,2) DEFAULT 0,
     sgst_total DECIMAL(12,2) DEFAULT 0,
@@ -303,7 +304,24 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     sgst_amount DECIMAL(12,2) DEFAULT 0,
     igst_amount DECIMAL(12,2) DEFAULT 0,
     line_total DECIMAL(12,2) NOT NULL,
-    sort_order INTEGER DEFAULT 0
+    sort_order INTEGER DEFAULT 0,
+    charge_line BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS invoice_charges (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    purpose TEXT,
+    amount NUMERIC(12,2) NOT NULL,
+    classification TEXT NOT NULL CHECK (classification IN ('follows_goods', 'separate_supply')),
+    hsn_sac VARCHAR(10),
+    tax_rate NUMERIC(5,2),
+    taxable_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+    cgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    sgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    igst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 -- Purchases
@@ -624,6 +642,7 @@ CREATE TABLE IF NOT EXISTS recurring_invoices (
     last_run_date DATE,
     is_active BOOLEAN DEFAULT true,
     items JSONB NOT NULL, -- Store invoice items template
+    charges JSONB NOT NULL DEFAULT '[]'::jsonb,
     notes TEXT,
     terms TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -658,6 +677,9 @@ CREATE TABLE IF NOT EXISTS estimates (
     grand_total DECIMAL(15, 2) NOT NULL DEFAULT 0,
     additional_charges DECIMAL(10, 2) DEFAULT 0,
     additional_charges_label VARCHAR(100),
+    charge_classification TEXT,
+    charge_hsn_sac VARCHAR(10),
+    charge_tax_rate NUMERIC(5,2),
     notes TEXT,
     terms TEXT,
     converted_invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,

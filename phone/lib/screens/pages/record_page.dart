@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../api.dart';
 import '../../format.dart';
@@ -17,11 +16,16 @@ import '../purchases/bill_form_screen.dart';
 import '../invoices/invoice_form_screen.dart';
 import '../parties/customer_form_logic.dart';
 import '../parties/supplier_form_screen.dart';
+import '../hr/attendance_screen.dart';
 import '../hr/employees_screen.dart';
+import '../hr/leaves_screen.dart';
+import '../hr/salary_payments_screen.dart';
+import '../whatsapp/order_verification_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
 import 'page_catalog.dart';
 import 'record_format.dart';
+import 'website_page_screen.dart';
 
 /// List, report, or tool for a website route that does not have its own screen yet.
 class RecordPage extends StatefulWidget {
@@ -76,6 +80,12 @@ class _RecordPageState extends State<RecordPage> {
 
   /// No phone API behind this page; it lives only on the website.
   bool get _webOnly => !widget.page.path.startsWith('/api');
+
+  /// Shown from the API as a read-only list or record (not a hub, tool or settings editor).
+  bool get _isDataList {
+    final page = widget.page;
+    return !_webOnly && page.tool == null && page.href != '/settings' && page.href != '/tools' && page.href != '/settings/features';
+  }
 
   String get _path {
     final page = widget.page;
@@ -179,6 +189,10 @@ class _RecordPageState extends State<RecordPage> {
     }
     final dedicated = dedicatedPageScreen(widget.session, page.href);
     if (dedicated != null) return dedicated;
+    // No phone screen and no data to list: show the website page itself, signed in.
+    if (isWebsiteOnlyHref(page.href) && !widget.embedded) {
+      return WebsitePageScreen(session: widget.session, href: page.href, title: page.title);
+    }
     final content = _content(page);
     if (widget.embedded) return content;
     return Scaffold(
@@ -195,6 +209,13 @@ class _RecordPageState extends State<RecordPage> {
                 KIconButton(icon: LucideIcons.arrowLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
                 const SizedBox(width: 4),
                 Expanded(child: Text(page.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.heading.copyWith(fontSize: 18))),
+                // A data list is read-only on the phone; the website page has every action.
+                if (_isDataList)
+                  KIconButton(
+                    icon: LucideIcons.globe,
+                    tooltip: 'Open on website',
+                    onTap: () => openWebsiteInApp(context, widget.session, page.href, page.title),
+                  ),
                 const SizedBox(width: AppSpace.gutter),
               ]),
             ),
@@ -323,9 +344,14 @@ class _RecordPageState extends State<RecordPage> {
     if (_webOnly) {
       return ListView(children: [
         KEmptyState(
-          icon: LucideIcons.pencil,
-          title: 'Not on the phone yet',
-          body: 'This page does not have a phone screen.',
+          icon: LucideIcons.globe,
+          title: widget.page.title,
+          body: 'This page opens on the website, inside the app.',
+          action: KButton(
+            label: 'Open',
+            expand: false,
+            onPressed: () => openWebsiteInApp(context, widget.session, widget.page.href, widget.page.title),
+          ),
         ),
       ]);
     }
@@ -769,6 +795,10 @@ class RecordSections extends StatelessWidget {
 /// Routes in [appPages] that now have their own phone screen instead of the generic list.
 Widget? dedicatedPageScreen(AppSession session, String href) => switch (href) {
       '/employees' => EmployeesScreen(session: session),
+      '/employees/attendance' => AttendanceScreen(session: session),
+      '/employees/leaves' => LeavesScreen(session: session),
+      '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
+      '/whatsapp/orders' => OrderVerificationScreen(session: session),
       '/reports/cash-flow' => CashFlowScreen(session: session),
       '/reports/profit-loss' => ProfitLossScreen(session: session),
       '/reports/balance-sheet' => BalanceSheetScreen(session: session),
@@ -776,7 +806,3 @@ Widget? dedicatedPageScreen(AppSession session, String href) => switch (href) {
       _ => null,
     };
 
-Future<void> openWebsitePage(String href) async {
-  final uri = Uri.parse('https://staging.khatario.com$href');
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
-}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { Customer } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getAuthenticatedUserId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import {
   enforceAccess,
   enforceAccessErrorResponse,
@@ -20,9 +20,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const search = searchParams.get('search') || '';
     const filter = searchParams.get('filter') || 'all';
     const page = parseInt(searchParams.get('page') || '1');
@@ -30,20 +32,9 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const updatedAfter = searchParams.get('updated_after'); // For delta sync (offline-first)
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'customers', 'read');
+      await authorize(userId, 'customers', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -155,8 +146,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       name,
       company_name,
@@ -179,18 +173,10 @@ export async function POST(request: NextRequest) {
       credit_limit = 0,
       credit_days: bodyCreditDays,
     } = body;
-    const created_by = getAuthenticatedUserId(request);
 
-    if (!business_id || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'business_id and name are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'name is required' },
         { status: 400 }
       );
     }
@@ -207,7 +193,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission
     try {
-      await authorize(created_by, 'customers', 'create');
+      await authorize(created_by, 'customers', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();

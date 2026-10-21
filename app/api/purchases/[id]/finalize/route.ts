@@ -249,6 +249,14 @@ export async function PATCH(
       }
     }
 
+    const { applyStoredAcquisition } = await import('@/lib/purchases/save-purchase-acquisition');
+    await applyStoredAcquisition(client, id, purchase.business_id);
+    const costRows = await client.query<{ id: string; acquisition_cost: string | null }>(
+      `SELECT id, acquisition_cost::text FROM purchase_items WHERE purchase_id = $1`,
+      [id]
+    );
+    const acquisitionByItem = new Map(costRows.rows.map((row) => [row.id, row.acquisition_cost]));
+
     for (const row of current.items) {
       const isServiceLine =
         row.line_item_type === 'service' ||
@@ -274,7 +282,9 @@ export async function PATCH(
       const lineIntent = (row.line_item_type as string) || 'goods';
       const qty = Number(row.quantity) || 0;
       const taxable = Number(row.taxable_value) || 0;
-      const unitCostForLine = qty > 0 ? taxable / qty : Number(row.unit_price) || 0;
+      const storedCost = acquisitionByItem.get(row.id);
+      const unitCostForLine =
+        qty > 0 ? (storedCost != null ? Number(storedCost) : taxable) / qty : Number(row.unit_price) || 0;
 
       if (!resolvedItemId && String(row.item_name || '').trim().length > 0 && lineIntent === 'goods') {
         try {
@@ -372,7 +382,7 @@ export async function PATCH(
     );
     if (already.rows.length === 0) {
       const invRes = await client.query(
-        `SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
+        `SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
            FROM purchase_items pi
            JOIN items i ON i.id = pi.item_id AND i.business_id = $2
           WHERE pi.purchase_id = $1 AND i.item_type = 'goods'

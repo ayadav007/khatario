@@ -309,12 +309,12 @@
                     <td class="text-right nowrap">- ₹ {{formatCurrency invoice.discount_total}}</td>
                   </tr>
                 {{/if}}{{/ifSetting}}
-                {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}
+                {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}
                   <tr>
                     <td>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</td>
                     <td class="text-right nowrap">₹ {{formatCurrency invoice.additional_charges}}</td>
                   </tr>
-                {{/if}}{{/ifSetting}}
+                {{/if}}{{/unless}}{{/ifSetting}}
                 {{#if invoice.is_igst}}
                   {{#ifSetting 'show_igst'}}
                   <tr>

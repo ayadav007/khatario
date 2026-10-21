@@ -107,11 +107,10 @@ class _MoreScreenState extends State<MoreScreen> {
           onOpen: widget.onOpen,
           usageStrip: true,
         ),
+        // The account card and Log out never wait for the menu, so sign-out works offline too.
         Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: sections == null
-              ? (_failed ? _MenuFailed(onRetry: _loadMenu) : const _MenuLoading())
-              : Column(
+          child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
@@ -119,7 +118,8 @@ class _MoreScreenState extends State<MoreScreen> {
                       child: MobileAccountCard(session: widget.session, onOpen: widget.onOpen, onNavigate: widget.onNavigate),
                     ),
                     const SizedBox(height: 8),
-                    for (final s in sections)
+                    if (sections == null) _failed ? _MenuFailed(onRetry: _loadMenu) : const _MenuLoading(),
+                    for (final s in sections ?? const <MoreNavSection>[])
                       _MoreSection(
                         title: s.title,
                         open: _openSections[s.title] != false,

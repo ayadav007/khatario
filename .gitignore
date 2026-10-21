@@ -70,6 +70,7 @@ public/workbox-*.js.map
 next-env.d.ts
 
 # Tooling caches
+graphify-out/
 .turbo/
 .swc/
 .cache/

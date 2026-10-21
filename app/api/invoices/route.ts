@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { clientInvoiceChannel, isInvoiceChannel } from '@/lib/invoices/channel';
-import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
+import { round2 } from '@/lib/invoices/line-gst';
+import { InvoiceChargeError, persistInvoiceCharges } from '@/lib/invoices/invoice-charges';
+import { computeInvoiceTotals } from '@/lib/invoices/validate-invoice-gst-payload';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
@@ -19,7 +21,7 @@ import {
   type BundleDeductionContext,
 } from '@/lib/invoice-bundle-stock';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
 import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 import {
@@ -58,19 +60,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     
     // AUTHORIZATION: Check read permission (PBAC will check branch access)
     try {
-      await authorize(userId, 'invoices', 'read');
+      await authorize(userId, 'invoices', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -454,6 +451,45 @@ export async function POST(request: NextRequest) {
           );
         }
         throw e;
+      }
+    }
+
+    // Session business only. A missing row and a row owned by another business
+    // return the same code so the response does not reveal the other tenant.
+    if (customer_id) {
+      const cust = await client.query(
+        `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+        [customer_id, business_id]
+      );
+      if (cust.rows.length === 0) {
+        return NextResponse.json(
+          { error: 'Customer not found', code: 'CUSTOMER_NOT_FOUND' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const requestedItemIds = (items as Array<{ item_id?: string | null; item_name?: string }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const activeItems = await client.query<{ id: string }>(
+        `SELECT id FROM items
+          WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      const activeIds = new Set(activeItems.rows.map((row) => row.id));
+      const missing = (items as Array<{ item_id?: string | null; item_name?: string }>).find(
+        (item) => item.item_id && !activeIds.has(item.item_id)
+      );
+      if (missing) {
+        return NextResponse.json(
+          {
+            error: `Product "${missing.item_name || 'Item'}" no longer exists`,
+            code: 'PRODUCT_DELETED',
+          },
+          { status: 409 }
+        );
       }
     }
 
@@ -1393,59 +1429,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate totals
-    let subtotal = 0;
-    let taxTotal = 0;
-    let discountTotal = 0;
-    let cgstTotal = 0;
-    let sgstTotal = 0;
-    let igstTotal = 0;
-
-    const intraStateSupply = !!(
-      posStateCode && businessStateCode && posStateCode === businessStateCode
-    );
-    const zeroRatedWithoutTax = isZeroRatedWithoutTax({
-      is_export,
-      supply_type,
-      export_type,
-      lut_declaration,
-      place_of_supply_state_code: posStateCode,
-    });
-    const noTaxOnLines = zeroRatedWithoutTax || !taxPolicy.collectTax;
-
-    invoiceItems.forEach((item: any) => {
-      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount } = computeLineGst(
-        item,
-        intraStateSupply,
-        noTaxOnLines,
-        pricesIncludeGst
+    let invoiceTotals;
+    try {
+      invoiceTotals = computeInvoiceTotals(
+        {
+          ...(body as object),
+          items: invoiceItems,
+          document_type: finalDocumentType,
+          additional_charges: Object.prototype.hasOwnProperty.call(body, 'additional_charges')
+            ? additional_charges
+            : undefined,
+          place_of_supply_state_code: posStateCode,
+          prices_include_gst: pricesIncludeGst,
+          is_export,
+          supply_type,
+          export_type,
+          lut_declaration,
+          round_off,
+          enable_round_off,
+          invoice_date,
+        } as never,
+        businessStateCode
       );
-
-      subtotal += taxable;
-      discountTotal += itemDiscount;
-      taxTotal += taxAmount;
-      cgstTotal += cgst;
-      sgstTotal += sgst;
-      igstTotal += igst;
-    });
-    subtotal = round2(subtotal);
-    discountTotal = round2(discountTotal);
-    cgstTotal = round2(cgstTotal);
-    sgstTotal = round2(sgstTotal);
-    igstTotal = round2(igstTotal);
-    taxTotal = round2(cgstTotal + sgstTotal + igstTotal);
-
-    const grandTotalRaw = round2(subtotal + taxTotal + (Number(additional_charges) || 0));
-    // Use provided round_off if available, otherwise calculate if enable_round_off is true
-    let roundOff = Number(round_off) || 0;
-    if (enable_round_off && !round_off) {
-      roundOff = round2(Math.round(grandTotalRaw) - grandTotalRaw);
+    } catch (error) {
+      if (error instanceof InvoiceChargeError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+      }
+      throw error;
     }
-    const grandTotal = round2(grandTotalRaw + roundOff);
+    const subtotal = invoiceTotals.subtotal;
+    const taxTotal = invoiceTotals.taxTotal;
+    const discountTotal = invoiceTotals.discountTotal;
+    const cgstTotal = invoiceTotals.cgstTotal;
+    const sgstTotal = invoiceTotals.sgstTotal;
+    const igstTotal = invoiceTotals.igstTotal;
+    const roundOff = invoiceTotals.roundOff;
+    const grandTotal = invoiceTotals.grandTotal;
+    const chargeBase = invoiceTotals.additionalCharges;
 
     // Calculate payment status from payments array or single payment (for backward compatibility)
     let paidAmount = 0;
-    let paymentEntries: Array<{ amount: number; mode?: string; date?: string; reference?: string }> = [];
+    let paymentEntries: Array<{
+      amount: number;
+      mode?: string;
+      date?: string;
+      reference?: string;
+      settlement_account_id?: string | null;
+    }> = [];
     
     // Support both payments array (new) and single payment (legacy)
     if (payments && Array.isArray(payments) && payments.length > 0) {
@@ -1598,7 +1629,7 @@ export async function POST(request: NextRequest) {
         paymentStatus,
         subtotal,
         discountTotal,
-        additional_charges,
+        chargeBase,
         taxTotal,
         roundOff,
         grandTotal,
@@ -1705,7 +1736,7 @@ export async function POST(request: NextRequest) {
         paymentStatus,
         subtotal,
         discountTotal,
-        additional_charges,
+        chargeBase,
         taxTotal,
         roundOff,
         grandTotal,
@@ -1756,6 +1787,7 @@ export async function POST(request: NextRequest) {
     try {
       if (invoiceId) {
         await client.query('DELETE FROM invoice_items WHERE invoice_id = $1', [invoiceId]);
+        await client.query('DELETE FROM invoice_charges WHERE invoice_id = $1', [invoiceId]);
         const updateSql = buildInvoiceUpdateSql(invoiceSql);
         invoiceRes = await client.query(updateSql, [...invoiceParams, invoiceId, business_id]);
       } else {
@@ -1817,12 +1849,8 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < invoiceItems.length; i++) {
       
       const item = invoiceItems[i];
-      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
-        item,
-        intraStateSupply,
-        noTaxOnLines,
-        pricesIncludeGst
-      );
+      const priced = invoiceTotals.lines[i];
+      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = priced;
 
       
       // HSN/SAC is mandatory on a tax invoice (Rule 46); fall back to the catalogue item's code.
@@ -1848,7 +1876,7 @@ export async function POST(request: NextRequest) {
         item.unit_price,
         item.discount_percent || 0,
         itemDiscount,
-        taxPolicy.collectTax ? item.tax_rate || 0 : 0,
+        priced.taxRate,
         taxAmount,
         taxable,
         cgst,
@@ -2266,7 +2294,13 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
+    await persistInvoiceCharges(client, {
+      invoiceId: invoice.id,
+      businessId: business_id,
+      totals: invoiceTotals,
+      goodsLineCount: invoiceItems.length,
+    });
 
     // Calculate COGS (Cost of Goods Sold) for inventory items
     let totalCogsAmount = 0;
@@ -2347,6 +2381,7 @@ export async function POST(request: NextRequest) {
       mode: string;
       date: string | Date;
       reference?: string;
+      settlementAccountId?: string | null;
     }> = [];
     if (status === 'final' && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
       try {
@@ -2356,9 +2391,9 @@ export async function POST(request: NextRequest) {
             const ins = await client.query<{ id: string }>(`
               INSERT INTO payments (
                 business_id, branch_id, type, customer_id, reference_type, reference_id,
-                amount, payment_mode, payment_date, notes
+                amount, payment_mode, payment_date, notes, settlement_account_id
               )
-              VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8)
+              VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8, $9)
               RETURNING id
             `, [
               business_id,
@@ -2368,7 +2403,8 @@ export async function POST(request: NextRequest) {
               pAmount,
               p.mode || 'cash',
               p.date || new Date(),
-              p.reference ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}` : `Payment for Invoice ${invoiceNumber}`
+              p.reference ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}` : `Payment for Invoice ${invoiceNumber}`,
+              p.settlement_account_id || null,
             ]);
             insertedPayments.push({
               id: ins.rows[0].id,
@@ -2376,6 +2412,7 @@ export async function POST(request: NextRequest) {
               mode: p.mode || 'cash',
               date: p.date || new Date(),
               reference: p.reference,
+              settlementAccountId: p.settlement_account_id || null,
             });
           }
         }
@@ -2431,8 +2468,8 @@ export async function POST(request: NextRequest) {
         UPDATE customers
         SET current_balance = current_balance + $1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-      `, [balanceToAdd, customer_id]);
+        WHERE id = $2 AND business_id = $3
+      `, [balanceToAdd, customer_id, business_id]);
     }
 
       // Note: If we used providedInvoiceNumber, it was already reserved via next-number API which incremented the counter.
@@ -2502,6 +2539,7 @@ export async function POST(request: NextRequest) {
             type: 'receivable',
             customerId: customer_id,
             paymentMode: p.mode,
+            settlementAccountId: p.settlementAccountId,
             referenceNumber: invoiceNumber,
             description: `Receipt against Invoice ${invoiceNumber}${p.reference ? ` (Ref: ${p.reference})` : ''}`,
             branchId: finalBranchId,

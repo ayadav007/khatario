@@ -22,11 +22,11 @@ import { format, addDays, parseISO } from 'date-fns';
 import { Customer, Item } from '@/types/database';
 import {
   calculateRow as engineCalculateRow,
-  calculateTotals as engineCalculateTotals,
   determineTaxType as engineDetermineTaxType,
   numberToWords as engineNumberToWords,
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
+import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
 import { useToastContext } from '@/contexts/ToastContext';
 import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
@@ -1407,12 +1407,81 @@ function NewInvoiceContent() {
   }, [calculateRow]);
 
   const totals = useMemo(() => {
-    const calculated = engineCalculateTotals({ rows, extraCharges: extraCharges as any, context: { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst } });
-    if (enableRoundOff) { const rounded = Math.round(calculated.grandTotal); return { ...calculated, grandTotal: rounded, roundOff: rounded - calculated.grandTotal }; }
-    return { ...calculated, roundOff: 0 };
-  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst]);
+    const businessStateCode = business?.state_code || engineGetStateCode(business?.state || '');
+    const placeCode = engineGetStateCode(placeOfSupply || '');
+    const intraState = !!businessStateCode && !!placeCode && businessStateCode === placeCode;
+    const zeroRated = documentType === 'bill_of_supply' || (isExport && exportType === 'wop');
+    const charges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>).map((charge) => ({
+      purpose: charge.purpose,
+      amount: charge.amount,
+      classification: charge.classification,
+      hsn_sac: charge.hsnSac,
+      tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+    }));
+    const goods = authoritativeInvoiceTotals({
+      items: rows.map((row) => ({
+        quantity: row.quantity,
+        unit_price: row.price,
+        discount_percent: row.discountPercent,
+        tax_rate: row.taxPercent,
+      })),
+      intraState,
+      zeroRated,
+      pricesIncludeGst,
+      documentDate: invoiceDate,
+      enableRoundOff,
+    });
+    try {
+      const calculated = authoritativeInvoiceTotals({
+        items: rows.map((row) => ({
+          quantity: row.quantity,
+          unit_price: row.price,
+          discount_percent: row.discountPercent,
+          tax_rate: row.taxPercent,
+        })),
+        charges,
+        intraState,
+        zeroRated,
+        pricesIncludeGst,
+        documentDate: invoiceDate,
+        enableRoundOff,
+      });
+      return {
+        itemSubtotal: calculated.itemSubtotal,
+        totalDiscount: calculated.discountTotal,
+        subtotal: calculated.goodsTaxable,
+        totalExtraCharges: calculated.additionalCharges,
+        taxableAmount: calculated.subtotal,
+        totalCGST: calculated.cgstTotal,
+        totalSGST: calculated.sgstTotal,
+        totalIGST: calculated.igstTotal,
+        totalTax: calculated.taxTotal,
+        grandTotal: calculated.grandTotal,
+        roundOff: calculated.roundOff,
+        chargesNotice: '',
+        chargesReady: true,
+      };
+    } catch (error) {
+      if (!(error instanceof InvoiceChargeError)) throw error;
+      return {
+        itemSubtotal: goods.itemSubtotal,
+        totalDiscount: goods.discountTotal,
+        subtotal: goods.goodsTaxable,
+        totalExtraCharges: charges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0),
+        taxableAmount: goods.subtotal,
+        totalCGST: goods.cgstTotal,
+        totalSGST: goods.sgstTotal,
+        totalIGST: goods.igstTotal,
+        totalTax: goods.taxTotal,
+        grandTotal: goods.grandTotal,
+        roundOff: goods.roundOff,
+        chargesNotice: error.message,
+        chargesReady: false,
+      };
+    }
+  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst, invoiceDate]);
 
-  const { itemSubtotal, totalDiscount, subtotal, itemTax, itemCGST, itemSGST, itemIGST, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST } = totals;
+  const { itemSubtotal, totalDiscount, subtotal, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST, chargesNotice, chargesReady } = totals;
   const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = !!bStateCode && !!pStateCode && bStateCode === pStateCode;
   const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const recordPayment = payments.length > 0 && totalPaid > 0;
@@ -1424,6 +1493,7 @@ function NewInvoiceContent() {
           amount: Number(p.amount) || 0,
           date: p.date,
           reference: p.reference,
+          settlementAccountId: p.settlementAccountId,
         }))
       )
     : null;
@@ -1438,7 +1508,13 @@ function NewInvoiceContent() {
   const invoiceBalanceAmount = Math.max(0, cashDue - creditApplied);
   const invoicePaymentRows = posSettlement
     ? posSettlement.payments
-    : payments.map((p) => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference }));
+    : payments.map((p) => ({
+        amount: p.amount,
+        mode: p.mode,
+        date: p.date,
+        reference: p.reference,
+        settlementAccountId: p.settlementAccountId,
+      }));
   const invoicePaymentStatus =
     invoicePaidAmount >= grandTotal ? 'paid' : invoicePaidAmount > 0 ? 'partially_paid' : 'unpaid';
 
@@ -1600,6 +1676,20 @@ function NewInvoiceContent() {
           if (loadingTimeout) clearTimeout(loadingTimeout);
           throw new Error('Please add at least one item');
         }
+        if (!chargesReady) {
+          setLoading(false);
+          if (loadingTimeout) clearTimeout(loadingTimeout);
+          throw new Error(chargesNotice || 'Classify each additional charge before saving');
+        }
+        const classifiedCharges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>)
+          .filter((charge) => Number(charge.amount) > 0)
+          .map((charge) => ({
+            purpose: charge.purpose,
+            amount: charge.amount,
+            classification: charge.classification,
+            hsn_sac: charge.hsnSac,
+            tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+          }));
         
         console.log('[POS] Validation passed, preparing payload...');
         console.log('[POS] Invoice data:', {
@@ -1674,11 +1764,11 @@ function NewInvoiceContent() {
             hsn_sac: r.hsnSac 
           })), 
           subtotal, 
-          additional_charges: totalExtraCharges, 
+          charges: classifiedCharges, 
           tax_total: totalTax, 
           round_off: roundOff, 
           grand_total: grandTotal, 
-          payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+          payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference, settlement_account_id: p.settlementAccountId || undefined })) : undefined, 
           customer_credit_amount: creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
           payment_status: invoicePaymentStatus, 
           paid_amount: invoicePaidAmount, 
@@ -2109,6 +2199,19 @@ function NewInvoiceContent() {
       // For regular invoices, use targetStatus ('draft' or 'final')
       const finalInvoiceStatus = documentType === 'proforma_invoice' ? 'draft' : targetStatus;
 
+      if (!chargesReady) {
+        throw new Error(chargesNotice || 'Classify each additional charge before saving');
+      }
+      const classifiedCharges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>)
+        .filter((charge) => Number(charge.amount) > 0)
+        .map((charge) => ({
+          purpose: charge.purpose,
+          amount: charge.amount,
+          classification: charge.classification,
+          hsn_sac: charge.hsnSac,
+          tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+        }));
+
       // CRITICAL: Include branch_id to ensure invoice is created under the correct branch
       // For non-admin users, currentBranchId should never be 'ALL' (enforced by BranchContext)
       // If it is 'ALL', we should not allow creation (this should be caught by validation above)
@@ -2161,11 +2264,11 @@ function NewInvoiceContent() {
         notes, 
         items: rows.map(r => ({ item_id: r.itemId || null, variant_id: r.variantId || null, item_name: r.name, quantity: r.quantity, unit_price: r.price, unit: r.unit, discount_percent: r.discountPercent, tax_rate: r.taxPercent, hsn_sac: r.hsnSac, location_id: selectedWarehouseId || null })), 
         subtotal, 
-        additional_charges: totalExtraCharges, 
+        charges: classifiedCharges, 
         tax_total: totalTax, 
         round_off: roundOff, 
         grand_total: grandTotal, 
-        payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+        payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference, settlement_account_id: p.settlementAccountId || undefined })) : undefined, 
         customer_credit_amount: targetStatus === 'final' && creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
         payment_status: invoicePaymentStatus, 
         paid_amount: invoicePaidAmount, 
@@ -2482,7 +2585,17 @@ function NewInvoiceContent() {
           setInvoiceCustomFieldValues(parseItemCustomFieldsFromApi(inv));
           if (inv.is_export) { setExportType(inv.export_type); setPortCode(inv.port_code); setShippingBillNumber(inv.shipping_bill_number); setShippingBillDate(inv.shipping_bill_date?.split('T')[0] || ''); }
           if (inv.items) {
-            setRows(inv.items.map((i: any) => ({ itemId: i.item_id || '', variantId: i.variant_id || undefined, variantName: i.variant_name || undefined, name: i.item_name || '', quantity: Number(i.quantity || 1), freeQty: 0, unit: i.unit || 'PCS', price: Number(i.unit_price || 0), discountPercent: Number(i.discount_percent || 0), discountAmount: Number(i.discount_amount || 0), taxPercent: Number(i.tax_rate || 0), taxAmount: Number(i.tax_amount || 0), hsnSac: i.hsn_sac || '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!i.gst_included, priceUserOverride: true })));
+            setRows(inv.items.filter((i: any) => !i.charge_line).map((i: any) => ({ itemId: i.item_id || '', variantId: i.variant_id || undefined, variantName: i.variant_name || undefined, name: i.item_name || '', quantity: Number(i.quantity || 1), freeQty: 0, unit: i.unit || 'PCS', price: Number(i.unit_price || 0), discountPercent: Number(i.discount_percent || 0), discountAmount: Number(i.discount_amount || 0), taxPercent: Number(i.tax_rate || 0), taxAmount: Number(i.tax_amount || 0), hsnSac: i.hsn_sac || '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!i.gst_included, priceUserOverride: true })));
+          }
+          if (Array.isArray(inv.charges)) {
+            setExtraCharges(inv.charges.map((charge: any, index: number) => ({
+              id: String(charge.id || index + 1),
+              purpose: charge.purpose || '',
+              amount: Number(charge.amount) || 0,
+              classification: charge.classification || '',
+              hsnSac: charge.hsn_sac || '',
+              taxPercent: charge.tax_rate == null ? '' : Number(charge.tax_rate),
+            })));
           }
           if (inv.document_type === 'proforma_invoice') {
             if (inv.expiry_date) setExpiryDate(inv.expiry_date.split('T')[0]);
@@ -3306,7 +3419,7 @@ function NewInvoiceContent() {
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
-          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
           <ActionsBar
             onPreview={handlePreview}
             onSaveDraft={() => handleSave('draft')}
@@ -3928,7 +4041,7 @@ function NewInvoiceContent() {
           ) : null}
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
         </div>
-        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
         {words ? <p className="text-[10px] leading-snug text-text-muted">{words}</p> : null}
         {!isFinal && documentType !== 'proforma_invoice' ? (
           <div className="flex flex-wrap items-center gap-1">

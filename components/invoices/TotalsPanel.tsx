@@ -9,6 +9,9 @@ interface ExtraCharge {
   id: string;
   purpose: string;
   amount: number;
+  classification?: '' | 'follows_goods' | 'separate_supply';
+  hsnSac?: string;
+  taxPercent?: number;
 }
 
 interface TotalsPanelProps {
@@ -50,6 +53,7 @@ interface TotalsPanelProps {
   documentType: string;
   isExport: boolean;
   isIntraState: boolean;
+  chargesNotice?: string;
 }
 
 const TotalsPanel = React.memo(function TotalsPanel({
@@ -80,6 +84,7 @@ const TotalsPanel = React.memo(function TotalsPanel({
   documentType,
   isExport,
   isIntraState,
+  chargesNotice,
 }: TotalsPanelProps) {
   return (
     <div className={`lg:col-span-1 flex flex-col gap-3 ${className}`}>
@@ -115,19 +120,37 @@ const TotalsPanel = React.memo(function TotalsPanel({
         {extraCharges.length > 0 && (
           <div className="border-t border-dashed my-2 pt-2 space-y-2">
             {extraCharges.map((charge, idx) => (
-              <div key={charge.id} className="flex gap-2 items-center">
+              <div key={charge.id} className="space-y-2">
+              <div className="flex gap-2 items-center">
                 <Input
                   type="text"
                   placeholder="Purpose (e.g., Packaging, Delivery)"
                   value={charge.purpose}
                   onChange={(e) => {
                     const updated = [...extraCharges];
-                    updated[idx].purpose = e.target.value;
+                    updated[idx] = { ...updated[idx], purpose: e.target.value };
                     onExtraChargesChange(updated);
                   }}
                   className="text-sm flex-1"
                   disabled={isFinal}
                 />
+                <select
+                  value={charge.classification || ''}
+                  disabled={isFinal}
+                  onChange={(e) => {
+                    const updated = [...extraCharges];
+                    updated[idx] = {
+                      ...updated[idx],
+                      classification: e.target.value as ExtraCharge['classification'],
+                    };
+                    onExtraChargesChange(updated);
+                  }}
+                  className="text-sm h-10 rounded-md border border-border bg-surface px-2"
+                >
+                  <option value="">Classify</option>
+                  <option value="follows_goods">Part of the goods</option>
+                  <option value="separate_supply">Separate supply</option>
+                </select>
                 <Input
                   type="number"
                   step="0.01"
@@ -136,7 +159,7 @@ const TotalsPanel = React.memo(function TotalsPanel({
                   value={charge.amount || ''}
                   onChange={(e) => {
                     const updated = [...extraCharges];
-                    updated[idx].amount = Number(e.target.value) || 0;
+                    updated[idx] = { ...updated[idx], amount: Number(e.target.value) || 0 };
                     onExtraChargesChange(updated);
                   }}
                   className="text-sm w-24"
@@ -152,6 +175,35 @@ const TotalsPanel = React.memo(function TotalsPanel({
                   </button>
                 )}
               </div>
+              {charge.classification === 'separate_supply' && !isFinal && (
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="HSN / SAC"
+                    value={charge.hsnSac || ''}
+                    onChange={(e) => {
+                      const updated = [...extraCharges];
+                      updated[idx] = { ...updated[idx], hsnSac: e.target.value };
+                      onExtraChargesChange(updated);
+                    }}
+                    className="text-sm flex-1"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="GST %"
+                    value={charge.taxPercent ?? ''}
+                    onChange={(e) => {
+                      const updated = [...extraCharges];
+                      updated[idx] = { ...updated[idx], taxPercent: Number(e.target.value) };
+                      onExtraChargesChange(updated);
+                    }}
+                    className="text-sm w-24"
+                  />
+                </div>
+              )}
+              </div>
             ))}
           </div>
         )}
@@ -163,6 +215,9 @@ const TotalsPanel = React.memo(function TotalsPanel({
           </div>
         )}
         
+        {chargesNotice && (
+          <p className="text-xs text-amber-700 dark:text-amber-300">{chargesNotice}</p>
+        )}
         <div className="flex justify-between font-semibold text-text-primary"><span>Taxable Amount</span><span>₹ {taxableAmount.toFixed(2)}</span></div>
         {/* Hide GST breakdown for Bill of Supply */}
         {documentType !== 'bill_of_supply' && (

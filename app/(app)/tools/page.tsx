@@ -125,7 +125,7 @@ const tools = [
   },
   {
     title: 'BG Remover',
-    description: 'Professional AI-powered background removal tool.',
+    description: 'Cut a product or person out of a photo. Click the subject, then tidy the edge.',
     icon: Wand2,
     href: '/tools/image-background-remover',
     color: 'bg-violet-50 text-violet-600',

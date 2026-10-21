@@ -101,7 +101,7 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
         if (res.ok) {
           const data = await res.json();
           setResults(data.results || []);
-          setIsOpen(data.results?.length > 0);
+          setIsOpen(true);
         } else {
           setResults([]);
         }

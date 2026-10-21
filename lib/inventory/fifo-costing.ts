@@ -123,7 +123,7 @@ export async function loadCostMovements(
     `SELECT pi.item_id, pu.id AS doc_id, pi.id AS line_id,
             COALESCE(pu.bill_number, pu.invoice_number) AS doc_number, s.name AS party,
             ${day('pu.bill_date')} AS d, ${seq('pu.created_at')} AS s,
-            pi.quantity AS qty, COALESCE(pi.taxable_value, 0) AS value
+            pi.quantity AS qty, COALESCE(pi.acquisition_cost, pi.taxable_value, 0) AS value
        FROM purchase_items pi
        JOIN purchases pu ON pu.id = pi.purchase_id
        JOIN items it ON it.id = pi.item_id AND it.item_type = 'goods'
@@ -248,11 +248,12 @@ export async function loadCostMovements(
   const adjustments = await rows<{
     item_id: string; doc_id: string; doc_number: string | null; d: string; s: string;
     adjustment_type: string; direction: string | null; quantity_change: string | null; value_change: string | null;
+    purchase_id: string | null;
   }>(
     client,
     `SELECT ia.item_id, ia.id AS doc_id, ia.adjustment_number AS doc_number,
             ${day('ia.adjustment_date')} AS d, ${seq('ia.created_at')} AS s,
-            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change
+            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change, ia.purchase_id
        FROM inventory_adjustments ia
       WHERE ia.business_id = $1 AND ia.item_id = ANY($2::uuid[])
         AND NOT EXISTS (
@@ -263,7 +264,14 @@ export async function loadCostMovements(
   for (const a of adjustments) {
     const base = { docId: a.doc_id, docNumber: a.doc_number, date: a.d, seq: a.s };
     if (a.adjustment_type === 'VALUE') {
-      push(a.item_id, { ...base, key: `value_adjustment:${a.doc_id}`, kind: 'value_adjustment', qty: 0, value: Number(a.value_change) || 0 });
+      push(a.item_id, {
+        ...base,
+        key: `value_adjustment:${a.doc_id}`,
+        kind: 'value_adjustment',
+        qty: 0,
+        value: Number(a.value_change) || 0,
+        linkedDocId: a.purchase_id,
+      });
       continue;
     }
     const qty = Math.abs(Number(a.quantity_change) || 0);

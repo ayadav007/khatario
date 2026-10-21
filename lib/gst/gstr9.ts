@@ -444,7 +444,15 @@ export class GSTR9Generator {
 
       purchasesRes.rows.forEach(row => {
         const type = classifyItcType(row);
-        const tb = { taxable_value: parseFloat(row.taxable_value) || 0, igst: parseFloat(row.igst_amount) || 0, cgst: parseFloat(row.cgst_amount) || 0, sgst: parseFloat(row.sgst_amount) || 0, cess: parseFloat(row.cess_amount) || 0 };
+        // Supplier credit notes reduce the same bucket. GSTR-3B already negates them; Table 6 must too.
+        const sign = row.document_type === 'supplier_credit_note' ? -1 : 1;
+        const tb = {
+          taxable_value: sign * (parseFloat(row.taxable_value) || 0),
+          igst: sign * (parseFloat(row.igst_amount) || 0),
+          cgst: sign * (parseFloat(row.cgst_amount) || 0),
+          sgst: sign * (parseFloat(row.sgst_amount) || 0),
+          cess: sign * (parseFloat(row.cess_amount) || 0),
+        };
         const itcAllowed = row.itc_eligible !== false;
 
         if (itcAllowed) {
@@ -491,7 +499,7 @@ export class GSTR9Generator {
 
         // HSN Inward (Always from Books)
         if (row.hsn_sac) {
-          const lineTotal = parseFloat(row.line_total) || 0;
+          const lineTotal = sign * (parseFloat(row.line_total) || 0);
           // Table 18 is one row per HSN and unit quantity code.
           const uqc = toGstUqc(row.unit, row.hsn_sac);
           const hsnKey = `${row.hsn_sac}|${uqc}`;
@@ -521,9 +529,57 @@ export class GSTR9Generator {
         }
       });
 
+      // A charge is its own supplier service supply. GSTR-9 has no incidental-freight ITC bucket:
+      // classifyItcType sends a service (or SAC 99) to input services. Capitalizing the cost into
+      // inventory does not move that GST into inputs, and the goods line is not increased.
+      const chargesRes = await client.query(
+        `SELECT pc.taxable_value, pc.igst_amount, pc.cgst_amount, pc.sgst_amount, pc.hsn_sac,
+                p.supplier_gstin, p.is_reverse_charge, p.document_type, p.itc_eligible
+           FROM purchase_charges pc
+           JOIN purchases p ON p.id = pc.purchase_id AND p.deleted_at IS NULL
+          WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3
+            AND p.status = 'final'
+            AND p.document_type IS DISTINCT FROM 'supplier_credit_note'
+            AND NOT EXISTS (
+              SELECT 1 FROM gstr2b_reconciliation gr
+              JOIN reconciliation_decisions rd ON rd.reconciliation_id = gr.id
+              WHERE gr.purchase_id = p.id
+                AND rd.decision IN ('ITC_DEFERRED_TO_FUTURE', 'ITC_NOT_ELIGIBLE', 'PENDING_SUPPLIER_CORRECTION', 'IGNORE')
+            )`,
+        [business_id, fyFrom, fyTo]
+      );
+      chargesRes.rows.forEach((row) => {
+        if (row.itc_eligible === false) return;
+        const type = classifyItcType({ item_type: 'service', line_item_type: 'service', hsn_sac: row.hsn_sac });
+        const tb = {
+          taxable_value: parseFloat(row.taxable_value) || 0,
+          igst: parseFloat(row.igst_amount) || 0,
+          cgst: parseFloat(row.cgst_amount) || 0,
+          sgst: parseFloat(row.sgst_amount) || 0,
+          cess: 0,
+        };
+        const isImportService =
+          (!row.supplier_gstin || String(row.supplier_gstin).length < 15) &&
+          (row.document_type === 'import_service' || (row.is_reverse_charge && tb.igst > 0));
+        if (isImportService) {
+          addTaxBreakdown(data.table_6.F, tb);
+        } else if (row.is_reverse_charge) {
+          const isReg = row.supplier_gstin && String(row.supplier_gstin).length >= 15;
+          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[type], tb);
+        } else {
+          addTaxBreakdown(data.table_6.B[type], tb);
+        }
+      });
+
       // Purchase returns (debit notes to suppliers) reduce ITC availed on the original bill.
+      // Goods lines reduce the goods or capital bucket. Any header amount above those lines is
+      // refunded freight and reduces input services, the same bucket the charge was added to.
       const returnsRes = await client.query(
-        `SELECT pr.subtotal, pr.igst_total, pr.cgst_total, pr.sgst_total, p.is_reverse_charge, p.supplier_gstin,
+        `SELECT pr.id, pr.subtotal, pr.igst_total, pr.cgst_total, pr.sgst_total, p.is_reverse_charge, p.supplier_gstin,
+                COALESCE(items.taxable_value, 0) AS item_taxable,
+                COALESCE(items.igst_amount, 0) AS item_igst,
+                COALESCE(items.cgst_amount, 0) AS item_cgst,
+                COALESCE(items.sgst_amount, 0) AS item_sgst,
                 EXISTS (
                   SELECT 1 FROM purchase_items pi
                   LEFT JOIN items it ON it.id = pi.item_id
@@ -541,17 +597,30 @@ export class GSTR9Generator {
                 ) AS all_capital_goods
            FROM purchase_returns pr
            JOIN purchases p ON p.id = pr.purchase_id
+           LEFT JOIN LATERAL (
+             SELECT SUM(taxable_value) AS taxable_value, SUM(igst_amount) AS igst_amount,
+                    SUM(cgst_amount) AS cgst_amount, SUM(sgst_amount) AS sgst_amount
+               FROM purchase_return_items
+              WHERE return_id = pr.id
+           ) items ON true
           WHERE pr.business_id = $1 AND pr.return_date BETWEEN $2 AND $3
             AND COALESCE(pr.status, 'final') <> 'cancelled'
             AND COALESCE(p.itc_eligible, true)`,
         [business_id, fyFrom, fyTo]
       );
       returnsRes.rows.forEach((r) => {
-        const neg = {
-          taxable_value: -(parseFloat(r.subtotal) || 0),
-          igst: -(parseFloat(r.igst_total) || 0),
-          cgst: -(parseFloat(r.cgst_total) || 0),
-          sgst: -(parseFloat(r.sgst_total) || 0),
+        const itemNeg = {
+          taxable_value: -(parseFloat(r.item_taxable) || 0),
+          igst: -(parseFloat(r.item_igst) || 0),
+          cgst: -(parseFloat(r.item_cgst) || 0),
+          sgst: -(parseFloat(r.item_sgst) || 0),
+          cess: 0,
+        };
+        const chargeNeg = {
+          taxable_value: -Math.max(0, (parseFloat(r.subtotal) || 0) - (parseFloat(r.item_taxable) || 0)),
+          igst: -Math.max(0, (parseFloat(r.igst_total) || 0) - (parseFloat(r.item_igst) || 0)),
+          cgst: -Math.max(0, (parseFloat(r.cgst_total) || 0) - (parseFloat(r.item_cgst) || 0)),
+          sgst: -Math.max(0, (parseFloat(r.sgst_total) || 0) - (parseFloat(r.item_sgst) || 0)),
           cess: 0,
         };
         const bucket: ItcType = r.all_capital_goods
@@ -559,11 +628,17 @@ export class GSTR9Generator {
           : r.all_services
             ? 'input_services'
             : 'inputs';
-        if (r.is_reverse_charge) {
-          const isReg = r.supplier_gstin && r.supplier_gstin.length >= 15;
-          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[bucket], neg);
-        } else {
-          addTaxBreakdown(data.table_6.B[bucket], neg);
+        const place = (kind: ItcType, amounts: typeof itemNeg) => {
+          if (r.is_reverse_charge) {
+            const isReg = r.supplier_gstin && r.supplier_gstin.length >= 15;
+            addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[kind], amounts);
+          } else {
+            addTaxBreakdown(data.table_6.B[kind], amounts);
+          }
+        };
+        place(bucket, itemNeg);
+        if (chargeNeg.taxable_value < -0.004 || chargeNeg.cgst < -0.004 || chargeNeg.sgst < -0.004 || chargeNeg.igst < -0.004) {
+          place('input_services', chargeNeg);
         }
       });
 

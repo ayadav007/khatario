@@ -282,48 +282,13 @@ export async function getDefaultAccounts(businessId: string): Promise<{
  */
 export async function getAccountForPaymentMode(
   businessId: string,
-  paymentMode: string
+  paymentMode: string,
+  settlementAccountId?: string | null,
 ): Promise<Account | null> {
-  try {
-    // Try to use configured payment mode mapping
-    const { getPaymentModeAccountId } = await import('@/lib/account-mappings');
-    const accountId = await getPaymentModeAccountId(businessId, paymentMode);
-    
-    if (accountId) {
-      const account = await getAccountById(businessId, accountId);
-      if (account) return account;
-    }
-  } catch (error) {
-    console.warn('Error using payment mode mapping, falling back to default:', error);
-  }
-
-  // Fallback to default lookup
-  const mode = paymentMode?.toLowerCase() || 'cash';
-  
-  if (mode === 'cash') {
-    return await getAccountByCode(businessId, '1101') || 
-           await getAccountByName(businessId, 'Cash');
-  }
-  
-  if (mode === 'bank' || mode === 'bank_transfer' || mode === 'neft' || mode === 'rtgs') {
-    return await getAccountByCode(businessId, '1102') || 
-           await getAccountByName(businessId, 'Bank Account');
-  }
-
-  if (mode === 'upi' || mode === 'credit_card' || mode === 'card' || mode === 'cheque') {
-    return (
-      (await getAccountByCode(businessId, '1102')) ||
-      (await getAccountByName(businessId, 'Bank Account')) ||
-      (await getAccountByCode(businessId, '1101')) ||
-      (await getAccountByName(businessId, 'Cash'))
-    );
-  }
-  
-  // Other modes: prefer Cash, then Bank
-  return await getAccountByCode(businessId, '1101') || 
-         await getAccountByName(businessId, 'Cash') ||
-         (await getAccountByCode(businessId, '1102')) ||
-         (await getAccountByName(businessId, 'Bank Account'));
+  const { resolveSettlementForBusiness } = await import('@/lib/accounting/settlement-accounts-db');
+  const resolved = await resolveSettlementForBusiness(businessId, paymentMode, settlementAccountId);
+  if (!resolved.accountId) return null;
+  return await getAccountById(businessId, resolved.accountId);
 }
 
 /**
@@ -805,7 +770,11 @@ export async function createInvoiceLedgerEntries(params: {
     const split = cashSaleDebitLines(grandTotal, cashSalePayments || []);
     if (split) {
       for (const line of split) {
-        const paymentAccount = await getAccountForPaymentMode(businessId, line.mode);
+        const paymentAccount = await getAccountForPaymentMode(
+          businessId,
+          line.mode,
+          line.settlementAccountId,
+        );
         if (!paymentAccount) {
           throw new Error(
             `No Cash/Bank ledger account found for payment mode "${line.mode}". ` +
@@ -1008,6 +977,9 @@ export async function createPurchaseLedgerEntries(params: {
   isReverseCharge?: boolean;   // true → also Cr RCM Output (2155); ITC still Dr Input
   /** Date ITC is being claimed in the books (defaults to today, IST) — s.16(4) check. */
   itcClaimDate?: string;
+  /** Used when the bill is settled in full and the credit is cash or bank, not Accounts Payable. */
+  paymentMode?: string | null;
+  settlementAccountId?: string | null;
 }): Promise<{ itcEligible: boolean; itcBlockedReason: string | null }> {
   const {
     businessId,
@@ -1140,10 +1112,14 @@ export async function createPurchaseLedgerEntries(params: {
 
   // Entry 1: Credit AP / Cash side (unchanged shape)
   if (isCashPurchase || !supplierId) {
-    const cashAccount = accounts.cash || accounts.bank;
+    const cashAccount = await getAccountForPaymentMode(
+      businessId,
+      params.paymentMode || 'cash',
+      params.settlementAccountId,
+    );
     if (!cashAccount) {
       throw new Error(
-        `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
+        `Cash/Bank account not found for business ${businessId}. ` +
         `Cannot post cash purchase ${purchaseNumber}.`,
       );
     }
@@ -1321,7 +1297,12 @@ export async function createPurchaseLedgerEntries(params: {
   // Entry 7: capital goods lines are capitalised to Fixed Assets (1201), not expensed.
   // Blocked ITC is part of the asset's cost, so tax is included when the split did not apply.
   const capRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
-    SELECT COALESCE(SUM(pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END), 0) AS total,
+    SELECT COALESCE(SUM(
+             CASE
+               WHEN pi.acquisition_cost IS NOT NULL THEN pi.acquisition_cost::numeric
+               ELSE pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END
+             END
+           ), 0) AS total,
            (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '1201' LIMIT 1) AS account_id
       FROM purchase_items pi
      WHERE pi.purchase_id = $1 AND pi.itc_type = 'capital_goods'
@@ -1382,6 +1363,43 @@ export async function createPurchaseLedgerEntries(params: {
     });
   }
 
+  // Independent charges, and incidental charges that were not capitalized (periodic bills),
+  // are expenses. A capitalized incidental charge is already inside inventory or fixed assets.
+  const chargeRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(
+             pc.taxable_value::numeric + CASE
+               WHEN $2::boolean THEN 0
+               ELSE COALESCE(pc.tax_amount, 0)::numeric
+             END
+           ), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '5201' AND is_active = true LIMIT 1) AS account_id
+      FROM purchase_charges pc
+      JOIN purchases pu ON pu.id = pc.purchase_id
+     WHERE pc.purchase_id = $1
+       AND (
+         pc.classification = 'independent_service'
+         OR (pc.classification = 'incidental_to_goods' AND pu.acquisition_costs_capitalized IS DISTINCT FROM true)
+       )
+  `, [purchaseId, useGstSplit, businessId]);
+  const chargeExpense = Math.round((Number(chargeRows[0]?.total) || 0) * 100) / 100;
+  const chargeAccountId = chargeRows[0]?.account_id;
+  if (chargeExpense > 0 && chargeAccountId) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: chargeAccountId, entryDate: purchaseDate,
+      debit: chargeExpense, credit: 0,
+      narration: `Purchase charges expensed - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: chargeExpense,
+      narration: `Transfer purchase charges to expenses - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
+
   if (poolClient && inventoryAmount > 0) {
     await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'purchase', purchaseId));
   }
@@ -1402,6 +1420,7 @@ export async function createExpenseLedgerEntries(params: {
   amount: number;
   description?: string;
   paymentMode?: string;
+  settlementAccountId?: string | null;
   expenseAccountId?: string; // Optional: specific expense account
   branchId?: string; // Branch ID for branch-wise accounting
   cgstTotal?: number;
@@ -1418,6 +1437,7 @@ export async function createExpenseLedgerEntries(params: {
     amount,
     description,
     paymentMode,
+    settlementAccountId,
     expenseAccountId,
     cgstTotal = 0,
     sgstTotal = 0,
@@ -1461,7 +1481,11 @@ export async function createExpenseLedgerEntries(params: {
     }
     secondLineAccount = accounts.accountsPayable;
   } else {
-    const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode || 'cash');
+    const paymentAccount = await getAccountForPaymentMode(
+      businessId,
+      paymentMode || 'cash',
+      settlementAccountId,
+    );
     if (!paymentAccount) {
       throw new Error(
         `No Cash/Bank ledger account found for payment mode "${paymentMode || 'cash'}". ` +
@@ -1811,6 +1835,18 @@ export async function createPurchaseReturnLedgerEntries(params: {
   grandTotal: number;
   supplierId?: string | null;
   inventoryAmount?: number; // Amount to reduce from inventory
+  /**
+   * Acquisition cost leaving inventory. When set, 5102 is debited for the supplier
+   * taxable credit (purchasesCredit) and 5105 is debited once for any unrecovered gap.
+   * Omit it to keep the historical voucher, which debits 5102 for inventoryAmount.
+   */
+  inventoryRelief?: number;
+  /**
+   * Share of a later Landed Cost adjustment still on the returned quantity.
+   * Debited to 5201, the account that adjustment credited. It is not added to 5105
+   * and it does not change acquisition_cost.
+   */
+  landedCostRelief?: number;
   branchId?: string; // Branch ID for branch-wise accounting
   // PHASE-3
   taxableValue?: number;
@@ -1833,6 +1869,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
     grandTotal,
     supplierId,
     inventoryAmount = 0,
+    inventoryRelief,
+    landedCostRelief = 0,
     taxableValue,
     cgstTotal = 0,
     sgstTotal = 0,
@@ -1991,8 +2029,11 @@ export async function createPurchaseReturnLedgerEntries(params: {
     });
   }
 
-  // Entry 3: Credit Inventory (goods going back to supplier)
-  if (inventoryAmount > 0 && accounts.inventory) {
+  // Stock returns credit inventory for the acquisition cost and keep 5102's debit equal
+  // to its credit. Unrecovered freight is one 5105 debit, not a second 5102 debit.
+  const relief = inventoryRelief ?? inventoryAmount;
+  const returnsDebit = inventoryRelief == null ? inventoryAmount : purchasesCredit;
+  if (relief > 0 && accounts.inventory) {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
@@ -2000,27 +2041,71 @@ export async function createPurchaseReturnLedgerEntries(params: {
       accountId: accounts.inventory.id,
       entryDate: returnDate,
       debit: 0,
-      credit: inventoryAmount,
+      credit: relief,
       narration: `Inventory reduction - Purchase return ${returnNumber}`,
       referenceNumber: returnNumber,
       branchId: params.branchId,
       poolClient,
     });
 
-    // Entry 4: Debit Purchases by the same amount (to reverse the inventory transfer)
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: purchaseReturnId,
-      voucherType,
-      accountId: returnsAccount.id,
-      entryDate: returnDate,
-      debit: inventoryAmount,
-      credit: 0,
-      narration: `Reverse inventory transfer - Purchase return ${returnNumber}`,
-      referenceNumber: returnNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (returnsDebit > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: returnsAccount.id,
+        entryDate: returnDate,
+        debit: returnsDebit,
+        credit: 0,
+        narration: `Reverse inventory transfer - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+    const landed = inventoryRelief == null ? 0 : Math.round(landedCostRelief * 100) / 100;
+    const unrecovered = Math.round((relief - returnsDebit - landed) * 100) / 100;
+    if (unrecovered < -0.004) {
+      throw new Error('Purchase return inventory relief is below the supplier credit and landed-cost share');
+    }
+    if (inventoryRelief != null && unrecovered > 0.004) {
+      const freightIn = await getAccountByCode(businessId, '5105');
+      if (!freightIn) {
+        throw new Error(`Freight Inward account (5105) not found for business ${businessId}.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: freightIn.id,
+        entryDate: returnDate,
+        debit: unrecovered,
+        credit: 0,
+        narration: `Unrecovered inward freight - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+    if (landed > 0.004) {
+      const admin = await getAccountByCode(businessId, '5201');
+      if (!admin) {
+        throw new Error(`Administrative Expenses account (5201) not found for business ${businessId}.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: admin.id,
+        entryDate: returnDate,
+        debit: landed,
+        credit: 0,
+        narration: `Landed cost leaving inventory - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
     if (poolClient) {
       await recostAfterStockChange(
         poolClient,
@@ -2066,6 +2151,7 @@ export async function createPaymentLedgerEntries(params: {
   customerId?: string | null;
   supplierId?: string | null;
   paymentMode?: string;
+  settlementAccountId?: string | null;
   referenceNumber?: string;
   description?: string;
   branchId?: string; // Branch ID for branch-wise accounting
@@ -2087,6 +2173,7 @@ export async function createPaymentLedgerEntries(params: {
     customerId,
     supplierId,
     paymentMode,
+    settlementAccountId,
     referenceNumber,
     description,
     poolClient,
@@ -2096,7 +2183,11 @@ export async function createPaymentLedgerEntries(params: {
   const accounts = await getDefaultAccounts(businessId);
 
   // Get payment account (Cash or Bank)
-  const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode || 'cash');
+  const paymentAccount = await getAccountForPaymentMode(
+    businessId,
+    paymentMode || 'cash',
+    settlementAccountId,
+  );
   if (!paymentAccount) {
     throw new Error(
       `Payment account (Cash/Bank for mode '${paymentMode || 'cash'}') not found for business ${businessId}. ` +

@@ -40,6 +40,47 @@ describe('validateInvoiceGstPayload', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('rejects a bare additional charge instead of taxing or dropping it', () => {
+    const result = validateInvoiceGstPayload(
+      { ...base, invoice_date: '2026-10-09', additional_charges: 1000, subtotal: 1200, tax_total: 36, grand_total: 1236 },
+      '29'
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('classification');
+  });
+
+  it('accepts a classified freight charge when the client totals match', () => {
+    const result = validateInvoiceGstPayload(
+      {
+        ...base,
+        invoice_date: '2026-10-09',
+        items: [{ item_name: 'Widget', quantity: 1, unit_price: 10000, tax_rate: 18 }],
+        charges: [{ purpose: 'Freight', amount: 1000, classification: 'follows_goods' }],
+        subtotal: 11000,
+        tax_total: 1980,
+        grand_total: 12980,
+      },
+      '29'
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects heading 9987 at 5 percent for an ordinary installation', () => {
+    const result = validateInvoiceGstPayload(
+      {
+        ...base,
+        invoice_date: '2026-10-09',
+        charges: [{ purpose: 'Installation', amount: 1000, classification: 'separate_supply', hsn_sac: '9987', tax_rate: 5 }],
+        subtotal: 1200,
+        tax_total: 86,
+        grand_total: 1286,
+      },
+      '29'
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('9987');
+  });
+
   it('flags GST mismatch for manual review', () => {
     const result = validateInvoiceGstPayload(
       { ...base, tax_total: 30, grand_total: 230 },

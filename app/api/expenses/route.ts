@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { postExpenseVoucher, ExpenseValidationError, type ExpenseSplit } from '@/lib/accounting/expense-posting';
+import {
+  postExpenseVoucher,
+  ExpenseValidationError,
+  readExpenseIdempotencyKey,
+  expensePostingHash,
+  decideExpenseIdempotency,
+  expenseIdempotencyConflictBody,
+  expenseIdempotencyCancelledBody,
+  type ExpenseSplit,
+} from '@/lib/accounting/expense-posting';
+import { EXPENSE_ACCOUNT_REQUIRED } from '@/lib/accounting/expense-account-policy';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { checkGstin } from '@/lib/tax/gstin';
@@ -8,10 +18,24 @@ import { parseRegistrationStatus } from '@/lib/gst/rule47a';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
+
+function expenseIdempotencyHttp(
+  row: Parameters<typeof decideExpenseIdempotency>[0],
+  requestHash: string
+) {
+  const decision = decideExpenseIdempotency(row, requestHash);
+  if (decision === 'replay') {
+    return NextResponse.json({ expense: row, idempotent: true }, { status: 200 });
+  }
+  if (decision === 'cancelled') {
+    return NextResponse.json(expenseIdempotencyCancelledBody(), { status: 409 });
+  }
+  return NextResponse.json(expenseIdempotencyConflictBody(), { status: 409 });
+}
 
 /**
  * GET /api/expenses
@@ -19,30 +43,18 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const categoryId = searchParams.get('category_id');
     const fromDate = searchParams.get('from_date');
     const toDate = searchParams.get('to_date');
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'expenses', 'read');
+      await authorize(userId, 'expenses', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -105,6 +117,7 @@ export async function GET(request: NextRequest) {
         e.tds_section,
         COALESCE(e.tds_amount, 0)::float AS tds_amount,
         e.supplier_id, e.branch_id,
+        to_char(e.updated_at, 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at,
         ec.name AS category_name
       FROM expenses e
       LEFT JOIN expense_categories ec ON e.category_id = ec.id
@@ -128,8 +141,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that incurred this expense
       category_id: rawCategoryId,
@@ -162,6 +178,18 @@ export async function POST(request: NextRequest) {
 
     const category_id =
       rawCategoryId && String(rawCategoryId).trim() ? String(rawCategoryId).trim() : null;
+    let idempotencyKey: string;
+    try {
+      idempotencyKey = readExpenseIdempotencyKey(request.headers.get('x-idempotency-key'), body.idempotency_key);
+    } catch (keyError) {
+      if (keyError instanceof ExpenseValidationError) {
+        return NextResponse.json({ error: keyError.message, code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
+      }
+      throw keyError;
+    }
+    if (!category_id) {
+      return NextResponse.json({ error: EXPENSE_ACCOUNT_REQUIRED, code: 'EXPENSE_ACCOUNT_REQUIRED' }, { status: 400 });
+    }
 
     const isOnAccount = ['on_account', 'pay_later', 'unpaid', 'credit'].includes(
       String(payment_mode || '').toLowerCase()
@@ -211,18 +239,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const created_by = getAuthenticatedUserId(request);
-
-    if (!business_id || !amount || !expense_date) {
+    if (!amount || !expense_date) {
       return NextResponse.json(
-        { error: 'business_id, amount, and expense_date are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'amount and expense_date are required' },
         { status: 400 }
       );
     }
@@ -253,7 +272,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission with branch context
     try {
-      await authorize(created_by, 'expenses', 'create', { branchId: finalBranchId });
+      await authorize(created_by, 'expenses', 'create', { businessId: business_id, branchId: finalBranchId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -345,26 +364,79 @@ export async function POST(request: NextRequest) {
 
     let expense: any;
     let split: ExpenseSplit;
+    const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+      '@/lib/accounting/settlement-accounts-db'
+    );
+    const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+    let settlementAccountId: string | null = null;
+    try {
+      const resolved = await resolveSettlementForBusiness(
+        business_id,
+        payment_mode,
+        readSettlementAccountId(body.settlement_account_id),
+      );
+      settlementAccountId = resolved.accountId;
+    } catch (settlementError) {
+      if (settlementError instanceof SettlementAccountError) {
+        return NextResponse.json(
+          { error: settlementError.message, code: settlementError.code },
+          { status: settlementError.status },
+        );
+      }
+      throw settlementError;
+    }
+    const requestHash = expensePostingHash({
+      businessId: business_id,
+      branchId: finalBranchId,
+      categoryId: category_id,
+      amount: Number(amount),
+      description: description ?? null,
+      expenseDate: String(expense_date),
+      paymentMode: payment_mode ?? null,
+      referenceNumber: reference_number ?? null,
+      settlementAccountId,
+      cgst: cgstAmt,
+      sgst: sgstAmt,
+      igst: igstAmt,
+      itcEligible: tax.itcEligible,
+      isReverseCharge: tax.isReverseCharge,
+      tdsSection: tax.tdsSection,
+      tdsAmount: tax.tdsAmount,
+      supplierId: isOnAccount ? supplier_id : null,
+      supplierGstin,
+      supplyReceivedOn,
+      supplierRegistrationStatus: registrationStatus,
+    });
+    const alreadyPosted = await db.queryOne(
+      `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,
+              to_char(e.supply_received_on, 'YYYY-MM-DD') AS supply_day
+         FROM expenses e
+        WHERE e.business_id = $1 AND e.idempotency_key = $2`,
+      [business_id, idempotencyKey]
+    );
+    if (alreadyPosted) return expenseIdempotencyHttp(alreadyPosted, requestHash);
     const client = await db.getPool().connect();
     try {
       await client.query('BEGIN');
       const ins = await client.query(
         `INSERT INTO expenses (
            business_id, branch_id, category_id, amount, description,
-           expense_date, payment_mode, reference_number, created_by,
+           expense_date, payment_mode, reference_number, settlement_account_id, created_by,
            cgst_amount, sgst_amount, igst_amount,
            itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id,
-           supplier_gstin, supply_received_on, supplier_registration_status
+           supplier_gstin, supply_received_on, supplier_registration_status, idempotency_key,
+           idempotency_payload_hash
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
          RETURNING *`,
         [
-          business_id, finalBranchId, category_id || null, amount, description,
-          expense_date, payment_mode, reference_number, created_by,
+          business_id, finalBranchId, category_id, amount, description,
+          expense_date, payment_mode, reference_number, settlementAccountId, created_by,
           cgstAmt, sgstAmt, igstAmt,
           tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount,
           isOnAccount ? supplier_id : null,
-          supplierGstin, supplyReceivedOn, registrationStatus,
+          supplierGstin, supplyReceivedOn, registrationStatus, idempotencyKey,
+          requestHash,
         ]
       );
       expense = ins.rows[0];
@@ -373,8 +445,9 @@ export async function POST(request: NextRequest) {
         branchId: finalBranchId,
         expenseId: expense.id,
         expenseDate: expense_date,
-        expenseAccountId: category?.account_id ?? null,
+        categoryId: category_id,
         paymentMode: payment_mode,
+        settlementAccountId,
         description: description ?? null,
         reference: reference_number ?? null,
         amount: Number(amount),
@@ -398,8 +471,18 @@ export async function POST(request: NextRequest) {
       await client.query('COMMIT');
     } catch (ledgerError: any) {
       await client.query('ROLLBACK').catch(() => {});
-      console.error('Error creating expense:', ledgerError);
+      if (ledgerError?.code === '23505' && ledgerError?.constraint === 'expenses_business_idempotency_key') {
+        const existing = await db.queryOne(
+          `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,
+                  to_char(e.supply_received_on, 'YYYY-MM-DD') AS supply_day
+             FROM expenses e
+            WHERE e.business_id = $1 AND e.idempotency_key = $2`,
+          [business_id, idempotencyKey]
+        );
+        if (existing) return expenseIdempotencyHttp(existing, requestHash);
+      }
       const validation = ledgerError instanceof ExpenseValidationError;
+      if (!validation) console.error('Error creating expense:', ledgerError);
       return NextResponse.json(
         {
           error:

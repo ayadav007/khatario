@@ -104,6 +104,7 @@ d('Phase 3.7 final documents (real DB)', () => {
         'x-user-id': OTHER,
         'x-authenticated-user-id': user,
         'x-authenticated-business-id': business,
+        'x-authenticated-session-version': '1',
       },
       body: body == null ? undefined : JSON.stringify(body),
     });

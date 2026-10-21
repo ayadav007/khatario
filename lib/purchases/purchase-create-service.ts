@@ -21,6 +21,13 @@ import {
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
 import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
+import {
+  AcquisitionCostError,
+  planAcquisitionCosts,
+  type PurchaseChargeInput,
+} from '@/lib/purchases/acquisition-cost';
+import { savePurchaseAcquisition } from '@/lib/purchases/save-purchase-acquisition';
 
 export class PurchaseCreateServiceError extends Error {
   constructor(
@@ -48,6 +55,8 @@ export interface CreatePurchaseInput {
   round_off?: number;
   grand_total?: number;
   paid_amount?: number;
+  payment_mode?: string | null;
+  settlement_account_id?: string | null;
   notes?: string | null;
   place_of_supply_state_code?: string | null;
   is_reverse_charge?: boolean;
@@ -61,6 +70,7 @@ export interface CreatePurchaseInput {
   original_bill_number?: string | null;
   original_bill_date?: string | null;
   extraction_job_id?: string | null;
+  charges?: PurchaseChargeInput[];
 }
 
 function optionalNumber(v: unknown): number | undefined {
@@ -329,14 +339,61 @@ export async function createPurchaseInTransaction(
     }
   );
 
+  const billItcEligible = body.itc_eligible !== false;
+  const supplierCredit = body.document_type === 'supplier_credit_note';
+  const perpetual = (await getInventoryModel(client, business_id)) === 'perpetual';
+  let acquisitionPlan;
+  try {
+    acquisitionPlan = planAcquisitionCosts({
+      lines: items.map((item, index) => {
+        const computed = gstDoc.lineComputeds[index];
+        const lineIntent =
+          item.item_type === 'service' ||
+          item.line_item_type === 'service' ||
+          /^99/.test(String(item.hsn_sac ?? '').trim())
+            ? 'service'
+            : 'goods';
+        const capital = purchaseLineItcType(item, lineIntent) === 'capital_goods';
+        return {
+          taxable: computed.taxableValue,
+          tax: computed.taxAmount,
+          cess: purchaseLineCess(item),
+          quantity: Number(item.quantity) || 0,
+          stock: lineIntent === 'goods' && !capital,
+          capital,
+        };
+      }),
+      charges: body.charges || [],
+      itcEligible: billItcEligible,
+      capitalize: status === 'final' && perpetual && !supplierCredit,
+      intraState: gstDoc.intraState,
+      billDate: body.bill_date ? String(body.bill_date).slice(0, 10) : null,
+    });
+  } catch (error) {
+    if (error instanceof AcquisitionCostError) {
+      throw new PurchaseCreateServiceError(error.message, 400, error.code);
+    }
+    throw error;
+  }
+  if (supplierCredit && acquisitionPlan.charges.length > 0) {
+    throw new PurchaseCreateServiceError(
+      'A supplier credit note cannot carry an incidental or independent charge. Use a service line, or a purchase return when goods go back.',
+      400,
+      'SUPPLIER_CREDIT_NO_CHARGE'
+    );
+  }
+
   // Header totals always come from the stored lines; a client figure that disagrees would leave
   // the bill header, its lines and the ledger (posted from the header) out of step.
-  const finalSubtotal = gstDoc.subtotal;
-  const finalTaxTotal = gstDoc.taxTotal;
+  const finalSubtotal = Math.round((gstDoc.subtotal + acquisitionPlan.subtotal) * 100) / 100;
+  const finalTaxTotal = Math.round((gstDoc.taxTotal + acquisitionPlan.tax) * 100) / 100;
   const finalRoundOff =
     typeof body.round_off === 'number' && isFinite(body.round_off) ? body.round_off : 0;
   const cessTotal = purchaseCessTotal(items);
-  const finalGrandTotal = Math.round((gstDoc.subtotal + gstDoc.taxTotal + cessTotal + finalRoundOff) * 100) / 100;
+  const finalCgstTotal = Math.round((gstDoc.cgstTotal + acquisitionPlan.cgst) * 100) / 100;
+  const finalSgstTotal = Math.round((gstDoc.sgstTotal + acquisitionPlan.sgst) * 100) / 100;
+  const finalIgstTotal = Math.round((gstDoc.igstTotal + acquisitionPlan.igst) * 100) / 100;
+  const finalGrandTotal = Math.round((finalSubtotal + finalTaxTotal + cessTotal + finalRoundOff) * 100) / 100;
   if (body.grand_total !== undefined && Math.abs(Number(body.grand_total) - finalGrandTotal) > 0.05) {
     console.warn('[purchase-create] client grand_total differs from server lines', {
       business_id,
@@ -386,9 +443,9 @@ export async function createPurchaseInTransaction(
       status,
       finalSubtotal,
       finalTaxTotal,
-      gstDoc.cgstTotal,
-      gstDoc.sgstTotal,
-      gstDoc.igstTotal,
+      finalCgstTotal,
+      finalSgstTotal,
+      finalIgstTotal,
       finalRoundOff,
       finalGrandTotal,
       paid_amount,
@@ -411,6 +468,7 @@ export async function createPurchaseInTransaction(
   );
 
   const purchase = purchaseResult.rows[0];
+  const purchaseItemIds: string[] = [];
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -433,10 +491,12 @@ export async function createPurchaseInTransaction(
       typeof item.variant_id === 'string' && uuidRe.test(item.variant_id.trim())
         ? item.variant_id.trim()
         : null;
-    const unitCostForStock = qty > 0 ? computed.taxableValue / qty : Number(item.unit_price) || 0;
+    const plannedCost = acquisitionPlan.lineCosts[i];
+    const unitCostForStock =
+      qty > 0 ? (plannedCost != null ? plannedCost : computed.taxableValue) / qty : Number(item.unit_price) || 0;
     const lineItcType = purchaseLineItcType(item, lineIntent);
 
-    await client.query(
+    const insertedItem = await client.query<{ id: string }>(
       `
       INSERT INTO purchase_items (
         purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
@@ -445,6 +505,7 @@ export async function createPurchaseInTransaction(
         location_id, line_item_type, itc_type, cess_amount
       )
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      RETURNING id
       `,
       [
         purchase.id,
@@ -472,6 +533,7 @@ export async function createPurchaseInTransaction(
         purchaseLineCess(item),
       ]
     );
+    purchaseItemIds.push(insertedItem.rows[0].id);
 
     // Capital goods go to the fixed-asset register, not stock.
     const lineIsService = lineIntent === 'service' || lineItcType === 'capital_goods';
@@ -581,12 +643,20 @@ export async function createPurchaseInTransaction(
     }
   }
 
+  await savePurchaseAcquisition(client, {
+    purchaseId: String(purchase.id),
+    businessId: business_id,
+    lineIds: purchaseItemIds,
+    plan: acquisitionPlan,
+    applyCosts: status === 'final' && perpetual && !supplierCredit,
+  });
+
   if (status === 'final') {
     let totalInventoryAmount = 0;
-    // Capitalise at this bill's cost (matches stock_movements.unit_cost), not items.purchase_price.
+    // Capitalise at this bill's acquisition cost (taxable value on historical rows).
     const invRes = await client.query(
       `
-      SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
+      SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
       FROM purchase_items pi
       JOIN items i ON i.id = pi.item_id AND i.business_id = $2
       WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
@@ -615,9 +685,9 @@ export async function createPurchaseInTransaction(
         branchId: finalBranchId,
         poolClient: client,
         taxableValue: finalSubtotal,
-        cgstTotal: gstDoc.cgstTotal,
-        sgstTotal: gstDoc.sgstTotal,
-        igstTotal: gstDoc.igstTotal,
+        cgstTotal: finalCgstTotal,
+        sgstTotal: finalSgstTotal,
+        igstTotal: finalIgstTotal,
         cessTotal,
         itcEligible: body.itc_eligible !== false,
         isReverseCharge: !!body.is_reverse_charge,
@@ -636,12 +706,14 @@ export async function createPurchaseInTransaction(
         branchId: finalBranchId,
         poolClient: client,
         taxableValue: finalSubtotal,
-        cgstTotal: gstDoc.cgstTotal,
-        sgstTotal: gstDoc.sgstTotal,
-        igstTotal: gstDoc.igstTotal,
+        cgstTotal: finalCgstTotal,
+        sgstTotal: finalSgstTotal,
+        igstTotal: finalIgstTotal,
         cessTotal,
         itcEligible: body.itc_eligible !== false,
         isReverseCharge: !!body.is_reverse_charge,
+        paymentMode: body.payment_mode || 'cash',
+        settlementAccountId: body.settlement_account_id || null,
       });
     }
 
@@ -657,8 +729,8 @@ export async function createPurchaseInTransaction(
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         RETURNING id
         `,
         [
@@ -669,9 +741,10 @@ export async function createPurchaseInTransaction(
           'purchase',
           purchase.id,
           paid_amount,
-          'cash',
+          body.payment_mode || 'cash',
           body.bill_date,
           `Payment for purchase ${body.bill_number || String(purchase.id).substring(0, 8)}`,
+          body.settlement_account_id || null,
           created_by,
         ]
       );
@@ -684,7 +757,8 @@ export async function createPurchaseInTransaction(
           amount: paid_amount,
           type: 'payable',
           supplierId: normalizedSupplierId,
-          paymentMode: 'cash',
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
           referenceNumber: body.bill_number || String(purchase.id).substring(0, 8),
           description: `Payment for purchase ${body.bill_number || String(purchase.id).substring(0, 8)}`,
           branchId: finalBranchId,
@@ -713,9 +787,9 @@ export async function createPurchaseInTransaction(
     grandTotal: finalGrandTotal,
     subtotal: finalSubtotal,
     taxTotal: finalTaxTotal,
-    cgstTotal: gstDoc.cgstTotal,
-    sgstTotal: gstDoc.sgstTotal,
-    igstTotal: gstDoc.igstTotal,
+    cgstTotal: finalCgstTotal,
+    sgstTotal: finalSgstTotal,
+    igstTotal: finalIgstTotal,
   };
 }
 
@@ -751,8 +825,48 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
     }
   );
 
+  let chargeSubtotal = 0;
+  let chargeTax = 0;
+  let chargeCgst = 0;
+  let chargeSgst = 0;
+  let chargeIgst = 0;
+  try {
+    const chargePlan = planAcquisitionCosts({
+      lines: items.map((item, index) => ({
+        taxable: gstDoc.lineComputeds[index].taxableValue,
+        tax: gstDoc.lineComputeds[index].taxAmount,
+        cess: purchaseLineCess(item),
+        quantity: Number(item.quantity) || 0,
+        stock: false,
+        capital: false,
+      })),
+      charges: body.charges || [],
+      itcEligible: body.itc_eligible !== false,
+      capitalize: false,
+      intraState: gstDoc.intraState,
+      billDate: body.bill_date ? String(body.bill_date).slice(0, 10) : null,
+    });
+    chargeSubtotal = chargePlan.subtotal;
+    chargeTax = chargePlan.tax;
+    chargeCgst = chargePlan.cgst;
+    chargeSgst = chargePlan.sgst;
+    chargeIgst = chargePlan.igst;
+  } catch (error) {
+    if (error instanceof AcquisitionCostError) {
+      return {
+        ok: false,
+        reason: error.message,
+        serverTotals: { subtotal: gstDoc.subtotal, taxTotal: gstDoc.taxTotal, grandTotal: gstDoc.subtotal + gstDoc.taxTotal },
+        clientTotals: { subtotal: body.subtotal, taxTotal: body.tax_total, grandTotal: body.grand_total },
+      };
+    }
+    throw error;
+  }
+
   const roundOff = typeof body.round_off === 'number' ? body.round_off : 0;
-  const serverGrand = gstDoc.subtotal + gstDoc.taxTotal + purchaseCessTotal(items) + roundOff;
+  const serverSubtotal = gstDoc.subtotal + chargeSubtotal;
+  const serverTax = gstDoc.taxTotal + chargeTax;
+  const serverGrand = serverSubtotal + serverTax + purchaseCessTotal(items) + roundOff;
   const tolerance = 0.05;
 
   const clientSub = body.subtotal;
@@ -760,8 +874,8 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
   const clientGrand = body.grand_total;
 
   const mismatch =
-    (clientSub !== undefined && Math.abs(clientSub - gstDoc.subtotal) > tolerance) ||
-    (clientTax !== undefined && Math.abs(clientTax - gstDoc.taxTotal) > tolerance) ||
+    (clientSub !== undefined && Math.abs(clientSub - serverSubtotal) > tolerance) ||
+    (clientTax !== undefined && Math.abs(clientTax - serverTax) > tolerance) ||
     (clientGrand !== undefined && Math.abs(clientGrand - serverGrand) > tolerance);
 
   if (mismatch) {
@@ -769,8 +883,8 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
       ok: false,
       reason: 'Client GST totals do not match server recomputation',
       serverTotals: {
-        subtotal: gstDoc.subtotal,
-        taxTotal: gstDoc.taxTotal,
+        subtotal: serverSubtotal,
+        taxTotal: serverTax,
         grandTotal: serverGrand,
       },
       clientTotals: {
@@ -786,11 +900,11 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
     serverTotals: {
       purchase: {},
       grandTotal: serverGrand,
-      subtotal: gstDoc.subtotal,
-      taxTotal: gstDoc.taxTotal,
-      cgstTotal: gstDoc.cgstTotal,
-      sgstTotal: gstDoc.sgstTotal,
-      igstTotal: gstDoc.igstTotal,
+      subtotal: serverSubtotal,
+      taxTotal: serverTax,
+      cgstTotal: gstDoc.cgstTotal + chargeCgst,
+      sgstTotal: gstDoc.sgstTotal + chargeSgst,
+      igstTotal: gstDoc.igstTotal + chargeIgst,
     },
   };
 }

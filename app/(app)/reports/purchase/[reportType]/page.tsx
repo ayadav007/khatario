@@ -30,7 +30,7 @@ const REPORT_SUBTITLES: Record<string, string> = {
   'summary': 'Bills less purchase returns, by period. Purchases exclude GST.',
   'invoice-wise': 'Every bill in the period with its status. Totals cover posted bills only.',
   'supplier-wise': 'Purchases per supplier, net of purchase returns. Purchases exclude GST.',
-  'item-wise': 'Quantity and value billed less returns. Amounts exclude GST.',
+  'item-wise': 'Goods and catalogue lines, less returns. Amounts exclude GST. Incidental freight is shown separately and is not inside the item amounts.',
   'returns': 'Active purchase returns (debit notes) by return date.',
   'credit': 'Posted bills in the period that still have a balance to pay.',
   'tax-wise': 'Taxable value and input GST by rate and HSN, net of purchase returns.',
@@ -270,16 +270,19 @@ export default function PurchaseReportPage() {
   };
 
   const renderItemWiseReport = () => {
-    if (!data.items || data.items.length === 0) return <div>No data available</div>;
-    const t = data.totals;
+    const freight = data.charges?.incidental_freight;
+    const services = data.charges?.independent_services;
+    if ((!data.items || data.items.length === 0) && !freight && !services) return <div>No data available</div>;
+    const t = data.totals || {};
     return (
       <div className="space-y-4">
+        <p className="text-sm text-text-secondary">{data.charges?.note}</p>
         <SummaryCards
           cards={[
             { label: 'Quantity Purchased (net)', value: qty(t.quantity), sub: t.quantity_returned ? `${qty(t.quantity_returned)} returned` : undefined },
-            { label: 'Amount (excl. tax)', value: inr(t.amount) },
-            { label: 'Input Tax', value: inr(t.tax) },
-            { label: 'Discount Received', value: inr(t.discount) },
+            { label: 'Goods amount (excl. tax)', value: inr(t.amount) },
+            { label: 'Incidental freight (net, excl. tax)', value: inr(freight?.net_taxable || 0), sub: freight?.refunded_taxable ? `${inr(freight.refunded_taxable)} refunded` : undefined },
+            { label: 'Independent services (excl. tax)', value: inr(services?.taxable || 0) },
           ]}
         />
         <ReportTable
@@ -295,7 +298,7 @@ export default function PurchaseReportPage() {
             { label: 'Tax', right: true },
             { label: 'Amount with Tax', right: true },
           ]}
-          rows={data.items.map((item: any) => [
+          rows={(data.items || []).map((item: any) => [
             item.item_name,
             item.hsn_sac || '-',
             qty(item.quantity_purchased),

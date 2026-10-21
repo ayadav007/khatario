@@ -41,6 +41,7 @@ const BIZ = '22222222-2222-4222-8222-222222222222';
 function post(body: Record<string, unknown>, headers: Record<string, string> = {
   'x-authenticated-user-id': USER,
   'x-authenticated-business-id': BIZ,
+  'x-authenticated-session-version': '1',
 }) {
   return POST(
     new NextRequest('http://localhost/api/items', {
@@ -52,6 +53,10 @@ function post(body: Record<string, unknown>, headers: Record<string, string> = {
 }
 
 beforeEach(() => {
+  const { queryOne } = jest.requireMock('@/lib/db') as { queryOne: jest.Mock };
+  queryOne.mockImplementation(async (sql: string) =>
+    String(sql).includes('auth_session_version') ? { auth_session_version: '1' } : null,
+  );
   mockAuthorize.mockReset().mockResolvedValue(undefined);
   mockBoundary.mockReset().mockResolvedValue({ allowed: true });
 });
@@ -59,14 +64,13 @@ beforeEach(() => {
 it('authorizes the session user and ignores created_by in the body', async () => {
   const res = await post({ name: 'Rice', created_by: ADMIN, item_type: 'goods', selling_price: 10 });
   expect(res.status).toBe(201);
-  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create');
+  expect(mockAuthorize).toHaveBeenCalledWith(USER, 'items', 'create', { businessId: BIZ });
   expect(mockAuthorize).not.toHaveBeenCalledWith(ADMIN, expect.anything(), expect.anything());
   expect(mockBoundary).toHaveBeenCalledWith(USER, 'portal');
 });
 
-it('does not accept a body created_by when there is no session user', async () => {
+it('rejects a request with no session user, even with created_by in the body', async () => {
   const res = await post({ name: 'Rice', created_by: ADMIN }, { 'x-authenticated-business-id': BIZ });
-  expect(res.status).toBe(400);
-  expect((await res.json()).error).toBe('created_by (user_id) is required for authorization');
+  expect(res.status).toBe(401);
   expect(mockAuthorize).not.toHaveBeenCalled();
 });

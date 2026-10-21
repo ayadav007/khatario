@@ -19,6 +19,7 @@ export default defineConfig({
   reporter: 'html',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+    serviceWorkers: 'block',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 15000,
@@ -28,7 +29,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chromium',
-      testIgnore: [/auth\.setup\.ts/, /mobile-audit\.spec\.ts/],
+      testIgnore: [/auth\.setup\.ts/, /mobile-audit\.spec\.ts/, /phase3q-staging-browser\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
     {

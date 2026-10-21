@@ -132,7 +132,9 @@ export function replayItem(movements: Movement[], fallbackRate: number): ItemRep
     const qty = Number(m.qty) || 0;
 
     if (m.kind === 'value_adjustment') {
-      const open = lots.filter((l) => l.remaining > EPS);
+      const open = lots.filter(
+        (l) => l.remaining > EPS && (!m.linkedDocId || (l.kind === 'purchase' && l.docId === m.linkedDocId))
+      );
       const openQty = open.reduce((s, l) => s + l.remaining, 0);
       const value = Number(m.value) || 0;
       if (openQty > EPS && value !== 0) {

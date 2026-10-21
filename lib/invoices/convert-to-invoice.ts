@@ -5,6 +5,7 @@ import {
   type CreateInvoiceResult,
 } from '@/lib/invoices/invoice-create-service';
 import type { InvoiceChannel } from '@/lib/invoices/channel';
+import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 
 export type SourceLine = {
   item_id?: string | null;
@@ -45,6 +46,7 @@ export async function convertLinesToInvoice(
     lines: SourceLine[];
     channel?: InvoiceChannel;
     salesOrderId?: string | null;
+    charges?: InvoiceChargeInput[];
   }
 ): Promise<CreateInvoiceResult> {
   const items: CreateInvoiceItemInput[] = p.lines.map((l) => ({
@@ -75,5 +77,6 @@ export async function convertLinesToInvoice(
     notes: p.notes || null,
     channel: p.channel,
     sales_order_id: p.salesOrderId ?? null,
+    charges: p.charges,
   });
 }

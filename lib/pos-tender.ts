@@ -9,6 +9,7 @@ export type PosTenderPayment = {
   date?: string;
   reference?: string;
   id?: string;
+  settlementAccountId?: string | null;
 };
 
 function round2(n: number): number {

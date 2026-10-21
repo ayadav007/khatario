@@ -6,6 +6,7 @@ import {
   requireTenantBusinessId,
 } from '@/lib/auth-helpers';
 import { hasTableColumn } from '@/lib/schema-columns';
+import { storedChargeFields } from '@/lib/invoices/invoice-charges';
 import {
   isSalesOrderEditable,
   isSalesOrderEditableStatus,
@@ -223,13 +224,16 @@ export async function PUT(
          grand_total = $10,
          additional_charges = $11,
          additional_charges_label = $12,
-         shipping_address = $13,
-         billing_address = $14,
-         place_of_supply_state_code = $15,
-         notes = $16,
-         terms = $17,
+         charge_classification = $13,
+         charge_hsn_sac = $14,
+         charge_tax_rate = $15,
+         shipping_address = $16,
+         billing_address = $17,
+         place_of_supply_state_code = $18,
+         notes = $19,
+         terms = $20,
          updated_at = CURRENT_TIMESTAMP
-       WHERE id = $18 AND business_id = $19
+       WHERE id = $21 AND business_id = $22
        RETURNING *`,
       [
         customer_id,
@@ -244,6 +248,9 @@ export async function PUT(
         grand_total,
         additional_charges,
         additional_charges_label || null,
+        storedChargeFields(body).classification,
+        storedChargeFields(body).hsnSac,
+        storedChargeFields(body).taxRate,
         shipping_address || null,
         billing_address || null,
         place_of_supply_state_code || null,

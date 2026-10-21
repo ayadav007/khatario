@@ -14,6 +14,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { ConnectBuyerDialog } from '@/components/suppliers/hub/ConnectBuyerDialog';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { clsx } from 'clsx';
 
@@ -59,6 +60,7 @@ export default function SuppliersDirectorySettingsPage() {
     []
   );
   const [adding, setAdding] = useState(false);
+  const [connectRequestId, setConnectRequestId] = useState<string | null>(null);
 
   const { status: authStatus } = useAuthorizationGuard({
     resource: 'settings',
@@ -331,7 +333,7 @@ export default function SuppliersDirectorySettingsPage() {
                         ) : null}
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="primary" onClick={() => resolveRequest(r.id, 'accept')}>
+                        <Button size="sm" variant="primary" onClick={() => setConnectRequestId(r.id)}>
                           Accept
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => resolveRequest(r.id, 'decline')}>
@@ -426,6 +428,17 @@ export default function SuppliersDirectorySettingsPage() {
             </Button>
           </SettingsFloatingSaveBar>
         </>
+      )}
+      {connectRequestId && (
+        <ConnectBuyerDialog
+          requestId={connectRequestId}
+          onClose={() => setConnectRequestId(null)}
+          onConnected={(name) => {
+            toast.success(`Connected with ${name}.`);
+            setConnectRequestId(null);
+            load();
+          }}
+        />
       )}
     </SettingsPageShell>
   );

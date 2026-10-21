@@ -8,6 +8,7 @@ import { type ReportContext, reportParams as params, r2, num, sumKeys } from '@/
  * both by document date. "Purchases" excludes GST and is the bill's taxable value (subtotal, which is
  * what the ledger debits to stock / purchase accounts); "with tax" is the document total. This matches
  * Zoho's Purchases by Vendor / Item and reconciles to the P&L.
+ * Item-wise amounts stay on the goods lines. Incidental freight is returned separately and counted once.
  */
 
 const POSTED_BILL = (a: string) => `
@@ -166,9 +167,54 @@ export async function purchasesByItem(ctx: ReportContext) {
     };
   });
 
+  const chargeRows = await queryRows<any>(
+    `SELECT pc.classification,
+            COALESCE(SUM(pc.taxable_value), 0) AS taxable,
+            COALESCE(SUM(pc.tax_amount), 0) AS tax
+       FROM purchase_charges pc
+       JOIN purchases p ON p.id = pc.purchase_id
+      WHERE ${POSTED_BILL('p')}
+      GROUP BY pc.classification`,
+    params(ctx)
+  );
+  const refundRows = await queryRows<any>(
+    `SELECT COALESCE(SUM(GREATEST(pr.subtotal - COALESCE(items.taxable_value, 0), 0)), 0) AS taxable,
+            COALESCE(SUM(GREATEST(COALESCE(pr.tax_total, 0) - COALESCE(items.tax_amount, 0), 0)), 0) AS tax
+       FROM purchase_returns pr
+       LEFT JOIN LATERAL (
+         SELECT SUM(taxable_value) AS taxable_value, SUM(tax_amount) AS tax_amount
+           FROM purchase_return_items WHERE return_id = pr.id
+       ) items ON true
+      WHERE ${ACTIVE_RETURN('pr')}`,
+    params(ctx)
+  );
+  const byClass = new Map(chargeRows.map((row) => [row.classification, row]));
+  const incidental = byClass.get('incidental_to_goods');
+  const independent = byClass.get('independent_service');
+  const refundedTaxable = r2(num(refundRows[0]?.taxable));
+  const refundedTax = r2(num(refundRows[0]?.tax));
+  const incidentalTaxable = r2(num(incidental?.taxable));
+  const incidentalTax = r2(num(incidental?.tax));
+
   return {
     items,
     totals: sumKeys(items, ['quantity_purchased', 'quantity_returned', 'quantity', 'amount', 'tax', 'amount_with_tax', 'discount'] as const),
+    charges: {
+      contract: 'goods_lines',
+      note: 'Item amounts are goods and catalogue lines. Incidental freight and independent services are listed once below and are not inside the item amounts.',
+      incidental_freight: {
+        taxable: incidentalTaxable,
+        tax: incidentalTax,
+        refunded_taxable: refundedTaxable,
+        refunded_tax: refundedTax,
+        net_taxable: r2(incidentalTaxable - refundedTaxable),
+        net_tax: r2(incidentalTax - refundedTax),
+      },
+      independent_services: {
+        taxable: r2(num(independent?.taxable)),
+        tax: r2(num(independent?.tax)),
+      },
+    },
   };
 }
 

@@ -491,12 +491,12 @@
         <span>- ₹{{invoice.discount_total}}</span>
       </div>
       {{/if}}{{/ifSetting}}
-      {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}
+      {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}
       <div class="summary-row">
         <span>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</span>
         <span>₹{{invoice.additional_charges}}</span>
       </div>
-      {{/if}}{{/ifSetting}}
+      {{/if}}{{/unless}}{{/ifSetting}}
       {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}
       <div class="summary-row">
         <span>Round Off</span>

@@ -185,6 +185,23 @@ export const marketingConfig: Config = {
       };
       return (
         <MarketingEditingProvider editing={Boolean(puck?.isEditing)}>
+          {puck?.isEditing ? (
+            <style>{`
+              [data-puck-overlay][class*="isSelected"] [class*="DraggableComponent-actionsOverlay"] {
+                position: fixed !important;
+                top: 8px !important;
+                right: 12px !important;
+                left: auto !important;
+                bottom: auto !important;
+                z-index: 30;
+              }
+              [data-puck-overlay][class*="isSelected"] [class*="DraggableComponent-actions"] {
+                position: relative !important;
+                top: 0 !important;
+                right: 0 !important;
+              }
+            `}</style>
+          ) : null}
           <div className="mb-page" style={brandStyle(brandColor, headingFont)}>
             {children}
           </div>

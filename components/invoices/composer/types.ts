@@ -9,11 +9,19 @@ export type ComposerPayment = {
   id: string;
   amount: number;
   mode: string;
+  settlementAccountId?: string;
   date: string;
   reference: string;
 };
 
-export type ComposerCharge = { id: string; purpose: string; amount: number };
+export type ComposerCharge = {
+  id: string;
+  purpose: string;
+  amount: number;
+  classification?: '' | 'follows_goods' | 'separate_supply';
+  hsnSac?: string;
+  taxPercent?: number;
+};
 
 export type ComposerAttachment = { id: string; name: string; url: string; size?: number };
 

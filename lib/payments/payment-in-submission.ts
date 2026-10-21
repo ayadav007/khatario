@@ -21,6 +21,7 @@ export interface PaymentInRequestBody {
   reference_id: string | null;
   amount: number;
   payment_mode: string;
+  settlement_account_id?: string | null;
   payment_date: string;
   notes: string | null;
   tds_amount: number;
@@ -39,6 +40,7 @@ export function paymentInFingerprint(body: PaymentInRequestBody): string {
     body.tds_amount,
     body.tds_section,
     body.payment_mode,
+    body.settlement_account_id ?? null,
     body.payment_date,
     body.notes,
   ]);

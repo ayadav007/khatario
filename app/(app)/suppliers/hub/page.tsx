@@ -26,6 +26,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { HubInboxCard } from '@/components/suppliers/hub/HubInboxCard';
 import { NewOrderSheet } from '@/components/suppliers/hub/NewOrderSheet';
 import { BuyerInsightsCard } from '@/components/suppliers/hub/BuyerInsightsCard';
+import { ConnectBuyerDialog } from '@/components/suppliers/hub/ConnectBuyerDialog';
 import type { HubHome, InboxItem } from '@/lib/supplier-hub-home';
 
 type HomeResponse = Omit<HubHome, 'buying' | 'selling'> & {
@@ -120,6 +121,7 @@ export default function SupplierHubHomePage() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [side, setSide] = useState<Side>('buying');
   const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const [connectRequestId, setConnectRequestId] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
@@ -170,6 +172,10 @@ export default function SupplierHubHomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: a.orderAction, lines: [] }),
         });
+      } else if (a.kind === 'request' && choice === 'accept') {
+        setConnectRequestId(a.requestId);
+        setBusyKey(null);
+        return;
       } else if (a.kind === 'request' && choice) {
         res = await fetch(`/api/suppliers/hub/connection-requests/${a.requestId}`, {
           method: 'PATCH',
@@ -355,6 +361,20 @@ export default function SupplierHubHomePage() {
       )}
 
       {b && <NewOrderSheet open={newOrderOpen} onClose={() => setNewOrderOpen(false)} partners={b.partners} />}
+      {connectRequestId && (
+        <ConnectBuyerDialog
+          requestId={connectRequestId}
+          onClose={() => setConnectRequestId(null)}
+          onConnected={(name) => {
+            toast.success(`Connected with ${name}.`);
+            setHome((h) =>
+              h ? { ...h, inbox: h.inbox.filter((i) => i.key !== `request-${connectRequestId}`) } : h
+            );
+            setConnectRequestId(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

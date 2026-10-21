@@ -98,8 +98,10 @@ export function aggregateTable8AFromPortal(rows: Gstr2bTable8ARow[], financialYe
 }
 
 /**
- * Portal GSTR-2B where imported (latest import per period); months with no import fall back to
- * the purchase register for registered, non-RCM, non-import bills and are flagged in warnings.
+ * Portal GSTR-2B where imported (latest import per period). Months with no import add an
+ * internal books estimate: purchase-item tax, plus each purchase_charges row once, minus the
+ * purchase-return header once. The return header already includes refunded freight, so charge
+ * rows are not subtracted again. This estimate is not the portal Table 8A value.
  */
 export async function computeTable8A(
   client: PoolClient,
@@ -154,6 +156,16 @@ export async function computeTable8A(
           AND to_char(p.bill_date, 'YYYY-MM') = ANY($4::text[])`,
       [businessId, from, to, booksPeriods]
     );
+    const charges = await client.query(
+      `SELECT COALESCE(SUM(pc.taxable_value), 0) AS taxable, COALESCE(SUM(pc.igst_amount), 0) AS igst,
+              COALESCE(SUM(pc.cgst_amount), 0) AS cgst, COALESCE(SUM(pc.sgst_amount), 0) AS sgst
+         FROM purchase_charges pc
+         JOIN purchases p ON p.id = pc.purchase_id
+        WHERE ${regularInward}
+          AND p.bill_date BETWEEN $2 AND $3
+          AND to_char(p.bill_date, 'YYYY-MM') = ANY($4::text[])`,
+      [businessId, from, to, booksPeriods]
+    );
     const returns = await client.query(
       `SELECT COALESCE(SUM(pr.subtotal), 0) AS taxable, COALESCE(SUM(pr.igst_total), 0) AS igst,
               COALESCE(SUM(pr.cgst_total), 0) AS cgst, COALESCE(SUM(pr.sgst_total), 0) AS sgst
@@ -167,17 +179,19 @@ export async function computeTable8A(
       [businessId, from, to, booksPeriods]
     );
     const b = bills.rows[0] || {};
+    const ch = charges.rows[0] || {};
     const r = returns.rows[0] || {};
     A = {
-      taxable_value: round2(A.taxable_value + num(b.taxable) - num(r.taxable)),
-      igst: round2(A.igst + num(b.igst) - num(r.igst)),
-      cgst: round2(A.cgst + num(b.cgst) - num(r.cgst)),
-      sgst: round2(A.sgst + num(b.sgst) - num(r.sgst)),
+      taxable_value: round2(A.taxable_value + num(b.taxable) + num(ch.taxable) - num(r.taxable)),
+      igst: round2(A.igst + num(b.igst) + num(ch.igst) - num(r.igst)),
+      cgst: round2(A.cgst + num(b.cgst) + num(ch.cgst) - num(r.cgst)),
+      sgst: round2(A.sgst + num(b.sgst) + num(ch.sgst) - num(r.sgst)),
       cess: round2(A.cess + num(b.cess)),
     };
     warnings.push(
-      `Table 8A: no GSTR-2B imported for ${booksPeriods.join(', ')}. Those months are estimated from the purchase register ` +
-        `(registered suppliers, excluding reverse charge and imports). Import the portal GSTR-2B for the exact Table 8A.`
+      `Table 8A: no GSTR-2B imported for ${booksPeriods.join(', ')}. Those months are an internal books estimate ` +
+        `(purchase items + purchase charges once − purchase-return headers once; registered suppliers, excluding reverse charge and imports). ` +
+        `This is not the authoritative portal Table 8A. Import the portal GSTR-2B before using the figure.`
     );
   }
 

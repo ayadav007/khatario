@@ -242,6 +242,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       description: translatePrintedItemName(documentLanguage, item.description || ''),
       hsn_sac: item.hsn_sac || '',
       quantity: qty,
+      charge_line: item.charge_line === true,
       unit: item.unit || 'PCS',
       unit_price: price.toFixed(2),
       discount_percent: discountPercent,
@@ -289,7 +290,10 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   const balanceDue = openingBalance + invoiceGrandTotal;
 
   // Calculate total quantity and unit for display
-  const totalQuantity = processedItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
+  const totalQuantity = processedItems.reduce(
+    (sum: number, item: any) => sum + (item.charge_line ? 0 : Number(item.quantity || 0)),
+    0
+  );
   const primaryUnit = processedItems.length > 0 ? processedItems[0].unit || 'Nos' : 'Nos';
 
   // Calculate tax breakdown grouped by HSN/SAC
@@ -361,6 +365,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       sgst_total: Number(invoice.sgst_total || 0).toFixed(2),
       igst_total: Number(invoice.igst_total || 0).toFixed(2),
       additional_charges: Number(invoice.additional_charges || 0).toFixed(2),
+      charges_included: invoice.charges_included === true,
       round_off: Number(invoice.round_off || 0).toFixed(2),
       total_quantity: totalQuantity,
       items_have_prices: processedItems.some((i: any) => Number(i.unit_price) > 0),

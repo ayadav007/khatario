@@ -162,7 +162,8 @@ export async function salesByItem(ctx: SalesReportContext) {
     `WITH lines AS (
        SELECT COALESCE(ii.item_id::text, 'name:' || LOWER(TRIM(ii.item_name))) AS k,
               ii.item_id, ii.item_name AS line_name, ii.hsn_sac, ii.unit, i.id AS invoice_id,
-              COALESCE(ii.quantity, 0) AS qty_in, 0::numeric AS qty_out,
+              CASE WHEN COALESCE(ii.charge_line, false) THEN 0 ELSE COALESCE(ii.quantity, 0) END AS qty_in,
+              0::numeric AS qty_out,
               COALESCE(ii.taxable_value, 0) AS amount, COALESCE(ii.tax_amount, 0) AS tax,
               COALESCE(ii.discount_amount, 0) AS discount
          FROM invoice_items ii

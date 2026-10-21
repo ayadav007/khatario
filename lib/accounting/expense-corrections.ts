@@ -1,7 +1,26 @@
 import type { PoolClient } from 'pg';
 import { round2 } from '@/lib/accounting/voucher-posting';
-import { postExpenseVoucher, ON_ACCOUNT_MODES } from '@/lib/accounting/expense-posting';
+import { postExpenseVoucher, ON_ACCOUNT_MODES, ExpenseValidationError } from '@/lib/accounting/expense-posting';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
+
+export const EXPENSE_EDIT_CONFLICT = 'EXPENSE_EDIT_CONFLICT';
+
+export class ExpenseEditConflictError extends Error {
+  readonly code = EXPENSE_EDIT_CONFLICT;
+  constructor() {
+    super('Another edit to this expense was saved. Reload the latest expense and try again.');
+  }
+}
+
+/** Microsecond text of expenses.updated_at. The edit form sends this string back unchanged. */
+export function expenseVersionSql(expression = 'updated_at'): string {
+  return `to_char(${expression}, 'YYYY-MM-DD HH24:MI:SS.US')`;
+}
+
+export function expenseVersionsMatch(stored: string | null, expected: unknown): boolean {
+  if (expected === null) return stored === null;
+  return typeof expected === 'string' && stored === expected;
+}
 
 export type ExpenseRow = {
   id: string;
@@ -12,6 +31,7 @@ export type ExpenseRow = {
   description: string | null;
   expense_date: string;
   payment_mode: string | null;
+  settlement_account_id?: string | null;
   reference_number: string | null;
   cgst_amount: string | null;
   sgst_amount: string | null;
@@ -24,6 +44,7 @@ export type ExpenseRow = {
   supplier_gstin?: string | null;
   supply_received_on?: string | null;
   supplier_registration_status?: string | null;
+  updated_at?: string | null;
 };
 
 export type ExpenseTax = {
@@ -47,6 +68,35 @@ async function moveSupplier(client: PoolClient, businessId: string, supplierId: 
   );
 }
 
+const CURRENT_EXPENSE_SQL = `SELECT id, business_id, branch_id, category_id, amount::text AS amount, description,
+            to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, settlement_account_id,
+            reference_number, cgst_amount::text AS cgst_amount, sgst_amount::text AS sgst_amount,
+            igst_amount::text AS igst_amount, itc_eligible, is_reverse_charge, tds_section,
+            tds_amount::text AS tds_amount, supplier_id, supplier_gstin,
+            to_char(supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
+            supplier_registration_status,
+            ${expenseVersionSql('updated_at')} AS updated_at
+       FROM expenses
+      WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+      FOR UPDATE`;
+
+/** Expense row first, then supplier rows in id order, so two corrections cannot deadlock. */
+async function lockSuppliersInOrder(
+  client: PoolClient,
+  businessId: string,
+  supplierIds: Array<string | null | undefined>
+) {
+  const ids = [...new Set(supplierIds.filter((id): id is string => !!id))].sort();
+  for (const id of ids) {
+    await client.query(`SELECT id FROM suppliers WHERE id = $1 AND business_id = $2 FOR UPDATE`, [id, businessId]);
+  }
+}
+
+async function lockCurrentExpense(client: PoolClient, businessId: string, expenseId: string): Promise<ExpenseRow | null> {
+  const locked = await client.query<ExpenseRow>(CURRENT_EXPENSE_SQL, [expenseId, businessId]);
+  return locked.rows[0] ?? null;
+}
+
 /**
  * Edit on the caller's transaction: the current expense posting is reversed (dated on the
  * original posting) and the corrected expense is posted under the same voucher, so the
@@ -60,17 +110,21 @@ export async function repostExpense(
     old: ExpenseRow;
     next: ExpenseRow;
     tax: ExpenseTax;
-    expenseAccountId: string | null;
+    expectedUpdatedAt: unknown;
   }
 ): Promise<boolean> {
   const { businessId, old, next, tax } = p;
-  const locked = await client.query(
-    `SELECT 1 FROM expenses WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
-    [old.id, businessId]
-  );
-  if (locked.rows.length === 0) return false;
+  if (!next.category_id) {
+    throw new ExpenseValidationError('Select a category mapped to an active operating expense account.');
+  }
+  const current = await lockCurrentExpense(client, businessId, old.id);
+  if (!current) return false;
+  if (!expenseVersionsMatch(current.updated_at ?? null, p.expectedUpdatedAt)) {
+    throw new ExpenseEditConflictError();
+  }
+  await lockSuppliersInOrder(client, businessId, [current.supplier_id, next.supplier_id]);
 
-  await moveSupplier(client, businessId, old.supplier_id, -supplierDue(old));
+  await moveSupplier(client, businessId, current.supplier_id, -supplierDue(current));
   await reverseVoucherLedgerEntries(client, {
     businessId,
     voucherType: 'expense',
@@ -81,14 +135,14 @@ export async function repostExpense(
   await client.query(
     `UPDATE expenses SET
        category_id = $3, amount = $4, description = $5, expense_date = $6, payment_mode = $7,
-       reference_number = $8, cgst_amount = $9, sgst_amount = $10, igst_amount = $11,
-       itc_eligible = $12, is_reverse_charge = $13, tds_section = $14, tds_amount = $15,
-       supplier_id = $16, supplier_gstin = $17, supply_received_on = $18,
-       supplier_registration_status = $19, updated_at = CURRENT_TIMESTAMP
+       reference_number = $8, settlement_account_id = $9, cgst_amount = $10, sgst_amount = $11, igst_amount = $12,
+       itc_eligible = $13, is_reverse_charge = $14, tds_section = $15, tds_amount = $16,
+       supplier_id = $17, supplier_gstin = $18, supply_received_on = $19,
+       supplier_registration_status = $20, updated_at = clock_timestamp()
      WHERE id = $1 AND business_id = $2`,
     [
       old.id, businessId, next.category_id, next.amount, next.description, next.expense_date, next.payment_mode,
-      next.reference_number, next.cgst_amount, next.sgst_amount, next.igst_amount,
+      next.reference_number, next.settlement_account_id ?? null, next.cgst_amount, next.sgst_amount, next.igst_amount,
       tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount, next.supplier_id,
       next.supplier_gstin ?? null, next.supply_received_on ?? null,
       next.supplier_registration_status ?? 'unknown',
@@ -99,8 +153,9 @@ export async function repostExpense(
     branchId: old.branch_id,
     expenseId: old.id,
     expenseDate: next.expense_date,
-    expenseAccountId: p.expenseAccountId,
+    categoryId: next.category_id,
     paymentMode: next.payment_mode,
+    settlementAccountId: next.settlement_account_id,
     description: next.description,
     reference: next.reference_number,
     amount: Number(next.amount),
@@ -121,6 +176,10 @@ export async function deleteExpenseByReversal(
   client: PoolClient,
   p: { businessId: string; userId: string; old: ExpenseRow; reason: string | null }
 ): Promise<boolean> {
+  const current = await lockCurrentExpense(client, p.businessId, p.old.id);
+  if (!current) return false;
+  await lockSuppliersInOrder(client, p.businessId, [current.supplier_id]);
+  await moveSupplier(client, p.businessId, current.supplier_id, -supplierDue(current));
   const del = await client.query(
     `UPDATE expenses SET deleted_at = CURRENT_TIMESTAMP, deleted_by = $3, delete_reason = $4, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
@@ -128,7 +187,6 @@ export async function deleteExpenseByReversal(
     [p.old.id, p.businessId, p.userId, p.reason ? p.reason.slice(0, 500) : null]
   );
   if (del.rows.length === 0) return false;
-  await moveSupplier(client, p.businessId, p.old.supplier_id, -supplierDue(p.old));
   await reverseVoucherLedgerEntries(client, {
     businessId: p.businessId,
     voucherType: 'expense',

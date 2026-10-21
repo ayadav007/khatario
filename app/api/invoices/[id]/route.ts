@@ -172,6 +172,12 @@ export async function GET(
       : null;
 
     invoice.items = itemsResult.rows.map(({ resolved_unit_cost: _r, ...line }) => line);
+    const chargeRows = await pool.query(
+      `SELECT purpose, amount, classification, hsn_sac, tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount
+         FROM invoice_charges WHERE invoice_id = $1 AND business_id = $2 ORDER BY sort_order`,
+      [invoiceId, businessScope]
+    );
+    invoice.charges = chargeRows.rows;
 
     // Fetch payments for this invoice
     const paymentsResult = await pool.query(

@@ -3,7 +3,7 @@ import { getPool } from '@/lib/db';
 import { getStateCode } from '@/lib/gst-utils';
 import { createDebitNoteLedgerEntries } from '@/lib/ledger-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -35,25 +35,13 @@ async function nextDebitNoteNumber(
  */
 export async function GET(request: NextRequest) {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const userId = session.userId;
 
     try {
-      await authorize(userId, 'debit_notes', 'read');
+      await authorize(userId, 'debit_notes', 'read', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();

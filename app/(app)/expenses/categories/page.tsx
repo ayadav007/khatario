@@ -60,6 +60,7 @@ export default function ExpenseCategoriesPage() {
           user_id: user.id,
           account_type: 'expense',
           is_active: 'true',
+          pl_section: 'operating_expense',
           limit: '500',
           page: '1',
         });
@@ -102,8 +103,8 @@ export default function ExpenseCategoriesPage() {
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!business?.id || !newCategory.name.trim()) {
-      toast.error('Category name is required');
+    if (!business?.id || !newCategory.name.trim() || !newCategory.account_id) {
+      toast.error('Category name and an operating expense account are required');
       return;
     }
 
@@ -116,7 +117,7 @@ export default function ExpenseCategoriesPage() {
           business_id: business.id,
           name: newCategory.name.trim(),
           description: newCategory.description.trim() || null,
-          account_id: newCategory.account_id || null,
+          account_id: newCategory.account_id,
         })
       });
 
@@ -140,6 +141,10 @@ export default function ExpenseCategoriesPage() {
   async function saveCategoryAccount(categoryId: string) {
     if (!business?.id) return;
     const accountId = accountDraftByCategory[categoryId] ?? '';
+    if (!accountId) {
+      toast.error('Choose an operating expense account');
+      return;
+    }
     setSavingAccountFor(categoryId);
     try {
       const res = await fetch(`/api/expense-categories/${categoryId}`, {
@@ -147,7 +152,7 @@ export default function ExpenseCategoriesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           business_id: business.id,
-          account_id: accountId || null,
+          account_id: accountId,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -217,14 +222,15 @@ export default function ExpenseCategoriesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ledger expense account
+                  Operating expense account *
                 </label>
                 <select
+                  required
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   value={newCategory.account_id}
                   onChange={(e) => setNewCategory({ ...newCategory, account_id: e.target.value })}
                 >
-                  <option value="">Default — use business generic expense account</option>
+                  <option value="">Select an operating expense account</option>
                   {expenseAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.account_code} — {a.account_name}
@@ -232,7 +238,7 @@ export default function ExpenseCategoriesPage() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Optional. When set, expenses in this category debit this account in the ledger.
+                  Expenses in this category debit this account. Only operating expense accounts are listed.
                 </p>
               </div>
               <div className="flex justify-end">

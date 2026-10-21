@@ -80,6 +80,9 @@ describe('describeAccountingError: auth and fallbacks', () => {
   });
 
   it('unknown codes fall back to the server message, then the fallback', () => {
+    expect(describeAccountingError(409, { code: 'EXPENSE_EDIT_CONFLICT' }, { context: 'expense' }).message).toContain(
+      'Reload the latest expense'
+    );
     expect(describeAccountingError(500, { error: 'boom' }, { context: 'purchase' }).message).toBe('boom');
     expect(describeAccountingError(500, null, { context: 'purchase', fallback: 'Try again' }).message).toBe('Try again');
   });

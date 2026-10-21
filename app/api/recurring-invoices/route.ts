@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireStrictSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { isRecurringFrequency } from '@/lib/invoices/recurring-schedule';
+import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +15,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
     const { searchParams } = new URL(request.url);
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
@@ -58,17 +57,12 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const userId = session.userId;
+    const business_id = session.businessId;
 
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
-    if (!tenant.ok) {
-      return tenant.response;
-    }
-    const business_id = tenant.businessId;
     const {
       customer_id,
       template_invoice_id,
@@ -125,6 +119,18 @@ export async function POST(request: NextRequest) {
       [customer_id, business_id]
     );
     if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+    const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const ownedItems = await db.queryRows<{ id: string }>(
+        `SELECT id FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      if (ownedItems.length !== new Set(requestedItemIds).size) {
+        return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
+      }
+    }
     if (template_invoice_id) {
       const tpl = await db.queryOne(
         `SELECT id FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
@@ -133,18 +139,27 @@ export async function POST(request: NextRequest) {
       if (!tpl) return NextResponse.json({ error: 'Template invoice not found' }, { status: 404 });
     }
 
+    let charges: InvoiceChargeInput[] = Array.isArray(body.charges) ? body.charges : [];
+    if (charges.length === 0 && template_invoice_id) {
+      charges = await db.queryRows<InvoiceChargeInput>(
+        `SELECT purpose, amount, classification, hsn_sac, tax_rate
+           FROM invoice_charges WHERE invoice_id = $1 AND business_id = $2 ORDER BY sort_order`,
+        [template_invoice_id, business_id]
+      );
+    }
+
     const recurringInvoice = await db.queryOne(`
       INSERT INTO recurring_invoices (
         business_id, customer_id, template_invoice_id, invoice_prefix,
         frequency, interval_value, start_date, end_date, next_run_date,
-        items, notes, terms, created_by, auto_finalize, branch_id
+        items, charges, notes, terms, created_by, auto_finalize, branch_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $9::jsonb, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15)
       RETURNING *
     `, [
       business_id, customer_id, template_invoice_id || null, invoice_prefix || null,
       frequency, interval, start_date, end_date || null,
-      JSON.stringify(items), notes || null, terms || null, userId, auto_finalize === true, branch_id || null,
+      JSON.stringify(items), JSON.stringify(charges), notes || null, terms || null, userId, auto_finalize === true, branch_id || null,
     ]);
 
     return NextResponse.json({ recurringInvoice }, { status: 201 });

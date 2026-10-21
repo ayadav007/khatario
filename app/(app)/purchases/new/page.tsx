@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { NumericBlurField } from '@/components/ui/NumericBlurField';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { Trash2, Loader2, ScanLine, Upload, FileText, CheckCircle2, ChevronRight, X, Search, MoreVertical } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,10 +50,12 @@ import {
   inclusiveLineTotalWithDiscountAmount,
 } from '@/lib/invoice-line-math';
 import {
+  calculatePurchaseLine,
   computePurchaseDocument,
   deriveExclusiveUnitPriceFromInvoiceAnchor,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import { round2, roundRetailQty, roundExclusiveUnitPrice } from '@/lib/numeric-precision';
 import { resolvePurchaseFormLineFromExtractItem } from '@/lib/purchases/map-extracted-line';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY, PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
@@ -199,6 +202,8 @@ export default function NewPurchasePage() {
     itc_eligible: true,
     notes: '',
     paid_amount: 0,
+    payment_mode: 'cash',
+    settlement_account_id: '',
     round_off: 0,
     supplier_gstin: '',
     supplier_state_code: '',
@@ -206,6 +211,16 @@ export default function NewPurchasePage() {
   });
   const [showAdvancedTax, setShowAdvancedTax] = useState(false);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
+  const [purchaseCharges, setPurchaseCharges] = useState<
+    {
+      id: string;
+      purpose: string;
+      amount: string;
+      tax_rate: number;
+      hsn_sac: string;
+      classification: '' | 'incidental_to_goods' | 'independent_service';
+    }[]
+  >([]);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [showUploader, setShowUploader] = useState(false);
   /** Bill the desktop form was last filled from (drives the "Filled from" banner). */
@@ -408,6 +423,31 @@ export default function NewPurchasePage() {
           tax_rate: Number(item.tax_rate) || 0,
           fromBillExtract: false,
         }))
+      );
+      setPurchaseCharges(
+        (purchase.charges || []).map(
+          (
+            charge: {
+              id?: string;
+              purpose?: string;
+              taxable_value?: number;
+              tax_rate?: number;
+              hsn_sac?: string;
+              classification?: string;
+            },
+            index: number
+          ) => ({
+            id: charge.id || `charge-${index}`,
+            purpose: charge.purpose || '',
+            amount: String(Number(charge.taxable_value) || 0),
+            tax_rate: Number(charge.tax_rate) || 0,
+            hsn_sac: charge.hsn_sac || '',
+            classification:
+              charge.classification === 'incidental_to_goods' || charge.classification === 'independent_service'
+                ? charge.classification
+                : '',
+          })
+        )
       );
     })();
     return () => {
@@ -1186,9 +1226,23 @@ export default function NewPurchasePage() {
     business,
   ]);
 
+  const chargeLines = useMemo(() => {
+    const intra = purchaseGstDoc?.intraState !== false;
+    return purchaseCharges.map((charge) => {
+      const amount = Math.max(0, Number(charge.amount) || 0);
+      const computed = calculatePurchaseLine(
+        { quantity: 1, unitPrice: amount, discountPercent: 0, discountAmount: 0, gstRate: charge.tax_rate, taxMode: 'exclusive' },
+        intra
+      );
+      return { ...charge, amount, taxable: computed.taxableValue, tax: computed.taxAmount, cgst: computed.cgstAmount, sgst: computed.sgstAmount, igst: computed.igstAmount };
+    });
+  }, [purchaseCharges, purchaseGstDoc?.intraState]);
+
   const totals = useMemo(() => {
     const ro = Number(formData.round_off) || 0;
     const cessTotal = purchaseCessTotal(purchaseItems);
+    const chargeTaxable = round2(chargeLines.reduce((sum, charge) => sum + charge.taxable, 0));
+    const chargeTax = round2(chargeLines.reduce((sum, charge) => sum + charge.tax, 0));
     const d = purchaseGstDoc;
     if (!d) {
       return {
@@ -1198,7 +1252,9 @@ export default function NewPurchasePage() {
         sgstTotal: 0,
         igstTotal: 0,
         cessTotal,
-        grandTotal: ro + cessTotal,
+        chargeTaxable,
+        chargeTax,
+        grandTotal: ro + cessTotal + chargeTaxable + chargeTax,
         intraState: true,
         slabSummary: [] as { gst_rate: number; taxable_value: number; cgst: number; sgst: number; igst: number; total_tax: number }[],
       };
@@ -1210,11 +1266,13 @@ export default function NewPurchasePage() {
       sgstTotal: d.sgstTotal,
       igstTotal: d.igstTotal,
       cessTotal,
-      grandTotal: d.grandTotalLines + cessTotal + ro,
+      chargeTaxable,
+      chargeTax,
+      grandTotal: d.grandTotalLines + cessTotal + ro + chargeTaxable + chargeTax,
       intraState: d.intraState,
       slabSummary: d.slabSummary,
     };
-  }, [purchaseGstDoc, purchaseItems, formData.round_off]);
+  }, [purchaseGstDoc, purchaseItems, formData.round_off, chargeLines]);
 
   const invoiceFillTracePanel =
     lastInvoiceFillTrace ? (
@@ -1297,6 +1355,10 @@ export default function NewPurchasePage() {
     if (!business) return;
     if (purchaseItems.length === 0) {
       toast.warning('Please add at least one item');
+      return;
+    }
+    if (chargeLines.some((charge) => charge.amount > 0 && !charge.classification)) {
+      toast.warning('Choose whether each charge is incidental to the goods or an independent service');
       return;
     }
 
@@ -1383,8 +1445,17 @@ export default function NewPurchasePage() {
           }
           return payloadItem;
         }),
-        subtotal: totals.subtotal,
-        tax_total: totals.taxTotal,
+        charges: chargeLines
+          .filter((charge) => charge.amount > 0 && charge.classification)
+          .map((charge) => ({
+            purpose: charge.purpose.trim() || (charge.classification === 'incidental_to_goods' ? 'Freight' : 'Service'),
+            amount: charge.amount,
+            classification: charge.classification,
+            tax_rate: charge.tax_rate,
+            hsn_sac: charge.hsn_sac.trim() || null,
+          })),
+        subtotal: round2(totals.subtotal + totals.chargeTaxable),
+        tax_total: round2(totals.taxTotal + totals.chargeTax),
         grand_total: totals.grandTotal,
         place_of_supply_state_code: formData.place_of_supply_state_code || business.state_code,
         created_by: user?.id,
@@ -1989,6 +2060,118 @@ export default function NewPurchasePage() {
             </p>
           )}
 
+          <div className="mt-5 space-y-3 border-t border-border pt-5" data-testid="purchase-charges">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Charges</p>
+                <p className="text-xs text-text-secondary">
+                  Goods taxable values stay on the lines. Incidental charges are added to stock cost. Independent services are expensed.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-black/5"
+                onClick={() =>
+                  setPurchaseCharges((prev) => [
+                    ...prev,
+                    { id: `charge-${Date.now()}`, purpose: '', amount: '', tax_rate: 18, hsn_sac: '', classification: '' },
+                  ])
+                }
+              >
+                Add charge
+              </button>
+            </div>
+            {purchaseCharges.map((charge, index) => {
+              const computed = chargeLines[index];
+              return (
+                <div key={charge.id} className="grid gap-2 rounded-lg border border-border p-3 md:grid-cols-[1.2fr_1fr_8rem_8rem_8rem_auto]">
+                  <label className="text-xs text-text-secondary">
+                    Classification
+                    <select
+                      aria-label={`Charge ${index + 1} classification`}
+                      value={charge.classification}
+                      onChange={(e) =>
+                        setPurchaseCharges((prev) =>
+                          prev.map((row) =>
+                            row.id === charge.id
+                              ? { ...row, classification: e.target.value as typeof charge.classification }
+                              : row
+                          )
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-text-primary"
+                    >
+                      <option value="">Choose</option>
+                      <option value="incidental_to_goods">Incidental to goods</option>
+                      <option value="independent_service">Independent service</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-text-secondary">
+                    Purpose
+                    <input
+                      aria-label={`Charge ${index + 1} purpose`}
+                      value={charge.purpose}
+                      onChange={(e) =>
+                        setPurchaseCharges((prev) => prev.map((row) => (row.id === charge.id ? { ...row, purpose: e.target.value } : row)))
+                      }
+                      className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-text-primary"
+                    />
+                  </label>
+                  <label className="text-xs text-text-secondary">
+                    Taxable value
+                    <input
+                      aria-label={`Charge ${index + 1} taxable value`}
+                      inputMode="decimal"
+                      value={charge.amount}
+                      onChange={(e) =>
+                        setPurchaseCharges((prev) => prev.map((row) => (row.id === charge.id ? { ...row, amount: e.target.value } : row)))
+                      }
+                      className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-text-primary"
+                    />
+                  </label>
+                  <label className="text-xs text-text-secondary">
+                    GST %
+                    <select
+                      aria-label={`Charge ${index + 1} GST rate`}
+                      value={charge.tax_rate}
+                      onChange={(e) =>
+                        setPurchaseCharges((prev) =>
+                          prev.map((row) => (row.id === charge.id ? { ...row, tax_rate: Number(e.target.value) } : row))
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-text-primary"
+                    >
+                      {GST_RATE_SLABS.map((rate) => (
+                        <option key={rate} value={rate}>{rate}%</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-text-secondary">
+                    HSN/SAC
+                    <input
+                      aria-label={`Charge ${index + 1} HSN or SAC`}
+                      value={charge.hsn_sac}
+                      onChange={(e) =>
+                        setPurchaseCharges((prev) => prev.map((row) => (row.id === charge.id ? { ...row, hsn_sac: e.target.value } : row)))
+                      }
+                      className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-text-primary"
+                    />
+                  </label>
+                  <div className="flex items-end justify-between gap-2 pb-1 text-sm">
+                    <span className="tabular-nums text-text-secondary">Tax ₹{(computed?.tax || 0).toFixed(2)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove charge ${index + 1}`}
+                      onClick={() => setPurchaseCharges((prev) => prev.filter((row) => row.id !== charge.id))}
+                      className="rounded-md p-2 text-text-secondary hover:bg-black/5"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-5">
             <div className="flex items-center gap-3">
               <span className="text-sm text-text-secondary">Prices are</span>
@@ -2504,11 +2687,32 @@ export default function NewPurchasePage() {
             />
             <div>
               <label className={labelClass}>Paid via</label>
-              <select className={fieldClass} value="cash" disabled title="Payments recorded here go to cash. Record bank or UPI payments after saving.">
+              <select
+                className={fieldClass}
+                value={formData.payment_mode}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, payment_mode: e.target.value, settlement_account_id: '' }))
+                }
+              >
                 <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="neft">NEFT</option>
+                <option value="rtgs">RTGS</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="debit_card">Debit card</option>
+                <option value="credit_card">Credit card</option>
               </select>
-              <p className="mt-1 text-xs text-text-muted">Recorded when you finalize. For bank or UPI, record a payment after saving.</p>
             </div>
+            {formData.paid_amount > 0 ? (
+              <div className="md:col-span-3">
+                <SettlementAccountField
+                  mode={formData.payment_mode}
+                  value={formData.settlement_account_id}
+                  onChange={(settlement_account_id) => setFormData((prev) => ({ ...prev, settlement_account_id }))}
+                />
+              </div>
+            ) : null}
             <div className="md:col-span-3">
               <label className={labelClass}>Internal notes</label>
               <textarea
@@ -2548,17 +2752,23 @@ export default function NewPurchasePage() {
           <dl className="flex flex-wrap items-end gap-x-6 gap-y-2 text-sm">
             <div>
               <dt className="text-xs text-text-secondary">
-                Subtotal · {purchaseItems.length} item{purchaseItems.length === 1 ? '' : 's'}
+                Goods taxable · {purchaseItems.length} item{purchaseItems.length === 1 ? '' : 's'}
               </dt>
               <dd className="font-semibold tabular-nums text-text-primary">₹{totals.subtotal.toFixed(2)}</dd>
             </div>
+            {totals.chargeTaxable > 0.005 && (
+              <div>
+                <dt className="text-xs text-text-secondary">Charges taxable</dt>
+                <dd className="font-semibold tabular-nums text-text-primary">₹{totals.chargeTaxable.toFixed(2)}</dd>
+              </div>
+            )}
             <div>
               <dt className="text-xs text-text-secondary">Discount</dt>
               <dd className="font-semibold tabular-nums text-text-primary">₹{discountTotal.toFixed(2)}</dd>
             </div>
             <div>
               <dt className="text-xs text-text-secondary">{totals.intraState ? 'CGST + SGST' : 'IGST'}</dt>
-              <dd className="font-semibold tabular-nums text-text-primary">₹{totals.taxTotal.toFixed(2)}</dd>
+              <dd className="font-semibold tabular-nums text-text-primary">₹{(totals.taxTotal + totals.chargeTax).toFixed(2)}</dd>
             </div>
             {totals.cessTotal > 0.005 && (
               <div>

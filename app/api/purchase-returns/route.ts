@@ -3,20 +3,20 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { createPurchaseReturnLedgerEntries } from '@/lib/ledger-utils';
+import { nextCostShare } from '@/lib/purchases/acquisition-cost';
+import { landedCostLeavingWithReturn, LandedCostError } from '@/lib/inventory/landed-cost-application';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import {
+  applyIncidentalFreightRefund,
   buildReturnLinesFromBill,
   buildStandaloneReturnLines,
+  incidentalAllocationsFromCharges,
   purchaseReturnLineKey,
   PurchaseReturnValidationError,
 } from '@/lib/purchases/purchase-return-lines';
 import { movePurchaseReturnStock } from '@/lib/purchases/purchase-return-stock';
-import {
-  getBusinessIdFromRequest,
-  getUserIdFromRequest,
-  resolveCreatedByUserId,
-} from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
@@ -26,15 +26,10 @@ import { markGstReadinessStale } from '@/lib/gst/period-freshness';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
@@ -109,21 +104,20 @@ function jsonError(message: string, status: number, code?: string, details?: Rec
  * returned quantity, and value and GST are recomputed on the server from the bill lines.
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
   const body = await request.json().catch(() => null);
   if (!body) return jsonError('Invalid JSON body', 400);
 
-  const business_id = getBusinessIdFromRequest(request, body);
+  const business_id = session.businessId;
+  const createdByUserId = session.userId;
   const { purchase_id, return_number, return_date, original_purchase_date, reason, items, notes } = body;
   const refund_status = body.refund_status || 'pending';
   const refund_mode = body.refund_mode || null;
   const refund_date = body.refund_date || null;
-  const createdByUserId = getUserIdFromRequest(request, body) ?? resolveCreatedByUserId(request, body);
 
-  if (!business_id || !return_number || !return_date || !Array.isArray(items) || items.length === 0) {
-    return jsonError('business_id, return_number, return_date, and items are required', 400);
-  }
-  if (!createdByUserId) {
-    return jsonError('created_by (user_id) is required. Sign in again if this persists.', 400);
+  if (!return_number || !return_date || !Array.isArray(items) || items.length === 0) {
+    return jsonError('return_number, return_date, and items are required', 400);
   }
 
   try {
@@ -134,17 +128,43 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
+  try {
+    await authorize(createdByUserId, 'purchases', 'create', { businessId: business_id });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
+
   const pool = getPool();
+  if (body.supplier_id) {
+    const supplier = await pool.query(
+      `SELECT id FROM suppliers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [body.supplier_id, business_id]
+    );
+    if (supplier.rows.length === 0) return jsonError('Supplier not found', 400, 'SUPPLIER_NOT_FOUND');
+  }
+  if (purchase_id) {
+    const billOwner = await pool.query(
+      `SELECT id FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [purchase_id, business_id]
+    );
+    if (billOwner.rows.length === 0) return jsonError('Original purchase bill not found', 404, 'PURCHASE_NOT_FOUND');
+  }
+  const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+    .map((item) => item.item_id)
+    .filter((id): id is string => !!id);
+  if (requestedItemIds.length > 0) {
+    const ownedItems = await pool.query(
+      `SELECT id FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+      [business_id, requestedItemIds]
+    );
+    if (ownedItems.rows.length !== new Set(requestedItemIds).size) {
+      return jsonError('Item not found', 400, 'ITEM_NOT_FOUND');
+    }
+  }
+
   const client = await pool.connect();
   try {
-    const userRow = await client.query(`SELECT id FROM users WHERE id = $1 AND business_id = $2`, [
-      createdByUserId,
-      business_id,
-    ]);
-    if (userRow.rows.length === 0) {
-      return jsonError('Invalid created_by: user not found for this business.', 400, 'INVALID_CREATED_BY');
-    }
-
     await client.query('BEGIN');
 
     let bill: any = null;
@@ -279,6 +299,134 @@ export async function POST(request: NextRequest) {
       throw e;
     }
     const { lines, totals } = computed;
+    let inventoryRelief: number | undefined;
+    let landedCostRelief = 0;
+    if (bill) {
+      const sourceLines = await client.query<{
+        item_id: string;
+        quantity: string;
+        taxable_value: string;
+        acquisition_cost: string | null;
+        line_item_type: string | null;
+        itc_type: string | null;
+      }>(
+        `SELECT item_id, quantity, taxable_value, acquisition_cost, line_item_type, itc_type
+           FROM purchase_items WHERE purchase_id = $1 FOR UPDATE`,
+        [bill.id]
+      );
+      const priorQty = await client.query<{ item_id: string; qty: string }>(
+        `SELECT pri.item_id, pri.qty
+           FROM purchase_return_items pri
+           JOIN purchase_returns pr ON pr.id = pri.return_id
+          WHERE pr.purchase_id = $1 AND pr.business_id = $2
+            AND COALESCE(pr.status, 'final') <> 'cancelled'
+          ORDER BY pr.created_at, pri.sort_order`,
+        [bill.id, business_id]
+      );
+      const priors = new Map<string, number[]>();
+      for (const row of priorQty.rows) {
+        if (!row.item_id) continue;
+        const list = priors.get(row.item_id) || [];
+        list.push(Number(row.qty) || 0);
+        priors.set(row.item_id, list);
+      }
+      inventoryRelief = 0;
+      for (const line of lines) {
+        if (!line.item_id) continue;
+        const source = sourceLines.rows.find(
+          (row) =>
+            row.item_id === line.item_id &&
+            row.itc_type !== 'capital_goods' &&
+            row.line_item_type !== 'service'
+        );
+        if (!source) continue;
+        const acquisition =
+          source.acquisition_cost != null ? Number(source.acquisition_cost) : Number(source.taxable_value);
+        inventoryRelief += nextCostShare(
+          acquisition,
+          Number(source.quantity) || 0,
+          priors.get(line.item_id) || [],
+          line.qty
+        );
+      }
+      const returnQtyByItem = new Map<string, number>();
+      for (const line of lines) {
+        if (!line.item_id) continue;
+        returnQtyByItem.set(line.item_id, (returnQtyByItem.get(line.item_id) || 0) + line.qty);
+      }
+      for (const [itemId, returnQty] of returnQtyByItem) {
+        const source = sourceLines.rows.find(
+          (row) => row.item_id === itemId && row.itc_type !== 'capital_goods' && row.line_item_type !== 'service'
+        );
+        if (!source) continue;
+        const acquisition =
+          source.acquisition_cost != null ? Number(source.acquisition_cost) : Number(source.taxable_value);
+        const leaving = await landedCostLeavingWithReturn(client, {
+          businessId: business_id,
+          purchaseId: bill.id,
+          itemId,
+          quantity: Number(source.quantity) || 0,
+          acquisitionCost: acquisition,
+          returnQty,
+        });
+        inventoryRelief += leaving.total;
+        landedCostRelief += leaving.linked;
+      }
+      inventoryRelief = Math.round(inventoryRelief * 100) / 100;
+      landedCostRelief = Math.round(landedCostRelief * 100) / 100;
+
+      if (body.refund_incidental_charges === true) {
+        const charges = await client.query<{
+          id: string;
+          taxable_value: string;
+          cgst_amount: string;
+          sgst_amount: string;
+          igst_amount: string;
+          item_id: string;
+          amount: string;
+          quantity: string;
+        }>(
+          `SELECT pc.id, pc.taxable_value, pc.cgst_amount, pc.sgst_amount, pc.igst_amount,
+                  pi.item_id, a.amount, pi.quantity
+             FROM purchase_charges pc
+             JOIN purchase_charge_allocations a ON a.purchase_charge_id = pc.id
+             JOIN purchase_items pi ON pi.id = a.purchase_item_id
+            WHERE pc.purchase_id = $1 AND pc.classification = 'incidental_to_goods'`,
+          [bill.id]
+        );
+        const grouped = new Map<string, {
+          classification: 'incidental_to_goods';
+          taxable_value: string;
+          cgst_amount: string;
+          sgst_amount: string;
+          igst_amount: string;
+          allocations: Array<{ item_id: string; amount: string; quantity: string }>;
+        }>();
+        for (const row of charges.rows) {
+          const charge = grouped.get(row.id) || {
+            classification: 'incidental_to_goods' as const,
+            taxable_value: row.taxable_value,
+            cgst_amount: row.cgst_amount,
+            sgst_amount: row.sgst_amount,
+            igst_amount: row.igst_amount,
+            allocations: [],
+          };
+          charge.allocations.push({ item_id: row.item_id, amount: row.amount, quantity: row.quantity });
+          grouped.set(row.id, charge);
+        }
+        const refunded = applyIncidentalFreightRefund(totals, {
+          allocations: incidentalAllocationsFromCharges([...grouped.values()]),
+          lines,
+          priorQuantities: priors,
+        });
+        totals.subtotal = refunded.subtotal;
+        totals.cgst_total = refunded.cgst_total;
+        totals.sgst_total = refunded.sgst_total;
+        totals.igst_total = refunded.igst_total;
+        totals.tax_total = refunded.tax_total;
+        totals.grand_total = refunded.grand_total;
+      }
+    }
 
     const returnResult = await client.query(
       `INSERT INTO purchase_returns (
@@ -316,7 +464,7 @@ export async function POST(request: NextRequest) {
     );
     const purchaseReturn = returnResult.rows[0];
 
-    let inventoryAmount = 0;
+    let inventoryAmount = inventoryRelief ?? 0;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       await client.query(
@@ -349,7 +497,7 @@ export async function POST(request: NextRequest) {
           l.item_id,
           business_id,
         ]);
-        if ((t.rows[0]?.item_type || 'goods') === 'goods') inventoryAmount += l.taxable_value;
+        if (inventoryRelief == null && (t.rows[0]?.item_type || 'goods') === 'goods') inventoryAmount += l.taxable_value;
         await movePurchaseReturnStock(client, {
           businessId: business_id,
           branchId: stockBranchId,
@@ -386,6 +534,8 @@ export async function POST(request: NextRequest) {
       grandTotal: totals.grand_total,
       supplierId: supplier_id,
       inventoryAmount,
+      inventoryRelief,
+      landedCostRelief,
       branchId: stockBranchId,
       taxableValue: totals.subtotal,
       cgstTotal: totals.cgst_total,
@@ -405,6 +555,9 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Error creating purchase return:', error);
+    if (error instanceof LandedCostError) {
+      return jsonError(error.message, 409, error.code);
+    }
     if (error?.code === '23505') {
       return jsonError('A purchase return with this number already exists', 409, 'DUPLICATE_RETURN_NUMBER');
     }

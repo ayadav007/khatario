@@ -142,6 +142,9 @@ const _webOnly = {
   '/settings/help/how-to',
 };
 
+/// A page with no phone screen and no data to list: it opens on the website inside the app.
+bool isWebsiteOnlyHref(String href) => _webOnly.contains(normalizeHref(href));
+
 const toolLinks = <(String, String)>[
   ('/tools/todo', 'To Do List'),
   ('/tools/hsn-finder', 'HSN/SAC Finder'),

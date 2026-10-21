@@ -133,11 +133,34 @@ export async function PATCH(
         );
       }
 
+      const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+        '@/lib/accounting/settlement-accounts-db'
+      );
+      const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+      let settlementAccountId: string | null = null;
+      try {
+        const resolved = await resolveSettlementForBusiness(
+          inv.business_id,
+          payment_mode || 'cash',
+          readSettlementAccountId(body.settlement_account_id),
+        );
+        settlementAccountId = resolved.accountId;
+      } catch (settlementError) {
+        await client.query('ROLLBACK');
+        if (settlementError instanceof SettlementAccountError) {
+          return NextResponse.json(
+            { error: settlementError.message, code: settlementError.code },
+            { status: settlementError.status },
+          );
+        }
+        throw settlementError;
+      }
+
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, tds_amount, tds_section, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section, settlement_account_id, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
         RETURNING id`,
         [
           inv.business_id,
@@ -152,6 +175,7 @@ export async function PATCH(
           reference ? String(reference) : null,
           tdsAmount,
           tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          settlementAccountId,
           userId,
         ],
       );
@@ -166,6 +190,7 @@ export async function PATCH(
           type: 'receivable',
           customerId: inv.customer_id,
           paymentMode: payment_mode || 'cash',
+          settlementAccountId,
           referenceNumber: inv.invoice_number,
           description: `Payment for invoice ${inv.invoice_number}${reference ? ` - Ref: ${reference}` : ''}`,
           branchId: paymentBranchId,

@@ -4,7 +4,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { Supplier } from '@/types/database';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
@@ -138,8 +138,10 @@ export async function POST(request: NextRequest) {
   console.log('[SupplierAPI] POST /api/suppliers called');
   try {
     const body = await request.json();
-    console.log('[SupplierAPI] Request body:', JSON.stringify(body, null, 0).slice(0, 500));
-    const business_id = getBusinessIdFromRequest(request, body);
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const createdByUserId = session.userId;
     const {
       name,
       phone,
@@ -163,12 +165,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const createdByUserId = resolveCreatedByUserId(request, body);
-    console.log('[SupplierAPI] business_id:', business_id, 'name:', name, 'createdByUserId:', createdByUserId);
+    console.log('[SupplierAPI] business_id:', business_id, 'name:', name);
 
-    if (!business_id || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'business_id and name are required' },
+        { error: 'name is required' },
         { status: 400 }
       );
     }
@@ -180,13 +181,6 @@ export async function POST(request: NextRequest) {
     if (gstinCheck.pan && pan && normalizePan(pan) && normalizePan(pan) !== gstinCheck.pan) {
       return NextResponse.json(
         { error: `PAN ${String(pan).toUpperCase()} does not match the PAN inside GSTIN (${gstinCheck.pan}).`, code: 'PAN_GSTIN_MISMATCH' },
-        { status: 400 }
-      );
-    }
-
-    if (!createdByUserId) {
-      return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
         { status: 400 }
       );
     }

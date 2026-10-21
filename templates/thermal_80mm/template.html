@@ -76,7 +76,7 @@
   <div class="totals">
     {{#ifSetting 'show_subtotal'}}<div class="row"><span>Subtotal</span><span>{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
     {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div class="row"><span>Discount</span><span>-{{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}<div class="row"><span>Add Chg</span><span>+{{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div class="row"><span>Add Chg</span><span>+{{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
     {{#ifSetting 'show_cgst'}}{{#unless invoice.is_igst}}{{#if (gt invoice.cgst_total 0)}}<div class="row"><span>CGST</span><span>{{formatCurrency invoice.cgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
     {{#ifSetting 'show_sgst'}}{{#unless invoice.is_igst}}{{#if (gt invoice.sgst_total 0)}}<div class="row"><span>SGST</span><span>{{formatCurrency invoice.sgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
     {{#ifSetting 'show_igst'}}{{#if invoice.is_igst}}{{#if (gt invoice.igst_total 0)}}<div class="row"><span>IGST</span><span>{{formatCurrency invoice.igst_total}}</span></div>{{/if}}{{/if}}{{/ifSetting}}

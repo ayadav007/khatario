@@ -6,6 +6,7 @@ import {
   getUserIdFromRequest,
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
+  requireStrictSession,
 } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -112,9 +113,10 @@ async function getPaymentTransactionsForOrder(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
 
     const orderIdParam = searchParams.get('order_id');
     if (orderIdParam) {
@@ -148,7 +150,7 @@ export async function GET(request: NextRequest) {
 
       // AUTHORIZATION: payment reconciliation is admin-only (primary admin or settings.read).
       try {
-        await authorize(userId, 'payments', 'read');
+        await authorize(userId, 'payments', 'read', { businessId });
       } catch (error) {
         if (error instanceof AuthorizationError) {
           return error.toNextResponse();
@@ -245,7 +247,7 @@ export async function GET(request: NextRequest) {
 
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'payments', 'read');
+      await authorize(userId, 'payments', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -794,12 +796,35 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+        '@/lib/accounting/settlement-accounts-db'
+      );
+      const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+      let settlementAccountId: string | null = null;
+      try {
+        const resolved = await resolveSettlementForBusiness(
+          business_id,
+          payment_mode || 'cash',
+          readSettlementAccountId(body.settlement_account_id),
+        );
+        settlementAccountId = resolved.accountId;
+      } catch (settlementError) {
+        await client.query('ROLLBACK');
+        if (settlementError instanceof SettlementAccountError) {
+          return NextResponse.json(
+            { error: settlementError.message, code: settlementError.code },
+            { status: settlementError.status },
+          );
+        }
+        throw settlementError;
+      }
+
       // Insert payment
       const paymentRes = await client.query(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, tds_amount, tds_section, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING *`,
         [
           business_id,
@@ -815,6 +840,7 @@ export async function POST(request: NextRequest) {
           notes || null,
           tdsAmount,
           tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          settlementAccountId,
           created_by,
         ],
       );
@@ -990,6 +1016,7 @@ export async function POST(request: NextRequest) {
         customerId: finalCustomerId || null,
         supplierId: finalSupplierId || null,
         paymentMode: payment_mode || 'cash',
+        settlementAccountId,
         referenceNumber: reference_id ? `${reference_type}-${reference_id.substring(0, 8)}` : undefined,
         description: notes || `Payment ${type === 'receivable' ? 'received' : 'made'}${reference_id ? ` for ${reference_type}` : ''}`,
         branchId: finalBranchId,
@@ -1004,6 +1031,9 @@ export async function POST(request: NextRequest) {
       await client.query('COMMIT');
     } catch (txError: any) {
       await client.query('ROLLBACK').catch(() => {});
+      if (txError?.name === 'SettlementAccountError') {
+        return NextResponse.json({ error: txError.message, code: txError.code }, { status: txError.status || 400 });
+      }
       console.error('Error creating payment (transaction rolled back):', txError);
       return NextResponse.json(
         {

@@ -117,11 +117,34 @@ export async function PATCH(
         );
       }
 
+      const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+        '@/lib/accounting/settlement-accounts-db'
+      );
+      const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+      let settlementAccountId: string | null = null;
+      try {
+        const resolved = await resolveSettlementForBusiness(
+          purchase.business_id,
+          payment_mode || 'cash',
+          readSettlementAccountId(body.settlement_account_id),
+        );
+        settlementAccountId = resolved.accountId;
+      } catch (settlementError) {
+        await client.query('ROLLBACK');
+        if (settlementError instanceof SettlementAccountError) {
+          return NextResponse.json(
+            { error: settlementError.message, code: settlementError.code },
+            { status: settlementError.status },
+          );
+        }
+        throw settlementError;
+      }
+
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id`,
         [
           purchase.business_id,
@@ -134,6 +157,7 @@ export async function PATCH(
           payment_mode,
           payment_date || new Date(),
           reference ? String(reference) : null,
+          settlementAccountId,
           userId,
         ],
       );
@@ -148,6 +172,7 @@ export async function PATCH(
           type: 'payable',
           supplierId: purchase.supplier_id,
           paymentMode: payment_mode || 'cash',
+          settlementAccountId,
           referenceNumber: purchase.bill_number || purchaseId.substring(0, 8),
           description: `Payment for purchase ${purchase.bill_number || purchaseId}${reference ? ` - Ref: ${reference}` : ''}`,
           branchId: purchase.branch_id,

@@ -125,7 +125,11 @@ function InvoicesPageContent() {
 
   // In-memory filtering (works offline): search, status, aging, date
   const filteredInvoices = useMemo(() => {
-    let list = allInvoices.filter((i) => i.status !== 'cancelled' && i.document_type !== 'proforma_invoice');
+    let list = allInvoices.filter((i) => {
+      if (i.document_type === 'proforma_invoice') return false;
+      if (statusFilter !== 'cancelled' && i.status === 'cancelled') return false;
+      return true;
+    });
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(

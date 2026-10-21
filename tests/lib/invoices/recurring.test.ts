@@ -1,4 +1,12 @@
+import { spawnSync } from 'child_process';
+import path from 'path';
+import { calendarDateOnly } from '@/lib/closing-stock-period-lock';
 import { dueRunDates, nextRunDate } from '@/lib/invoices/recurring-schedule';
+
+/** Local midnight, which is how node-pg returns a PostgreSQL DATE. */
+function pgDate(year: number, month: number, day: number): Date {
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
 
 describe('nextRunDate', () => {
   it('daily and weekly', () => {
@@ -31,5 +39,51 @@ describe('dueRunDates', () => {
   });
   it('nothing due in the future', () => {
     expect(dueRunDates({ nextRun: '2026-10-01', today: '2026-09-27', frequency: 'monthly' })).toEqual([]);
+  });
+});
+
+describe('recurring calendar dates', () => {
+  it('keeps a node-pg date of 2026-10-19 and the first of a month', () => {
+    expect(calendarDateOnly(pgDate(2026, 10, 19))).toBe('2026-10-19');
+    expect(calendarDateOnly(pgDate(2026, 10, 1))).toBe('2026-10-01');
+    expect(calendarDateOnly('2026-10-19')).toBe('2026-10-19');
+  });
+
+  it('keeps month boundaries, year boundaries, and a leap day', () => {
+    expect(calendarDateOnly(pgDate(2026, 1, 31))).toBe('2026-01-31');
+    expect(calendarDateOnly(pgDate(2026, 3, 1))).toBe('2026-03-01');
+    expect(calendarDateOnly(pgDate(2025, 12, 31))).toBe('2025-12-31');
+    expect(calendarDateOnly(pgDate(2026, 1, 1))).toBe('2026-01-01');
+    expect(calendarDateOnly(pgDate(2024, 2, 29))).toBe('2024-02-29');
+  });
+
+  it('raises a definition due on the business calendar day and advances one month', () => {
+    const start = calendarDateOnly(pgDate(2026, 10, 19));
+    const runs = dueRunDates({
+      nextRun: start!,
+      today: '2026-10-19',
+      frequency: 'monthly',
+      anchorDay: Number(start!.slice(8, 10)),
+    });
+    expect(runs).toEqual(['2026-10-19']);
+    expect(nextRunDate(runs[0], 'monthly', 1, 19)).toBe('2026-11-19');
+    expect(dueRunDates({ nextRun: '2026-11-19', today: '2026-10-19', frequency: 'monthly', anchorDay: 19 })).toEqual([]);
+  });
+
+  it('keeps those dates in UTC and in Asia/Kolkata', () => {
+    for (const tz of ['UTC', 'Asia/Kolkata']) {
+      const result = spawnSync(
+        process.execPath,
+        [
+          path.resolve('node_modules/jest/bin/jest.js'),
+          'tests/lib/invoices/calendar-date-tz.test.ts',
+          '--runInBand',
+          '--forceExit',
+          '--watchman=false',
+        ],
+        { cwd: process.cwd(), env: { ...process.env, TZ: tz }, encoding: 'utf8' },
+      );
+      expect(result.status).toBe(0);
+    }
   });
 });

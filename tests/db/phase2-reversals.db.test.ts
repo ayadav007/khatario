@@ -260,14 +260,24 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
   async function makeExpense(amount: number, date: string): Promise<ExpenseRow> {
     const id = randomUUID();
     return tx(async (c) => {
+      const cat = await c.query<{ id: string }>(
+        `INSERT INTO expense_categories (business_id, name, account_id)
+         SELECT $1, 'Office rent', id FROM accounts
+          WHERE business_id = $1 AND account_code = '5201' AND is_active = true
+         ON CONFLICT (business_id, name) DO UPDATE SET account_id = EXCLUDED.account_id
+         RETURNING id`,
+        [B]
+      );
+      const catId = cat.rows[0].id;
       const row = (
         await c.query<ExpenseRow>(
-          `INSERT INTO expenses (id, business_id, branch_id, amount, description, expense_date, payment_mode, created_by)
-           VALUES ($1, $2, $3, $4, 'Office rent', $5, 'cash', $6)
+          `INSERT INTO expenses (id, business_id, branch_id, category_id, amount, description, expense_date, payment_mode, created_by)
+           VALUES ($1, $2, $3, $4, $5, 'Office rent', $6, 'cash', $7)
            RETURNING id, business_id, branch_id, category_id, amount, description, expense_date::text, payment_mode,
                      reference_number, cgst_amount, sgst_amount, igst_amount, itc_eligible, is_reverse_charge,
-                     tds_section, tds_amount, supplier_id`,
-          [id, B, BR, amount, date, U]
+                     tds_section, tds_amount, supplier_id,
+                     to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at`,
+          [id, B, BR, catId, amount, date, U]
         )
       ).rows[0];
       await postExpenseVoucher(c, {
@@ -275,7 +285,7 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
         branchId: BR,
         expenseId: id,
         expenseDate: date,
-        expenseAccountId: null,
+        categoryId: catId,
         paymentMode: 'cash',
         description: 'Office rent',
         reference: null,
@@ -296,7 +306,8 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
       await pool.query<ExpenseRow & { deleted_at: Date | null }>(
         `SELECT id, business_id, branch_id, category_id, amount, description, expense_date::text, payment_mode,
                 reference_number, cgst_amount, sgst_amount, igst_amount, itc_eligible, is_reverse_charge,
-                tds_section, tds_amount, supplier_id, deleted_at
+                tds_section, tds_amount, supplier_id, deleted_at,
+                to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at
            FROM expenses WHERE id = $1`,
         [id]
       )
@@ -311,7 +322,7 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
         old,
         next: { ...old, amount: String(amount) },
         tax: noTax,
-        expenseAccountId: null,
+        expectedUpdatedAt: old.updated_at ?? null,
       })
     );
 

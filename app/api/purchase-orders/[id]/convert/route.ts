@@ -57,6 +57,16 @@ export async function POST(
         { status: 400 }
       );
     }
+    if (Number(purchaseOrder.additional_charges) > 0.004) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'This purchase order has an unclassified extra charge. Classify it on the bill before converting.',
+          code: 'CHARGE_UNCLASSIFIED',
+        },
+        { status: 400 }
+      );
+    }
     if (purchaseOrder.status === 'cancelled') {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Cancelled purchase orders cannot be converted' }, { status: 400 });

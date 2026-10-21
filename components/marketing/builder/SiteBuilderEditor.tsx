@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Puck, type Data } from '@puckeditor/core';
+import { createUsePuck, Puck, type Data } from '@puckeditor/core';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -54,6 +54,59 @@ type VersionRow = {
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict';
 
 type Conflict = { by: string | null; at: string };
+
+const useBuilderPuck = createUsePuck();
+
+function SelectedBlockActions() {
+  const selected = useBuilderPuck((s) => s.selectedItem);
+  const dispatch = useBuilderPuck((s) => s.dispatch);
+  const getSelectorForId = useBuilderPuck((s) => s.getSelectorForId);
+  const getParentById = useBuilderPuck((s) => s.getParentById);
+  const config = useBuilderPuck((s) => s.config);
+  const getPermissions = useBuilderPuck((s) => s.getPermissions);
+
+  if (!selected) return null;
+  const id = String(selected.props.id ?? '');
+  const label = config.components?.[selected.type]?.label || selected.type;
+  const parent = id ? getParentById(id) : undefined;
+  const parentLabel = parent ? config.components?.[parent.type]?.label || parent.type : '';
+  const canDelete = getPermissions({ item: selected }).delete !== false;
+
+  const selectById = (itemId: string) => {
+    const selector = getSelectorForId(itemId);
+    if (!selector || selector.index < 0) return;
+    dispatch({ type: 'setUi', ui: { itemSelector: selector } });
+  };
+
+  const deleteSelected = () => {
+    const selector = getSelectorForId(id);
+    if (!selector || selector.index < 0) return;
+    dispatch({ type: 'remove', index: selector.index, zone: selector.zone });
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      {parent ? (
+        <button
+          type="button"
+          onClick={() => selectById(String(parent.props.id))}
+          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Select {parentLabel}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={deleteSelected}
+        disabled={!canDelete}
+        className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Delete {label}
+      </button>
+    </span>
+  );
+}
 
 const VIEWPORTS = [
   { width: 390, label: 'Phone', icon: <Smartphone className="h-4 w-4" /> },
@@ -421,6 +474,7 @@ export function SiteBuilderEditor() {
 
   const headerActions = () => (
     <div className="flex flex-wrap items-center gap-2 text-sm">
+      <SelectedBlockActions />
       <span
         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
           saveState === 'error' || saveState === 'conflict'

@@ -314,6 +314,9 @@ export default function NewSalesOrderPage() {
               id: '1',
               purpose: so.additional_charges_label || 'Additional charges',
               amount: Number(so.additional_charges) || 0,
+              classification: so.charge_classification || '',
+              hsnSac: so.charge_hsn_sac || '',
+              taxPercent: so.charge_tax_rate == null ? undefined : Number(so.charge_tax_rate),
             },
           ]);
         }
@@ -576,6 +579,8 @@ export default function NewSalesOrderPage() {
         .map((c) => c.purpose)
         .filter(Boolean)
         .join(', ') || undefined;
+    const classified = extraCharges.filter((c) => Number(c.amount) > 0 && c.classification);
+    const headerCharge = classified.length === 1 ? classified[0] : null;
     return {
       customer_id: customerId,
       order_number: orderNumber,
@@ -606,6 +611,9 @@ export default function NewSalesOrderPage() {
       grand_total: engineTotals.grandTotal,
       additional_charges: additional,
       additional_charges_label: label,
+      charge_classification: headerCharge?.classification || null,
+      charge_hsn_sac: headerCharge?.hsnSac || null,
+      charge_tax_rate: headerCharge?.classification === 'separate_supply' ? headerCharge.taxPercent ?? null : null,
       shipping_address: shippingAddress || null,
       billing_address: billingAddress || null,
       place_of_supply_state_code: getStateCode(placeOfSupply) || null,

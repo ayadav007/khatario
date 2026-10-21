@@ -1059,3 +1059,47 @@ class KInfoCard extends StatelessWidget {
     );
   }
 }
+
+/// The 64-high back arrow + title row at the top of a pushed screen.
+class KBackBar extends StatelessWidget {
+  const KBackBar(this.title, {super.key, this.trailing});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: Row(children: [
+        const SizedBox(width: 4),
+        KIconButton(icon: LucideIcons.arrowLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
+        const SizedBox(width: 4),
+        Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.heading.copyWith(fontSize: 18))),
+        ?trailing,
+        const SizedBox(width: AppSpace.gutter),
+      ]),
+    );
+  }
+}
+
+/// Asks for a short reason (for a reject). Returns the text, '' when left blank, or null when closed.
+Future<String?> showReasonSheet(BuildContext context, {required String title, required String confirmLabel, String hint = 'Reason (optional)'}) {
+  final controller = TextEditingController();
+  return showKSheet<String>(
+    context,
+    title: title,
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(controller: controller, autofocus: true, maxLines: 3, minLines: 1, decoration: InputDecoration(hintText: hint)),
+          const SizedBox(height: AppSpace.md),
+          KButton(label: confirmLabel, kind: KButtonKind.danger, onPressed: () => Navigator.of(ctx).pop(controller.text.trim())),
+        ],
+      ),
+    ),
+  ).whenComplete(controller.dispose);
+}

@@ -12,6 +12,7 @@ import {
   getUserIdFromRequest,
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
+  requireStrictSession,
 } from '@/lib/auth-helpers';
 import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
@@ -38,6 +39,9 @@ import {
   computePurchaseDocument,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
+import { AcquisitionCostError, planAcquisitionCosts } from '@/lib/purchases/acquisition-cost';
+import { savePurchaseAcquisition } from '@/lib/purchases/save-purchase-acquisition';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -52,8 +56,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || 'all';
     const agingDaysMin = searchParams.get('aging_days_min');
@@ -61,23 +67,9 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'purchases', 'read');
+      await authorize(userId, 'purchases', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -707,23 +699,70 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const calculatedSubtotal = gstDoc.subtotal;
-    const calculatedTaxTotal = gstDoc.taxTotal;
-    const calculatedCgstTotal = gstDoc.cgstTotal;
-    const calculatedSgstTotal = gstDoc.sgstTotal;
-    const calculatedIgstTotal = gstDoc.igstTotal;
+    const supplierCreditNote = document_type === 'supplier_credit_note';
+    const perpetual = (await getInventoryModel(client, business_id)) === 'perpetual';
+    let acquisitionPlan;
+    try {
+      acquisitionPlan = planAcquisitionCosts({
+        lines: (items as Array<Record<string, unknown>>).map((item, index) => {
+          const computed = gstDoc.lineComputeds[index];
+          const lineIntent =
+            item.item_type === 'service' ||
+            item.line_item_type === 'service' ||
+            /^99/.test(String(item.hsn_sac ?? '').trim())
+              ? 'service'
+              : 'goods';
+          const capital = purchaseLineItcType(item, lineIntent) === 'capital_goods';
+          return {
+            taxable: computed.taxableValue,
+            tax: computed.taxAmount,
+            cess: purchaseLineCess(item),
+            quantity: Number(item.quantity) || 0,
+            stock: lineIntent === 'goods' && !capital,
+            capital,
+          };
+        }),
+        charges: Array.isArray(body.charges) ? body.charges : [],
+        itcEligible: itc_eligible !== false,
+        capitalize: status === 'final' && perpetual && !supplierCreditNote,
+        intraState: gstDoc.intraState,
+        billDate: bill_date ? String(bill_date).slice(0, 10) : null,
+      });
+    } catch (error) {
+      if (error instanceof AcquisitionCostError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+      }
+      throw error;
+    }
+    if (supplierCreditNote && acquisitionPlan.charges.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'A supplier credit note cannot carry an incidental or independent charge.',
+          code: 'SUPPLIER_CREDIT_NO_CHARGE',
+        },
+        { status: 400 }
+      );
+    }
+
+    const calculatedSubtotal = Math.round((gstDoc.subtotal + acquisitionPlan.subtotal) * 100) / 100;
+    const calculatedTaxTotal = Math.round((gstDoc.taxTotal + acquisitionPlan.tax) * 100) / 100;
+    const calculatedCgstTotal = Math.round((gstDoc.cgstTotal + acquisitionPlan.cgst) * 100) / 100;
+    const calculatedSgstTotal = Math.round((gstDoc.sgstTotal + acquisitionPlan.sgst) * 100) / 100;
+    const calculatedIgstTotal = Math.round((gstDoc.igstTotal + acquisitionPlan.igst) * 100) / 100;
 
     // Use provided totals or calculated ones
-    const finalSubtotal = subtotal !== undefined ? subtotal : calculatedSubtotal;
-    const finalTaxTotal = tax_total !== undefined ? tax_total : calculatedTaxTotal;
+    const chargesPresent = acquisitionPlan.charges.length > 0;
+    const finalSubtotal = !chargesPresent && subtotal !== undefined ? subtotal : calculatedSubtotal;
+    const finalTaxTotal = !chargesPresent && tax_total !== undefined ? tax_total : calculatedTaxTotal;
     const finalCgstTotal = calculatedCgstTotal;
     const finalSgstTotal = calculatedSgstTotal;
     const finalIgstTotal = calculatedIgstTotal;
     const finalRoundOff = typeof round_off === 'number' && isFinite(round_off) ? round_off : 0;
     const cessTotal = purchaseCessTotal(items);
     const computedGrand = calculatedSubtotal + calculatedTaxTotal + cessTotal + finalRoundOff;
-    const finalGrandTotal =
-      grand_total !== undefined ? grand_total : computedGrand;
+    const finalGrandTotal = !chargesPresent && grand_total !== undefined ? grand_total : computedGrand;
 
     // Calculate balance_amount and payment_status
     const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, is_reverse_charge);
@@ -883,6 +922,7 @@ export async function POST(request: NextRequest) {
       item.item_name = name;
     }
 
+    const purchaseItemIds: string[] = [];
     // Insert purchase items with GST breakdown
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -903,7 +943,8 @@ export async function POST(request: NextRequest) {
           ? item.variant_id.trim()
           : null;
 
-      const unitCostForStock = qty > 0 ? taxable / qty : Number(item.unit_price) || 0;
+      const plannedCost = acquisitionPlan.lineCosts[i];
+      const unitCostForStock = qty > 0 ? (plannedCost != null ? plannedCost : taxable) / qty : Number(item.unit_price) || 0;
 
       // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
       const lineIntent =
@@ -914,7 +955,7 @@ export async function POST(request: NextRequest) {
           : 'goods';
 
       // Insert purchase item with GST breakdown
-      await client.query(
+      const insertedItem = await client.query(
         `
         INSERT INTO purchase_items (
           purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
@@ -923,6 +964,7 @@ export async function POST(request: NextRequest) {
           location_id, line_item_type, itc_type, cess_amount
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        RETURNING id
       `,
         [
           purchase.id,
@@ -950,6 +992,7 @@ export async function POST(request: NextRequest) {
           lineCess,
         ],
       );
+      purchaseItemIds.push(insertedItem.rows[0].id);
 
       // Capital goods go to the fixed-asset register, not stock.
       const lineIsService =
@@ -1093,11 +1136,19 @@ export async function POST(request: NextRequest) {
 
     // Inventory is capitalised at this bill's cost (net of discount, excl. GST), matching the
     // unit_cost written to stock_movements — not the item master's purchase_price.
+    await savePurchaseAcquisition(client, {
+      purchaseId: purchase.id,
+      businessId: business_id,
+      lineIds: purchaseItemIds,
+      plan: acquisitionPlan,
+      applyCosts: status === 'final' && perpetual && !supplierCreditNote,
+    });
+
     let totalInventoryAmount = 0;
     if (status === 'final') {
       const invRes = await client.query(
         `
-        SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
+        SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
         FROM purchase_items pi
         JOIN items i ON i.id = pi.item_id AND i.business_id = $2
         WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
@@ -1158,6 +1209,8 @@ export async function POST(request: NextRequest) {
           cessTotal,
           itcEligible: itc_eligible !== false,
           isReverseCharge: !!is_reverse_charge,
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
         });
         if (posted.itcBlockedReason) {
           purchase.itc_eligible = false;
@@ -1185,8 +1238,8 @@ export async function POST(request: NextRequest) {
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
       `,
         [
@@ -1197,9 +1250,10 @@ export async function POST(request: NextRequest) {
           'purchase',
           purchase.id,
           paid_amount,
-          'cash',
+          body.payment_mode || 'cash',
           bill_date,
           `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
+          body.settlement_account_id || null,
           getAuthenticatedUserId(request),
         ]
       );
@@ -1212,7 +1266,8 @@ export async function POST(request: NextRequest) {
           amount: paid_amount,
           type: 'payable',
           supplierId: normalizedSupplierId,
-          paymentMode: 'cash',
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
           referenceNumber: bill_number || purchase.id.substring(0, 8),
           description: `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
           branchId: finalBranchId,

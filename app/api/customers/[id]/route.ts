@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query, queryRows } from '@/lib/db';
 import { Customer, Payment, Invoice } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getBusinessIdFromRequest, getUserIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 
@@ -175,10 +175,13 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
     const customerId = params.id;
+    const userId = session.userId;
+    const businessScope = session.businessId;
     const body = await request.json();
-    const { user_id, updated_by, business_id: _bodyBusinessId, ...raw } = body;
-    const userId = getUserIdFromRequest(request, body) || updated_by;
+    const { user_id: _userId, updated_by: _updatedBy, business_id: _bodyBusinessId, ...raw } = body;
 
     const updateData: Record<string, unknown> = {};
     for (const key of Object.keys(raw)) {
@@ -197,22 +200,7 @@ export async function PUT(
       }
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id or updated_by is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const businessScope = getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    // Get customer first to check business_id (scoped to JWT tenant)
+    // Get customer first to check business_id (scoped to the verified session)
     const existingCustomer = await queryOne<Customer>(
       'SELECT * FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
       [customerId, businessScope]

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { resolveActorContext } from '@/lib/employee-portal/portal-api-guard';
 import { queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -19,12 +19,12 @@ export async function PATCH(
   try {
     const requestId = params.id;
     const body = await request.json();
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = body.updated_by_user_id ?? getUserIdFromRequest(request);
-
-    if (!businessId || !userId) {
+    // Who acts, and for which business, comes only from the verified session — never the body.
+    const actor = await resolveActorContext(request);
+    if (!actor) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+    const { businessId, userId } = actor;
 
     const { action, rejection_reason, hold_reason, comments } = body;
     if (!['approve', 'reject', 'cancel', 'hold'].includes(action)) {
@@ -81,7 +81,7 @@ export async function PATCH(
       'leave',
       settings,
     );
-    if (!allowed && action !== 'reject') {
+    if (!allowed) {
       try {
         await authorize(userId, 'leave_requests', 'update', { businessId });
       } catch (error) {

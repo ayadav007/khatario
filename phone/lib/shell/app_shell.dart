@@ -19,6 +19,7 @@ import '../screens/items/item_detail_screen.dart';
 import '../screens/more/more_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/pages/page_catalog.dart';
+import '../screens/pages/website_page_screen.dart';
 import '../screens/chats/chats_inbox_screen.dart';
 import '../screens/pages/record_page.dart';
 import '../screens/expenses/expense_form_screen.dart';
@@ -227,7 +228,8 @@ class _AppShellState extends State<AppShell> {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: page)));
       return;
     }
-    if (tab == null) return _notBuilt(label);
+    // No phone screen for this link: open the website page inside the app, signed in.
+    if (tab == null) return openWebsiteInApp(context, widget.session, href, label);
     _selectTab(tab);
     setState(() {
       _openedFromMore = true;

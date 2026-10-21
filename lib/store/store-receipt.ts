@@ -218,20 +218,33 @@ async function postStoreInvoiceReceipt(
   const { businessId, invoice, amount, paymentMode } = p;
   const paymentDate = new Date();
   await assertPeriodNotLocked(businessId, invoice.branch_id, paymentDate, 'record a store receipt');
+  let settlementAccountId: string | null = null;
   if (invoice.customer_id) {
     const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode);
     if (!paymentAccount) {
       throw new Error('No ledger account is mapped for the store receipt');
     }
+    settlementAccountId = paymentAccount.id;
   }
 
   const payment = await client.query<{ id: string }>(
     `INSERT INTO payments (
        business_id, branch_id, type, customer_id, reference_type, reference_id,
-       amount, payment_mode, payment_date, notes, created_by
-     ) VALUES ($1,$2,'receivable',$3,'invoice',$4,$5,$6,$7,$8,$9)
+       amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+     ) VALUES ($1,$2,'receivable',$3,'invoice',$4,$5,$6,$7,$8,$9,$10)
      RETURNING id`,
-    [businessId, invoice.branch_id, invoice.customer_id, invoice.id, amount, paymentMode, paymentDate, p.notes, p.createdBy],
+    [
+      businessId,
+      invoice.branch_id,
+      invoice.customer_id,
+      invoice.id,
+      amount,
+      paymentMode,
+      paymentDate,
+      p.notes,
+      settlementAccountId,
+      p.createdBy,
+    ],
   );
   const paymentId = payment.rows[0].id;
   if (invoice.customer_id) {
@@ -243,6 +256,7 @@ async function postStoreInvoiceReceipt(
       type: 'receivable',
       customerId: invoice.customer_id,
       paymentMode,
+      settlementAccountId,
       referenceNumber: invoice.invoice_number,
       description: p.description,
       branchId: invoice.branch_id ?? undefined,

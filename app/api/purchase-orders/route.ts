@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getBusinessIdFromRequest, getAuthenticatedUserId, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import { partiesFromItemOwner, purchaseQtyAllowed } from '@/lib/quantity-request-parties';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
@@ -13,16 +14,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const status = searchParams.get('status');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     const pool = getPool();
     let query = `
@@ -60,6 +56,11 @@ export async function GET(request: NextRequest) {
  * Create a new purchase order
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const business_id = session.businessId;
+  const actorUserId = session.userId;
+
   const pool = getPool();
   const client = await pool.connect();
   
@@ -68,7 +69,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      business_id,
       supplier_id,
       order_number,
       order_date,
@@ -86,28 +86,54 @@ export async function POST(request: NextRequest) {
       place_of_supply_state_code,
       notes,
       terms,
-      created_by,
       status = 'draft',
       request_id,
     } = body;
 
-    if (!business_id || !supplier_id || !order_number || !order_date || !items || items.length === 0) {
+    if (!supplier_id || !order_number || !order_date || !items || items.length === 0) {
       await client.query('ROLLBACK');
-      client.release();
       return NextResponse.json(
-        { error: 'business_id, supplier_id, order_number, order_date, and items are required' },
+        { error: 'supplier_id, order_number, order_date, and items are required' },
         { status: 400 }
       );
     }
 
-    const sessionBusinessId = getBusinessIdFromRequest(request, body);
-    if (sessionBusinessId && String(sessionBusinessId) !== String(business_id)) {
+    try {
+      await authorize(actorUserId, 'purchases', 'create', { businessId: business_id });
+    } catch (error) {
       await client.query('ROLLBACK');
-      client.release();
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
+    const supplier = await client.query(
+      `SELECT id FROM suppliers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [supplier_id, business_id]
+    );
+    if (supplier.rows.length === 0) {
+      await client.query('ROLLBACK');
       return NextResponse.json(
-        { error: 'business_id does not match authenticated session', code: 'TENANT_MISMATCH' },
-        { status: 403 }
+        { error: 'Supplier not found', code: 'SUPPLIER_NOT_FOUND' },
+        { status: 400 }
       );
+    }
+
+    const requestedItemIds = (items as Array<{ item_id?: string | null; itemId?: string | null }>)
+      .map((item) => item.item_id || item.itemId)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const activeItems = await client.query<{ id: string }>(
+        `SELECT id FROM items
+          WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      if (activeItems.rows.length !== new Set(requestedItemIds).size) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Item not found', code: 'ITEM_NOT_FOUND' },
+          { status: 400 }
+        );
+      }
     }
 
     let linkedRequest: {
@@ -127,13 +153,11 @@ export async function POST(request: NextRequest) {
       );
       if (qrRes.rows.length === 0) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json({ error: 'quantity request not found', code: 'REQUEST_NOT_FOUND' }, { status: 400 });
       }
       const qr = qrRes.rows[0];
       if (qr.purchase_order_id) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           { error: 'This quantity request is already linked to a purchase order', code: 'PO_ALREADY_LINKED' },
           { status: 409 }
@@ -147,7 +171,6 @@ export async function POST(request: NextRequest) {
       );
       if (!parties) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           { error: 'Quantity request is not tied to the buyer catalog item', code: 'ITEM_NOT_BUYER' },
           { status: 400 }
@@ -155,7 +178,6 @@ export async function POST(request: NextRequest) {
       }
       if (String(parties.buyerBusinessId) !== String(business_id)) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           { error: 'The purchase order must be created on the buyer’s books' },
           { status: 403 }
@@ -168,7 +190,6 @@ export async function POST(request: NextRequest) {
       );
       if (allowedQty == null) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           {
             error: 'Confirm the quantity before creating a purchase order',
@@ -184,7 +205,6 @@ export async function POST(request: NextRequest) {
       );
       if (supplierOk.rows.length === 0) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           {
             error: 'Supplier must be the linked vendor on this quantity request',
@@ -199,7 +219,6 @@ export async function POST(request: NextRequest) {
         const lid = line.item_id || line.itemId;
         if (!lid || String(lid) !== String(parties.buyerItemId)) {
           await client.query('ROLLBACK');
-          client.release();
           return NextResponse.json(
             {
               error: 'Purchase order lines must use the buyer’s item from this quantity request.',
@@ -212,7 +231,6 @@ export async function POST(request: NextRequest) {
       }
       if (!(lineQty > 0) || lineQty - allowedQty > 1e-6) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           {
             error: 'Purchase order quantity cannot exceed the confirmed quantity',
@@ -224,12 +242,6 @@ export async function POST(request: NextRequest) {
       linkedRequest = parties;
     }
 
-    const actorUserId = getAuthenticatedUserId(request);
-    if (!actorUserId) {
-      await client.query('ROLLBACK');
-      client.release();
-      return NextResponse.json({ error: 'created_by is required' }, { status: 400 });
-    }
     try {
       await enforceAccess({
         businessId: business_id,
@@ -240,7 +252,6 @@ export async function POST(request: NextRequest) {
       });
     } catch (e) {
       await client.query('ROLLBACK');
-      client.release();
       const res = enforceAccessErrorResponse(e);
       if (res) return res;
       throw e;

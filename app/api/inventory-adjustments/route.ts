@@ -11,7 +11,7 @@ import {
 } from '@/lib/inventory-adjustment-service';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getAuthenticatedUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 
 /**
  * GET /api/inventory-adjustments
@@ -203,8 +203,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       adjustment_type,
       item_id,
@@ -221,19 +224,9 @@ export async function POST(request: NextRequest) {
       gst_impact // For value adjustments
     } = body;
 
-    const created_by = getAuthenticatedUserId(request);
-
-    // Validation
-    if (!business_id || !adjustment_type || !item_id || !reason_code || !adjustment_date) {
+    if (!adjustment_type || !item_id || !reason_code || !adjustment_date) {
       return NextResponse.json(
-        { error: 'Missing required fields: business_id, adjustment_type, item_id, reason_code, adjustment_date' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'adjustment_type, item_id, reason_code, and adjustment_date are required' },
         { status: 400 }
       );
     }
@@ -250,12 +243,23 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission (inventory adjustments are part of items module)
     try {
-      await authorize(created_by, 'items', 'create');
+      await authorize(created_by, 'items', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    const ownedItem = await queryOne<{ id: string }>(
+      `SELECT id FROM items WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [item_id, business_id]
+    );
+    if (!ownedItem) {
+      return NextResponse.json(
+        { error: 'Item not found', code: 'ITEM_NOT_FOUND' },
+        { status: 400 }
+      );
     }
 
     // PBAC: Check warehouse access if warehouse mode is enabled and location_id provided

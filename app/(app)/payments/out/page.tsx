@@ -20,6 +20,7 @@ import {
   submitPaymentIn,
   type PaymentSubmissionKeys,
 } from '@/lib/payments/payment-in-submission';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 interface Payment {
   id: string;
@@ -62,6 +63,7 @@ const emptyForm = () => ({
   tds_amount: '',
   tds_section: '194C',
   payment_mode: 'cash',
+  settlement_account_id: '',
   payment_date: new Date().toISOString().split('T')[0],
   notes: '',
 });
@@ -176,6 +178,7 @@ export default function PaymentOutPage() {
           reference_id: formData.purchase_id || null,
           amount: paymentAmount,
           payment_mode: formData.payment_mode,
+      settlement_account_id: formData.settlement_account_id || null,
           payment_date: formData.payment_date,
           notes: formData.notes || null,
           tds_amount: tdsAmount,
@@ -488,17 +491,27 @@ export default function PaymentOutPage() {
                 <select
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={formData.payment_mode}
-                  onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value, settlement_account_id: '' })}
                   required
                 >
                   <option value="cash">Cash</option>
                   <option value="bank">Bank Transfer</option>
                   <option value="upi">UPI</option>
                   <option value="cheque">Cheque</option>
-                  <option value="card">Card</option>
+                  <option value="neft">NEFT</option>
+                  <option value="rtgs">RTGS</option>
+                  <option value="debit_card">Debit card</option>
+                  <option value="credit_card">Credit card</option>
                   <option value="other">Other</option>
                 </select>
               </div>
+
+              <SettlementAccountField
+                  mode={formData.payment_mode}
+                  value={formData.settlement_account_id}
+                  onChange={(settlement_account_id) => setFormData({ ...formData, settlement_account_id })}
+                  disabled={submitting}
+                />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date *</label>

@@ -380,9 +380,11 @@
         {{/if}}
       {{/ifSetting}}
       {{#ifSetting 'show_additional_charges'}}
+        {{#unless invoice.charges_included}}
         {{#if (gt invoice.additional_charges 0)}}
           <div style="margin-bottom: 5px;">Additional Charges: + {{formatCurrency invoice.additional_charges}}</div>
         {{/if}}
+        {{/unless}}
       {{/ifSetting}}
       {{#ifSetting 'show_cgst'}}
         {{#unless invoice.is_igst}}

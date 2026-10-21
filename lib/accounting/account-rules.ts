@@ -120,7 +120,9 @@ export async function replaceOpeningVoucher(
 
 /**
  * Posts a bank account's opening balance (Dr Bank / Cr 3100; a negative amount is
- * an overdraft). Uses the bank's ledger account, else 1102 Bank Account.
+ * an overdraft) to the ledger the caller names. Never falls back to 1102.
+ * The voucher id is the bank register row, which is how older opening balances
+ * were reversed when that row was deleted.
  */
 export async function postBankOpeningBalance(p: {
   businessId: string;
@@ -130,15 +132,13 @@ export async function postBankOpeningBalance(p: {
   date: string | Date | null;
   label: string;
 }): Promise<string | null> {
-  let ledgerId = p.ledgerAccountId;
+  const ledgerId = p.ledgerAccountId;
   if (!ledgerId) {
-    const bank = await queryOne<{ id: string }>(
-      `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '1102' AND is_active = true`,
-      [p.businessId]
+    throw new AccountRuleError(
+      'Choose the bank ledger before posting an opening balance.',
+      'BANK_LEDGER_REQUIRED',
     );
-    ledgerId = bank?.id ?? null;
   }
-  if (!ledgerId) return null;
   const obAccount = await getOrCreateOpeningBalanceAdjustmentAccount(p.businessId);
   const entryDate = p.date || (await getFinancialYearStartDate(p.businessId));
   const client = await getPool().connect();
