@@ -172,7 +172,7 @@ export function hashStoredExpense(row: StoredExpenseIdentity): string {
     tdsAmount: Number(row.tds_amount || 0),
     supplierId: row.supplier_id ?? null,
     supplierGstin: row.supplier_gstin ?? null,
-    supplyReceivedOn: row.supply_day ?? row.supply_received_on ?? null,
+    supplyReceivedOn: row.supply_day ?? calendarDay(row.supply_received_on),
     supplierRegistrationStatus: row.supplier_registration_status ?? 'unknown',
   });
 }

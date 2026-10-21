@@ -2,6 +2,7 @@ import type { CreateInvoiceInput } from '@/lib/invoices/invoice-create-service';
 import {
   authoritativeInvoiceTotals,
   InvoiceChargeError,
+  type AuthoritativeInvoiceTotals,
   type InvoiceChargeInput,
 } from '@/lib/invoices/invoice-charges';
 import { isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
@@ -29,16 +30,7 @@ function getStateCode(stateName: string): string {
 export function computeInvoiceTotals(
   body: CreateInvoiceInput,
   businessStateCode: string
-): {
-  subtotal: number;
-  taxTotal: number;
-  discountTotal: number;
-  cgstTotal: number;
-  sgstTotal: number;
-  igstTotal: number;
-  grandTotal: number;
-  roundOff: number;
-} {
+): AuthoritativeInvoiceTotals {
   const items = body.items ?? [];
   const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
   const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
@@ -98,14 +90,21 @@ export function validateInvoiceGstPayload(
         ok: false,
         reason: error.message,
         serverTotals: {
+          itemSubtotal: 0,
+          goodsTaxable: 0,
           subtotal: 0,
-          taxTotal: 0,
           discountTotal: 0,
+          taxTotal: 0,
           cgstTotal: 0,
           sgstTotal: 0,
           igstTotal: 0,
-          grandTotal: 0,
+          additionalCharges: 0,
+          chargesIncluded: false,
           roundOff: 0,
+          grandTotal: 0,
+          lines: [],
+          separateLines: [],
+          charges: [],
         },
         clientTotals: {
           subtotal: body.subtotal,
