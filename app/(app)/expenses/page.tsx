@@ -568,13 +568,14 @@ function AddExpenseModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black bg-opacity-50 p-3">
+      <div className="bg-white rounded-2xl w-[min(1120px,calc(100vw-1.5rem))] p-4 sm:p-5">
+        <h2 className="text-xl font-bold text-gray-900 mb-3">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-x-5 gap-y-3">
+          <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
             <select
               value={formData.category_id}
               required
@@ -597,7 +598,7 @@ function AddExpenseModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label>
             <input
               type="number"
               step="0.01"
@@ -614,6 +615,92 @@ function AddExpenseModal({
             </p>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+            <input
+              type="date"
+              value={formData.expense_date}
+              onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment</label>
+            <select
+              value={formData.payment_mode}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  payment_mode: e.target.value,
+                  settlement_account_id: '',
+                  supplier_id: e.target.value === 'on_account' ? formData.supplier_id : '',
+                })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="cash">Paid — Cash</option>
+              <option value="upi">Paid — UPI</option>
+              <option value="bank_transfer">Paid — Bank transfer</option>
+              <option value="card">Paid — Card</option>
+              <option value="cheque">Paid — Cheque</option>
+              <option value="neft">Paid — NEFT</option>
+              <option value="rtgs">Paid — RTGS</option>
+              <option value="debit_card">Paid — Debit card</option>
+              <option value="credit_card">Paid — Credit card</option>
+              <option value="on_account">Bill received, not paid yet (on account)</option>
+            </select>
+            <div className="mt-2">
+              <SettlementAccountField
+                mode={formData.payment_mode}
+                value={formData.settlement_account_id}
+                onChange={(settlement_account_id) => setFormData({ ...formData, settlement_account_id })}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Use &quot;Bill received, not paid yet&quot; when you have the bill but will pay later (books: Dr
+              expense, Cr Accounts Payable). Then record a payment under Payments → Out to the same supplier.
+            </p>
+          </div>
+
+          {isOnAccount && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Supplier / vendor (recommended)
+              </label>
+              <select
+                value={formData.supplier_id}
+                onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">— Select or add under Purchases → Suppliers —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Pick the repair shop (or create the supplier first). This links the due amount so you can pay
+                them from Payments → Out.
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              rows={2}
+              placeholder="What was this expense for?"
+            />
+          </div>
+          </div>
+
+          <div className="space-y-3">
           <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 p-3 space-y-2">
             <p className="text-sm font-medium text-gray-800">GST on bill (optional — ITC)</p>
             <p className="text-xs text-gray-600">
@@ -680,27 +767,29 @@ function AddExpenseModal({
               <span>Reverse charge (RCM)</span>
             </label>
             <RcmCoverageNotice kind="expense" />
-            <label className="block text-sm text-gray-700">
-              Supplier registration on this supply
-              <select
-                value={formData.supplier_registration_status}
-                onChange={(e) => setFormData({ ...formData, supplier_registration_status: e.target.value })}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="unknown">Unknown</option>
-                <option value="registered">Registered</option>
-                <option value="unregistered">Unregistered</option>
-              </select>
-            </label>
-            <label className="block text-sm text-gray-700">
-              Date received
-              <input
-                type="date"
-                value={formData.supply_received_on}
-                onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-sm text-gray-700">
+                Supplier registration on this supply
+                <select
+                  value={formData.supplier_registration_status}
+                  onChange={(e) => setFormData({ ...formData, supplier_registration_status: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="unknown">Unknown</option>
+                  <option value="registered">Registered</option>
+                  <option value="unregistered">Unregistered</option>
+                </select>
+              </label>
+              <label className="block text-sm text-gray-700">
+                Date received
+                <input
+                  type="date"
+                  value={formData.supply_received_on}
+                  onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </label>
+            </div>
           </div>
 
           <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 p-3 space-y-2">
@@ -730,90 +819,6 @@ function AddExpenseModal({
             <p className="text-xs text-gray-500">
               Paid / payable to the vendor = amount − TDS. TDS is credited to TDS Payable (2102).
             </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
-            <input
-              type="date"
-              value={formData.expense_date}
-              onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Payment</label>
-            <select
-              value={formData.payment_mode}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  payment_mode: e.target.value,
-                  settlement_account_id: '',
-                  supplier_id: e.target.value === 'on_account' ? formData.supplier_id : '',
-                })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="cash">Paid — Cash</option>
-              <option value="upi">Paid — UPI</option>
-              <option value="bank_transfer">Paid — Bank transfer</option>
-              <option value="card">Paid — Card</option>
-              <option value="cheque">Paid — Cheque</option>
-              <option value="neft">Paid — NEFT</option>
-              <option value="rtgs">Paid — RTGS</option>
-              <option value="debit_card">Paid — Debit card</option>
-              <option value="credit_card">Paid — Credit card</option>
-              <option value="on_account">Bill received, not paid yet (on account)</option>
-            </select>
-            <div className="mt-3">
-              <SettlementAccountField
-                mode={formData.payment_mode}
-                value={formData.settlement_account_id}
-                onChange={(settlement_account_id) => setFormData({ ...formData, settlement_account_id })}
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Use &quot;Bill received, not paid yet&quot; when you have the bill but will pay later (books: Dr
-              expense, Cr Accounts Payable). Then record a payment under Payments → Out to the same supplier.
-            </p>
-          </div>
-
-          {isOnAccount && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Supplier / vendor (recommended)
-              </label>
-              <select
-                value={formData.supplier_id}
-                onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="">— Select or add under Purchases → Suppliers —</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Pick the repair shop (or create the supplier first). This links the due amount so you can pay
-                them from Payments → Out.
-              </p>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              rows={3}
-              placeholder="What was this expense for?"
-            />
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
@@ -863,8 +868,9 @@ function AddExpenseModal({
               </button>
             </div>
           )}
+          </div>
 
-          <div className="flex space-x-3 pt-4">
+          <div className="lg:col-span-2 flex space-x-3">
             <button
               type="button"
               onClick={onClose}
