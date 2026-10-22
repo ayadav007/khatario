@@ -12,6 +12,12 @@ import {
 } from '@/lib/accounting/expense-posting';
 import { EXPENSE_ACCOUNT_REQUIRED } from '@/lib/accounting/expense-account-policy';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
+import {
+  buildExpenseBillFromLines,
+  loadExpenseSupplyStates,
+  replaceExpenseLines,
+  type ExpenseLineBill,
+} from '@/lib/accounting/expense-lines';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { checkGstin } from '@/lib/tax/gstin';
 import { parseRegistrationStatus } from '@/lib/gst/rule47a';
@@ -164,6 +170,8 @@ export async function POST(request: NextRequest) {
       supply_received_on: rawReceived,
       supplier_registration_status: rawStatus,
     } = body;
+    const hasLines = Object.prototype.hasOwnProperty.call(body, 'lines');
+    let postedAmount = Number(amount);
     const registrationStatus = parseRegistrationStatus(rawStatus);
     const supplyReceivedOn =
       typeof rawReceived === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawReceived) ? rawReceived : null;
@@ -197,18 +205,18 @@ export async function POST(request: NextRequest) {
     const supplier_id =
       rawSupplierId && String(rawSupplierId).trim() ? String(rawSupplierId).trim() : null;
 
-    const cgstAmt = Math.max(0, Number(rawCgst) || 0);
-    const sgstAmt = Math.max(0, Number(rawSgst) || 0);
-    const igstAmt = Math.max(0, Number(rawIgst) || 0);
-    const expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
-    if (expenseGstTotal > Number(amount)) {
+    let cgstAmt = Math.max(0, Number(rawCgst) || 0);
+    let sgstAmt = Math.max(0, Number(rawSgst) || 0);
+    let igstAmt = Math.max(0, Number(rawIgst) || 0);
+    let expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
+    if (!hasLines && expenseGstTotal > postedAmount) {
       return NextResponse.json(
         { error: 'GST amounts cannot exceed the expense total amount' },
         { status: 400 }
       );
     }
     const intraComponents = (cgstAmt > 0 ? 1 : 0) + (sgstAmt > 0 ? 1 : 0);
-    if (intraComponents === 1) {
+    if (!hasLines && intraComponents === 1) {
       return NextResponse.json(
         {
           error:
@@ -217,7 +225,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (igstAmt > 0 && intraComponents > 0) {
+    if (!hasLines && igstAmt > 0 && intraComponents > 0) {
       return NextResponse.json(
         {
           error: 'Enter either IGST (inter-state) or CGST+SGST (intra-state), not both.',
@@ -239,7 +247,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!amount || !expense_date) {
+    if (!expense_date || (!hasLines && !(postedAmount > 0))) {
       return NextResponse.json(
         { error: 'amount and expense_date are required' },
         { status: 400 }
@@ -361,6 +369,49 @@ export async function POST(request: NextRequest) {
       }
     }
     const tax = parseExpenseTaxFields(body, category);
+    let lineBill: ExpenseLineBill | null = null;
+    if (hasLines) {
+      try {
+        const supply = await loadExpenseSupplyStates(
+          business_id,
+          supplier_id,
+          supplierGstin
+        );
+        lineBill = await buildExpenseBillFromLines({
+          businessId: business_id,
+          lines: body.lines,
+          pricesIncludeGst: body.prices_include_gst === true,
+          isReverseCharge: tax.isReverseCharge,
+          expenseDate: String(expense_date),
+          businessState: supply.businessState,
+          supplierState: supply.supplierState,
+        });
+      } catch (lineError) {
+        if (lineError instanceof ExpenseValidationError) {
+          return NextResponse.json({ error: lineError.message, code: 'EXPENSE_INVALID' }, { status: 400 });
+        }
+        throw lineError;
+      }
+      postedAmount = lineBill.amount;
+      cgstAmt = lineBill.cgst;
+      sgstAmt = lineBill.sgst;
+      igstAmt = lineBill.igst;
+      expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
+      if ((cgstAmt > 0) !== (sgstAmt > 0) || (igstAmt > 0 && cgstAmt > 0)) {
+        return NextResponse.json(
+          { error: 'Enter either IGST (inter-state) or CGST+SGST (intra-state), not both.' },
+          { status: 400 }
+        );
+      }
+      const lineGstGuard = await periodGuardResponse({
+        businessId: business_id,
+        branchId: finalBranchId,
+        dates: [expense_date],
+        action: 'record this expense',
+        checkGstFiled: expenseGstTotal > 0,
+      });
+      if (lineGstGuard) return lineGstGuard;
+    }
 
     let expense: any;
     let split: ExpenseSplit;
@@ -389,7 +440,7 @@ export async function POST(request: NextRequest) {
       businessId: business_id,
       branchId: finalBranchId,
       categoryId: category_id,
-      amount: Number(amount),
+      amount: postedAmount,
       description: description ?? null,
       expenseDate: String(expense_date),
       paymentMode: payment_mode ?? null,
@@ -406,6 +457,8 @@ export async function POST(request: NextRequest) {
       supplierGstin,
       supplyReceivedOn,
       supplierRegistrationStatus: registrationStatus,
+      lines: lineBill?.hashLines,
+      pricesIncludeGst: lineBill?.pricesIncludeGst,
     });
     const alreadyPosted = await db.queryOne(
       `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,
@@ -425,21 +478,23 @@ export async function POST(request: NextRequest) {
            cgst_amount, sgst_amount, igst_amount,
            itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id,
            supplier_gstin, supply_received_on, supplier_registration_status, idempotency_key,
-           idempotency_payload_hash
+           idempotency_payload_hash, prices_include_gst
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
          RETURNING *`,
         [
-          business_id, finalBranchId, category_id, amount, description,
+          business_id, finalBranchId, category_id, postedAmount, description,
           expense_date, payment_mode, reference_number, settlementAccountId, created_by,
           cgstAmt, sgstAmt, igstAmt,
           tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount,
           isOnAccount ? supplier_id : null,
           supplierGstin, supplyReceivedOn, registrationStatus, idempotencyKey,
           requestHash,
+          lineBill?.pricesIncludeGst === true,
         ]
       );
       expense = ins.rows[0];
+      if (lineBill) await replaceExpenseLines(client, business_id, expense.id, lineBill.lines);
       split = await postExpenseVoucher(client, {
         businessId: business_id,
         branchId: finalBranchId,
@@ -450,7 +505,7 @@ export async function POST(request: NextRequest) {
         settlementAccountId,
         description: description ?? null,
         reference: reference_number ?? null,
-        amount: Number(amount),
+        amount: postedAmount,
         cgst: cgstAmt,
         sgst: sgstAmt,
         igst: igstAmt,
@@ -512,7 +567,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         expense_date,
         branch_id: finalBranchId,
-        amount: Number(amount),
+        amount: postedAmount,
         is_backdated: backdateValidation.isBackdated,
         days_backdated: backdateValidation.daysBackdated,
         backdate_reason: (body as any).backdate_reason || null

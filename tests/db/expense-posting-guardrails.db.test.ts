@@ -175,7 +175,7 @@ describe('expense posting guardrails', () => {
     if (info.db !== 'kh_phase2_test' || info.port !== 5433 || !(info.addr.startsWith('127.') || info.addr.startsWith('::1'))) {
       throw new Error(`Refusing expense tests against ${info.db} at ${info.addr}:${info.port}`);
     }
-    for (const file of ['404_expense_idempotency.sql', '405_expense_idempotency_payload_hash.sql']) {
+    for (const file of ['404_expense_idempotency.sql', '405_expense_idempotency_payload_hash.sql', '406_expense_items_and_lines.sql']) {
       const sql = fs.readFileSync(path.resolve(process.cwd(), 'database/migrations', file), 'utf8');
       await pool.query(sql);
     }

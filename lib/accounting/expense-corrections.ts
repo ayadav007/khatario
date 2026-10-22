@@ -44,6 +44,7 @@ export type ExpenseRow = {
   supplier_gstin?: string | null;
   supply_received_on?: string | null;
   supplier_registration_status?: string | null;
+  prices_include_gst?: boolean | null;
   updated_at?: string | null;
 };
 
@@ -75,6 +76,7 @@ const CURRENT_EXPENSE_SQL = `SELECT id, business_id, branch_id, category_id, amo
             tds_amount::text AS tds_amount, supplier_id, supplier_gstin,
             to_char(supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
             supplier_registration_status,
+            COALESCE(prices_include_gst, false) AS prices_include_gst,
             ${expenseVersionSql('updated_at')} AS updated_at
        FROM expenses
       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
@@ -138,7 +140,7 @@ export async function repostExpense(
        reference_number = $8, settlement_account_id = $9, cgst_amount = $10, sgst_amount = $11, igst_amount = $12,
        itc_eligible = $13, is_reverse_charge = $14, tds_section = $15, tds_amount = $16,
        supplier_id = $17, supplier_gstin = $18, supply_received_on = $19,
-       supplier_registration_status = $20, updated_at = clock_timestamp()
+       supplier_registration_status = $20, prices_include_gst = $21, updated_at = clock_timestamp()
      WHERE id = $1 AND business_id = $2`,
     [
       old.id, businessId, next.category_id, next.amount, next.description, next.expense_date, next.payment_mode,
@@ -146,6 +148,7 @@ export async function repostExpense(
       tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount, next.supplier_id,
       next.supplier_gstin ?? null, next.supply_received_on ?? null,
       next.supplier_registration_status ?? 'unknown',
+      next.prices_include_gst === true,
     ]
   );
   await postExpenseVoucher(client, {

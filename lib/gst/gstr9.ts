@@ -642,8 +642,7 @@ export class GSTR9Generator {
         }
       });
 
-      // Expenses with GST post ITC to 1110–1112 (so they are in 6A) but carry no item lines.
-      // Expense heads (rent, fees, telecom, travel) are services, so they go to input services.
+      // Header-only expenses have no item lines. They stay input services, which is how they were filed before lines existed.
       const expenseItcRes = await client.query(
         `SELECT e.amount, e.cgst_amount, e.sgst_amount, e.igst_amount, e.is_reverse_charge, s.gstin AS supplier_gstin
            FROM expenses e
@@ -651,27 +650,60 @@ export class GSTR9Generator {
           WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3
             AND e.deleted_at IS NULL
             AND COALESCE(e.itc_eligible, true)
-            AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0`,
+            AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0
+            AND NOT EXISTS (SELECT 1 FROM expense_lines el WHERE el.expense_id = e.id)`,
         [business_id, fyFrom, fyTo]
       );
+      const placeExpenseItc = (
+        e: { is_reverse_charge?: boolean; supplier_gstin?: string | null },
+        kind: ItcType,
+        tb: { taxable_value: number; igst: number; cgst: number; sgst: number; cess: number }
+      ) => {
+        if (e.is_reverse_charge) {
+          const isReg = e.supplier_gstin && e.supplier_gstin.length >= 15;
+          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[kind], tb);
+        } else {
+          addTaxBreakdown(data.table_6.B[kind], tb);
+        }
+      };
       expenseItcRes.rows.forEach((e) => {
         const cgst = parseFloat(e.cgst_amount) || 0;
         const sgst = parseFloat(e.sgst_amount) || 0;
         const igst = parseFloat(e.igst_amount) || 0;
         const amount = parseFloat(e.amount) || 0;
-        const tb = {
+        placeExpenseItc(e, 'input_services', {
           taxable_value: e.is_reverse_charge ? amount : amount - cgst - sgst - igst,
           igst,
           cgst,
           sgst,
           cess: 0,
-        };
-        if (e.is_reverse_charge) {
-          const isReg = e.supplier_gstin && e.supplier_gstin.length >= 15;
-          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C).input_services, tb);
-        } else {
-          addTaxBreakdown(data.table_6.B.input_services, tb);
-        }
+        });
+      });
+      // Lined expenses file goods as inputs and services as input services. One bill can contain both when reverse charge matches.
+      const expenseLineItcRes = await client.query(
+        `SELECT e.is_reverse_charge, s.gstin AS supplier_gstin, el.item_type,
+                COALESCE(SUM(el.taxable_value), 0)::float AS taxable_value,
+                COALESCE(SUM(el.cgst_amount), 0)::float AS cgst,
+                COALESCE(SUM(el.sgst_amount), 0)::float AS sgst,
+                COALESCE(SUM(el.igst_amount), 0)::float AS igst
+           FROM expenses e
+           JOIN expense_lines el ON el.expense_id = e.id AND el.business_id = e.business_id
+           LEFT JOIN suppliers s ON s.id = e.supplier_id
+          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3
+            AND e.deleted_at IS NULL
+            AND COALESCE(e.itc_eligible, true)
+            AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0
+          GROUP BY e.id, e.is_reverse_charge, s.gstin, el.item_type`,
+        [business_id, fyFrom, fyTo]
+      );
+      expenseLineItcRes.rows.forEach((e) => {
+        placeExpenseItc(e, e.item_type === 'goods' ? 'inputs' : 'input_services', {
+          taxable_value: parseFloat(e.taxable_value) || 0,
+          igst: parseFloat(e.igst) || 0,
+          cgst: parseFloat(e.cgst) || 0,
+          sgst: parseFloat(e.sgst) || 0,
+          cess: 0,
+        });
       });
 
       // 3. COMPARISON DATA FROM RETURNS (12 Months)

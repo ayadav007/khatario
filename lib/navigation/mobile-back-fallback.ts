@@ -10,6 +10,8 @@ const MOBILE_BACK_FALLBACKS: Record<string, string> = {
   '/customers/new': '/customers',
   '/suppliers/new': '/suppliers',
   '/purchases/new': '/purchases',
+  '/expenses/new': '/expenses',
+  '/expenses/items': '/expenses',
 };
 
 const BOTTOM_NAV_ROOTS = new Set([

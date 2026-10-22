@@ -24,6 +24,8 @@ const routeMetadata: Record<string, { label: string; parent?: string }> = {
   '/purchases': { label: 'Purchases' },
   '/purchases/new': { label: 'New Purchase', parent: '/purchases' },
   '/expenses': { label: 'Expenses' },
+  '/expenses/new': { label: 'New Expense', parent: '/expenses' },
+  '/expenses/items': { label: 'Expense items', parent: '/expenses' },
   '/expenses/categories': { label: 'Expense Categories', parent: '/expenses' },
   '/payments/in': { label: 'Payments In' },
   '/payments/out': { label: 'Payments Out' },

@@ -150,7 +150,7 @@ describe('RCM coverage visibility', () => {
   it('places one purchase notice beside reverse charge on desktop and mobile, including edit', () => {
     const desktop = read('app/(app)/purchases/new/page.tsx');
     const mobile = read('components/purchases/MobileNewPurchaseScrollForm.tsx');
-    const expense = read('app/(app)/expenses/page.tsx');
+    const expense = read('app/(app)/expenses/new/page.tsx');
 
     expect(desktop).toMatch(/is_reverse_charge: false/);
     expect(desktop.indexOf('<RcmCoverageNotice kind="purchase" />')).toBeGreaterThan(
@@ -167,7 +167,7 @@ describe('RCM coverage visibility', () => {
 
     expect(expense.match(/<RcmCoverageNotice kind="expense" \/>/g)).toHaveLength(1);
     expect(expense).not.toMatch(/notified-supply rules are loaded/);
-    expect(expense).toMatch(/is_reverse_charge: !!expense\?\.is_reverse_charge/);
+    expect(expense).toMatch(/!!expense\.is_reverse_charge/);
     expect(expense).toMatch(/blocked credit u\/s 17\(5\)/);
   });
 });

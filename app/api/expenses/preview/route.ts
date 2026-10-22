@@ -6,6 +6,7 @@ import { prepareExpenseVoucher, ExpenseValidationError, ON_ACCOUNT_MODES } from 
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
 import { readSettlementAccountId, resolveSettlementForBusiness } from '@/lib/accounting/settlement-accounts-db';
 import { SettlementAccountError } from '@/lib/accounting/settlement-accounts';
+import { buildExpenseBillFromLines, loadExpenseSupplyStates } from '@/lib/accounting/expense-lines';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,38 @@ export async function POST(request: NextRequest) {
       }
     }
     const tax = parseExpenseTaxFields(body, category);
+    const hasLines = Object.prototype.hasOwnProperty.call(body, 'lines');
+    let amount = Number(body.amount);
+    let cgst = Math.max(0, Number(body.cgst_amount) || 0);
+    let sgst = Math.max(0, Number(body.sgst_amount) || 0);
+    let igst = Math.max(0, Number(body.igst_amount) || 0);
+    let lineBill = null;
+    if (hasLines) {
+      try {
+        const supplierId = body.supplier_id && String(body.supplier_id).trim() ? String(body.supplier_id).trim() : null;
+        let supplierGstin: string | null = null;
+        if (typeof body.supplier_gstin === 'string' && body.supplier_gstin.trim()) supplierGstin = body.supplier_gstin.trim();
+        const supply = await loadExpenseSupplyStates(session.businessId, supplierId, supplierGstin);
+        lineBill = await buildExpenseBillFromLines({
+          businessId: session.businessId,
+          lines: body.lines,
+          pricesIncludeGst: body.prices_include_gst === true,
+          isReverseCharge: tax.isReverseCharge,
+          expenseDate: String(body.expense_date || new Date().toISOString().slice(0, 10)),
+          businessState: supply.businessState,
+          supplierState: supply.supplierState,
+        });
+      } catch (lineError) {
+        if (lineError instanceof ExpenseValidationError) {
+          return NextResponse.json({ error: lineError.message, code: 'EXPENSE_INVALID' }, { status: 400 });
+        }
+        throw lineError;
+      }
+      amount = lineBill.amount;
+      cgst = lineBill.cgst;
+      sgst = lineBill.sgst;
+      igst = lineBill.igst;
+    }
     const paymentMode = body.payment_mode ? String(body.payment_mode) : 'cash';
     let settlementAccountId: string | null = null;
     try {
@@ -68,16 +101,25 @@ export async function POST(request: NextRequest) {
         settlementAccountId,
         description: body.description ?? null,
         lockCategory: false,
-        amount: Number(body.amount),
-        cgst: Math.max(0, Number(body.cgst_amount) || 0),
-        sgst: Math.max(0, Number(body.sgst_amount) || 0),
-        igst: Math.max(0, Number(body.igst_amount) || 0),
+        amount,
+        cgst,
+        sgst,
+        igst,
         ...tax,
       });
       const onAccount = ON_ACCOUNT_MODES.includes(paymentMode.toLowerCase());
       return NextResponse.json({
         on_account: onAccount,
         paid_immediately: !onAccount,
+        bill: lineBill
+          ? {
+              amount: lineBill.amount,
+              cgst: lineBill.cgst,
+              sgst: lineBill.sgst,
+              igst: lineBill.igst,
+              intra_state: lineBill.intraState,
+            }
+          : null,
         lines: prepared.lines.map((line) => ({
           role: line.role,
           account_code: line.accountCode,

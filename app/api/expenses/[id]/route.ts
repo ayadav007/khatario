@@ -16,6 +16,12 @@ import {
 import { checkGstin } from '@/lib/tax/gstin';
 import { parseRegistrationStatus } from '@/lib/gst/rule47a';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import {
+  buildExpenseBillFromLines,
+  loadExpenseSupplyStates,
+  replaceExpenseLines,
+  type ExpenseLineBill,
+} from '@/lib/accounting/expense-lines';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +33,7 @@ async function loadExpense(id: string, businessId: string): Promise<ExpenseRow |
             tds_section, tds_amount, supplier_id, supplier_gstin,
             to_char(supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
             supplier_registration_status,
+            COALESCE(prices_include_gst, false) AS prices_include_gst,
             ${expenseVersionSql('updated_at')} AS updated_at
        FROM expenses WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [id, businessId]
@@ -55,7 +62,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   if (!expense) return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
   const denied = await authz(userId, 'read', expense.branch_id);
   if (denied) return denied;
-  return NextResponse.json({ expense });
+  const lines = await db.queryRows(
+    `SELECT line_no, expense_item_id, item_name, item_type, unit, hsn_sac,
+            quantity::float AS quantity, unit_price::float AS unit_price, tax_rate::float AS tax_rate,
+            taxable_value::float AS taxable_value, cgst_amount::float AS cgst_amount,
+            sgst_amount::float AS sgst_amount, igst_amount::float AS igst_amount,
+            line_total::float AS line_total
+       FROM expense_lines
+      WHERE expense_id = $1 AND business_id = $2
+      ORDER BY line_no`,
+    [id, businessId]
+  );
+  return NextResponse.json({ expense: { ...expense, lines } });
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
@@ -146,6 +164,48 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     next.is_reverse_charge = tax.isReverseCharge;
     next.tds_section = tax.tdsSection;
     next.tds_amount = String(tax.tdsAmount);
+    if (body.prices_include_gst !== undefined) next.prices_include_gst = body.prices_include_gst === true;
+
+    const hasLines = Object.prototype.hasOwnProperty.call(body, 'lines');
+    const existingLine = await db.queryOne<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM expense_lines WHERE expense_id = $1 AND business_id = $2`,
+      [id, businessId]
+    );
+    if (Number(existingLine?.n || 0) > 0 && !hasLines) {
+      return NextResponse.json(
+        { error: 'This expense is entered by lines. Send the lines with the edit.', code: 'EXPENSE_INVALID' },
+        { status: 400 }
+      );
+    }
+    let lineBill: ExpenseLineBill | null = null;
+    if (hasLines) {
+      try {
+        const lookupSupplierId =
+          typeof body.supplier_id === 'string' && body.supplier_id.trim()
+            ? body.supplier_id.trim()
+            : next.supplier_id;
+        const supply = await loadExpenseSupplyStates(businessId, lookupSupplierId, next.supplier_gstin ?? null);
+        lineBill = await buildExpenseBillFromLines({
+          businessId,
+          lines: body.lines,
+          pricesIncludeGst: next.prices_include_gst === true,
+          isReverseCharge: tax.isReverseCharge,
+          expenseDate: next.expense_date,
+          businessState: supply.businessState,
+          supplierState: supply.supplierState,
+        });
+      } catch (lineError) {
+        if (lineError instanceof ExpenseValidationError) {
+          return NextResponse.json({ error: lineError.message, code: 'EXPENSE_INVALID' }, { status: 400 });
+        }
+        throw lineError;
+      }
+      next.amount = String(lineBill.amount);
+      next.cgst_amount = String(lineBill.cgst);
+      next.sgst_amount = String(lineBill.sgst);
+      next.igst_amount = String(lineBill.igst);
+      next.prices_include_gst = lineBill.pricesIncludeGst;
+    }
 
     const client = await db.getPool().connect();
     try {
@@ -164,6 +224,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
       }
+      if (lineBill) await replaceExpenseLines(client, businessId, id, lineBill.lines);
       await markGstReadinessStale(client, businessId, {
         from: old.expense_date,
         to: next.expense_date,

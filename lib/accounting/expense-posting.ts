@@ -78,6 +78,24 @@ export type ExpensePostingIdentity = {
   supplierGstin: string | null;
   supplyReceivedOn: string | null;
   supplierRegistrationStatus: string | null;
+  /**
+   * Present only when the bill was entered as lines. Header-only expenses omit this so their hash stays unchanged.
+   */
+  lines?: Array<{
+    line_no: number;
+    expense_item_id: string;
+    item_name: string;
+    item_type: 'goods' | 'service';
+    quantity: string;
+    unit_price: string;
+    tax_rate: string;
+    taxable: string;
+    cgst: string;
+    sgst: string;
+    igst: string;
+    line_total: string;
+  }>;
+  pricesIncludeGst?: boolean;
 };
 
 const textOrNull = (value: unknown): string | null => {
@@ -120,6 +138,9 @@ export function expensePostingHash(input: ExpensePostingIdentity): string {
     supply_received_on: calendarDay(input.supplyReceivedOn),
     tds_amount: round2(input.tdsAmount),
     tds_section: textOrNull(input.tdsSection),
+    ...(input.lines
+      ? { lines: input.lines, prices_include_gst: input.pricesIncludeGst === true }
+      : {}),
   };
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }

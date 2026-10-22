@@ -117,6 +117,8 @@ export function getMobileRouteTitle(
   if (p === '/journal-entries') return 'Journal';
   if (p.startsWith('/ledger/account/')) return 'Ledger account';
   if (p === '/ledger') return 'Ledger';
+  if (p === '/expenses/new') return isEdit ? 'Edit expense' : 'New expense';
+  if (p === '/expenses/items') return 'Expense items';
   if (p.startsWith('/expenses')) return 'Expenses';
   if (p === '/opening-balances/setup') return 'Opening balances';
   if (p.startsWith('/opening-balances')) return 'Opening balances';
