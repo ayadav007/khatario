@@ -358,7 +358,6 @@ export default function NewExpensePage() {
     if (!res.ok) {
       const view = describeAccountingError(res.status, data, {
         context: 'expense',
-        verb: 'saved',
         canManagePeriods: false,
         currentPath: '/expenses/new',
         fallback: 'Could not save this expense.',
