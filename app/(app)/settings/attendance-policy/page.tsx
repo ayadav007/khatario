@@ -73,14 +73,14 @@ export default function AttendancePolicySettingsPage() {
     load();
   }, [load]);
 
-  const save = async () => {
-    if (!business?.id || !user?.id || !policy) return;
+  const save = async (next: AttendancePolicy | null = policy) => {
+    if (!business?.id || !user?.id || !next) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/settings/attendance-policy`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: business.id, user_id: user.id, ...policy }),
+        body: JSON.stringify({ business_id: business.id, user_id: user.id, ...next }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -93,6 +93,11 @@ export default function AttendancePolicySettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const turnOffGeofence = async () => {
+    if (!policy) return;
+    await save({ ...policy, geofence_enabled: false });
   };
 
   if (loading || !policy) {
@@ -287,65 +292,21 @@ export default function AttendancePolicySettingsPage() {
           </p>
         </Card>
 
-        <Card padding="md" className="space-y-4">
-          <h2 className="font-semibold text-text-primary">Office geofence (optional)</h2>
-          <p className="text-xs text-text-muted">
-            When enabled, portal and kiosk check-ins must be within the radius of your office coordinates.
-            Manual admin entries are not restricted. Office sites below take over once you add one.
-          </p>
-          <CheckboxRow
-            label="Require check-in within office radius"
-            checked={policy.geofence_enabled}
-            onChange={(v) => setPolicy({ ...policy, geofence_enabled: v })}
-          />
-          {policy.geofence_enabled && (
-            <>
-              <Input
-                label="Office latitude"
-                type="number"
-                step="any"
-                value={policy.geofence_lat != null ? String(policy.geofence_lat) : ''}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    geofence_lat: e.target.value.trim() ? Number(e.target.value) : null,
-                  })
-                }
-              />
-              <Input
-                label="Office longitude"
-                type="number"
-                step="any"
-                value={policy.geofence_lng != null ? String(policy.geofence_lng) : ''}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    geofence_lng: e.target.value.trim() ? Number(e.target.value) : null,
-                  })
-                }
-              />
-              <Input
-                label="Allowed radius (metres)"
-                type="number"
-                min={10}
-                value={policy.geofence_radius_m != null ? String(policy.geofence_radius_m) : ''}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    geofence_radius_m: e.target.value.trim()
-                      ? Math.max(10, Number(e.target.value) || 0)
-                      : null,
-                  })
-                }
-              />
-            </>
-          )}
-        </Card>
-
-        <AttendanceSitesSettings />
+        {/* The single-office geofence is replaced by office sites; an existing one is shown there until moved or turned off. */}
+        <AttendanceSitesSettings
+          legacyGeofence={
+            policy.geofence_enabled &&
+            policy.geofence_lat != null &&
+            policy.geofence_lng != null &&
+            (policy.geofence_radius_m ?? 0) > 0
+              ? { lat: policy.geofence_lat, lng: policy.geofence_lng, radius_m: policy.geofence_radius_m ?? 0 }
+              : null
+          }
+          onTurnOffGeofence={turnOffGeofence}
+        />
 
         <div className="flex justify-end">
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={() => void save()} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save policy'}
           </Button>
         </div>
