@@ -14,6 +14,9 @@ import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
 import { fifoCostForDocument, getValuationMethod } from '@/lib/inventory/fifo-costing';
 import { recostAfterStockChange } from '@/lib/inventory/fifo-recost';
 import { postInventoryAdjustment } from '@/lib/inventory/adjustment-posting';
+import type { PoolClient } from 'pg';
+import type { OpeningBatch } from '@/lib/items/opening-batch';
+import { findReplayLog, insertReplayLogPending, markReplayCompleted } from '@/lib/offline-sync/replay-log-repository';
 
 export type AdjustmentType = 'QUANTITY' | 'VALUE';
 export type AdjustmentDirection = 'INCREASE' | 'DECREASE';
@@ -42,6 +45,22 @@ export interface QuantityAdjustmentParams {
   notes?: string;
   adjustmentDate: string; // ISO date string
   createdBy?: string;
+  /**
+   * Batch and dates of the stock being added (Scan & Add Items). On an INCREASE the quantity goes
+   * into that batch and the item is switched to batch tracking with FIFO, as for opening stock.
+   */
+  batch?: OpeningBatch | null;
+  /** Retry key, recorded in this transaction so a retried request returns the first adjustment. */
+  idempotency?: { scopedKey: string; hash: string; storedPayload: Record<string, unknown> } | null;
+}
+
+export const ADJUSTMENT_IDEMPOTENCY_ACTION = 'inventory_adjustments.create';
+
+/** A retry key reused for a different adjustment, or one whose first request is still running. */
+export class AdjustmentIdempotencyError extends Error {
+  constructor(public readonly code: 'IDEMPOTENCY_KEY_REUSED' | 'IDEMPOTENCY_IN_PROGRESS', message: string) {
+    super(message);
+  }
 }
 
 export interface ValueAdjustmentParams {
@@ -70,6 +89,43 @@ export interface AdjustmentResult {
   totalValueBefore: number;
   totalValueAfter: number;
   journalEntryId?: string;
+  /** True when this is the stored answer to a retried request. */
+  replayed?: boolean;
+}
+
+/** The adjustment a completed retry key points at, for this business only. */
+async function replayedAdjustment(
+  client: PoolClient,
+  businessId: string,
+  idem: NonNullable<QuantityAdjustmentParams['idempotency']>
+): Promise<AdjustmentResult> {
+  const row = await findReplayLog(businessId, idem.scopedKey, client);
+  if (!row || row.request_hash !== idem.hash || row.action_type !== ADJUSTMENT_IDEMPOTENCY_ACTION) {
+    throw new AdjustmentIdempotencyError('IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for a different stock change.');
+  }
+  if (row.status !== 'completed' || !row.entity_id) {
+    throw new AdjustmentIdempotencyError('IDEMPOTENCY_IN_PROGRESS', 'This stock change is still being saved. Try again in a moment.');
+  }
+  const a = (
+    await client.query(
+      `SELECT id, adjustment_number, quantity_before, quantity_after, unit_cost_before, unit_cost_after,
+              total_value_before, total_value_after
+         FROM inventory_adjustments WHERE id = $1 AND business_id = $2`,
+      [row.entity_id, businessId]
+    )
+  ).rows[0];
+  if (!a) throw new AdjustmentIdempotencyError('IDEMPOTENCY_KEY_REUSED', 'This idempotency key cannot be replayed.');
+  return {
+    adjustmentId: a.id,
+    adjustmentNumber: a.adjustment_number,
+    quantityBefore: Number(a.quantity_before),
+    quantityAfter: Number(a.quantity_after),
+    unitCostBefore: Number(a.unit_cost_before),
+    unitCostAfter: Number(a.unit_cost_after),
+    totalValueBefore: Number(a.total_value_before),
+    totalValueAfter: Number(a.total_value_after),
+    replayed: true,
+  };
 }
 
 /**
@@ -83,6 +139,25 @@ export async function createQuantityAdjustment(
 
   try {
     await client.query('BEGIN');
+
+    let idemRowId: string | null = null;
+    if (params.idempotency) {
+      const inserted = await insertReplayLogPending(client, {
+        businessId: params.businessId,
+        idempotencyKey: params.idempotency.scopedKey,
+        actionType: ADJUSTMENT_IDEMPOTENCY_ACTION,
+        requestHash: params.idempotency.hash,
+        requestPayload: params.idempotency.storedPayload,
+        // Nullable column; a system adjustment has no user.
+        userId: params.createdBy as string,
+      });
+      if (!inserted) {
+        // The key is already recorded (an earlier or concurrent request committed it).
+        await client.query('ROLLBACK');
+        return await replayedAdjustment(client, params.businessId, params.idempotency);
+      }
+      idemRowId = inserted.id;
+    }
 
     // Check if warehouse mode is enabled
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
@@ -314,13 +389,62 @@ export async function createQuantityAdjustment(
 
     const adjustmentId = adjustmentResult.rows[0].id;
 
+    // Added stock with a batch from the pack: same batch number tops up that batch, a new one is created.
+    let batchId: string | null = null;
+    if (params.batch && quantityChange > 0) {
+      const existingBatch = await client.query<{ id: string }>(
+        `SELECT id FROM item_batches
+          WHERE business_id = $1 AND item_id = $2 AND variant_id IS NOT DISTINCT FROM $3
+            AND batch_number = $4 AND location_id IS NULL
+          FOR UPDATE`,
+        [params.businessId, params.itemId, params.variantId || null, params.batch.batchNumber]
+      );
+      if (existingBatch.rows[0]) {
+        batchId = existingBatch.rows[0].id;
+        await client.query(
+          `UPDATE item_batches
+              SET quantity = quantity + $1,
+                  expiry_date = COALESCE(expiry_date, $2),
+                  manufacturing_date = COALESCE(manufacturing_date, $3),
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $4`,
+          [quantityChange, params.batch.expiryDate, params.batch.manufacturingDate, batchId]
+        );
+      } else {
+        batchId = (
+          await client.query<{ id: string }>(
+            `INSERT INTO item_batches (
+               business_id, item_id, variant_id, batch_number, manufacturing_date, expiry_date,
+               purchase_price, quantity, notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id`,
+            [
+              params.businessId,
+              params.itemId,
+              params.variantId || null,
+              params.batch.batchNumber,
+              params.batch.manufacturingDate,
+              params.batch.expiryDate,
+              currentPurchasePrice,
+              quantityChange,
+              `Stock added (${adjustmentNumber})`,
+            ]
+          )
+        ).rows[0].id;
+      }
+      await client.query(
+        `UPDATE items SET track_batch = true, valuation_method = 'fifo' WHERE id = $1 AND business_id = $2`,
+        [params.itemId, params.businessId]
+      );
+    }
+
     // Create stock movement record with adjustment reference
     // Always include location_id when provided
     await client.query(
       `INSERT INTO stock_movements (
-        business_id, item_id, variant_id, location_id, type, quantity, 
-        reference_type, reference_id, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        business_id, item_id, variant_id, location_id, type, quantity,
+        reference_type, reference_id, notes, created_by, batch_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         params.businessId,
         params.itemId,
@@ -331,7 +455,8 @@ export async function createQuantityAdjustment(
         'adjustment',
         adjustmentId, // Use adjustment ID directly
         `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units. Reason: ${params.reasonCode}`,
-        params.createdBy || null
+        params.createdBy || null,
+        batchId,
       ]
     );
 
@@ -366,6 +491,10 @@ export async function createQuantityAdjustment(
       [Math.round(valueChange * 100) / 100, itcReversed ? -itcReversed : null, adjustmentId]
     );
     await recostAfterStockChange(client, params.businessId, [params.itemId]);
+
+    if (idemRowId) {
+      await markReplayCompleted(client, idemRowId, { adjustment_id: adjustmentId }, { type: 'inventory_adjustment', id: adjustmentId });
+    }
 
     // Commit the transaction
     await client.query('COMMIT');

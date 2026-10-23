@@ -5,6 +5,8 @@ import { queryRows, queryOne } from '@/lib/db';
 import {
   createQuantityAdjustment,
   createValueAdjustment,
+  ADJUSTMENT_IDEMPOTENCY_ACTION,
+  AdjustmentIdempotencyError,
   QuantityAdjustmentParams,
   ValueAdjustmentParams,
   ReasonCode
@@ -221,7 +223,8 @@ export async function POST(request: NextRequest) {
       reason_notes,
       notes,
       adjustment_date,
-      gst_impact // For value adjustments
+      gst_impact, // For value adjustments
+      batch, // Optional batch of the stock added: { batch_number, manufacturing_date, expiry_date }
     } = body;
 
     if (!adjustment_type || !item_id || !reason_code || !adjustment_date) {
@@ -260,6 +263,45 @@ export async function POST(request: NextRequest) {
         { error: 'Item not found', code: 'ITEM_NOT_FOUND' },
         { status: 400 }
       );
+    }
+    if (variant_id) {
+      const ownedVariant = await queryOne<{ id: string }>(
+        `SELECT id FROM item_variants WHERE id = $1 AND item_id = $2`,
+        [variant_id, item_id]
+      );
+      if (!ownedVariant) {
+        return NextResponse.json({ error: 'Variant not found for this item', code: 'VARIANT_NOT_FOUND' }, { status: 400 });
+      }
+    }
+
+    const { normalizeOpeningBatch } = await import('@/lib/items/opening-batch');
+    const addedBatch = normalizeOpeningBatch(batch);
+    if (addedBatch && 'error' in addedBatch) {
+      return NextResponse.json({ error: addedBatch.error, code: 'INVALID_BATCH' }, { status: 400 });
+    }
+
+    // Optional retry key (X-Idempotency-Key): a retried request returns the first adjustment.
+    const { readPaymentIdempotencyKey } = await import('@/lib/accounting/payment-idempotency');
+    const idemKey = readPaymentIdempotencyKey(request);
+    if (!idemKey.ok) return NextResponse.json(idemKey.body, { status: 400 });
+    let idempotency: QuantityAdjustmentParams['idempotency'] = null;
+    if (idemKey.key) {
+      const { hashReplayPayload } = await import('@/lib/offline-sync/types');
+      const storedPayload = {
+        adjustment_type,
+        item_id,
+        variant_id: variant_id || null,
+        direction: direction ?? null,
+        quantity: quantity != null ? Number(quantity) : null,
+        value_change: value_change != null ? Number(value_change) : null,
+        reason_code,
+        batch: addedBatch ?? null,
+      };
+      idempotency = {
+        scopedKey: `${ADJUSTMENT_IDEMPOTENCY_ACTION}:${idemKey.key}`,
+        hash: hashReplayPayload(storedPayload),
+        storedPayload,
+      };
     }
 
     // PBAC: Check warehouse access if warehouse mode is enabled and location_id provided
@@ -328,10 +370,22 @@ export async function POST(request: NextRequest) {
         reasonNotes: reason_notes || undefined,
         notes: notes || undefined,
         adjustmentDate: adjustment_date,
-        createdBy: created_by || undefined
+        createdBy: created_by || undefined,
+        batch: addedBatch && !('error' in addedBatch) ? addedBatch : null,
+        idempotency,
       };
 
-      result = await createQuantityAdjustment(params);
+      try {
+        result = await createQuantityAdjustment(params);
+      } catch (e) {
+        if (e instanceof AdjustmentIdempotencyError) {
+          return NextResponse.json({ error: e.message, code: e.code }, { status: 409 });
+        }
+        throw e;
+      }
+      if (result.replayed) {
+        return NextResponse.json({ success: true, adjustment: result, idempotent: true }, { status: 200 });
+      }
     } else {
       // Value adjustment validation
       if (value_change === undefined || value_change === null) {

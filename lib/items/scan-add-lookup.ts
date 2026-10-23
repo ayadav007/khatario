@@ -23,6 +23,8 @@ export interface ShopBarcodeMatch {
     current_stock: number;
     has_variants: boolean;
     image_url: string | null;
+    /** Size on pack, e.g. "100 g". */
+    net_quantity: string | null;
   };
   /** Set when the code is a variant's own barcode rather than the item's. */
   matched_variant_id: string | null;
@@ -64,7 +66,7 @@ export async function findShopBarcodeMatch(
   const item = (
     await q.query(
       `SELECT i.id, i.name, i.barcode, i.unit, i.brand, i.mrp, i.selling_price, i.purchase_price,
-              i.current_stock, i.has_variants, i.image_url,
+              i.current_stock, i.has_variants, i.image_url, i.net_quantity,
               (EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.item_id = i.id)
                OR EXISTS (SELECT 1 FROM purchase_items pi WHERE pi.item_id = i.id)
                OR EXISTS (SELECT 1 FROM stock_movements sm
@@ -105,6 +107,7 @@ export async function findShopBarcodeMatch(
       current_stock: Number(item.current_stock) || 0,
       has_variants: item.has_variants === true,
       image_url: (item.image_url as string | null) ?? null,
+      net_quantity: (item.net_quantity as string | null) ?? null,
     },
     matched_variant_id: hit.variant_id,
     variants,

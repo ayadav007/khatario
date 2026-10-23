@@ -40,6 +40,7 @@ export function itemCreateFingerprint(body: Record<string, unknown>): {
     mrp: num(body.mrp),
     tax_rate: num(body.tax_rate) ?? 0,
     has_variants: body.has_variants === true,
+    opening_batch: body.opening_batch && typeof body.opening_batch === 'object' ? body.opening_batch : null,
   };
   return { hash: hashReplayPayload(storedPayload), storedPayload };
 }

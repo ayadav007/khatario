@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Camera, CheckCircle2, ExternalLink, ImagePlus, Keyboard, Loader2, Package, ScanLine } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, ExternalLink, ImagePlus, Keyboard, Loader2, ScanLine } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,8 +16,11 @@ import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import type { ShopBarcodeMatch } from '@/lib/items/scan-add-lookup';
 import type { ProductLookupResult, ProductSuggestion } from '@/lib/product-lookup/types';
 import type { LabelReading, LabelStep } from '@/lib/product-lookup/label-reader';
+import { ScanAddExistingActions } from '@/components/items/ScanAddExistingActions';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import {
   emptyScanAddForm,
+  fillBatch,
   fillFromFacts,
   scanAddItemPayload,
   validateScanAddForm,
@@ -47,8 +50,11 @@ interface SessionEntry {
   barcode: string;
   name: string;
   itemId: string;
-  outcome: 'created' | 'existing';
+  /** created = new item, stock = stock added, size = new pack size, existing = skipped. */
+  outcome: 'created' | 'existing' | 'stock' | 'size';
   qty: number;
+  /** Unique per row, so adding stock twice to one item shows twice. */
+  key?: string;
 }
 
 function readSession(): SessionEntry[] {
@@ -76,6 +82,7 @@ function newIdempotencyKey(): string {
 
 function ScanAddItemsPage() {
   const toast = useToastContext();
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   const [step, setStep] = useState<Step>({ kind: 'scan' });
   const [showCamera, setShowCamera] = useState(false);
   const [manualCode, setManualCode] = useState('');
@@ -97,7 +104,9 @@ function ScanAddItemsPage() {
 
   const remember = useCallback((entry: SessionEntry) => {
     setSession((prev) => {
-      const next = [entry, ...prev.filter((e) => e.itemId !== entry.itemId)];
+      // A skipped scan replaces an earlier skip of the same item; every stock or size change is its own row.
+      const row = { ...entry, key: entry.outcome === 'existing' ? `skip-${entry.itemId}` : newIdempotencyKey() };
+      const next = [row, ...prev.filter((e) => (e.key ?? e.itemId) !== row.key)];
       writeSession(next);
       return next;
     });
@@ -160,7 +169,7 @@ function ScanAddItemsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not read this photo');
       const r = data.reading as LabelReading;
-      setForm((f) => fillFromFacts(f, { name: r.name, brand: r.brand, quantity: r.size, mrp: r.mrp }));
+      setForm((f) => fillBatch(fillFromFacts(f, { name: r.name, brand: r.brand, quantity: r.size, mrp: r.mrp }), r));
       // Once any photo has shown the pack size, the size photo is not asked for.
       nextPhoto(barcode, r.size ? queue.filter((q, i) => i === 0 || q !== 'size') : queue);
     } catch (e) {
@@ -231,7 +240,7 @@ function ScanAddItemsPage() {
     }
   };
 
-  const created = session.filter((e) => e.outcome === 'created').length;
+  const created = session.filter((e) => e.outcome !== 'existing').length;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-24">
@@ -356,40 +365,16 @@ function ScanAddItemsPage() {
       ) : null}
 
       {step.kind === 'existing' ? (
-        <Card className="space-y-3 p-4">
-          <div className="flex items-start gap-3">
-            <Package className="mt-0.5 h-5 w-5 text-text-secondary" />
-            <div>
-              <p className="font-semibold">Already in your shop</p>
-              <p>{step.match.item.name}</p>
-              <p className="text-sm text-text-secondary">
-                Barcode {step.barcode} · Stock {step.match.item.current_stock} {step.match.item.unit ?? ''}
-                {step.match.variants.length > 0
-                  ? ` · Sizes: ${step.match.variants.map((v) => v.variant_name).join(', ')}`
-                  : ''}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => {
-                remember({
-                  barcode: step.barcode,
-                  name: step.match.item.name,
-                  itemId: step.match.item.id,
-                  outcome: 'existing',
-                  qty: 0,
-                });
-                setStep({ kind: 'scan' });
-              }}
-            >
-              Skip, scan next
-            </Button>
-            <Link href={`/items/${step.match.item.id}`}>
-              <Button variant="secondary">Open item</Button>
-            </Link>
-          </div>
-        </Card>
+        <ScanAddExistingActions
+          key={`${step.barcode}-${lookupSeqRef.current}`}
+          barcode={step.barcode}
+          match={step.match}
+          canAddStock={snapshotLoaded && hasCapability('purchase_inventory_adjustments', 'view')}
+          onDone={(done) => {
+            remember({ barcode: step.barcode, name: done.name, itemId: done.itemId, outcome: done.outcome, qty: done.qty });
+            setStep({ kind: 'scan' });
+          }}
+        />
       ) : null}
 
       {step.kind === 'new' ? (
@@ -491,6 +476,14 @@ function ScanAddItemsPage() {
             </div>
             <Input label="HSN" value={form.hsn_sac} onChange={setField('hsn_sac')} error={errors.hsn_sac} inputMode="numeric" placeholder="Optional" />
             <Input label="Stock you have now" type="number" min={0} step="any" value={form.opening_stock} onChange={setField('opening_stock')} error={errors.opening_stock} placeholder="0" />
+            <Input label="Batch no." value={form.batch_number} onChange={setField('batch_number')} placeholder="Optional" />
+            <Input label="Mfg date" value={form.manufacturing_date} onChange={setField('manufacturing_date')} error={errors.manufacturing_date} placeholder="2026-09" />
+            <Input label="Expiry date" value={form.expiry_date} onChange={setField('expiry_date')} error={errors.expiry_date} placeholder="2027-03" />
+            {form.batch_number || form.manufacturing_date || form.expiry_date ? (
+              <p className="text-xs text-text-secondary sm:col-span-2">
+                The stock you have is saved in this batch, and sales use the oldest batch first.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void save()} disabled={saving}>
@@ -509,18 +502,19 @@ function ScanAddItemsPage() {
           <p className="mb-2 font-semibold">Scanned in this session</p>
           <ul className="divide-y divide-border text-sm">
             {session.map((e) => (
-              <li key={e.itemId} className="flex items-center justify-between gap-2 py-2">
+              <li key={e.key ?? e.itemId} className="flex items-center justify-between gap-2 py-2">
                 <Link href={`/items/${e.itemId}`} className="truncate hover:underline">
                   {e.name}
                 </Link>
                 <span className="flex shrink-0 items-center gap-1 text-text-secondary">
-                  {e.outcome === 'created' ? (
+                  {e.outcome === 'existing' ? (
+                    'Already in shop'
+                  ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Added{e.qty ? ` · ${e.qty}` : ''}
+                      {e.outcome === 'stock' ? 'Stock added' : e.outcome === 'size' ? 'Size added' : 'Added'}
+                      {e.qty ? ` · ${e.qty}` : ''}
                     </>
-                  ) : (
-                    'Already in shop'
                   )}
                 </span>
               </li>

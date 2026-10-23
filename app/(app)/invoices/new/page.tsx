@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
+import { ScanVariantPicker, type PickableVariant } from '@/components/invoices/ScanVariantPicker';
 import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle, Phone } from 'lucide-react';
 import { printInvoiceA4 } from '@/lib/desktop/a4-print';
 import { useAuth } from '@/contexts/AuthContext';
@@ -352,6 +353,8 @@ function NewInvoiceContent() {
     });
   }, [currentBranchId, branchLoading, accessibleBranches, isAdmin]);
   const [showContinuousScanner, setShowContinuousScanner] = useState(false);
+  // A scanned barcode shared by several sizes: the item waiting for the cashier to pick one.
+  const [sizeChoice, setSizeChoice] = useState<any | null>(null);
   const [creditMetrics, setCreditMetrics] = useState<{ current?: CreditMetrics; projected?: CreditMetrics } | null>(null);
   const [customerId, setCustomerId] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
@@ -1172,6 +1175,8 @@ function NewInvoiceContent() {
             const { normalizeBarcode } = await import('@/lib/barcode-validator');
             const norm = normalizeBarcode(barcode), variant = item.variants.find((v: any) => v.barcode && normalizeBarcode(v.barcode) === norm);
             if (variant) { handleItemSelect({ ...item, selling_price: variant.selling_price ?? item.selling_price, current_stock: variant.current_stock, tax_rate: item.tax_rate, variantId: variant.id, variantName: variant.variant_name, variantAttributes: variant.attributes }); toastCtx.success(`Variant added!`); return; }
+            // The item's own barcode covers every size: ask which one.
+            setSizeChoice(item); return;
           }
           handleItemSelect(item); toastCtx.success(`Item added!`);
         } else if (foundItems.length > 1) {
@@ -1181,7 +1186,7 @@ function NewInvoiceContent() {
             if (item.barcode && normalizeBarcode(item.barcode) === norm) { match = item; break; }
             if (item.has_variants && item.variants?.length) { const v = item.variants.find((x: any) => x.barcode && normalizeBarcode(x.barcode) === norm); if (v) { match = item; vMatch = v; break; } }
           }
-          if (match) { if (vMatch) handleItemSelect({ ...match, selling_price: vMatch.selling_price ?? match.selling_price, current_stock: vMatch.current_stock, tax_rate: match.tax_rate, variantId: vMatch.id, variantName: vMatch.variant_name }); else handleItemSelect(match); toastCtx.success('Item added!'); }
+          if (match) { if (vMatch) handleItemSelect({ ...match, selling_price: vMatch.selling_price ?? match.selling_price, current_stock: vMatch.current_stock, tax_rate: match.tax_rate, variantId: vMatch.id, variantName: vMatch.variant_name }); else if (match.has_variants && match.variants?.length) { setSizeChoice(match); return; } else handleItemSelect(match); toastCtx.success('Item added!'); }
           else hotToast(`Multiple items match "${barcode}". Please select from list.`, { icon: '🔍' });
         } else toastCtx.error(`Barcode not found.`);
       }
@@ -4372,7 +4377,20 @@ function NewInvoiceContent() {
       {shareModalOpen && savedInvoiceId && <ShareInvoiceModal invoiceId={savedInvoiceId} invoiceNumber={invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : 'N/A'} customerEmail={selectedCustomer?.email} customerPhone={selectedCustomer?.phone} onClose={() => setShareModalOpen(false)} onCreateAnother={resetFormForNewInvoice} />}
       {paymentModalOpen && <InvoicePaymentModal grandTotal={Math.max(0, grandTotal - creditApplied)} payments={payments} onSave={setPayments} onClose={() => setPaymentModalOpen(false)} />}
       {showUpgradePrompt && limitInfo && <UpgradeModal limitType="invoices" currentCount={limitInfo.current} limit={limitInfo.limit} onClose={() => setShowUpgradePrompt(false)} onUpgradeSuccess={() => window.location.reload()} />}
-      {showContinuousScanner && business?.id && (<ContinuousBarcodeScanner businessId={business.id} onItemScanned={(item) => { if (!item?.id) return; handleItemSelect(item); }} onClose={() => setShowContinuousScanner(false)} />)}
+      {showContinuousScanner && business?.id && (<ContinuousBarcodeScanner businessId={business.id} onItemScanned={(item) => { if (!item?.id) return; if (item.has_variants && item.variants?.length && !(item as any).variantId) { setSizeChoice(item); return; } handleItemSelect(item); }} onClose={() => setShowContinuousScanner(false)} />)}
+      {sizeChoice && (
+        <ScanVariantPicker
+          itemName={sizeChoice.name}
+          variants={(sizeChoice.variants || []) as PickableVariant[]}
+          onCancel={() => setSizeChoice(null)}
+          onPick={(v) => {
+            const item = sizeChoice;
+            setSizeChoice(null);
+            handleItemSelect({ ...item, selling_price: v.selling_price ?? item.selling_price, current_stock: v.current_stock, tax_rate: item.tax_rate, variantId: v.id, variantName: v.variant_name, variantAttributes: v.attributes });
+            toastCtx.success(`${v.variant_name} added`);
+          }}
+        />
+      )}
       {createCustomerModalOpen && (
         <CreateCustomerModal
           isOpen={createCustomerModalOpen}

@@ -17,6 +17,9 @@ class ScanAddValues {
     this.taxRate = '0',
     this.hsn = '',
     this.openingStock = '',
+    this.batchNumber = '',
+    this.manufacturingDate = '',
+    this.expiryDate = '',
   });
 
   final String barcode;
@@ -32,6 +35,45 @@ class ScanAddValues {
   final String taxRate;
   final String hsn;
   final String openingStock;
+
+  /// Batch of the stock in hand, from the MRP/batch/expiry photo. Saved only with stock.
+  final String batchNumber;
+
+  /// YYYY-MM-DD or YYYY-MM, as the pack prints it.
+  final String manufacturingDate;
+  final String expiryDate;
+}
+
+final _dateRe = RegExp(r'^\d{4}-\d{2}(-\d{2})?$');
+
+/// Same checks as `batchErrors` in lib/items/scan-add-form.ts.
+Map<String, String> batchErrors(String manufacturingDate, String expiryDate) {
+  final errors = <String, String>{};
+  final mfg = manufacturingDate.trim();
+  final exp = expiryDate.trim();
+  if (mfg.isNotEmpty && !_dateRe.hasMatch(mfg)) errors['manufacturing_date'] = 'Use YYYY-MM-DD or YYYY-MM';
+  if (exp.isNotEmpty && !_dateRe.hasMatch(exp)) errors['expiry_date'] = 'Use YYYY-MM-DD or YYYY-MM';
+  if (errors.isEmpty && mfg.isNotEmpty && exp.isNotEmpty && exp.substring(0, 7).compareTo(mfg.substring(0, 7)) < 0) {
+    errors['expiry_date'] = 'Expiry is before the manufacturing date';
+  }
+  return errors;
+}
+
+/// Batch body for the APIs; null when there is no stock or nothing was entered.
+Map<String, dynamic>? batchBody(String quantity, String batchNumber, String manufacturingDate, String expiryDate) {
+  if (!((_num(quantity) ?? 0) > 0)) return null;
+  final b = batchNumber.trim(), m = manufacturingDate.trim(), e = expiryDate.trim();
+  if (b.isEmpty && m.isEmpty && e.isEmpty) return null;
+  return {if (b.isNotEmpty) 'batch_number': b, if (m.isNotEmpty) 'manufacturing_date': m, if (e.isNotEmpty) 'expiry_date': e};
+}
+
+/// "Harpic 500 ml" with size "500 ml" → "Harpic". Same as `nameWithoutSize` on the website.
+String nameWithoutSize(String name, String? size) {
+  final sz = (size ?? '').trim();
+  if (sz.isEmpty) return name.trim();
+  final pattern = RegExp.escape(sz).replaceAll(RegExp(r'\s+'), r'\s*');
+  final stripped = name.replaceAll(RegExp('\\s*$pattern\\s*\$', caseSensitive: false), '').trim();
+  return stripped.isEmpty ? name.trim() : stripped;
 }
 
 num? _num(String v) => v.trim().isEmpty ? null : num.tryParse(v.trim());
@@ -63,7 +105,7 @@ Map<String, String> validateScanAdd(ScanAddValues v) {
 
   final hsn = v.hsn.replaceAll(RegExp(r'\s'), '');
   if (hsn.isNotEmpty && !RegExp(r'^\d{4,8}$').hasMatch(hsn)) errors['hsn_sac'] = 'HSN must be 4 to 8 digits';
-  return errors;
+  return {...errors, ...batchErrors(v.manufacturingDate, v.expiryDate)};
 }
 
 /// Body for POST /api/items. Identity fields are omitted; the server takes them from the session.
@@ -86,6 +128,7 @@ Map<String, dynamic> scanAddItemBody(ScanAddValues v, {String? lookupSource}) {
     'opening_stock': _num(v.openingStock) ?? 0,
     // Which database's suggestion was accepted. The server records the source from its own cache.
     if (lookupSource != null && lookupSource.isNotEmpty) 'lookup_source': lookupSource,
+    'opening_batch': ?batchBody(v.openingStock, v.batchNumber, v.manufacturingDate, v.expiryDate),
   };
 }
 
@@ -109,18 +152,11 @@ class ProductFacts {
   final String? quantity;
   final num? mrp;
 
-  factory ProductFacts.fromSuggestion(Map<String, dynamic> s) => ProductFacts(
-        name: s['name']?.toString(),
-        brand: s['brand']?.toString(),
-        quantity: s['quantity']?.toString(),
-      );
+  factory ProductFacts.fromSuggestion(Map<String, dynamic> s) =>
+      ProductFacts(name: s['name']?.toString(), brand: s['brand']?.toString(), quantity: s['quantity']?.toString());
 
-  factory ProductFacts.fromReading(Map<String, dynamic> r) => ProductFacts(
-        name: r['name']?.toString(),
-        brand: r['brand']?.toString(),
-        quantity: r['size']?.toString(),
-        mrp: r['mrp'] is num ? r['mrp'] as num : null,
-      );
+  factory ProductFacts.fromReading(Map<String, dynamic> r) =>
+      ProductFacts(name: r['name']?.toString(), brand: r['brand']?.toString(), quantity: r['size']?.toString(), mrp: r['mrp'] is num ? r['mrp'] as num : null);
 }
 
 /// Same rules as `fillFromFacts` in lib/items/scan-add-form.ts: only empty fields are filled, and a

@@ -17,6 +17,51 @@ export interface ScanAddForm {
   tax_rate: string;
   hsn_sac: string;
   opening_stock: string;
+  /** Batch of the stock in hand, from the MRP/batch/expiry photo. Saved only with stock. */
+  batch_number: string;
+  /** YYYY-MM-DD or YYYY-MM, as the pack prints it. */
+  manufacturing_date: string;
+  expiry_date: string;
+}
+
+const DATE_RE = /^\d{4}-\d{2}(-\d{2})?$/;
+
+/** Batch body for the APIs, or undefined when there is no stock or nothing was entered. */
+export function batchPayload(f: Pick<ScanAddForm, 'batch_number' | 'manufacturing_date' | 'expiry_date' | 'opening_stock'>) {
+  if (!((Number(f.opening_stock) || 0) > 0)) return undefined;
+  const b = { batch_number: f.batch_number.trim(), manufacturing_date: f.manufacturing_date.trim(), expiry_date: f.expiry_date.trim() };
+  if (!b.batch_number && !b.manufacturing_date && !b.expiry_date) return undefined;
+  return {
+    batch_number: b.batch_number || undefined,
+    manufacturing_date: b.manufacturing_date || undefined,
+    expiry_date: b.expiry_date || undefined,
+  };
+}
+
+/** Date checks shared by the new-item, add-stock and add-size forms. */
+export function batchErrors(f: Pick<ScanAddForm, 'manufacturing_date' | 'expiry_date'>): ScanAddFormErrors {
+  const errors: ScanAddFormErrors = {};
+  const mfg = f.manufacturing_date.trim();
+  const exp = f.expiry_date.trim();
+  if (mfg && !DATE_RE.test(mfg)) errors.manufacturing_date = 'Use YYYY-MM-DD or YYYY-MM';
+  if (exp && !DATE_RE.test(exp)) errors.expiry_date = 'Use YYYY-MM-DD or YYYY-MM';
+  if (mfg && exp && !errors.manufacturing_date && !errors.expiry_date && exp.slice(0, 7) < mfg.slice(0, 7)) {
+    errors.expiry_date = 'Expiry is before the manufacturing date';
+  }
+  return errors;
+}
+
+/** Fills batch fields the shopkeeper has left empty from a details-photo reading. */
+export function fillBatch<T extends Pick<ScanAddForm, 'batch_number' | 'manufacturing_date' | 'expiry_date'>>(
+  f: T,
+  r: { batch_number?: string | null; manufacturing_date?: string | null; expiry_date?: string | null }
+): T {
+  return {
+    ...f,
+    batch_number: f.batch_number.trim() ? f.batch_number : r.batch_number?.trim() || '',
+    manufacturing_date: f.manufacturing_date.trim() ? f.manufacturing_date : r.manufacturing_date?.trim() || '',
+    expiry_date: f.expiry_date.trim() ? f.expiry_date : r.expiry_date?.trim() || '',
+  };
 }
 
 export function emptyScanAddForm(barcode: string): ScanAddForm {
@@ -32,6 +77,9 @@ export function emptyScanAddForm(barcode: string): ScanAddForm {
     tax_rate: '0',
     hsn_sac: '',
     opening_stock: '',
+    batch_number: '',
+    manufacturing_date: '',
+    expiry_date: '',
   };
 }
 
@@ -65,7 +113,7 @@ export function validateScanAddForm(form: ScanAddForm): ScanAddFormErrors {
   if (!blank(form.hsn_sac) && !/^\d{4,8}$/.test(form.hsn_sac.replace(/\s/g, ''))) {
     errors.hsn_sac = 'HSN must be 4 to 8 digits';
   }
-  return errors;
+  return { ...errors, ...batchErrors(form) };
 }
 
 /** Product details a database suggestion or a label photo can supply. */
@@ -85,6 +133,15 @@ export function nameWithSize(name: string, size: string | null | undefined): str
   if (!sz) return n;
   const squash = (v: string) => v.toLowerCase().replace(/\s+/g, '');
   return squash(n).includes(squash(sz)) ? n : `${n} ${sz}`;
+}
+
+/** "Harpic 500 ml" with size "500 ml" → "Harpic": when sizes become variants, the size leaves the name. */
+export function nameWithoutSize(name: string, size: string | null | undefined): string {
+  const sz = (size ?? '').trim();
+  if (!sz) return name.trim();
+  const escaped = sz.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+  const stripped = name.replace(new RegExp(`\\s*${escaped}\\s*$`, 'i'), '').trim();
+  return stripped || name.trim();
 }
 
 /**
@@ -120,5 +177,6 @@ export function scanAddItemPayload(form: ScanAddForm, lookupSource?: string | nu
     opening_stock: numberOrNull(form.opening_stock) ?? 0,
     // Which database's suggestion was accepted. The server records the source from its own cache.
     lookup_source: lookupSource || undefined,
+    opening_batch: batchPayload(form),
   };
 }

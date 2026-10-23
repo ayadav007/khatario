@@ -51,6 +51,8 @@ import { POST as postItem } from '@/app/api/items/route';
 import { GET as getBarcode } from '@/app/api/items/scan-add/barcode/route';
 import { GET as getLookup } from '@/app/api/items/scan-add/lookup/route';
 import { POST as postReadLabel } from '@/app/api/items/scan-add/read-label/route';
+import { POST as postVariant } from '@/app/api/items/scan-add/variant/route';
+import { POST as postAdjustment } from '@/app/api/inventory-adjustments/route';
 import { resetProviderSlotsForTests } from '@/lib/product-lookup/service';
 
 /** Provider answers for the lookup tests. No request leaves the machine. */
@@ -338,6 +340,199 @@ describe('scan & add items', () => {
       pdf.append('step', 'details');
       pdf.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), 'a.pdf');
       expect((await read(pdf)).status).toBe(400);
+    });
+  });
+
+  describe('batches, added stock and sizes', () => {
+    const MAGGI = '8901058000023';
+    const HARPIC = '8901396151012';
+    let maggiId = '';
+    let harpicId = '';
+
+    async function send(handler: (r: NextRequest) => Promise<Response>, url: string, body: unknown, key?: string) {
+      const res = await handler(
+        new NextRequest(`http://localhost${url}`, {
+          method: 'POST',
+          headers: { ...auth(USER, B), ...(key ? { 'x-idempotency-key': key } : {}) },
+          body: JSON.stringify(body),
+        })
+      );
+      return { status: res.status, json: await res.json() };
+    }
+
+    async function openingValue(itemId: string): Promise<number> {
+      const r = await pool.query(
+        `SELECT COALESCE(SUM(debit), 0)::numeric AS v FROM ledger_entry_lines
+          WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'opening_stock'`,
+        [B, itemId]
+      );
+      return Number(r.rows[0].v);
+    }
+
+    beforeAll(async () => {
+      // Add stock uses inventory adjustments, which the plan must include.
+      const plan = await pool.query(
+        `SELECT plan_id FROM subscription_plan_features WHERE feature_id = 'purchase_inventory_adjustments' AND enabled ORDER BY plan_id LIMIT 1`
+      );
+      await pool.query(`UPDATE business_module_subscriptions SET plan_id = $2 WHERE business_id = $1`, [B, plan.rows[0].plan_id]);
+    });
+
+    test('opening stock with a batch goes into that batch and the item switches to FIFO batches', async () => {
+      const saved = await create(
+        {
+          name: `Maggi 70 g ${tag}`,
+          barcode: MAGGI,
+          purchase_price: 11,
+          opening_stock: 24,
+          opening_batch: { batch_number: 'L45', manufacturing_date: '2026-09', expiry_date: '2027-03' },
+        },
+        randomUUID()
+      );
+      expect([saved.status, saved.json.error]).toEqual([201, undefined]);
+      maggiId = saved.json.item.id;
+      const item = await pool.query(`SELECT track_batch, valuation_method FROM items WHERE id = $1`, [maggiId]);
+      expect(item.rows[0]).toEqual({ track_batch: true, valuation_method: 'fifo' });
+      const batch = await pool.query(
+        `SELECT batch_number, manufacturing_date::text AS mfg, expiry_date::text AS exp, quantity::numeric AS qty, purchase_price::numeric AS cost
+           FROM item_batches WHERE item_id = $1`,
+        [maggiId]
+      );
+      expect(batch.rows).toEqual([{ batch_number: 'L45', mfg: '2026-09-01', exp: '2027-03-31', qty: '24.000', cost: '11.00' }]);
+      const move = await pool.query(`SELECT batch_id IS NOT NULL AS linked, unit_cost::numeric AS cost FROM stock_movements WHERE item_id = $1`, [maggiId]);
+      expect(move.rows).toEqual([{ linked: true, cost: '11.00' }]);
+      expect(await openingValue(maggiId)).toBe(264);
+    });
+
+    test('without a batch the item is created exactly as before', async () => {
+      const saved = await create({ name: `Plain ${tag}`, purchase_price: 3, opening_stock: 4 }, randomUUID());
+      const item = await pool.query(
+        `SELECT COALESCE(track_batch, false) AS t, COALESCE(valuation_method, 'simple') AS v FROM items WHERE id = $1`,
+        [saved.json.item.id]
+      );
+      expect(item.rows[0]).toEqual({ t: false, v: 'simple' });
+      const move = await pool.query(`SELECT batch_id, unit_cost FROM stock_movements WHERE item_id = $1`, [saved.json.item.id]);
+      expect(move.rows).toEqual([{ batch_id: null, unit_cost: null }]);
+    });
+
+    test('a bad batch date is refused before anything is saved', async () => {
+      const bad = await create({ name: `Bad date ${tag}`, purchase_price: 3, opening_stock: 4, opening_batch: { expiry_date: '2027-02-30' } }, randomUUID());
+      expect([bad.status, bad.json.code]).toEqual([400, 'INVALID_BATCH']);
+    });
+
+    test('added stock with a new batch makes a second batch; a retry adds nothing more', async () => {
+      const key = randomUUID();
+      const body = {
+        adjustment_type: 'QUANTITY',
+        item_id: maggiId,
+        direction: 'INCREASE',
+        quantity: 10,
+        reason_code: 'STOCK_TAKE',
+        adjustment_date: '2026-10-23',
+        batch: { batch_number: 'L52', expiry_date: '2027-06' },
+      };
+      const first = await send(postAdjustment, '/api/inventory-adjustments', body, key);
+      expect([first.status, first.json.error]).toEqual([201, undefined]);
+      const retry = await send(postAdjustment, '/api/inventory-adjustments', body, key);
+      expect([retry.status, retry.json.idempotent]).toEqual([200, true]);
+      expect(retry.json.adjustment.adjustmentId).toBe(first.json.adjustment.adjustmentId);
+
+      const reused = await send(postAdjustment, '/api/inventory-adjustments', { ...body, quantity: 11 }, key);
+      expect([reused.status, reused.json.code]).toEqual([409, 'IDEMPOTENCY_KEY_REUSED']);
+
+      const batches = await pool.query(
+        `SELECT batch_number, quantity::numeric AS q FROM item_batches WHERE item_id = $1 ORDER BY batch_number`,
+        [maggiId]
+      );
+      expect(batches.rows).toEqual([
+        { batch_number: 'L45', q: '24.000' },
+        { batch_number: 'L52', q: '10.000' },
+      ]);
+      const adjustments = await pool.query(`SELECT COUNT(*)::int AS n FROM inventory_adjustments WHERE item_id = $1`, [maggiId]);
+      expect(adjustments.rows[0].n).toBe(1);
+      const item = await pool.query(`SELECT current_stock::numeric AS s FROM items WHERE id = $1`, [maggiId]);
+      expect(Number(item.rows[0].s)).toBe(34);
+    });
+
+    test('an item that has had a stock change cannot be split into sizes', async () => {
+      const r = await send(postVariant, '/api/items/scan-add/variant', { item_id: maggiId, variant_name: '140 g' }, randomUUID());
+      expect([r.status, r.json.code]).toEqual([409, 'ITEM_HAS_HISTORY']);
+      const item = await pool.query(`SELECT has_variants FROM items WHERE id = $1`, [maggiId]);
+      expect(item.rows[0].has_variants).toBe(false);
+    });
+
+    test('a second size under the same barcode turns a fresh item into sizes, keeping its stock and value', async () => {
+      const saved = await create(
+        {
+          name: `Harpic 500 ml ${tag}`,
+          barcode: HARPIC,
+          net_quantity: '500 ml',
+          purchase_price: 80,
+          selling_price: 99,
+          opening_stock: 6,
+          opening_batch: { batch_number: 'H1', expiry_date: '2028-01' },
+        },
+        randomUUID()
+      );
+      harpicId = saved.json.item.id;
+      expect(await openingValue(harpicId)).toBe(480);
+
+      const key = randomUUID();
+      const body = {
+        item_id: harpicId,
+        variant_name: '200 ml',
+        selling_price: 45,
+        purchase_price: 36,
+        opening_stock: 10,
+        existing_variant_name: '500 ml',
+        item_name: `Harpic ${tag}`,
+        batch: { batch_number: 'H9', expiry_date: '2028-04' },
+      };
+      const first = await send(postVariant, '/api/items/scan-add/variant', body, key);
+      expect([first.status, first.json.error, first.json.converted]).toEqual([201, undefined, true]);
+      const retry = await send(postVariant, '/api/items/scan-add/variant', body, key);
+      expect([retry.status, retry.json.variant_id]).toEqual([200, first.json.variant_id]);
+
+      const item = await pool.query(
+        `SELECT name, has_variants, opening_stock::numeric AS os, current_stock::numeric AS cs, net_quantity, barcode FROM items WHERE id = $1`,
+        [harpicId]
+      );
+      expect(item.rows[0]).toEqual({ name: `Harpic ${tag}`, has_variants: true, os: '0.00', cs: '0.00', net_quantity: null, barcode: HARPIC });
+      const vs = await pool.query(
+        `SELECT v.variant_name, v.opening_stock::numeric AS os, v.current_stock::numeric AS cs, v.barcode,
+                (SELECT string_agg(b.batch_number || ':' || b.quantity::int, ',') FROM item_batches b WHERE b.variant_id = v.id) AS batches
+           FROM item_variants v WHERE v.item_id = $1 ORDER BY v.variant_name`,
+        [harpicId]
+      );
+      expect(vs.rows).toEqual([
+        { variant_name: '200 ml', os: '10.00', cs: '10.00', barcode: null, batches: 'H9:10' },
+        { variant_name: '500 ml', os: '6.00', cs: '6.00', barcode: null, batches: 'H1:6' },
+      ]);
+      const itemLevelBatches = await pool.query(`SELECT COUNT(*)::int AS n FROM item_batches WHERE item_id = $1 AND variant_id IS NULL`, [harpicId]);
+      expect(itemLevelBatches.rows[0].n).toBe(0);
+      // 6 × 80 kept for the first pack, plus 10 × 36 for the new one.
+      expect(await openingValue(harpicId)).toBe(840);
+
+      const scanned = await lookup(HARPIC);
+      expect(scanned.json.match.item.has_variants).toBe(true);
+      expect(scanned.json.match.variants.map((v: { variant_name: string }) => v.variant_name)).toEqual(['200 ml', '500 ml']);
+    });
+
+    test('a size the item already has is refused; a new one is added', async () => {
+      const dup = await send(postVariant, '/api/items/scan-add/variant', { item_id: harpicId, variant_name: '200 ML' }, randomUUID());
+      expect([dup.status, dup.json.code]).toEqual([409, 'VARIANT_EXISTS']);
+      const more = await send(postVariant, '/api/items/scan-add/variant', { item_id: harpicId, variant_name: '1 L', purchase_price: 150, opening_stock: 2 }, randomUUID());
+      expect([more.status, more.json.converted]).toEqual([201, false]);
+    });
+
+    test('another business cannot add a size to this item', async () => {
+      const res = await postVariant(
+        new NextRequest('http://localhost/api/items/scan-add/variant', {
+          method: 'POST',
+          headers: auth(OUSER, OTHER),
+          body: JSON.stringify({ item_id: harpicId, variant_name: '50 ml' }),
+        })
+      );
+      expect(res.status).toBe(404);
     });
   });
 });

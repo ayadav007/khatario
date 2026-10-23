@@ -244,10 +244,18 @@ export async function POST(request: NextRequest) {
       seo_image_url,
       /** Scan & Add: provider whose suggestion the shopkeeper accepted. Its source is read from our own cache. */
       lookup_source,
+      /** Scan & Add: batch code and dates printed on the stock being entered as opening stock. */
+      opening_batch,
     } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    const { normalizeOpeningBatch } = await import('@/lib/items/opening-batch');
+    const openingBatch = normalizeOpeningBatch(opening_batch);
+    if (openingBatch && 'error' in openingBatch) {
+      return NextResponse.json({ error: openingBatch.error, code: 'INVALID_BATCH' }, { status: 400 });
     }
 
     // CRITICAL: Enforce access boundary - reject attendance-only employees
@@ -524,10 +532,38 @@ export async function POST(request: NextRequest) {
       // Opening stock of a plain item posts in the same transaction as the item, so a failed save
       // leaves neither and a retried save cannot post it twice.
       if (finalOpeningStock > 0 && item_type === 'goods') {
+        // Batch and expiry from the pack: the stock goes into that batch, and the item draws
+        // batches down oldest first (FIFO). Without stock there is nothing to put in a batch.
+        let batchId: string | null = null;
+        if (openingBatch && !('error' in openingBatch)) {
+          const batchRow = await client.query<{ id: string }>(
+            `INSERT INTO item_batches (
+               business_id, item_id, batch_number, manufacturing_date, expiry_date, purchase_price, quantity, notes
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Opening stock')
+             RETURNING id`,
+            [
+              business_id,
+              item.id,
+              openingBatch.batchNumber,
+              openingBatch.manufacturingDate,
+              openingBatch.expiryDate,
+              Number(purchase_price) || 0,
+              finalOpeningStock,
+            ]
+          );
+          batchId = batchRow.rows[0]?.id ?? null;
+          await client.query(
+            `UPDATE items SET track_batch = true, valuation_method = 'fifo' WHERE id = $1 AND business_id = $2`,
+            [item.id, business_id]
+          );
+          item = { ...item, track_batch: true, valuation_method: 'fifo' } as Item;
+        }
         await client.query(
-          `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes)
-           VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock')`,
-          [business_id, item.id, finalOpeningStock]
+          `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes, batch_id, unit_cost)
+           VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock', $4, $5)`,
+          // Cost and batch only when a batch was saved, so the New Item form posts exactly as before.
+          [business_id, item.id, finalOpeningStock, batchId, batchId ? Number(purchase_price) || 0 : null]
         );
         await seedOpeningStockLayers(business_id, {
           itemId: item.id,

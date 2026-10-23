@@ -47,6 +47,15 @@ ScannedItem? matchScannedItem(List<Map<String, dynamic>> items, String code) {
   return null;
 }
 
+/// Sizes to choose from when the code is the item's own barcode and the item has sizes
+/// (Scan & Add saves extra pack sizes under one barcode). Empty when no choice is needed.
+List<Map<String, dynamic>> sizesToPick(ScannedItem hit) {
+  if (hit.variant != null || hit.item['has_variants'] != true) return const [];
+  final variants = hit.item['variants'];
+  if (variants is! List) return const [];
+  return variants.whereType<Map>().map((v) => Map<String, dynamic>.from(v)).toList();
+}
+
 /// Looks a code up through `/api/items/search` (which ranks exact barcode matches first).
 Future<ScannedItem?> lookupBarcode(KhatarioApi api, String code) async {
   final body = await api.getJson(Uri(path: '/api/items/search', queryParameters: {'q': code.trim(), 'scan': '1'}).toString());
@@ -93,8 +102,23 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     _lastAt = now;
     setState(() => _busy = true);
     try {
-      final hit = await lookupBarcode(widget.api, c);
+      var hit = await lookupBarcode(widget.api, c);
       if (!mounted) return;
+      final sizes = hit == null ? const <Map<String, dynamic>>[] : sizesToPick(hit);
+      if (hit != null && sizes.isNotEmpty) {
+        await _controller.stop();
+        final picked = await _pickSize(hit.name, sizes);
+        if (mounted) await _controller.start();
+        if (!mounted) return;
+        if (picked == null) {
+          setState(() {
+            _error = false;
+            _message = 'Not added. Scan again and pick a size.';
+          });
+          return;
+        }
+        hit = ScannedItem(item: hit.item, variant: picked);
+      }
       if (hit == null) {
         HapticFeedback.heavyImpact();
         setState(() {
@@ -102,12 +126,13 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
           _message = 'No item with code $c. Add the barcode to the item first.';
         });
       } else {
+        final added = hit;
         HapticFeedback.mediumImpact();
-        widget.onItem(hit);
+        widget.onItem(added);
         setState(() {
           _error = false;
-          _added.add(hit.name);
-          _message = 'Added ${hit.name} · $rupeeSign${enIn(hit.price, maxFraction: 2)}';
+          _added.add(added.name);
+          _message = 'Added ${added.name} · $rupeeSign${enIn(added.price, maxFraction: 2)}';
         });
       }
     } on ApiException catch (e) {
@@ -120,6 +145,40 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// "Which size is this?" for a barcode several pack sizes share. Null when cancelled.
+  Future<Map<String, dynamic>?> _pickSize(String itemName, List<Map<String, dynamic>> sizes) {
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.gutter),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(itemName, style: AppText.heading.copyWith(fontSize: 17)),
+              const SizedBox(height: 4),
+              Text('Which size is this?', style: AppText.label),
+              const SizedBox(height: AppSpace.md),
+              for (final v in sizes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: KButton.secondary(
+                    label: '${v['variant_name'] ?? ''}'
+                        '${v['selling_price'] != null ? ' · $rupeeSign${enIn(toNum(v['selling_price']), maxFraction: 2)}' : ''}'
+                        ' · Stock ${toNum(v['current_stock'])}',
+                    onPressed: () => Navigator.of(ctx).pop(v),
+                  ),
+                ),
+              KTextButton(label: 'Cancel', onTap: () => Navigator.of(ctx).pop()),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override

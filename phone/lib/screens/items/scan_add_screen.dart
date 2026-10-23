@@ -9,6 +9,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../purchases/bill_camera.dart';
+import 'scan_add_existing_screen.dart';
 import 'scan_add_logic.dart';
 
 /// Label photos Scan & Add asks for, in order. Same steps as the website's PHOTO_STEPS.
@@ -23,9 +24,12 @@ enum _Stage { looking, photo, form }
 /// Scan & Add Items, the phone side of `app/(app)/items/scan-add/page.tsx`.
 /// Scan a barcode; if the shop already has it, say so; otherwise fill in the new item and its stock.
 class ScanAddScreen extends StatefulWidget {
-  const ScanAddScreen({super.key, required this.session});
+  const ScanAddScreen({super.key, required this.session, this.canAddStock = false});
 
   final AppSession session;
+
+  /// Plan has inventory adjustments, so a product already in the shop can get more stock.
+  final bool canAddStock;
 
   @override
   State<ScanAddScreen> createState() => _ScanAddScreenState();
@@ -99,39 +103,19 @@ class _ScanAddScreenState extends State<ScanAddScreen> {
   }
 
   Future<void> _showExisting(String barcode, Map<String, dynamic> match) async {
-    final item = match['item'] is Map ? Map<String, dynamic>.from(match['item'] as Map) : const <String, dynamic>{};
-    final variants = (match['variants'] as List? ?? const [])
-        .whereType<Map>()
-        .map((v) => v['variant_name']?.toString() ?? '')
-        .where((v) => v.isNotEmpty)
-        .toList();
-    final stock = item['current_stock'];
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpace.gutter),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Already in your shop', style: AppText.heading.copyWith(fontSize: 18)),
-              const SizedBox(height: AppSpace.sm),
-              Text(item['name']?.toString() ?? '', style: AppText.body),
-              const SizedBox(height: 4),
-              Text(
-                'Barcode $barcode · Stock ${stock ?? 0} ${item['unit'] ?? ''}${variants.isEmpty ? '' : ' · Sizes: ${variants.join(', ')}'}',
-                style: AppText.label,
-              ),
-              const SizedBox(height: AppSpace.md),
-              KButton(label: 'Skip, scan next', onPressed: () => Navigator.of(ctx).pop()),
-            ],
-          ),
-        ),
+    final done = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ScanAddExistingScreen(session: widget.session, barcode: barcode, match: match, canAddStock: widget.canAddStock),
       ),
     );
-    if (mounted) _say('${item['name'] ?? 'This product'} is already in your shop.');
+    if (!mounted) return;
+    final item = match['item'] is Map ? match['item'] as Map : const {};
+    if (done != null) {
+      setState(() => _added.add(done));
+      _say('$done. Scan the next product.');
+    } else {
+      _say('${item['name'] ?? 'This product'} is already in your shop.');
+    }
   }
 
   @override
@@ -259,6 +243,9 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
   final _purchase = TextEditingController();
   final _hsn = TextEditingController();
   final _opening = TextEditingController();
+  final _batch = TextEditingController();
+  final _mfg = TextEditingController();
+  final _exp = TextEditingController();
   String _unit = 'PCS';
   String _tax = '0';
   bool _saving = false;
@@ -351,6 +338,11 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
       if ((res.statusCode ?? 500) >= 400) throw ApiException(body['error']?.toString() ?? 'Could not read this photo');
       final reading = body['reading'] is Map ? Map<String, dynamic>.from(body['reading'] as Map) : <String, dynamic>{};
       _apply(ProductFacts.fromReading(reading));
+      // Batch and dates from the details photo fill only empty fields.
+      for (final (c, key) in [(_batch, 'batch_number'), (_mfg, 'manufacturing_date'), (_exp, 'expiry_date')]) {
+        final v = reading[key]?.toString().trim() ?? '';
+        if (c.text.trim().isEmpty && v.isNotEmpty) c.text = v;
+      }
       // Once any photo has shown the pack size, the size photo is not asked for.
       final hasSize = (reading['size']?.toString() ?? '').isNotEmpty;
       final queue = <String>[];
@@ -378,7 +370,7 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_barcode, _name, _brand, _size, _mrp, _selling, _purchase, _hsn, _opening]) {
+    for (final c in [_barcode, _name, _brand, _size, _mrp, _selling, _purchase, _hsn, _opening, _batch, _mfg, _exp]) {
       c.dispose();
     }
     super.dispose();
@@ -396,6 +388,9 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
     taxRate: _tax,
     hsn: _hsn.text,
     openingStock: _opening.text,
+    batchNumber: _batch.text,
+    manufacturingDate: _mfg.text,
+    expiryDate: _exp.text,
   );
 
   Future<void> _save() async {
@@ -629,6 +624,25 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
                               KChipBar<String>(value: _tax, padding: EdgeInsets.zero, options: rates, onChanged: (v) => setState(() => _tax = v)),
                               gap,
                               _f(_hsn, 'HSN (optional)', field: 'hsn_sac', number: true),
+                              gap,
+                              _f(_batch, 'Batch no. (optional)'),
+                              gap,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _f(_mfg, 'Mfg date', field: 'manufacturing_date', hint: '2026-09'),
+                                  ),
+                                  const SizedBox(width: AppSpace.md),
+                                  Expanded(
+                                    child: _f(_exp, 'Expiry date', field: 'expiry_date', hint: '2027-03'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppSpace.sm),
+                              Text(
+                                'With a batch or date, the stock you have is saved in that batch and sales use the oldest batch first.',
+                                style: AppText.label,
+                              ),
                             ],
                           ),
                         ),

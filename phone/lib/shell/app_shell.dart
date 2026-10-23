@@ -376,7 +376,7 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     final added = await Navigator.of(context).push<bool>(MaterialPageRoute(
-      builder: (_) => ScanAddScreen(session: widget.session),
+      builder: (_) => ScanAddScreen(session: widget.session, canAddStock: _capabilities?.has('purchase_inventory_adjustments') ?? false),
     ));
     if (added == true && mounted) setState(() => _itemsEpoch++);
   }

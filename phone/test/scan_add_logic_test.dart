@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/items/scan_add_logic.dart';
+import 'package:khatario_phone/screens/invoices/invoice_scan.dart';
 
 void main() {
   const base = ScanAddValues(barcode: '0089012345675', name: 'Parle-G 100 g');
@@ -70,6 +71,56 @@ void main() {
     test('the accepted provider is sent by name only', () {
       expect(scanAddItemBody(base, lookupSource: 'productguru')['lookup_source'], 'productguru');
       expect(scanAddItemBody(base).containsKey('lookup_source'), isFalse);
+    });
+  });
+
+  group('batches and sizes', () {
+    test('a batch goes with the body only when there is stock', () {
+      expect(batchBody('12', 'L45', '', '2027-03'), {'batch_number': 'L45', 'expiry_date': '2027-03'});
+      expect(batchBody('0', 'L45', '', '2027-03'), isNull);
+      expect(batchBody('12', '', '', ''), isNull);
+      final body = scanAddItemBody(const ScanAddValues(barcode: '', name: 'Maggi 70 g', openingStock: '12', purchasePrice: '11', expiryDate: '2027-03'));
+      expect(body['opening_batch'], {'expiry_date': '2027-03'});
+    });
+
+    test('date mistakes are caught before saving', () {
+      expect(batchErrors('09/2026', ''), contains('manufacturing_date'));
+      expect(batchErrors('2027-05', '2027-01'), contains('expiry_date'));
+      expect(batchErrors('2026-09', '2027-03-31'), isEmpty);
+    });
+
+    test('the size leaves the name when sizes become variants', () {
+      expect(nameWithoutSize('Harpic 500 ml', '500 ml'), 'Harpic');
+      expect(nameWithoutSize('Harpic 500ml', '500 ml'), 'Harpic');
+      expect(nameWithoutSize('Harpic Blue', '500 ml'), 'Harpic Blue');
+    });
+  });
+
+  group('billing a barcode shared by sizes', () {
+    final item = {
+      'name': 'Harpic',
+      'barcode': '8901396151012',
+      'has_variants': true,
+      'variants': [
+        {'id': 'v1', 'variant_name': '500 ml', 'barcode': null},
+        {'id': 'v2', 'variant_name': '200 ml', 'barcode': null},
+      ],
+    };
+
+    test('the item barcode asks which size', () {
+      final hit = matchScannedItem([item], '8901396151012')!;
+      expect(sizesToPick(hit).map((v) => v['variant_name']), ['500 ml', '200 ml']);
+    });
+
+    test('a size with its own barcode, or an item without sizes, needs no choice', () {
+      final own = {
+        ...item,
+        'variants': [
+          {'id': 'v3', 'variant_name': '1 L', 'barcode': '8901396151029'},
+        ],
+      };
+      expect(sizesToPick(matchScannedItem([own], '8901396151029')!), isEmpty);
+      expect(sizesToPick(matchScannedItem([{'name': 'Salt', 'barcode': '1234'}], '1234')!), isEmpty);
     });
   });
 
