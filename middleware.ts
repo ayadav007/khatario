@@ -138,6 +138,25 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
+/**
+ * True when a same-origin Referer shows the call came from a business console page rather than
+ * an employee portal page (`/{slug}/employees/...`). No Referer counts as unknown (false).
+ */
+function isBusinessConsoleReferer(request: NextRequest): boolean {
+  const referer = request.headers.get('referer');
+  if (!referer) return false;
+  let url: URL;
+  try {
+    url = new URL(referer);
+  } catch {
+    return false;
+  }
+  // Behind nginx the Next origin is internal; compare with the public Host header.
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  if (!host || url.host !== host) return false;
+  return !isPublicBusinessEmployeePath(url.pathname);
+}
+
 /** Allowlisted ESS APIs with employee portal cookie (session validated in route handlers). */
 function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | null {
   const token = request.cookies.get(EMPLOYEE_PORTAL_COOKIE)?.value;
@@ -254,8 +273,16 @@ export async function middleware(request: NextRequest) {
 
   if (isPublicPath(pathname)) return nextWithoutSpoofedIdentity(request);
 
-  /** Employee portal ESS APIs: prefer portal cookie over business JWT when both exist. */
-  if (pathname.startsWith('/api/') && isEssApiAllowed(request.method, pathname)) {
+  /**
+   * Employee portal ESS APIs: prefer portal cookie over business JWT when both exist, unless the
+   * call comes from the business console. An owner who also signed in to the portal in this
+   * browser would otherwise see the console's attendance, leave and payslip lists as the employee.
+   */
+  if (
+    pathname.startsWith('/api/') &&
+    isEssApiAllowed(request.method, pathname) &&
+    !isBusinessConsoleReferer(request)
+  ) {
     const portalPassthrough = tryEmployeePortalApiPassthrough(request);
     if (portalPassthrough) return portalPassthrough;
   }

@@ -41,6 +41,7 @@ export default function AttendanceManagementPage() {
   
   const [attendance, setAttendance] = useState<AttendanceWithEmployee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -67,21 +68,25 @@ export default function AttendanceManagementPage() {
 
     setLoading(true);
     try {
+      setLoadError(null);
       const params = new URLSearchParams({
         business_id: business.id,
-        user_id: user?.id || '', // Required for authorization
         start_date: startDate,
         end_date: endDate,
         ...(statusFilter !== 'all' && { status: statusFilter }),
       });
 
       const res = await fetch(`/api/employees/attendance?${params}`);
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         setAttendance(data.attendance || []);
+      } else {
+        setAttendance([]);
+        setLoadError(data.error || 'Could not load attendance.');
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
+      setLoadError('Could not load attendance.');
     } finally {
       setLoading(false);
     }
@@ -260,7 +265,7 @@ export default function AttendanceManagementPage() {
           ) : filteredAttendance.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-text-secondary">No attendance records found</p>
+              <p className="text-text-secondary">{loadError ?? 'No attendance records found'}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
