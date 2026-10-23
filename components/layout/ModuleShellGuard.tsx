@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { moduleForPath } from '@/lib/platform-modules';
-import { featureIdForPath } from '@/lib/subscription/plan-path-gate';
+import { featureIdForPath, isSupplierHubHref } from '@/lib/subscription/plan-path-gate';
 import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 import {
   CONNECT_AGENT_HOME_PATH,
@@ -39,7 +39,10 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { loading, platformSession, user } = useAuth();
-  const { loading: planLoading, snapshotLoaded, enabledFeatureIds } = useLayoutData();
+  const { loading: planLoading, snapshotLoaded, enabledFeatureIds, supplierHubVisible } = useLayoutData();
+  const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
+  const hubPath = isSupplierHubHref(pathname);
+  const hubHidden = hubPath && supplierHubVisible === false;
 
   const requiredFeature = featureIdForPath(pathname);
   const planKnown = snapshotLoaded && !planLoading;
@@ -49,6 +52,10 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
     !enabledFeatureIds.includes(requiredFeature);
 
   useEffect(() => {
+    if (hubHidden) {
+      router.replace(homeHref);
+      return;
+    }
     if (loading || !pathname || blockedByPlan) return;
 
     if (isConnectAgentSeat(user) && isConnectAgentBlockedPath(pathname)) {
@@ -71,7 +78,10 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
     if (!platformSession.enabledModules.includes(requiredModule)) {
       router.replace(`/settings/products?upsell=${requiredModule}`);
     }
-  }, [blockedByPlan, loading, pathname, platformSession, router, user]);
+  }, [blockedByPlan, homeHref, hubHidden, loading, pathname, platformSession, router, user]);
+
+  if (hubPath && supplierHubVisible === null) return null;
+  if (hubHidden) return null;
 
   if (blockedByPlan && requiredFeature) {
     return (

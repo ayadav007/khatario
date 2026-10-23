@@ -5,6 +5,7 @@ import { Check, X, Loader2, Save } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { SupplierHubVisibilitySwitch } from '@/components/admin/SupplierHubVisibilitySwitch';
 
 interface Feature {
   id: string;
@@ -156,6 +157,8 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
             ×
           </button>
         </div>
+
+        <SupplierHubVisibilitySwitch />
 
         {/* Feature Matrix by Category */}
         <div className="space-y-6 mb-6">

@@ -64,7 +64,7 @@ export async function POST(
 
     // CRITICAL: Enforce subscription feature access
     try {
-      await assertFeatureAccess(businessId, 'supplier_management');
+      await assertFeatureAccess(businessId, 'purchase_supplier_hub');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();

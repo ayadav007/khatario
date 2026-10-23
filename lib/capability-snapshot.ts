@@ -46,6 +46,8 @@ export interface CapabilitySnapshot {
   subscription: Subscription | null;
   addons: Addon[];
   enabledFeatures: string[];
+  /** Platform show/hide for Supplier Hub. Missing on older cached snapshots. */
+  supplierHubVisible?: boolean;
   timestamp: number;
 }
 

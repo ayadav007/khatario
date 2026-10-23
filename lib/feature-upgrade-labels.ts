@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   purchase_management: 'Purchase management',
   expense_tracking: 'Expense tracking',
   supplier_management: 'Supplier management',
+  purchase_supplier_hub: 'Supplier Hub',
   reports_basic: 'Basic reports',
   reports_gst: 'GST reports',
   reports_advanced: 'Advanced reports',

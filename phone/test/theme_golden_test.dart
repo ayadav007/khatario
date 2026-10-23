@@ -138,9 +138,9 @@ void main() {
 
   test('bottom nav layouts follow BottomNav.tsx', () {
     List<String> labels(Map<String, dynamic> raw) => bottomNavItems(AppSession(KhatarioApi(Dio()), raw)).map((i) => i.$2).toList();
-    Map<String, dynamic> s(List<String> modules, {String seat = 'billing', bool admin = false, bool invoices = false}) => {
+    Map<String, dynamic> s(List<String> modules, {String seat = 'billing', bool admin = false, bool invoices = false, Map<String, dynamic>? nav}) => {
           'isPrimaryAdmin': admin,
-          'user': {'seat_type': seat},
+          'user': {'seat_type': seat, if (nav != null) 'mobile_nav': nav},
           'platform': {'enabledModules': modules},
           'permissions': {
             'invoices': {'can_view': invoices},
@@ -154,5 +154,10 @@ void main() {
     expect(labels(s(['hr', 'connect'])), ['Home', 'Team', 'Attendance', 'More']);
     expect(labels(s(['billing', 'connect'], seat: 'connect')), ['Chats', 'Contacts', 'Parties', 'More']);
     expect(labels(s(['billing', 'connect'], seat: 'connect', invoices: true)), ['Chats', 'Contacts', 'Orders', 'More']);
+    expect(labels(s(['billing'], nav: {'slotCount': 4, 'middle': ['items', 'parties']})), ['Home', 'Items', 'Parties', 'More']);
+    expect(
+      labels(s(['billing'], nav: {'slotCount': 5, 'middle': ['parties', 'invoices', 'items']})),
+      ['Home', 'Parties', 'Invoices', 'Items', 'More'],
+    );
   });
 }

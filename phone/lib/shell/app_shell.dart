@@ -42,6 +42,8 @@ import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
 import 'date_range.dart';
+import 'mobile_nav.dart';
+import 'mobile_nav_editor.dart';
 import 'module_settings_sheet.dart';
 import 'shell_banners.dart';
 
@@ -51,41 +53,25 @@ enum AppTab { home, invoices, items, parties, more, chats, contacts, team, atten
 
 typedef NavItem = (AppTab tab, String label, IconData icon, IconData activeIcon, int badge);
 
-/// `BottomNav.tsx` layouts; the first matching rule wins.
+/// `BottomNav.tsx` layouts. A saved `user.mobile_nav` replaces the middle shortcuts.
 List<NavItem> bottomNavItems(AppSession s, {int unpaidInvoices = 0, int lowStockItems = 0}) {
   const home = (AppTab.home, 'Home', LucideIcons.house, LucideIcons.house500, 0);
   const more = (AppTab.more, 'More', LucideIcons.ellipsis, LucideIcons.ellipsis500, 0);
   const chats = (AppTab.chats, 'Chats', LucideIcons.messageSquare, LucideIcons.messageSquare500, 0);
-  const contacts = (AppTab.contacts, 'Contacts', LucideIcons.contact, LucideIcons.contact500, 0);
-  const parties = (AppTab.parties, 'Parties', LucideIcons.users, LucideIcons.users500, 0);
-  final invoices = (AppTab.invoices, 'Invoices', LucideIcons.fileText, LucideIcons.fileText500, unpaidInvoices);
-  final billing = s.hasModule('billing');
-  if (s.isConnectAgent) {
-    return [
-      chats,
-      contacts,
-      if (s.canView('invoices'))
-        (AppTab.orders, 'Orders', LucideIcons.truck, LucideIcons.truck500, 0)
-      else
-        parties,
-      more,
-    ];
-  }
-  if (s.hasModule('hr') && !billing) {
-    return [
-      home,
-      (AppTab.team, 'Team', LucideIcons.users, LucideIcons.users500, 0),
-      (AppTab.attendance, 'Attendance', LucideIcons.calendarCheck, LucideIcons.calendarCheck500, 0),
-      more,
-    ];
-  }
-  if (s.hasModule('connect') && !billing) return [home, chats, contacts, more];
-  if (s.hasModule('connect')) return [home, invoices, chats, parties, more];
+  NavItem middle(String id) => switch (id) {
+        'invoices' => (AppTab.invoices, 'Invoices', LucideIcons.fileText, LucideIcons.fileText500, unpaidInvoices),
+        'items' => (AppTab.items, 'Items', LucideIcons.package, LucideIcons.package500, lowStockItems),
+        'parties' => (AppTab.parties, 'Parties', LucideIcons.users, LucideIcons.users500, 0),
+        'chats' => chats,
+        'contacts' => (AppTab.contacts, 'Contacts', LucideIcons.contact, LucideIcons.contact500, 0),
+        'orders' => (AppTab.orders, 'Orders', LucideIcons.truck, LucideIcons.truck500, 0),
+        'team' => (AppTab.team, 'Team', LucideIcons.users, LucideIcons.users500, 0),
+        'attendance' => (AppTab.attendance, 'Attendance', LucideIcons.calendarCheck, LucideIcons.calendarCheck500, 0),
+        _ => (AppTab.parties, 'Parties', LucideIcons.users, LucideIcons.users500, 0),
+      };
   return [
-    home,
-    invoices,
-    (AppTab.items, 'Items', LucideIcons.package, LucideIcons.package500, lowStockItems),
-    parties,
+    pinnedChats(s) ? chats : home,
+    for (final id in displayedMiddle(s)) middle(id),
     more,
   ];
 }
@@ -140,6 +126,11 @@ class _AppShellState extends State<AppShell> {
 
   /// The Items page's header search toggle (`useMobileHeaderRightAccessory`).
   bool _itemsSearchOpen = false;
+
+  Future<void> _editNav() async {
+    final saved = await showMobileNavEditor(context, widget.session);
+    if (saved && mounted) await widget.onSessionChanged();
+  }
 
   void _selectTab(AppTab t) {
     if (t == AppTab.home && _tab != AppTab.home) _banners.loadUsage();
@@ -618,6 +609,7 @@ class _AppShellState extends State<AppShell> {
           onNavigate: _openFromMore,
           onOpen: _openAnything,
           onSignOut: widget.onSignOut,
+          onEditNav: _editNav,
         ),
       AppTab.chats => ChatsInboxScreen(key: ValueKey('chats-${widget.session.businessId}'), session: widget.session),
       AppTab.contacts => _recordTab('/whatsapp/contacts'),
@@ -716,6 +708,7 @@ class _AppShellState extends State<AppShell> {
           _selectTab(t);
           _loadBadges();
         },
+        onCustomize: _editNav,
       ),
     );
   }
@@ -957,11 +950,12 @@ class _BusinessSwitcherBarState extends State<BusinessSwitcherBar> {
 }
 
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.tab, required this.items, required this.onTab});
+  const _BottomNav({required this.tab, required this.items, required this.onTab, required this.onCustomize});
 
   final AppTab tab;
   final List<NavItem> items;
   final ValueChanged<AppTab> onTab;
+  final VoidCallback onCustomize;
 
   @override
   Widget build(BuildContext context) {
@@ -983,6 +977,7 @@ class _BottomNav extends StatelessWidget {
                     selected: t == tab,
                     child: InkWell(
                       onTap: () => onTab(t),
+                      onLongPress: onCustomize,
                       highlightColor: Colors.transparent,
                       splashColor: Colors.transparent,
                       child: Column(

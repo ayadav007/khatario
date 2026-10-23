@@ -34,6 +34,8 @@ import { isModuleSubscriptionOperational } from '@/lib/subscription/module-opera
 import type { PlatformModule } from '@/lib/platform-modules';
 import * as db from '../db';
 import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
+import { SUPPLIER_HUB_FEATURE_ID } from '@/lib/subscription/plan-path-gate';
+import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
 
 /** Built-in matrix when `subscription_plan_features` rows are missing (migration drift). */
 const HR_PLAN_FEATURE_FALLBACKS: Record<string, string[]> = {
@@ -134,6 +136,21 @@ export class FeatureAccessDeniedError extends Error {
   /** Same shape as route handlers using {@link AuthorizationError#toNextResponse} */
   toNextResponse(): NextResponse {
     return NextResponse.json(this.toResponse(), { status: 403 });
+  }
+}
+
+/** Platform hide switch. Not a plan denial, so it must not open the upgrade modal. */
+export class SupplierHubHiddenError extends FeatureAccessDeniedError {
+  constructor() {
+    super(SUPPLIER_HUB_FEATURE_ID, 'platform', 'FEATURE_NOT_ENABLED');
+    this.name = 'SupplierHubHiddenError';
+  }
+
+  toNextResponse(): NextResponse {
+    return NextResponse.json(
+      { error: 'Supplier Hub is not available.', code: 'FEATURE_HIDDEN', feature: SUPPLIER_HUB_FEATURE_ID },
+      { status: 404 },
+    );
   }
 }
 
@@ -482,6 +499,15 @@ export async function assertFeatureAccess(
       businessId || 'unknown',
       'NO_SUBSCRIPTION'
     );
+  }
+
+  if (
+    featureKey === SUPPLIER_HUB_FEATURE_ID ||
+    normalizeFeatureKey(featureKey) === SUPPLIER_HUB_FEATURE_ID
+  ) {
+    if (!(await isSupplierHubVisible())) {
+      throw new SupplierHubHiddenError();
+    }
   }
 
   await assertOperationalSubscriptionExists(businessId, featureKey);

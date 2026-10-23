@@ -16,6 +16,28 @@ describe('featureIdForPath', () => {
     expect(featureIdForPath('/api/customers')).toBeNull();
   });
 
+  it('gates Supplier Hub separately from the supplier list', () => {
+    expect(featureIdForPath('/suppliers')).toBe('purchase_suppliers');
+    expect(featureIdForPath('/suppliers/new')).toBe('purchase_suppliers');
+    expect(featureIdForPath('/suppliers/abc')).toBe('purchase_suppliers');
+    expect(featureIdForPath('/api/suppliers')).toBe('purchase_suppliers');
+    expect(featureIdForPath('/api/suppliers/search-business')).toBe('purchase_suppliers');
+
+    expect(featureIdForPath('/suppliers/hub')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/suppliers/hub/find')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/suppliers/dashboard')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/suppliers/catalog')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/suppliers/requests')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/suppliers/abc/item-links')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/purchases/incoming')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/purchases/requests')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/purchases')).toBe('purchase_management');
+    expect(featureIdForPath('/supply-orders')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/api/suppliers/hub/home')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/api/suppliers/abc/approve')).toBe('purchase_supplier_hub');
+    expect(featureIdForPath('/api/stock-requests')).toBe('purchase_supplier_hub');
+  });
+
   it('gates the matching API', () => {
     expect(featureIdForPath('/api/credit-notes')).toBe('sales_credit_notes');
     expect(featureIdForPath('/api/accounts/groups')).toBe('accounting_chart');

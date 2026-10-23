@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { buildFlatSettingsGroups } from '@/lib/settings-module-registry';
 import type { PlatformModule } from '@/lib/platform-modules';
@@ -25,6 +26,7 @@ function linkMatches(label: string, href: string, keywords: string[] | undefined
 export function SettingsMobileNav({ open, onClose }: Props) {
   const pathname = usePathname() ?? '';
   const { platformSession } = useAuth();
+  const { supplierHubVisible } = useLayoutData();
   const { hasCapability } = useCapabilityCheck();
   const [search, setSearch] = useState('');
   const [locationHash, setLocationHash] = useState('');
@@ -43,8 +45,9 @@ export function SettingsMobileNav({ open, onClose }: Props) {
     () =>
       buildFlatSettingsGroups(enabledModules, {
         hasFeature: (featureKey) => hasCapability(featureKey, 'view'),
+        supplierHubVisible: supplierHubVisible === true,
       }),
-    [enabledModules, hasCapability],
+    [enabledModules, hasCapability, supplierHubVisible],
   );
 
   const hrefs = useMemo(() => groups.flatMap((group) => group.links.map((link) => link.href)), [groups]);

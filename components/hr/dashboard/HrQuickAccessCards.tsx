@@ -105,31 +105,71 @@ export function HrInboxCard({
   );
 }
 
+const HOLIDAY_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export function splitHolidayDate(iso: string): { day: string; month: string; year: string } | null {
+  const match = iso.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return null;
+  return {
+    year: match[1],
+    month: HOLIDAY_MONTHS[monthIndex],
+    day: String(Number(match[3])),
+  };
+}
+
 export function HrHolidaysCard({
   holidays,
+  viewAllHref,
 }: {
   holidays: Array<{ holiday_date: string; holiday_name: string }>;
+  viewAllHref?: string;
 }) {
   const next = holidays[0];
+  const parts = next ? splitHolidayDate(next.holiday_date) : null;
   return (
-    <QuickAccessCardShell>
-      <CardTitleRow title="Holidays" icon={PartyPopper} iconClassName="text-amber-600" />
-      {next ? (
-        <div className="flex flex-1 flex-col justify-center px-4 pb-5 pt-2">
-          <p className="text-sm font-medium text-text-primary">{next.holiday_name}</p>
-          <p className="mt-1 text-xs text-text-secondary">
-            {new Date(next.holiday_date).toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-            })}
-          </p>
+    <QuickAccessCardShell className="overflow-hidden bg-gradient-to-br from-amber-50 via-white to-orange-50">
+      <div className="flex items-center justify-between gap-2 px-4 pt-4">
+        <div className="flex items-center gap-2">
+          <PartyPopper className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+          <h3 className="text-sm font-semibold text-text-primary">Holidays</h3>
+        </div>
+        {viewAllHref ? (
+          <Link
+            href={viewAllHref}
+            className="inline-flex min-h-10 items-center px-1 text-sm font-medium text-amber-900"
+          >
+            View all
+          </Link>
+        ) : null}
+      </div>
+      {parts && next ? (
+        <div className="flex flex-1 flex-col px-4 pb-4 pt-1">
+          <p className="text-5xl font-semibold leading-none tabular-nums text-amber-950">{parts.day}</p>
+          <p className="mt-1 text-sm text-amber-800">{parts.month}</p>
+          <p className="mt-2 truncate text-base font-semibold text-text-primary">{next.holiday_name}</p>
           {holidays.length > 1 ? (
-            <p className="mt-2 text-xs text-text-muted">+{holidays.length - 1} more upcoming</p>
+            <p className="mt-auto pt-3 text-xs text-text-muted">
+              +{holidays.length - 1} more upcoming
+            </p>
           ) : null}
         </div>
       ) : (
-        <EmptyIllustration icon={PartyPopper} message="No holidays" tone="amber" />
+        <EmptyIllustration icon={PartyPopper} message="No upcoming holidays" tone="amber" />
       )}
     </QuickAccessCardShell>
   );

@@ -65,6 +65,7 @@ export const FEATURE_REGISTRY_IDS = [
   // Purchase domain (Registry IDs)
   'purchase_management',
   'purchase_suppliers',
+  'purchase_supplier_hub',
   'purchase_expenses',
   'purchase_orders',
   
@@ -320,6 +321,7 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'sales_recurring_invoices': 'sales_recurring_invoices',
   'sales_sales_orders': 'sales_sales_orders',
   'purchase_suppliers': 'purchase_suppliers',
+  'purchase_supplier_hub': 'purchase_supplier_hub',
   'purchase_expenses': 'purchase_expenses',
   'settings_multi_user': 'settings_multi_user',
   'settings_multi_branch': 'settings_multi_branch',

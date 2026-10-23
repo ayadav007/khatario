@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -18,23 +18,49 @@ import { clsx } from 'clsx';
 import { useBadges } from '@/contexts/BadgeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCapabilityCheck } from '@/hooks/useCapability';
+import { MobileNavEditor } from '@/components/layout/MobileNavEditor';
+import {
+  MIDDLE_NAV_HREFS,
+  MIDDLE_NAV_LABELS,
+  displayedMiddle,
+  pinnedFirstId,
+  type MiddleNavId,
+  type MobileNavContext,
+} from '@/lib/mobile-bottom-nav';
 import {
   CONNECT_AGENT_HOME_PATH,
   isConnectAgentSeat,
 } from '@/lib/users/connect-seats';
 
+const MIDDLE_ICONS = {
+  invoices: FileText,
+  items: Package,
+  parties: Users,
+  chats: MessageSquare,
+  contacts: Contact,
+  orders: Truck,
+  team: Users,
+  attendance: CalendarCheck,
+} as const;
+
 export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { badgeCounts, refreshBadgeCounts } = useBadges();
-  const { user, platformSession, hasPlatformModule } = useAuth();
+  const { user, platformSession } = useAuth();
   const { hasCapability } = useCapabilityCheck();
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
-  const hrOnly = hasPlatformModule('hr') && !hasPlatformModule('billing');
-  const connectOnly = hasPlatformModule('connect') && !hasPlatformModule('billing');
-  const hasConnect = hasPlatformModule('connect');
   const isConnectAgent = isConnectAgentSeat(user);
-  const agentCanViewOrders = isConnectAgent && hasCapability('invoices', 'view');
-  const attendanceHref = '/employees/attendance';
+  const [editorOpen, setEditorOpen] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  const navContext: MobileNavContext = useMemo(
+    () => ({
+      modules: platformSession?.enabledModules ?? [],
+      isConnectAgent,
+      canViewInvoices: hasCapability('invoices', 'view'),
+    }),
+    [platformSession?.enabledModules, isConnectAgent, hasCapability],
+  );
 
   useEffect(() => {
     const isMobile = window.innerWidth < 1024;
@@ -45,87 +71,45 @@ export const BottomNav: React.FC = () => {
   }, [refreshBadgeCounts]);
 
   const navItems = useMemo(() => {
-    if (isConnectAgent) {
-      const items = [
-        {
-          href: homeHref === '/dashboard' ? CONNECT_AGENT_HOME_PATH : homeHref,
-          label: 'Chats',
-          icon: MessageSquare,
-        },
-        { href: '/whatsapp/contacts', label: 'Contacts', icon: Contact },
-      ];
-      if (agentCanViewOrders) {
-        items.push({ href: '/orders', label: 'Orders', icon: Truck });
-      } else {
-        items.push({ href: '/customers', label: 'Parties', icon: Users });
-      }
-      items.push({ href: '/more', label: 'More', icon: MoreHorizontal });
-      return items;
-    }
+    const middle = displayedMiddle(navContext, user?.mobile_nav).map((id: MiddleNavId) => ({
+      href: MIDDLE_NAV_HREFS[id],
+      label: MIDDLE_NAV_LABELS[id],
+      icon: MIDDLE_ICONS[id],
+      badge:
+        id === 'invoices' && badgeCounts.unpaid_invoices > 0
+          ? badgeCounts.unpaid_invoices
+          : id === 'items' && badgeCounts.low_stock_items > 0
+            ? badgeCounts.low_stock_items
+            : null,
+    }));
+    const first =
+      pinnedFirstId(navContext) === 'chats'
+        ? {
+            href: homeHref === '/dashboard' ? CONNECT_AGENT_HOME_PATH : homeHref,
+            label: 'Chats',
+            icon: MessageSquare,
+            badge: null,
+          }
+        : { href: homeHref, label: 'Home', icon: Home, badge: null };
+    return [...[first], ...middle, { href: '/more', label: 'More', icon: MoreHorizontal, badge: null }];
+  }, [navContext, user?.mobile_nav, homeHref, badgeCounts.unpaid_invoices, badgeCounts.low_stock_items]);
 
-    if (hrOnly) {
-      return [
-        { href: homeHref, label: 'Home', icon: Home },
-        { href: '/employees', label: 'Team', icon: Users },
-        { href: attendanceHref, label: 'Attendance', icon: CalendarCheck },
-        { href: '/more', label: 'More', icon: MoreHorizontal },
-      ];
-    }
+  const startPress = () => {
+    suppressClick.current = false;
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => {
+      suppressClick.current = true;
+      setEditorOpen(true);
+    }, 450);
+  };
 
-    if (connectOnly) {
-      return [
-        { href: homeHref, label: 'Home', icon: Home },
-        { href: '/whatsapp/conversations', label: 'Chats', icon: MessageSquare },
-        { href: '/whatsapp/contacts', label: 'Contacts', icon: Contact },
-        { href: '/more', label: 'More', icon: MoreHorizontal },
-      ];
-    }
-
-    if (hasConnect) {
-      return [
-        { href: homeHref, label: 'Home', icon: Home },
-        {
-          href: '/invoices',
-          label: 'Invoices',
-          icon: FileText,
-          badge: badgeCounts.unpaid_invoices > 0 ? badgeCounts.unpaid_invoices : null,
-        },
-        { href: '/whatsapp/conversations', label: 'Chats', icon: MessageSquare },
-        { href: '/customers', label: 'Parties', icon: Users },
-        { href: '/more', label: 'More', icon: MoreHorizontal },
-      ];
-    }
-
-    return [
-      { href: homeHref, label: 'Home', icon: Home },
-      {
-        href: '/invoices',
-        label: 'Invoices',
-        icon: FileText,
-        badge: badgeCounts.unpaid_invoices > 0 ? badgeCounts.unpaid_invoices : null,
-      },
-      {
-        href: '/items',
-        label: 'Items',
-        icon: Package,
-        badge: badgeCounts.low_stock_items > 0 ? badgeCounts.low_stock_items : null,
-      },
-      { href: '/customers', label: 'Parties', icon: Users },
-      { href: '/more', label: 'More', icon: MoreHorizontal },
-    ];
-  }, [
-    isConnectAgent,
-    agentCanViewOrders,
-    hrOnly,
-    connectOnly,
-    hasConnect,
-    homeHref,
-    badgeCounts.unpaid_invoices,
-    badgeCounts.low_stock_items,
-    attendanceHref,
-  ]);
+  const endPress = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
 
   return (
+    <>
     <nav data-mobile-bottom-nav className="mobile-bottom-nav">
       {navItems.map((item) => {
         const Icon = item.icon;
@@ -137,6 +121,19 @@ export const BottomNav: React.FC = () => {
             href={item.href}
             className={clsx('mobile-nav-item', isActive && 'mobile-nav-item-active')}
             aria-current={isActive ? 'page' : undefined}
+            onPointerDown={startPress}
+            onPointerUp={endPress}
+            onPointerLeave={endPress}
+            onPointerCancel={endPress}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setEditorOpen(true);
+            }}
+            onClick={(event) => {
+              if (!suppressClick.current) return;
+              event.preventDefault();
+              suppressClick.current = false;
+            }}
           >
             <span className="relative z-[1] flex h-8 w-14 items-center justify-center">
               {isActive ? <span className="mobile-nav-pill" aria-hidden /> : null}
@@ -165,5 +162,7 @@ export const BottomNav: React.FC = () => {
         );
       })}
     </nav>
+    <MobileNavEditor open={editorOpen} onClose={() => setEditorOpen(false)} />
+    </>
   );
 };

@@ -66,7 +66,8 @@ export const env = {
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKey: process.env.GROQ_API_KEY || '',
     model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    visionModel: process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct'
+    // First entry of the main app's GROQ_VISION_MODELS list; Llama 4 Scout was shut down 2026-07-17.
+    visionModel: parseList(process.env.GROQ_VISION_MODELS)[0] || process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b'
   },
   extraction: {
     mode: process.env.EXTRACTION_MODE || 'vision'

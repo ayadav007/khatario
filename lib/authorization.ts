@@ -28,8 +28,9 @@ import { queryOne } from './db';
 import { evaluatePolicy } from './policies/engine';
 import { PolicyUser, PolicyContext } from './policies/types';
 import { getPolicyRegistry } from './policies/registry';
-import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError } from './subscription/feature-access';
-import { featureIdForPath } from './subscription/plan-path-gate';
+import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError, SupplierHubHiddenError } from './subscription/feature-access';
+import { featureIdForPath, SUPPLIER_HUB_FEATURE_ID } from './subscription/plan-path-gate';
+import { isSupplierHubVisible } from './supplier-hub-visibility';
 import { getHrRegistryFeatureForAuthModule } from './hr-plan-features';
 import { resolvePlatformModuleForAuthModule } from './rbac-permission-catalog';
 import { clearSessionCookie } from './jwt';
@@ -193,6 +194,9 @@ export async function authorize(
     requestPath = null;
   }
   const pathFeature = featureIdForPath(requestPath);
+  if (pathFeature === SUPPLIER_HUB_FEATURE_ID && !(await isSupplierHubVisible())) {
+    throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
+  }
   if (pathFeature) {
     const businessIdForPath = context?.businessId || callingUser?.business_id;
     if (!businessIdForPath) {
@@ -204,6 +208,9 @@ export async function authorize(
     try {
       await assertFeatureAccess(businessIdForPath, pathFeature);
     } catch (e) {
+      if (e instanceof SupplierHubHiddenError) {
+        throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
+      }
       if (e instanceof FeatureAccessDeniedError) {
         throw new AuthorizationError(
           'This feature is not included in your subscription plan.',

@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS users (
     permissions JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
     product_tour_completed_at TIMESTAMPTZ,
+    mobile_nav JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

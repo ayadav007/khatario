@@ -42,6 +42,8 @@ interface LayoutData {
   subscription: Subscription | null;
   addons: Addon[];
   enabledFeatureIds: string[];
+  /** null until /api/features/enabled answers. False hides Supplier Hub. */
+  supplierHubVisible: boolean | null;
   promotions: {
     banner: Promotion | null;
     sidebar: Promotion | null;
@@ -64,6 +66,7 @@ const LayoutDataContext = createContext<LayoutDataContextType>({
   subscription: null,
   addons: [],
   enabledFeatureIds: [],
+  supplierHubVisible: null,
   promotions: { banner: null, sidebar: null, modal: null, topbar: null },
   warehousesEnabled: false,
   warehousesSettingLoaded: false,
@@ -95,6 +98,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
     subscription: null,
     addons: [],
     enabledFeatureIds: [],
+    supplierHubVisible: null,
     promotions: { banner: null, sidebar: null, modal: null, topbar: null },
     warehousesEnabled: false,
     warehousesSettingLoaded: false,
@@ -123,9 +127,11 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
       const subscription = subRes.subscription || null;
       const addons = addonsRes.addons || [];
       let enabledFeatureIds: string[] = [];
+      let supplierHubVisible: boolean | null = null;
       if (featuresRes.ok) {
         const f = await featuresRes.json().catch(() => ({}));
         enabledFeatureIds = f.enabledIds || [];
+        supplierHubVisible = f.supplierHubVisible === true;
       }
 
       setData((prev) => ({
@@ -133,6 +139,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         subscription,
         addons,
         enabledFeatureIds,
+        supplierHubVisible: supplierHubVisible ?? prev.supplierHubVisible,
       }));
 
       const existing = loadCapabilitySnapshot(business.id, user.id);
@@ -144,6 +151,9 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           enabledFeatures: featuresRes.ok
             ? enabledFeatureIds
             : (existing.enabledFeatures || []),
+          supplierHubVisible: featuresRes.ok
+            ? supplierHubVisible === true
+            : existing.supplierHubVisible,
           timestamp: Date.now(),
         });
       }
@@ -251,6 +261,10 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
             subscription: cachedSnapshot.subscription,
             addons: cachedSnapshot.addons || [],
             enabledFeatureIds: cachedSnapshot.enabledFeatures || [],
+            supplierHubVisible:
+              typeof cachedSnapshot.supplierHubVisible === 'boolean'
+                ? cachedSnapshot.supplierHubVisible
+                : false,
           }));
         } else {
           console.warn('[LayoutData] Offline: no cached snapshot found. User will see limited access.');
@@ -271,6 +285,10 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           subscription: cachedSnapshot.subscription,
           addons: cachedSnapshot.addons || [],
           enabledFeatureIds: cachedSnapshot.enabledFeatures || [],
+          supplierHubVisible:
+            typeof cachedSnapshot.supplierHubVisible === 'boolean'
+              ? cachedSnapshot.supplierHubVisible
+              : prev.supplierHubVisible,
           warehousesSettingLoaded: true,
         }));
         setSnapshotLoaded(true);
@@ -293,6 +311,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         let subscription: Subscription | null = null;
         let addons: Addon[] = [];
         let enabledFeatures: string[] = [];
+        let supplierHubVisible: boolean | null = null;
 
         if (permsRes.status === 'fulfilled' && permsRes.value.ok) {
           const p = await permsRes.value.json();
@@ -308,6 +327,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         if (featuresRes.status === 'fulfilled' && featuresRes.value.ok) {
           const f = await featuresRes.value.json();
           enabledFeatures = f.enabledIds || [];
+          supplierHubVisible = f.supplierHubVisible === true;
         }
 
         const fetchedPermissionsCount = Object.keys(permissions).length;
@@ -328,6 +348,11 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
             featuresRes.status === 'fulfilled' && featuresRes.value.ok
               ? enabledFeatures
               : (cachedSnapshot?.enabledFeatures || []),
+          supplierHubVisible:
+            supplierHubVisible ??
+            (typeof cachedSnapshot?.supplierHubVisible === 'boolean'
+              ? cachedSnapshot.supplierHubVisible
+              : false),
           timestamp: Date.now(),
         };
         saveCapabilitySnapshot(snapshot);
@@ -338,6 +363,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           subscription,
           addons,
           enabledFeatureIds: snapshot.enabledFeatures || [],
+          supplierHubVisible: snapshot.supplierHubVisible ?? false,
         }));
 
         console.log('[LayoutData] Fresh snapshot saved', {
@@ -394,6 +420,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         ...prev,
         warehousesSettingLoaded: false,
         enabledFeatureIds: [],
+        supplierHubVisible: null,
       }));
     }
   }, [business?.id, user]);

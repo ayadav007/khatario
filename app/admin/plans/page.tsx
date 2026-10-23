@@ -5,6 +5,7 @@ import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3, Tags } from 'luci
 import { PlanFeatureMatrix } from '@/components/admin/PlanFeatureMatrix';
 import { PlanLimitsMatrix } from '@/components/admin/PlanLimitsMatrix';
 import { PricingDisplaySettings } from '@/components/admin/PricingDisplaySettings';
+import { SupplierHubVisibilitySwitch } from '@/components/admin/SupplierHubVisibilitySwitch';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
@@ -201,6 +202,8 @@ export default function PlansManagement() {
           </button>
         </div>
       </div>
+
+      <SupplierHubVisibilitySwitch />
 
       {/* Plans Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

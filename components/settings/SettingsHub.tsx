@@ -131,7 +131,7 @@ function filterSection(
 export function SettingsHub() {
   const router = useRouter();
   const { business, platformSession } = useAuth();
-  const { warehousesEnabled } = useLayoutData();
+  const { warehousesEnabled, supplierHubVisible } = useLayoutData();
   const { hasCapability } = useCapabilityCheck();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -142,8 +142,9 @@ export function SettingsHub() {
     () =>
       buildSettingsHubSections(enabledModules, {
         hasFeature: (featureKey) => hasCapability(featureKey, 'view'),
+        supplierHubVisible: supplierHubVisible === true,
       }),
-    [enabledModules, hasCapability],
+    [enabledModules, hasCapability, supplierHubVisible],
   );
 
   const filtered = useMemo(() => {

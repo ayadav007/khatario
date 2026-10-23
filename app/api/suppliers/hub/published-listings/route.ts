@@ -3,7 +3,6 @@ import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
 import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await assertFeatureAccess(businessId, FeatureKeys.SUPPLIER_MANAGEMENT);
+      await assertFeatureAccess(businessId, 'purchase_supplier_hub');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();

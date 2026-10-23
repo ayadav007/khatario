@@ -42,6 +42,8 @@ export type MoreNavContext = {
   checkCapability?: (resource: string, action?: string) => MoreCapabilityResult;
   /** Enabled platform modules (billing, hr, connect, crm). Tools always shown. */
   enabledModules: PlatformModule[];
+  /** False removes Supplier Hub links. Omitted keeps them (plan lock still applies). */
+  supplierHubVisible?: boolean;
 };
 
 /** Match Sidebar: hasFeature === hasCapability(featureKey, 'view') */
@@ -103,11 +105,17 @@ export function toggleMoreSection(
 /**
  * Build grouped links for /more — titles align with desktop Sidebar.
  */
+function withSupplierHubLock(item: MoreNavItem, hubLocked: boolean): MoreNavItem {
+  return { ...item, featureKey: 'purchase_supplier_hub', isLocked: hubLocked };
+}
+
 export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const { isSupplier, warehousesEnabled, hasCapability } = ctx;
   const out: MoreNavSection[] = [];
+  const showHub = ctx.supplierHubVisible !== false;
+  const hubLocked = !hasFeature(hasCapability, 'purchase_supplier_hub');
 
-  if (isSupplier && isNavSectionVisible('Supplier', ctx.enabledModules)) {
+  if (showHub && isSupplier && isNavSectionVisible('Supplier', ctx.enabledModules)) {
     const s = section(
       'Supplier',
       [
@@ -116,7 +124,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
         { href: '/suppliers/catalog', label: 'My Catalog' },
         { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
         { href: '/suppliers/requests', label: 'Requests to Fulfill' },
-      ],
+      ].map((item) => withSupplierHubLock(item, hubLocked)),
       ctx
     );
     if (s) out.push(s);
@@ -143,12 +151,18 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     'Purchases',
     [
       { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
-      { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
-      { href: '/purchases/incoming', label: 'Incoming Bills', module: 'purchases' },
-      { href: '/supply-orders', label: 'Supplier Orders', module: 'purchases' },
-      { href: '/purchases/new-arrivals', label: 'New Arrivals', module: 'purchases' },
+      ...(showHub
+        ? [
+            withSupplierHubLock({ href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/purchases/incoming', label: 'Incoming Bills', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/supply-orders', label: 'Supplier Orders', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/purchases/new-arrivals', label: 'New Arrivals', module: 'purchases' }, hubLocked),
+          ]
+        : []),
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-      { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
+      ...(showHub
+        ? [withSupplierHubLock({ href: '/purchases/requests', label: 'Requests', module: 'purchases' }, hubLocked)]
+        : []),
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
       { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', module: 'expenses' },

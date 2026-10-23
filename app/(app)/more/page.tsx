@@ -17,10 +17,11 @@ import {
   Store,
   Loader2,
   MessageSquare,
+  LayoutGrid,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
+import { useLayoutData, useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { buildMoreMenuSections, toggleMoreSection, type MoreNavSection } from '@/lib/more-navigation';
@@ -28,6 +29,7 @@ import { MORE_SECTION_QUERY_KEY } from '@/lib/navigation/more-menu-back';
 import type { LucideIcon } from 'lucide-react';
 import { MobileAccountCard } from '@/components/layout/MobileAccountCard';
 import { MobileListRow, MobileListSection } from '@/components/layout/MobileList';
+import { MobileNavEditor } from '@/components/layout/MobileNavEditor';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   Supplier: Store,
@@ -52,14 +54,16 @@ export default function MorePage() {
   const searchParams = useSearchParams();
   const { logout, business, platformSession } = useAuth();
   const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
+  const { supplierHubVisible } = useLayoutData();
   const { isOffline } = useNetworkStatus();
   const { hasCapability, checkCapability } = useCapabilityCheck();
   const [isSupplier, setIsSupplier] = useState(false);
+  const [navEditorOpen, setNavEditorOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
-    if (!business?.id || isOffline) {
+    if (!business?.id || isOffline || supplierHubVisible !== true) {
       setIsSupplier(false);
       return;
     }
@@ -91,7 +95,7 @@ export default function MorePage() {
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [business?.id, isOffline]);
+  }, [business?.id, isOffline, supplierHubVisible]);
 
   // Show menu once capability snapshot is ready — do not block on supplier probe or
   // warehouses API (those refine sections in the background).
@@ -107,6 +111,7 @@ export default function MorePage() {
       hasCapability,
       checkCapability,
       enabledModules,
+      supplierHubVisible: supplierHubVisible === true,
     });
   }, [
     menuReady,
@@ -115,6 +120,7 @@ export default function MorePage() {
     hasCapability,
     checkCapability,
     enabledModules,
+    supplierHubVisible,
   ]);
 
   // Back from a More destination opens that section (?section=).
@@ -139,6 +145,17 @@ export default function MorePage() {
       ) : (
         <>
           <MobileAccountCard className="mb-1 lg:hidden" />
+
+          <div className="-mx-page-x mb-2">
+            <MobileListSection title="App">
+              <MobileListRow
+                label="Navigation bar"
+                hint="Choose 4 or 5 tabs. Press and hold the bar to edit it too."
+                icon={LayoutGrid}
+                onClick={() => setNavEditorOpen(true)}
+              />
+            </MobileListSection>
+          </div>
 
           <div className="-mx-page-x">
             {sections.map((section) => {
@@ -179,6 +196,7 @@ export default function MorePage() {
           </p>
         </>
       )}
+      <MobileNavEditor open={navEditorOpen} onClose={() => setNavEditorOpen(false)} />
     </div>
   );
 }

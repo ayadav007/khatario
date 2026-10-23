@@ -14,11 +14,19 @@ class BillCapture {
 
   final Uint8List bytes;
   final String name;
+
+  bool get isPdf => name.toLowerCase().endsWith('.pdf');
 }
 
 /// Rear camera for a supplier bill. Upload stays available for a PDF or a saved photo.
 class BillCameraScreen extends StatefulWidget {
-  const BillCameraScreen({super.key});
+  const BillCameraScreen({super.key, required this.onCapture, required this.onClose, this.allowPdf = true});
+
+  final ValueChanged<BillCapture> onCapture;
+  final VoidCallback onClose;
+
+  /// An extra page of a bill is a photo, so its upload leaves PDFs out.
+  final bool allowPdf;
 
   @override
   State<BillCameraScreen> createState() => _BillCameraScreenState();
@@ -54,6 +62,8 @@ class _BillCameraScreenState extends State<BillCameraScreen> {
       if (!mounted) return;
       final denied = e.code == 'CameraAccessDenied' || e.code == 'CameraAccessDeniedWithoutPrompt' || e.code == 'CameraAccessRestricted';
       setState(() => _error = denied ? 'Allow camera access for Khatario in phone settings, or upload the bill.' : 'Could not open the camera. Upload the bill instead.');
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not open the camera. Upload the bill instead.');
     }
   }
 
@@ -64,17 +74,17 @@ class _BillCameraScreenState extends State<BillCameraScreen> {
     try {
       final shot = await camera.takePicture();
       final bytes = await shot.readAsBytes();
-      if (mounted) Navigator.of(context).pop(BillCapture(bytes: bytes, name: 'bill.jpg'));
+      if (mounted) widget.onCapture(BillCapture(bytes: bytes, name: 'bill.jpg'));
     } catch (_) {
       if (mounted) setState(() { _busy = false; _error = 'Could not take the photo.'; });
     }
   }
 
   Future<void> _upload() async {
-    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png']);
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: [if (widget.allowPdf) 'pdf', 'jpg', 'jpeg', 'png']);
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
-    if (mounted) Navigator.of(context).pop(BillCapture(bytes: bytes, name: file.name));
+    if (mounted) widget.onCapture(BillCapture(bytes: bytes, name: file.name));
   }
 
   @override
@@ -93,7 +103,7 @@ class _BillCameraScreenState extends State<BillCameraScreen> {
           children: [
             Row(
               children: [
-                KIconButton(icon: LucideIcons.x, tooltip: 'Close', color: Colors.white, onTap: () => Navigator.of(context).maybePop()),
+                KIconButton(icon: LucideIcons.x, tooltip: 'Close', color: Colors.white, onTap: widget.onClose),
                 const Expanded(child: Text('Scan bill', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))),
               ],
             ),

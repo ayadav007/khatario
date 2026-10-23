@@ -60,7 +60,7 @@ import {
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
+import { useLayoutData, useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { PromotionSidebar } from '@/components/promotions/PromotionSidebar';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
@@ -77,7 +77,7 @@ import {
   HR_NAV_SECTION_TITLE,
 } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
-import { featureIdForPath } from '@/lib/subscription/plan-path-gate';
+import { featureIdForPath, isSupplierHubHref } from '@/lib/subscription/plan-path-gate';
 import { collectNavHrefs, pickActiveNavHref } from '@/lib/navigation/nav-active';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
@@ -116,6 +116,7 @@ export const Sidebar = React.memo(function Sidebar() {
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
+  const { supplierHubVisible } = useLayoutData();
   const { hasCapability, checkCapability } = useCapabilityCheck();
 
   // Role grants the action; a plan-only denial still counts so the item can render as locked.
@@ -369,6 +370,7 @@ export const Sidebar = React.memo(function Sidebar() {
       'purchase_management': 'Purchase Management',
       'expense_tracking': 'Expense Tracking',
       'supplier_management': 'Supplier Management',
+      'purchase_supplier_hub': 'Supplier Hub',
       'reports_basic': 'Basic Reports',
       'reports_gst': 'GST Reports',
       'reports_advanced': 'Advanced Reports',
@@ -505,6 +507,9 @@ export const Sidebar = React.memo(function Sidebar() {
           return null;
         }
         if (item.label === 'Connect' && !hasPlatformModule('connect')) {
+          return null;
+        }
+        if (supplierHubVisible !== true && item.href && isSupplierHubHref(item.href)) {
           return null;
         }
 
@@ -968,6 +973,7 @@ export const Sidebar = React.memo(function Sidebar() {
 
     const groups = buildFlatSettingsGroups(enabledModules, {
       hasFeature,
+      supplierHubVisible: supplierHubVisible === true,
     });
 
     const items = groups.map((group) => ({
@@ -1004,7 +1010,7 @@ export const Sidebar = React.memo(function Sidebar() {
         icon: ArrowLeft,
       },
     ];
-  }, [isSettingsPage, enabledModules, hasFeature, homeHref]);
+  }, [isSettingsPage, enabledModules, hasFeature, homeHref, supplierHubVisible]);
 
   const settingsNavItems = settingsNavModel;
 
@@ -1041,6 +1047,7 @@ export const Sidebar = React.memo(function Sidebar() {
     enabledModules,
     hasPlatformModule,
     homeHref,
+    supplierHubVisible,
   ]);
 
   const visibleNavItemsRef = useRef(visibleNavItems);

@@ -38,6 +38,7 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | `phase-3q-recurring-date-fix-results.md` | Fix for the recurring run date, with the persisted invoice date. |
 | `phase-3q-browser-functional-results.md` | Staging browser check of a sales invoice. Purchase and purchase return were blocked by the login limit. |
 | `account-hierarchy-audit-results.md` | Chart of Accounts hierarchy, opening balances, and report totals. Separate from the identity series. |
+| `store-journey-audit-results.md` | Online store customer and merchant journey audit (2026-10-23): existing store suites, the new journey test, and the staging template check. Seven defects, D1–D7. |
 | `security-live-regression-results.md` | Repeatable command for the security suites already verified. It does not pass the rest of the application. |
 
 ## Completed work
@@ -84,6 +85,13 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | `GET /api/purchase-orders` and `GET /api/purchase-returns` return the business id from the query | Fixed in Phase 3O. Live regression PASS. The Phase 3N failure remains recorded. |
 | Revoked session still accepted by `GET /api/recurring-invoices` and `POST /api/journal-entries` | Fixed in Phase 3O. A revoked cookie returns HTTP 401 `SESSION_REVOKED`. The Phase 3N failure remains recorded. |
 | Recurring `run_now` run date is the previous calendar day | Fixed in Phase 3Q. A definition dated `2026-10-19` now stores `invoice_date` `2026-10-19`. The Phase 3P failure remains recorded. |
+| Store receipts fail when more than one bank-class account exists (D1) | FAIL. Open. `store-journey-audit-results.md` |
+| Store orders with a delivery fee or coupon are never invoiced (D2) | FAIL. Open. |
+| Mixed GST-inclusive and exclusive store cart overcharged (D3) | FAIL. Open. |
+| Store invoice date is the UTC day (D4) | FAIL. Open. |
+| COD remittance posts nothing to the accounts (D5) | FAIL. Open. |
+| Direct-UPI store order labelled cash on delivery (D6) | FAIL. Open. |
+| Orders screen hides a failed store invoice on confirm (D7) | FAIL by code reading. Not run. |
 
 No open FAIL is recorded for S01–S08 after the Phase 2B rerun.
 
@@ -123,6 +131,7 @@ No open FAIL is recorded for S01–S08 after the Phase 2B rerun.
 | My Accounts visibility, pins, ancestor balance | Same audit | `tests/lib/accounting/my-accounts.test.ts` and the my-accounts case in `tests/db/account-hierarchy-integrity.db.test.ts` | PASS. 2026-10-20: 6 unit tests passed inside the 46-test Jest run above. Settled activity, ancestor with its own zero balance, manual pin, and removing one sibling while another account still needs the parent. |
 | Security regressions already recorded for Phases 3A–3O and the report HTTP check | Repeatable command | `npm run test:qa:security-live` | PASS twice. First run exit 0 in 458 seconds. Second run exit 0 in 197 seconds. Fixture prefixes left at 0 both times. This does not pass the rest of the application. |
 | `/login`, `/invoices/new`, `/customers/new`, `/items/new` on staging | Staging browser | `npx playwright test --config=playwright.staging.config.ts` after `STAGING_TEST_BUSINESS` is set | Partial. Empty invoice showed “Add items”. INV-072 showed CGST + SGST and 118.00. The list and side panel were not opened. Purchase and purchase return were BLOCKED after “Too many login attempts.” The corrected test was not run. |
+| Store order, invoice, receipt, fulfilment, COD, label | Store journey audit | existing store suites and `tests/db/store-journey-e2e.db.test.ts` | Existing suites: 314 passed, 26 failed (5 product, 21 old plan mocks). Journey: 1 passed, 8 failed. Staging templates BLOCKED by a broken staging build. |
 
 All other routes and action labels stay NOT TESTED. Icon-only buttons, translated labels, and components deeper than one import were not in the Phase 1 scan (`audit-gaps.md`).
 

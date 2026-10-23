@@ -44,6 +44,30 @@ type HolidayRow = {
 
 type Branch = { id: string; name: string };
 
+function isoToDmy(iso: string): string {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+function dmyToIso(raw: string): string | null {
+  const match = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 
 
 const emptyForm = {
@@ -180,7 +204,7 @@ export default function HolidayListsSettingsPage() {
 
     setEditingHoliday(null);
 
-    setFormData({ ...emptyForm, holiday_date: `${year}-01-01` });
+    setFormData({ ...emptyForm, holiday_date: `01/01/${year}` });
 
     setShowForm(true);
 
@@ -194,7 +218,7 @@ export default function HolidayListsSettingsPage() {
 
     setFormData({
 
-      holiday_date: holiday.holiday_date.slice(0, 10),
+      holiday_date: isoToDmy(holiday.holiday_date.slice(0, 10)),
 
       holiday_name: holiday.holiday_name,
 
@@ -262,7 +286,11 @@ export default function HolidayListsSettingsPage() {
 
     if (!business?.id || !selectedListId) return;
 
-
+    const holidayDate = dmyToIso(formData.holiday_date);
+    if (!holidayDate) {
+      toast.error('Enter the date as DD/MM/YYYY');
+      return;
+    }
 
     setSaving(true);
 
@@ -270,7 +298,7 @@ export default function HolidayListsSettingsPage() {
 
       const payload = {
 
-        holiday_date: formData.holiday_date,
+        holiday_date: holidayDate,
 
         holiday_name: formData.holiday_name.trim(),
 
@@ -594,13 +622,23 @@ export default function HolidayListsSettingsPage() {
 
                     label="Date *"
 
-                    type="date"
+                    type="text"
+
+                    inputMode="numeric"
+
+                    placeholder="DD/MM/YYYY"
+
+                    helperText="DD/MM/YYYY"
 
                     value={formData.holiday_date}
 
                     onChange={(e) => setFormData({ ...formData, holiday_date: e.target.value })}
 
                     required
+
+                    pattern="\d{1,2}/\d{1,2}/\d{4}"
+
+                    title="Use DD/MM/YYYY"
 
                   />
 
@@ -720,7 +758,9 @@ export default function HolidayListsSettingsPage() {
 
                       <tr key={h.id} className="border-b border-border">
 
-                        <td className="py-2 pr-4 whitespace-nowrap">{h.holiday_date}</td>
+                        <td className="py-2 pr-4 whitespace-nowrap">
+                          {isoToDmy(h.holiday_date.slice(0, 10)) || h.holiday_date}
+                        </td>
 
                         <td className="py-2 pr-4 font-medium">{h.holiday_name}</td>
 

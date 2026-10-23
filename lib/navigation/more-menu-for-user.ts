@@ -10,11 +10,13 @@ import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { getAllFeatureAccessForBusiness } from '@/lib/subscription/feature-access';
 import { loadUserModulePermissions } from '@/lib/user-module-permissions';
 import { queryOne } from '@/lib/db';
+import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
 
 export type MoreMenuContextFlags = {
   isSupplier: boolean;
   warehousesEnabled: boolean;
   enabledModules: PlatformModule[];
+  supplierHubVisible?: boolean;
 };
 
 /** Same checks the website's More page runs against the browser's capability snapshot. */
@@ -58,16 +60,22 @@ async function warehousesEnabled(businessId: string): Promise<boolean> {
 }
 
 export async function loadMoreMenuForUser(businessId: string, userId: string): Promise<MoreNavSection[]> {
-  const [loaded, enabledFeatures, platform, supplier, warehouses] = await Promise.all([
+  const [loaded, enabledFeatures, platform, supplier, warehouses, supplierHubVisible] = await Promise.all([
     loadUserModulePermissions(userId),
     getAllFeatureAccessForBusiness(businessId),
     getBusinessPlatformContext(businessId),
     isActiveSupplier(businessId).catch(() => false),
     warehousesEnabled(businessId).catch(() => false),
+    isSupplierHubVisible().catch(() => false),
   ]);
   if (!loaded) return [];
   return buildMoreMenuForSnapshot(
     { permissions: loaded.permissions, isPrimaryAdmin: loaded.isPrimaryAdmin, enabledFeatures: Array.from(enabledFeatures) },
-    { isSupplier: supplier, warehousesEnabled: warehouses, enabledModules: platform.enabledModules },
+    {
+      isSupplier: supplier,
+      warehousesEnabled: warehouses,
+      enabledModules: platform.enabledModules,
+      supplierHubVisible,
+    },
   );
 }

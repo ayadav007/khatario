@@ -19,7 +19,7 @@ import { prepareInvoiceVisionImageServer } from '../lib/invoice-extract/latency/
 
 /** Keep in sync with lib/services/invoice-extract/pipeline/geminiVisionPipeline.ts */
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-3.6-flash';
 const TIMEOUT_MS = 90_000;
 
 function loadAppEnv(): string {

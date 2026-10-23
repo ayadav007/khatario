@@ -41,7 +41,11 @@ function persistPortalThemeFromSession(portalTheme: PortalTheme, businessId: str
 function sessionUserUnchanged(prev: User | null, next: User | null): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return prev.id === next.id && prev.business_id === next.business_id;
+  return (
+    prev.id === next.id &&
+    prev.business_id === next.business_id &&
+    JSON.stringify(prev.mobile_nav ?? null) === JSON.stringify(next.mobile_nav ?? null)
+  );
 }
 
 function sessionBusinessUnchanged(prev: Business | null, next: Business | null): boolean {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, query } from '@/lib/db';
+import { requireStrictSession } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,15 +10,12 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    // The signed-in business only; a business_id in the body is ignored.
+    const business_id = session.businessId;
     const body = await request.json();
-    const { business_id, name, gstin } = body;
-
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const { name, gstin } = body;
 
     if (!name && !gstin) {
       return NextResponse.json(

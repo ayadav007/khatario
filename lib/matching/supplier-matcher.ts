@@ -183,7 +183,6 @@ export async function matchSupplier(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: businessId,
           name: extractedName
         })
       });

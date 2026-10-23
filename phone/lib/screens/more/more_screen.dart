@@ -18,6 +18,7 @@ class MoreScreen extends StatefulWidget {
     required this.onNavigate,
     required this.onOpen,
     required this.onSignOut,
+    required this.onEditNav,
   });
 
   final AppSession session;
@@ -27,6 +28,7 @@ class MoreScreen extends StatefulWidget {
   final void Function(String href, String label) onNavigate;
   final ValueChanged<String> onOpen;
   final Future<void> Function() onSignOut;
+  final VoidCallback onEditNav;
 
   @override
   State<MoreScreen> createState() => _MoreScreenState();
@@ -116,6 +118,17 @@ class _MoreScreenState extends State<MoreScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
                       child: MobileAccountCard(session: widget.session, onOpen: widget.onOpen, onNavigate: widget.onNavigate),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
+                      child: KCard(
+                        child: MobileListRow(
+                          label: 'Navigation bar',
+                          icon: LucideIcons.settings,
+                          onTap: widget.onEditNav,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (sections == null) _failed ? _MenuFailed(onRetry: _loadMenu) : const _MenuLoading(),

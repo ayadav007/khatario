@@ -5,6 +5,44 @@
  * The longest matching prefix wins, so /reports/gst is GST reports rather than basic reports.
  */
 
+/** Connected buying (hub, incoming bills, supply orders). Separate from the supplier list. */
+export const SUPPLIER_HUB_FEATURE_ID = 'purchase_supplier_hub';
+
+const SUPPLIER_HUB_PREFIXES = [
+  '/suppliers/hub',
+  '/suppliers/dashboard',
+  '/suppliers/catalog',
+  '/suppliers/requests',
+  '/purchases/incoming',
+  '/purchases/requests',
+  '/purchases/new-arrivals',
+  '/supply-orders',
+  '/settings/suppliers-directory',
+  '/api/suppliers/hub',
+  '/api/suppliers/dashboard',
+  '/api/suppliers/requests',
+  '/api/suppliers/lookup-customer',
+  '/api/suppliers/thresholds',
+  '/api/purchases/incoming-bills',
+  '/api/supply-orders',
+  '/api/stock-requests',
+];
+
+export function isSupplierHubHref(href: string | null | undefined): boolean {
+  if (!href) return false;
+  const path = href.split('?')[0].split('#')[0];
+  return isSupplierHubPath(path);
+}
+
+function isSupplierHubPath(path: string): boolean {
+  if (SUPPLIER_HUB_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    return true;
+  }
+  if (/^\/suppliers\/[^/]+\/item-links(?:\/|$)/.test(path)) return true;
+  if (/^\/api\/suppliers\/[^/]+\/(?:item-links|approve)(?:\/|$)/.test(path)) return true;
+  return false;
+}
+
 const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/invoices/recurring', featureId: 'sales_recurring_invoices' },
   { prefix: '/invoices', featureId: 'sales_invoices' },
@@ -184,6 +222,7 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
 export function featureIdForPath(pathname: string | null | undefined): string | null {
   if (!pathname) return null;
   const path = pathname.split('?')[0];
+  if (isSupplierHubPath(path)) return SUPPLIER_HUB_FEATURE_ID;
   let best: { prefix: string; featureId: string } | null = null;
   for (const row of PATH_FEATURES) {
     if (path === row.prefix || path.startsWith(`${row.prefix}/`)) {

@@ -1,7 +1,8 @@
 /**
  * Gemini Vision extraction pipeline.
  *
- * Sends the invoice image directly to Gemini 2.0 Flash as a native vision call.
+ * Sends the invoice image directly to Gemini as a native vision call, trying each
+ * model in GEMINI_MODELS (or GEMINI_MODEL) until one answers.
  * No OCR step, no spatial reconstruction, no section-header propagation engine —
  * the model sees the image and applies the prompt rules visually.
  *
@@ -24,9 +25,13 @@ import {
   logInvoiceGeminiMetrics,
   parseGeminiUsageMetadata,
 } from '@/lib/invoice-extract/latency/gemini-metrics-diagnostic';
+import {
+  ProviderHttpError,
+  geminiVisionModels,
+  runWithModelFallback,
+} from '@/lib/services/invoice-extract/pipeline/visionModelFallback';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
 const TIMEOUT_MS = 90_000;
 
 export async function runGeminiVisionPipeline(
@@ -38,7 +43,6 @@ export async function runGeminiVisionPipeline(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
-  const model = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
   const rawBuffer = Buffer.from(await file.arrayBuffer());
   const fallbackMime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
 
@@ -62,29 +66,29 @@ export async function runGeminiVisionPipeline(
   const base64 = prepared.buffer.toString('base64');
 
   const beforeFetchMs = Date.now() - pipelineStartedAt;
-  const startTime = Date.now();
 
-  const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(
-      buildGeminiVisionGenerateContentBody({
-        prompt: VISION_PROMPT,
-        mimeType: prepared.mimeType,
-        base64,
-      }),
-    ),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+  const { res, model, processingTimeMs } = await runWithModelFallback('gemini', geminiVisionModels(), async (model) => {
+    const startTime = Date.now();
+    // Key in a header, not the URL, so it never shows up in error or proxy logs.
+    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(
+        buildGeminiVisionGenerateContentBody({
+          prompt: VISION_PROMPT,
+          mimeType: prepared.mimeType,
+          base64,
+          model,
+        }),
+      ),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      throw new ProviderHttpError('gemini', model, res.status, await res.text());
+    }
+    return { res, model, processingTimeMs: Date.now() - startTime };
   });
-
-  const processingTimeMs = Date.now() - startTime;
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${body.slice(0, 600)}`);
-  }
 
   const bodyReadStartedAt = Date.now();
   const json = await res.json();

@@ -246,7 +246,11 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         id: 'billing-setup',
         title: 'Billing setup',
         links: [
-          { href: '/settings/suppliers-directory', label: 'Suppliers directory' },
+          {
+            href: '/settings/suppliers-directory',
+            label: 'Suppliers directory',
+            featureKey: 'purchase_supplier_hub',
+          },
           {
             href: '/settings/business#pos-mode',
             label: 'POS mode',
@@ -530,10 +534,13 @@ const GROUP_ACCENT: Record<string, number> = {
 
 export type SettingsNavFilterOptions = {
   hasFeature?: (featureKey: string) => boolean;
+  /** False drops Supplier Hub settings links. Omitted keeps them. */
+  supplierHubVisible?: boolean;
 };
 
 function filterByPlan(links: SettingsNavLink[], opts: SettingsNavFilterOptions): SettingsNavLink[] {
   return links.filter((link) => {
+    if (opts.supplierHubVisible === false && link.featureKey === 'purchase_supplier_hub') return false;
     if (link.featureKey && opts.hasFeature && !opts.hasFeature(link.featureKey)) return false;
     return true;
   });
