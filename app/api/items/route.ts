@@ -242,6 +242,8 @@ export async function POST(request: NextRequest) {
       seo_title,
       seo_description,
       seo_image_url,
+      /** Scan & Add: provider whose suggestion the shopkeeper accepted. Its source is read from our own cache. */
+      lookup_source,
     } = body;
 
     if (!name) {
@@ -505,6 +507,18 @@ export async function POST(request: NextRequest) {
           [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
         );
         item = { ...item, ...seo };
+      }
+
+      if (lookup_source && normalizedBarcode) {
+        const { externalSourceFromCache } = await import('@/lib/product-lookup/service');
+        const source = await externalSourceFromCache(client, business_id, normalizedBarcode, String(lookup_source));
+        if (source) {
+          await client.query(
+            `UPDATE items SET external_source = $1::jsonb WHERE id = $2 AND business_id = $3`,
+            [JSON.stringify(source), item.id, business_id]
+          );
+          item = { ...item, external_source: source } as Item;
+        }
       }
 
       // Opening stock of a plain item posts in the same transaction as the item, so a failed save

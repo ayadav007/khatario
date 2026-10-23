@@ -49,6 +49,18 @@ import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { POST as postItem } from '@/app/api/items/route';
 import { GET as getBarcode } from '@/app/api/items/scan-add/barcode/route';
+import { GET as getLookup } from '@/app/api/items/scan-add/lookup/route';
+import { POST as postReadLabel } from '@/app/api/items/scan-add/read-label/route';
+import { resetProviderSlotsForTests } from '@/lib/product-lookup/service';
+
+/** Provider answers for the lookup tests. No request leaves the machine. */
+const providerFetch = jest.fn(async (url: string) => {
+  const found = url.includes('myproduct.guru/lookup/8901396151005');
+  const body = found
+    ? { ean: '8901396151005', name: 'harpic', brand: 'Harpic', quantity: '500 ml', category_name: 'Toilet cleaner', verified: true, certainty: 65, web_url: 'https://myproduct.guru/p/8901396151005' }
+    : { status: 0 };
+  return { status: found ? 200 : 404, url, json: async () => body } as unknown as Response;
+});
 
 describe('scan & add items', () => {
   jest.setTimeout(120000);
@@ -111,6 +123,7 @@ describe('scan & add items', () => {
       throw new Error(`Refusing scan & add tests against ${info.db} at ${info.addr}:${info.port}`);
     }
     await pool.query(fs.readFileSync(path.resolve(process.cwd(), 'database/migrations/409_items_scan_onboarding_feature.sql'), 'utf8'));
+    await pool.query(fs.readFileSync(path.resolve(process.cwd(), 'database/migrations/410_product_lookup_cache.sql'), 'utf8'));
     await pool.query(
       `INSERT INTO businesses (id, name, state_code, gst_registration_type) VALUES ($1, $2, '27', 'regular'), ($3, $4, '27', 'regular')`,
       [B, `Scan add ${tag}`, OTHER, `Scan add other ${tag}`]
@@ -233,5 +246,98 @@ describe('scan & add items', () => {
 
   test('an empty code is a bad request', async () => {
     expect((await lookup('')).status).toBe(400);
+  });
+
+  describe('product database lookup', () => {
+    const HARPIC = '8901396151005';
+    const realFetch = global.fetch;
+    beforeAll(() => {
+      global.fetch = providerFetch as unknown as typeof fetch;
+    });
+    afterAll(() => {
+      global.fetch = realFetch;
+    });
+    beforeEach(() => {
+      providerFetch.mockClear();
+      resetProviderSlotsForTests();
+    });
+
+    async function externalLookup(code: string, as: [string, string] = [USER, B]) {
+      const res = await getLookup(
+        new NextRequest(`http://localhost/api/items/scan-add/lookup?code=${encodeURIComponent(code)}`, { headers: auth(as[0], as[1]) })
+      );
+      return { status: res.status, json: await res.json() };
+    }
+
+    test('a found barcode is suggested with its source, then answered from this shop’s cache', async () => {
+      const first = await externalLookup(HARPIC);
+      expect(first.status).toBe(200);
+      expect(first.json.status).toBe('found');
+      expect(first.json.suggestions[0]).toEqual(expect.objectContaining({ provider: 'productguru', quantity: '500 ml', attribution: 'Data: ProductGuru' }));
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+
+      const again = await externalLookup(HARPIC);
+      expect(again.json.cached).toBe(true);
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("another shop's lookup does not use this shop's cache", async () => {
+      const other = await externalLookup(HARPIC, [OUSER, OTHER]);
+      expect(other.json.cached).toBe(false);
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+      const rows = await pool.query(`SELECT business_id FROM product_lookup_cache WHERE barcode = $1 AND business_id = ANY($2::uuid[])`, [HARPIC, [B, OTHER]]);
+      expect(rows.rows).toHaveLength(2);
+    });
+
+    test('a barcode nobody knows is cached as not found', async () => {
+      const r = await externalLookup('8901058000009');
+      expect(r.json.status).toBe('not_found');
+      expect((await externalLookup('8901058000009')).json.cached).toBe(true);
+    });
+
+    test('accepting a suggestion records its source from the cache, not from the client', async () => {
+      const saved = await create({ name: `Harpic 500 ml ${tag}`, barcode: HARPIC, purchase_price: 80, opening_stock: 6, lookup_source: 'productguru' }, randomUUID());
+      expect([saved.status, saved.json.error]).toEqual([201, undefined]);
+      const row = await pool.query(`SELECT external_source FROM items WHERE id = $1`, [saved.json.item.id]);
+      expect(row.rows[0].external_source).toEqual(
+        expect.objectContaining({ provider: 'productguru', source_url: `https://myproduct.guru/p/${HARPIC}`, license: 'CC BY 4.0' })
+      );
+    });
+
+    test('a claimed source with nothing in the cache is ignored', async () => {
+      const saved = await create({ name: `Hand typed ${tag}`, barcode: '8901058000016', purchase_price: 5, opening_stock: 1, lookup_source: 'productguru' }, randomUUID());
+      expect([saved.status, saved.json.error]).toEqual([201, undefined]);
+      const row = await pool.query(`SELECT external_source FROM items WHERE id = $1`, [saved.json.item.id]);
+      expect(row.rows[0].external_source).toBeNull();
+    });
+
+    test('codes with odd characters are refused before any provider call', async () => {
+      expect((await externalLookup('12;DROP')).status).toBe(400);
+      expect(providerFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('label photo reading', () => {
+    async function read(form: FormData) {
+      const res = await postReadLabel(new NextRequest('http://localhost/api/items/scan-add/read-label', { method: 'POST', headers: (({ 'content-type': _json, ...rest }) => rest)(auth(USER, B)), body: form }));
+      return { status: res.status, json: await res.json() };
+    }
+
+    test('an unknown step or a missing photo is a bad request', async () => {
+      const noStep = new FormData();
+      noStep.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }), 'a.jpg');
+      expect((await read(noStep)).status).toBe(400);
+
+      const noImage = new FormData();
+      noImage.append('step', 'front');
+      expect((await read(noImage)).status).toBe(400);
+    });
+
+    test('a file that is not a photo is refused', async () => {
+      const pdf = new FormData();
+      pdf.append('step', 'details');
+      pdf.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), 'a.pdf');
+      expect((await read(pdf)).status).toBe(400);
+    });
   });
 });

@@ -68,8 +68,42 @@ export function validateScanAddForm(form: ScanAddForm): ScanAddFormErrors {
   return errors;
 }
 
+/** Product details a database suggestion or a label photo can supply. */
+export interface ProductFacts {
+  name?: string | null;
+  brand?: string | null;
+  quantity?: string | null;
+  mrp?: number | null;
+}
+
+const tidyName = (name: string) => (name === name.toLowerCase() ? name.charAt(0).toUpperCase() + name.slice(1) : name);
+
+/** "Harpic" + "500 ml" → "Harpic 500 ml", so two sizes of one product never share a name. */
+export function nameWithSize(name: string, size: string | null | undefined): string {
+  const n = tidyName(name.trim());
+  const sz = (size ?? '').trim();
+  if (!sz) return n;
+  const squash = (v: string) => v.toLowerCase().replace(/\s+/g, '');
+  return squash(n).includes(squash(sz)) ? n : `${n} ${sz}`;
+}
+
+/**
+ * Fills only the fields the shopkeeper has not typed. A pack size the providers disagree on is
+ * left blank (`sizeInDoubt`) so a 300 ml product never silently becomes 200 ml.
+ */
+export function fillFromFacts(form: ScanAddForm, facts: ProductFacts, opts: { sizeInDoubt?: boolean } = {}): ScanAddForm {
+  const next = { ...form };
+  const size = opts.sizeInDoubt ? null : facts.quantity?.trim() || null;
+  if (!next.size.trim() && size) next.size = size;
+  if (!next.brand.trim() && facts.brand?.trim()) next.brand = facts.brand.trim();
+  if (!next.name.trim() && facts.name?.trim()) next.name = nameWithSize(facts.name, next.size);
+  else if (next.name.trim() && size && !form.size.trim()) next.name = nameWithSize(next.name, size);
+  if (!next.mrp.trim() && facts.mrp != null && facts.mrp > 0) next.mrp = String(facts.mrp);
+  return next;
+}
+
 /** Body for POST /api/items. Never carries business_id or user ids; the server takes them from the session. */
-export function scanAddItemPayload(form: ScanAddForm): Record<string, unknown> {
+export function scanAddItemPayload(form: ScanAddForm, lookupSource?: string | null): Record<string, unknown> {
   const barcode = form.barcode.replace(/\s+/g, '');
   return {
     name: form.name.trim(),
@@ -84,5 +118,7 @@ export function scanAddItemPayload(form: ScanAddForm): Record<string, unknown> {
     tax_rate: numberOrNull(form.tax_rate) ?? 0,
     hsn_sac: form.hsn_sac.replace(/\s/g, '') || undefined,
     opening_stock: numberOrNull(form.opening_stock) ?? 0,
+    // Which database's suggestion was accepted. The server records the source from its own cache.
+    lookup_source: lookupSource || undefined,
   };
 }

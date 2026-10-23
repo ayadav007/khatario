@@ -40,6 +40,39 @@ void main() {
     expect(scanAddItemBody(withValues(barcode: '')).containsKey('barcode'), isFalse);
   });
 
+  group('filling from a database or a photo', () {
+    const blank = (name: '', brand: '', size: '', mrp: '');
+
+    test('fills empty fields, with the size in the name', () {
+      final f = fillFromFacts(blank, const ProductFacts(name: 'harpic', brand: 'Harpic', quantity: '500 ml'));
+      expect(f, (name: 'Harpic 500 ml', brand: 'Harpic', size: '500 ml', mrp: ''));
+    });
+
+    test('never overwrites what was typed', () {
+      final f = fillFromFacts((name: 'Harpic Blue 500 ml', brand: '', size: '500 ml', mrp: '99'), const ProductFacts(name: 'harpic', quantity: '200 ml', mrp: 120));
+      expect(f.name, 'Harpic Blue 500 ml');
+      expect(f.size, '500 ml');
+      expect(f.mrp, '99');
+    });
+
+    test('a disputed size stays blank', () {
+      final f = fillFromFacts(blank, const ProductFacts(name: 'Harpic', quantity: '300 ml'), sizeInDoubt: true);
+      expect(f.size, '');
+      expect(f.name, 'Harpic');
+    });
+
+    test('a size from a later photo joins the name once', () {
+      final named = fillFromFacts(blank, const ProductFacts(name: 'Parle-G Biscuits'));
+      expect(fillFromFacts(named, const ProductFacts(quantity: '75 g')).name, 'Parle-G Biscuits 75 g');
+      expect(nameWithSize('Parle-G 75g', '75 g'), 'Parle-G 75g');
+    });
+
+    test('the accepted provider is sent by name only', () {
+      expect(scanAddItemBody(base, lookupSource: 'productguru')['lookup_source'], 'productguru');
+      expect(scanAddItemBody(base).containsKey('lookup_source'), isFalse);
+    });
+  });
+
   test('each product gets its own key', () {
     expect(newScanAddKey(), isNot(newScanAddKey()));
   });

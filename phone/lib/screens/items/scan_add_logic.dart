@@ -67,7 +67,7 @@ Map<String, String> validateScanAdd(ScanAddValues v) {
 }
 
 /// Body for POST /api/items. Identity fields are omitted; the server takes them from the session.
-Map<String, dynamic> scanAddItemBody(ScanAddValues v) {
+Map<String, dynamic> scanAddItemBody(ScanAddValues v, {String? lookupSource}) {
   String? text(String s) => s.trim().isEmpty ? null : s.trim();
   final barcode = v.barcode.replaceAll(RegExp(r'\s+'), '');
   final hsn = v.hsn.replaceAll(RegExp(r'\s'), '');
@@ -84,7 +84,64 @@ Map<String, dynamic> scanAddItemBody(ScanAddValues v) {
     'tax_rate': _num(v.taxRate) ?? 0,
     if (hsn.isNotEmpty) 'hsn_sac': hsn,
     'opening_stock': _num(v.openingStock) ?? 0,
+    // Which database's suggestion was accepted. The server records the source from its own cache.
+    if (lookupSource != null && lookupSource.isNotEmpty) 'lookup_source': lookupSource,
   };
+}
+
+String _tidyName(String name) => name == name.toLowerCase() && name.isNotEmpty ? name[0].toUpperCase() + name.substring(1) : name;
+
+/// "Harpic" + "500 ml" → "Harpic 500 ml", so two sizes of one product never share a name.
+String nameWithSize(String name, String? size) {
+  final n = _tidyName(name.trim());
+  final sz = (size ?? '').trim();
+  if (sz.isEmpty) return n;
+  String squash(String v) => v.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+  return squash(n).contains(squash(sz)) ? n : '$n $sz';
+}
+
+/// Product details from a database suggestion or a label photo.
+class ProductFacts {
+  const ProductFacts({this.name, this.brand, this.quantity, this.mrp});
+
+  final String? name;
+  final String? brand;
+  final String? quantity;
+  final num? mrp;
+
+  factory ProductFacts.fromSuggestion(Map<String, dynamic> s) => ProductFacts(
+        name: s['name']?.toString(),
+        brand: s['brand']?.toString(),
+        quantity: s['quantity']?.toString(),
+      );
+
+  factory ProductFacts.fromReading(Map<String, dynamic> r) => ProductFacts(
+        name: r['name']?.toString(),
+        brand: r['brand']?.toString(),
+        quantity: r['size']?.toString(),
+        mrp: r['mrp'] is num ? r['mrp'] as num : null,
+      );
+}
+
+/// Same rules as `fillFromFacts` in lib/items/scan-add-form.ts: only empty fields are filled, and a
+/// pack size the databases disagree on is left blank so a 300 ml product never becomes 200 ml.
+({String name, String brand, String size, String mrp}) fillFromFacts(
+  ({String name, String brand, String size, String mrp}) form,
+  ProductFacts facts, {
+  bool sizeInDoubt = false,
+}) {
+  String t(String? v) => (v ?? '').trim();
+  final size = sizeInDoubt ? '' : t(facts.quantity);
+  final nextSize = form.size.trim().isEmpty && size.isNotEmpty ? size : form.size;
+  final brand = form.brand.trim().isEmpty && t(facts.brand).isNotEmpty ? t(facts.brand) : form.brand;
+  var name = form.name;
+  if (name.trim().isEmpty && t(facts.name).isNotEmpty) {
+    name = nameWithSize(t(facts.name), nextSize);
+  } else if (name.trim().isNotEmpty && size.isNotEmpty && form.size.trim().isEmpty) {
+    name = nameWithSize(name, size);
+  }
+  final mrp = form.mrp.trim().isEmpty && facts.mrp != null && facts.mrp! > 0 ? '${facts.mrp}' : form.mrp;
+  return (name: name, brand: brand, size: nextSize, mrp: mrp);
 }
 
 /// A random key per product being added. A retried save reuses it, so the server

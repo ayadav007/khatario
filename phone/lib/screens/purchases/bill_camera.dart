@@ -20,13 +20,16 @@ class BillCapture {
 
 /// Rear camera for a supplier bill. Upload stays available for a PDF or a saved photo.
 class BillCameraScreen extends StatefulWidget {
-  const BillCameraScreen({super.key, required this.onCapture, required this.onClose, this.allowPdf = true});
+  const BillCameraScreen({super.key, required this.onCapture, required this.onClose, this.allowPdf = true, this.title = 'Scan bill'});
 
   final ValueChanged<BillCapture> onCapture;
   final VoidCallback onClose;
 
   /// An extra page of a bill is a photo, so its upload leaves PDFs out.
   final bool allowPdf;
+
+  /// Scan & Add Items reuses this camera for product label photos.
+  final String title;
 
   @override
   State<BillCameraScreen> createState() => _BillCameraScreenState();
@@ -104,7 +107,7 @@ class _BillCameraScreenState extends State<BillCameraScreen> {
             Row(
               children: [
                 KIconButton(icon: LucideIcons.x, tooltip: 'Close', color: Colors.white, onTap: widget.onClose),
-                const Expanded(child: Text('Scan bill', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))),
+                Expanded(child: Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))),
               ],
             ),
             Expanded(

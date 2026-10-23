@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Camera, CheckCircle2, Keyboard, Loader2, Package, ScanLine } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, ExternalLink, ImagePlus, Keyboard, Loader2, Package, ScanLine } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -14,8 +14,11 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import type { ShopBarcodeMatch } from '@/lib/items/scan-add-lookup';
+import type { ProductLookupResult, ProductSuggestion } from '@/lib/product-lookup/types';
+import type { LabelReading, LabelStep } from '@/lib/product-lookup/label-reader';
 import {
   emptyScanAddForm,
+  fillFromFacts,
   scanAddItemPayload,
   validateScanAddForm,
   type ScanAddForm,
@@ -30,7 +33,15 @@ type Step =
   | { kind: 'scan' }
   | { kind: 'checking'; barcode: string }
   | { kind: 'existing'; barcode: string; match: ShopBarcodeMatch }
+  | { kind: 'looking'; barcode: string }
+  | { kind: 'photo'; barcode: string; queue: LabelStep[] }
   | { kind: 'new'; barcode: string };
+
+const PHOTO_STEPS: Record<LabelStep, { title: string; hint: string }> = {
+  front: { title: 'Photo of the name', hint: 'The front of the pack, where the brand and product name are printed.' },
+  details: { title: 'Photo of MRP, batch and expiry', hint: 'The panel where MRP, batch number and dates are printed together.' },
+  size: { title: 'Photo of the pack size', hint: 'Where the net weight or volume is printed, e.g. 100 g or 500 ml.' },
+};
 
 interface SessionEntry {
   barcode: string;
@@ -72,6 +83,11 @@ function ScanAddItemsPage() {
   const [form, setForm] = useState<ScanAddForm>(emptyScanAddForm(''));
   const [errors, setErrors] = useState<ScanAddFormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [lookup, setLookup] = useState<ProductLookupResult | null>(null);
+  // The database whose suggestion filled the form, while the shopkeeper keeps it.
+  const [lookupSource, setLookupSource] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   // One key per product being added, reused when a failed save is retried.
   const saveKeyRef = useRef<string>(newIdempotencyKey());
   // Only the latest lookup may change the screen; an older reply for another barcode is dropped.
@@ -87,12 +103,72 @@ function ScanAddItemsPage() {
     });
   }, []);
 
-  const startNew = useCallback((barcode: string) => {
-    saveKeyRef.current = newIdempotencyKey();
-    setForm(emptyScanAddForm(barcode));
-    setErrors({});
-    setStep({ kind: 'new', barcode });
+  /**
+   * A product the shop does not have: ask the product databases, then the label photos.
+   * Found in a database → only the MRP/batch/expiry photo, since those belong to the stock in hand.
+   * Not found, or no barcode → name, details and size photos. Every photo can be skipped.
+   */
+  const startNew = useCallback(
+    async (barcode: string, seq: number) => {
+      saveKeyRef.current = newIdempotencyKey();
+      setForm(emptyScanAddForm(barcode));
+      setErrors({});
+      setLookup(null);
+      setLookupSource(null);
+      if (!barcode) {
+        setStep({ kind: 'photo', barcode, queue: ['front', 'details', 'size'] });
+        return;
+      }
+      setStep({ kind: 'looking', barcode });
+      let result: ProductLookupResult | null = null;
+      try {
+        const res = await fetch(`/api/items/scan-add/lookup?code=${encodeURIComponent(barcode)}`);
+        if (res.ok) result = (await res.json()) as ProductLookupResult;
+      } catch {
+        result = null;
+      }
+      if (seq !== lookupSeqRef.current) return;
+      const best: ProductSuggestion | undefined = result?.suggestions[0];
+      if (result && best) {
+        const sizeInDoubt = result.conflicts.some((c) => c.field === 'quantity');
+        setLookup(result);
+        setLookupSource(best.provider);
+        setForm((f) => fillFromFacts(f, best, { sizeInDoubt }));
+        setStep({ kind: 'photo', barcode, queue: ['details'] });
+      } else {
+        if (result?.status === 'unavailable' || !result) {
+          toast.error('Product databases did not answer. Add the details from the label.');
+        }
+        setStep({ kind: 'photo', barcode, queue: ['front', 'details', 'size'] });
+      }
+    },
+    [toast]
+  );
+
+  const nextPhoto = useCallback((barcode: string, queue: LabelStep[]) => {
+    const rest = queue.slice(1);
+    setStep(rest.length ? { kind: 'photo', barcode, queue: rest } : { kind: 'new', barcode });
   }, []);
+
+  const readPhoto = async (file: File, barcode: string, queue: LabelStep[]) => {
+    setReading(true);
+    try {
+      const body = new FormData();
+      body.append('image', file);
+      body.append('step', queue[0]);
+      const res = await fetch('/api/items/scan-add/read-label', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not read this photo');
+      const r = data.reading as LabelReading;
+      setForm((f) => fillFromFacts(f, { name: r.name, brand: r.brand, quantity: r.size, mrp: r.mrp }));
+      // Once any photo has shown the pack size, the size photo is not asked for.
+      nextPhoto(barcode, r.size ? queue.filter((q, i) => i === 0 || q !== 'size') : queue);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not read this photo');
+    } finally {
+      setReading(false);
+    }
+  };
 
   const lookUp = useCallback(
     async (raw: string) => {
@@ -108,12 +184,12 @@ function ScanAddItemsPage() {
         if (seq !== lookupSeqRef.current) return;
         if (!res.ok) throw new Error(data.error || 'Could not check the barcode');
         if (data.match) setStep({ kind: 'existing', barcode, match: data.match as ShopBarcodeMatch });
-        else startNew(barcode);
+        else void startNew(barcode, seq);
       } catch (e) {
         if (seq !== lookupSeqRef.current) return;
         toast.error(e instanceof Error ? e.message : 'Could not check the barcode');
         // The shopkeeper can still add the item by hand.
-        startNew(barcode);
+        void startNew(barcode, seq);
       }
     },
     [startNew, toast]
@@ -133,7 +209,7 @@ function ScanAddItemsPage() {
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': saveKeyRef.current },
-        body: JSON.stringify(scanAddItemPayload(form)),
+        body: JSON.stringify(scanAddItemPayload(form, lookupSource)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not save the item');
@@ -220,7 +296,7 @@ function ScanAddItemsPage() {
           <button
             type="button"
             className="w-full text-center text-sm text-text-secondary underline"
-            onClick={() => startNew('')}
+            onClick={() => void startNew('', ++lookupSeqRef.current)}
           >
             Product has no barcode
           </button>
@@ -231,6 +307,51 @@ function ScanAddItemsPage() {
         <Card className="flex items-center gap-3 p-4">
           <Loader2 className="h-5 w-5 animate-spin" />
           Checking {step.barcode}…
+        </Card>
+      ) : null}
+
+      {step.kind === 'looking' ? (
+        <Card className="flex items-center gap-3 p-4">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Not in your shop yet. Looking up {step.barcode} in product databases…
+        </Card>
+      ) : null}
+
+      {step.kind === 'photo' ? (
+        <Card className="space-y-4 p-4">
+          <div>
+            <p className="font-semibold">{PHOTO_STEPS[step.queue[0]].title}</p>
+            <p className="text-sm text-text-secondary">{PHOTO_STEPS[step.queue[0]].hint}</p>
+            {lookup?.suggestions.length ? (
+              <p className="mt-2 text-sm">
+                Found <strong>{form.name}</strong> in a product database. You can check the details after this photo.
+              </p>
+            ) : null}
+          </div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void readPhoto(file, step.barcode, step.queue);
+            }}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => photoInputRef.current?.click()} disabled={reading}>
+              {reading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+              {reading ? 'Reading the label…' : 'Take photo'}
+            </Button>
+            <Button variant="secondary" onClick={() => nextPhoto(step.barcode, step.queue)} disabled={reading}>
+              Skip
+            </Button>
+            <Button variant="ghost" onClick={() => setStep({ kind: 'new', barcode: step.barcode })} disabled={reading}>
+              Type details instead
+            </Button>
+          </div>
         </Card>
       ) : null}
 
@@ -279,6 +400,67 @@ function ScanAddItemsPage() {
               {step.barcode ? `Barcode ${step.barcode} is not in your shop yet.` : 'Adding a product without a barcode.'}
             </p>
           </div>
+          {lookup?.suggestions.length ? (
+            <div className="space-y-2 rounded-md border border-border p-3 text-sm">
+              <p>
+                {lookupSource
+                  ? 'Filled from a product database. Check the name and pack size against the pack before saving.'
+                  : 'Database details not used for this product.'}
+              </p>
+              {lookupSource
+                ? lookup.conflicts.map((c) => (
+                    <div key={c.field}>
+                      <p className="text-text-secondary">
+                        Databases disagree on the {c.field === 'quantity' ? 'pack size' : c.field}. Pick the one on the pack:
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {c.values.map((v) => (
+                          <Button
+                            key={v}
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              setForm((f) =>
+                                c.field === 'quantity' ? { ...f, size: v } : c.field === 'brand' ? { ...f, brand: v } : { ...f, name: v }
+                              )
+                            }
+                          >
+                            {v}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                : null}
+              <p className="flex flex-wrap gap-x-3 text-xs text-text-secondary">
+                {lookup.suggestions.map((sg) => (
+                  <a
+                    key={sg.provider}
+                    href={sg.source_url ?? '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline"
+                  >
+                    {sg.attribution}
+                    {sg.certainty !== null ? ` · match ${sg.certainty}/100` : ''}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ))}
+                {lookupSource ? (
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      setLookupSource(null);
+                      setForm((f) => ({ ...emptyScanAddForm(f.barcode), purchase_price: f.purchase_price, opening_stock: f.opening_stock }));
+                    }}
+                  >
+                    Wrong product? Clear it
+                  </button>
+                ) : null}
+              </p>
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input label="Product name *" value={form.name} onChange={setField('name')} error={errors.name} placeholder="Parle-G Biscuit" />
             <Input label="Brand" value={form.brand} onChange={setField('brand')} placeholder="Parle" />
