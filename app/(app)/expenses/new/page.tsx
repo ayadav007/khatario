@@ -9,6 +9,10 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { RcmCoverageNotice } from '@/components/gst/RcmCoverageNotice';
 import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
+import { ExpenseCategoryModal } from '@/components/expenses/ExpenseCategoryModal';
+import { ExpenseItemModal, type CreatedExpenseItem } from '@/components/expenses/ExpenseItemModal';
+import { SearchableSelect } from '@/components/expenses/SearchableSelect';
+import { CreateSupplierModal } from '@/components/modals/CreateSupplierModal';
 import { describeAccountingError } from '@/lib/accounting-ui/errors';
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
 
@@ -90,12 +94,9 @@ export default function NewExpensePage() {
   const [headerSgst, setHeaderSgst] = useState('');
   const [headerIgst, setHeaderIgst] = useState('');
   const [lines, setLines] = useState<Line[]>([newLine()]);
-
-  const [itemName, setItemName] = useState('');
-  const [itemType, setItemType] = useState<'goods' | 'service'>('goods');
-  const [itemUnit, setItemUnit] = useState('PCS');
-  const [itemHsn, setItemHsn] = useState('');
-  const [itemRate, setItemRate] = useState('18');
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [itemModalLine, setItemModalLine] = useState<number | null>(null);
 
   const filledLines = useMemo(
     () => lines.filter((line) => line.expense_item_id && Number(line.quantity) > 0 && line.unit_price !== ''),
@@ -267,39 +268,16 @@ export default function NewExpensePage() {
     );
   }
 
-  async function createItem() {
-    setError(null);
-    const res = await fetch('/api/expense-items', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: itemName,
-        item_type: itemType,
-        unit: itemUnit,
-        hsn_sac: itemHsn,
-        tax_rate: Number(itemRate),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || 'Could not add the expense item');
-      return;
-    }
-    setItems((current) => [...current, data.item].sort((a, b) => a.name.localeCompare(b.name)));
+  function acceptNewItem(item: CreatedExpenseItem) {
+    setItems((current) => [...current, item].sort((a, b) => a.name.localeCompare(b.name)));
     setLines((current) => {
       const next = [...current];
-      const empty = next.findIndex((line) => !line.expense_item_id);
-      const target = empty >= 0 ? empty : next.length;
-      if (!next[target]) next.push(newLine());
-      next[target] = {
-        ...next[target],
-        expense_item_id: data.item.id,
-        tax_rate: String(data.item.tax_rate),
-      };
+      const target = itemModalLine != null && next[itemModalLine] ? itemModalLine : next.findIndex((line) => !line.expense_item_id);
+      const index = target >= 0 ? target : next.length;
+      if (!next[index]) next.push(newLine());
+      next[index] = { ...next[index], expense_item_id: item.id, tax_rate: String(item.tax_rate) };
       return next;
     });
-    setItemName('');
-    toast.success('Expense item added');
   }
 
   async function save() {
@@ -394,26 +372,21 @@ export default function NewExpensePage() {
         <div className="space-y-5">
           <section className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block text-sm">
+              <div className="block text-sm">
                 <span className="font-medium text-gray-700">Category</span>
-                <select
+                <SearchableSelect
                   value={categoryId}
-                  onChange={(event) => {
-                    const id = event.target.value;
+                  placeholder="Select a category"
+                  options={categories.map((category) => ({ id: category.id, label: category.name }))}
+                  onChange={(id) => {
                     setCategoryId(id);
                     const category = categories.find((row) => row.id === id);
                     if (category) setItcEligible(!category.itc_blocked);
                   }}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
-                >
-                  <option value="">Select a category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  addLabel="Add category"
+                  onAdd={() => setCategoryModalOpen(true)}
+                />
+              </div>
               <label className="block text-sm">
                 <span className="font-medium text-gray-700">Date</span>
                 <input
@@ -431,21 +404,17 @@ export default function NewExpensePage() {
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
                 />
               </label>
-              <label className="block text-sm">
+              <div className="block text-sm">
                 <span className="font-medium text-gray-700">Supplier</span>
-                <select
+                <SearchableSelect
                   value={supplierId}
-                  onChange={(event) => chooseSupplier(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
-                >
-                  <option value="">Select a supplier</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  placeholder="Select a supplier"
+                  options={suppliers.map((supplier) => ({ id: supplier.id, label: supplier.name }))}
+                  onChange={chooseSupplier}
+                  addLabel="Add supplier"
+                  onAdd={() => setSupplierModalOpen(true)}
+                />
+              </div>
             </div>
             <label className="block text-sm">
               <span className="font-medium text-gray-700">Description</span>
@@ -511,18 +480,15 @@ export default function NewExpensePage() {
                     return (
                       <tr key={line.key} className="border-t border-gray-100">
                         <td className="py-2 pr-2">
-                          <select
+                          <SearchableSelect
                             value={line.expense_item_id}
-                            onChange={(event) => chooseItem(index, event.target.value)}
-                            className="w-full min-w-48 rounded-lg border border-gray-300 px-2 py-1.5"
-                          >
-                            <option value="">Select an item</option>
-                            {items.map((row) => (
-                              <option key={row.id} value={row.id}>
-                                {row.name}
-                              </option>
-                            ))}
-                          </select>
+                            placeholder="Select an item"
+                            options={items.map((row) => ({ id: row.id, label: row.name }))}
+                            onChange={(id) => chooseItem(index, id)}
+                            addLabel="Add item"
+                            onAdd={() => setItemModalLine(index)}
+                            buttonClassName="flex min-h-11 w-full min-w-48 items-center justify-between rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-left text-base"
+                          />
                         </td>
                         <td className="py-2 pr-2 capitalize text-gray-600">{item?.item_type || '—'}</td>
                         <td className="py-2 pr-2">
@@ -581,32 +547,6 @@ export default function NewExpensePage() {
             >
               <Plus className="h-4 w-4" /> Add line
             </button>
-            <div className="rounded-lg border border-dashed border-gray-200 p-3">
-              <p className="text-sm font-medium text-gray-800">New expense item</p>
-              <p className="text-xs text-gray-500">This list is only for expenses. It is not the items you sell.</p>
-              <div className="mt-2 grid gap-2 md:grid-cols-6">
-                <input value={itemName} onChange={(event) => setItemName(event.target.value)} placeholder="Name" className="rounded-lg border px-2 py-1.5 md:col-span-2" />
-                <select value={itemType} onChange={(event) => setItemType(event.target.value as 'goods' | 'service')} className="rounded-lg border px-2 py-1.5">
-                  <option value="goods">Goods</option>
-                  <option value="service">Service</option>
-                </select>
-                <input value={itemUnit} onChange={(event) => setItemUnit(event.target.value)} placeholder="Unit" className="rounded-lg border px-2 py-1.5" />
-                <input value={itemHsn} onChange={(event) => setItemHsn(event.target.value)} placeholder="HSN / SAC" className="rounded-lg border px-2 py-1.5" />
-                <button type="button" onClick={() => void createItem()} className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm text-white">
-                  Add item
-                </button>
-              </div>
-              <label className="mt-2 block text-xs text-gray-600">
-                GST %
-                <select value={itemRate} onChange={(event) => setItemRate(event.target.value)} className="ml-2 rounded border px-2 py-1">
-                  {RATE_OPTIONS.map((rate) => (
-                    <option key={rate} value={String(rate)}>
-                      {rate}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
             {bill && (
               <p className="text-sm text-gray-700">
                 {isReverseCharge ? 'Supplier charge' : 'Bill total'} ₹{bill.amount.toFixed(2)}
@@ -718,6 +658,33 @@ export default function NewExpensePage() {
           </section>
         </div>
       )}
+      <ExpenseCategoryModal
+        open={categoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        onCreated={(category) => {
+          setCategories((current) => [...current, category].sort((a, b) => a.name.localeCompare(b.name)));
+          setCategoryId(category.id);
+          setItcEligible(!category.itc_blocked);
+        }}
+      />
+      <CreateSupplierModal
+        isOpen={supplierModalOpen}
+        onClose={() => setSupplierModalOpen(false)}
+        onSuccess={(supplier) => {
+          setSuppliers((current) =>
+            [...current, { id: supplier.id, name: supplier.name, gstin: supplier.gstin, state_code: supplier.state_code }].sort((a, b) =>
+              a.name.localeCompare(b.name)
+            )
+          );
+          setSupplierId(supplier.id);
+          if (supplier.gstin) setSupplierGstin(supplier.gstin);
+        }}
+      />
+      <ExpenseItemModal
+        open={itemModalLine != null}
+        onClose={() => setItemModalLine(null)}
+        onCreated={acceptNewItem}
+      />
     </div>
   );
 }
