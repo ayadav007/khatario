@@ -347,6 +347,8 @@ class _ItemsScreenState extends State<ItemsScreen> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _HeaderTool(icon: LucideIcons.scanLine, label: 'Scan & Add Items', onTap: () => widget.onOpen('Scan & add items')),
+                const SizedBox(width: 8),
                 _HeaderTool(icon: LucideIcons.printer, label: 'Print Barcodes', onTap: () => widget.onOpen('Print barcodes')),
                 const SizedBox(width: 8),
                 _HeaderTool(icon: LucideIcons.tag, label: 'Manage Categories', onTap: () => widget.onOpen('Manage categories')),

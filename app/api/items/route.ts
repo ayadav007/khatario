@@ -12,6 +12,16 @@ import {
 } from '@/lib/security/require-platform-module';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 import { isOwnSupplier } from '@/lib/supplier-hub-links';
+import { readPaymentIdempotencyKey } from '@/lib/accounting/payment-idempotency';
+import {
+  ITEM_CREATE_IDEMPOTENCY_ACTION,
+  findItemCreateOutcome,
+  itemCreateFingerprint,
+  itemIdempotencyErrorBody,
+  scopedItemCreateKey,
+  type ItemCreateIdempotencyOutcome,
+} from '@/lib/items/item-create-idempotency';
+import { insertReplayLogPending, markReplayCompleted } from '@/lib/offline-sync/replay-log-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -258,6 +268,36 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    // Optional retry key (X-Idempotency-Key). A retry of a save that already went through gets the
+    // same item back instead of a duplicate item or a second opening-stock posting.
+    const idemKey = readPaymentIdempotencyKey(request);
+    if (!idemKey.ok) return NextResponse.json(idemKey.body, { status: 400 });
+    const idem = idemKey.key
+      ? { scopedKey: scopedItemCreateKey(idemKey.key), ...itemCreateFingerprint(body) }
+      : null;
+    const idemResponse = async (outcome: ItemCreateIdempotencyOutcome) => {
+      if (outcome.kind !== 'replay') {
+        return NextResponse.json(itemIdempotencyErrorBody(outcome.kind), { status: 409 });
+      }
+      const replayed = outcome.item as unknown as Item;
+      if (replayed.item_type === 'goods') {
+        // Re-running is safe: the opening voucher is replaced, not added.
+        const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+        await syncItemOpeningStockLedger(business_id, replayed.id).catch((e) =>
+          console.error('Error re-syncing opening stock ledger on replay:', e)
+        );
+      }
+      return NextResponse.json({ item: replayed, idempotent: true }, { status: 200 });
+    };
+    if (idem) {
+      const prior = await findItemCreateOutcome(getPool(), {
+        businessId: business_id,
+        scopedKey: idem.scopedKey,
+        hash: idem.hash,
+      });
+      if (prior) return idemResponse(prior);
+    }
+
     if (featured_in_store) {
       const { canEnableStoreFeatured, countStoreFeaturedItems, featuredLimitMessage } = await import(
         '@/lib/store/store-featured'
@@ -381,6 +421,27 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const idemRow = idem
+        ? await insertReplayLogPending(client, {
+            businessId: business_id,
+            idempotencyKey: idem.scopedKey,
+            actionType: ITEM_CREATE_IDEMPOTENCY_ACTION,
+            requestHash: idem.hash,
+            requestPayload: idem.storedPayload,
+            userId: created_by,
+          })
+        : null;
+      if (idem && !idemRow) {
+        // Another request with this key committed first; answer as its replay.
+        await client.query('ROLLBACK');
+        const winner = await findItemCreateOutcome(getPool(), {
+          businessId: business_id,
+          scopedKey: idem.scopedKey,
+          hash: idem.hash,
+        });
+        return idemResponse(winner ?? { kind: 'in_progress' });
+      }
+
       const insertResult = await client.query<Item>(`
       INSERT INTO items (
         business_id, category_id, name, code, barcode, barcode_type, unit, selling_price, purchase_price, 
@@ -444,6 +505,25 @@ export async function POST(request: NextRequest) {
           [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
         );
         item = { ...item, ...seo };
+      }
+
+      // Opening stock of a plain item posts in the same transaction as the item, so a failed save
+      // leaves neither and a retried save cannot post it twice.
+      if (finalOpeningStock > 0 && item_type === 'goods') {
+        await client.query(
+          `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes)
+           VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock')`,
+          [business_id, item.id, finalOpeningStock]
+        );
+        await seedOpeningStockLayers(business_id, {
+          itemId: item.id,
+          quantity: finalOpeningStock,
+          client,
+        });
+      }
+
+      if (idemRow) {
+        await markReplayCompleted(client, idemRow.id, { item_id: item.id }, { type: 'item', id: item.id });
       }
 
       await client.query('COMMIT');
@@ -594,16 +674,6 @@ export async function POST(request: NextRequest) {
       } catch (verifyError) {
         console.error('[Items API] Error verifying variants:', verifyError);
       }
-    } else if (finalOpeningStock > 0 && item_type === 'goods') {
-      // Create initial stock movement for base item
-      await query(`
-        INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes)
-        VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock')
-      `, [business_id, item.id, finalOpeningStock]);
-      await seedOpeningStockLayers(business_id, {
-        itemId: item.id,
-        quantity: finalOpeningStock,
-      });
     }
 
     if (item_type === 'goods') {

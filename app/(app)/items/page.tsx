@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Package, Loader2, Pencil, Filter, X, Tag, Printer, Tags, ChevronDown } from 'lucide-react';
+import { Search, Plus, Package, Loader2, Pencil, Filter, X, Tag, Printer, Tags, ChevronDown, ScanLine } from 'lucide-react';
 import { ItemMobileCard } from '@/components/items/ItemMobileCard';
 import { AdjustItemStockSheet } from '@/components/items/AdjustItemStockSheet';
 
@@ -26,6 +26,7 @@ import { useEntityList } from '@/hooks/useEntityList';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useToastContext } from '@/contexts/ToastContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import { clsx } from 'clsx';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
@@ -55,6 +56,7 @@ function ItemsPage() {
   const searchParams = useSearchParams();
   const toast = useToastContext();
   const { canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   const canDeleteItems = !permissionsLoading && (canDelete('items') || isPrimaryAdmin);
   const moduleSettingsMenu = getModuleSettingsMenu(pathname);
   const [search, setSearch] = useState('');
@@ -747,6 +749,14 @@ function ItemsPage() {
                 <span className="hidden md:inline">Manage Categories</span>
               </Button>
             </Link>
+            {snapshotLoaded && hasCapability('items_scan_onboarding', 'view') ? (
+              <Link href="/items/scan-add">
+                <Button variant="secondary" className="h-10 px-4">
+                  <ScanLine className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Scan &amp; Add Items</span>
+                </Button>
+              </Link>
+            ) : null}
             <Link href="/items/new" className="hidden md:inline-flex">
               <Button className="h-10 px-4">
                 <Plus className="w-4 h-4 mr-2" />

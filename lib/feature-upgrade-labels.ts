@@ -22,6 +22,7 @@ const LABELS: Record<string, string> = {
   party_pricing: 'Party-wise pricing',
   whatsapp_auto_reminders: 'WhatsApp auto reminders',
   barcode_label_printing: 'Barcode label printing',
+  items_scan_onboarding: 'Scan & Add Items',
   barcode_label_from_purchase: 'Labels from purchase',
   barcode_thermal_printer: 'Thermal printing',
   report_builder: 'Custom report builder',

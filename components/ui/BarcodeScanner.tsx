@@ -9,12 +9,15 @@ interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
   onClose: () => void;
   formats?: string[];
+  /** Plan feature that unlocks this scanner. Billing uses advanced_barcode; Scan & Add has its own. */
+  feature?: string;
 }
 
 export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   onScan,
   onClose,
-  formats = ['EAN_13', 'CODE_128', 'QR_CODE', 'UPC_A', 'EAN_8', 'CODE_39', 'CODE_93', 'ITF']
+  formats = ['EAN_13', 'CODE_128', 'QR_CODE', 'UPC_A', 'EAN_8', 'CODE_39', 'CODE_93', 'ITF'],
+  feature = 'advanced_barcode',
 }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +31,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const isInitializingRef = useRef(false);
   const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   useEffect(() => {
-    if (snapshotLoaded && !hasCapability('advanced_barcode', 'view')) onClose();
-  }, [snapshotLoaded, hasCapability, onClose]);
+    if (snapshotLoaded && !hasCapability(feature, 'view')) onClose();
+  }, [snapshotLoaded, hasCapability, onClose, feature]);
   const initScannerRef = useRef<(() => Promise<void>) | null>(null);
 
   // Function to play beep sound on successful scan

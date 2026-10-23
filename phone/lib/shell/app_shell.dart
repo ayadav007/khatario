@@ -12,6 +12,7 @@ import '../screens/hub/supply_orders_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
 import '../screens/items/item_form_screen.dart';
+import '../screens/items/scan_add_screen.dart';
 import '../screens/items/items_screen.dart';
 import '../screens/invoices/invoice_detail_screen.dart';
 import '../screens/invoices/invoice_form_screen.dart';
@@ -368,6 +369,18 @@ class _AppShellState extends State<AppShell> {
     if (saved == true && mounted) setState(() => _itemsEpoch++);
   }
 
+  /// Scan & Add Items has its own plan feature (items_scan_onboarding), not billing's advanced_barcode.
+  Future<void> _openScanAdd() async {
+    if (_capabilities?.has('items_scan_onboarding') == false) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Scan & Add Items is not in your plan.')));
+      return;
+    }
+    final added = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => ScanAddScreen(session: widget.session),
+    ));
+    if (added == true && mounted) setState(() => _itemsEpoch++);
+  }
+
   Future<void> _openNewCustomer() async {
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => CustomerFormScreen(session: widget.session, capabilities: _capabilities),
@@ -495,6 +508,9 @@ class _AppShellState extends State<AppShell> {
         return page('/reports');
       case 'New inventory adjustment':
         return page('/inventory-adjustments');
+      case 'Scan & add items':
+        _openScanAdd();
+        return;
       case 'Print barcodes':
       case 'Print barcode':
         return page('/items/barcodes');

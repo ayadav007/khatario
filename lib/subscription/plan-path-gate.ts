@@ -44,6 +44,7 @@ function isSupplierHubPath(path: string): boolean {
 }
 
 const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
+  { prefix: '/items/scan-add', featureId: 'items_scan_onboarding' },
   { prefix: '/invoices/recurring', featureId: 'sales_recurring_invoices' },
   { prefix: '/invoices', featureId: 'sales_invoices' },
   { prefix: '/estimates', featureId: 'sales_estimates' },
@@ -136,6 +137,7 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/whatsapp/flows', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/reminders', featureId: 'whatsapp_auto_reminders' },
 
+  { prefix: '/api/items/scan-add', featureId: 'items_scan_onboarding' },
   { prefix: '/api/invoices', featureId: 'sales_invoices' },
   { prefix: '/api/estimates', featureId: 'sales_estimates' },
   { prefix: '/api/credit-notes', featureId: 'sales_credit_notes' },
