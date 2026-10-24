@@ -1,5 +1,6 @@
 import { queryRows, queryOne } from '@/lib/db';
 import { applyCouponDiscount, lineAmounts, roundMoney } from './pricing';
+import { buildStoreInvoicePlan, StoreInvoicePlanError } from './store-invoice-plan';
 import { getBranchDelivery, quoteDeliveryForBranch } from './delivery';
 import type { DeliveryMode } from './delivery/self';
 
@@ -123,7 +124,8 @@ export async function buildStoreQuote(input: {
       taxRate,
       gstIncluded,
     });
-    subtotal += gstIncluded ? amt.lineTotal : amt.taxable;
+    // Subtotal is what the shopper pays for the goods (GST-exclusive lines with their tax added).
+    subtotal += amt.lineTotal;
     taxTotal += amt.tax;
     lines.push({
       item_id: item.id,
@@ -151,7 +153,7 @@ export async function buildStoreQuote(input: {
       tax_total: taxTotal,
       delivery_charge: 0,
       discount: 0,
-      grand_total: roundMoney(subtotal + (lines.some((l) => !l.gst_included) ? taxTotal : 0)),
+      grand_total: subtotal,
       eta_text: '',
       lines,
       coupon_code: null,
@@ -200,8 +202,7 @@ export async function buildStoreQuote(input: {
     couponCode = code;
   }
 
-  const exclusiveTax = lines.some((l) => !l.gst_included) ? taxTotal : 0;
-  const goodsTotal = roundMoney(subtotal + exclusiveTax - discount);
+  const goodsTotal = roundMoney(subtotal - discount);
 
   let deliveryCharge = 0;
   let eta = input.deliveryMode === 'pickup' ? 'Ready for pickup' : '';
@@ -245,6 +246,18 @@ export async function buildStoreQuote(input: {
   }
 
   const grand = roundMoney(goodsTotal + deliveryCharge);
+  // GST as it will appear on the invoice: after the coupon, including the delivery fee's share.
+  try {
+    taxTotal = buildStoreInvoicePlan({
+      lines,
+      discount,
+      delivery: deliveryCharge,
+      grandTotal: grand,
+    }).taxTotal;
+  } catch (err) {
+    if (!(err instanceof StoreInvoicePlanError)) throw err;
+    return { ...failQuote(subtotal, taxTotal, lines, discount, couponCode), error: err.message };
+  }
   return {
     serviceable: true,
     subtotal,

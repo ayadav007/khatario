@@ -804,6 +804,10 @@ export function OrderDrawer({
                   {f.cod_amount > 0 && !f.cod_collected_at ? (
                     <Button size="sm" variant="secondary" isLoading={busy} onClick={() => void act({ action: 'cod_collected' })}>Cash collected</Button>
                   ) : null}
+                  {/* A store order settled outside a gateway with nothing to collect at the door is direct UPI. */}
+                  {o.source_type === 'store_order' && o.payment_status === 'cod' && !(f.cod_amount > 0) && !f.cod_collected_at ? (
+                    <Button size="sm" variant="secondary" isLoading={busy} onClick={() => void act({ action: 'cod_collected' })}>UPI received</Button>
+                  ) : null}
                   {next.includes('cancelled') ? (
                     <Button size="sm" variant="ghost" onClick={() => setPanel(panel === 'cancel' ? null : 'cancel')}>Cancel</Button>
                   ) : null}

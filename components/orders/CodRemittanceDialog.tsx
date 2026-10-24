@@ -47,6 +47,8 @@ export function CodRemittanceDialog({ onClose }: { onClose: () => void }) {
   const [received, setReceived] = useState('');
   const [reference, setReference] = useState('');
   const [date, setDate] = useState(today());
+  const [accounts, setAccounts] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -61,6 +63,8 @@ export function CodRemittanceDialog({ onClose }: { onClose: () => void }) {
     }
     setOpen(json.open ?? []);
     setHistory(json.remittances ?? []);
+    setAccounts(json.settlement_accounts ?? []);
+    setAccountId((cur) => cur || json.default_settlement_account_id || '');
   }, []);
 
   useEffect(() => {
@@ -102,6 +106,7 @@ export function CodRemittanceDialog({ onClose }: { onClose: () => void }) {
           remitted_on: date,
           received_amount: Number(received),
           fulfilment_ids: [...picked],
+          settlement_account_id: accountId || undefined,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -209,6 +214,17 @@ export function CodRemittanceDialog({ onClose }: { onClose: () => void }) {
               <label className="text-xs text-slate-500">
                 UTR / reference
                 <input className={input} value={reference} onChange={(e) => setReference(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-500 sm:col-span-3">
+                Money received into
+                <select className={input} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                  <option value="">Choose cash or bank account</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.code} · {a.name}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3 text-sm">

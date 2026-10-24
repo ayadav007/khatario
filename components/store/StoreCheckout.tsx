@@ -540,12 +540,6 @@ export function StoreCheckout({
                       <span>Subtotal</span>
                       <span>₹{quote.subtotal.toLocaleString('en-IN')}</span>
                     </div>
-                    {quote.tax_total > 0 ? (
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>Tax</span>
-                        <span>₹{quote.tax_total.toLocaleString('en-IN')}</span>
-                      </div>
-                    ) : null}
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Delivery</span>
                       <span>
@@ -572,6 +566,11 @@ export function StoreCheckout({
                         ₹{quote.grand_total.toLocaleString('en-IN')}
                       </span>
                     </div>
+                    {quote.tax_total > 0 ? (
+                      <p className="text-right text-xs text-gray-400">
+                        Includes ₹{quote.tax_total.toLocaleString('en-IN')} GST
+                      </p>
+                    ) : null}
                   </>
                 ) : (
                   <div className="flex items-center justify-between">

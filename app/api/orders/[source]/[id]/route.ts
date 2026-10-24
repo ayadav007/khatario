@@ -420,8 +420,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       }
       await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
     }
-    const res = await inTx((c) => markCodCollected(c, { businessId, fulfilmentId: target, actorUserId: auth.userId }));
-    if (!res.ok) return NextResponse.json({ error: 'No cash on delivery on this shipment' }, { status: 409 });
+    const parcel = own.find((x) => x.id === target) as { cod_amount?: string | number } | undefined;
+    // Direct-UPI store orders have no COD on the parcel; the receipt above is the whole action.
+    const upiOnly = row.source_type === 'store_order' && !(Number(parcel?.cod_amount) > 0);
+    if (!upiOnly) {
+      const res = await inTx((c) => markCodCollected(c, { businessId, fulfilmentId: target, actorUserId: auth.userId }));
+      if (!res.ok) return NextResponse.json({ error: 'No cash on delivery on this shipment' }, { status: 409 });
+    }
   } else if (action === 'set_shipping') {
     const shipping = parseShipping(body.shipping);
     if (!shipping) return NextResponse.json({ error: 'Nothing to save' }, { status: 400 });
@@ -502,7 +507,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       const storeTo = storeTargetFor(to, row.order_status);
       if (storeTo) {
         try {
-          const { moved, bookingError, bookingWarning } = await applyStoreOrderStatus({
+          const { moved, invoiceError, bookingError, bookingWarning } = await applyStoreOrderStatus({
             businessId,
             orderId: row.source_id,
             to: storeTo,
@@ -513,7 +518,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
           if (!moved.ok) {
             return NextResponse.json({ error: moved.error, code: moved.code }, { status: moved.status });
           }
-          if (bookingError) warning = `Shiprocket booking failed: ${bookingError}`;
+          if (invoiceError) warning = `Order confirmed, but the bill was not posted to the accounts: ${invoiceError}`;
+          else if (bookingError) warning = `Shiprocket booking failed: ${bookingError}`;
           else if (bookingWarning) warning = bookingWarning;
         } catch (error) {
           if (error instanceof InvoiceCancelError) {

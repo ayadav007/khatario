@@ -5,6 +5,8 @@ import { roundMoney } from '@/lib/store/pricing';
 import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
 import { syncStoreOrderFulfilment } from '@/lib/fulfilment/service';
 import { releaseStoreOrderStock } from '@/lib/store/checkout-stock';
+import { buildStoreInvoicePlan, StoreInvoicePlanError } from '@/lib/store/store-invoice-plan';
+import { todayIst } from '@/lib/gst/time-limits';
 
 export type StoreOnlinePaymentProvider = 'razorpay' | 'easebuzz';
 
@@ -506,22 +508,25 @@ export async function createInvoiceForStoreOrder(
       throw new StoreInvoiceError('Store order has no lines to invoice', 'STORE_ORDER_EMPTY');
     }
 
-    const kinds = new Set(lines.map(classifyStoreLine));
-    if (kinds.size > 1) {
-      throw new StoreInvoiceError(
-        'This order mixes GST-inclusive and GST-exclusive prices, which one invoice cannot represent',
-        'STORE_TAX_NOT_REPRESENTABLE',
-      );
-    }
-    const pricesIncludeGst = kinds.has('inclusive');
-    const delivery = parseFloat(String(o.delivery_charge)) || 0;
-    const discount = parseFloat(String(o.discount_amount)) || 0;
-    const additional = roundMoney(delivery - discount);
-    if (Math.abs(additional) > 0.004) {
-      throw new StoreInvoiceError(
-        'This store order has a delivery or discount amount with no GST classification. It was not invoiced.',
-        'CHARGE_UNCLASSIFIED'
-      );
+    const planLines = lines.map((line) => ({
+      unit_price: parseFloat(line.unit_price) || 0,
+      quantity: parseFloat(line.quantity) || 0,
+      tax_rate: parseFloat(line.tax_rate) || 0,
+      gst_included: classifyStoreLine(line) === 'inclusive',
+    }));
+    let plan: ReturnType<typeof buildStoreInvoicePlan>;
+    try {
+      plan = buildStoreInvoicePlan({
+        lines: planLines,
+        discount: parseFloat(String(o.discount_amount)) || 0,
+        delivery: parseFloat(String(o.delivery_charge)) || 0,
+        grandTotal: grand,
+      });
+    } catch (err) {
+      if (err instanceof StoreInvoicePlanError) {
+        throw new StoreInvoiceError(err.message, 'STORE_TOTALS_NOT_REPRESENTABLE');
+      }
+      throw err;
     }
 
     let createdBy = actorUserId || null;
@@ -551,7 +556,8 @@ export async function createInvoiceForStoreOrder(
     const customerId = await storeOrderCustomerId(client, businessId, branchId, o);
     const locationId = await storeInvoiceWarehouseId(client, businessId, branchId);
 
-    const invoiceDate = new Date(o.created_at).toISOString().slice(0, 10);
+    // The sale date in India, not the UTC day (an order at 00:30 IST is that day's sale).
+    const invoiceDate = todayIst(new Date(o.created_at));
     const payLabel =
       o.payment_provider === 'upi'
         ? 'UPI'
@@ -570,30 +576,34 @@ export async function createInvoiceForStoreOrder(
         invoice_date: invoiceDate,
         status: 'final',
         document_type: 'tax_invoice',
-        prices_include_gst: pricesIncludeGst,
+        prices_include_gst: plan.pricesIncludeGst,
         billing_address: o.customer_address,
         notes: `Online store order ${o.order_number} (${payLabel})`,
         channel: 'online_store',
-        items: lines.map((line) => ({
+        charges: plan.charges,
+        additional_charges: plan.charges.reduce((s, c) => s + (Number(c.amount) || 0), 0),
+        round_off: plan.roundOff,
+        items: lines.map((line, i) => ({
           item_id: line.item_id,
           variant_id: line.variant_id,
           item_name: line.item_name,
-          quantity: parseFloat(line.quantity) || 0,
+          quantity: planLines[i].quantity,
           unit: line.unit || 'PCS',
-          unit_price: parseFloat(line.unit_price) || 0,
-          tax_rate: parseFloat(line.tax_rate) || 0,
+          unit_price: plan.unitPrices[i],
+          discount_percent: plan.discountPercent,
+          tax_rate: planLines[i].tax_rate,
           location_id: locationId,
         })),
       },
     );
 
-    const orderTax = parseFloat(String(o.tax_total)) || 0;
+    // Inter-state CGST/SGST vs IGST rounding can move tax by a paisa; the total must match exactly.
     if (
-      Math.abs(result.grandTotal - grand) > 0.02 ||
-      Math.abs(result.taxTotal - orderTax) > 0.05
+      Math.abs(result.grandTotal - grand) > 0.005 ||
+      Math.abs(result.taxTotal - plan.taxTotal) > 0.05
     ) {
       throw new StoreInvoiceError(
-        `Store order totals cannot be represented on a normal invoice (order ${grand}/${orderTax}, invoice ${result.grandTotal}/${result.taxTotal})`,
+        `Store order totals cannot be represented on a normal invoice (order ${grand}/${plan.taxTotal}, invoice ${result.grandTotal}/${result.taxTotal})`,
         'STORE_TOTALS_NOT_REPRESENTABLE',
       );
     }

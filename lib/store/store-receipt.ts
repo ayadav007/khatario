@@ -3,6 +3,15 @@ import { getPool } from '@/lib/db';
 import { createPaymentLedgerEntries, getAccountForPaymentMode } from '@/lib/ledger-utils';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { assertPeriodNotLocked } from '@/lib/period-lock-utils';
+import { getAccountMappings } from '@/lib/account-mappings';
+import {
+  accountsForMode,
+  classifyPaymentMode,
+  normalizePaymentMode,
+  resolveSettlementAccount,
+  SettlementAccountError,
+} from '@/lib/accounting/settlement-accounts';
+import { listSettlementAccounts } from '@/lib/accounting/settlement-accounts-db';
 
 export const STORE_RECEIPT_ACTOR = 'razorpay_webhook' as const;
 
@@ -68,6 +77,46 @@ export function storeReceiptPaymentMode(payload: unknown): string {
   if (method === 'upi') return 'upi';
   if (method === 'wallet') return 'wallet';
   return method || 'cash';
+}
+
+/**
+ * The account an automatic store receipt lands in; no one is there to pick it.
+ * 1. The account mapped for this mode in Settings > Account mappings (or the default bank / cash).
+ * 2. The only eligible account.
+ * 3. For bank-like modes, the only bank *asset*: Bank OD (2112) also counts as a bank, but a
+ *    gateway settlement or UPI credit lands in the current account.
+ * A card payment with no clearing account in the chart is posted as a bank card receipt.
+ */
+export async function storeSettlementChoice(
+  businessId: string,
+  paymentMode: string,
+): Promise<{ mode: string; accountId: string | null }> {
+  const accounts = await listSettlementAccounts(businessId);
+  const mappings = await getAccountMappings(businessId);
+  let mode = normalizePaymentMode(paymentMode) || 'cash';
+  let modeClass = classifyPaymentMode(mode);
+  if (modeClass === 'clearing' && accountsForMode(accounts, 'clearing').length === 0) {
+    mode = 'card';
+    modeClass = 'bank';
+  }
+  const eligible = accountsForMode(accounts, modeClass);
+  const fallbackMapping =
+    modeClass === 'bank' ? mappings.bank_account_id : modeClass === 'cash' ? mappings.cash_account_id : undefined;
+  const mapped = [mappings.payment_modes?.[mode], fallbackMapping].find(
+    (id) => !!id && eligible.some((a) => a.id === id),
+  );
+  if (mapped) return { mode, accountId: mapped };
+
+  const resolved = resolveSettlementAccount({ accounts, mode });
+  if (resolved.ok) return { mode, accountId: resolved.accountId };
+  if (modeClass === 'bank' || modeClass === 'other') {
+    const assets = eligible.filter((a) => a.kind === 'bank' && a.accountType === 'asset');
+    if (assets.length === 1) return { mode, accountId: assets[0].id };
+  }
+  throw new SettlementAccountError(
+    `${resolved.error} Choose the account for ${mode} store payments in Settings > Account mappings.`,
+    resolved.code,
+  );
 }
 
 export type StoreReceiptResult =
@@ -190,7 +239,7 @@ export async function settleStoreOrderReceipt(
   }
 }
 
-type StoreReceiptInvoice = {
+export type StoreReceiptInvoice = {
   id: string;
   customer_id: string | null;
   branch_id: string | null;
@@ -203,7 +252,7 @@ type StoreReceiptInvoice = {
  * A cash-sale invoice (older store orders, no customer) already debited Cash when it was
  * posted, so only the payment row and paid amount are recorded, as POS cash sales do.
  */
-async function postStoreInvoiceReceipt(
+export async function postStoreInvoiceReceipt(
   client: PoolClient,
   p: {
     businessId: string;
@@ -213,14 +262,22 @@ async function postStoreInvoiceReceipt(
     createdBy: string | null;
     notes: string;
     description: string;
+    /** An account the merchant chose (COD remittance); otherwise storeSettlementChoice picks one. */
+    settlementAccountId?: string | null;
+    paymentDate?: Date;
   },
 ): Promise<string> {
-  const { businessId, invoice, amount, paymentMode } = p;
-  const paymentDate = new Date();
+  const { businessId, invoice, amount } = p;
+  let paymentMode = p.paymentMode;
+  const paymentDate = p.paymentDate ?? new Date();
   await assertPeriodNotLocked(businessId, invoice.branch_id, paymentDate, 'record a store receipt');
   let settlementAccountId: string | null = null;
   if (invoice.customer_id) {
-    const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode);
+    const choice = p.settlementAccountId
+      ? { mode: paymentMode, accountId: p.settlementAccountId }
+      : await storeSettlementChoice(businessId, paymentMode);
+    paymentMode = choice.mode;
+    const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode, choice.accountId);
     if (!paymentAccount) {
       throw new Error('No ledger account is mapped for the store receipt');
     }

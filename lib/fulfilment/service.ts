@@ -524,9 +524,10 @@ export async function syncStoreOrderFulfilment(
     customer_phone: string;
     grand_total: string;
     cash_collected_at: string | null;
+    payment_provider: string | null;
   }>(
     `SELECT status, payment_status, delivery_mode, dispatch_mode, awb, tracking_url, branch_id, invoice_id,
-            customer_name, customer_phone, grand_total, cash_collected_at
+            customer_name, customer_phone, grand_total, cash_collected_at, payment_provider
        FROM store_orders WHERE id = $1 AND business_id = $2`,
     [input.storeOrderId, input.businessId],
   );
@@ -538,7 +539,9 @@ export async function syncStoreOrderFulfilment(
     storeStatusToFulfilment(order.status, { deliveryMode: order.delivery_mode, dispatchMode: order.dispatch_mode });
   if (!target) return null;
   const method = storeDispatchToMethod(order.delivery_mode, order.dispatch_mode);
-  const codAmount = order.payment_status === 'cod' ? Number(order.grand_total) || 0 : 0;
+  // Direct UPI is settled like COD in the books but the buyer paid at checkout: nothing to collect at the door.
+  const codAmount =
+    order.payment_status === 'cod' && order.payment_provider !== 'upi' ? Number(order.grand_total) || 0 : 0;
 
   const { row, created } = await ensureFulfilment(client, {
     businessId: input.businessId,
