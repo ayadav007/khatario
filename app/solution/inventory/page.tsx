@@ -16,7 +16,7 @@ const title = 'Inventory Management Software for Small Business | Khatario';
 export const metadata: Metadata = {
   title: { absolute: title },
   description:
-    'Stock tracking app for Indian retail & wholesale: live stock with every sale and purchase, branches & warehouses, batch/expiry/serial, FIFO and weighted-average costing, transfers & adjustments, reports (summary, valuation, movement, low stock, expired), barcodes. Start free.',
+    'Stock app for Indian shops and wholesalers: live stock with every bill, batch and expiry, branches, barcodes, low-stock alerts and valuation reports. Start free.',
   keywords: [
     'inventory management software',
     'stock tracking app',
@@ -29,6 +29,7 @@ export const metadata: Metadata = {
     description:
       'Inventory that updates with every bill and purchase. Branches, warehouses, batches, costing, reports, and barcodes — built for busy shops.',
     type: 'website',
+    images: ['/opengraph-image'],
   },
   twitter: {
     card: 'summary_large_image',

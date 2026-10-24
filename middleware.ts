@@ -118,6 +118,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/public/',
   /** Khatario Staff app: each request is signed by the phone's device key (lib/hr/staff-app). */
   '/api/staff-app/',
+  /** SEO agent blog drafts: bearer SEO_AGENT_API_KEY checked in the route (lib/blog/seo-agent-auth). */
+  '/api/seo-agent/',
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -208,6 +210,7 @@ function isStaticAsset(pathname: string): boolean {
     pathname === '/admin/pwa-manifest' ||
     pathname === '/robots.txt' ||
     pathname === '/sitemap.xml' ||
+    pathname.startsWith('/opengraph-image') ||
     pathname.endsWith('.ico') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.jpg') ||

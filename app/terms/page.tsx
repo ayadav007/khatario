@@ -1,4 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Terms of Service',
+  description: 'The terms that apply when you use Khatario for GST billing, stock, payments and WhatsApp invoices.',
+  alternates: { canonical: '/terms' },
+};
 
 export default function TermsPage() {
   return (

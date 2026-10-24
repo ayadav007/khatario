@@ -15,7 +15,7 @@
 
 Fixed in repo: `app/robots.ts` (production allows crawling with a sitemap; every other host, including staging, is disallowed), and the solution pages no longer render "| Khatario - Khatario" in the title.
 
-**Blocker:** none of the SEO work reaches Google until production runs current `main`.
+**Update 2026-10-24 (later):** production deployed to `fd7b8525` (same code as `main`). robots.txt, the sitemap, blog, guides and solution pages are live (200). Sitemap submitted to Search Console. `www.khatario.com` now 301s to `https://khatario.com` (nginx backup at `/root/nginx-khatario.bak-2026-10-24-1221`). Week 1 steps 1–3 are done except the owner's manual "Request indexing" in Search Console.
 
 ## Honest target for 30 days
 
@@ -53,9 +53,10 @@ Search volumes above are unverified estimates; Search Console impressions replac
 9. Daily: compare with yesterday; for queries at position 8–20, rewrite title/description/H1 or add a section; for pages with impressions but CTR under 2%, rewrite the title and description.
 
 ## Owner actions (only you can do these)
-- [ ] Add the service account email as a **Full** user in Search Console > Settings > Users and permissions.
+- [x] Add the service account email as a **Full** user in Search Console > Settings > Users and permissions.
 - [ ] Put the JSON key outside the repo (e.g. `C:\Users\Abhishek\.secrets\gsc.json`) and tell Claude the path. Never commit it.
-- [ ] Approve deploying `main` to production.
+- [x] Approve deploying `main` to production.
+- [ ] Request indexing in Search Console for `/solution/accounting`, `/solution/inventory`, `/guides`, `/book-demo`.
 - [ ] Create a Google Business Profile for Khatario (brand panel, local queries).
 - [ ] Backlinks: list Khatario on Product Hunt, G2, Capterra, SoftwareSuggest, Techjockey, and IndiaMART; post the Play Store listing link on the site.
 - [ ] Share 3–5 real customer quotes and screenshots for the landing pages.

@@ -16,7 +16,7 @@ const title = 'Simple Accounting Software for Small Businesses | Khatario';
 export const metadata: Metadata = {
   title: { absolute: title },
   description:
-    'Easy accounting app for Indian SMEs: automatic entries from invoices, purchases & expenses, GST (GSTR-1, GSTR-3B, GSTR-2B), credit tracking, bank reconciliation, P&L & balance sheet, WhatsApp reminders. Start free.',
+    'Easy accounting app for Indian small businesses: books update from every bill, GSTR-1, 3B and 2B ready, P&L, balance sheet and WhatsApp reminders. Start free.',
   keywords: [
     'accounting software for small business',
     'GST accounting',
@@ -29,6 +29,7 @@ export const metadata: Metadata = {
     description:
       'Khatario turns invoices, purchases, and expenses into proper books — without accounting jargon. GST support, reports, bank match, WhatsApp reminders.',
     type: 'website',
+    images: ['/opengraph-image'],
   },
   twitter: {
     card: 'summary_large_image',
