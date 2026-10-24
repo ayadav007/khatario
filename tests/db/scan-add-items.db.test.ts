@@ -53,6 +53,8 @@ import { GET as getLookup } from '@/app/api/items/scan-add/lookup/route';
 import { POST as postReadLabel } from '@/app/api/items/scan-add/read-label/route';
 import { POST as postVariant } from '@/app/api/items/scan-add/variant/route';
 import { POST as postAdjustment } from '@/app/api/inventory-adjustments/route';
+import { POST as postReview } from '@/app/api/items/scan-add/review/route';
+import { GET as getItem, PATCH as patchItem } from '@/app/api/items/[id]/route';
 import { resetProviderSlotsForTests } from '@/lib/product-lookup/service';
 
 /** Provider answers for the lookup tests. No request leaves the machine. */
@@ -533,6 +535,89 @@ describe('scan & add items', () => {
         })
       );
       expect(res.status).toBe(404);
+    });
+
+    test('the review reads current details and names what each item lacks', async () => {
+      const plain = await create({ name: `Loose sugar ${tag}`, purchase_price: 0, opening_stock: 0 }, randomUUID());
+      const otherItemId = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO items (business_id, name, unit, item_type) VALUES ($1, $2, 'PCS', 'goods') RETURNING id`,
+          [OTHER, `Other shop item ${tag}`]
+        )
+      ).rows[0].id;
+      const res = await send(postReview, '/api/items/scan-add/review', {
+        item_ids: [maggiId, harpicId, plain.json.item.id, otherItemId, 'not-an-id'],
+      });
+      expect(res.status).toBe(200);
+      const byId = new Map((res.json.items as Array<{ id: string; gaps: string[]; next_expiry: string | null; variants: unknown[] }>).map((i) => [i.id, i]));
+      // The other business's item is not returned, and the bad id is ignored.
+      expect([...byId.keys()].sort()).toEqual([maggiId, harpicId, plain.json.item.id].sort());
+      expect(byId.get(plain.json.item.id)!.gaps).toEqual(['hsn', 'selling_price', 'purchase_price', 'mrp', 'stock', 'gst_zero']);
+      expect(byId.get(maggiId)!.next_expiry).toBe('2027-03-31');
+      expect(byId.get(harpicId)!.variants).toHaveLength(3);
+
+      expect((await send(postReview, '/api/items/scan-add/review', { item_ids: 'x' })).status).toBe(400);
+      expect((await send(postReview, '/api/items/scan-add/review', { item_ids: Array(1001).fill(maggiId) })).status).toBe(400);
+    });
+  });
+
+  // The review's Fix button opens the item edit form, which loads with GET and saves with PATCH.
+  describe('item edit ownership (Fix)', () => {
+    let itemId = '';
+
+    beforeAll(async () => {
+      const saved = await create({ name: `Fix target ${tag}`, purchase_price: 5, opening_stock: 0 }, randomUUID());
+      itemId = saved.json.item.id;
+    });
+
+    async function patch(body: Record<string, unknown>, headers: Record<string, string>) {
+      const res = await patchItem(
+        new NextRequest(`http://localhost/api/items/${itemId}`, { method: 'PATCH', headers, body: JSON.stringify(body) }),
+        { params: { id: itemId } }
+      );
+      return { status: res.status, json: await res.json() };
+    }
+
+    async function read(url: string, headers: Record<string, string>) {
+      const res = await getItem(new NextRequest(url, { headers }), { params: { id: itemId } });
+      return { status: res.status, json: await res.json() };
+    }
+
+    const nameNow = async () => (await pool.query(`SELECT name, business_id FROM items WHERE id = $1`, [itemId])).rows[0];
+
+    test('no session: a business and user named in the body or query cannot read or edit the item', async () => {
+      const r = await patch({ name: 'Hijacked', business_id: B, user_id: USER, updated_by: USER }, { 'content-type': 'application/json' });
+      expect([r.status, r.json.code]).toEqual([401, 'UNAUTHENTICATED']);
+      expect((await nameNow()).name).toBe(`Fix target ${tag}`);
+
+      const g = await read(`http://localhost/api/items/${itemId}?business_id=${B}&user_id=${USER}`, {});
+      expect(g.status).toBe(401);
+    });
+
+    test("another business's session cannot read or edit the item, whatever the body says", async () => {
+      const r = await patch({ name: 'Hijacked', business_id: B, user_id: USER }, auth(OUSER, OTHER));
+      expect(r.status).toBe(404);
+      expect((await nameNow()).name).toBe(`Fix target ${tag}`);
+      expect((await read(`http://localhost/api/items/${itemId}?business_id=${B}`, auth(OUSER, OTHER))).status).toBe(404);
+    });
+
+    test('the session business wins over a forged business_id in the body', async () => {
+      const r = await patch({ name: `Fix target edited ${tag}`, business_id: OTHER, user_id: OUSER }, auth(USER, B));
+      expect([r.status, r.json.error]).toEqual([200, undefined]);
+      expect(await nameNow()).toEqual({ name: `Fix target edited ${tag}`, business_id: B });
+      const g = await read(`http://localhost/api/items/${itemId}?business_id=${OTHER}`, auth(USER, B));
+      expect([g.status, g.json.item?.name]).toEqual([200, `Fix target edited ${tag}`]);
+    });
+
+    test('a revoked session cannot edit', async () => {
+      await pool.query(`UPDATE users SET auth_session_version = auth_session_version + 1 WHERE id = $1`, [USER]);
+      try {
+        const r = await patch({ name: 'After revoke' }, auth(USER, B));
+        expect([r.status, r.json.code]).toEqual([401, 'SESSION_REVOKED']);
+        expect((await nameNow()).name).toBe(`Fix target edited ${tag}`);
+      } finally {
+        await pool.query(`UPDATE users SET auth_session_version = 1 WHERE id = $1`, [USER]);
+      }
     });
   });
 });

@@ -88,7 +88,10 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
         'adjustment_date': DateTime.now().toIso8601String().substring(0, 10),
         'batch': ?batchBody(_qty.text, _batch.text, _mfg.text, _exp.text),
       });
-      if (mounted) Navigator.of(context).pop('${_item['name']}: $qty added');
+      if (mounted) {
+        Navigator.of(context)
+            .pop(ScanAddEntry(name: _item['name']?.toString() ?? '', outcome: 'stock', barcode: widget.barcode, itemId: _item['id']?.toString(), qty: qty));
+      }
     } on ApiException catch (e) {
       // Kept as typed; retrying sends the same key, so the stock cannot be added twice.
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -119,7 +122,10 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
         if (converting) 'item_name': _itemName.text.trim(),
       });
       final name = converting ? _itemName.text.trim() : _item['name'];
-      if (mounted) Navigator.of(context).pop('$name ${_sizeName.text.trim()} added');
+      if (mounted) {
+        Navigator.of(context)
+            .pop(ScanAddEntry(name: '$name ${_sizeName.text.trim()}', outcome: 'size', barcode: widget.barcode, itemId: _item['id']?.toString(), qty: qty));
+      }
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {

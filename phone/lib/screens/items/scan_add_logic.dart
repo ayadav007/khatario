@@ -187,3 +187,194 @@ String newScanAddKey() {
   final hex = List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
   return 'scan-add-$hex';
 }
+
+/// One row of a Scan & Add session. Same meaning as `ScanAddSessionEntry` in lib/items/scan-add-session.ts:
+/// created = new item, stock = stock added, size = new pack size, existing = skipped,
+/// failed = a new item whose save did not go through (kept with its body and retry key).
+class ScanAddEntry {
+  ScanAddEntry({
+    required this.name,
+    required this.outcome,
+    this.barcode = '',
+    this.itemId,
+    this.qty = 0,
+    this.source,
+    this.body,
+    this.idempotencyKey,
+    this.error,
+    String? key,
+  }) : key = key ?? newScanAddKey();
+
+  final String key;
+  final String barcode;
+  final String name;
+  final String? itemId;
+  final String outcome;
+  final num qty;
+
+  /// For created items: database, photo or manual.
+  final String? source;
+
+  /// For failed saves: the POST /api/items body to send again with the same key.
+  final Map<String, dynamic>? body;
+  final String? idempotencyKey;
+  final String? error;
+}
+
+/// Same rules as `addSessionEntry` on the website: a skip replaces an earlier skip of the same item,
+/// and a failed save is replaced by its own retry (same retry key).
+List<ScanAddEntry> addScanAddEntry(List<ScanAddEntry> entries, ScanAddEntry entry) {
+  final rest = entries.where((e) {
+    if (entry.outcome == 'existing' && e.outcome == 'existing' && e.itemId == entry.itemId) return false;
+    if (entry.idempotencyKey != null && e.outcome == 'failed' && e.idempotencyKey == entry.idempotencyKey) return false;
+    return e.key != entry.key;
+  });
+  return [entry, ...rest];
+}
+
+/// Gaps that stop a correct GST bill or stock value (BLOCKING_GAPS on the website).
+const blockingGaps = ['hsn', 'selling_price', 'purchase_price'];
+
+const reviewGapLabels = {
+  'hsn': 'No HSN',
+  'selling_price': 'No selling price',
+  'purchase_price': 'No purchase price',
+  'mrp': 'No MRP',
+  'stock': 'No stock',
+  'gst_zero': 'GST 0%, check',
+};
+
+/// Counts for the review screen, as `summarizeSession` on the website.
+Map<String, int> summarizeScanAdd(List<ScanAddEntry> entries, List<Map<String, dynamic>> reviewed) {
+  int count(bool Function(ScanAddEntry e) test) => entries.where(test).length;
+  final created = entries.where((e) => e.outcome == 'created');
+  return {
+    'scanned': entries.length,
+    'created': created.length,
+    'existing': count((e) => e.outcome == 'existing'),
+    'stock': count((e) => e.outcome == 'stock'),
+    'size': count((e) => e.outcome == 'size'),
+    'database': created.where((e) => e.source == 'database').length,
+    'photo': created.where((e) => e.source == 'photo').length,
+    'manual': created.where((e) => e.source == 'manual' || e.source == null).length,
+    'withStock': count((e) => e.outcome != 'existing' && e.outcome != 'failed' && e.qty > 0),
+    'needDetails': reviewed.where((i) => (i['gaps'] as List? ?? const []).any((g) => blockingGaps.contains(g))).length,
+    'conflicts': count((e) => e.outcome == 'failed' && RegExp(r'barcode .* already exists', caseSensitive: false).hasMatch(e.error ?? '')),
+    'failed': count((e) => e.outcome == 'failed'),
+  };
+}
+
+/// Item ids worth reviewing: everything saved, each once.
+List<String> reviewItemIds(List<ScanAddEntry> entries) =>
+    entries.where((e) => e.itemId != null && e.outcome != 'failed').map((e) => e.itemId!).toSet().toList();
+
+/// Session rows as stored in the phone's Scan & Add draft (same fields as the website's draft).
+Map<String, dynamic> scanAddEntryToJson(ScanAddEntry e) => {
+  'key': e.key,
+  'barcode': e.barcode,
+  'name': e.name,
+  'itemId': e.itemId,
+  'outcome': e.outcome,
+  'qty': e.qty,
+  'source': e.source,
+  'body': e.body,
+  'idempotencyKey': e.idempotencyKey,
+  'error': e.error,
+};
+
+const _outcomes = {'created', 'existing', 'stock', 'size', 'failed'};
+
+/// Null for anything that is not a session row, so a damaged draft drops rows instead of crashing.
+ScanAddEntry? scanAddEntryFromJson(Object? raw) {
+  if (raw is! Map) return null;
+  final key = raw['key'], name = raw['name'], outcome = raw['outcome'], itemId = raw['itemId'];
+  if (key is! String || name is! String || outcome is! String || !_outcomes.contains(outcome)) return null;
+  if (itemId != null && itemId is! String) return null;
+  final body = raw['body'];
+  return ScanAddEntry(
+    key: key,
+    name: name,
+    outcome: outcome,
+    barcode: raw['barcode']?.toString() ?? '',
+    itemId: itemId as String?,
+    qty: raw['qty'] is num ? raw['qty'] as num : 0,
+    source: raw['source']?.toString(),
+    body: body is Map ? Map<String, dynamic>.from(body) : null,
+    idempotencyKey: raw['idempotencyKey']?.toString(),
+    error: raw['error']?.toString(),
+  );
+}
+
+Map<String, String> scanAddValuesToJson(ScanAddValues v) => {
+  'barcode': v.barcode,
+  'name': v.name,
+  'brand': v.brand,
+  'size': v.size,
+  'unit': v.unit,
+  'mrp': v.mrp,
+  'sellingPrice': v.sellingPrice,
+  'purchasePrice': v.purchasePrice,
+  'taxRate': v.taxRate,
+  'hsn': v.hsn,
+  'openingStock': v.openingStock,
+  'batchNumber': v.batchNumber,
+  'manufacturingDate': v.manufacturingDate,
+  'expiryDate': v.expiryDate,
+};
+
+ScanAddValues scanAddValuesFromJson(Map raw) {
+  String s(String k, [String fallback = '']) => raw[k] is String ? raw[k] as String : fallback;
+  return ScanAddValues(
+    barcode: s('barcode'),
+    name: s('name'),
+    brand: s('brand'),
+    size: s('size'),
+    unit: s('unit', 'PCS'),
+    mrp: s('mrp'),
+    sellingPrice: s('sellingPrice'),
+    purchasePrice: s('purchasePrice'),
+    taxRate: s('taxRate', '0'),
+    hsn: s('hsn'),
+    openingStock: s('openingStock'),
+    batchNumber: s('batchNumber'),
+    manufacturingDate: s('manufacturingDate'),
+    expiryDate: s('expiryDate'),
+  );
+}
+
+/// The product being filled in, kept so it can be continued with its original retry key.
+class ScanAddDraftProduct {
+  const ScanAddDraftProduct({required this.values, required this.idempotencyKey, this.lookupSource, this.usedPhoto = false});
+
+  final ScanAddValues values;
+  final String idempotencyKey;
+  final String? lookupSource;
+  final bool usedPhoto;
+
+  /// Something was scanned or typed, so it is worth offering back.
+  bool get worthKeeping {
+    final v = values;
+    return v.barcode.trim().isNotEmpty ||
+        v.name.trim().isNotEmpty ||
+        v.openingStock.trim().isNotEmpty ||
+        v.purchasePrice.trim().isNotEmpty ||
+        v.mrp.trim().isNotEmpty;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'values': scanAddValuesToJson(values),
+    'idempotencyKey': idempotencyKey,
+    'lookupSource': lookupSource,
+    'usedPhoto': usedPhoto,
+  };
+
+  static ScanAddDraftProduct? fromJson(Object? raw) {
+    if (raw is! Map || raw['values'] is! Map || raw['idempotencyKey'] is! String) return null;
+    return ScanAddDraftProduct(
+      values: scanAddValuesFromJson(raw['values'] as Map),
+      idempotencyKey: raw['idempotencyKey'] as String,
+      lookupSource: raw['lookupSource'] is String ? raw['lookupSource'] as String : null,
+      usedPhoto: raw['usedPhoto'] == true,
+    );
+  }
+}

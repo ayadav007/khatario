@@ -5,7 +5,7 @@ import { validateBundleComponentItems } from '@/lib/bundle-items-validation';
 import { Item } from '@/types/database';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
@@ -16,19 +16,11 @@ export async function GET(
 ) {
   try {
     const itemId = params.id;
-    const businessId = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    // Same rule as PATCH: the item edit form loads through here, so a query business_id is ignored.
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
 
     const item = await queryOne<Item>(
       'SELECT * FROM items WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
@@ -114,22 +106,14 @@ export async function PATCH(
 ) {
   try {
     const itemId = params.id;
+    // Business and user come only from the verified, unrevoked session. A business_id, user_id or
+    // updated_by in the body is ignored, so an edit can never reach another business's item.
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const body = await request.json();
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
     const { user_id, updated_by, ...updateData } = body;
-    const userId = getUserIdFromRequest(request, body) || updated_by;
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id or updated_by is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // Get item first to check business_id
     const existingItem = await queryOne<Item>(

@@ -124,6 +124,53 @@ void main() {
     });
   });
 
+  group('session review', () {
+    test('counts each kind of row, sources, stock and conflicts', () {
+      final entries = [
+        ScanAddEntry(name: 'a', outcome: 'created', itemId: 'a', source: 'database', qty: 12),
+        ScanAddEntry(name: 'b', outcome: 'created', itemId: 'b', source: 'photo'),
+        ScanAddEntry(name: 'c', outcome: 'created', itemId: 'c', source: 'manual', qty: 3),
+        ScanAddEntry(name: 'd', outcome: 'existing', itemId: 'd'),
+        ScanAddEntry(name: 'e', outcome: 'stock', itemId: 'e', qty: 10),
+        ScanAddEntry(name: 'e', outcome: 'size', itemId: 'e', qty: 4),
+        ScanAddEntry(name: 'f', outcome: 'failed', error: 'Barcode "890" already exists for item "Salt"'),
+      ];
+      final s = summarizeScanAdd(entries, [
+        {
+          'id': 'b',
+          'gaps': ['hsn'],
+        },
+        {
+          'id': 'a',
+          'gaps': ['mrp'],
+        },
+      ]);
+      expect(s, {
+        'scanned': 7,
+        'created': 3,
+        'existing': 1,
+        'stock': 1,
+        'size': 1,
+        'database': 1,
+        'photo': 1,
+        'manual': 1,
+        'withStock': 4,
+        'needDetails': 1,
+        'conflicts': 1,
+        'failed': 1,
+      });
+      expect(reviewItemIds(entries), ['a', 'b', 'c', 'd', 'e']);
+    });
+
+    test('a retry that succeeds replaces its failed row; a second skip replaces the first', () {
+      var entries = addScanAddEntry([], ScanAddEntry(key: 'f', name: 'x', outcome: 'failed', idempotencyKey: 'k1'));
+      entries = addScanAddEntry(entries, ScanAddEntry(key: 's1', name: 'd', outcome: 'existing', itemId: 'd'));
+      entries = addScanAddEntry(entries, ScanAddEntry(key: 's2', name: 'd', outcome: 'existing', itemId: 'd'));
+      entries = addScanAddEntry(entries, ScanAddEntry(key: 'ok', name: 'x', outcome: 'created', itemId: 'n', idempotencyKey: 'k1'));
+      expect(entries.map((e) => e.key), ['ok', 's2']);
+    });
+  });
+
   test('each product gets its own key', () {
     expect(newScanAddKey(), isNot(newScanAddKey()));
   });

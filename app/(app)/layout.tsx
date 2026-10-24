@@ -182,7 +182,8 @@ function AppRouteLayoutInner({
     </TodoScheduleRailProvider>
   );
 
-  return accessibilityOn ? <AccessibilityProvider>{shell}</AccessibilityProvider> : shell;
+  // Always the same wrapper: wrapping only once the plan loaded remounted every page and lost its state.
+  return <AccessibilityProvider enabled={accessibilityOn}>{shell}</AccessibilityProvider>;
 }
 
 export default function AppRouteLayout({

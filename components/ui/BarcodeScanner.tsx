@@ -9,8 +9,13 @@ interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
   onClose: () => void;
   formats?: string[];
-  /** Plan feature that unlocks this scanner. Billing uses advanced_barcode; Scan & Add has its own. */
-  feature?: string;
+  /**
+   * Plan feature that unlocks this scanner; it closes itself when the plan lacks it. Billing uses
+   * advanced_barcode. null skips the check, for a page whose route is already plan-gated
+   * (Scan & Add): right after login the cached snapshot can list no features yet, and the scanner
+   * would otherwise close the moment it opens.
+   */
+  feature?: string | null;
 }
 
 export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
@@ -31,7 +36,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const isInitializingRef = useRef(false);
   const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   useEffect(() => {
-    if (snapshotLoaded && !hasCapability(feature, 'view')) onClose();
+    if (feature !== null && snapshotLoaded && !hasCapability(feature, 'view')) onClose();
   }, [snapshotLoaded, hasCapability, onClose, feature]);
   const initScannerRef = useRef<(() => Promise<void>) | null>(null);
 

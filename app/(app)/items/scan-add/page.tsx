@@ -17,7 +17,23 @@ import type { ShopBarcodeMatch } from '@/lib/items/scan-add-lookup';
 import type { ProductLookupResult, ProductSuggestion } from '@/lib/product-lookup/types';
 import type { LabelReading, LabelStep } from '@/lib/product-lookup/label-reader';
 import { ScanAddExistingActions } from '@/components/items/ScanAddExistingActions';
+import { ScanAddReview } from '@/components/items/ScanAddReview';
+import type { ReviewItem } from '@/lib/items/scan-add-review';
+import {
+  addSessionEntry,
+  reviewItemIds,
+  summarizeSession,
+  type ScanAddSessionEntry,
+} from '@/lib/items/scan-add-session';
 import { useCapabilityCheck } from '@/hooks/useCapability';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  hasUnfinishedProduct,
+  loadDraft,
+  saveDraft,
+  type DraftStore,
+  type ScanAddCurrentDraft,
+} from '@/lib/items/scan-add-draft';
 import {
   emptyScanAddForm,
   fillBatch,
@@ -30,7 +46,15 @@ import {
 
 // Same stock units the New Item form offers. The pack size ("100 g") goes in Size on pack.
 const UNITS = ['PCS', 'KG', 'BOX', 'LTR', 'MTR', 'NOS'];
-const SESSION_KEY = 'khatario.scan-add.session';
+
+/** localStorage, or null where the browser blocks it (the page then works without a draft). */
+function draftStore(): DraftStore | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
 
 type Step =
   | { kind: 'scan' }
@@ -46,33 +70,7 @@ const PHOTO_STEPS: Record<LabelStep, { title: string; hint: string }> = {
   size: { title: 'Photo of the pack size', hint: 'Where the net weight or volume is printed, e.g. 100 g or 500 ml.' },
 };
 
-interface SessionEntry {
-  barcode: string;
-  name: string;
-  itemId: string;
-  /** created = new item, stock = stock added, size = new pack size, existing = skipped. */
-  outcome: 'created' | 'existing' | 'stock' | 'size';
-  qty: number;
-  /** Unique per row, so adding stock twice to one item shows twice. */
-  key?: string;
-}
-
-function readSession(): SessionEntry[] {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as SessionEntry[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeSession(entries: SessionEntry[]) {
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(entries));
-  } catch {
-    // Storage blocked: the list just won't survive a reload.
-  }
-}
+type SessionEntry = ScanAddSessionEntry;
 
 function newIdempotencyKey(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -82,6 +80,7 @@ function newIdempotencyKey(): string {
 
 function ScanAddItemsPage() {
   const toast = useToastContext();
+  const { business, user } = useAuth();
   const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   const [step, setStep] = useState<Step>({ kind: 'scan' });
   const [showCamera, setShowCamera] = useState(false);
@@ -95,22 +94,96 @@ function ScanAddItemsPage() {
   const [lookupSource, setLookupSource] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  // Whether a label photo filled any of the current product's details.
+  const usedPhotoRef = useRef(false);
+  const [review, setReview] = useState<{
+    open: boolean;
+    loading: boolean;
+    items: ReviewItem[];
+    filter: 'all' | 'details' | 'failed';
+    retrying: string | null;
+  }>({ open: false, loading: false, items: [], filter: 'all', retrying: null });
   // One key per product being added, reused when a failed save is retried.
   const saveKeyRef = useRef<string>(newIdempotencyKey());
   // Only the latest lookup may change the screen; an older reply for another barcode is dropped.
   const lookupSeqRef = useRef(0);
 
-  useEffect(() => setSession(readSession()), []);
+  // The draft belongs to this business and user. Until it is loaded nothing is written, so an empty
+  // screen never overwrites a saved draft; a business switch loads that business's own draft.
+  const owner = business?.id && user?.id ? { businessId: business.id, userId: user.id } : null;
+  const ownerKey = owner ? `${owner.businessId}:${owner.userId}` : null;
+  const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
+  const [resume, setResume] = useState<ScanAddCurrentDraft | null>(null);
 
-  const remember = useCallback((entry: SessionEntry) => {
-    setSession((prev) => {
-      // A skipped scan replaces an earlier skip of the same item; every stock or size change is its own row.
-      const row = { ...entry, key: entry.outcome === 'existing' ? `skip-${entry.itemId}` : newIdempotencyKey() };
-      const next = [row, ...prev.filter((e) => (e.key ?? e.itemId) !== row.key)];
-      writeSession(next);
-      return next;
+  const loadedOwnerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!owner || !ownerKey || loadedOwnerRef.current === ownerKey) return;
+    const store = draftStore();
+    const draft = store ? loadDraft(store, owner.businessId, owner.userId) : null;
+    const saved = draft?.entries ?? [];
+    if (loadedOwnerRef.current !== null) {
+      // A real business (or user) switch: nothing from the previous one stays on screen.
+      lookupSeqRef.current++;
+      setSession(saved);
+      setStep({ kind: 'scan' });
+      setReview({ open: false, loading: false, items: [], filter: 'all', retrying: null });
+      setForm(emptyScanAddForm(''));
+    } else {
+      // First load: the shopkeeper may already have scanned before the session arrived. Keep that.
+      setSession((prev) => [...saved, ...prev.filter((e) => !saved.some((s) => s.key === e.key))]);
+    }
+    setResume(draft && hasUnfinishedProduct(draft.current) ? draft.current : null);
+    loadedOwnerRef.current = ownerKey;
+    setLoadedOwner(ownerKey);
+    // owner is derived from ownerKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerKey]);
+
+  // Keep the draft in step with the screen: the session rows, plus the product being filled in.
+  useEffect(() => {
+    if (!owner || loadedOwner !== ownerKey) return;
+    const store = draftStore();
+    if (!store) return;
+    const filling = step.kind === 'new' || step.kind === 'photo';
+    const current: ScanAddCurrentDraft | null = filling
+      ? { barcode: step.barcode, form, idempotencyKey: saveKeyRef.current, lookupSource, usedPhoto: usedPhotoRef.current }
+      : resume;
+    saveDraft(store, {
+      businessId: owner.businessId,
+      userId: owner.userId,
+      entries: session,
+      current: hasUnfinishedProduct(current) ? current : null,
     });
+    // owner is derived from ownerKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, form, step, lookupSource, resume, loadedOwner, ownerKey]);
+
+  const remember = useCallback((entry: Omit<SessionEntry, 'key'> & { key?: string }) => {
+    setSession((prev) => addSessionEntry(prev, { ...entry, key: entry.key ?? newIdempotencyKey() }));
   }, []);
+
+  const forget = useCallback((key: string) => {
+    setSession((prev) => prev.filter((e) => e.key !== key));
+  }, []);
+
+  /** Back to the product that was being filled in, with its original retry key. */
+  const resumeProduct = () => {
+    if (!resume) return;
+    lookupSeqRef.current++;
+    saveKeyRef.current = resume.idempotencyKey;
+    setForm({ ...emptyScanAddForm(resume.barcode), ...resume.form });
+    setLookup(null);
+    setLookupSource(resume.lookupSource);
+    usedPhotoRef.current = resume.usedPhoto;
+    setErrors({});
+    setResume(null);
+    setStep({ kind: 'new', barcode: resume.barcode });
+  };
+
+  const discardResume = () => {
+    if (!window.confirm('Discard this unfinished product? What was typed for it will be lost.')) return;
+    setResume(null);
+  };
 
   /**
    * A product the shop does not have: ask the product databases, then the label photos.
@@ -124,6 +197,7 @@ function ScanAddItemsPage() {
       setErrors({});
       setLookup(null);
       setLookupSource(null);
+      usedPhotoRef.current = false;
       if (!barcode) {
         setStep({ kind: 'photo', barcode, queue: ['front', 'details', 'size'] });
         return;
@@ -169,6 +243,7 @@ function ScanAddItemsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not read this photo');
       const r = data.reading as LabelReading;
+      usedPhotoRef.current = true;
       setForm((f) => fillBatch(fillFromFacts(f, { name: r.name, brand: r.brand, quantity: r.size, mrp: r.mrp }), r));
       // Once any photo has shown the pack size, the size photo is not asked for.
       nextPhoto(barcode, r.size ? queue.filter((q, i) => i === 0 || q !== 'size') : queue);
@@ -209,27 +284,47 @@ function ScanAddItemsPage() {
     setErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
+  /**
+   * Sends one new item. A failure is kept in the session with the form and its retry key, so it can
+   * be retried or fixed from the review; a later success with the same key replaces that row.
+   */
+  const sendItem = async (f: ScanAddForm, source: string | null, key: string, origin: ScanAddSessionEntry['source']) => {
+    try {
+      const res = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': key },
+        body: JSON.stringify(scanAddItemPayload(f, source)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not save the item');
+      const item = data.item as { id: string; name: string };
+      remember({ barcode: f.barcode, name: item.name, itemId: item.id, outcome: 'created', qty: Number(f.opening_stock) || 0, source: origin, idempotencyKey: key });
+      return item;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not save the item';
+      remember({
+        barcode: f.barcode,
+        name: f.name.trim() || f.barcode || 'Unnamed product',
+        itemId: null,
+        outcome: 'failed',
+        qty: Number(f.opening_stock) || 0,
+        source: origin,
+        payload: { form: f, lookupSource: source },
+        idempotencyKey: key,
+        error: message,
+      });
+      throw new Error(message);
+    }
+  };
+
   const save = async () => {
     const found = validateScanAddForm(form);
     setErrors(found);
     if (Object.values(found).some(Boolean)) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': saveKeyRef.current },
-        body: JSON.stringify(scanAddItemPayload(form, lookupSource)),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Could not save the item');
-      const item = data.item as { id: string; name: string };
-      remember({
-        barcode: form.barcode,
-        name: item.name,
-        itemId: item.id,
-        outcome: 'created',
-        qty: Number(form.opening_stock) || 0,
-      });
+      const origin = lookupSource ? 'database' : usedPhotoRef.current ? 'photo' : 'manual';
+      const item = await sendItem(form, lookupSource, saveKeyRef.current, origin);
       toast.success(`${item.name} added`);
       setStep({ kind: 'scan' });
     } catch (e) {
@@ -240,7 +335,52 @@ function ScanAddItemsPage() {
     }
   };
 
-  const created = session.filter((e) => e.outcome !== 'existing').length;
+  const loadReview = useCallback(async (entries: SessionEntry[]) => {
+    setReview((r) => ({ ...r, loading: true }));
+    try {
+      const res = await fetch('/api/items/scan-add/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_ids: reviewItemIds(entries) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not load the review');
+      setReview((r) => ({ ...r, items: (data.items ?? []) as ReviewItem[], loading: false }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not load the review');
+      setReview((r) => ({ ...r, loading: false }));
+    }
+  }, [toast]);
+
+  const retryFailed = async (entry: SessionEntry) => {
+    const payload = entry.payload as { form?: ScanAddForm; lookupSource?: string | null } | undefined;
+    if (!payload?.form || !entry.idempotencyKey) return;
+    setReview((r) => ({ ...r, retrying: entry.key }));
+    try {
+      const item = await sendItem(payload.form, payload.lookupSource ?? null, entry.idempotencyKey, entry.source);
+      toast.success(`${item.name} added`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save the item');
+    } finally {
+      setReview((r) => ({ ...r, retrying: null }));
+    }
+  };
+
+  const editFailed = (entry: SessionEntry) => {
+    const payload = entry.payload as { form?: ScanAddForm; lookupSource?: string | null } | undefined;
+    if (!payload?.form || !entry.idempotencyKey) return;
+    saveKeyRef.current = entry.idempotencyKey;
+    setForm({ ...emptyScanAddForm(payload.form.barcode), ...payload.form });
+    setLookup(null);
+    setLookupSource(null);
+    setErrors({});
+    usedPhotoRef.current = entry.source === 'photo';
+    setReview((r) => ({ ...r, open: false }));
+    setStep({ kind: 'new', barcode: payload.form.barcode });
+  };
+
+  const summary = summarizeSession(session, review.items);
+  const created = session.filter((e) => e.outcome !== 'existing' && e.outcome !== 'failed').length;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-24">
@@ -260,22 +400,74 @@ function ScanAddItemsPage() {
 
       <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 text-sm">
         <span>
-          This session: <strong>{created}</strong> added
-          {session.length > created ? `, ${session.length - created} already in shop` : ''}
+          This session: <strong>{created}</strong> saved
+          {summary.existing ? `, ${summary.existing} already in shop` : ''}
+          {summary.failed ? <span className="text-red-600">, {summary.failed} not saved</span> : null}
         </span>
-        {session.length > 0 ? (
-          <button
-            type="button"
-            className="text-text-secondary underline"
+        {session.length > 0 && !review.open ? (
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => {
-              writeSession([]);
-              setSession([]);
+              setReview((r) => ({ ...r, open: true, filter: 'all' }));
+              void loadReview(session);
             }}
           >
-            Clear list
-          </button>
+            Review and finish
+          </Button>
         ) : null}
       </div>
+      {session.some((e) => e.outcome === 'failed') || resume ? (
+        <p className="-mt-2 text-xs text-text-secondary">
+          Products marked not saved are kept on this device only until they are saved.
+        </p>
+      ) : null}
+
+      {resume && !review.open && step.kind === 'scan' ? (
+        <Card className="space-y-3 border-amber-300 p-4">
+          <div>
+            <p className="font-semibold">Unfinished product on this device</p>
+            <p className="text-sm text-text-secondary">
+              {resume.form.name.trim() || 'No name yet'}
+              {resume.barcode ? ` · Barcode ${resume.barcode}` : ''}
+              {resume.form.opening_stock.trim() ? ` · Stock ${resume.form.opening_stock}` : ''}. Not saved to your shop yet.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={resumeProduct}>Continue</Button>
+            <Button variant="secondary" onClick={discardResume}>
+              Discard
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {review.open ? (
+        <ScanAddReview
+          summary={summary}
+          entries={session}
+          items={review.items}
+          loading={review.loading}
+          filter={review.filter}
+          retrying={review.retrying}
+          onFilter={(filter) => setReview((r) => ({ ...r, filter }))}
+          onRefresh={() => void loadReview(session)}
+          onRetry={(e) => void retryFailed(e)}
+          onEdit={editFailed}
+          onDiscard={forget}
+          onBack={() => setReview((r) => ({ ...r, open: false }))}
+          onFinish={() => {
+            if (summary.failed > 0 && !window.confirm(`${summary.failed} products were not saved. Finish anyway and drop them?`)) return;
+            // An empty session and no product in progress removes the draft from this device.
+            setSession([]);
+            setResume(null);
+            setReview({ open: false, loading: false, items: [], filter: 'all', retrying: null });
+            setStep({ kind: 'scan' });
+            toast.success('Session finished');
+          }}
+        />
+      ) : (
+        <>
 
       {step.kind === 'scan' ? (
         <Card className="space-y-4 p-4">
@@ -502,13 +694,19 @@ function ScanAddItemsPage() {
           <p className="mb-2 font-semibold">Scanned in this session</p>
           <ul className="divide-y divide-border text-sm">
             {session.map((e) => (
-              <li key={e.key ?? e.itemId} className="flex items-center justify-between gap-2 py-2">
-                <Link href={`/items/${e.itemId}`} className="truncate hover:underline">
-                  {e.name}
-                </Link>
+              <li key={e.key} className="flex items-center justify-between gap-2 py-2">
+                {e.itemId ? (
+                  <Link href={`/items/${e.itemId}`} className="truncate hover:underline">
+                    {e.name}
+                  </Link>
+                ) : (
+                  <span className="truncate">{e.name}</span>
+                )}
                 <span className="flex shrink-0 items-center gap-1 text-text-secondary">
                   {e.outcome === 'existing' ? (
                     'Already in shop'
+                  ) : e.outcome === 'failed' ? (
+                    <span className="text-red-600">Not saved, see review</span>
                   ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-success" />
@@ -523,9 +721,13 @@ function ScanAddItemsPage() {
         </Card>
       ) : null}
 
+        </>
+      )}
+
       {showCamera ? (
         <BarcodeScanner
-          feature="items_scan_onboarding"
+          // The route is plan-gated (items_scan_onboarding); see the feature prop.
+          feature={null}
           onScan={(code) => void lookUp(code)}
           onClose={() => setShowCamera(false)}
         />

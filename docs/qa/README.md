@@ -40,6 +40,7 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | `account-hierarchy-audit-results.md` | Chart of Accounts hierarchy, opening balances, and report totals. Separate from the identity series. |
 | `store-journey-audit-results.md` | Online store customer and merchant journey audit (2026-10-23): existing store suites, the new journey test, and the staging template check. Seven defects, D1–D7. |
 | `security-live-regression-results.md` | Repeatable command for the security suites already verified. It does not pass the rest of the application. |
+| `scan-add-items-results.md` | Scan & Add Items (barcode onboarding, web and phone), 2026-10-23: feature status, its tests, the regression run, and the failures that were already there. |
 
 ## Completed work
 
@@ -92,6 +93,10 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | COD remittance posts nothing to the accounts (D5) | FAIL. Open. |
 | Direct-UPI store order labelled cash on delivery (D6) | FAIL. Open. |
 | Orders screen hides a failed store invoice on confirm (D7) | FAIL by code reading. Not run. |
+| `tests/live/phase3m-http.mjs` posts an expense without the retry key required since `8468a49e` | FAIL. Open. Stops `npm run test:qa:security-live` after Phase 3M. `scan-add-items-results.md` |
+| 6 Jest suites and 17 Flutter golden tests | FAIL on `8df41f22` as well. Pre-existing, not fixed. `scan-add-items-results.md` |
+| `GET`/`PATCH /api/items/[id]` used body or query identity without a session and accepted a revoked session | Fixed 2026-10-24. Regression PASS. `scan-add-items-results.md` |
+| Every `(app)` page remounted a few seconds after load when `AccessibilityProvider` was added around the shell (`app/(app)/layout.tsx`) | Fixed 2026-10-24. Scan & Add browser scenarios 7/7 PASS twice after it. Other pages not clicked through. `scan-add-items-results.md` |
 
 No open FAIL is recorded for S01–S08 after the Phase 2B rerun.
 
@@ -132,6 +137,8 @@ No open FAIL is recorded for S01–S08 after the Phase 2B rerun.
 | Security regressions already recorded for Phases 3A–3O and the report HTTP check | Repeatable command | `npm run test:qa:security-live` | PASS twice. First run exit 0 in 458 seconds. Second run exit 0 in 197 seconds. Fixture prefixes left at 0 both times. This does not pass the rest of the application. |
 | `/login`, `/invoices/new`, `/customers/new`, `/items/new` on staging | Staging browser | `npx playwright test --config=playwright.staging.config.ts` after `STAGING_TEST_BUSINESS` is set | Partial. Empty invoice showed “Add items”. INV-072 showed CGST + SGST and 118.00. The list and side panel were not opened. Purchase and purchase return were BLOCKED after “Too many login attempts.” The corrected test was not run. |
 | Store order, invoice, receipt, fulfilment, COD, label | Store journey audit | existing store suites and `tests/db/store-journey-e2e.db.test.ts` | Existing suites: 314 passed, 26 failed (5 product, 21 old plan mocks). Journey: 1 passed, 8 failed. Staging templates BLOCKED by a broken staging build. |
+| Scan & Add routes: shop barcode, product lookup, label input checks, add size, review; `POST /api/items` retry key and opening batch; `POST /api/inventory-adjustments` batch and retry key | Scan & Add Items | `tests/db/scan-add-items.db.test.ts` and four `tests/lib/scan-add*`/`product-lookup` files | PASS. 26 database tests on `kh_phase2_test`, 51 unit tests. Screens, camera and label reading by the model are NOT TESTED. |
+| Scan & Add pages in a browser: known and unknown barcode, camera refused, manual entry, database suggestion, lost reply and retry, review and Fix, draft close and reopen, second business on the same browser | Scan & Add Items | `node tests/live/scan-add-e2e.mjs` (`e2e/scan-add-items.spec.ts`) | PASS. 7 of 7, twice, on `kh_phase2_test`. Phone screens: widget tests only, no device. |
 
 All other routes and action labels stay NOT TESTED. Icon-only buttons, translated labels, and components deeper than one import were not in the Phase 1 scan (`audit-gaps.md`).
 
