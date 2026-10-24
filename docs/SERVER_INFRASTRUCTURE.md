@@ -243,7 +243,7 @@ pm2 start npm --name kb-index-worker-prod -- run worker:kb   # production clone;
 pm2 save
 ```
 
-`scripts/deploy-vps.sh` re-indexes after migrations (warning only on failure) and restarts `PM2_KB_WORKER_NAME` (default `kb-index-worker`) if it exists. Without the worker, add a cron line calling `/api/cron/assistant-maintenance` like the other cron jobs.
+`scripts/deploy-vps.sh` re-indexes the help docs (`--source=markdown`) after migrations, but only when `knowledge/` or the indexing code (`lib/rag/ingest`, `lib/rag/embed.ts`, `lib/rag/config.ts`) changed since the last finished deploy, or a help-doc source is in error (warning only on failure). Plans and marketing pages are re-indexed by the worker on admin save and nightly. It restarts `PM2_KB_WORKER_NAME` (default `kb-index-worker`) if it exists. `npm ci` is skipped when `package.json`, `package-lock.json` and `patches/` are unchanged, and the app is restarted with `pm2 reload`. The last finished deploy's commit is kept in `.git/khatario-last-deploy`; `bash scripts/deploy-vps.sh --full` ignores it and runs every step. Without the worker, add a cron line calling `/api/cron/assistant-maintenance` like the other cron jobs.
 
 QA on staging before production: ask a pricing question on `/book-demo` (answer should cite the plans source), ask "demo book karna hai" (booking card), check `/admin/assistant` for the conversation, then run `npx playwright test e2e/assistant.spec.ts` with `PLAYWRIGHT_BASE_URL=https://staging.khatario.com PLAYWRIGHT_SKIP_WEBSERVER=1`.
 
