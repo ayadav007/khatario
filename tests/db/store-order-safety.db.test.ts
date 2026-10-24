@@ -13,8 +13,26 @@ if (url) process.env.DATABASE_URL = url;
 const d = url ? describe : describe.skip;
 
 jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
+// Store orders now post their bill, which runs outside a Next request here.
+jest.mock('next/headers', () => ({
+  headers: jest.fn(async () => ({ get: () => null })),
+  cookies: jest.fn(async () => ({ get: () => undefined })),
+}));
+jest.mock('@/lib/credit-alerts', () => ({ checkAndSendCreditAlerts: jest.fn() }));
+jest.mock('@/lib/enforce-access', () => ({
+  ...jest.requireActual('@/lib/enforce-access'),
+  enforceAccess: jest.fn().mockResolvedValue(undefined),
+  enforceAccessErrorResponse: jest.fn(() => null),
+}));
+// The store itself is on the plan; the payment gateway is not, so online checkout is refused.
 jest.mock('@/lib/subscription/feature-access', () => ({
-  hasFeatureAccess: jest.fn().mockResolvedValue(false),
+  ...jest.requireActual('@/lib/subscription/feature-access'),
+  hasFeatureAccess: jest.fn(
+    async (_businessId: string, feature: string) =>
+      feature !== jest.requireActual('@/lib/featureKeys').FeatureKeys.PAYMENT_GATEWAY,
+  ),
+  assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+  denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn(), notifyStoreEvent: jest.fn() }));
 jest.mock('@/lib/store/notify-merchant', () => ({ notifyStoreMerchantNewOrder: jest.fn() }));
@@ -35,6 +53,8 @@ d('store order safety (real DB)', () => {
   let pool: Pool;
   const A = randomUUID();
   const B = randomUUID();
+  // Cash collection posts the bill and a receipt, so the UPI test switches this user on.
+  const OWNER: Record<string, string> = { [A]: randomUUID(), [B]: randomUUID() };
   const BR_A = randomUUID();
   const BR_B = randomUUID();
   const tag = A.slice(0, 8);
@@ -121,7 +141,7 @@ d('store order safety (real DB)', () => {
   }
 
   const adminHeaders = (businessId: string) => ({
-    'x-authenticated-user-id': randomUUID(),
+    'x-authenticated-user-id': OWNER[businessId] ?? randomUUID(),
     'x-authenticated-business-id': businessId,
     'content-type': 'application/json',
   });
@@ -203,10 +223,20 @@ d('store order safety (real DB)', () => {
          VALUES ($1, $2, 'Main', '27', true, true, true)`,
         [br, biz],
       );
+      // Inactive: the other tests run with no user who can author a bill, as they were written.
+      await pool.query(
+        `INSERT INTO users (id, business_id, name, phone, is_primary_admin, is_active) VALUES ($1, $2, 'Owner', $3, true, false)`,
+        [OWNER[biz], biz, `9${String(Date.now()).slice(-8)}${name === 'A' ? 1 : 2}`],
+      );
+      await pool.query(`SELECT create_default_chart_of_accounts($1)`, [biz]);
+      await pool.query(`SELECT ensure_standard_account_heads($1)`, [biz]);
     }
     await pool.query(
       `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_shiprocket_webhook_token_hash)
-       VALUES ($1, $2, true, $3), ($4, NULL, false, $5)`,
+       VALUES ($1, $2, true, $3), ($4, NULL, false, $5)
+       ON CONFLICT (business_id) DO UPDATE
+         SET store_subdomain = EXCLUDED.store_subdomain, store_enabled = EXCLUDED.store_enabled,
+             store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
       [A, SUB, hashStoreWebhookToken(TOKEN_A), B, hashStoreWebhookToken(TOKEN_B)],
     );
     await pool.query(
@@ -227,7 +257,7 @@ d('store order safety (real DB)', () => {
     try {
       await pool.query(`DELETE FROM store_orders WHERE business_id = ANY($1::uuid[])`, [[A, B]]);
       await tx(async (c) => {
-        await withLedgerDelete(c, 'tenant_purge', null, async () => {
+        await withLedgerDelete(c, 'tenant_purge', OWNER[A], async () => {
           await c.query(`DELETE FROM businesses WHERE id = ANY($1::uuid[])`, [[A, B]]);
         });
       });
@@ -260,6 +290,12 @@ d('store order safety (real DB)', () => {
          VALUES ($1, 'upi', 'Shop UPI', 'shop.test@okicici', true, true)`,
         [A],
       );
+      await pool.query(`UPDATE users SET is_active = true WHERE id = $1`, [OWNER[A]]);
+      await pool.query(
+        `INSERT INTO branch_item_stock (business_id, branch_id, item_id, quantity) VALUES ($1, $2, $3, 10)
+         ON CONFLICT (business_id, branch_id, item_id) DO NOTHING`,
+        [A, BR_A, ITEM_A],
+      );
       try {
         const r = await checkout([{ item_id: ITEM_A, quantity: 1 }], true, 'upi');
         expect(r.status).toBe(200);
@@ -277,6 +313,9 @@ d('store order safety (real DB)', () => {
         expect(collected.status).toBe(200);
         expect(collected.json.order.cash_collected_at).toBeTruthy();
       } finally {
+        await pool.query(`UPDATE users SET is_active = false WHERE id = $1`, [OWNER[A]]);
+        await pool.query(`DELETE FROM branch_item_stock WHERE business_id = $1 AND item_id = $2`, [A, ITEM_A]);
+        await pool.query(`UPDATE items SET current_stock = 10 WHERE id = $1`, [ITEM_A]);
         await pool.query(`DELETE FROM payment_methods WHERE business_id = $1`, [A]);
       }
     });

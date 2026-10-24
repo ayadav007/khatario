@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
 import { listSettlementAccounts } from '@/lib/accounting/settlement-accounts-db';
+import { resolveBranchId } from '@/lib/branch-helpers';
 import { createLedgerEntryLine } from '@/lib/ledger-utils';
 import { postStoreInvoiceReceipt, storeSettlementChoice } from '@/lib/store/store-receipt';
 
@@ -109,8 +110,9 @@ export async function recordRemittance(
     cod_collected_at: Date | null;
     store_order_id: string | null;
     invoice_id: string | null;
+    branch_id: string | null;
   }>(
-    `SELECT f.id, f.cod_amount::float8 AS cod, f.cod_collected_at, f.store_order_id,
+    `SELECT f.id, f.cod_amount::float8 AS cod, f.cod_collected_at, f.store_order_id, f.branch_id,
             COALESCE(so.invoice_id, f.invoice_id, s.converted_invoice_id) AS invoice_id
        FROM order_fulfilments f
        LEFT JOIN store_orders so ON so.id = f.store_order_id AND so.business_id = f.business_id
@@ -210,6 +212,10 @@ export async function recordRemittance(
     const voucherNumber = await allocateJournalVoucherNumber(client, p.businessId, p.remittedOn);
     const voucherId = (await client.query<{ id: string }>(`SELECT uuid_generate_v4() AS id`)).rows[0].id;
     const narration = `Courier COD deductions: ${label}`;
+    // The journal sits on the parcels' branch (the first one), else the business default branch.
+    const branchId =
+      parcels.rows.find((r) => r.branch_id)?.branch_id ??
+      (await resolveBranchId({ businessId: p.businessId, branchId: null }));
     const legs: Array<[string, number, number]> = [
       [expenseId, deductions, 0],
       [settlementAccountId, 0, deductions],
@@ -225,13 +231,14 @@ export async function recordRemittance(
         credit,
         narration,
         referenceNumber: voucherNumber,
+        branchId,
         poolClient: client,
       });
     }
     await client.query(
-      `INSERT INTO journal_entries (business_id, voucher_id, voucher_number, entry_date, reference_number, narration, is_locked, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,false,$7)`,
-      [p.businessId, voucherId, voucherNumber, p.remittedOn, voucherNumber, narration, p.userId],
+      `INSERT INTO journal_entries (business_id, branch_id, voucher_id, voucher_number, entry_date, reference_number, narration, is_locked, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,false,$8)`,
+      [p.businessId, branchId, voucherId, voucherNumber, p.remittedOn, voucherNumber, narration, p.userId],
     );
   }
 

@@ -30,6 +30,9 @@ jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: j
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+  // Fixture businesses have no plan; plan gating is covered elsewhere.
+  hasFeatureAccess: jest.fn().mockResolvedValue(true),
+  denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
 }));
 
 import { getPool, closePool } from '@/lib/db';
@@ -627,7 +630,7 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
     expect(items.rows[0]).toMatchObject({ quantity: 2, unit_price: 100, tax_rate: 18 });
   });
 
-  test('20. coupon discount and delivery are kept on the invoice, and mixed tax is rejected', async () => {
+  test('20. coupon discount and delivery are billed on the invoice, and a mixed-tax cart is billed exclusive', async () => {
     const id = await seedOrder({
       qty: 1,
       unit: 100,
@@ -639,9 +642,22 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
       discount: 10,
       grand: 148,
     });
-    const invoiceId = await createInvoiceForStoreOrder(id, B, A).catch((error: { code?: string }) => error);
-    expect(invoiceId).toMatchObject({ code: 'CHARGE_UNCLASSIFIED' });
-    expect((await pool.query(`SELECT invoice_id FROM store_orders WHERE id = $1`, [id])).rows[0].invoice_id).toBeNull();
+    const invoiceId = await createInvoiceForStoreOrder(id, B, A);
+    const inv = (
+      await pool.query(
+        `SELECT grand_total::float8 AS grand, discount_total::float8 AS discount, round_off::float8 AS round_off
+           FROM invoices WHERE id = $1`,
+        [invoiceId],
+      )
+    ).rows[0];
+    // ₹118 less the ₹10 coupon, plus ₹40 delivery (GST-inclusive, following the goods) = ₹148 exactly.
+    expect(inv.grand).toBeCloseTo(148, 2);
+    expect(inv.discount).toBeGreaterThan(0);
+    expect(Math.abs(inv.round_off)).toBeLessThanOrEqual(1);
+    const charge = (
+      await pool.query(`SELECT purpose, classification FROM invoice_charges WHERE invoice_id = $1`, [invoiceId])
+    ).rows;
+    expect(charge).toEqual([{ purpose: 'Delivery', classification: 'follows_goods' }]);
 
     const mixed = await seedOrder({
       lines: [
@@ -652,12 +668,15 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
       tax: 18,
       grand: 218,
     });
-    await expect(createInvoiceForStoreOrder(mixed, B, A)).rejects.toMatchObject({
-      code: 'STORE_TAX_NOT_REPRESENTABLE',
-    });
-    expect((await pool.query(`SELECT invoice_id FROM store_orders WHERE id = $1`, [mixed])).rows[0].invoice_id).toBeNull();
-    expect(await shelf()).toBe(10);
-    expect(await branchQty()).toBe(10);
+    const mixedInvoice = await createInvoiceForStoreOrder(mixed, B, A);
+    const m = (
+      await pool.query(`SELECT grand_total::float8 AS grand, prices_include_gst FROM invoices WHERE id = $1`, [mixedInvoice])
+    ).rows[0];
+    expect(m.grand).toBeCloseTo(218, 2);
+    expect(m.prices_include_gst).toBe(false);
+    // Each seeded order resets the shelf to 10; the mixed invoice takes its two units.
+    expect(await shelf()).toBe(8);
+    expect(await branchQty()).toBe(8);
   });
 
   test('COD checkout stock stays put until the final invoice deducts it once', async () => {

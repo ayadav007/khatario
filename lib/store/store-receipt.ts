@@ -93,7 +93,8 @@ export async function storeSettlementChoice(
 ): Promise<{ mode: string; accountId: string | null }> {
   const accounts = await listSettlementAccounts(businessId);
   const mappings = await getAccountMappings(businessId);
-  let mode = normalizePaymentMode(paymentMode) || 'cash';
+  const requested = normalizePaymentMode(paymentMode) || 'cash';
+  let mode = requested;
   let modeClass = classifyPaymentMode(mode);
   if (modeClass === 'clearing' && accountsForMode(accounts, 'clearing').length === 0) {
     mode = 'card';
@@ -102,7 +103,8 @@ export async function storeSettlementChoice(
   const eligible = accountsForMode(accounts, modeClass);
   const fallbackMapping =
     modeClass === 'bank' ? mappings.bank_account_id : modeClass === 'cash' ? mappings.cash_account_id : undefined;
-  const mapped = [mappings.payment_modes?.[mode], fallbackMapping].find(
+  // A card mapped to a bank (no clearing account) still counts as the merchant's choice.
+  const mapped = [mappings.payment_modes?.[requested], mappings.payment_modes?.[mode], fallbackMapping].find(
     (id) => !!id && eligible.some((a) => a.id === id),
   );
   if (mapped) return { mode, accountId: mapped };

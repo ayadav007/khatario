@@ -59,6 +59,30 @@ Code check of template wiring: the three packs (`studio`, `khatario`, `grocery`)
 | D6 | Direct-UPI orders are stored as `payment_status = 'cod'`, so the parcel COD amount is the order total. The shipping label and the Shiprocket booking say collect cash, and the order screen button says "Cash collected". | `lib/fulfilment/service.ts` `syncStoreOrderFulfilment`; `components/orders/OrderDrawer.tsx` | Courier may collect again from a buyer who paid by UPI. |
 | D7 | Confirm on the Orders screen drops `invoiceError`; only the Settings → Online store → Orders screen shows it. | `app/api/orders/[source]/[id]/route.ts` | Merchant is not told that the sale did not post. Found by reading code, not run. |
 
+## Fix and rerun — 2026-10-24
+
+Fix commit `e8a3e827`, then a follow-up commit with the test and remittance-branch changes below. The FAIL results above stay as recorded.
+
+| Id | Fix |
+| --- | --- |
+| D1 | `storeSettlementChoice` in `lib/store/store-receipt.ts`: the mapped account for the mode (Settings > Account mappings, card mapping honoured), else the only eligible account, else the only bank asset (2112 Bank OD is a liability and is skipped), else a clear error. A card with no clearing account is a bank `card` receipt. |
+| D2, D3 | `lib/store/store-invoice-plan.ts`, used by the quote and the invoice. Coupon is a percentage off every line (lowers taxable value). Delivery is a charge that follows the goods, GST-inclusive at their weighted rate. Mixed carts bill GST-exclusive. Paise go to round-off, at most ₹1. Quote subtotal is now what the shopper pays for goods; checkout shows "Includes ₹X GST". |
+| D4 | Invoice date is `todayIst(created_at)`. |
+| D5 | `recordRemittance` posts a receipt per uncollected parcel into the chosen cash or bank account and a journal Dr Courier & COD Charges (5219, created on first use) / Cr that account for the deductions, on the parcels' branch. The route posts a missing store bill first. The dialog has a "Money received into" picker. |
+| D6 | A direct-UPI store order carries no COD on its parcel. Label and Shiprocket booking are not cash on delivery. The order drawer shows "UPI received". |
+| D7 | The Orders screen confirm returns the bill error as a warning. |
+
+A bug found while rerunning: the remittance deduction journal had no `branch_id` and was refused by the ledger. Fixed in the follow-up commit.
+
+Test changes:
+
+- `phase3-5` #20 asserted the old refusal. It now asserts a ₹148 invoice with a `Delivery` follows-goods charge and a discount, and a ₹218 mixed cart billed exclusive.
+- `phase3-6b` #33 mapped UPI to cash, which the settlement rules refuse for a bank mode. It now maps UPI and card to 1102 and expects `upi` and `card`.
+- `phase3-5`, `phase3-6a`, `phase3-6b`: plan mocks also stub `hasFeatureAccess` and `denyIfFeatureMissing`.
+- `store-order-safety`: plan mock grants the store but not the gateway. Request and access mocks added. Each business has a chart and an inactive owner. The UPI test switches the owner on, so cash collection can post the bill, then switches it off again.
+
+Rerun: same runner on `kh_phase2_test` (port 5433, `::1`), the 15 paths from section 1 plus `tests/db/store-journey-e2e.db.test.ts`. Result: 33 suites passed, 349 tests passed. Exit 0. Journey alone: 9 passed. `npx tsc --noEmit` reported nothing in the changed files.
+
 ## Not tested
 
-Storefront pages in a browser (catalogue, product, cart, OTP, checkout, account, wishlist, return), real Razorpay, Easebuzz and Shiprocket calls, the Shiprocket tracking webhook over HTTP, printing the packing slip and labels, refunds after D1, and the 26 failing tests in the existing suites until their fixtures grant a plan.
+Storefront pages in a browser (catalogue, product, cart, OTP, checkout, account, wishlist, return), the checkout "Includes GST" line and the remittance account picker on screen, real Razorpay, Easebuzz and Shiprocket calls, the Shiprocket tracking webhook over HTTP, printing the packing slip and labels, and refunds of an order billed with a delivery fee or coupon.

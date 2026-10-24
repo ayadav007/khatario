@@ -29,6 +29,9 @@ jest.mock('@/lib/enforce-access', () => ({
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+  // Fixture businesses have no plan; plan gating is covered elsewhere.
+  hasFeatureAccess: jest.fn().mockResolvedValue(true),
+  denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
 }));
 
 import { getPool, closePool } from '@/lib/db';

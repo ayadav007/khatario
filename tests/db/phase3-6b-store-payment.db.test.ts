@@ -31,6 +31,9 @@ jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: j
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+  // Fixture businesses have no plan; plan gating is covered elsewhere.
+  hasFeatureAccess: jest.fn().mockResolvedValue(true),
+  denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
 }));
 
 import { getPool, closePool } from '@/lib/db';
@@ -704,7 +707,8 @@ d('Phase 3.6B store payment lifecycle (real DB)', () => {
       `INSERT INTO business_settings (business_id, account_mappings)
        VALUES ($1, $2::jsonb)
        ON CONFLICT (business_id) DO UPDATE SET account_mappings = EXCLUDED.account_mappings`,
-      [B, JSON.stringify({ payment_modes: { upi: cash.id, credit_card: bank.id } })],
+      // UPI is a bank mode, so its mapping must be a bank; the standard chart also has 2112 Bank OD.
+      [B, JSON.stringify({ payment_modes: { upi: bank.id, credit_card: bank.id } })],
     );
     try {
       const cardOrder = await seedOrder();
@@ -721,7 +725,8 @@ d('Phase 3.6B store payment lifecycle (real DB)', () => {
       expect(
         (await pool.query(`SELECT payment_mode FROM payments WHERE id = $1`, [cardRow.receipt_payment_id])).rows[0]
           .payment_mode,
-      ).toBe('credit_card');
+        // No clearing account in the chart: a card mapped to the bank is a bank card receipt.
+      ).toBe('card');
       expect((await voucherLines(cardRow.receipt_payment_id, 'payment')).find((l) => Number(l.debit) > 0)?.account_code).toBe(
         '1102',
       );
@@ -742,7 +747,7 @@ d('Phase 3.6B store payment lifecycle (real DB)', () => {
           .payment_mode,
       ).toBe('upi');
       expect((await voucherLines(upiRow.receipt_payment_id, 'payment')).find((l) => Number(l.debit) > 0)?.account_code).toBe(
-        '1101',
+        '1102',
       );
     } finally {
       await pool.query(`UPDATE business_settings SET account_mappings = '{}'::jsonb WHERE business_id = $1`, [B]);
