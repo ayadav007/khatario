@@ -430,7 +430,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const [recentInvoices, lowStockItems, overdueInvoices, dueTomorrow, dueIn3Days, draftCountRow] =
+    const [recentInvoices, lowStockItems, lowStockCountRow, overdueInvoices, dueTomorrow, dueIn3Days, draftCountRow] =
       await Promise.all([
       queryRows(
         `SELECT i.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone
@@ -444,6 +444,10 @@ export async function GET(request: NextRequest) {
         recentInvoicesParams
       ),
       queryRows(lowStockItemsSql, lowStockItemsParams),
+      queryOne<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM (${lowStockItemsSql.replace(/\s+ORDER BY[\s\S]*$/i, '')}) low_stock`,
+        lowStockItemsParams
+      ),
       queryOne<{ count: number; total_amount: number }>(
         `SELECT 
           COUNT(*) as count,
@@ -512,6 +516,7 @@ export async function GET(request: NextRequest) {
       recentInvoices,
       draftInvoicesCount,
       lowStockItems,
+      lowStockCount: Number(lowStockCountRow?.c ?? lowStockItems.length),
       invoiceAlerts: {
         overdue: {
           count: Number(overdueInvoices?.count || 0),

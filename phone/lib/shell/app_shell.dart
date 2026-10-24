@@ -108,6 +108,9 @@ class _AppShellState extends State<AppShell> {
   PartyKind _partyKind = PartyKind.customers;
   int _partiesEpoch = 0;
   int _itemsEpoch = 0;
+
+  /// `all` on the Items tab. `low` when Home asks for the low-stock list.
+  String _itemsStock = 'all';
   int _invoicesEpoch = 0;
 
   KhatarioApi get _api => widget.session.api;
@@ -140,6 +143,7 @@ class _AppShellState extends State<AppShell> {
       _tab = t;
       _openedFromMore = false;
       _partiesStartSuppliers = false;
+      if (t == AppTab.items) _itemsStock = 'all';
     });
   }
 
@@ -468,7 +472,13 @@ class _AppShellState extends State<AppShell> {
         const {'Filtered invoices', 'Invoices for this period', 'Invoices for this day', 'Sales details'}.contains(w)) {
       return tab(AppTab.invoices);
     }
-    if (w.startsWith('Item ') || const {'Item details', 'Low stock items', 'The full item page'}.contains(w)) {
+    if (w.startsWith('Open item ')) {
+      final id = w.substring('Open item '.length).trim();
+      if (id.isEmpty) return;
+      return push(ItemDetailScreen(session: widget.session, itemId: id, onOpen: _openAnything));
+    }
+    if (w == 'Low stock items') return _openLowStock();
+    if (w.startsWith('Item ') || const {'Item details', 'The full item page'}.contains(w)) {
       return tab(AppTab.items);
     }
     if (w.startsWith('Purchase ') || const {'Purchase details', 'Purchase detail', 'Filtered purchases', 'Purchases for this day'}.contains(w)) {
@@ -544,15 +554,27 @@ class _AppShellState extends State<AppShell> {
       ..showSnackBar(SnackBar(content: Text('$what is not on the phone yet.')));
   }
 
-  /// Collect from Home: record the receipt, then show it on Payment in.
-  Future<void> _openRecordPayment() async {
+  /// Collect or Pay from Home: record the receipt, then show it on the matching list.
+  Future<void> _openRecordPayment({bool payable = false}) async {
     final recorded = await Navigator.of(context).push<RecordedPayments>(
-      MaterialPageRoute(builder: (_) => PaymentInFormScreen(session: widget.session)),
+      MaterialPageRoute(builder: (_) => PaymentInFormScreen(session: widget.session, payable: payable)),
     );
     if (!mounted || recorded == null) return;
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PaymentInScreen(session: widget.session, highlightIds: recorded.ids),
+      builder: (_) => PaymentInScreen(session: widget.session, payable: payable, highlightIds: recorded.ids),
     ));
+  }
+
+  /// Items list with the low-stock chip already on. The Items tab itself stays unfiltered.
+  void _openLowStock() {
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    setState(() {
+      _itemsStock = 'low';
+      _itemsSearchOpen = false;
+      _tab = AppTab.items;
+      _openedFromMore = false;
+      _partiesStartSuppliers = false;
+    });
   }
 
   /// Home shortcuts that already have a phone screen. Everything else stays on [_notBuilt].
@@ -565,8 +587,11 @@ class _AppShellState extends State<AppShell> {
         _selectTab(AppTab.invoices);
       case 'New item':
         _openNewItem();
+      case 'Record payment out':
+        _openRecordPayment(payable: true);
+        break;
       case 'Low stock items':
-        _selectTab(AppTab.items);
+        _openLowStock();
         break;
       case 'New party':
         _selectTab(AppTab.parties);
@@ -611,12 +636,13 @@ class _AppShellState extends State<AppShell> {
           banners: ShellBanners(controller: _banners, placement: _bannerPlacement, onOpen: _openAnything),
         ),
       AppTab.items => ItemsScreen(
-          key: ValueKey('items-${widget.session.businessId}-$_itemsEpoch'),
+          key: ValueKey('items-${widget.session.businessId}-$_itemsEpoch-$_itemsStock'),
           session: widget.session,
           banners: _banners,
           searchOpen: _itemsSearchOpen,
           onOpen: _openAnything,
           onStockChanged: _loadBadges,
+          initialStock: _itemsStock,
         ),
       AppTab.more => MoreScreen(
           key: ValueKey('more-${widget.session.businessId}'),

@@ -24,9 +24,50 @@ String deriveInvoicePaymentStatus(dynamic grandTotal, dynamic paidAmount, dynami
   final grand = toNum(grandTotal);
   final paid = toNum(paidAmount);
   final due = balanceAmount != null && balanceAmount != '' ? toNum(balanceAmount) : grand - paid;
+  // A cleared bill is paid even when no cash was received (advance, credit note, TDS).
+  if (due <= 0.01 && grand > 0.01) return 'paid';
   if (paid <= 0.01) return 'unpaid';
   if (due <= 0.01) return 'paid';
   return 'partially_paid';
+}
+
+/// Cash plus advance, TDS and credit notes. Falls back to the invoice columns when the API omits `settled_amount`.
+num invoiceCoveredAmount(Map<String, dynamic> inv, num paid) {
+  final explicit = inv['settled_amount'];
+  if (explicit != null && explicit != '') return toNum(explicit);
+  return paid + toNum(inv['advance_adjusted']) + toNum(inv['tds_received']);
+}
+
+/// Receipts, and — when the API has not sent `settlements` — a line for the advance and TDS already stored on the bill.
+List<Map<String, dynamic>> invoiceSettlementRows(Map<String, dynamic> inv) {
+  final raw = inv['settlements'];
+  if (raw is List) {
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+  final list = inv['payments'];
+  final rows = list is List
+      ? list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+      : <Map<String, dynamic>>[];
+  final advance = toNum(inv['advance_adjusted']);
+  if (advance > 0.009) {
+    rows.add({
+      'id': 'advance',
+      'kind': 'advance',
+      'label': 'Customer advance',
+      'amount': advance,
+    });
+  }
+  final tds = toNum(inv['tds_received']);
+  if (tds > 0.009) {
+    rows.add({
+      'id': 'tds',
+      'kind': 'tds',
+      'label': 'TDS withheld',
+      'amount': tds,
+      'date': inv['invoice_date'],
+    });
+  }
+  return rows;
 }
 
 DateTime? parseServerDate(dynamic v) => v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
@@ -164,7 +205,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
     final grand = toNum(inv['grand_total']);
     final paid = toNum(inv['paid_amount']);
-    final balance = inv['balance_amount'] != null ? toNum(inv['balance_amount']) : grand - paid;
+    final covered = invoiceCoveredAmount(inv, paid);
+    final balance = inv['balance_amount'] != null ? toNum(inv['balance_amount']) : grand - covered;
     final due = balance > 0.01 && inv['status'] != 'cancelled';
     final draft = inv['status'] == 'draft';
     final hasCustomer = (inv['customer_id']?.toString() ?? '').isNotEmpty;
@@ -199,7 +241,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             onTap: () => printInvoiceOnThermal(context, widget.session!, widget.invoiceId),
           ),
       ],
-      header: _hero(inv, grand, paid, balance, due),
+      header: _hero(inv, grand, covered, balance, due),
       body: switch (_tab) {
         _Tab.overview => _overview(inv),
         _Tab.transactions => _payments(inv),
@@ -218,7 +260,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             child: KButton(
               label: 'Collect ${formatInvoiceInr(balance)}',
               icon: LucideIcons.handCoins,
-              onPressed: () => _collect(inv, grand, paid, balance),
+              onPressed: () => _collect(inv, grand, covered, balance),
             ),
           ),
         ] else
@@ -233,7 +275,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final cancelled = inv['status'] == 'cancelled';
     final paymentStatus = cancelled
         ? (inv['payment_status']?.toString() ?? 'unpaid')
-        : deriveInvoicePaymentStatus(inv['grand_total'], inv['paid_amount'], inv['balance_amount'] ?? balance);
+        : deriveInvoicePaymentStatus(inv['grand_total'], paid, inv['balance_amount'] ?? balance);
     final docType = inv['document_type']?.toString() ?? '';
     final (KTone tone, String label) = cancelled
         ? (KTone.negative, 'Cancelled')
@@ -242,7 +284,9 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             : due
                 ? (KTone.due, '${paymentStatus == 'partially_paid' ? 'Part paid' : 'Unpaid'} · ${formatInvoiceInr(balance)} due')
                 : (KTone.positive, 'Paid');
-    final ratio = grand <= 0 ? 0.0 : (paid / grand).clamp(0, 1).toDouble();
+    final advance = toNum(inv['advance_adjusted']);
+    final base = paid + (balance > 0 ? balance : 0);
+    final ratio = base <= 0 ? 0.0 : (paid / base).clamp(0, 1).toDouble();
     return KCard(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       child: Column(
@@ -289,6 +333,16 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                 if (docType.isNotEmpty) Text(capitalizeWords(docType.replaceAll('_', ' ')), style: AppText.caption),
               ],
             ),
+            if (advance > 0.009) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${formatInvoiceInr(advance)} from customer advance',
+                  style: AppText.caption.copyWith(color: AppColors.ink2),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -386,8 +440,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Widget _payments(Map<String, dynamic> inv) {
-    final list = inv['payments'];
-    final payments = list is List ? list.whereType<Map>().toList() : const <Map>[];
+    final payments = invoiceSettlementRows(inv);
     if (payments.isEmpty) {
       return const DetailEmptyState(icon: LucideIcons.receipt, text: 'No payments recorded for this invoice.');
     }
@@ -398,6 +451,34 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           'cheque' => LucideIcons.fileCheck,
           _ => LucideIcons.landmark,
         };
+    IconData rowIcon(Map<String, dynamic> row) {
+      switch (row['kind']?.toString()) {
+        case 'advance':
+          return LucideIcons.handCoins;
+        case 'credit':
+          return LucideIcons.fileText;
+        case 'tds':
+          return LucideIcons.landmark;
+        default:
+          return modeIcon(row['payment_mode']?.toString() ?? '');
+      }
+    }
+
+    String rowTitle(Map<String, dynamic> row) {
+      final label = row['label']?.toString() ?? '';
+      if (label.isNotEmpty) return label;
+      return capitalizeWords(row['payment_mode']?.toString() ?? '');
+    }
+
+    String rowSubtitle(Map<String, dynamic> row) {
+      final date = parseServerDate(row['date'] ?? row['payment_date']);
+      final when = date == null ? '' : ddMMMyyyy(date);
+      final detail = row['detail']?.toString() ?? '';
+      if (when.isEmpty) return detail.isEmpty ? '-' : detail;
+      if (detail.isEmpty) return when;
+      return '$when · $detail';
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
       child: KCard(
@@ -410,10 +491,10 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(color: AppColors.positiveSoft, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(modeIcon(p['payment_mode']?.toString() ?? ''), size: 18, color: AppColors.positive),
+                  child: Icon(rowIcon(p), size: 18, color: AppColors.positive),
                 ),
-                title: capitalizeWords(p['payment_mode']?.toString() ?? ''),
-                subtitle: parseServerDate(p['payment_date']) == null ? '-' : ddMMMyyyy(parseServerDate(p['payment_date'])!),
+                title: rowTitle(p),
+                subtitle: rowSubtitle(p),
                 trailing: Text(formatInvoiceInr(p['amount']),
                     style: AppText.bodyStrong.copyWith(color: AppColors.positive, fontFeatures: AppText.tabular)),
               ),

@@ -260,7 +260,11 @@ export async function GET(request: NextRequest) {
 
     const normalizedInvoices = invoices.map((inv) => {
       if (inv.status === 'cancelled') return inv;
-      const p = deriveInvoicePaymentStatus(inv.grand_total, inv.paid_amount, inv.balance_amount);
+      const settled =
+        (Number(inv.paid_amount) || 0) +
+        (Number((inv as { advance_adjusted?: unknown }).advance_adjusted) || 0) +
+        (Number((inv as { tds_received?: unknown }).tds_received) || 0);
+      const p = deriveInvoicePaymentStatus(inv.grand_total, settled, inv.balance_amount);
       return p !== inv.payment_status ? { ...inv, payment_status: p } : inv;
     });
 

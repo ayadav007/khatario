@@ -5,6 +5,7 @@ import { getAuthenticatedUserId, getBusinessIdFromRequest, getSessionScopedBusin
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { loadInvoiceSettlements } from '@/lib/invoices/invoice-settlements';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
@@ -191,12 +192,17 @@ export async function GET(
     );
 
     invoice.payments = paymentsResult.rows;
+    const settlement = await loadInvoiceSettlements(pool, invoice, paymentsResult.rows);
+    invoice.settlements = settlement.settlements;
+    invoice.settled_amount = settlement.settled_amount;
+    invoice.credit_applied = settlement.credit_applied;
 
-    // Align payment_status with balance when DB is stale (e.g. credit note adjusted balance only)
+    // Align payment_status with balance when DB is stale (e.g. credit note adjusted balance only).
+    // Use the settled total so an advance-only bill is not reported as unpaid.
     if (invoice.status !== 'cancelled') {
       const normalized = deriveInvoicePaymentStatus(
         invoice.grand_total,
-        invoice.paid_amount,
+        settlement.settled_amount,
         invoice.balance_amount
       );
       if (normalized !== invoice.payment_status) {

@@ -419,7 +419,7 @@ class _QuickActions extends StatelessWidget {
     (LucideIcons.packagePlus, 'Add item', 'New item', AppTints.amber),
     (LucideIcons.userPlus, 'Add party', 'New party', AppTints.teal),
     (LucideIcons.chartColumn, 'Reports', 'Reports', AppTints.indigo),
-    (LucideIcons.packageSearch, 'Low stock', 'Low stock items', AppTints.orange),
+    (LucideIcons.arrowUpRight, 'Pay', 'Record payment out', AppTints.orange),
   ];
 
   @override
@@ -1010,7 +1010,10 @@ class _LowStockTile extends StatelessWidget {
     return SizedBox(
       width: 196,
       child: KCard(
-        onTap: () => onOpen('Item details'),
+        onTap: () {
+          final id = item['id']?.toString() ?? '';
+          if (id.isNotEmpty) onOpen('Open item $id');
+        },
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

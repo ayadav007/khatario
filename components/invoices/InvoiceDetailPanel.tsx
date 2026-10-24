@@ -47,9 +47,13 @@ interface InvoiceJournal {
 interface PaymentRow {
   id: string;
   amount: number;
-  payment_mode: string;
-  payment_date: string;
+  payment_mode?: string | null;
+  payment_date?: string;
   notes?: string | null;
+  kind?: string;
+  label?: string;
+  date?: string | null;
+  detail?: string | null;
 }
 
 interface HistoryEntry {
@@ -89,7 +93,7 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
       if (res.ok) {
         const data = await res.json();
         setInvoice(data.invoice);
-        setPayments(data.invoice?.payments || []);
+        setPayments(data.invoice?.settlements?.length ? data.invoice.settlements : data.invoice?.payments || []);
       } else {
         setInvoice(null);
       }
@@ -184,12 +188,17 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
   }
 
   const grand = Number(invoice.grand_total) || 0;
-  const paid = Number(invoice.paid_amount) || 0;
+  const cashPaid = Number(invoice.paid_amount) || 0;
+  const paid =
+    invoice.settled_amount != null && invoice.settled_amount !== ''
+      ? Number(invoice.settled_amount) || 0
+      : cashPaid + (Number(invoice.advance_adjusted) || 0) + (Number(invoice.tds_received) || 0);
   const balance = Number(invoice.balance_amount ?? grand - paid) || 0;
+  const advanceAdjusted = Number(invoice.advance_adjusted) || 0;
   const paymentStatusForBadge =
     invoice.status === 'cancelled'
       ? invoice.payment_status || 'unpaid'
-      : deriveInvoicePaymentStatus(invoice.grand_total, invoice.paid_amount, invoice.balance_amount ?? balance);
+      : deriveInvoicePaymentStatus(invoice.grand_total, paid, invoice.balance_amount ?? balance);
   const openInvoiceView = () => {
     window.location.assign(`/invoices/${invoiceId}/view`);
   };
@@ -260,6 +269,9 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
             <div>
               <div className="text-text-secondary text-xs">Paid</div>
               <div className="font-medium text-text-primary">{formatINR(paid)}</div>
+              {advanceAdjusted > 0.009 && (
+                <div className="text-xs text-text-secondary mt-1">{formatINR(advanceAdjusted)} from customer advance</div>
+              )}
             </div>
             {invoice.document_type && (
               <div>
@@ -301,9 +313,14 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
                   {payments.map((p) => (
                     <tr key={p.id} className="border-b border-border">
                       <td className="py-2 px-2">
-                        {p.payment_date ? format(new Date(p.payment_date), 'dd MMM yyyy') : '-'}
+                        {(p.date || p.payment_date)
+                          ? format(new Date(p.date || p.payment_date || ''), 'dd MMM yyyy')
+                          : '-'}
                       </td>
-                      <td className="py-2 px-2 capitalize">{p.payment_mode}</td>
+                      <td className="py-2 px-2 capitalize">
+                        {p.label || p.payment_mode}
+                        {p.detail ? <span className="text-text-secondary"> · {p.detail}</span> : null}
+                      </td>
                       <td className="py-2 px-2 text-right font-semibold text-emerald-700">
                         {formatINR(p.amount)}
                       </td>

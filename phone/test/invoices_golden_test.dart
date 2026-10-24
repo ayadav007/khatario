@@ -142,6 +142,7 @@ void main() {
     expect(deriveInvoicePaymentStatus('74.00', '0.00', '74.00'), 'unpaid');
     expect(deriveInvoicePaymentStatus('100', '40', '60'), 'partially_paid');
     expect(deriveInvoicePaymentStatus('100', '100', null), 'paid');
+    expect(deriveInvoicePaymentStatus('1180', '0', '0'), 'paid');
     expect(formatInvoiceInr('1156.02'), '₹ 1,156.02');
     expect(formatInvoiceInr('283.5200'), '₹ 283.52');
     expect(jsNumberString(74.0), '74');

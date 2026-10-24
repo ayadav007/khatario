@@ -618,7 +618,18 @@ export default function InvoiceDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-text-secondary">Paid Amount</p>
-                <p className="text-lg font-semibold text-green-600 dark:text-green-400">₹{Number(invoice.paid_amount || 0).toLocaleString('en-IN')}</p>
+                <p className="text-lg font-semibold text-green-600 dark:text-green-400">
+                  ₹{(
+                    invoice.settled_amount != null && invoice.settled_amount !== ''
+                      ? Number(invoice.settled_amount)
+                      : Number(invoice.paid_amount || 0) + Number(invoice.advance_adjusted || 0) + Number(invoice.tds_received || 0)
+                  ).toLocaleString('en-IN')}
+                </p>
+                {Number(invoice.advance_adjusted) > 0 && (
+                  <p className="text-xs text-text-secondary mt-1">
+                    ₹{Number(invoice.advance_adjusted).toLocaleString('en-IN')} from customer advance
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-text-secondary">Balance</p>
@@ -627,10 +638,31 @@ export default function InvoiceDetailPage() {
             </div>
 
             {/* Payment History */}
-            {payments.length > 0 && (
+            {(payments.length > 0 || (invoice.settlements || []).some((row: { kind?: string }) => row.kind && row.kind !== 'payment')) && (
               <div className="mt-4 pt-4 border-t border-border">
                 <h4 className="font-medium text-text-primary mb-2">Payment History</h4>
                 <div className="space-y-2">
+                  {(invoice.settlements || [])
+                    .filter((row: { kind?: string }) => row.kind && row.kind !== 'payment')
+                    .map((row: { id: string; label?: string; amount: number; date?: string | null; detail?: string | null }) => (
+                      <div
+                        key={row.id}
+                        className="flex justify-between items-center gap-2 text-sm rounded-md border border-border bg-slate-100/90 p-2.5 dark:bg-slate-800/70"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-medium text-text-primary">
+                            ₹{Number(row.amount).toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-text-secondary ml-2">
+                            {row.label || 'Adjustment'}
+                            {row.detail ? ` · ${row.detail}` : ''}
+                          </span>
+                        </div>
+                        <span className="shrink-0 text-text-secondary">
+                          {row.date ? new Date(row.date).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                    ))}
                   {payments.map((payment) => (
                     <div
                       key={payment.id}

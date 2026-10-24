@@ -97,6 +97,7 @@ class ItemsScreen extends StatefulWidget {
     required this.searchOpen,
     required this.onOpen,
     required this.onStockChanged,
+    this.initialStock = 'all',
   });
 
   final AppSession session;
@@ -107,6 +108,9 @@ class ItemsScreen extends StatefulWidget {
   /// `inventory-updated`: refresh the low-stock badge.
   final VoidCallback onStockChanged;
 
+  /// `all` or `low`. Home's low-stock taps open the list already filtered.
+  final String initialStock;
+
   @override
   State<ItemsScreen> createState() => _ItemsScreenState();
 }
@@ -114,7 +118,7 @@ class ItemsScreen extends StatefulWidget {
 class _ItemsScreenState extends State<ItemsScreen> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
-  ItemFilters _filters = const ItemFilters();
+  late ItemFilters _filters = ItemFilters(stock: widget.initialStock == 'low' ? 'low' : 'all');
   int _page = 1;
   List<Map<String, dynamic>> _all = const [];
   List<(String, String)> _categories = const [];

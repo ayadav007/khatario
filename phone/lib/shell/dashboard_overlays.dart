@@ -16,7 +16,8 @@ List<PendingAction> pendingActions(Map<String, dynamic> d, {required bool isPrim
   final drafts = d['draftInvoicesCount'] is num
       ? (d['draftInvoicesCount'] as num).toInt()
       : (isPrimaryAdmin ? recent.where((i) => i['status'] == 'draft').length : 0);
-  final lowStock = ((d['lowStockItems'] as List?) ?? const []).length;
+  final listedLowStock = ((d['lowStockItems'] as List?) ?? const []).length;
+  final lowStock = d['lowStockCount'] is num ? (d['lowStockCount'] as num).toInt() : listedLowStock;
   num? amount(Map m) => m['total_amount'] == null ? null : toNum(m['total_amount']);
   return [
     (id: 'overdue', label: 'Overdue Invoices', count: toNum(overdue['count']).toInt(), amount: amount(overdue), tone: KTone.negative, icon: LucideIcons.circleAlert),
@@ -57,7 +58,7 @@ class PendingActionsCard extends StatelessWidget {
             children: [
               for (final a in actions)
                 KListRow(
-                  onTap: () => onOpen(a.label),
+                  onTap: () => onOpen(a.id == 'low_stock' ? 'Low stock items' : a.label),
                   leading: Container(
                     width: 40,
                     height: 40,
