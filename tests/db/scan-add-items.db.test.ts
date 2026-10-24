@@ -343,6 +343,39 @@ describe('scan & add items', () => {
       pdf.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), 'a.pdf');
       expect((await read(pdf)).status).toBe(400);
     });
+
+    test('the front photo comes back as a small item picture even when the label cannot be read', async () => {
+      const key = process.env.GEMINI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      try {
+        const sharp = (await import('sharp')).default;
+        const png = await sharp({ create: { width: 2400, height: 3200, channels: 3, background: { r: 10, g: 120, b: 60 } } })
+          .png()
+          .toBuffer();
+        const front = new FormData();
+        front.append('step', 'front');
+        front.append('image', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'front.png');
+        const r = await read(front);
+        expect(r.status).toBe(503);
+        expect(r.json.thumbnail).toMatch(/^data:image\/jpeg;base64,/);
+        expect(r.json.thumbnail.length).toBeLessThan(80_000);
+
+        const details = new FormData();
+        details.append('step', 'details');
+        details.append('image', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'back.png');
+        expect((await read(details)).json.thumbnail).toBeNull();
+      } finally {
+        if (key !== undefined) process.env.GEMINI_API_KEY = key;
+      }
+    });
+  });
+
+  test('a new item keeps prices-include-GST and its picture', async () => {
+    const picture = 'data:image/jpeg;base64,' + Buffer.from('tiny picture').toString('base64');
+    const saved = await create({ name: `GST incl ${tag}`, purchase_price: 40, opening_stock: 1, gst_included: true, image_url: picture }, randomUUID());
+    expect([saved.status, saved.json.error]).toEqual([201, undefined]);
+    const row = await pool.query(`SELECT gst_included, image_url FROM items WHERE id = $1`, [saved.json.item.id]);
+    expect(row.rows[0]).toEqual({ gst_included: true, image_url: picture });
   });
 
   describe('batches, added stock and sizes', () => {
@@ -526,6 +559,13 @@ describe('scan & add items', () => {
       expect([more.status, more.json.converted]).toEqual([201, false]);
     });
 
+    test('a new size can set prices to include GST, for the whole item', async () => {
+      expect((await lookup(HARPIC)).json.match.item.gst_included).toBe(false);
+      const r = await send(postVariant, '/api/items/scan-add/variant', { item_id: harpicId, variant_name: '2 L', gst_included: true }, randomUUID());
+      expect([r.status, r.json.error]).toEqual([201, undefined]);
+      expect((await lookup(HARPIC)).json.match.item.gst_included).toBe(true);
+    });
+
     test('another business cannot add a size to this item', async () => {
       const res = await postVariant(
         new NextRequest('http://localhost/api/items/scan-add/variant', {
@@ -554,7 +594,8 @@ describe('scan & add items', () => {
       expect([...byId.keys()].sort()).toEqual([maggiId, harpicId, plain.json.item.id].sort());
       expect(byId.get(plain.json.item.id)!.gaps).toEqual(['hsn', 'selling_price', 'purchase_price', 'mrp', 'stock', 'gst_zero']);
       expect(byId.get(maggiId)!.next_expiry).toBe('2027-03-31');
-      expect(byId.get(harpicId)!.variants).toHaveLength(3);
+      // 500 ml, 200 ml, 1 L and 2 L.
+      expect(byId.get(harpicId)!.variants).toHaveLength(4);
 
       expect((await send(postReview, '/api/items/scan-add/review', { item_ids: 'x' })).status).toBe(400);
       expect((await send(postReview, '/api/items/scan-add/review', { item_ids: Array(1001).fill(maggiId) })).status).toBe(400);

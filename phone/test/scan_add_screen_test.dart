@@ -91,6 +91,29 @@ void main() {
     expect(find.textContaining('Added Loose dal 1 kg'), findsOneWidget);
   });
 
+  testWidgets('prices-include-GST starts from the business setting and is sent with the item', (tester) async {
+    final api = _FakeServer()..pricesIncludeGst = true;
+    await open(tester, api);
+    await typeCode(tester, _unknown);
+    await tapText(tester, 'Type details instead');
+    final gst = find.widgetWithText(SwitchListTile, 'Prices include GST');
+    await tester.scrollUntilVisible(gst, 200, scrollable: find.byType(Scrollable).first);
+    expect(tester.widget<SwitchListTile>(gst).value, isTrue);
+    await fill(tester, 'Product name *', 'Ghee 1 L');
+    await tapText(tester, 'Save and scan next');
+    expect(api.itemPosts.single.$1['gst_included'], isTrue);
+
+    // Turned off by the shopkeeper, it is sent off.
+    await typeCode(tester, '2000000000039');
+    await tapText(tester, 'Type details instead');
+    await tester.scrollUntilVisible(gst, 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(gst);
+    await tester.pumpAndSettle();
+    await fill(tester, 'Product name *', 'Salt 1 kg');
+    await tapText(tester, 'Save and scan next');
+    expect(api.itemPosts.last.$1['gst_included'], isFalse);
+  });
+
   testWidgets('a product database suggestion fills the form for checking before it is saved', (tester) async {
     final api = _FakeServer();
     await open(tester, api);
@@ -204,11 +227,17 @@ class _FakeServer extends KhatarioApi {
 
   final itemPosts = <(Map<String, dynamic>, String?)>[];
   bool failNextItemPost = false;
+  bool pricesIncludeGst = false;
   var _seq = 0;
 
   @override
   Future<Map<String, dynamic>> getJson(String path) async {
     final uri = Uri.parse(path);
+    if (uri.path == '/api/settings/invoice-defaults') {
+      return {
+        'defaults': {'pricesIncludeGst': pricesIncludeGst},
+      };
+    }
     final code = uri.queryParameters['code'];
     if (uri.path == '/api/items/scan-add/barcode') {
       if (code == _known) {

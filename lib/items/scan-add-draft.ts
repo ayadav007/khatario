@@ -128,5 +128,5 @@ export function clearDraft(store: DraftStore, businessId: string, userId: string
 export function hasUnfinishedProduct(c: ScanAddCurrentDraft | null): boolean {
   if (!c) return false;
   const f = c.form;
-  return !!(c.barcode || f.name.trim() || f.opening_stock.trim() || f.purchase_price.trim() || f.mrp.trim());
+  return !!(c.barcode || f.name.trim() || f.opening_stock.trim() || f.purchase_price.trim() || f.mrp.trim() || f.image_url);
 }

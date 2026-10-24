@@ -160,26 +160,33 @@ async function checkRows() {
               (SELECT COUNT(*)::int FROM stock_movements m WHERE m.item_id = i.id) AS movements,
               (SELECT COALESCE(SUM(l.debit), 0)::numeric FROM ledger_entry_lines l
                 WHERE l.business_id = i.business_id AND l.voucher_id = i.id AND l.voucher_type = 'opening_stock') AS opening_value,
-              i.external_source->>'provider' AS source
+              i.external_source->>'provider' AS source,
+              COALESCE(i.gst_included, false) AS gst,
+              left(i.image_url, 23) AS picture, length(i.image_url) AS picture_len
          FROM items i
         WHERE i.business_id = ANY($1::uuid[]) AND i.name LIKE $3`,
       [shops.map((s) => s.businessId), A.businessId, `%${tag}`]
     )
   ).rows;
   const expect = {
-    [`Manual item ${tag}`]: { stock: 7, value: 84, source: null },
-    [`Harpic 500 ml ${tag}`]: { stock: 3, value: 240, source: 'productguru' },
-    [`Retry item ${tag}`]: { stock: 5, value: 45, source: null },
-    [`Review item ${tag}`]: { stock: 2, value: 20, source: null },
+    [`Manual item ${tag}`]: { stock: 7, value: 84, source: null, gst: true, picture: false },
+    [`Harpic 500 ml ${tag}`]: { stock: 3, value: 240, source: 'productguru', gst: false, picture: false },
+    [`Retry item ${tag}`]: { stock: 5, value: 45, source: null, gst: false, picture: false },
+    [`Review item ${tag}`]: { stock: 2, value: 20, source: null, gst: false, picture: true },
   };
   let failures = 0;
   for (const [name, want] of Object.entries(expect)) {
     const r = rows.find((x) => x.name === name);
+    // A picture is the shrunk front photo: a JPEG data URL well under the 2 MB the item form allows.
+    const pictureOk = want.picture ? r?.picture === 'data:image/jpeg;base64,' && r.picture_len < 80000 : r?.picture == null;
     const ok =
-      r && r.in_a && r.copies === 1 && r.movements === 1 && Number(r.stock) === want.stock && Number(r.opening_value) === want.value && r.source === want.source;
+      r && r.in_a && r.copies === 1 && r.movements === 1 && Number(r.stock) === want.stock && Number(r.opening_value) === want.value &&
+      r.source === want.source && r.gst === want.gst && pictureOk;
     console.log(
       `${ok ? 'PASS' : 'FAIL'} ${name.replace(` ${tag}`, '')}: ${
-        r ? `copies ${r.copies}, stock movements ${r.movements}, stock ${Number(r.stock)}, opening value ${Number(r.opening_value)}, source ${r.source}` : 'missing'
+        r
+          ? `copies ${r.copies}, stock movements ${r.movements}, stock ${Number(r.stock)}, opening value ${Number(r.opening_value)}, source ${r.source}, gst included ${r.gst}, picture ${r.picture ? `${r.picture_len} chars` : 'none'}`
+          : 'missing'
       }`
     );
     if (!ok) failures++;

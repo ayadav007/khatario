@@ -7,6 +7,7 @@ import {
   readProductLabel,
   type LabelStep,
 } from '@/lib/product-lookup/label-reader';
+import { makeItemThumbnail } from '@/lib/product-lookup/item-thumbnail';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,12 +46,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only photos can be read' }, { status: 400 });
     }
 
-    const reading = await readProductLabel(Buffer.from(await image.arrayBuffer()), mime, step);
-    return NextResponse.json({ step, reading });
-  } catch (error) {
-    if (error instanceof LabelReaderUnavailableError) {
-      return NextResponse.json({ error: 'Reading labels is not set up on this server. Type the details instead.' }, { status: 503 });
+    const bytes = Buffer.from(await image.arrayBuffer());
+    // The front of the pack also becomes the item's picture, shrunk, even when the text cannot be read.
+    const thumbnail = step === 'front' ? await makeItemThumbnail(bytes) : null;
+    try {
+      const reading = await readProductLabel(bytes, mime, step);
+      return NextResponse.json({ step, reading, thumbnail });
+    } catch (error) {
+      if (error instanceof LabelReaderUnavailableError) {
+        return NextResponse.json(
+          { error: 'Reading labels is not set up on this server. Type the details instead.', thumbnail },
+          { status: 503 }
+        );
+      }
+      console.error('[scan-add/read-label]', error instanceof Error ? error.message : error);
+      return NextResponse.json({ error: 'Could not read this photo. Try again or type the details.', thumbnail }, { status: 502 });
     }
+  } catch (error) {
     console.error('[scan-add/read-label]', error instanceof Error ? error.message : error);
     return NextResponse.json({ error: 'Could not read this photo. Try again or type the details.' }, { status: 502 });
   }

@@ -31,6 +31,8 @@ export interface AddVariantInput {
   existing_variant_name?: string | null;
   /** When converting: the item's new name without a size, e.g. "Harpic" instead of "Harpic 500 ml". */
   item_name?: string | null;
+  /** Whether prices include GST. Kept on the item, so it applies to every size of it. Omitted = unchanged. */
+  gst_included?: boolean | null;
 }
 
 export type AddVariantResult =
@@ -64,6 +66,7 @@ export function addVariantFingerprint(input: AddVariantInput, batch: OpeningBatc
     opening_stock: money(input.opening_stock) ?? 0,
     existing_variant_name: input.existing_variant_name?.trim() || null,
     item_name: input.item_name?.trim() || null,
+    gst_included: typeof input.gst_included === 'boolean' ? input.gst_included : null,
     batch,
   };
   return { hash: hashReplayPayload(storedPayload), storedPayload };
@@ -233,6 +236,14 @@ export async function addVariantFromScan(
       );
       await refreshItemGlobalStockFromBranches(client, businessId, item.id);
       converted = true;
+    }
+
+    if (typeof input.gst_included === 'boolean') {
+      await client.query(`UPDATE items SET gst_included = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2`, [
+        item.id,
+        businessId,
+        input.gst_included,
+      ]);
     }
 
     const clash = await client.query(

@@ -23,6 +23,8 @@ interface Extra {
   batch_number: string;
   manufacturing_date: string;
   expiry_date: string;
+  /** Kept on the item, so it covers every size. Starts from the item's current setting. */
+  gst_included: boolean;
 }
 
 export interface ScanAddExistingDone {
@@ -66,6 +68,7 @@ export function ScanAddExistingActions({ barcode, match, canAddStock, onDone }: 
     batch_number: '',
     manufacturing_date: '',
     expiry_date: '',
+    gst_included: item.gst_included,
   });
   const converting = !item.has_variants;
   // A plain item that has been sold or bought cannot be split into sizes.
@@ -144,6 +147,7 @@ export function ScanAddExistingActions({ barcode, match, canAddStock, onDone }: 
         batch,
         existing_variant_name: converting ? extra.existing_variant_name.trim() : undefined,
         item_name: converting ? extra.item_name.trim() : undefined,
+        gst_included: extra.gst_included,
       });
       toast.success(`${extra.variant_name.trim()} added to ${converting ? extra.item_name.trim() : item.name}`);
       onDone({ itemId: item.id, name: `${converting ? extra.item_name.trim() : item.name} ${extra.variant_name.trim()}`, outcome: 'size', qty });
@@ -258,6 +262,14 @@ export function ScanAddExistingActions({ barcode, match, canAddStock, onDone }: 
             <Input label="Selling price (₹)" type="number" min={0} step="0.01" value={extra.selling_price} onChange={set('selling_price')} />
             <Input label="Purchase price (₹)" type="number" min={0} step="0.01" value={extra.purchase_price} onChange={set('purchase_price')} error={errors.purchase_price} />
             <Input label="Stock you have now" type="number" min={0} step="any" value={extra.quantity} onChange={set('quantity')} />
+            <label className="flex items-center gap-2 self-end pb-2 text-sm">
+              <input
+                type="checkbox"
+                checked={extra.gst_included}
+                onChange={(e) => setExtra((x) => ({ ...x, gst_included: e.target.checked }))}
+              />
+              Prices include GST (all sizes)
+            </label>
             {batchFields}
           </div>
           <div className="flex flex-wrap gap-2">

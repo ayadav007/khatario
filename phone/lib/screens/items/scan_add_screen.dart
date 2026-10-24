@@ -398,6 +398,11 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
   final _exp = TextEditingController();
   String _unit = 'PCS';
   String _tax = '0';
+  // Prices include GST; starts from the business's invoice setting unless a draft says otherwise.
+  bool _gstIncluded = false;
+  bool _gstTouched = false;
+  // Item picture from the front photo (a data URL from the server), empty when none.
+  String _imageUrl = '';
   bool _saving = false;
   Map<String, String> _errors = const {};
   // One key per product, reused when a failed save is retried, and kept with a resumed draft.
@@ -438,11 +443,14 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
       }
       _unit = v.unit;
       _tax = v.taxRate;
+      _gstIncluded = v.pricesIncludeGst;
+      _imageUrl = v.imageUrl;
       _lookupSource = resume.lookupSource;
       _usedPhoto = resume.usedPhoto;
       _stage = _Stage.form;
     } else {
       _start();
+      _loadGstDefault();
     }
     for (final c in [_barcode, _name, _brand, _size, _mrp, _selling, _purchase, _hsn, _opening, _batch, _mfg, _exp]) {
       c.addListener(_draftChanged);
@@ -521,6 +529,12 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
       final form = FormData.fromMap({'step': step, 'image': MultipartFile.fromBytes(capture.bytes, filename: capture.name)});
       final res = await widget.session.api.dio.post<dynamic>('/api/items/scan-add/read-label', data: form);
       final body = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
+      // The front photo becomes the item picture even when its text could not be read.
+      final thumb = body['thumbnail']?.toString() ?? '';
+      if (thumb.startsWith('data:image/') && mounted) {
+        setState(() => _imageUrl = thumb);
+        _draftChanged();
+      }
       if ((res.statusCode ?? 500) >= 400) throw ApiException(body['error']?.toString() ?? 'Could not read this photo');
       final reading = body['reading'] is Map ? Map<String, dynamic>.from(body['reading'] as Map) : <String, dynamic>{};
       _apply(ProductFacts.fromReading(reading));
@@ -544,6 +558,32 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
     } finally {
       if (mounted) setState(() => _reading = false);
     }
+  }
+
+  /// The front photo as the item's picture, with a way to drop it.
+  Widget _picture() {
+    final data = Uri.tryParse(_imageUrl)?.data;
+    return KCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          if (data != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: Image.memory(data.contentAsBytes(), width: 64, height: 64, fit: BoxFit.cover),
+            ),
+          const SizedBox(width: 12),
+          Expanded(child: Text('Item picture from the front photo', style: AppText.body)),
+          KTextButton(
+            label: 'Remove',
+            onTap: () {
+              setState(() => _imageUrl = '');
+              _draftChanged();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   void _clearSuggestion() {
@@ -578,7 +618,18 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
     batchNumber: _batch.text,
     manufacturingDate: _mfg.text,
     expiryDate: _exp.text,
+    pricesIncludeGst: _gstIncluded,
+    imageUrl: _imageUrl,
   );
+
+  /// Settings › Invoice defaults › prices include GST, so new items match how the shop bills.
+  Future<void> _loadGstDefault() async {
+    try {
+      final body = await widget.session.api.getJson('/api/settings/invoice-defaults');
+      final d = body['defaults'];
+      if (mounted && !_gstTouched && d is Map && d['pricesIncludeGst'] == true) setState(() => _gstIncluded = true);
+    } catch (_) {}
+  }
 
   Future<void> _save() async {
     final errors = validateScanAdd(_values);
@@ -804,6 +855,7 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
                           ),
                           gap,
                           if (_suggestions.isNotEmpty) ...[_databaseNotice(), gap],
+                          if (_imageUrl.isNotEmpty) ...[_picture(), gap],
                           KCard(
                             padding: const EdgeInsets.all(14),
                             child: Column(
@@ -869,6 +921,19 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
                                   },
                                 ),
                                 gap,
+                                SwitchListTile.adaptive(
+                                  contentPadding: EdgeInsets.zero,
+                                  activeTrackColor: AppColors.brand,
+                                  title: Text('Prices include GST', style: AppText.body),
+                                  value: _gstIncluded,
+                                  onChanged: (v) {
+                                    setState(() {
+                                      _gstIncluded = v;
+                                      _gstTouched = true;
+                                    });
+                                    _draftChanged();
+                                  },
+                                ),
                                 _f(_hsn, 'HSN (optional)', field: 'hsn_sac', number: true),
                                 gap,
                                 _f(_batch, 'Batch no. (optional)'),

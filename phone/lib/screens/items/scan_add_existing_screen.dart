@@ -44,6 +44,8 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
   late String? _variantId = widget.match['matched_variant_id']?.toString() ?? (_variants.length == 1 ? _variants.first['id']?.toString() : null);
   _Action _action = _Action.choose;
   bool _saving = false;
+  // Kept on the item, so it covers every size. Starts from the item's current setting.
+  late bool _gstIncluded = _item['gst_included'] == true;
   Map<String, String> _errors = const {};
   String _key = newScanAddKey();
 
@@ -120,6 +122,7 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
         'batch': ?batchBody(_qty.text, _batch.text, _mfg.text, _exp.text),
         if (converting) 'existing_variant_name': _existingSize.text.trim(),
         if (converting) 'item_name': _itemName.text.trim(),
+        'gst_included': _gstIncluded,
       });
       final name = converting ? _itemName.text.trim() : _item['name'];
       if (mounted) {
@@ -253,6 +256,13 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
                       ],
                     ),
                     _f(_qty, 'Stock you have now', number: true),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      activeTrackColor: AppColors.brand,
+                      title: Text('Prices include GST (all sizes)', style: AppText.body),
+                      value: _gstIncluded,
+                      onChanged: (v) => setState(() => _gstIncluded = v),
+                    ),
                     ..._batchFields(),
                   ],
                 ],

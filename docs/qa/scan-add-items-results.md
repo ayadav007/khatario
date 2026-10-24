@@ -150,6 +150,22 @@ Defects the browser run found:
 
 `node tests/live/scan-add-e2e.mjs` (runs `e2e/scan-add-items.spec.ts`, Chromium, server `127.0.0.1:3131`). Two consecutive runs after the layout fix: 7 passed, 0 failed, playwright exit 0, database checks passed, leftover SCAN-E2E businesses 0.
 
+## Prices include GST and the item picture (2026-10-24)
+
+Reported from the phone: Scan & Add had no "prices include GST" choice, and a front photo did not appear as the item's picture.
+
+- "Prices include GST" on the new-product form (web and phone) starts from Settings › Invoice defaults and is sent as `gst_included`. On "Another size, same barcode" it starts from the item's setting and, being an item field, applies to every size.
+- The front photo is shrunk by the label route (`lib/product-lookup/item-thumbnail.ts`: JPEG, at most 512 px) and returned as `thumbnail`, also when the text cannot be read. It is saved in `items.image_url` as a data URL, the same storage the New Item form uses. MRP/batch and size photos are not kept.
+
+| Check | Command | Database | Result |
+| --- | --- | --- | --- |
+| Unit | `npx jest tests/lib/scan-add-gst-picture.test.ts` and the other five Scan & Add files | none | 64 passed |
+| Database | `npx jest tests/db/scan-add-items.db.test.ts --runInBand` | `kh_phase2_test`, port 5433 | 33 passed: flag and picture stored on create; a new size sets the item's flag; front photo returns a thumbnail with HTTP 503 when no Gemini key, the details photo returns none |
+| Phone | `flutter test test/scan_add_logic_test.dart test/scan_add_screen_test.dart` | none | 28 passed: switch starts from the business setting, sent on save, off when turned off; picture and flag survive the draft |
+| Browser | `node tests/live/scan-add-e2e.mjs` | `kh_phase2_test`, port 5433 | 7 of 7 passed. Database: Manual item `gst_included` true; Review item picture a JPEG data URL (1,291 chars for the plain test image) from a photo uploaded through the file picker |
+
+Not run: a real phone camera photo, and label reading by Gemini. The phone changes need a new APK.
+
 ## Gaps
 
 - No browser or device run of any Scan & Add screen. The local preview needs a test password that the project does not hold.

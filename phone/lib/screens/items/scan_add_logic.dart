@@ -20,6 +20,8 @@ class ScanAddValues {
     this.batchNumber = '',
     this.manufacturingDate = '',
     this.expiryDate = '',
+    this.pricesIncludeGst = false,
+    this.imageUrl = '',
   });
 
   final String barcode;
@@ -42,6 +44,12 @@ class ScanAddValues {
   /// YYYY-MM-DD or YYYY-MM, as the pack prints it.
   final String manufacturingDate;
   final String expiryDate;
+
+  /// Selling price and MRP already include GST (items.gst_included).
+  final bool pricesIncludeGst;
+
+  /// Item picture: the front-of-pack photo, shrunk by the server (a data URL). Empty when none.
+  final String imageUrl;
 }
 
 final _dateRe = RegExp(r'^\d{4}-\d{2}(-\d{2})?$');
@@ -129,6 +137,8 @@ Map<String, dynamic> scanAddItemBody(ScanAddValues v, {String? lookupSource}) {
     // Which database's suggestion was accepted. The server records the source from its own cache.
     if (lookupSource != null && lookupSource.isNotEmpty) 'lookup_source': lookupSource,
     'opening_batch': ?batchBody(v.openingStock, v.batchNumber, v.manufacturingDate, v.expiryDate),
+    'gst_included': v.pricesIncludeGst,
+    if (v.imageUrl.isNotEmpty) 'image_url': v.imageUrl,
   };
 }
 
@@ -305,7 +315,7 @@ ScanAddEntry? scanAddEntryFromJson(Object? raw) {
   );
 }
 
-Map<String, String> scanAddValuesToJson(ScanAddValues v) => {
+Map<String, Object> scanAddValuesToJson(ScanAddValues v) => {
   'barcode': v.barcode,
   'name': v.name,
   'brand': v.brand,
@@ -320,6 +330,8 @@ Map<String, String> scanAddValuesToJson(ScanAddValues v) => {
   'batchNumber': v.batchNumber,
   'manufacturingDate': v.manufacturingDate,
   'expiryDate': v.expiryDate,
+  'pricesIncludeGst': v.pricesIncludeGst,
+  'imageUrl': v.imageUrl,
 };
 
 ScanAddValues scanAddValuesFromJson(Map raw) {
@@ -339,6 +351,8 @@ ScanAddValues scanAddValuesFromJson(Map raw) {
     batchNumber: s('batchNumber'),
     manufacturingDate: s('manufacturingDate'),
     expiryDate: s('expiryDate'),
+    pricesIncludeGst: raw['pricesIncludeGst'] == true,
+    imageUrl: s('imageUrl').startsWith('data:image/') ? s('imageUrl') : '',
   );
 }
 
@@ -358,7 +372,8 @@ class ScanAddDraftProduct {
         v.name.trim().isNotEmpty ||
         v.openingStock.trim().isNotEmpty ||
         v.purchasePrice.trim().isNotEmpty ||
-        v.mrp.trim().isNotEmpty;
+        v.mrp.trim().isNotEmpty ||
+        v.imageUrl.isNotEmpty;
   }
 
   Map<String, dynamic> toJson() => {

@@ -22,6 +22,10 @@ export interface ScanAddForm {
   /** YYYY-MM-DD or YYYY-MM, as the pack prints it. */
   manufacturing_date: string;
   expiry_date: string;
+  /** Selling price and MRP already include GST (items.gst_included). */
+  prices_include_gst: boolean;
+  /** Item picture: the front-of-pack photo, shrunk by the server. Empty when none was taken. */
+  image_url: string;
 }
 
 const DATE_RE = /^\d{4}-\d{2}(-\d{2})?$/;
@@ -64,7 +68,8 @@ export function fillBatch<T extends Pick<ScanAddForm, 'batch_number' | 'manufact
   };
 }
 
-export function emptyScanAddForm(barcode: string): ScanAddForm {
+/** `pricesIncludeGst` starts from the business's invoice setting, so items match how the shop bills. */
+export function emptyScanAddForm(barcode: string, pricesIncludeGst = false): ScanAddForm {
   return {
     barcode,
     name: '',
@@ -80,6 +85,8 @@ export function emptyScanAddForm(barcode: string): ScanAddForm {
     batch_number: '',
     manufacturing_date: '',
     expiry_date: '',
+    prices_include_gst: pricesIncludeGst,
+    image_url: '',
   };
 }
 
@@ -178,5 +185,7 @@ export function scanAddItemPayload(form: ScanAddForm, lookupSource?: string | nu
     // Which database's suggestion was accepted. The server records the source from its own cache.
     lookup_source: lookupSource || undefined,
     opening_batch: batchPayload(form),
+    gst_included: form.prices_include_gst === true,
+    image_url: form.image_url || undefined,
   };
 }

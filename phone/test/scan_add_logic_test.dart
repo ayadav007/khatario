@@ -171,6 +171,30 @@ void main() {
     });
   });
 
+  group('prices include GST and the item picture', () {
+    test('sent as gst_included, picture only when there is one', () {
+      const v = ScanAddValues(barcode: '', name: 'Maggi 70 g', pricesIncludeGst: true);
+      expect(scanAddItemBody(v)['gst_included'], isTrue);
+      expect(scanAddItemBody(v).containsKey('image_url'), isFalse);
+      const pic = ScanAddValues(barcode: '', name: 'Maggi 70 g', imageUrl: 'data:image/jpeg;base64,AAAA');
+      expect(scanAddItemBody(pic)['image_url'], 'data:image/jpeg;base64,AAAA');
+      expect(scanAddItemBody(pic)['gst_included'], isFalse);
+    });
+
+    test('both survive the draft, and a non-image picture is dropped', () {
+      const v = ScanAddValues(barcode: '1', name: 'x', pricesIncludeGst: true, imageUrl: 'data:image/jpeg;base64,AAAA');
+      final back = scanAddValuesFromJson(scanAddValuesToJson(v));
+      expect(back.pricesIncludeGst, isTrue);
+      expect(back.imageUrl, 'data:image/jpeg;base64,AAAA');
+      expect(scanAddValuesFromJson({...scanAddValuesToJson(v), 'imageUrl': 'https://evil.example/x.png'}).imageUrl, '');
+    });
+
+    test('a product with only a photo is worth keeping', () {
+      const p = ScanAddDraftProduct(values: ScanAddValues(barcode: '', name: '', imageUrl: 'data:image/jpeg;base64,AAAA'), idempotencyKey: 'k');
+      expect(p.worthKeeping, isTrue);
+    });
+  });
+
   test('each product gets its own key', () {
     expect(newScanAddKey(), isNot(newScanAddKey()));
   });

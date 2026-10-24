@@ -93,6 +93,21 @@ function ScanAddItemsPage() {
   // The database whose suggestion filled the form, while the shopkeeper keeps it.
   const [lookupSource, setLookupSource] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  // The business's own "prices include GST" setting for bills, used as the starting value for new items.
+  const [gstDefault, setGstDefault] = useState(false);
+  useEffect(() => {
+    if (!business?.id) return;
+    let live = true;
+    fetch('/api/settings/invoice-defaults')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (live && d?.defaults) setGstDefault(d.defaults.pricesIncludeGst === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [business?.id]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   // Whether a label photo filled any of the current product's details.
   const usedPhotoRef = useRef(false);
@@ -193,7 +208,7 @@ function ScanAddItemsPage() {
   const startNew = useCallback(
     async (barcode: string, seq: number) => {
       saveKeyRef.current = newIdempotencyKey();
-      setForm(emptyScanAddForm(barcode));
+      setForm(emptyScanAddForm(barcode, gstDefault));
       setErrors({});
       setLookup(null);
       setLookupSource(null);
@@ -225,7 +240,7 @@ function ScanAddItemsPage() {
         setStep({ kind: 'photo', barcode, queue: ['front', 'details', 'size'] });
       }
     },
-    [toast]
+    [toast, gstDefault]
   );
 
   const nextPhoto = useCallback((barcode: string, queue: LabelStep[]) => {
@@ -241,6 +256,10 @@ function ScanAddItemsPage() {
       body.append('step', queue[0]);
       const res = await fetch('/api/items/scan-add/read-label', { method: 'POST', body });
       const data = await res.json().catch(() => ({}));
+      // The front photo becomes the item picture even when its text could not be read.
+      if (typeof data.thumbnail === 'string' && data.thumbnail.startsWith('data:image/')) {
+        setForm((f) => ({ ...f, image_url: data.thumbnail }));
+      }
       if (!res.ok) throw new Error(data.error || 'Could not read this photo');
       const r = data.reading as LabelReading;
       usedPhotoRef.current = true;
@@ -629,13 +648,30 @@ function ScanAddItemsPage() {
                     className="underline"
                     onClick={() => {
                       setLookupSource(null);
-                      setForm((f) => ({ ...emptyScanAddForm(f.barcode), purchase_price: f.purchase_price, opening_stock: f.opening_stock }));
+                      setForm((f) => ({
+                        ...emptyScanAddForm(f.barcode, f.prices_include_gst),
+                        purchase_price: f.purchase_price,
+                        opening_stock: f.opening_stock,
+                        image_url: f.image_url,
+                      }));
                     }}
                   >
                     Wrong product? Clear it
                   </button>
                 ) : null}
               </p>
+            </div>
+          ) : null}
+          {form.image_url ? (
+            <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element -- data URL from the front photo */}
+              <img src={form.image_url} alt="Item picture" className="h-16 w-16 rounded-md border border-border object-cover" />
+              <div className="text-sm">
+                <p>Item picture from the front photo</p>
+                <button type="button" className="text-xs text-text-secondary underline" onClick={() => setForm((f) => ({ ...f, image_url: '' }))}>
+                  Remove picture
+                </button>
+              </div>
             </div>
           ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -666,6 +702,14 @@ function ScanAddItemsPage() {
                 ))}
               </select>
             </div>
+            <label className="flex items-center gap-2 self-end pb-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.prices_include_gst}
+                onChange={(e) => setForm((f) => ({ ...f, prices_include_gst: e.target.checked }))}
+              />
+              Prices include GST
+            </label>
             <Input label="HSN" value={form.hsn_sac} onChange={setField('hsn_sac')} error={errors.hsn_sac} inputMode="numeric" placeholder="Optional" />
             <Input label="Stock you have now" type="number" min={0} step="any" value={form.opening_stock} onChange={setField('opening_stock')} error={errors.opening_stock} placeholder="0" />
             <Input label="Batch no." value={form.batch_number} onChange={setField('batch_number')} placeholder="Optional" />

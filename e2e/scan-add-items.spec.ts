@@ -111,6 +111,7 @@ test.describe('Scan & Add Items', () => {
     await field(page, 'Purchase price (₹)').fill('12');
     await field(page, 'Selling price (₹)').fill('15');
     await field(page, 'Stock you have now').fill('7');
+    await page.getByLabel('Prices include GST').check();
     await page.getByRole('button', { name: 'Save and scan next' }).click();
     await expect(page.locator('li', { hasText: `Manual item ${TAG}` }).filter({ hasText: 'Added · 7' })).toBeVisible({ timeout: 30000 });
   });
@@ -175,7 +176,18 @@ test.describe('Scan & Add Items', () => {
     await openScanAdd(page);
     // Each test has its own browser storage, so this one adds the product it reviews.
     await page.getByRole('button', { name: 'Product has no barcode' }).click();
+    // A real front photo through the file picker. No Gemini key here, so the text is not read,
+    // but the photo still has to come back as the item picture.
+    await expect(page.getByText('Photo of the name')).toBeVisible({ timeout: 30000 });
+    const sharp = (await import('sharp')).default;
+    const photo = await sharp({ create: { width: 1600, height: 2000, channels: 3, background: { r: 230, g: 120, b: 20 } } })
+      .jpeg()
+      .toBuffer();
+    await page.locator('input[type="file"]').setInputFiles({ name: 'front.jpg', mimeType: 'image/jpeg', buffer: photo });
+    await expect(page.getByAltText('Item picture')).toHaveCount(0);
     await typeDetailsInstead(page);
+    await expect(page.getByAltText('Item picture')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText('Item picture from the front photo')).toBeVisible();
     await field(page, 'Product name *').fill(`Review item ${TAG}`);
     await field(page, 'Selling price (₹)').fill('15');
     await field(page, 'Purchase price (₹)').fill('10');
