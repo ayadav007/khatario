@@ -19,8 +19,11 @@ function tolMoney(base: number): number {
   return Math.max(0.05, Math.min(2.5, Math.abs(base) * 0.015));
 }
 
+export type ClassifiedPriceBasis = 'inclusive' | 'exclusive' | 'unknown';
+
 export interface PriceModeReconciliationResult {
-  priceMode: InvoicePriceMode;
+  /** Null when the printed columns do not decide a mode. Never a silent exclusive. */
+  priceMode: InvoicePriceMode | null;
   exclusiveScore: number;
   inclusiveScore: number;
   /** Lower residual = better fit (₹). */
@@ -56,6 +59,193 @@ function sumPositiveLineTotals(items: ExtractedInvoiceLine[]): number {
     if (lt != null && Number.isFinite(lt) && lt > 0) s = round2(s + lt);
   }
   return s;
+}
+
+function nearMoney(a: number, b: number): boolean {
+  return Math.abs(a - b) <= tolMoney(b);
+}
+
+/** Printed item-column amount. A missing or zero amount is not evidence. */
+function originalItemAmount(it: ExtractedInvoiceLine): number | null {
+  const raw = it.source_line_total !== undefined ? it.source_line_total : it.line_total;
+  if (raw == null || !Number.isFinite(raw) || raw === 0) return null;
+  return raw;
+}
+
+function originalTaxableAmount(it: ExtractedInvoiceLine): number | null {
+  const raw = it.source_taxable_value !== undefined ? it.source_taxable_value : it.taxable_value;
+  if (raw == null || !Number.isFinite(raw) || raw === 0) return null;
+  return raw;
+}
+
+function qtyTimesRate(it: ExtractedInvoiceLine): number | null {
+  return qtyRateBase(it);
+}
+
+/**
+ * Slab labels such as "3) CGST @ 9%, SGST @ 9%" are not products.
+ * A real item whose name mentions GST and which has a printed amount stays.
+ */
+export function isGstBandHeadingLine(it: ExtractedInvoiceLine): boolean {
+  const name = (it.description ?? '').trim();
+  if (!name) return false;
+  const amount = originalItemAmount(it);
+  if (amount != null && Math.abs(amount) > 0.5) return false;
+  if (!/\b(cgst|sgst|igst|utgst)\b/i.test(name)) return false;
+  if (!/[@%]|\bgst\b/i.test(name)) return false;
+  const leftover = name
+    .replace(/^\s*\d+\s*[).:-]?\s*/, '')
+    .replace(/\b(cgst|sgst|igst|utgst|gst|total)\b/gi, '')
+    .replace(/@/g, '')
+    .replace(/%/g, '')
+    .replace(/[\d.,]+/g, '')
+    .replace(/[^a-z]+/gi, '');
+  return leftover.length <= 2;
+}
+
+export function omitGstBandHeadingLines(items: ExtractedInvoiceLine[]): ExtractedInvoiceLine[] {
+  return items.filter((it) => !isGstBandHeadingLine(it));
+}
+
+function productLines(items: ExtractedInvoiceLine[]): ExtractedInvoiceLine[] {
+  return omitGstBandHeadingLines(items);
+}
+
+function sumItemColumn(items: ExtractedInvoiceLine[]): { sum: number; counted: number } {
+  let sum = 0;
+  let counted = 0;
+  for (const it of items) {
+    const amount = originalItemAmount(it);
+    if (amount == null || amount < 0) continue;
+    sum = round2(sum + amount);
+    counted += 1;
+  }
+  return { sum, counted };
+}
+
+function footerTaxable(e: IndianGstInvoiceExtract): number | null {
+  const raw = e.printed_subtotal !== undefined ? e.printed_subtotal : e.subtotal;
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  return raw;
+}
+
+function footerPayable(e: IndianGstInvoiceExtract): number | null {
+  const raw = e.printed_grand_total !== undefined ? e.printed_grand_total : e.grand_total;
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  return raw;
+}
+
+function slabRows(e: IndianGstInvoiceExtract) {
+  return e.printed_gst_summary !== undefined ? (e.printed_gst_summary ?? []) : (e.gst_summary ?? []);
+}
+
+type BandVote = 'inclusive' | 'exclusive' | 'neutral';
+
+function voteGstBand(e: IndianGstInvoiceExtract, lines: ExtractedInvoiceLine[]): BandVote[] {
+  const votes: BandVote[] = [];
+  for (const row of slabRows(e)) {
+    const rate = row.gst_rate;
+    if (rate == null || !Number.isFinite(rate)) continue;
+    const members = lines.filter((it) => Math.abs((it.gst_rate ?? 0) - rate) <= 0.2);
+    const { sum, counted } = sumItemColumn(members);
+    if (counted === 0) continue;
+    const taxable = row.taxable_value > 0.01 ? row.taxable_value : null;
+    if (taxable == null) continue;
+    const tax = round2((row.cgst ?? 0) + (row.sgst ?? 0) + (row.igst ?? 0));
+    const payable = round2(taxable + tax);
+    const matchPay = nearMoney(sum, payable);
+    const matchTax = nearMoney(sum, taxable);
+    if (tax <= 0.01 && matchPay && matchTax) {
+      votes.push('neutral');
+      continue;
+    }
+    if (matchPay && !matchTax) votes.push('inclusive');
+    else if (matchTax && !matchPay) votes.push('exclusive');
+    else votes.push('neutral');
+  }
+  return votes;
+}
+
+function lineIsPrintedCharge(it: ExtractedInvoiceLine): boolean {
+  const item = originalItemAmount(it);
+  const base = qtyTimesRate(it);
+  if (item == null || base == null) return false;
+  return nearMoney(base, item);
+}
+
+function lineIsExclusiveGross(it: ExtractedInvoiceLine): boolean {
+  const item = originalItemAmount(it);
+  const base = qtyTimesRate(it);
+  const taxable = originalTaxableAmount(it);
+  const gst = it.gst_rate ?? 0;
+  if (item == null || !(gst > 0)) return false;
+  if (base != null && nearMoney(base, item)) return false;
+  if (base != null && nearMoney(base * (1 + gst / 100), item)) return true;
+  if (taxable != null && !nearMoney(taxable, item) && nearMoney(taxable * (1 + gst / 100), item)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Decide from the original item column, the printed taxable total, and the payable.
+ * taxable + GST = payable is true of both bill types and is not a vote.
+ * A missing total is not a match.
+ */
+export function classifyPrintedPriceBasis(e: IndianGstInvoiceExtract): ClassifiedPriceBasis {
+  const lines = productLines(e.items ?? []);
+  const { sum, counted } = sumItemColumn(lines);
+  if (counted === 0) return 'unknown';
+
+  const taxable = footerTaxable(e);
+  const payable = footerPayable(e);
+  const tax = bestPrintedTaxTotal(e);
+  const ro = e.round_off ?? 0;
+  const matchPay = payable != null && nearMoney(round2(sum + ro), payable);
+  const matchTax = taxable != null && nearMoney(sum, taxable);
+  const matchAdditive =
+    payable != null &&
+    tax > 0.01 &&
+    !matchPay &&
+    nearMoney(round2(sum + tax + ro), payable);
+
+  if (matchPay && !matchTax) {
+    const grossLines = lines.filter(lineIsExclusiveGross);
+    const chargeLines = lines.filter(lineIsPrintedCharge);
+    if (grossLines.length > 0 && chargeLines.length === 0) return 'exclusive';
+    if (grossLines.length > 0 && chargeLines.length > 0) return 'unknown';
+    return 'inclusive';
+  }
+  if ((matchTax && !matchPay) || matchAdditive) return 'exclusive';
+  if (matchPay && matchTax) {
+    return tax <= 0.01 ? 'exclusive' : 'unknown';
+  }
+
+  const votes = voteGstBand(e, lines).filter((v) => v !== 'neutral');
+  if (votes.length > 0 && votes.every((v) => v === 'inclusive')) return 'inclusive';
+  if (votes.length > 0 && votes.every((v) => v === 'exclusive')) return 'exclusive';
+  if (votes.some((v) => v === 'inclusive') && votes.some((v) => v === 'exclusive')) return 'unknown';
+
+  let taxed = 0;
+  let taxableColumn = 0;
+  for (const it of lines) {
+    if (!((it.gst_rate ?? 0) > 0)) continue;
+    taxed += 1;
+    const item = originalItemAmount(it);
+    const tv = originalTaxableAmount(it);
+    const base = qtyTimesRate(it);
+    if (
+      item != null &&
+      tv != null &&
+      base != null &&
+      nearMoney(base, item) &&
+      nearMoney(item, tv)
+    ) {
+      taxableColumn += 1;
+    }
+  }
+  if (taxed > 0 && taxableColumn === taxed) return 'exclusive';
+  return 'unknown';
 }
 
 function sumPrintedLineTax(items: ExtractedInvoiceLine[]): number {
@@ -102,24 +292,25 @@ function qtyRateBase(it: ExtractedInvoiceLine): number | null {
  * POS / restaurant pattern: Amount column = taxable, footer tax is additive.
  */
 export function matchesExclusivePosPattern(e: IndianGstInvoiceExtract): boolean {
-  const grand = e.grand_total;
+  const grand = e.printed_grand_total !== undefined ? e.printed_grand_total : e.grand_total;
   if (grand == null || !Number.isFinite(grand) || grand <= 0) return false;
 
   const printedTax = bestPrintedTaxTotal(e);
   if (printedTax < 0.01) return false;
 
-  const lineSum = sumPositiveLineTotals(e.items ?? []);
+  const lineSum = sumItemColumn(productLines(e.items ?? [])).sum;
   if (lineSum <= 0) return false;
 
   const ro = e.round_off ?? 0;
-  const tol = tolMoney(grand);
 
-  /** lines are taxable + printed tax ≈ grand */
-  if (Math.abs(lineSum + printedTax + ro - grand) <= tol) return true;
+  // The item column already is the payable. Footer taxable + GST = payable is not exclusive.
+  const taxable = footerTaxable(e);
+  if (nearMoney(round2(lineSum + ro), grand) && (taxable == null || !nearMoney(lineSum, taxable))) {
+    return false;
+  }
 
-  /** subtotal + printed tax ≈ grand */
-  const sub = e.subtotal ?? 0;
-  if (sub > 0.01 && Math.abs(sub + printedTax + ro - grand) <= tol) return true;
+  /** Item column is the taxable amount, and printed tax is added to reach the payable. */
+  if (nearMoney(round2(lineSum + printedTax + ro), grand)) return true;
 
   return false;
 }
@@ -266,30 +457,17 @@ export function reconcilePriceModeFromEvidence(
   const inc = scoreInclusive(e);
   const signals = [...ex.signals, ...inc.signals.filter((s) => !ex.signals.includes(s))];
 
-  let priceMode: InvoicePriceMode = 'exclusive';
+  const basis = classifyPrintedPriceBasis(e);
+  let priceMode: InvoicePriceMode | null = null;
 
-  if (ex.score > inc.score) {
-    priceMode = 'exclusive';
-  } else if (inc.score > ex.score) {
+  if (basis === 'inclusive') {
     priceMode = 'inclusive';
-  } else if (ex.residual < inc.residual - 0.02) {
+    signals.push('item_column_matches_payable');
+  } else if (basis === 'exclusive' || matchesExclusivePosPattern(e)) {
     priceMode = 'exclusive';
-  } else if (inc.residual < ex.residual - 0.02) {
-    priceMode = 'inclusive';
-  } else if (matchesExclusivePosPattern(e)) {
-    priceMode = 'exclusive';
-    signals.push('pos_pattern_tiebreak');
+    signals.push(basis === 'exclusive' ? 'item_column_matches_taxable' : 'exclusive_pos_hard_rule');
   } else {
-    priceMode = e.price_mode === 'inclusive' ? 'inclusive' : 'exclusive';
-    signals.push('llm_price_mode_tiebreak');
-  }
-
-  /** Hard rule: printed tax + grand > line sum → exclusive. */
-  if (matchesExclusivePosPattern(e)) {
-    priceMode = 'exclusive';
-    if (!signals.includes('taxable_plus_printed_tax_matches_grand')) {
-      signals.push('exclusive_pos_hard_rule');
-    }
+    signals.push('price_basis_unknown');
   }
 
   return {

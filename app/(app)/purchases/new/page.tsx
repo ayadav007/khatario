@@ -46,18 +46,19 @@ import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleConte
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { MobileItemPickerPanel, type ItemLite } from '@/components/invoices/MobileItemPickerPanel';
 import {
-  inclusiveLineTotal,
-  inclusiveLineTotalWithDiscountAmount,
-} from '@/lib/invoice-line-math';
-import {
   calculatePurchaseLine,
-  computePurchaseDocument,
   deriveExclusiveUnitPriceFromInvoiceAnchor,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import { round2, roundRetailQty, roundExclusiveUnitPrice } from '@/lib/numeric-precision';
-import { resolvePurchaseFormLineFromExtractItem } from '@/lib/purchases/map-extracted-line';
+import {
+  previewPurchaseFormDocument,
+  purchaseFormCanFinalize,
+  purchaseFormLinesFromScan,
+  purchaseSaveModes,
+  scanDocumentPriceMode,
+} from '@/lib/purchases/purchase-form-from-scan';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY, PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
 interface PurchaseItem {
@@ -83,6 +84,10 @@ interface PurchaseItem {
   tax_rate: number;
   /** Per-line tax interpretation; defaults from header price_mode when unset. */
   tax_mode?: 'exclusive' | 'inclusive';
+  /** Printed unit rate from a scan. Editing the line does not change it. */
+  printed_rate?: number | null;
+  /** Printed item amount from a scan. Editing the line does not change it. */
+  printed_line_total?: number | null;
   /** When set (invoice fill), GST slab math uses this tax-inclusive total instead of qty×rate. Cleared when qty or unit_price are edited; kept when tax/discount change so rate can be re-derived. */
   invoice_inclusive_line_total?: number;
   manual_cgst?: number;
@@ -207,7 +212,7 @@ export default function NewPurchasePage() {
     round_off: 0,
     supplier_gstin: '',
     supplier_state_code: '',
-    price_mode: 'exclusive' as 'exclusive' | 'inclusive',
+    price_mode: 'exclusive' as 'exclusive' | 'inclusive' | 'unknown',
   });
   const [showAdvancedTax, setShowAdvancedTax] = useState(false);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
@@ -877,10 +882,7 @@ export default function NewPurchasePage() {
         bill_date: data.invoice.bill_date || prev.bill_date,
         document_type: data.invoice.document_type || prev.document_type,
         is_reverse_charge: data.invoice.is_reverse_charge || prev.is_reverse_charge,
-        price_mode:
-          data.invoice.price_mode === 'inclusive' || data.invoice.price_mode === 'exclusive'
-            ? data.invoice.price_mode
-            : prev.price_mode,
+        price_mode: scanDocumentPriceMode(data.invoice.price_mode),
         place_of_supply_state_code:
           (data.invoice.place_of_supply_state_code &&
             String(data.invoice.place_of_supply_state_code).trim().slice(0, 2)) ||
@@ -901,52 +903,12 @@ export default function NewPurchasePage() {
     }
 
     let newItems: PurchaseItem[] = [];
-    // Fill line items — mapper already emits exclusive unit_price; do not re-derive when provenance exists.
+    // Replace the item list with the scan. Do not append onto lines already on the form.
     if (data.items && data.items.length > 0) {
-      newItems = data.items.map((item: any, index: number) => {
-        let qty = roundRetailQty(Number(item.quantity));
-        if (!(qty > 0)) qty = 1;
-        const discAmt = round2(Number(item.discount_amount) || 0);
-        const discPct = round2(Number(item.discount_percent) || 0);
-        const rawUp = roundExclusiveUnitPrice(Number(item.unit_price) || 0);
-        const tr = round2(Number(item.tax_rate) || 0);
-        const gross = qty * rawUp;
-        const discForDerive =
-          discAmt > 0 && gross > 0
-            ? Math.min(100, round2((discAmt / gross) * 100))
-            : discPct;
-        const offInc = item.discount_on_tax_inclusive === true;
-        const amt =
-          typeof item.amount === 'number' && item.amount !== 0
-            ? round2(item.amount)
-            : discAmt > 0
-              ? round2(inclusiveLineTotalWithDiscountAmount(qty, rawUp, discAmt, tr, offInc))
-              : round2(inclusiveLineTotal(qty, rawUp, discPct, tr));
-        const resolved = resolvePurchaseFormLineFromExtractItem(item, {
-          quantity: qty,
-          unitPrice: rawUp,
-          taxRate: tr,
-          discountPercentForDerive: discForDerive,
-          amount: amt,
-        });
-        return {
-          id: `item-${Date.now()}-${index}`,
-          item_id: reviewedData.itemMatches?.[index]?.[0]?.itemId || '',
-          item_name: item.item_name || '',
-          hsn_sac: item.hsn_sac || '',
-          quantity: qty,
-          unit: item.unit || 'PCS',
-          unit_price: roundExclusiveUnitPrice(Number(resolved.unitPrice) || 0),
-          discount_percent: discAmt > 0 ? 0 : discPct,
-          discount_amount: discAmt,
-          discount_on_tax_inclusive: item.discount_on_tax_inclusive === true,
-          tax_rate: tr,
-          tax_mode: resolved.taxMode,
-          invoice_inclusive_line_total: resolved.invoiceInclusiveLineTotal,
-          fromBillExtract: true,
-        };
+      newItems = purchaseFormLinesFromScan(data.items, {
+        itemIds: data.items.map((_: unknown, index: number) => reviewedData.itemMatches?.[index]?.[0]?.itemId || ''),
+        idFor: (index) => `item-${Date.now()}-${index}`,
       });
-
       setPurchaseItems(newItems);
     }
 
@@ -1103,12 +1065,11 @@ export default function NewPurchasePage() {
     const clearsInvoiceAnchor: Partial<Record<keyof PurchaseItem, true>> = {
       quantity: true,
       unit_price: true,
-    };
-    const reDeriveFromAnchor: Partial<Record<keyof PurchaseItem, true>> = {
-      tax_rate: true,
       discount_percent: true,
       discount_amount: true,
       discount_on_tax_inclusive: true,
+      tax_rate: true,
+      tax_mode: true,
     };
     setPurchaseItems(
       purchaseItems.map((item) => {
@@ -1141,11 +1102,9 @@ export default function NewPurchasePage() {
           }
         }
 
-        let next: PurchaseItem = { ...item, [field]: coercedValue };
+        const next: PurchaseItem = { ...item, [field]: coercedValue };
         if (clearsInvoiceAnchor[field]) {
           delete next.invoice_inclusive_line_total;
-        } else if (next.invoice_inclusive_line_total != null && reDeriveFromAnchor[field]) {
-          next = applyInvoiceAnchorDeriveUnitPrice(next);
         }
         return next;
       })
@@ -1184,37 +1143,21 @@ export default function NewPurchasePage() {
       supplierStRaw && String(supplierStRaw).trim().length >= 2
         ? String(supplierStRaw).trim().slice(0, 2)
         : String(posFallback || '').trim().slice(0, 2);
-    const doc = computePurchaseDocument(
-      purchaseItems.map((it) => ({
-        quantity: it.quantity,
-        unit_price: it.unit_price,
-        discount_percent: it.discount_percent,
-        discount_amount: it.discount_amount ?? 0,
-        discount_on_tax_inclusive: it.discount_on_tax_inclusive === true,
-        tax_rate: it.tax_rate,
-        tax_mode: it.tax_mode,
-        manual_cgst: it.manual_cgst,
-        manual_sgst: it.manual_sgst,
-        manual_igst: it.manual_igst,
-        invoice_inclusive_line_total: it.invoice_inclusive_line_total,
-      })),
-      {
-        supplierStateCode: supplierSt || '',
-        /**
-         * Prefer persisted `state_code`; else profile state name (user-selected in settings);
-         * else POS on this bill; else GSTIN prefix. GSTIN last avoids a stale/wrong GSTIN
-         * overriding an explicit Karnataka address when `state_code` was never backfilled.
-         */
-        companyStateCode:
-          (business.state_code && String(business.state_code).trim().slice(0, 2)) ||
-          getStateCode(business.state || '') ||
-          (formData.place_of_supply_state_code &&
-            String(formData.place_of_supply_state_code).trim().slice(0, 2)) ||
-          stateCodeFromGstin(business.gstin || undefined) ||
-          '',
-        headerPriceMode: formData.price_mode === 'inclusive' ? 'inclusive' : 'exclusive',
-      }
-    );
+    const doc = previewPurchaseFormDocument(purchaseItems, formData.price_mode, {
+      supplierStateCode: supplierSt || '',
+      /**
+       * Prefer persisted `state_code`; else profile state name (user-selected in settings);
+       * else POS on this bill; else GSTIN prefix. GSTIN last avoids a stale/wrong GSTIN
+       * overriding an explicit Karnataka address when `state_code` was never backfilled.
+       */
+      companyStateCode:
+        (business.state_code && String(business.state_code).trim().slice(0, 2)) ||
+        getStateCode(business.state || '') ||
+        (formData.place_of_supply_state_code &&
+          String(formData.place_of_supply_state_code).trim().slice(0, 2)) ||
+        stateCodeFromGstin(business.gstin || undefined) ||
+        '',
+    });
     return doc;
   }, [
     purchaseItems,
@@ -1353,6 +1296,10 @@ export default function NewPurchasePage() {
 
   async function handleSubmit(status: 'draft' | 'final') {
     if (!business) return;
+    if (status === 'final' && !purchaseFormCanFinalize(formData.price_mode)) {
+      toast.warning('Choose whether these prices include GST before finalizing. The bill did not show which one it is.');
+      return;
+    }
     if (purchaseItems.length === 0) {
       toast.warning('Please add at least one item');
       return;
@@ -1397,7 +1344,7 @@ export default function NewPurchasePage() {
         due_date: formData.due_date || null,
         supplier_gstin: formData.supplier_gstin?.trim() || null,
         supplier_state_code: formData.supplier_state_code?.trim() || null,
-        price_mode: formData.price_mode,
+        price_mode: purchaseSaveModes(formData.price_mode, null).price_mode,
         round_off: Number(formData.round_off) || 0,
         items: purchaseItems.map((item, idx) => {
           const c = doc.lineComputeds[idx];
@@ -1414,7 +1361,7 @@ export default function NewPurchasePage() {
             discount_amount: c.discountAmount,
             discount_account_id: item.discount_account_id || null,
             tax_rate: item.tax_rate,
-            tax_mode: item.tax_mode || formData.price_mode,
+            tax_mode: purchaseSaveModes(formData.price_mode, item.tax_mode).tax_mode,
             taxable_value: c.taxableValue,
             tax_amount: c.taxAmount,
             cgst_amount: c.cgstAmount,
@@ -1607,7 +1554,7 @@ export default function NewPurchasePage() {
           discount_amount: v > 0 ? 0 : (pItem.discount_amount ?? 0),
           discount_on_tax_inclusive: v > 0 ? false : pItem.discount_on_tax_inclusive,
         };
-        if (next.invoice_inclusive_line_total != null) next = applyInvoiceAnchorDeriveUnitPrice(next);
+        if (next.invoice_inclusive_line_total != null) delete next.invoice_inclusive_line_total;
         return next;
       })
     );
@@ -1624,7 +1571,7 @@ export default function NewPurchasePage() {
           discount_percent: v > 0 ? 0 : pItem.discount_percent,
           discount_on_tax_inclusive: v > 0 ? (pItem.discount_on_tax_inclusive ?? false) : false,
         };
-        if (next.invoice_inclusive_line_total != null) next = applyInvoiceAnchorDeriveUnitPrice(next);
+        if (next.invoice_inclusive_line_total != null) delete next.invoice_inclusive_line_total;
         return next;
       })
     );
@@ -2265,6 +2212,12 @@ export default function NewPurchasePage() {
           </details>
         </section>
 
+        {formData.price_mode === 'unknown' && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-950" role="alert">
+            This bill does not show whether the item amounts include GST. Choose Before GST or GST inclusive before finalizing. A draft can still be saved.
+          </div>
+        )}
+
         <section id="purchase-items-card" className="scroll-mt-4 overflow-hidden rounded-2xl border border-border bg-surface">
           <div className="flex flex-wrap items-center gap-3 px-6 pt-5">
             <h2 className="text-base font-semibold text-text-primary">Items</h2>
@@ -2365,6 +2318,12 @@ export default function NewPurchasePage() {
                                 warehouseId={selectedWarehouseId || undefined}
                               />
                             </div>
+                            {item.printed_line_total != null && (
+                              <p className="mt-1 text-[11px] text-text-secondary">
+                                Printed ₹{Number(item.printed_line_total).toFixed(2)}
+                                {item.printed_rate != null ? ` at ₹${Number(item.printed_rate).toFixed(2)}` : ''}
+                              </p>
+                            )}
                             {isUnlinked && (
                               <span
                                 className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"

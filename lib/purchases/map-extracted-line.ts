@@ -18,6 +18,8 @@ export type LineMappingRule =
   | 'exclusive_rate'
   | 'exclusive_from_taxable'
   | 'inclusive_rate'
+  | 'document_inclusive'
+  | 'price_basis_unknown'
   | 'marketplace_mrp'
   | 'zero_gst'
   | 'exchange';
@@ -27,6 +29,7 @@ export type LineValidationStatus = 'ok' | 'discrepancy' | 'incomplete';
 export type LineDiscrepancyCode =
   | 'LINE_TOTAL_EQUALS_TAXABLE'
   | 'LINE_TOTAL_VS_COMPUTED'
+  | 'PRICE_BASIS_UNKNOWN'
   | 'QTY_MISSING'
   | 'RATE_MISSING'
   | 'INCOMPLETE';
@@ -59,11 +62,20 @@ export interface MappedPurchaseExtractLine {
 
 export interface MapExtractedLineContext {
   headerPriceMode: InvoicePriceMode | null;
+  /**
+   * Document classification. Omit it for direct callers that already pass an explicit
+   * header mode; null and 'unknown' must not be treated as exclusive.
+   */
+  priceBasis?: InvoicePriceMode | 'unknown' | null;
 }
 
 function finiteNum(n: unknown): number | null {
   if (typeof n === 'number' && Number.isFinite(n)) return n;
   return null;
+}
+
+function finitePrinted(n: unknown): number | null {
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
 /** Relative/absolute nearness used for printed-column identities (same order as old derive tol). */
@@ -128,10 +140,24 @@ export function mapExtractedLineToPurchaseLine(
   ctx: MapExtractedLineContext,
 ): MappedPurchaseExtractLine {
   const codes: LineDiscrepancyCode[] = [];
-  const headerMode = ctx.headerPriceMode ?? 'exclusive';
+  const documentBasis =
+    ctx.priceBasis === 'inclusive' || ctx.priceBasis === 'exclusive' || ctx.priceBasis === 'unknown'
+      ? ctx.priceBasis
+      : null;
+  const headerMode =
+    documentBasis === 'unknown'
+      ? null
+      : documentBasis === 'inclusive' || documentBasis === 'exclusive'
+        ? documentBasis
+        : (ctx.headerPriceMode ?? 'exclusive');
   const printedRate = finiteNum(item.rate);
   const printedTaxable = finiteNum(item.taxable_value);
   const printedLineTotal = finiteNum(item.line_total);
+  const sourceRate = item.source_rate !== undefined ? finiteNum(item.source_rate) : printedRate;
+  const sourceTaxable =
+    item.source_taxable_value !== undefined ? finiteNum(item.source_taxable_value) : printedTaxable;
+  const sourceLineTotal =
+    item.source_line_total !== undefined ? finiteNum(item.source_line_total) : printedLineTotal;
   const printedGst = finiteNum(item.gst_rate);
   const printedTaxMode: InvoicePriceMode | null =
     item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive' ? item.tax_mode : null;
@@ -168,9 +194,9 @@ export function mapExtractedLineToPurchaseLine(
     cgst_amount: item.cgst_amount,
     sgst_amount: item.sgst_amount,
     igst_amount: item.igst_amount,
-    printed_rate: printedRate,
-    printed_taxable: printedTaxable,
-    printed_line_total: printedLineTotal,
+    printed_rate: sourceRate,
+    printed_taxable: sourceTaxable,
+    printed_line_total: sourceLineTotal,
     printed_gst_rate: printedGst,
     printed_tax_mode: printedTaxMode,
   });
@@ -273,11 +299,45 @@ export function mapExtractedLineToPurchaseLine(
     }
     const computed = unit_price * quantity - discountAmount;
     const amount = lineTotal !== 0 ? lineTotal : computed;
+    const zeroTaxMode =
+      documentBasis === 'unknown'
+        ? printedTaxMode
+        : documentBasis === 'inclusive'
+          ? 'inclusive'
+          : (printedTaxMode ?? 'exclusive');
     return finish({
       unit_price,
       amount,
       mapping_rule,
-      tax_mode: printedTaxMode ?? 'exclusive',
+      tax_mode: zeroTaxMode,
+      discount_amount: discountAmount,
+    });
+  }
+
+  if (documentBasis === 'inclusive') {
+    if (rate <= 0) pushCode(codes, 'RATE_MISSING');
+    const charge = sourceLineTotal != null && sourceLineTotal > 0 ? sourceLineTotal : lineTotal;
+    const unit_price = rate > 0 ? rate : charge > 0 ? charge / quantity : 0;
+    const amount = charge > 0 ? charge : unit_price * quantity;
+    return finish({
+      unit_price,
+      amount,
+      mapping_rule: 'document_inclusive',
+      tax_mode: 'inclusive',
+      discount_amount: discountAmount,
+    });
+  }
+
+  if (documentBasis === 'unknown') {
+    if (rate <= 0) pushCode(codes, 'RATE_MISSING');
+    pushCode(codes, 'PRICE_BASIS_UNKNOWN');
+    const unit_price = rate > 0 ? rate : lineTotal > 0 ? lineTotal / quantity : 0;
+    const amount = lineTotal > 0 ? lineTotal : unit_price * quantity;
+    return finish({
+      unit_price,
+      amount,
+      mapping_rule: 'price_basis_unknown',
+      tax_mode: null,
       discount_amount: discountAmount,
     });
   }
@@ -437,19 +497,30 @@ export function resolvePurchaseFormLineFromExtractItem(
   unitPrice: number;
   taxMode: InvoicePriceMode | undefined;
   invoiceInclusiveLineTotal: number | undefined;
+  printedRate: number | null;
+  printedLineTotal: number | null;
 } {
   const qty = ctx.quantity;
   const tr = ctx.taxRate;
   const amt = ctx.amount;
   const itemTaxMode =
     item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive' ? item.tax_mode : undefined;
+  const printedRate = finitePrinted(item.printed_rate);
+  const printedLineTotal = finitePrinted(item.printed_line_total);
 
   if (extractionLineHasProvenance(item)) {
     return {
       unitPrice: ctx.unitPrice,
       taxMode: itemTaxMode,
       invoiceInclusiveLineTotal:
-        item.validation_status === 'ok' && amt !== 0 && Number.isFinite(amt) ? round2(amt) : undefined,
+        itemTaxMode != null &&
+        item.validation_status === 'ok' &&
+        amt !== 0 &&
+        Number.isFinite(amt)
+          ? round2(amt)
+          : undefined,
+      printedRate,
+      printedLineTotal,
     };
   }
 
@@ -487,5 +558,7 @@ export function resolvePurchaseFormLineFromExtractItem(
     unitPrice,
     taxMode,
     invoiceInclusiveLineTotal: amt !== 0 && Number.isFinite(amt) ? round2(amt) : undefined,
+    printedRate,
+    printedLineTotal,
   };
 }

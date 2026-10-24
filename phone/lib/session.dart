@@ -52,6 +52,13 @@ class AppSession {
     return perms['can_view'] == true || perms['can_read'] == true;
   }
 
+  /// `canModify(module) || isPrimaryAdmin` from `usePermissions` (`can_modify`).
+  bool canModify(String module) {
+    if (isPrimaryAdmin) return true;
+    final perms = _map(_map(raw['permissions'])[module]);
+    return perms['can_modify'] == true || perms['can_update'] == true;
+  }
+
   /// `canDelete(module) || isPrimaryAdmin` from `usePermissions`.
   bool canDelete(String module) {
     if (isPrimaryAdmin) return true;

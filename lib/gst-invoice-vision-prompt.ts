@@ -26,7 +26,8 @@ Output ONLY one JSON object. No markdown fences, no prose — raw JSON only.
   "invoice_date": "string|null — YYYY-MM-DD. India: DD/MM/YYYY or DD-Mon-YYYY; first number is DAY.",
   "place_of_supply": "string|null — state name or code if printed (Place of supply, POS).",
   "tax_type": "string|null — exactly 'igst' OR 'cgst_sgst' based on printed tax columns and supplier vs buyer state codes (first 2 digits of GSTIN). Use 'igst' only when invoice shows IGST amounts / IGST columns or supplier state ≠ buyer state and invoice is inter-state style.",
-  "price_mode": "string|null — exactly 'exclusive' OR 'inclusive'. See DETECTION RULES below.",
+  "price_mode": "string|null — 'exclusive', 'inclusive', or 'unknown'. See DETECTION RULES. Use 'unknown' when the document does not show which column is taxable and which is the amount charged. Never guess exclusive.",
+  "price_evidence": "string|null — one short sentence naming the columns or footer figures you used. Not a reasoning trace.",
   "subtotal": "number|null — total taxable value before GST (sum of taxable columns or footer). NOT the same as grand total on inclusive retail bills unless clearly labeled.",
   "total_cgst": "number|null",
   "total_sgst": "number|null",
@@ -39,15 +40,16 @@ Output ONLY one JSON object. No markdown fences, no prose — raw JSON only.
       "hsn_code": "string|null — digits only where possible",
       "qty": "number|null — default 1",
       "unit": "string|null — NOS, PCS, KGS, etc.",
-      "rate": "number|null — printed unit rate (often MRP / list rate; may be tax-inclusive on retail bills — set tax_mode and price_mode accordingly)",
-      "discount_amount": "number|null — absolute rupees; 0 or null if none",
+      "rate": "number|null — the unit rate PRINTED on that row. null if the row has no unit rate. Do not derive it.",
+      "column_role": "string|null — what the row's money column is: 'item_value' (the amount column, which may already include GST), 'taxable_value', 'mrp', 'final_amount', or 'unknown'. null if there is no column heading.",
+      "discount_amount": "number|null — absolute rupees only when a discount is printed; otherwise null. Do not invent a discount to make a line match the total.",
       "gst_rate": "number|null — TOTAL GST % only (e.g. 0, 5, 12, 18, 28). If the bill shows CGST% and SGST%, ADD them (2.5+2.5=5, 9+9=18). Never use one half-rate. Never use total_tax/subtotal blended %.",
-      "tax_mode": "string|null — 'exclusive' or 'inclusive' for THIS line when you can infer from columns (null if unknown)",
-      "taxable_value": "number|null — line taxable if printed; else null (do not invent)",
-      "cgst_amount": "number|null",
-      "sgst_amount": "number|null",
-      "igst_amount": "number|null",
-      "line_total": "number|null — line total including tax for taxed lines; may be negative for exchange rows",
+      "tax_mode": "string|null — 'exclusive', 'inclusive', or 'unknown' for THIS line. 'unknown' when this line's price basis is not shown. Do not copy the document guess onto every line when the line itself is unclear.",
+      "taxable_value": "number|null — the taxable amount only when that column or figure is printed. null if it is not printed. Do not back-calculate it.",
+      "cgst_amount": "number|null — printed rupees only, else null",
+      "sgst_amount": "number|null — printed rupees only, else null",
+      "igst_amount": "number|null — printed rupees only, else null",
+      "line_total": "number|null — the amount printed for that item row (the value column). null if it is not printed. Do not add GST to it and do not replace it with a calculated figure.",
       "discount_on_tax_inclusive": "boolean|null — true when discount column applies to tax-inclusive gross (common Flipkart/Amazon MRP column with 18% included). false or null otherwise."
     }
   ],
@@ -69,10 +71,16 @@ When the document shows **one** combined tax label (Sales Tax, VAT, State tax, U
 - If your JSON includes a **TOTAL** before discount vs **DISCOUNT % / amount**, then **TAXABLE AMOUNT** (often labeled Taxable Amount / Amount before GST), always set **subtotal** to taxable **before GST** — not the gross line sum when they differ — and populate **total_cgst** / **total_sgst** / **total_igst** from footer rupees when printed even if SGST rate ≠ CGST rate on sloppy templates.
 
 ## DETECTION: price_mode
-- exclusive: Printed subtotal (taxable) + total_cgst + total_sgst + total_igst + round_off ≈ grand_total (within small rounding).
-- inclusive: Line rates or amounts clearly include GST; full tax appears mainly in footer breakup; line totals sum with round_off ≈ grand_total while taxable subtotal + header tax ≠ grand_total in exclusive sense.
+Decide from the item column and the column headings, not from the footer identity alone.
 
-Set price_mode to match the document; use null only if impossible.
+- exclusive: The item amount column is the taxable value. A separate GST amount is added, and item-column sum + GST + round_off ≈ grand_total. Column headings such as Taxable Value, Assessable Value, or "Rate + GST" support this.
+- inclusive: The item amount column is what the customer pays. GST is already inside that amount. The item-column sum ≈ grand_total, while the GST table's taxable total is lower. A retail Value / Amount / N/Rate column under a slab heading is often this case.
+- unknown: You cannot tell which of those two the item column is. A GST footer where taxable + CGST + SGST = grand_total is true of BOTH kinds of invoice. That identity alone is not exclusive and is not inclusive.
+
+Set price_mode to 'unknown' rather than guessing. null is allowed only when the document has no prices at all.
+
+## DO NOT INVENT
+If a unit rate, discount, HSN, GST rupee amount, taxable value, or line amount is not printed, return null for that field. Do not create a discount, a taxable value, or a gross-up to force the lines to match the footer. A missing total is missing. It is not zero and it is not a match.
 
 ## DETECTION: tax_type
 - If supplier_gstin state code (first 2 digits) ≠ buyer_gstin state code and invoice shows IGST → tax_type 'igst'.
@@ -113,6 +121,7 @@ Many bills **do not** print GST % on each product line. Instead they print **ban
 3. Each **product row** (item code, name, qty, rate, line total) that appears **after** that header and **before** the next tax header gets \`gst_rate: current_gst_rate\`. Do **not** copy one product's slab from another section; do **not** infer line gst_rate only from HSN when the section header is visible.
 4. If a product row has its **own** printed tax % or tax columns, that row **wins** over \`current_gst_rate\` for that row only.
 5. If there are **no** section headers **and** no per-line tax, set \`gst_rate: null\` for that line (do not guess from footer alone).
+6. A band heading such as \`3) CGST @ 9.00%, SGST @ 9.00%\` is a label, not a purchased product. Do **not** emit it as an \`items[]\` row. Emit only rows that name a product and have a quantity or an amount.
 
 Other tools often implement this as a **state machine** over OCR lines; you must do the same in your reasoning over the image/text.
 

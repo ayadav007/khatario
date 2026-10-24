@@ -490,7 +490,7 @@ void main() {
     await tester.tap(find.text('BIRYANI RICE'));
     await _settle(tester);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/67-item-detail.png'));
-    expect(find.byIcon(LucideIcons.pencil), findsNothing);
+    expect(find.byIcon(LucideIcons.pencil), findsOneWidget);
     tester.view.physicalSize = const Size(390, 900);
     await tester.pumpAndSettle();
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/68-item-detail-full.png'));

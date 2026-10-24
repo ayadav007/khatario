@@ -11,6 +11,7 @@ import '../../ui/kit.dart';
 import '../../ui/web_ui.dart';
 import '../invoices/invoice_detail_screen.dart';
 import 'adjust_stock_sheet.dart';
+import 'item_form_screen.dart';
 import 'items_screen.dart';
 
 /// `formatINR` in `ItemDetailPanel.tsx`.
@@ -53,6 +54,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   bool _txLoading = false;
   List<Map<String, dynamic>>? _history;
   bool _historyLoading = false;
+  bool _changed = false;
 
   KhatarioApi get _api => widget.session.api;
 
@@ -141,6 +143,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     );
   }
 
+  Future<void> _edit() async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => ItemFormScreen(session: widget.session, itemId: widget.itemId),
+    ));
+    if (saved != true || !mounted) return;
+    _changed = true;
+    await _fetchItem();
+  }
+
   Future<void> _adjustStock(Map<String, dynamic> item) async {
     if (_truthy(item['has_variants']) || _truthy(item['is_bundle'])) {
       widget.onOpen('New inventory adjustment');
@@ -157,7 +168,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   Widget _panel() {
     final item = _item;
     if (_loading || item == null) {
-      return DetailPanelPlaceholder(loading: _loading, notFoundText: 'Item not found', onClose: () => Navigator.of(context).pop());
+      return DetailPanelPlaceholder(loading: _loading, notFoundText: 'Item not found', onClose: () => Navigator.of(context).pop(_changed));
     }
     final isService = item['item_type'] == 'service';
     final code = item['code']?.toString() ?? '';
@@ -186,7 +197,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       ],
       activeTab: _tab,
       onTabChange: _selectTab,
-      onClose: () => Navigator.of(context).pop(),
+      onClose: () => Navigator.of(context).pop(_changed),
+      actions: [
+        if (widget.session.canModify('items'))
+          Tooltip(message: 'Edit', child: KIconButton(icon: LucideIcons.pencil, tooltip: 'Edit', onTap: _edit)),
+      ],
       moreActions: [
         DetailMoreAction(label: 'Open full page', icon: LucideIcons.externalLink, onTap: () => widget.onOpen('The full item page')),
         DetailMoreAction(label: 'Print barcode labels', icon: LucideIcons.printer, onTap: () => printItemLabels(context, widget.session, widget.itemId)),

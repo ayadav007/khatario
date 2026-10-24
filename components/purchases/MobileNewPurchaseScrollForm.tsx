@@ -32,7 +32,7 @@ export interface PurchaseFormState {
   round_off: number;
   supplier_gstin: string;
   supplier_state_code: string;
-  price_mode: 'exclusive' | 'inclusive';
+  price_mode: 'exclusive' | 'inclusive' | 'unknown';
 }
 
 export interface PurchaseMobileLine {
@@ -279,7 +279,12 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
           : `${Math.abs(dueIn)} day(s) overdue`;
   const placeCode = props.formData.place_of_supply_state_code || props.businessStateCode || '';
   const placeName = getStateName(placeCode) || 'Place of supply not set';
-  const priceLabel = props.formData.price_mode === 'inclusive' ? 'Inclusive' : 'Exclusive';
+  const priceLabel =
+    props.formData.price_mode === 'inclusive'
+      ? 'Inclusive'
+      : props.formData.price_mode === 'exclusive'
+        ? 'Exclusive'
+        : 'GST not shown on the bill';
   const docLabel = DOCUMENT_LABELS[props.formData.document_type] || 'Tax invoice';
 
   const fillPanel = props.invoiceFillTracePanel ? (
@@ -437,13 +442,18 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               id="mpricemode"
               className={`${SEL_CLASS_DENSE} cursor-pointer`}
               value={props.formData.price_mode}
-              onChange={(e) =>
+              onChange={(e) => {
+                const mode = e.target.value;
+                if (mode !== 'inclusive' && mode !== 'exclusive') return;
                 props.setFormData({
                   ...props.formData,
-                  price_mode: e.target.value === 'inclusive' ? 'inclusive' : 'exclusive',
-                })
-              }
+                  price_mode: mode,
+                });
+              }}
             >
+              {props.formData.price_mode === 'unknown' && (
+                <option value="unknown">Choose whether GST is included</option>
+              )}
               <option value="exclusive">Exclusive (rate before GST)</option>
               <option value="inclusive">Inclusive (rate includes GST)</option>
             </select>

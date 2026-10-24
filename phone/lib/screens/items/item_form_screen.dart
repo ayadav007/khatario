@@ -7,11 +7,19 @@ import '../../theme.dart';
 import '../../ui/kit.dart';
 import 'item_form_logic.dart';
 
-/// Plain create form for `app/(app)/items/new/page.tsx` (goods and services, no variants).
+bool _set(dynamic v) => v != null && v != false && v != 0 && v != '';
+
+/// Create and edit form for the fields on `app/(app)/items/new/page.tsx` that the phone collects.
+/// Variants, bundles, images and opening stock stay as they are when [itemId] is set.
 class ItemFormScreen extends StatefulWidget {
-  const ItemFormScreen({super.key, required this.session});
+  const ItemFormScreen({super.key, required this.session, this.itemId});
 
   final AppSession session;
+
+  /// Null creates an item. Set to edit.
+  final String? itemId;
+
+  bool get editing => itemId != null;
 
   @override
   State<ItemFormScreen> createState() => _ItemFormScreenState();
@@ -32,11 +40,52 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   bool _store = false;
   bool _featured = false;
   bool _saving = false;
+  bool _loading = false;
+  bool _missing = false;
+  bool _complex = false;
+  Map<String, dynamic>? _existing;
 
   @override
   void initState() {
     super.initState();
-    _loadDefaults();
+    if (widget.editing) {
+      _loading = true;
+      _loadItem();
+    } else {
+      _loadDefaults();
+    }
+  }
+
+  Future<void> _loadItem() async {
+    try {
+      final data = await widget.session.api.getJson('/api/items/${widget.itemId}');
+      final item = data['item'];
+      if (item is! Map) {
+        _missing = true;
+        return;
+      }
+      final row = Map<String, dynamic>.from(item);
+      _existing = row;
+      _name.text = row['name']?.toString() ?? '';
+      _code.text = row['code']?.toString() ?? '';
+      _selling.text = itemFieldText(row['selling_price']);
+      _purchase.text = itemFieldText(row['purchase_price']);
+      _tax.text = itemFieldText(row['tax_rate']);
+      _hsn.text = row['hsn_sac']?.toString() ?? '';
+      _min.text = itemFieldText(row['min_stock']);
+      _description.text = row['description']?.toString() ?? '';
+      _type = row['item_type'] == 'service' ? 'service' : 'goods';
+      final unit = row['unit']?.toString() ?? '';
+      _unit = unit.isEmpty ? 'PCS' : unit;
+      _store = row['show_in_store'] == true;
+      _featured = row['featured_in_store'] == true;
+      _complex = _set(row['has_variants']) || _set(row['is_bundle']);
+      _more = _code.text.isNotEmpty || _purchase.text.isNotEmpty || _hsn.text.isNotEmpty || _description.text.isNotEmpty || _store || _featured;
+    } catch (_) {
+      _missing = true;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   /// Settings › Items & stock › Low-stock alert at: filled in until the user types their own.
@@ -64,7 +113,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
     }
     setState(() => _saving = true);
     try {
-      await widget.session.api.postJson('/api/items', itemCreateBody(
+      final fields = (
         name: _name.text,
         code: _code.text,
         itemType: _type,
@@ -73,12 +122,46 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
         purchasePrice: _purchase.text,
         taxRate: _tax.text,
         hsn: _hsn.text,
-        openingStock: _opening.text,
         minStock: _min.text,
         description: _description.text,
         showInStore: _store,
         featuredInStore: _featured,
-      ));
+      );
+      if (widget.editing) {
+        final existing = _existing;
+        if (existing == null) return;
+        await widget.session.api.patchJson('/api/items/${widget.itemId}', itemUpdateBody(
+          existing: existing,
+          name: fields.name,
+          code: fields.code,
+          itemType: fields.itemType,
+          unit: fields.unit,
+          sellingPrice: fields.sellingPrice,
+          purchasePrice: fields.purchasePrice,
+          taxRate: fields.taxRate,
+          hsn: fields.hsn,
+          minStock: fields.minStock,
+          description: fields.description,
+          showInStore: fields.showInStore,
+          featuredInStore: fields.featuredInStore,
+        ));
+      } else {
+        await widget.session.api.postJson('/api/items', itemCreateBody(
+          name: fields.name,
+          code: fields.code,
+          itemType: fields.itemType,
+          unit: fields.unit,
+          sellingPrice: fields.sellingPrice,
+          purchasePrice: fields.purchasePrice,
+          taxRate: fields.taxRate,
+          hsn: fields.hsn,
+          openingStock: _opening.text,
+          minStock: fields.minStock,
+          description: fields.description,
+          showInStore: fields.showInStore,
+          featuredInStore: fields.featuredInStore,
+        ));
+      }
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -116,6 +199,9 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   Widget build(BuildContext context) {
     const units = [('PCS', 'PCS'), ('KG', 'KG'), ('LTR', 'LTR'), ('MTR', 'MTR'), ('BOX', 'BOX')];
     const rates = [('0', '0%'), ('5', '5%'), ('12', '12%'), ('18', '18%'), ('28', '28%')];
+    final unitOptions = units.any((u) => u.$1 == _unit) ? units : [(_unit, _unit), ...units];
+    final taxValue = _tax.text.isEmpty ? '0' : _tax.text;
+    final rateOptions = rates.any((r) => r.$1 == taxValue) ? rates : [(taxValue, '$taxValue%'), ...rates];
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -128,13 +214,22 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                 const SizedBox(width: 4),
                 KIconButton(icon: LucideIcons.x, tooltip: 'Close', onTap: () => Navigator.pop(context)),
                 const SizedBox(width: 4),
-                Expanded(child: Text('New item', style: AppText.heading.copyWith(fontSize: 18))),
+                Expanded(child: Text(widget.editing ? 'Edit item' : 'New item', style: AppText.heading.copyWith(fontSize: 18))),
               ]),
             ),
             Expanded(
-              child: ListView(
+              child: _loading
+                  ? const KSpinner()
+                  : _missing
+                      ? KEmptyState(icon: LucideIcons.package, title: 'Item not found', action: KButton.secondary(label: 'Close', expand: false, onPressed: () => Navigator.pop(context)))
+                      : ListView(
                 padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.xl),
                 children: [
+                  if (_complex)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpace.md),
+                      child: Text('Variants and the bundle list stay as they are. Change quantity on hand with Adjust stock.', style: AppText.body.copyWith(color: AppColors.ink3)),
+                    ),
                   KSegmented<String>(
                     value: _type,
                     options: const [('goods', 'Goods'), ('service', 'Service')],
@@ -153,22 +248,26 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                         Text('GST rate', style: AppText.label),
                         const SizedBox(height: AppSpace.sm),
                         KChipBar<String>(
-                          value: _tax.text.isEmpty ? '0' : _tax.text,
+                          value: taxValue,
                           padding: EdgeInsets.zero,
-                          options: rates,
+                          options: rateOptions,
                           onChanged: (v) => setState(() => _tax.text = v),
                         ),
                         const SizedBox(height: AppSpace.md),
                         Text('Unit', style: AppText.label),
                         const SizedBox(height: AppSpace.sm),
-                        KChipBar<String>(value: _unit, padding: EdgeInsets.zero, options: units, onChanged: (v) => setState(() => _unit = v)),
-                        if (_type == 'goods') ...[
+                        KChipBar<String>(value: _unit, padding: EdgeInsets.zero, options: unitOptions, onChanged: (v) => setState(() => _unit = v)),
+                        if (_type == 'goods' && !widget.editing) ...[
                           const SizedBox(height: AppSpace.md),
                           Row(children: [
                             Expanded(child: _f(_opening, 'Opening stock', number: true)),
                             const SizedBox(width: AppSpace.md),
                             Expanded(child: _f(_min, 'Low stock alert', number: true)),
                           ]),
+                        ],
+                        if (_type == 'goods' && widget.editing) ...[
+                          const SizedBox(height: AppSpace.md),
+                          _f(_min, 'Low stock alert', number: true),
                         ],
                       ],
                     ),
@@ -221,7 +320,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
               ),
             ),
             KBottomBar(children: [
-              Expanded(child: KButton(label: 'Save item', icon: LucideIcons.check, loading: _saving, onPressed: _save)),
+              Expanded(child: KButton(label: widget.editing ? 'Save changes' : 'Save item', icon: LucideIcons.check, loading: _saving, onPressed: _loading || _missing ? null : _save)),
             ]),
           ],
         ),

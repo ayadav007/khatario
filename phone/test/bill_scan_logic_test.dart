@@ -74,6 +74,79 @@ void main() {
     expect(line.inclusiveTotal, isNull);
   });
 
+  test('inclusive scan lines keep the printed amount and split GST inside it', () {
+    final lines = scannedPurchaseLines([
+      {'item_name': 'Active PO - 1KG', 'quantity': 1, 'unit_price': 80, 'tax_rate': 18, 'tax_mode': 'inclusive', 'amount': 80, 'printed_rate': 80, 'printed_line_total': 80, 'mapping_rule': 'document_inclusive', 'validation_status': 'ok'},
+      {'item_name': 'Reflect', 'quantity': 1, 'unit_price': 82, 'tax_rate': 18, 'tax_mode': 'inclusive', 'amount': 82, 'printed_rate': 82, 'printed_line_total': 82, 'mapping_rule': 'document_inclusive', 'validation_status': 'ok'},
+      {'item_name': 'Dettol', 'quantity': 1, 'unit_price': 155, 'tax_rate': 5, 'tax_mode': 'inclusive', 'amount': 155, 'printed_rate': 155, 'printed_line_total': 155, 'mapping_rule': 'document_inclusive', 'validation_status': 'ok'},
+    ]);
+    expect(lines.map((line) => line.printedLineTotal), [80, 82, 155]);
+    expect(lines.every((line) => line.taxMode == 'inclusive'), isTrue);
+    final active = purchaseScannedLineGst(quantity: 1, unitPrice: 80, discountPercent: 0, taxRate: 18, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive');
+    final reflect = purchaseScannedLineGst(quantity: 1, unitPrice: 82, discountPercent: 0, taxRate: 18, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive');
+    final dettol = purchaseScannedLineGst(quantity: 1, unitPrice: 155, discountPercent: 0, taxRate: 5, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive');
+    expect(active.total, 80);
+    expect(active.taxable, 67.8);
+    expect(active.tax, 12.2);
+    expect(reflect.total, 82);
+    expect(reflect.taxable, 69.49);
+    expect(reflect.tax, 12.51);
+    expect(dettol.total, 155);
+    expect(dettol.taxable, 147.62);
+    expect(dettol.tax, 7.38);
+  });
+
+  test('exclusive scan adds GST on top of the printed taxable price', () {
+    final line = scannedLine({
+      'item_name': 'Active PO - 1KG',
+      'quantity': 1,
+      'unit_price': 80,
+      'tax_rate': 18,
+      'tax_mode': 'exclusive',
+      'amount': 94.4,
+      'printed_rate': 80,
+      'printed_line_total': 80,
+      'mapping_rule': 'exclusive_rate',
+      'validation_status': 'discrepancy',
+    });
+    expect(line.printedLineTotal, 80);
+    expect(line.inclusiveTotal, isNull);
+    final gst = purchaseScannedLineGst(quantity: line.quantity, unitPrice: line.unitPrice, discountPercent: 0, taxRate: line.taxRate, intraState: true, lineMode: line.taxMode, headerMode: 'exclusive');
+    expect(gst.taxable, 80);
+    expect(gst.tax, 14.4);
+    expect(gst.total, 94.4);
+  });
+
+  test('unknown price basis is not exclusive and cannot be finalized', () {
+    expect(purchasePriceModeFromScan(null), 'unknown');
+    expect(purchaseCanFinalize('unknown'), isFalse);
+    expect(purchaseSavePriceMode('unknown'), isNull);
+    expect(purchaseSaveTaxMode(null, 'unknown'), isNull);
+    final line = scannedLine({
+      'item_name': 'Active PO - 1KG',
+      'quantity': 1,
+      'unit_price': 80,
+      'tax_rate': 18,
+      'amount': 80,
+      'printed_rate': 80,
+      'printed_line_total': 80,
+      'mapping_rule': 'price_basis_unknown',
+      'validation_status': 'discrepancy',
+    });
+    expect(line.taxMode, isNull);
+    expect(line.inclusiveTotal, isNull);
+    expect(line.printedLineTotal, 80);
+    final gst = purchaseScannedLineGst(quantity: 1, unitPrice: 80, discountPercent: 0, taxRate: 18, intraState: true, lineMode: null, headerMode: 'unknown');
+    expect(gst.total, 80);
+    expect(gst.tax, 0);
+  });
+
+  test('editing quantity recalculates and leaves the printed amount', () {
+    final gst = purchaseScannedLineGst(quantity: 2, unitPrice: 80, discountPercent: 0, taxRate: 18, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive');
+    expect(gst.total, 160);
+    expect(gst.taxable, closeTo(135.59, 0.01));
+  });
+
   test('place of supply falls back to the GSTIN state', () {
     expect(scannedPlaceOfSupply({'place_of_supply': ''}, gstin: '27AAAAA0000A1Z5', stateCodeOf: (_) => ''), '27');
     expect(scannedPlaceOfSupply({'place_of_supply_state_code': '29'}, stateCodeOf: (_) => ''), '29');

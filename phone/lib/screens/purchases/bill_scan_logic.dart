@@ -2,6 +2,8 @@
 /// Each function names the TypeScript it mirrors so the two stay in step.
 library;
 
+import '../invoices/invoice_form_logic.dart';
+
 int _levenshtein(String a, String b) {
   if (a == b) return 0;
   if (a.isEmpty) return b.length;
@@ -193,6 +195,8 @@ typedef ScannedLine = ({
   double taxRate,
   String? taxMode,
   double? inclusiveTotal,
+  double? printedRate,
+  double? printedLineTotal,
 });
 
 ScannedLine scannedLine(Map entry) {
@@ -206,7 +210,8 @@ ScannedLine scannedLine(Map entry) {
   // `resolvePurchaseFormLineFromExtractItem`: new extracts carry provenance and keep the
   // mapper's exclusive unit price; the bill's line total is kept only when it checked out.
   final provenance = (entry['mapping_rule']?.toString() ?? '').isNotEmpty || _num(entry['printed_rate']) != null;
-  final keepTotal = amount != null && amount != 0 && (!provenance || entry['validation_status'] == 'ok');
+  final knownMode = mode == 'inclusive' || mode == 'exclusive';
+  final keepTotal = knownMode && amount != null && amount != 0 && (!provenance || entry['validation_status'] == 'ok');
   return (
     name: (entry['item_name'] ?? entry['name'] ?? entry['description'] ?? '').toString().trim(),
     hsn: entry['hsn_sac']?.toString().trim() ?? '',
@@ -217,9 +222,62 @@ ScannedLine scannedLine(Map entry) {
     discountAmount: discAmt,
     discountOnTaxInclusive: entry['discount_on_tax_inclusive'] == true,
     taxRate: _round(_num(entry['tax_rate']) ?? 0, 2),
-    taxMode: mode == 'inclusive' || mode == 'exclusive' ? mode : null,
-    inclusiveTotal: keepTotal ? _round(amount, 2) : null,
+    taxMode: knownMode ? mode : null,
+    inclusiveTotal: keepTotal ? _round(amount!, 2) : null,
+    printedRate: _num(entry['printed_rate']),
+    printedLineTotal: _num(entry['printed_line_total']),
   );
+}
+
+/// Scan document mode. Anything other than inclusive or exclusive stays unknown.
+String purchasePriceModeFromScan(Object? mode) {
+  if (mode == 'inclusive' || mode == 'exclusive') return mode as String;
+  return 'unknown';
+}
+
+bool purchaseCanFinalize(String priceMode) => priceMode == 'inclusive' || priceMode == 'exclusive';
+
+/// Null stays null. A known line mode wins; otherwise only a resolved header is used.
+String? purchaseSaveTaxMode(String? lineMode, String headerMode) {
+  if (lineMode == 'inclusive' || lineMode == 'exclusive') return lineMode;
+  if (headerMode == 'inclusive' || headerMode == 'exclusive') return headerMode;
+  return null;
+}
+
+String? purchaseSavePriceMode(String headerMode) => purchaseCanFinalize(headerMode) ? headerMode : null;
+
+/// GST for one purchase line. Unknown does not call the exclusive calculator.
+LineGst purchaseScannedLineGst({
+  required double quantity,
+  required double unitPrice,
+  required double discountPercent,
+  required double taxRate,
+  required bool intraState,
+  required String? lineMode,
+  required String headerMode,
+}) {
+  final mode = purchaseSaveTaxMode(lineMode, headerMode);
+  if (mode == null) {
+    final gross = invoiceRound2(quantity * unitPrice);
+    final discount = invoiceRound2((gross * discountPercent) / 100);
+    final total = invoiceRound2(gross - discount);
+    return LineGst(discount: discount, taxable: total, cgst: 0, sgst: 0, igst: 0, tax: 0, total: total);
+  }
+  return computeLineGst(
+    quantity: quantity,
+    unitPrice: unitPrice,
+    discountPercent: discountPercent,
+    taxRate: taxRate,
+    intraState: intraState,
+    pricesIncludeGst: mode == 'inclusive',
+  );
+}
+
+List<ScannedLine> scannedPurchaseLines(List<dynamic> extracted) {
+  return [
+    for (final entry in extracted)
+      if (entry is Map) scannedLine(Map<String, dynamic>.from(entry)),
+  ];
 }
 
 /// Place of supply the way the website fills it from a scan: the bill's state code, the

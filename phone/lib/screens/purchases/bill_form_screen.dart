@@ -52,6 +52,8 @@ class _BillLine {
   String unit = '';
   String? taxMode;
   double? inclusiveTotal;
+  double? printedRate;
+  double? printedLineTotal;
   bool discountOnTaxInclusive = false;
 
   String get label => item?['name']?.toString() ?? (name.isEmpty ? 'Item' : name);
@@ -266,8 +268,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         final docType = invoice['document_type']?.toString() ?? '';
         if (docType.isNotEmpty) _docType = docType;
         if (invoice['is_reverse_charge'] == true) _reverseCharge = true;
-        final mode = invoice['price_mode']?.toString();
-        if (mode == 'inclusive' || mode == 'exclusive') _priceMode = mode!;
+        _priceMode = purchasePriceModeFromScan(invoice['price_mode']);
         final roundOff = totals['round_off'];
         if (roundOff is num) {
           _scanRoundOff = invoiceRound2(roundOff.toDouble());
@@ -288,9 +289,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
           _lines
             ..clear()
             ..addAll([
-              for (final entry in extracted.whereType<Map>())
+              for (final scan in scannedPurchaseLines(extracted))
                 () {
-                  final scan = scannedLine(entry);
                   final line = _BillLine()
                     ..name = scan.name
                     ..hsn = scan.hsn
@@ -298,6 +298,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
                     ..taxRate = scan.taxRate
                     ..taxMode = scan.taxMode
                     ..inclusiveTotal = scan.inclusiveTotal
+                    ..printedRate = scan.printedRate
+                    ..printedLineTotal = scan.printedLineTotal
                     ..discountOnTaxInclusive = scan.discountOnTaxInclusive
                     ..item = matchScannedItem(_items, name: scan.name, hsn: scan.hsn);
                   line.qty.text = _plain(scan.quantity);
@@ -561,7 +563,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'discount_percent': widget.kind == BillKind.purchase && discountAmount > 0 ? 0 : (double.tryParse(line.discount.text) ?? 0),
         if (widget.kind == BillKind.purchase) ...{
           'discount_amount': discountAmount,
-          'tax_mode': line.taxMode ?? _priceMode,
+          'tax_mode': purchaseSaveTaxMode(line.taxMode, _priceMode),
           'discount_on_tax_inclusive': line.discountOnTaxInclusive,
           if (line.inclusiveTotal != null) 'invoice_inclusive_line_total': line.inclusiveTotal,
           'cess_amount': double.tryParse(line.cess.text) ?? 0,
@@ -591,6 +593,10 @@ class _BillFormScreenState extends State<BillFormScreen> {
       setState(() => _error = 'Add at least one item.');
       return;
     }
+    if (widget.kind == BillKind.purchase && purchaseStatus == 'final' && !purchaseCanFinalize(_priceMode)) {
+      setState(() => _error = 'Choose whether these prices include GST before finalizing. The bill did not show which one it is.');
+      return;
+    }
     if (widget.kind == BillKind.purchase && purchaseStatus == 'final' && _warehouses.isNotEmpty && _warehouseId == null) {
       setState(() => _error = 'Pick a receiving warehouse before finalizing. Stock is tracked per warehouse.');
       return;
@@ -607,7 +613,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
           'status': purchaseStatus,
           'paid_amount': num.tryParse(_paid.text) ?? 0,
           'document_type': _docType,
-          'price_mode': _priceMode,
+          'price_mode': purchaseSavePriceMode(_priceMode),
           'supplier_gstin': _gstin.text.trim(),
           'supplier_state_code': _supplierCode(),
           'port_code': _docType == 'bill_of_entry' ? _port.text.trim() : '',
@@ -760,13 +766,14 @@ class _BillFormScreenState extends State<BillFormScreen> {
     final amount = double.tryParse(line.discountAmount.text) ?? 0;
     final gross = qty * price;
     final percent = amount > 0 && gross > 0 ? (amount / gross) * 100 : (double.tryParse(line.discount.text) ?? 0);
-    return computeLineGst(
+    return purchaseScannedLineGst(
       quantity: qty,
       unitPrice: price,
       discountPercent: percent,
       taxRate: line.taxRate,
       intraState: intra,
-      pricesIncludeGst: (line.taxMode ?? _priceMode) == 'inclusive',
+      lineMode: line.taxMode,
+      headerMode: _priceMode,
     );
   }
 
@@ -796,6 +803,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
           final price = _supplier ? (item?['purchase_price'] ?? item?['selling_price']) : (item?['selling_price'] ?? item?['price']);
           line.price.text = price == null ? '' : price.toString();
           line.taxRate = double.tryParse(item?['tax_rate']?.toString() ?? '') ?? 0;
+          line.inclusiveTotal = null;
         });
       },
     );
@@ -989,6 +997,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         line.serials.text = serials.text;
         line.capitalGoods = capital;
         line.taxRate = rate;
+        line.inclusiveTotal = null;
       });
     }
     await showKSheet<void>(
@@ -1091,7 +1100,10 @@ class _BillFormScreenState extends State<BillFormScreen> {
       });
       return;
     }
-    setState(() => line.qty.text = next == next.roundToDouble() ? next.toStringAsFixed(0) : next.toString());
+    setState(() {
+      line.qty.text = next == next.roundToDouble() ? next.toStringAsFixed(0) : next.toString();
+      line.inclusiveTotal = null;
+    });
   }
 
   Future<void> _pickState({required String title, required String current, required ValueChanged<String> onPicked}) async {
@@ -1178,6 +1190,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
                       [('Link existing', _searchSupplier), ('Create supplier', _createScannedSupplier)],
                     ),
                   if (_scanGstinMissing && _gstin.text.trim().isEmpty) _scanNotice('GSTIN not found on the bill.', const []),
+                  if (_priceMode == 'unknown')
+                    _scanNotice('This bill does not show whether the amounts include GST. Choose that under Prices before finalizing. A draft can still be saved.', const []),
                   if (_warehouses.isNotEmpty) ...[
                     const SizedBox(height: 18),
                     Text('WAREHOUSE', style: AppText.overline),
@@ -1315,6 +1329,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
                     children: [
                       Text(line.label, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
                       if (line.item == null) Text('Not in your items', style: AppText.caption.copyWith(color: AppColors.warning)),
+                      if (line.printedLineTotal != null)
+                        Text('Printed ${_money(line.printedLineTotal!)}', style: AppText.caption),
                     ],
                   ),
                 ),
@@ -1435,7 +1451,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
           ),
           KListRow(
             title: 'Prices',
-            subtitle: _priceMode == 'inclusive' ? 'GST included in the rate' : 'GST extra',
+            subtitle: _priceMode == 'inclusive'
+                ? 'GST included in the rate'
+                : _priceMode == 'exclusive'
+                    ? 'GST extra'
+                    : 'Choose whether GST is included',
             onTap: () => showKPicker<String>(
               context,
               title: 'Prices',
@@ -1532,7 +1552,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
                 onChanged: (v) => setState(() => _priceMode = v),
               ),
               title: 'Prices',
-              subtitle: _priceMode == 'inclusive' ? 'GST included' : 'GST extra',
+              subtitle: _priceMode == 'inclusive'
+                  ? 'GST included'
+                  : _priceMode == 'exclusive'
+                      ? 'GST extra'
+                      : 'Choose whether GST is included',
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),

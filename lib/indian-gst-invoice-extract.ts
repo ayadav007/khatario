@@ -16,6 +16,8 @@ import {
   applyExclusiveSemanticsFromPrintedEvidence,
   extractHasPrintedTax,
   lineHasPrintedTax,
+  classifyPrintedPriceBasis,
+  isGstBandHeadingLine,
   matchesExclusivePosPattern,
   reconcilePriceModeFromEvidence,
 } from '@/lib/services/invoice-extract/priceModeReconciliationEngine';
@@ -24,6 +26,10 @@ import {
 
 export type InvoiceTaxType = 'igst' | 'cgst_sgst';
 export type InvoicePriceMode = 'exclusive' | 'inclusive';
+/** What the model reported. Missing and unknown stay distinct from exclusive. */
+export type StatedPriceMode = InvoicePriceMode | 'unknown';
+/** What a printed money column is, when the document says so. */
+export type PrintedColumnRole = 'item_value' | 'taxable_value' | 'mrp' | 'final_amount' | 'unknown';
 
 export interface GstSummarySlabRow {
   gst_rate: number;
@@ -51,6 +57,16 @@ export interface ExtractedInvoiceLine {
   line_total: number | null;
   /** When true, rupee discount applies to tax-inclusive line value (MRP-style). */
   discount_on_tax_inclusive?: boolean | null;
+  /** Printed unit rate, captured before repair rewrites `rate`. */
+  source_rate?: number | null;
+  /** Printed item-column / line amount, captured before repair rewrites `line_total`. */
+  source_line_total?: number | null;
+  /** Printed taxable value, captured before repair rewrites `taxable_value`. */
+  source_taxable_value?: number | null;
+  /** Model's per-line price statement. Null means the model omitted it. */
+  source_tax_mode?: StatedPriceMode | null;
+  /** Printed column meaning, when the model could see a heading. */
+  column_role?: PrintedColumnRole | null;
 }
 
 export interface IndianGstInvoiceExtract {
@@ -62,7 +78,18 @@ export interface IndianGstInvoiceExtract {
   place_of_supply: string | null;
   tax_type: InvoiceTaxType | null;
   price_mode: InvoicePriceMode | null;
+  /** Model's document price statement, kept after reconciliation overwrites `price_mode`. */
+  source_price_mode?: StatedPriceMode | null;
+  /** One short sentence of layout evidence. Not chain-of-thought. */
+  price_evidence?: string | null;
   subtotal: number | null;
+  /** Footer figures as printed, captured before line rollup replaces them. */
+  printed_subtotal?: number | null;
+  printed_total_cgst?: number | null;
+  printed_total_sgst?: number | null;
+  printed_total_igst?: number | null;
+  printed_grand_total?: number | null;
+  printed_gst_summary?: GstSummarySlabRow[];
   total_cgst: number | null;
   total_sgst: number | null;
   total_igst: number | null;
@@ -108,6 +135,10 @@ export interface PurchaseReviewExtractPayload {
     sgst: number | null;
     igst: number | null;
     gst_summary: GstSummarySlabRow[];
+    /** Printed footer figures. Null means the document did not print that total. */
+    printed_subtotal: number | null;
+    printed_grand_total: number | null;
+    source_price_mode: StatedPriceMode | null;
   };
 }
 
@@ -259,9 +290,17 @@ export function coerceRawInvoiceJson(raw: unknown): IndianGstInvoiceExtract {
   else if (tt === 'cgst_sgst' || tt === 'cgst+sgst' || tt === 'intrastate') tax_type = 'cgst_sgst';
 
   let price_mode: InvoicePriceMode | null = null;
+  let source_price_mode: StatedPriceMode | null = null;
   const pm = str(o.price_mode)?.toLowerCase();
-  if (pm === 'exclusive' || pm === 'excl') price_mode = 'exclusive';
-  else if (pm === 'inclusive' || pm === 'incl') price_mode = 'inclusive';
+  if (pm === 'exclusive' || pm === 'excl') {
+    price_mode = 'exclusive';
+    source_price_mode = 'exclusive';
+  } else if (pm === 'inclusive' || pm === 'incl') {
+    price_mode = 'inclusive';
+    source_price_mode = 'inclusive';
+  } else if (pm === 'unknown' || pm === 'ambiguous') {
+    source_price_mode = 'unknown';
+  }
 
   const subtotal =
     num(o.subtotal) ??
@@ -308,6 +347,17 @@ export function coerceRawInvoiceJson(raw: unknown): IndianGstInvoiceExtract {
     const tm = str(r.tax_mode)?.toLowerCase();
     const tax_mode: InvoicePriceMode | null =
       tm === 'inclusive' ? 'inclusive' : tm === 'exclusive' ? 'exclusive' : null;
+    const source_tax_mode: StatedPriceMode | null =
+      tax_mode ?? (tm === 'unknown' || tm === 'ambiguous' ? 'unknown' : null);
+    const columnRaw = str(r.column_role)?.toLowerCase();
+    const column_role: PrintedColumnRole | null =
+      columnRaw === 'item_value' ||
+      columnRaw === 'taxable_value' ||
+      columnRaw === 'mrp' ||
+      columnRaw === 'final_amount' ||
+      columnRaw === 'unknown'
+        ? columnRaw
+        : null;
     const gstNormLine =
       gst_rateRaw != null && Number.isFinite(gst_rateRaw) ? normalizePositiveGstPercent(gst_rateRaw) : 0;
     return {
@@ -324,6 +374,11 @@ export function coerceRawInvoiceJson(raw: unknown): IndianGstInvoiceExtract {
       sgst_amount: num(r.sgst_amount),
       igst_amount: num(r.igst_amount),
       line_total,
+      source_rate: rate,
+      source_line_total: line_total,
+      source_taxable_value: num(r.taxable_value),
+      source_tax_mode,
+      column_role,
       discount_on_tax_inclusive:
         typeof r.discount_on_tax_inclusive === 'boolean'
           ? r.discount_on_tax_inclusive
@@ -342,7 +397,15 @@ export function coerceRawInvoiceJson(raw: unknown): IndianGstInvoiceExtract {
     place_of_supply,
     tax_type,
     price_mode,
+    source_price_mode,
+    price_evidence: str(o.price_evidence)?.slice(0, 240) ?? null,
     subtotal,
+    printed_subtotal: subtotal,
+    printed_total_cgst: total_cgst,
+    printed_total_sgst: total_sgst,
+    printed_total_igst: total_igst,
+    printed_grand_total: grand_total,
+    printed_gst_summary: gst_summary.map((row) => ({ ...row })),
     total_cgst,
     total_sgst,
     total_igst,
@@ -668,24 +731,13 @@ export function detectTaxType(e: IndianGstInvoiceExtract): InvoiceTaxType {
   return e.tax_type === 'igst' ? 'igst' : 'cgst_sgst';
 }
 
-export function detectPriceMode(e: IndianGstInvoiceExtract): InvoicePriceMode {
+export function detectPriceMode(e: IndianGstInvoiceExtract): InvoicePriceMode | null {
   return reconcilePriceModeFromEvidence(e).priceMode;
 }
 
-function inferPriceModeFromTotals(e: IndianGstInvoiceExtract): InvoicePriceMode {
-  const sub = e.subtotal ?? 0;
-  const tax = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
-  const grand = e.grand_total ?? 0;
-  const ro = e.round_off ?? 0;
-  if (grand > 0 && sub > 0) {
-    const tol = Math.max(1.5, grand * 0.02);
-    const exclusiveFit = Math.abs(sub + tax + ro - grand);
-    if (exclusiveFit <= tol) return 'exclusive';
-
-    const lineSum = e.items.reduce((s, it) => s + (it.line_total ?? 0), 0);
-    if (Math.abs(lineSum + ro - grand) <= tol) return 'inclusive';
-  }
-  return 'exclusive';
+function inferPriceModeFromTotals(e: IndianGstInvoiceExtract): InvoicePriceMode | null {
+  const basis = classifyPrintedPriceBasis(e);
+  return basis === 'unknown' ? null : basis;
 }
 
 /** Clear wrong tax split; never keep both full IGST and full CGST+SGST unless numerically tied. */
@@ -914,12 +966,39 @@ function inferDiscountTaxInclusiveFromGrossWhenExclusive(it: ExtractedInvoiceLin
   return it;
 }
 
+/**
+ * Copy printed amounts once. Later repairs may change `line_total`, `rate`,
+ * `taxable_value`, `subtotal`, or `grand_total`; these source fields stay.
+ * A missing total is stored as null and is not treated as zero.
+ */
+export function capturePrintedEvidence(e: IndianGstInvoiceExtract): void {
+  if (e.printed_grand_total === undefined) e.printed_grand_total = e.grand_total ?? null;
+  if (e.printed_subtotal === undefined) e.printed_subtotal = e.subtotal ?? null;
+  if (e.printed_total_cgst === undefined) e.printed_total_cgst = e.total_cgst ?? null;
+  if (e.printed_total_sgst === undefined) e.printed_total_sgst = e.total_sgst ?? null;
+  if (e.printed_total_igst === undefined) e.printed_total_igst = e.total_igst ?? null;
+  if (e.printed_gst_summary === undefined) {
+    e.printed_gst_summary = (e.gst_summary ?? []).map((row) => ({ ...row }));
+  }
+  if (e.source_price_mode === undefined) e.source_price_mode = e.price_mode ?? null;
+  e.items = (e.items ?? []).map((it) => ({
+    ...it,
+    source_rate: it.source_rate !== undefined ? it.source_rate : (it.rate ?? null),
+    source_line_total: it.source_line_total !== undefined ? it.source_line_total : (it.line_total ?? null),
+    source_taxable_value:
+      it.source_taxable_value !== undefined ? it.source_taxable_value : (it.taxable_value ?? null),
+    source_tax_mode: it.source_tax_mode !== undefined ? it.source_tax_mode : (it.tax_mode ?? null),
+  }));
+}
+
 export function normalizeIndianGstInvoiceExtract(
   input: IndianGstInvoiceExtract
 ): IndianGstInvoiceExtract {
   const e: IndianGstInvoiceExtract = JSON.parse(JSON.stringify(input)) as IndianGstInvoiceExtract;
 
   e.invoice_date = parseDateToISO(e.invoice_date);
+  capturePrintedEvidence(e);
+  e.items = (e.items ?? []).filter((it) => !isGstBandHeadingLine(it));
 
   e.subtotal = num(e.subtotal);
   e.total_cgst = num(e.total_cgst);
@@ -1110,10 +1189,8 @@ export function normalizeIndianGstInvoiceExtract(
     }
   }
 
-  if (!e.grand_total && e.subtotal) {
-    const taxSum = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
-    e.grand_total = round2(e.subtotal + taxSum + (e.round_off ?? 0));
-  }
+  // A missing payable stays missing. Do not invent grand_total from subtotal + tax;
+  // that fabricated total would look like evidence that the item column matches.
 
   maybeAppendAdjustmentForGrandTotal(e);
   applyConsolidatedForeignTaxSplit(e);
@@ -1135,7 +1212,8 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
   if (!e.items?.length) return;
 
   const taxType = e.tax_type ?? detectTaxType(e);
-  const priceMode = e.price_mode ?? 'exclusive';
+  const priceMode =
+    e.price_mode === 'inclusive' || e.price_mode === 'exclusive' ? e.price_mode : null;
 
   type Acc = { taxable: number; cgst: number; sgst: number; igst: number };
   const buckets = new Map<number, Acc>();
@@ -1223,6 +1301,7 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
       const tvRaw = it.taxable_value;
       const derivedTaxable = round2(lt / (1 + r / 100));
       const tol = Math.max(0.05, Math.abs(lt) * 0.012);
+      let inventedTax: number | null = null;
       if (
         tvRaw != null &&
         Number.isFinite(tvRaw) &&
@@ -1237,10 +1316,13 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
         Math.abs((it.qty ?? 1) * (it.rate ?? 0) - lt) <= tol
       ) {
         taxable = round2(lt);
-      } else {
+      } else if (priceMode === 'inclusive') {
         taxable = derivedTaxable;
+      } else {
+        taxable = tvRaw != null && tvRaw > 0.01 ? round2(tvRaw) : round2(lt);
+        inventedTax = 0;
       }
-      tax = round2(lt - taxable);
+      tax = inventedTax != null ? inventedTax : round2(lt - taxable);
     }
 
     const totalTaxRounded = round2(tax);
@@ -1312,10 +1394,11 @@ export function transformExtractToPurchaseReviewFormat(
   const headerTaxSum =
     (extraction.total_cgst ?? 0) + (extraction.total_sgst ?? 0) + (extraction.total_igst ?? 0);
 
-  const headerPriceMode = extraction.price_mode ?? 'exclusive';
+  const headerPriceMode = extraction.price_mode;
+  const priceBasis = extraction.price_mode ?? 'unknown';
 
   const items = (extraction.items || []).map((item) =>
-    mapExtractedLineToPurchaseLine(item, { headerPriceMode })
+    mapExtractedLineToPurchaseLine(item, { headerPriceMode, priceBasis })
   );
 
   const sumLineTaxable = items.reduce((s, it) => {
@@ -1380,6 +1463,9 @@ export function transformExtractToPurchaseReviewFormat(
       sgst: extraction.total_sgst ?? null,
       igst: extraction.total_igst ?? null,
       gst_summary: extraction.gst_summary ?? [],
+      printed_subtotal: extraction.printed_subtotal ?? null,
+      printed_grand_total: extraction.printed_grand_total ?? null,
+      source_price_mode: extraction.source_price_mode ?? null,
     },
   };
 }
