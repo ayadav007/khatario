@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
-import { adminUpdateSubscription, getBusinessSubscription } from '@/lib/admin-business-ops';
+import {
+  adminUpdateSubscription,
+  getBusinessModuleSubscriptions,
+  getBusinessSubscription,
+} from '@/lib/admin-business-ops';
 import { queryOne } from '@/lib/db';
+import { normalizePlatformModule } from '@/lib/platform-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +18,13 @@ export async function GET(
   if (!auth.ok) return auth.response;
 
   try {
-    const subscription = await getBusinessSubscription(params.id);
-    return NextResponse.json({ subscription });
+    const moduleKey = normalizePlatformModule(request.nextUrl.searchParams.get('module_key'));
+    if (moduleKey) {
+      const subscription = await getBusinessSubscription(params.id, moduleKey);
+      return NextResponse.json({ subscription });
+    }
+    const module_subscriptions = await getBusinessModuleSubscriptions(params.id);
+    return NextResponse.json({ module_subscriptions });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
@@ -35,9 +45,18 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    const moduleKey = normalizePlatformModule(body.module_key);
+    if (!moduleKey) {
+      return NextResponse.json(
+        { error: 'module_key is required (billing, hr, connect or crm)' },
+        { status: 400 },
+      );
+    }
+
     const subscription = await adminUpdateSubscription({
       businessId: params.id,
       adminId: auth.admin.id,
+      moduleKey,
       planId: body.plan_id,
       status: body.status,
       extendTrialDays:

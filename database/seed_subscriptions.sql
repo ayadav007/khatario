@@ -281,18 +281,20 @@ ON CONFLICT (id) DO UPDATE SET
   is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order;
 
--- Assign free plan to all existing businesses (if any)
-INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-SELECT 
-  id,
-  'free',
-  'active',
-  CURRENT_DATE,
-  CURRENT_DATE + INTERVAL '30 days'
-FROM businesses
-WHERE NOT EXISTS (
-  SELECT 1 FROM business_subscriptions WHERE business_subscriptions.business_id = businesses.id
-);
+-- Assign the free Billing plan to existing businesses that have no subscription yet.
+-- business_module_subscriptions is created by migration 256; skip when seeding an older schema.
+DO $$
+BEGIN
+  IF to_regclass('public.business_module_subscriptions') IS NOT NULL THEN
+    INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date)
+    SELECT b.id, 'billing', 'free', 'active', CURRENT_DATE
+    FROM businesses b
+    WHERE NOT EXISTS (
+      SELECT 1 FROM business_module_subscriptions m WHERE m.business_id = b.id
+    )
+    ON CONFLICT (business_id, module_key) DO NOTHING;
+  END IF;
+END $$;
 
 COMMIT;
 

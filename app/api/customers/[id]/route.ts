@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query, queryRows } from '@/lib/db';
 import { Customer, Payment, Invoice } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getBusinessIdFromRequest, getUserIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +137,7 @@ export async function GET(
         amount as paid_amount,
         0 as balance_amount,
         NULL::text as document_type,
-        NULL::text as status,
+        status::text as status,
         NULL::text as payment_status,
         NULL::text as estimate_status,
         payment_mode::text as payment_mode
@@ -174,10 +175,13 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
     const customerId = params.id;
+    const userId = session.userId;
+    const businessScope = session.businessId;
     const body = await request.json();
-    const { user_id, updated_by, business_id: _bodyBusinessId, ...raw } = body;
-    const userId = getUserIdFromRequest(request, body) || updated_by;
+    const { user_id: _userId, updated_by: _updatedBy, business_id: _bodyBusinessId, ...raw } = body;
 
     const updateData: Record<string, unknown> = {};
     for (const key of Object.keys(raw)) {
@@ -196,22 +200,7 @@ export async function PUT(
       }
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id or updated_by is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const businessScope = getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    // Get customer first to check business_id (scoped to JWT tenant)
+    // Get customer first to check business_id (scoped to the verified session)
     const existingCustomer = await queryOne<Customer>(
       'SELECT * FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
       [customerId, businessScope]
@@ -232,6 +221,26 @@ export async function PUT(
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    if ('gstin' in updateData || 'state' in updateData || 'state_code' in updateData) {
+      const next = {
+        gstin: 'gstin' in updateData ? updateData.gstin : existingCustomer.gstin,
+        state: ('state' in updateData ? updateData.state : (existingCustomer as { state?: string | null }).state) as string | null,
+        state_code: ('state_code' in updateData
+          ? updateData.state_code
+          : (existingCustomer as { state_code?: string | null }).state_code) as string | null,
+      };
+      // A state_code carried over from an older GSTIN must not block a GSTIN change.
+      if ('gstin' in updateData && !('state_code' in updateData)) next.state_code = null;
+      if ('gstin' in updateData && !('state' in updateData)) next.state = null;
+      const gstinCheck = resolveGstinAndState(next);
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      updateData.gstin = gstinCheck.gstin;
+      if (gstinCheck.state) updateData.state = gstinCheck.state;
+      if (gstinCheck.state_code) updateData.state_code = gstinCheck.state_code;
     }
 
     // PHASE 2: Lock opening balance only when it *changes* (the edit form always resends the same values)

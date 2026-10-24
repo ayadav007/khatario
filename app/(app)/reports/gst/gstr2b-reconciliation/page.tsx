@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
  * - Full audit trail maintained
  */
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Upload, RefreshCw, AlertCircle, CheckCircle, XCircle, FileDown, AlertTriangle } from 'lucide-react';
@@ -89,8 +90,21 @@ export default function GSTR2BReconciliationPage() {
   
   const [invoices, setInvoices] = useState<ReconciliationInvoice[]>([]);
   const [summary, setSummary] = useState<ReconciliationSummary>({});
+  const [missingReferences, setMissingReferences] = useState<Array<{
+    source: string;
+    reason: string;
+    purchase_id: string | null;
+    bill_date: string | null;
+  }>>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<{
+    source: string;
+    filing_period: string;
+    invoices_imported: number;
+    duplicates_skipped: number;
+    sections: Array<{ sheet: string; status: string; documents: number; reason?: string }>;
+  } | null>(null);
 
   useEffect(() => {
     if (business) {
@@ -111,6 +125,7 @@ export default function GSTR2BReconciliationPage() {
       if (res.ok) {
         setInvoices(data.invoices || []);
         setSummary(data.summary || {});
+        setMissingReferences(data.missing_references || []);
       } else {
         console.error('Error:', data.error);
         // If no reconciliation exists, summary will be empty - that's OK
@@ -135,21 +150,36 @@ export default function GSTR2BReconciliationPage() {
       formData.append('filing_period', filingPeriod);
       formData.append('file', selectedFile);
       formData.append('user_id', user.id);
-      
+
       const res = await fetch('/api/gst/gstr2b/import', {
         method: 'POST',
         body: formData
       });
-      
+
       const data = await res.json();
-      
-      if (res.ok) {
-        toast.success(`Successfully imported ${data.invoices_imported} invoices`);
+
+      if (res.ok && data.success) {
+        const skipped = data.sections?.filter((section: { status: string }) => section.status !== 'imported') || [];
+        setImportSummary({
+          source: data.source || 'json',
+          filing_period: data.filing_period || filingPeriod,
+          invoices_imported: data.invoices_imported,
+          duplicates_skipped: data.duplicates_skipped || 0,
+          sections: data.sections || [],
+        });
+        toast.success(
+          `Imported ${data.invoices_imported} documents from ${data.source === 'excel' ? 'Excel' : 'JSON'}` +
+            (data.duplicates_skipped ? `. ${data.duplicates_skipped} duplicate rows skipped.` : '.') +
+            (skipped.length ? ` ${skipped.length} sheets were not document lists.` : '')
+        );
         setSelectedFile(null);
-        // Trigger reconciliation after import
         await handleReconcile();
       } else {
-        toast.error(`Import failed: ${data.error}`);
+        const rowError = Array.isArray(data.errors) && data.errors[0]
+          ? ` (${data.errors[0].sheet || 'workbook'} row ${data.errors[0].row}: ${data.errors[0].message})`
+          : '';
+        toast.error(`Import failed: ${data.error}${rowError}`);
+        setImportSummary(null);
       }
     } catch (error) {
       console.error('Import error:', error);
@@ -176,7 +206,12 @@ export default function GSTR2BReconciliationPage() {
       const data = await res.json();
       
       if (res.ok) {
-        toast.success(`Reconciliation completed. ${data.total_invoices} invoices processed.`);
+        const leftOut = Array.isArray(data.missing_references) ? data.missing_references.length : 0;
+        toast.success(
+          leftOut
+            ? `Reconciliation completed. ${data.total_invoices} invoices processed. ${leftOut} without a bill number were left out.`
+            : `Reconciliation completed. ${data.total_invoices} invoices processed.`
+        );
         await fetchReconciliation();
       } else {
         toast.error(`Reconciliation failed: ${data.error}`);
@@ -193,16 +228,15 @@ export default function GSTR2BReconciliationPage() {
     if (!business) return;
     setExporting(true);
     try {
-      // Split filing period into from/to dates for the export
-      const [year, month] = filingPeriod.split('-');
-      const fromDate = `${year}-${month}-01`;
-      const toDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
-      
+      const status = activeTab === 'ALL' ? 'all' : activeTab;
       const res = await fetch(
-        `/api/gst/gstr2b/export?business_id=${business.id}&from_date=${fromDate}&to_date=${toDate}&status=${activeTab.toLowerCase() === 'all' ? 'all' : activeTab}`
+        `/api/gst/gstr2b/export?business_id=${business.id}&filing_period=${filingPeriod}&status=${status}`
       );
-      
-      if (!res.ok) throw new Error('Export failed');
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.details || data?.error || 'Export failed');
+      }
       
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -214,7 +248,7 @@ export default function GSTR2BReconciliationPage() {
       link.remove();
     } catch (error) {
       console.error('Export error:', error);
-      toast.error('Failed to export reconciliation report');
+      toast.error(error instanceof Error ? error.message : 'Failed to export reconciliation report');
     } finally {
       setExporting(false);
     }
@@ -289,10 +323,10 @@ export default function GSTR2BReconciliationPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">GSTR-2B Reconciliation Workspace</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Reconcile purchase register with GSTR-2B data from GST portal
-          </p>
+          <PageHeader
+  title="GSTR-2B Reconciliation Workspace"
+  subtitle="Reconcile purchase register with GSTR-2B data from GST portal"
+/>
         </div>
 
         {/* Compliance Warning Banner */}
@@ -330,8 +364,24 @@ export default function GSTR2BReconciliationPage() {
               <div className="flex gap-2">
                 <input
                   type="file"
-                  accept=".json"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    if (file && file.size > 8 * 1024 * 1024) {
+                      toast.error('File is larger than 8 MB');
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                    const lower = file?.name.toLowerCase() || '';
+                    if (file && !lower.endsWith('.json') && !lower.endsWith('.xlsx')) {
+                      toast.error('Upload a GSTR-2B JSON or Excel file.');
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                    setSelectedFile(file);
+                  }}
                   className="text-sm"
                 />
                 <button
@@ -372,7 +422,51 @@ export default function GSTR2BReconciliationPage() {
               Refresh
             </button>
           </div>
+          <p className="mt-2 text-xs text-gray-500">JSON or Excel downloaded from the GST portal. A second upload of the same file is rejected.</p>
+          {importSummary && (
+            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <p>
+                {importSummary.source === 'excel' ? 'Excel' : 'JSON'} import for {importSummary.filing_period}:{' '}
+                {importSummary.invoices_imported} documents saved
+                {importSummary.duplicates_skipped ? `, ${importSummary.duplicates_skipped} duplicate rows skipped` : ''}.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {importSummary.sections.map((section) => (
+                  <li key={`${section.sheet}-${section.status}`}>
+                    {section.sheet}: {section.status}
+                    {section.status === 'imported' ? ` (${section.documents})` : ''}
+                    {section.reason ? ` — ${section.reason}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
+
+        {missingReferences.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-amber-900 mb-1">
+              {missingReferences.length} document{missingReferences.length === 1 ? '' : 's'} left out of matching
+            </h3>
+            <p className="text-sm text-amber-800 mb-2">
+              These purchases have no supplier bill number, so they were not matched and were not given a made-up number. Enter the number printed on the bill, then run reconciliation again.
+            </p>
+            <ul className="text-sm text-amber-900 space-y-1">
+              {missingReferences.map((row) => (
+                <li key={row.purchase_id || row.bill_date || row.reason}>
+                  {row.purchase_id ? (
+                    <a className="underline" href={`/purchases/${row.purchase_id}`}>
+                      Purchase {row.purchase_id}
+                    </a>
+                  ) : (
+                    'Statement line'
+                  )}
+                  {row.bill_date ? ` · ${row.bill_date}` : ''} · no bill number
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Summary Cards */}
         {Object.keys(summary).length > 0 && (

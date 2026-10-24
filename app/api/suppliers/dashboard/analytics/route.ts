@@ -1,94 +1,258 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import {
+  aggregateAreasPrivately,
+  statesWithEnoughShops,
+  MIN_SHOPS_PER_AREA,
+  topItemPivot,
+  type CustomerAreaFact,
+  type ItemAreaAmount,
+} from '@/lib/supplier-area-performance';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/suppliers/dashboard/analytics?supplier_business_id=xxx
- * Get location-based analytics for supplier
+ * SQL CTE body (needs the linked CTE, $2 = from, $3 = to): the linked shops' posted sales lines. A
+ * bundle line (for example a 1 kg packet made from loose rice) is credited to its component
+ * items, split by each component's share of the bundle's value, so repacked goods still count.
+ */
+const SOLD_LINES_SQL = `
+  sold_lines AS (
+    SELECT inv.business_id AS customer_id, ii.item_id, ii.item_name, ii.line_total AS amount
+      FROM invoices inv
+      JOIN invoice_items ii ON ii.invoice_id = inv.id
+     WHERE inv.status = 'final'
+       AND inv.invoice_date >= $2::date AND inv.invoice_date <= $3::date
+       AND inv.business_id IN (SELECT customer_id FROM linked)
+    UNION ALL
+    SELECT inv.business_id, bi.item_id, ci.name, ii.line_total * w.share
+      FROM invoices inv
+      JOIN invoice_items ii ON ii.invoice_id = inv.id
+      JOIN bundle_items bi ON bi.bundle_id = ii.item_id
+      JOIN items ci ON ci.id = bi.item_id
+      JOIN LATERAL (
+        SELECT CASE
+                 WHEN SUM(b2.quantity * COALESCE(i2.selling_price, 0)) > 0
+                   THEN (bi.quantity * COALESCE(ci.selling_price, 0)) / SUM(b2.quantity * COALESCE(i2.selling_price, 0))
+                 ELSE 1.0 / COUNT(*)
+               END AS share
+          FROM bundle_items b2
+          JOIN items i2 ON i2.id = b2.item_id
+         WHERE b2.bundle_id = bi.bundle_id
+      ) w ON true
+     WHERE inv.status = 'final'
+       AND inv.invoice_date >= $2::date AND inv.invoice_date <= $3::date
+       AND inv.business_id IN (SELECT customer_id FROM linked)
+  )`;
+
+const PERIODS = ['30d', '90d', 'fy'] as const;
+type PeriodKey = (typeof PERIODS)[number];
+
+function periodRange(key: PeriodKey, today = new Date()): { from: string; to: string } {
+  const to = today.toISOString().slice(0, 10);
+  if (key === 'fy') {
+    const year = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+    return { from: `${year}-04-01`, to };
+  }
+  const from = new Date(today);
+  from.setDate(from.getDate() - (key === '30d' ? 30 : 90));
+  return { from: from.toISOString().slice(0, 10), to };
+}
+
+/**
+ * GET /api/suppliers/dashboard/analytics?period=30d|90d|fy
+ * Sell-in (customer purchases from this vendor) and sell-through (their onward invoices
+ * of items supplied by this vendor), for customers who granted low-stock access.
  */
 export async function GET(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
-    const supplierBusinessId = searchParams.get('supplier_business_id');
-
-    if (!supplierBusinessId) {
+    const requested = searchParams.get('supplier_business_id');
+    if (requested && requested !== auth.businessId) {
       return NextResponse.json(
-        { error: 'supplier_business_id is required' },
-        { status: 400 }
+        { error: 'You can only view your own area performance', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 
-    // Analytics by State
-    const byState = await queryRows(`
-      SELECT 
-        cb.state,
-        COUNT(DISTINCT cb.id) as customer_count,
-        COUNT(DISTINCT t.item_id) as item_count,
-        COALESCE(SUM(
-          CASE 
-            WHEN a.alert_status = 'resolved' 
-            THEN (t.low_stock_threshold - a.current_stock) * 0 -- Estimate, would need actual sale price
-            ELSE 0 
-          END
-        ), 0) as total_sales
-      FROM supplier_item_thresholds t
-      JOIN businesses cb ON t.customer_business_id = cb.id
-      LEFT JOIN low_stock_alerts a ON a.threshold_id = t.id
-      WHERE t.supplier_business_id = $1
-      AND cb.state IS NOT NULL AND cb.state != ''
-      GROUP BY cb.state
-      ORDER BY customer_count DESC, cb.state
-    `, [supplierBusinessId]);
+    const periodKey = (searchParams.get('period') || '90d') as PeriodKey;
+    if (!PERIODS.includes(periodKey)) {
+      return NextResponse.json({ error: 'period must be 30d, 90d, or fy' }, { status: 400 });
+    }
+    const period = periodRange(periodKey);
 
-    // Analytics by City
-    const byCity = await queryRows(`
-      SELECT 
+    const customers = await queryRows<{
+      state: string | null;
+      city: string | null;
+      pincode: string | null;
+      sell_in: string;
+      sell_through: string;
+      low_stock_items: string;
+    }>(
+      `
+      WITH linked AS (
+        SELECT DISTINCT s.business_id AS customer_id
+        FROM suppliers s
+        WHERE s.linked_business_id = $1
+          AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
+          AND s.deleted_at IS NULL
+      ),
+      sell_in AS (
+        SELECT p.business_id AS customer_id, COALESCE(SUM(p.grand_total), 0) AS amount
+        FROM purchases p
+        JOIN suppliers s ON s.id = p.supplier_id
+        JOIN linked l ON l.customer_id = p.business_id
+        WHERE s.linked_business_id = $1
+          AND s.deleted_at IS NULL
+          AND p.status = 'final'
+          AND p.bill_date >= $2::date
+          AND p.bill_date <= $3::date
+        GROUP BY p.business_id
+      ),
+      supplied_items AS (
+        SELECT DISTINCT pi.item_id, p.business_id AS customer_id
+        FROM purchases p
+        JOIN purchase_items pi ON pi.purchase_id = p.id
+        JOIN suppliers s ON s.id = p.supplier_id
+        JOIN linked l ON l.customer_id = p.business_id
+        WHERE s.linked_business_id = $1
+          AND p.status = 'final'
+          AND pi.item_id IS NOT NULL
+        UNION
+        SELECT i.id, i.business_id
+        FROM items i
+        JOIN suppliers s ON s.id = i.default_supplier_id
+        JOIN linked l ON l.customer_id = i.business_id
+        WHERE s.linked_business_id = $1
+          AND s.deleted_at IS NULL
+          AND i.deleted_at IS NULL
+        UNION
+        SELECT t.item_id, t.customer_business_id
+        FROM supplier_item_thresholds t
+        JOIN linked l ON l.customer_id = t.customer_business_id
+        WHERE t.supplier_business_id = $1
+      ),
+      ${SOLD_LINES_SQL},
+      sell_through AS (
+        SELECT sl.customer_id, COALESCE(SUM(sl.amount), 0) AS amount
+        FROM sold_lines sl
+        JOIN supplied_items si ON si.item_id = sl.item_id AND si.customer_id = sl.customer_id
+        GROUP BY sl.customer_id
+      ),
+      low_stock AS (
+        SELECT i.business_id AS customer_id, COUNT(*)::int AS n
+        FROM items i
+        JOIN supplied_items si ON si.item_id = i.id AND si.customer_id = i.business_id
+        WHERE i.deleted_at IS NULL
+          AND i.is_active = true
+          AND COALESCE(i.min_stock, 0) > 0
+          AND COALESCE(i.current_stock, 0) <= i.min_stock
+        GROUP BY i.business_id
+      )
+      SELECT
+        cb.state,
         cb.city,
-        cb.state,
-        COUNT(DISTINCT cb.id) as customer_count,
-        COUNT(DISTINCT t.item_id) as item_count,
-        0 as total_sales
-      FROM supplier_item_thresholds t
-      JOIN businesses cb ON t.customer_business_id = cb.id
-      WHERE t.supplier_business_id = $1
-      AND cb.city IS NOT NULL AND cb.city != ''
-      GROUP BY cb.city, cb.state
-      ORDER BY customer_count DESC, cb.city
-      LIMIT 50
-    `, [supplierBusinessId]);
-
-    // Analytics by Pincode
-    const byPincode = await queryRows(`
-      SELECT 
         cb.pincode,
-        cb.city,
-        cb.state,
-        COUNT(DISTINCT cb.id) as customer_count,
-        COUNT(DISTINCT t.item_id) as item_count,
-        0 as total_sales
-      FROM supplier_item_thresholds t
-      JOIN businesses cb ON t.customer_business_id = cb.id
-      WHERE t.supplier_business_id = $1
-      AND cb.pincode IS NOT NULL AND cb.pincode != ''
-      GROUP BY cb.pincode, cb.city, cb.state
-      ORDER BY customer_count DESC, cb.pincode
-      LIMIT 100
-    `, [supplierBusinessId]);
+        COALESCE(si.amount, 0)::text AS sell_in,
+        COALESCE(st.amount, 0)::text AS sell_through,
+        COALESCE(ls.n, 0)::text AS low_stock_items
+      FROM linked l
+      JOIN businesses cb ON cb.id = l.customer_id
+      LEFT JOIN sell_in si ON si.customer_id = cb.id
+      LEFT JOIN sell_through st ON st.customer_id = cb.id
+      LEFT JOIN low_stock ls ON ls.customer_id = cb.id
+      `,
+      [auth.businessId, period.from, period.to]
+    );
+
+    const facts: CustomerAreaFact[] = customers.map((row) => ({
+      state: row.state || '',
+      city: row.city || '',
+      pincode: row.pincode || '',
+      sellIn: Number(row.sell_in) || 0,
+      sellThrough: Number(row.sell_through) || 0,
+      lowStockItems: Number(row.low_stock_items) || 0,
+    }));
+
+    const itemRows = await queryRows<{ state: string | null; item_name: string; sell_through: string }>(
+      `
+      WITH linked AS (
+        SELECT DISTINCT s.business_id AS customer_id
+        FROM suppliers s
+        WHERE s.linked_business_id = $1
+          AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
+          AND s.deleted_at IS NULL
+      ),
+      supplied_items AS (
+        SELECT DISTINCT pi.item_id, p.business_id AS customer_id
+        FROM purchases p
+        JOIN purchase_items pi ON pi.purchase_id = p.id
+        JOIN suppliers s ON s.id = p.supplier_id
+        JOIN linked l ON l.customer_id = p.business_id
+        WHERE s.linked_business_id = $1
+          AND p.status = 'final'
+          AND pi.item_id IS NOT NULL
+        UNION
+        SELECT i.id, i.business_id
+        FROM items i
+        JOIN suppliers s ON s.id = i.default_supplier_id
+        JOIN linked l ON l.customer_id = i.business_id
+        WHERE s.linked_business_id = $1
+          AND s.deleted_at IS NULL
+          AND i.deleted_at IS NULL
+        UNION
+        SELECT t.item_id, t.customer_business_id
+        FROM supplier_item_thresholds t
+        JOIN linked l ON l.customer_id = t.customer_business_id
+        WHERE t.supplier_business_id = $1
+      )
+      ,${SOLD_LINES_SQL}
+      SELECT cb.state, sl.item_name, COALESCE(SUM(sl.amount), 0)::text AS sell_through
+      FROM sold_lines sl
+      JOIN supplied_items si ON si.item_id = sl.item_id AND si.customer_id = sl.customer_id
+      JOIN businesses cb ON cb.id = sl.customer_id
+      GROUP BY cb.state, sl.item_name
+      `,
+      [auth.businessId, period.from, period.to]
+    );
+
+    // Per-item sales only for states with enough shops that no single shop shows through.
+    const openStates = statesWithEnoughShops(facts);
+    const itemAmounts: ItemAreaAmount[] = itemRows
+      .map((row) => ({
+        state: (row.state || '').trim() || 'Unknown',
+        itemName: row.item_name,
+        sellThrough: Number(row.sell_through) || 0,
+      }))
+      .filter((row) => openStates.has(row.state));
+    const pivot = topItemPivot(itemAmounts);
+
+    const states = aggregateAreasPrivately(facts, 'state');
+    const cities = aggregateAreasPrivately(facts, 'city');
+    const pincodes = aggregateAreasPrivately(facts, 'pincode');
 
     return NextResponse.json({
       success: true,
-      by_state: byState,
-      by_city: byCity,
-      by_pincode: byPincode
+      period: { key: periodKey, from: period.from, to: period.to },
+      states: states.areas,
+      cities: cities.areas.slice(0, 80),
+      pincodes: pincodes.areas.slice(0, 100),
+      // Areas with fewer than this many shops are pooled or left out so no shop's sales show alone.
+      min_shops_per_area: MIN_SHOPS_PER_AREA,
+      shops_sharing: facts.length,
+      hidden_shops: { states: states.hiddenShops, cities: cities.hiddenShops, pincodes: pincodes.hiddenShops },
+      pivot_items: pivot.items,
+      pivot_matrix: pivot.matrix,
     });
-
   } catch (error: any) {
-    console.error('Error fetching analytics:', error);
+    console.error('Error fetching supplier area analytics:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch analytics' },
       { status: 500 }
     );
   }
 }
-

@@ -12,6 +12,7 @@ import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
+import { CategoryCombobox } from '@/components/items/CategoryCombobox';
 
 interface Supplier {
   id: string;
@@ -32,6 +33,7 @@ interface Item {
   tax_rate: number;
   hsn_sac?: string;
   current_stock: number;
+  gst_included?: boolean;
 }
 
 interface CreateItemModalProps {
@@ -413,22 +415,16 @@ export function CreateItemModal({
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-text-secondary mb-1">
-                  Category (optional)
-                </label>
-                <select
-                  name="category_id"
+                <CategoryCombobox
+                  categories={categories}
                   value={formData.category_id}
-                  onChange={handleChange}
-                  className="input w-full"
-                >
-                  <option value="">No category</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(categoryId) => setFormData((prev) => ({ ...prev, category_id: categoryId }))}
+                  onCategoryCreated={(category) =>
+                    setCategories((prev) =>
+                      prev.some((row) => row.id === category.id) ? prev : [...prev, category]
+                    )
+                  }
+                />
               </div>
               
               <Input label="Item Code (Optional)" name="code" value={formData.code} onChange={handleChange} placeholder="P001" />
@@ -588,11 +584,10 @@ export function CreateItemModal({
                   value={formData.hsn_sac}
                   onChange={(code) => setFormData({ ...formData, hsn_sac: code })}
                   onSelect={(result) => {
-                    const updates: any = { hsn_sac: result.code };
-                    // If SAC code (starts with 99), auto-switch to service
-                    if (result.code.startsWith('99')) {
-                      updates.item_type = 'service';
-                    }
+                    const updates: any = {
+                      hsn_sac: result.code,
+                      item_type: result.is_service ? 'service' : 'goods',
+                    };
                     if (result.gst_rate) {
                       updates.tax_rate = result.gst_rate.toString();
                     }

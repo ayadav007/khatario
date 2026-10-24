@@ -3,10 +3,13 @@ export const dynamic = 'force-dynamic';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { queryOne } from '@/lib/db';
+import { guardLedgerRoute } from '@/lib/http/ledger-route-guard';
 import {
   calculateDepreciationForAllAssets,
   saveDepreciationSchedule,
   getTotalDepreciation,
+  DepreciationOverlapError,
 } from '@/lib/services/depreciation-calculator';
 
 /**
@@ -16,9 +19,6 @@ import {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
-    if (!tenant.ok) return tenant.response;
-    const business_id = tenant.businessId;
     const {
       financial_year,
       period_start_date,
@@ -28,14 +28,31 @@ export async function POST(request: NextRequest) {
       post_to_ledger = false,
     } = body;
 
-    if (!business_id || !financial_year || !period_start_date || !period_end_date) {
+    if (!body.business_id || !financial_year || !period_start_date || !period_end_date) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
+    const guard = await guardLedgerRoute(request, {
+      claimedBusinessId: body.business_id,
+      branchId: body.branch_id,
+      action: 'create',
+      dates: post_to_ledger ? [period_end_date] : [],
+      actionLabel: 'post depreciation',
+    });
+    if (!guard.ok) return guard.response;
+    const business_id = guard.businessId;
+
     if (asset_id) {
+      const owned = await queryOne<{ id: string }>(
+        'SELECT id FROM fixed_assets WHERE id = $1 AND business_id = $2',
+        [asset_id, business_id]
+      );
+      if (!owned) {
+        return NextResponse.json({ error: 'Asset not found or disposed' }, { status: 404 });
+      }
       // Calculate for single asset
       const { calculateDepreciation } = await import('@/lib/services/depreciation-calculator');
       const calculation = await calculateDepreciation(
@@ -74,29 +91,34 @@ export async function POST(request: NextRequest) {
         period_end_date
       );
 
-      // Save all to schedule
       const saved = [];
+      const skipped: Array<{ asset_id: string; asset_name: string; reason: string }> = [];
       for (const calc of calculations) {
-        const scheduleId = await saveDepreciationSchedule(
-          calc,
-          business_id,
-          post_to_ledger
-        );
-        saved.push({ calculation: calc, schedule_id: scheduleId });
+        try {
+          const scheduleId = await saveDepreciationSchedule(calc, business_id, post_to_ledger);
+          saved.push({ calculation: calc, schedule_id: scheduleId });
+        } catch (err) {
+          if (!(err instanceof DepreciationOverlapError)) throw err;
+          skipped.push({ asset_id: calc.asset_id, asset_name: calc.asset_name, reason: err.message });
+        }
       }
 
-      const total = calculations.reduce(
-        (sum, calc) => sum + calc.depreciation_amount,
+      const total = saved.reduce(
+        (sum, s) => sum + s.calculation.depreciation_amount,
         0
       );
 
       return NextResponse.json({
         calculations: saved,
+        skipped,
         total_depreciation: total,
-        assets_count: calculations.length,
+        assets_count: saved.length,
       });
     }
   } catch (error: any) {
+    if (error instanceof DepreciationOverlapError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    }
     console.error('Error calculating depreciation:', error);
     return NextResponse.json(
       { error: 'Failed to calculate depreciation', details: error.message },

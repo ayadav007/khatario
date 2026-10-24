@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
         MAX(e.expense_date) as last_expense
       FROM expenses e
       LEFT JOIN expense_categories ec ON e.category_id = ec.id
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter}
       GROUP BY ec.id, ec.name, e.category
       ORDER BY total_amount DESC

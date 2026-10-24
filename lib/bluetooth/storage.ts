@@ -68,6 +68,20 @@ export function savePrinter(
   return next;
 }
 
+/** Saves edited settings for a printer, keeping its place in the list. */
+export function updateSavedPrinter(
+  businessId: string,
+  printer: SavedBluetoothPrinter
+): SavedBluetoothPrinter[] {
+  const current = listSavedPrinters(businessId);
+  const next = current.map((p) => (p.id === printer.id ? { ...p, ...printer } : p));
+  const store = getStore();
+  if (store && businessId) {
+    store.setItem(storageKey(businessId), JSON.stringify(next));
+  }
+  return next;
+}
+
 export function removePrinter(
   businessId: string,
   printerId: string

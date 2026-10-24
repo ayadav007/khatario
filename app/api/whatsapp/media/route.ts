@@ -5,7 +5,7 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ businessId }) => {
   try {
     const result = await query(
       `
@@ -32,7 +32,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
 });
 
 export const POST = withWhatsAppPremiumApi(
-  { claimedBusinessId: ({ request }) => getBusinessIdFromRequest(request) },
+  { claimedBusinessId: ({ request }) => getBusinessIdFromRequest(request), managePermission: true },
   async ({ request, businessId }) => {
     try {
       const formData = await request.formData();
@@ -91,7 +91,7 @@ export const POST = withWhatsAppPremiumApi(
   },
 );
 
-export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId }) => {
+export const DELETE = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const mediaId = searchParams.get('id');

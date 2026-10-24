@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { rejectDocumentDateChange } from '@/lib/gst/document-dates';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,6 +119,9 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    if (body && typeof body === 'object' && 'return_date' in body) {
+      return rejectDocumentDateChange('purchase return');
+    }
     const {
       refund_status: refundStatusInput,
       refund_mode,

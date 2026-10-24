@@ -14,6 +14,7 @@ import {
   type PaymentTransactionMethod,
 } from '@/lib/services/payment-transactions';
 import { getPaymentLinkCallbackUrl } from '@/lib/payments/payment-link-callback';
+import { buildUpiUri, upiPayPageUrl } from '@/lib/payments/upi-pay-link';
 
 function resolveHostedCheckoutReturnUrl(options: PaymentLinkOptions): string | undefined {
   if (options.transactionNote?.startsWith('http')) {
@@ -47,6 +48,11 @@ export interface PaymentLinkOptions {
   invoiceNumber?: string;
   transactionNote?: string;
   currency?: string;
+  /**
+   * When true (WhatsApp shop / prepaid orders), never fall back to manual UPI.
+   * Returns null if no payment-gateway hosted link can be created.
+   */
+  pspOnly?: boolean;
 }
 
 /**
@@ -54,26 +60,17 @@ export interface PaymentLinkOptions {
  */
 export function generateUPIPaymentLink(
   upiId: string,
-  options: PaymentLinkOptions
+  options: PaymentLinkOptions & { payeeName?: string }
 ): string {
-  const {
+  const { amount, invoiceNumber, transactionNote } = options;
+  const note = transactionNote || (invoiceNumber ? `Payment for Invoice ${invoiceNumber}` : 'Payment for order');
+  return buildUpiUri({
+    vpa: upiId,
+    payeeName: options.payeeName || 'Merchant',
     amount,
-    customerName = 'Customer',
-    invoiceNumber,
-    transactionNote,
-    currency = 'INR'
-  } = options;
-
-  // UPI payment link format: upi://pay?pa=UPI_ID&pn=PAYEE_NAME&am=AMOUNT&cu=CURRENCY&tn=TRANSACTION_NOTE
-  const payeeName = encodeURIComponent(customerName);
-  const note = transactionNote || 
-    (invoiceNumber ? `Payment for Invoice ${invoiceNumber}` : 'Payment for order');
-  const transactionNoteEncoded = encodeURIComponent(note);
-  
-  // Format amount to 2 decimal places
-  const amountStr = amount.toFixed(2);
-  
-  return `upi://pay?pa=${upiId}&pn=${payeeName}&am=${amountStr}&cu=${currency}&tn=${transactionNoteEncoded}`;
+    note,
+    reference: invoiceNumber,
+  });
 }
 
 /**
@@ -321,9 +318,21 @@ export async function generatePaymentLinkForBusiness(
     }
   }
 
-  // 2) Fallback: manual payment method (UPI deep link)
+  // 2) Fallback: manual payment method (UPI deep link) — skipped for prepaid WhatsApp orders
+  if (options.pspOnly) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[payments] pspOnly: no hosted gateway link available', {
+        businessId,
+        preferred,
+        configuredProviders: configuredProviders.map((p) => p.provider),
+        hasOrderId: !!options.orderId,
+      });
+    }
+    return null;
+  }
+
   const method = await getDefaultPaymentMethod(businessId);
-  
+
   if (!method) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[payments] no default payment method; cannot build manual link', {
@@ -335,12 +344,16 @@ export async function generatePaymentLinkForBusiness(
     }
     return null;
   }
-  
+
   if (method.method_type === 'upi' && method.upi_id) {
-    const link = generateUPIPaymentLink(method.upi_id, options);
+    // WhatsApp doesn't make upi:// tappable; for an order send our https page that opens the UPI app.
+    const page = options.orderId ? upiPayPageUrl(options.orderId) : null;
+    if (page) return { link: page, source: 'manual', method };
+    const shop = await queryOne<{ name: string | null }>(`SELECT name FROM businesses WHERE id = $1`, [businessId]).catch(() => null);
+    const link = generateUPIPaymentLink(method.upi_id, { ...options, payeeName: shop?.name || undefined });
     return { link, source: 'manual', method };
   }
-  
+
   // For other payment methods (bank transfer, etc.), generate appropriate link
   // This can be extended for other payment types
   return null;

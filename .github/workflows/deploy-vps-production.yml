@@ -29,5 +29,7 @@ jobs:
           script: |
             set -e
             cd "${{ secrets.VPS_PROD_APP_PATH }}"
-            git pull origin main
+            git fetch origin production
+            git checkout production
+            git merge --ff-only origin/production
             bash scripts/deploy-vps.sh --no-pull

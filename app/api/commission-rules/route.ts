@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionRule } from '@/types/database';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
       return tenant.response;
     }
     const businessId = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_commissions');
+    if (planDenied) return planDenied;
     const employeeId = searchParams.get('employee_id');
     const roleId = searchParams.get('role_id');
     const activeOnly = searchParams.get('active_only') === 'true';
@@ -98,6 +101,8 @@ export async function POST(request: NextRequest) {
       return tenant.response;
     }
     const business_id = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(business_id, 'hr_commissions');
+    if (planDenied) return planDenied;
     const {
       employee_id,
       role_id,

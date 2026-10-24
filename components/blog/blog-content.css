@@ -1,0 +1,186 @@
+.blog-content,
+.blog-editor .ProseMirror {
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: #0f172a;
+}
+
+.blog-content > *:first-child,
+.blog-editor .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+.blog-content p,
+.blog-editor .ProseMirror p {
+  margin: 0.9rem 0;
+}
+
+.blog-content h1,
+.blog-editor .ProseMirror h1,
+.blog-content h2,
+.blog-editor .ProseMirror h2,
+.blog-content h3,
+.blog-editor .ProseMirror h3 {
+  line-height: 1.25;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.blog-content h1,
+.blog-editor .ProseMirror h1 { font-size: 1.75rem; margin: 1.6rem 0 0.6rem; }
+.blog-content h2,
+.blog-editor .ProseMirror h2 { font-size: 1.45rem; margin: 1.5rem 0 0.5rem; }
+.blog-content h3,
+.blog-editor .ProseMirror h3 { font-size: 1.2rem; margin: 1.25rem 0 0.4rem; }
+
+.blog-content a,
+.blog-editor .ProseMirror a {
+  color: #0f766e;
+  text-decoration: underline;
+}
+
+.blog-content blockquote,
+.blog-editor .ProseMirror blockquote {
+  margin: 1rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid #99f6e4;
+  color: #334155;
+}
+
+.blog-content ul,
+.blog-editor .ProseMirror ul,
+.blog-content ol,
+.blog-editor .ProseMirror ol {
+  margin: 0.75rem 0;
+  padding-left: 1.4rem;
+}
+
+.blog-content ul,
+.blog-editor .ProseMirror ul { list-style: disc; }
+.blog-content ol,
+.blog-editor .ProseMirror ol { list-style: decimal; }
+
+.blog-content table,
+.blog-editor .ProseMirror table {
+  width: 100%;
+  margin: 1rem 0;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.blog-content th,
+.blog-content td,
+.blog-editor .ProseMirror th,
+.blog-editor .ProseMirror td {
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.blog-content th,
+.blog-editor .ProseMirror th {
+  background: #f8fafc;
+  font-weight: 650;
+}
+
+.blog-content pre,
+.blog-editor .ProseMirror pre {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.blog-figure {
+  display: block;
+  clear: both;
+  max-width: 100%;
+  margin: 1.25rem auto;
+}
+
+.blog-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+}
+
+.blog-figure figcaption,
+.blog-figure input.blog-caption {
+  margin-top: 0.4rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.blog-figure[data-size="small"] { width: 240px; }
+.blog-figure[data-size="medium"] { width: min(480px, 100%); }
+.blog-figure[data-size="large"],
+.blog-figure[data-align="full"] { width: 100%; }
+.blog-figure[data-size="original"] { width: auto; }
+.blog-figure[data-size="original"] img { width: auto; max-width: 100%; margin-inline: auto; }
+
+.blog-figure[data-align="left"] { margin-left: 0; margin-right: auto; }
+.blog-figure[data-align="right"] { margin-left: auto; margin-right: 0; }
+.blog-figure[data-align="center"],
+.blog-figure[data-align="full"] { margin-left: auto; margin-right: auto; }
+
+.blog-content::after,
+.blog-editor .ProseMirror::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+@media (min-width: 768px) {
+  .blog-figure[data-wrap="left"] {
+    float: left;
+    clear: none;
+    margin: 0.25rem 1.25rem 0.75rem 0;
+  }
+  .blog-figure[data-wrap="right"] {
+    float: right;
+    clear: none;
+    margin: 0.25rem 0 0.75rem 1.25rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .blog-figure,
+  .blog-figure[data-wrap="left"],
+  .blog-figure[data-wrap="right"] {
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  .blog-figure img {
+    width: 100%;
+    height: auto;
+  }
+}
+
+.blog-editor .ProseMirror {
+  min-height: 320px;
+  outline: none;
+}
+
+.blog-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.blog-editor .blog-figure.is-selected {
+  outline: 2px solid #0f766e;
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+}

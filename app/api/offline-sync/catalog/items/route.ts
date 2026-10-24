@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,24 +18,19 @@ function labelBundleNames(rows: Record<string, unknown>[]) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    const userId = getAuthenticatedUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = Math.min(parseInt(searchParams.get('limit') || '500', 10), 500);
     const offset = (page - 1) * limit;
     const updatedAfter = searchParams.get('updated_after');
     const warehouseId = searchParams.get('warehouse_id');
     const branchId = searchParams.get('branch_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     try {
       await authorize(userId, 'items', 'read');

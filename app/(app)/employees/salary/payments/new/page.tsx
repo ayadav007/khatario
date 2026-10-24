@@ -15,6 +15,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import Link from 'next/link';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useHrPlan } from '@/hooks/useFullHr';
 import {
   type ProRataSalaryResult,
 } from '@/lib/hr/salary-payroll-helpers';
@@ -39,6 +40,8 @@ type RecoveryBreakdownRow = {
 export default function NewSalaryPaymentPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const hrPlan = useHrPlan();
+  const fullHr = hrPlan.payrollSetup;
   const toast = useToastContext();
   const [loading, setLoading] = useState(false);
   
@@ -50,6 +53,7 @@ export default function NewSalaryPaymentPage() {
   });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [pendingAdvance, setPendingAdvance] = useState(0);
+  const [awaitingApproval, setAwaitingApproval] = useState(0);
   const [suggestedRecovery, setSuggestedRecovery] = useState(0);
   const [recoveryBreakdown, setRecoveryBreakdown] = useState<RecoveryBreakdownRow[]>([]);
   const [proRataInfo, setProRataInfo] = useState<ProRataSalaryResult | null>(null);
@@ -127,7 +131,11 @@ export default function NewSalaryPaymentPage() {
         });
 
         const res = await fetch(`/api/employees/salary/payments/prefill?${params}`);
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          await fetchPendingAdvance(formData.employee_id, 0);
+          return;
+        }
 
         const data = await res.json();
         const fields = data.fields ?? {};
@@ -178,9 +186,14 @@ export default function NewSalaryPaymentPage() {
           Number(fields.special_allowance ?? 0) +
           Number(fields.other_earnings ?? 0);
 
-        await fetchPendingAdvance(grossPreview);
+        if (!cancelled) {
+          await fetchPendingAdvance(formData.employee_id, grossPreview);
+        }
       } catch (error) {
         console.error('Error loading payroll prefill:', error);
+        if (!cancelled) {
+          await fetchPendingAdvance(formData.employee_id, 0);
+        }
       }
     };
 
@@ -218,43 +231,31 @@ export default function NewSalaryPaymentPage() {
     }
   };
 
-  const fetchPendingAdvance = async (basicOverride?: number) => {
-    if (!business?.id || !formData.employee_id) return;
-
-    const basic = basicOverride ?? parseFloat(formData.basic_salary || '0');
-    const grossPreview =
-      basic +
-      parseFloat(formData.hra || '0') +
-      parseFloat(formData.transport_allowance || '0') +
-      parseFloat(formData.medical_allowance || '0') +
-      parseFloat(formData.special_allowance || '0') +
-      parseFloat(formData.overtime || '0') +
-      parseFloat(formData.bonus || '0') +
-      parseFloat(formData.commission || '0') +
-      parseFloat(formData.other_earnings || '0');
+  const fetchPendingAdvance = async (employeeId: string, grossPreview = 0) => {
+    if (!employeeId) return;
 
     try {
-      const params = new URLSearchParams({
-        business_id: business.id,
-        employee_id: formData.employee_id,
-      });
+      const params = new URLSearchParams({ employee_id: employeeId });
       if (grossPreview > 0) {
         params.set('cap_amount', String(grossPreview));
       }
 
       const res = await fetch(`/api/employees/salary/advances/balance?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        const pending = data.pending_balance || 0;
-        const suggested = data.suggested_recovery ?? pending;
-        setPendingAdvance(pending);
-        setSuggestedRecovery(suggested);
-        setRecoveryBreakdown(data.recovery_breakdown ?? []);
-        setFormData((prev) => ({
-          ...prev,
-          advance_recovery: Math.min(suggested, pending, grossPreview || pending).toFixed(2),
-        }));
-      }
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const pending = Number(data.pending_balance) || 0;
+      const suggested = Number(data.suggested_recovery ?? pending) || 0;
+      setPendingAdvance(pending);
+      setAwaitingApproval(Number(data.awaiting_approval_amount) || 0);
+      setSuggestedRecovery(suggested);
+      setRecoveryBreakdown(data.recovery_breakdown ?? []);
+      const filled = Math.min(suggested, pending, grossPreview > 0 ? grossPreview : pending);
+      setFormData((prev) => {
+        const current = parseFloat(prev.advance_recovery || '0') || 0;
+        if (current > 0) return prev;
+        return { ...prev, advance_recovery: filled.toFixed(2) };
+      });
     } catch (error) {
       console.error('Error fetching pending advance:', error);
     }
@@ -296,9 +297,21 @@ export default function NewSalaryPaymentPage() {
 
   const totals = calculateTotals();
 
+  const recoveryAmount = parseFloat(formData.advance_recovery || '0') || 0;
+  const recoveryOverBalance = recoveryAmount > pendingAdvance + 0.001;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!business?.id) return;
+
+    if (recoveryOverBalance) {
+      toast.error(
+        pendingAdvance <= 0
+          ? 'Advance recovery has to be 0 until this employee has an approved salary advance.'
+          : `Advance recovery cannot be more than the pending advance (₹${pendingAdvance.toLocaleString('en-IN')}).`
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -308,11 +321,31 @@ export default function NewSalaryPaymentPage() {
         body: JSON.stringify({
           business_id: business.id,
           ...formData,
+          ...(fullHr
+            ? {}
+            : {
+                hra: '0',
+                transport_allowance: '0',
+                medical_allowance: '0',
+                special_allowance: '0',
+                overtime: '0',
+                provident_fund: '0',
+                professional_tax: '0',
+                tds: '0',
+                attendance_deduction: '0',
+                employer_provident_fund: '0',
+                esi_employee: '0',
+                esi_employer: '0',
+                pf_wage: '',
+                esi_wage: '',
+                leave_days: '',
+                overtime_hours: '',
+              }),
           processed_by: user?.id,
           generate_payslip: true,
-          component_breakdown: componentBreakdown,
+          component_breakdown: fullHr ? componentBreakdown : [],
           attendance_adjustment_details:
-            attendanceDeductionLines.length > 0
+            fullHr && attendanceDeductionLines.length > 0
               ? { lines: attendanceDeductionLines, summary: attendanceDeductionSummary }
               : null,
         }),
@@ -412,7 +445,7 @@ export default function NewSalaryPaymentPage() {
               />
             </div>
 
-            {prefillSource === 'salary_structure' && (
+            {fullHr && prefillSource === 'salary_structure' && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                 <p className="font-medium">Prefilled from salary structure</p>
                 <p className="mt-1 text-blue-800/90">
@@ -447,6 +480,8 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                {fullHr ? (
+                  <>
                 <Input
                   label="HRA"
                   type="number"
@@ -487,6 +522,8 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                  </>
+                ) : null}
                 <Input
                   label="Bonus"
                   type="number"
@@ -517,7 +554,7 @@ export default function NewSalaryPaymentPage() {
             {/* Deductions */}
             <div>
               <h2 className="text-lg font-semibold text-text-primary mb-4">Deductions</h2>
-              {attendanceDeductionLines.length > 0 && (
+              {fullHr && attendanceDeductionLines.length > 0 && (
                 <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <p className="font-medium">Suggested attendance deductions</p>
                   <ul className="mt-2 space-y-1 text-xs text-amber-800/90">
@@ -535,6 +572,17 @@ export default function NewSalaryPaymentPage() {
                       {String(attendanceDeductionSummary.billable_late_count ?? 0)} billable)
                     </p>
                   ) : null}
+                </div>
+              )}
+              {awaitingApproval > 0 && pendingAdvance <= 0 && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p>
+                    <strong>Advance waiting for approval:</strong> ₹
+                    {awaitingApproval.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800/90">
+                    Approve it under Salary Advances before recovering it on this payment. Until then, leave Advance Recovery at 0.
+                  </p>
                 </div>
               )}
               {pendingAdvance > 0 && (
@@ -565,6 +613,8 @@ export default function NewSalaryPaymentPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {fullHr ? (
+                  <>
                 <Input
                   label="Employee PF"
                   type="number"
@@ -615,14 +665,26 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                  </>
+                ) : null}
                 <Input
                   label="Advance Recovery"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={formData.advance_recovery}
                   onChange={(e) => setFormData({ ...formData, advance_recovery: e.target.value })}
-                  min="0"
-                  max={pendingAdvance.toString()}
-                  step="0.01"
+                  error={
+                    recoveryOverBalance
+                      ? `Cannot be more than the approved advance still outstanding (₹${pendingAdvance.toLocaleString('en-IN')}).`
+                      : undefined
+                  }
+                  helperText={
+                    recoveryOverBalance
+                      ? undefined
+                      : pendingAdvance > 0
+                        ? `Approved advance outstanding: ₹${pendingAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                        : 'No approved advance outstanding for this employee.'
+                  }
                 />
                 <Input
                   label="Loan Deduction"
@@ -632,6 +694,7 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                {fullHr ? (
                 <Input
                   label="Attendance deduction (late / LWP)"
                   type="number"
@@ -640,6 +703,7 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                ) : null}
                 <Input
                   label="Other Deductions"
                   type="number"
@@ -695,6 +759,7 @@ export default function NewSalaryPaymentPage() {
                   onChange={(e) => setFormData({ ...formData, absent_days: e.target.value })}
                   min="0"
                 />
+                {hrPlan.leaves ? (
                 <Input
                   label="Leave Days"
                   type="number"
@@ -702,6 +767,7 @@ export default function NewSalaryPaymentPage() {
                   onChange={(e) => setFormData({ ...formData, leave_days: e.target.value })}
                   min="0"
                 />
+                ) : null}
               </div>
             </div>
 

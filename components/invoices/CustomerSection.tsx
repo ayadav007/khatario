@@ -14,7 +14,7 @@ interface CustomerAutocompleteProps {
   onChange: (value: string) => void;
   onSelect: (customer: Customer) => void;
   disabled?: boolean;
-  onAddNew?: () => void; // Callback when "Add New Customer" is clicked
+  onAddNew?: (searchQuery?: string) => void; // Callback when "Add New Customer" is clicked
 }
 
 // CustomerAutocomplete component (exact copy from parent to preserve behavior)
@@ -176,7 +176,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                             onMouseDown={(e) => {
                                 e.preventDefault();
                                 if (onAddNew) {
-                                    onAddNew();
+                                    onAddNew(query);
                                 } else {
                                     window.location.href = '/customers/new';
                                 }
@@ -191,7 +191,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                         onMouseDown={(e) => {
                             e.preventDefault();
                             if (onAddNew) {
-                                onAddNew();
+                                onAddNew(query);
                             } else {
                                 window.location.href = '/customers/new';
                             }
@@ -219,7 +219,7 @@ interface CustomerSectionProps {
   customerId: string;
   onCustomerChange: (customerId: string) => void;
   onCustomerSelect: (customer: Customer) => void;
-  onAddNewCustomer?: () => void; // Callback when "Add New Customer" is clicked
+  onAddNewCustomer?: (searchQuery?: string) => void; // Callback when "Add New Customer" is clicked
   
   // Place of Supply
   placeOfSupply: string;

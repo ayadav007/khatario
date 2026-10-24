@@ -317,8 +317,7 @@ export function ItemDetailPanel({ itemId, onClose, onDelete, canDelete }: ItemDe
                     value={
                       <span className="uppercase">
                         {item.valuation_method === 'fifo' && 'FIFO'}
-                        {item.valuation_method === 'lifo' && 'LIFO'}
-                        {item.valuation_method === 'weighted_avg' && 'Weighted Avg'}
+                        {(item.valuation_method === 'weighted_avg' || item.valuation_method === 'lifo') && 'Weighted Avg'}
                         {item.valuation_method === 'simple' && 'Simple'}
                       </span>
                     }

@@ -3,18 +3,23 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
+import { scheduleKbReindex } from '@/lib/rag/queue';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/admin/subscriptions/plans
- * Fetch all subscription plans
- *
- * Public read (marketing landing, upgrade UI). POST requires platform admin.
+ * Public callers (marketing, upgrade UI) receive active plans only.
+ * A signed-in platform admin also receives inactive plans, so they can be
+ * found and turned back on from Admin → Plans.
+ * POST requires platform admin.
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const plansWithRegistry = await listActiveSubscriptionPlans();
+    const auth = await requirePlatformRequest(request, 'viewer');
+    const plansWithRegistry = await listActiveSubscriptionPlans({
+      includeInactive: auth.ok,
+    });
     return NextResponse.json({ plans: plansWithRegistry });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -43,6 +48,7 @@ export async function POST(request: NextRequest) {
       description,
       price_monthly,
       price_yearly,
+      price_3year = 0,
       currency = 'INR',
       features,
       is_active = true,
@@ -62,15 +68,16 @@ export async function POST(request: NextRequest) {
       INSERT INTO subscription_plans (
         id, name, display_name, description, 
         price_monthly, price_yearly, currency, 
-        features, is_active, sort_order
+        features, is_active, sort_order, price_3year
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         display_name = EXCLUDED.display_name,
         description = EXCLUDED.description,
         price_monthly = EXCLUDED.price_monthly,
         price_yearly = EXCLUDED.price_yearly,
+        price_3year = EXCLUDED.price_3year,
         currency = EXCLUDED.currency,
         features = EXCLUDED.features,
         is_active = EXCLUDED.is_active,
@@ -80,11 +87,13 @@ export async function POST(request: NextRequest) {
     `, [
       id, name, display_name, description,
       price_monthly, price_yearly, currency,
-      JSON.stringify(features), is_active, sort_order
+      JSON.stringify(features), is_active, sort_order,
+      Math.max(0, Number(price_3year) || 0),
     ]);
 
     // Clear all subscription caches since plan features changed
     clearAllSubscriptionCaches();
+    scheduleKbReindex({ target: 'plans', reason: 'plan_saved' });
 
     return NextResponse.json({ plan }, { status: 201 });
   } catch (error: any) {

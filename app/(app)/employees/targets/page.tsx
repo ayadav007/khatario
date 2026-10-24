@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -164,12 +165,13 @@ export default function TargetsPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Employee Targets</h1>
-            <p className="text-sm text-text-secondary mt-1">Set and manage sales targets for employees</p>
-          </div>
-          <Button onClick={() => {
+        <PageHeader
+  title="Employee Targets"
+  subtitle="Set and manage sales targets for employees"
+
+  actions={
+    <>
+<Button onClick={() => {
             setShowForm(true);
             setEditingTarget(null);
             setFormData({
@@ -184,7 +186,9 @@ export default function TargetsPage() {
             <Plus className="w-4 h-4 mr-2" />
             Set Target
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Form Modal */}
         {showForm && (

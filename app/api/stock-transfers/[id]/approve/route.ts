@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { ensureInterBranchInvoiceForTransfer } from '@/lib/inter-branch-utils';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,24 +21,21 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { approved_by, approval_notes } = body;
+    const { approval_notes } = body;
 
-    const userId = approved_by || body.user_id; // REQUIRED for authorization
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const userId = getUserIdFromRequest(request);
     if (!userId) {
-      client.release();
-      return NextResponse.json(
-        { error: 'approved_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get transfer with lock
-    const transferResult = await client.query(`
-      SELECT * FROM stock_transfers WHERE id = $1 FOR UPDATE
-    `, [params.id]);
+    const transferResult = await client.query(
+      `SELECT * FROM stock_transfers WHERE id = $1 AND business_id = $2`,
+      [params.id, tenant.businessId]
+    );
 
     if (transferResult.rows.length === 0) {
-      client.release();
       return NextResponse.json(
         { error: 'Transfer not found' },
         { status: 404 }
@@ -48,7 +48,6 @@ export async function POST(
     try {
       await assertFeatureAccess(transfer.business_id, 'multi_warehouse');
     } catch (error) {
-      client.release();
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
       }
@@ -66,7 +65,6 @@ export async function POST(
         resource: transfer,
       });
     } catch (error) {
-      client.release();
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
@@ -75,31 +73,64 @@ export async function POST(
 
     // Validate status
     if (transfer.status !== 'draft' && transfer.status !== 'pending_approval') {
-      client.release();
       return NextResponse.json(
         { error: `Cannot approve transfer in ${transfer.status} status. Only draft or pending_approval transfers can be approved.` },
         { status: 400 }
       );
     }
 
+    const fromBranch = await client.query(
+      `SELECT COALESCE(
+         w.branch_id,
+         (SELECT bw.branch_id FROM branch_warehouses bw WHERE bw.warehouse_id = w.id
+           ORDER BY bw.is_primary DESC NULLS LAST LIMIT 1)
+       ) AS branch_id
+         FROM warehouses w WHERE w.id = $1 AND w.business_id = $2`,
+      [transfer.from_location_id, tenant.businessId]
+    );
+    const guard = await periodGuardResponse({
+      businessId: tenant.businessId,
+      branchId: fromBranch.rows[0]?.branch_id ?? null,
+      dates: [transfer.transfer_date],
+      action: 'approve this stock transfer',
+      checkGstFiled: true,
+    });
+    if (guard) return guard;
+
     await client.query('BEGIN');
 
-    // Update transfer status to 'pending' (approved and ready for dispatch)
-    const updatedTransfer = await queryOne(`
+    const locked = await client.query(
+      `SELECT status FROM stock_transfers WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.id, tenant.businessId]
+    );
+    const lockedStatus = locked.rows[0]?.status;
+    if (lockedStatus !== 'draft' && lockedStatus !== 'pending_approval') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: `Transfer is ${lockedStatus ?? 'missing'}; it can no longer be approved.`, code: 'TRANSFER_STATE_CHANGED' },
+        { status: 409 }
+      );
+    }
+    await client.query(`
       UPDATE stock_transfers 
       SET status = 'pending',
           approved_by = $1,
           approved_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP,
           notes = CASE 
-            WHEN $2 IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || 'Approved: ' || $2
-            WHEN $2 IS NOT NULL THEN 'Approved: ' || $2
+            WHEN $2::text IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || 'Approved: ' || $2::text
+            WHEN $2::text IS NOT NULL THEN 'Approved: ' || $2::text
             WHEN notes IS NOT NULL THEN notes || E'\n' || 'Approved'
             ELSE 'Approved'
           END
       WHERE id = $3
-      RETURNING *
     `, [userId, approval_notes || null, params.id]);
+
+    await ensureInterBranchInvoiceForTransfer(client, params.id, {
+      ewayBillNumber: body.eway_bill_number,
+      ewayBillDate: body.eway_bill_date,
+      createdBy: userId,
+    });
 
     await client.query('COMMIT');
 

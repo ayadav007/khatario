@@ -216,18 +216,17 @@ export default function ContactsPage() {
 
   return (
     
-      <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="mobile-screen">
+        {/* Desktop header — mobile uses TopBar title */}
+        <div className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-text-primary tracking-tight">
+            <h1 className="text-3xl font-extrabold tracking-tight text-text-primary">
               WhatsApp Contacts
             </h1>
-            <p className="text-text-secondary text-lg">
+            <p className="text-lg text-text-secondary">
               Manage your contacts for campaigns and messaging
             </p>
           </div>
-
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -235,7 +234,7 @@ export default function ContactsPage() {
               onClick={() => void handleExport()}
               disabled={totalCount === 0}
             >
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
             <Button
@@ -243,32 +242,73 @@ export default function ContactsPage() {
               size="sm"
               onClick={() => setShowImportModal(true)}
             >
-              <Upload className="h-4 w-4 mr-2" />
+              <Upload className="mr-2 h-4 w-4" />
               Import
             </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowAddModal(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
+            <Button size="sm" onClick={() => setShowAddModal(true)}>
+              <Plus className="mr-2 h-4 w-4" />
               Add Contact
             </Button>
           </div>
         </div>
 
+        {/* Mobile search + filter strip */}
+        <div className="space-y-2 lg:hidden">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            <input
+              type="text"
+              placeholder="Search name, phone, or email"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="mobile-search-field"
+            />
+          </div>
+          <div className="mobile-chip-row">
+            <select
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setPage(1);
+              }}
+              className="mobile-chip appearance-none pr-7"
+              aria-label="Filter by source"
+            >
+              <option value="">All sources</option>
+              <option value="manual">Manual</option>
+              <option value="csv">CSV import</option>
+              <option value="group_extractor">Group extractor</option>
+            </select>
+            <span className="mobile-chip text-text-muted">
+              {totalCount} contact{totalCount === 1 ? '' : 's'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowImportModal(true)}
+              className="mobile-chip"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+          </div>
+        </div>
+
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center justify-between rounded-[var(--mobile-radius-row,14px)] border border-red-200 bg-red-50 p-3 lg:rounded-lg lg:p-4">
             <p className="text-sm text-red-600">{error}</p>
-            <button onClick={() => fetchContacts()} className="text-sm text-red-700 font-medium hover:underline">Retry</button>
+            <button onClick={() => fetchContacts()} className="text-sm font-medium text-red-700 hover:underline">Retry</button>
           </div>
         )}
 
-        {/* Filters & Search */}
-        <Card className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
+        {/* Desktop filters */}
+        <Card className="hidden p-4 lg:block">
+          <div className="flex flex-col gap-4 md:flex-row">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search by name, phone, or email..."
@@ -277,7 +317,7 @@ export default function ContactsPage() {
                     setSearch(e.target.value);
                     setPage(1);
                   }}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-primary-500"
                 />
               </div>
             </div>
@@ -288,7 +328,7 @@ export default function ContactsPage() {
                 setSourceFilter(e.target.value);
                 setPage(1);
               }}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              className="rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-primary-500"
             >
               <option value="">All Sources</option>
               <option value="manual">Manual</option>
@@ -349,38 +389,37 @@ export default function ContactsPage() {
             <span className="ml-3 text-text-secondary">Loading contacts...</span>
           </Card>
         ) : contacts.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Users className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="text-lg font-semibold text-text-primary mb-2">
+          <div className="mobile-inset-group px-6 py-10 text-center lg:rounded-card lg:border lg:border-border lg:bg-surface lg:p-12 lg:shadow-none">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50">
+              <Users className="h-8 w-8 text-primary-500" />
+            </div>
+            <h3 className="mb-1 text-base font-semibold text-text-primary lg:mb-2 lg:text-lg">
               {totalCount === 0 && !search && !sourceFilter && !groupFilter
                 ? 'No contacts yet'
                 : 'No contacts match your filters'}
             </h3>
-            <p className="text-text-secondary mb-4">
+            <p className="mb-5 text-sm text-text-secondary">
               {totalCount === 0 && !search && !sourceFilter && !groupFilter
-                ? 'Add contacts manually or import from CSV or WhatsApp groups'
+                ? 'Tap + to add one, or import a list'
                 : 'Try adjusting search or filters'}
             </p>
             {totalCount === 0 && !search && !sourceFilter && !groupFilter && (
-              <div className="flex gap-2 justify-center">
+              <div className="flex justify-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => setShowImportModal(true)}
                 >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Contacts
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setShowAddModal(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Your First Contact
+                <Button size="sm" onClick={() => setShowAddModal(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add contact
                 </Button>
               </div>
             )}
-          </Card>
+          </div>
         ) : (
           <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -473,7 +512,15 @@ export default function ContactsPage() {
           onConfirm={() => confirmDialog?.onConfirm()}
           onCancel={() => setConfirmDialog(null)}
         />
+
+        <button
+          type="button"
+          className="mobile-fab"
+          onClick={() => setShowAddModal(true)}
+          aria-label="Add contact"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
       </div>
-    
   );
 }

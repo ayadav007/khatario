@@ -1,25 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
+import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/suppliers/hub/published-listings — own business (supplier) listings + item names
- * POST — add listing (created_by_user_id for auth)
+ * POST — add listing
+ * Business and user come from the session only; client-sent ids are ignored.
  */
 export async function GET(request: NextRequest) {
   try {
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!businessId || !userId) {
-      return NextResponse.json({ error: 'business_id and user context required' }, { status: 400 });
-    }
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId } = auth;
     try {
       await authorize(userId, 'purchases', 'read', { businessId });
     } catch (error) {
@@ -51,8 +50,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId: createdByUserId } = auth;
     const body = await request.json();
-    const businessId = getBusinessIdFromRequest(request, body);
     const {
       item_id: itemId,
       audience,
@@ -62,17 +63,10 @@ export async function POST(request: NextRequest) {
       price_display: priceDisplay,
       from_amount: fromAmount,
       sort_order: sortOrder,
-      created_by_user_id: createdByUserId,
     } = body;
 
-    if (!businessId || !itemId) {
-      return NextResponse.json({ error: 'business_id and item_id are required' }, { status: 400 });
-    }
-    if (!createdByUserId) {
-      return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
-        { status: 400 }
-      );
+    if (!itemId) {
+      return NextResponse.json({ error: 'item_id is required' }, { status: 400 });
     }
 
     try {
@@ -85,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await assertFeatureAccess(businessId, FeatureKeys.SUPPLIER_MANAGEMENT);
+      await assertFeatureAccess(businessId, 'purchase_supplier_hub');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
@@ -124,6 +118,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let extras: ReturnType<typeof parseListingExtras>;
+    try {
+      extras = parseListingExtras(body, businessId);
+      if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
+    } catch (e) {
+      if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+
     const pd = ['hidden', 'from_amount', 'on_request'].includes(priceDisplay)
       ? priceDisplay
       : 'on_request';
@@ -135,9 +138,10 @@ export async function POST(request: NextRequest) {
         `
         INSERT INTO supplier_published_listings (
           supplier_business_id, item_id, audience, display_name, moq, lead_time_text,
-          price_display, from_amount, sort_order, is_active
+          price_display, from_amount, sort_order, is_active,
+          image_url, price, pack_label, order_multiple, collection_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14)
         RETURNING *
         `,
         [
@@ -150,6 +154,11 @@ export async function POST(request: NextRequest) {
           pd,
           fa,
           sortOrder != null ? parseInt(String(sortOrder), 10) : 0,
+          extras.image_url ?? null,
+          extras.price ?? null,
+          extras.pack_label ?? null,
+          extras.order_multiple ?? null,
+          extras.collection_id ?? null,
         ]
       );
       return NextResponse.json({ listing: row }, { status: 201 });

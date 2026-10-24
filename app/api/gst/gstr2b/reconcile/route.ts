@@ -7,10 +7,22 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GSTR2BReconciliationEngine } from '@/lib/gst/gstr2b-reconciliation';
+import { GSTR2BReconciliationEngine, type MissingReference } from '@/lib/gst/gstr2b-reconciliation';
 import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
+import { getPool } from '@/lib/db';
+import { markGstReadinessStale, markReturnReconciled } from '@/lib/gst/period-freshness';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
+
+function publicMissingReference(row: MissingReference) {
+  return {
+    source: row.source,
+    reason: row.reason,
+    purchase_id: row.purchase_id,
+    gstr2b_invoice_id: row.gstr2b_invoice_id,
+    bill_date: row.bill_date,
+  };
+}
 
 /**
  * POST /api/gst/gstr2b/reconcile
@@ -39,12 +51,19 @@ export async function POST(request: NextRequest) {
     const access = await assertGstr2bApiAccess(request, business_id, 'create');
     if (!access.ok) return access.response;
     
-    const matches = await reconciliationEngine.reconcile(access.businessId, filing_period);
-    
+    const { matches, missing_references } = await reconciliationEngine.reconcile(access.businessId, filing_period);
+    const pool = getPool();
+    await markGstReadinessStale(pool, access.businessId, {
+      dates: [`${filing_period}-01`],
+      monthly: ['gstr3b'],
+    });
+    await markReturnReconciled(pool, access.businessId, 'gstr2b', filing_period);
+
     return NextResponse.json({
       success: true,
       filing_period,
       total_invoices: matches.length,
+      missing_references: missing_references.map(publicMissingReference),
       matches: matches.map(m => ({
         ...m,
         invoice_date: typeof m.invoice_date === 'string' ? m.invoice_date : m.invoice_date.toISOString().split('T')[0]
@@ -117,8 +136,8 @@ export async function GET(request: NextRequest) {
         SELECT 
           match_status,
           COUNT(*) as count,
-          COALESCE(SUM(books_itc_amount), 0) as total_books_itc,
-          COALESCE(SUM(gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess), 0) as total_gstr2b_itc
+          COALESCE(SUM(CASE WHEN is_credit_note THEN -books_itc_amount ELSE books_itc_amount END), 0) as total_books_itc,
+          COALESCE(SUM(CASE WHEN is_credit_note THEN -(gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess) ELSE (gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess) END), 0) as total_gstr2b_itc
         FROM gstr2b_reconciliation
         WHERE business_id = $1 AND filing_period = $2
         GROUP BY match_status
@@ -133,9 +152,16 @@ export async function GET(request: NextRequest) {
         return acc;
       }, {});
       
+      const missing_references = await reconciliationEngine.listMissingReferences(
+        client,
+        access.businessId,
+        filing_period
+      );
+
       return NextResponse.json({
         filing_period,
         summary,
+        missing_references: missing_references.map(publicMissingReference),
         invoices: result.rows.map((row: any) => ({
           id: row.id,
           match_status: row.match_status,

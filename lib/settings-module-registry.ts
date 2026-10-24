@@ -1,11 +1,14 @@
 /**
- * Module-scoped settings navigation — single source of truth for hub + sidebar.
- * Shared settings are duplicated under each enabled platform module (Billing, HR, Connect, CRM).
+ * Settings navigation — one list for the hub and the sidebar.
+ * Shared settings (account, team, plan, integrations, system, help) appear once.
+ * Product-specific groups are added only for enabled modules.
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
 
 export const SETTINGS_MODULE_ORDER: PlatformModule[] = ['billing', 'hr', 'connect', 'crm'];
+
+const ALL_MODULES: PlatformModule[] = [...SETTINGS_MODULE_ORDER];
 
 export type SettingsNavLink = {
   href: string;
@@ -14,6 +17,10 @@ export type SettingsNavLink = {
   permissionModule?: string;
   featureKey?: string;
   searchKeywords?: string[];
+  /** Modules that may open this URL. Omit on a module group to use that module. */
+  accessModules?: PlatformModule[];
+  /** Modules that show this link. Defaults to accessModules. */
+  showForModules?: PlatformModule[];
 };
 
 export type SettingsNavGroup = {
@@ -28,78 +35,222 @@ export type SettingsModuleDefinition = {
   groups: SettingsNavGroup[];
 };
 
-const sharedPlanLinks: SettingsNavLink[] = [
-  { href: '/settings/products', label: 'Your products' },
-  { href: '/settings/subscription', label: 'Plan & billing' },
-];
-
-const sharedUserLinks: SettingsNavLink[] = [
-  { href: '/settings/user-management', label: 'User management' },
-  { href: '/settings/users', label: 'Manage users' },
-  { href: '/settings/roles', label: 'Manage roles' },
-  { href: '/settings/user-branches', label: 'User branches' },
-  { href: '/settings/activity', label: 'Activity logs' },
-];
-
-const sharedUserLinksBilling: SettingsNavLink[] = [
-  ...sharedUserLinks,
-  { href: '/settings/user-warehouses', label: 'User warehouses' },
-];
-
-const sharedHelpLinks: SettingsNavLink[] = [
-  { href: '/settings/help', label: 'Help & support' },
-  { href: '/settings/help/how-to', label: 'How-to guides', searchKeywords: ['docs', 'tutorial'] },
-];
-
 const businessProfileLink: SettingsNavLink = {
   href: '/settings/business',
   label: 'Business profile',
   searchKeywords: ['profile', 'company', 'logo', 'organization'],
+  accessModules: ALL_MODULES,
 };
 
 const branchesLink: SettingsNavLink = {
   href: '/settings/branches',
   label: 'Branches',
   searchKeywords: ['location', 'outlet'],
+  accessModules: ALL_MODULES,
 };
 
 const financialYearsLink: SettingsNavLink = {
   href: '/settings/financial-years',
   label: 'Financial years',
   searchKeywords: ['fiscal', 'payroll', 'income tax', 'fy'],
+  accessModules: ['billing', 'hr'],
 };
 
 const backupLink: SettingsNavLink = {
   href: '/settings/backup',
   label: 'Backup & restore',
   searchKeywords: ['export', 'download data'],
+  accessModules: ALL_MODULES,
 };
 
 const emailLink: SettingsNavLink = {
   href: '/settings/email',
   label: 'Email (SMTP)',
   searchKeywords: ['smtp', 'gmail', 'mail'],
+  accessModules: ['billing', 'hr', 'connect'],
 };
 
 const smsLink: SettingsNavLink = {
   href: '/settings/integrations?category=sms',
   label: 'SMS',
+  accessModules: ['billing', 'hr', 'connect'],
 };
+
+/** Shown once, above product-specific groups. */
+export const SETTINGS_SHARED_GROUPS: SettingsNavGroup[] = [
+  {
+    id: 'account',
+    title: 'Account',
+    links: [
+      businessProfileLink,
+      branchesLink,
+      financialYearsLink,
+      {
+        href: '/settings/warehouses',
+        label: 'Warehouses',
+        permissionModule: 'warehouses',
+        accessModules: ['billing'],
+      },
+    ],
+  },
+  {
+    id: 'team',
+    title: 'Team & permissions',
+    links: [
+      {
+        href: '/settings/user-management',
+        label: 'User management',
+        accessModules: ALL_MODULES,
+      },
+      { href: '/settings/users', label: 'Manage users', accessModules: ALL_MODULES },
+      { href: '/settings/roles', label: 'Manage roles', accessModules: ALL_MODULES },
+      { href: '/settings/user-branches', label: 'User branches', accessModules: ALL_MODULES },
+      {
+        href: '/settings/user-warehouses',
+        label: 'User warehouses',
+        permissionModule: 'warehouses',
+        accessModules: ['billing'],
+      },
+      { href: '/settings/activity', label: 'Activity logs', accessModules: ALL_MODULES },
+    ],
+  },
+  {
+    id: 'plan',
+    title: 'Plan',
+    links: [
+      { href: '/settings/products', label: 'Your products', accessModules: ALL_MODULES },
+      { href: '/settings/subscription', label: 'Plan & billing', accessModules: ALL_MODULES },
+    ],
+  },
+];
+
+const SETTINGS_TAIL_GROUPS: SettingsNavGroup[] = [
+  {
+    id: 'integrations',
+    title: 'Integrations',
+    links: [
+      {
+        href: '/settings/integrations',
+        label: 'All integrations',
+        accessModules: ['billing', 'crm'],
+      },
+      emailLink,
+      {
+        href: '/settings/payments',
+        label: 'Payment providers',
+        searchKeywords: ['cashfree', 'upi', 'gateway'],
+        accessModules: ['billing'],
+      },
+      smsLink,
+      {
+        href: '/settings/integrations?category=crm',
+        label: 'CRM integrations',
+        accessModules: ['crm'],
+      },
+    ],
+  },
+  {
+    id: 'system',
+    title: 'System',
+    links: [
+      {
+        href: '/settings/features',
+        label: 'Appearance',
+        searchKeywords: ['ui features', 'theme', 'dark mode', 'branding', 'portal'],
+        accessModules: ALL_MODULES,
+      },
+      backupLink,
+    ],
+  },
+  {
+    id: 'help',
+    title: 'Help',
+    links: [
+      { href: '/settings/help', label: 'Help & support', accessModules: ALL_MODULES },
+      {
+        href: '/settings/help/how-to',
+        label: 'How-to guides',
+        searchKeywords: ['docs', 'tutorial'],
+        accessModules: ALL_MODULES,
+      },
+    ],
+  },
+];
+
+/** WhatsApp pages, matching the in-page tabs. Inbox and agents are Connect-only in the menu. */
+export const WHATSAPP_SETTINGS_GROUP: SettingsNavGroup = {
+  id: 'whatsapp',
+  title: 'WhatsApp',
+  links: [
+    {
+      href: '/settings/whatsapp',
+      label: 'Connection',
+      searchKeywords: ['whatsapp', 'qr', 'meta', 'cloud api'],
+      accessModules: ['billing', 'connect'],
+    },
+    {
+      href: '/settings/whatsapp/templates',
+      label: 'Templates',
+      searchKeywords: ['whatsapp', 'template', 'reminder', 'invoice'],
+      accessModules: ['billing', 'connect'],
+    },
+    {
+      href: '/settings/whatsapp/notifications',
+      label: 'Notifications',
+      searchKeywords: ['whatsapp', 'reminder', 'notification'],
+      accessModules: ['billing', 'connect'],
+    },
+    {
+      href: '/settings/whatsapp/inbox',
+      label: 'Inbox & team',
+      searchKeywords: ['whatsapp', 'inbox', 'auto assign'],
+      accessModules: ['billing', 'connect'],
+      showForModules: ['connect'],
+    },
+    {
+      href: '/settings/whatsapp/team',
+      label: 'Agents',
+      searchKeywords: ['whatsapp', 'agents', 'team'],
+      accessModules: ['billing', 'connect'],
+      showForModules: ['connect'],
+    },
+    {
+      href: '/settings/whatsapp/ai-agent',
+      label: 'AI agent',
+      searchKeywords: ['ai', 'ai agent', 'chatbot', 'bot', 'assistant', 'knowledge'],
+      accessModules: ['billing', 'connect'],
+    },
+    {
+      href: '/settings/whatsapp/shop',
+      label: 'Shop',
+      searchKeywords: ['shop', 'catalog', 'whatsapp'],
+      accessModules: ['billing', 'connect'],
+    },
+  ],
+};
+
+/**
+ * Paths kept for bookmarks and route guards, not shown in the menu.
+ * Holiday calendar remains reachable; Holiday lists is the menu entry.
+ */
+export const SETTINGS_ACCESS_ONLY: { href: string; modules: PlatformModule[] }[] = [
+  { href: '/settings/holidays', modules: ['hr'] },
+];
 
 export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleDefinition> = {
   billing: {
     title: 'Billing',
-    description: 'Invoicing, inventory, accounting, and organization settings for billing',
+    description: 'Invoicing, inventory, and accounting settings',
     groups: [
       {
-        id: 'organization',
-        title: 'Organization',
+        id: 'billing-setup',
+        title: 'Billing setup',
         links: [
-          businessProfileLink,
-          { href: '/settings/suppliers-directory', label: 'Suppliers directory' },
-          financialYearsLink,
-          branchesLink,
-          { href: '/settings/warehouses', label: 'Warehouses', permissionModule: 'warehouses' },
+          {
+            href: '/settings/suppliers-directory',
+            label: 'Suppliers directory',
+            featureKey: 'purchase_supplier_hub',
+          },
           {
             href: '/settings/business#pos-mode',
             label: 'POS mode',
@@ -107,16 +258,6 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             searchKeywords: ['pos', 'point of sale', 'checkout'],
           },
         ],
-      },
-      {
-        id: 'users',
-        title: 'Users & access',
-        links: sharedUserLinksBilling,
-      },
-      {
-        id: 'subscription',
-        title: 'Plan & billing',
-        links: sharedPlanLinks,
       },
       {
         id: 'accounting',
@@ -146,33 +287,40 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             searchKeywords: ['invoice fields', 'item fields'],
           },
           { href: '/settings/number-series', label: 'Transaction number series' },
-          {
-            href: '/connect/whatsapp',
-            label: 'Send invoices on WhatsApp',
-            searchKeywords: ['whatsapp', 'invoice', 'reminder'],
-          },
+        ],
+      },
+      {
+        id: 'online-store',
+        title: 'Online store',
+        links: [
           {
             href: '/settings/online-store',
-            label: 'Online Store',
-            featureKey: 'online_store',
+            label: 'Storefront',
+            featureKey: 'advanced_online_store',
             searchKeywords: ['store', 'storefront', 'e-commerce', 'catalog', 'subdomain', 'theme', 'editor'],
           },
           {
             href: '/settings/online-store/orders',
-            label: 'Store Orders',
-            featureKey: 'online_store',
+            label: 'Store orders',
+            featureKey: 'advanced_online_store',
             searchKeywords: ['orders', 'store orders', 'online orders'],
+          },
+          {
+            href: '/settings/online-store/enquiries',
+            label: 'Store enquiries',
+            featureKey: 'advanced_online_store',
+            searchKeywords: ['enquiries', 'contact form', 'messages', 'inbox', 'leads'],
           },
         ],
       },
       {
         id: 'inventory-items',
-        title: 'Inventory & items',
+        title: 'Inventory',
         links: [
           {
             href: '/settings/business#bp-features',
             label: 'Item defaults',
-            searchKeywords: ['variants', 'stock', 'warehouse'],
+            searchKeywords: ['variants', 'stock', 'warehouse', 'billing preferences'],
           },
           {
             href: '/settings/label-templates',
@@ -188,56 +336,28 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         ],
       },
       {
-        id: 'general',
-        title: 'General',
+        id: 'billing-general',
+        title: 'Billing tools',
         links: [
-          { href: '/settings/features', label: 'UI features' },
-          backupLink,
           {
             href: '/settings/offline-sync',
             label: 'Offline sync',
             searchKeywords: ['catalog', 'cache', 'airplane'],
           },
-          { href: '/settings/automation', label: 'Workflow automation' },
+          { href: '/settings/automation', label: 'Workflow automation', featureKey: 'workflow_automation' },
         ],
-      },
-      {
-        id: 'integrations',
-        title: 'Integrations',
-        links: [
-          { href: '/settings/integrations', label: 'All integrations' },
-          emailLink,
-          {
-            href: '/settings/payments',
-            label: 'Payment providers',
-            searchKeywords: ['cashfree', 'upi', 'gateway'],
-          },
-          smsLink,
-          {
-            href: '/settings/ai-config',
-            label: 'AI sales agent',
-            searchKeywords: ['ai', 'chatbot', 'whatsapp'],
-          },
-          { href: '/settings/ai-assistant', label: 'AI assistant' },
-        ],
-      },
-      {
-        id: 'help',
-        title: 'Help',
-        links: sharedHelpLinks,
       },
     ],
   },
 
   hr: {
-    title: 'HR',
-    description: 'Payroll, attendance, leave, and organization settings for HR',
+    title: 'People',
+    description: 'Attendance, leave, payroll, and hiring settings',
     groups: [
       {
-        id: 'organization',
-        title: 'Organization',
+        id: 'hr-organization',
+        title: 'HR setup',
         links: [
-          businessProfileLink,
           {
             href: '/settings/departments',
             label: 'Departments & designations',
@@ -247,62 +367,61 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hr-employee',
             label: 'Employee management',
             searchKeywords: ['probation', 'employee id', 'visibility'],
+            featureKey: 'hr_advanced',
           },
           {
             href: '/settings/hr-exit',
             label: 'Exit process',
             searchKeywords: ['resignation', 'notice period', 'fnf'],
+            featureKey: 'hr_advanced',
           },
-          branchesLink,
-          financialYearsLink,
         ],
-      },
-      {
-        id: 'users',
-        title: 'Users & access',
-        links: sharedUserLinks,
-      },
-      {
-        id: 'subscription',
-        title: 'Plan & billing',
-        links: sharedPlanLinks,
       },
       {
         id: 'hr-time-attendance',
         title: 'Time & attendance',
         links: [
-          { href: '/settings/shifts', label: 'Shifts' },
-          { href: '/hr/shifts/roster', label: 'Shift roster' },
+          { href: '/settings/shifts', label: 'Shifts', featureKey: 'hr_shifts' },
+          { href: '/hr/shifts/roster', label: 'Shift roster', featureKey: 'hr_shifts' },
           {
             href: '/hr/shifts/bulk-assign',
             label: 'Bulk assign shifts',
             searchKeywords: ['roster', 'assign', 'shift'],
+            featureKey: 'hr_shifts',
           },
           { href: '/settings/weekly-off', label: 'Weekly off' },
-          { href: '/settings/holiday-lists', label: 'Holiday lists' },
-          { href: '/settings/holidays', label: 'Holidays (legacy)' },
-          { href: '/settings/ot-policy', label: 'Overtime policy' },
-          { href: '/settings/attendance-policy', label: 'Attendance policy' },
-          { href: '/settings/attendance-regularization', label: 'Regularization' },
+          { href: '/settings/holiday-lists', label: 'Holiday lists', featureKey: 'hr_shifts' },
+          { href: '/settings/ot-policy', label: 'Overtime policy', featureKey: 'hr_shifts' },
+          {
+            href: '/settings/attendance-policy',
+            label: 'Attendance policy',
+            featureKey: 'hr_staff_app',
+          },
+          {
+            href: '/settings/attendance-regularization',
+            label: 'Regularization',
+            featureKey: 'hr_shifts',
+          },
         ],
       },
       {
         id: 'hr-leave',
         title: 'Leave',
         links: [
-          { href: '/settings/leave-plan', label: 'Leave plan' },
-          { href: '/settings/leave-types', label: 'Leave types' },
-          { href: '/settings/holidays', label: 'Holidays' },
-          { href: '/settings/hr-approval', label: 'HR approvals' },
+          { href: '/settings/leave-plan', label: 'Leave plan', featureKey: 'hr_leaves' },
+          { href: '/settings/leave-types', label: 'Leave types', featureKey: 'hr_leaves' },
+          { href: '/settings/hr-approval', label: 'HR approvals', featureKey: 'hr_leaves' },
           {
             href: '/hr/leaves/year-end',
             label: 'Leave year-end',
             searchKeywords: ['carry forward', 'lapse', 'year end'],
+            featureKey: 'hr_leaves',
           },
           {
             href: '/hr/leaves/import-balances',
             label: 'Import leave balances',
             searchKeywords: ['import', 'balances', 'opening'],
+            featureKey: 'hr_leaves',
           },
         ],
       },
@@ -314,13 +433,15 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/payroll',
             label: 'Payroll settings',
             searchKeywords: ['pay day', 'salary', 'statutory'],
+            featureKey: 'hr_payroll_setup',
           },
           {
             href: '/settings/salary-components',
             label: 'Salary components',
             searchKeywords: ['basic', 'hra', 'allowance', 'earning', 'deduction', 'payroll'],
+            featureKey: 'hr_payroll_setup',
           },
-          { href: '/settings/commission-rules', label: 'Commission rules' },
+          { href: '/settings/commission-rules', label: 'Commission rules', featureKey: 'hr_commissions' },
         ],
       },
       {
@@ -331,16 +452,19 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hiring',
             label: 'Hiring defaults',
             searchKeywords: ['recruitment', 'onboarding invite'],
+            featureKey: 'hr_recruitment',
           },
           {
             href: '/settings/onboarding-templates',
             label: 'Onboarding templates',
             searchKeywords: ['recruitment', 'portal'],
+            featureKey: 'hr_recruitment',
           },
           {
             href: '/settings/offer-letter',
             label: 'Offer letter template',
             searchKeywords: ['offer', 'pdf'],
+            featureKey: 'hr_recruitment',
           },
         ],
       },
@@ -352,123 +476,23 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/employee-portal',
             label: 'Portal & kiosk',
             searchKeywords: ['ess', 'self service', 'kiosk'],
+            featureKey: 'hr_employee_portal',
           },
         ],
-      },
-      {
-        id: 'general',
-        title: 'General',
-        links: [backupLink],
-      },
-      {
-        id: 'integrations',
-        title: 'Integrations',
-        links: [emailLink, smsLink],
-      },
-      {
-        id: 'help',
-        title: 'Help',
-        links: sharedHelpLinks,
       },
     ],
   },
 
   connect: {
     title: 'Connect',
-    description: 'WhatsApp inbox, bot, campaigns, and messaging integrations',
-    groups: [
-      {
-        id: 'organization',
-        title: 'Organization',
-        links: [businessProfileLink, branchesLink],
-      },
-      {
-        id: 'users',
-        title: 'Users & access',
-        links: sharedUserLinks,
-      },
-      {
-        id: 'subscription',
-        title: 'Plan & billing',
-        links: sharedPlanLinks,
-      },
-      {
-        id: 'connect',
-        title: 'Connect',
-        links: [
-          {
-            href: '/connect/whatsapp',
-            label: 'WhatsApp number',
-            searchKeywords: ['meta', 'cloud api', 'qr'],
-          },
-          {
-            href: '/settings/whatsapp',
-            label: 'Bot & messaging',
-            searchKeywords: ['inbox', 'campaigns', 'bot'],
-          },
-        ],
-      },
-      {
-        id: 'general',
-        title: 'General',
-        links: [backupLink],
-      },
-      {
-        id: 'integrations',
-        title: 'Integrations',
-        links: [
-          emailLink,
-          smsLink,
-          { href: '/settings/ai-config', label: 'AI sales agent' },
-          { href: '/settings/ai-assistant', label: 'AI assistant' },
-        ],
-      },
-      {
-        id: 'help',
-        title: 'Help',
-        links: sharedHelpLinks,
-      },
-    ],
+    description: 'WhatsApp inbox, bot, and messaging',
+    groups: [],
   },
 
   crm: {
     title: 'CRM',
     description: 'Customer relationships and CRM integrations',
-    groups: [
-      {
-        id: 'organization',
-        title: 'Organization',
-        links: [businessProfileLink, branchesLink],
-      },
-      {
-        id: 'users',
-        title: 'Users & access',
-        links: sharedUserLinks,
-      },
-      {
-        id: 'subscription',
-        title: 'Plan & billing',
-        links: sharedPlanLinks,
-      },
-      {
-        id: 'integrations',
-        title: 'Integrations',
-        links: [
-          { href: '/settings/integrations', label: 'All integrations' },
-          { href: '/settings/integrations?category=crm', label: 'CRM integrations' },
-        ],
-      },
-      {
-        id: 'general',
-        title: 'General',
-        links: [backupLink],
-      },
-      {
-        id: 'help',
-        title: 'Help',
-        links: sharedHelpLinks,
-      },
-    ],
+    groups: [],
   },
 };
 
@@ -487,79 +511,65 @@ export type SettingsHubSection = {
 };
 
 const GROUP_ACCENT: Record<string, number> = {
-  organization: 0,
-  users: 1,
-  subscription: 1,
+  account: 0,
+  team: 1,
+  plan: 1,
+  'billing-setup': 0,
   accounting: 5,
   'sales-billing': 3,
+  'online-store': 3,
   'inventory-items': 2,
-  general: 2,
+  'billing-general': 2,
+  'hr-organization': 6,
   'hr-time-attendance': 6,
   'hr-leave': 6,
   'hr-payroll': 6,
   'hr-hiring': 6,
   'hr-employee-portal': 6,
-  connect: 5,
+  whatsapp: 5,
   integrations: 0,
+  system: 2,
   help: 3,
 };
 
 export type SettingsNavFilterOptions = {
   hasFeature?: (featureKey: string) => boolean;
+  /** False drops Supplier Hub settings links. Omitted keeps them. */
+  supplierHubVisible?: boolean;
 };
 
-function filterLinks(
-  links: SettingsNavLink[],
-  opts: SettingsNavFilterOptions,
-): SettingsNavLink[] {
+function filterByPlan(links: SettingsNavLink[], opts: SettingsNavFilterOptions): SettingsNavLink[] {
   return links.filter((link) => {
-    if (link.featureKey && opts.hasFeature && !opts.hasFeature(link.featureKey)) {
-      return false;
-    }
+    if (opts.supplierHubVisible === false && link.featureKey === 'purchase_supplier_hub') return false;
+    if (link.featureKey && opts.hasFeature && !opts.hasFeature(link.featureKey)) return false;
     return true;
   });
 }
 
-export function getEnabledSettingsModuleDefinitions(
-  enabledModules: PlatformModule[],
-  opts: SettingsNavFilterOptions = {},
-): Array<{ platformModule: PlatformModule } & SettingsModuleDefinition> {
-  const modules =
-    enabledModules.length > 0 ? enabledModules : (['billing'] as PlatformModule[]);
-
-  return SETTINGS_MODULE_ORDER.filter((m) => modules.includes(m)).map((platformModule) => {
-    const def = SETTINGS_BY_PLATFORM_MODULE[platformModule];
-    const groups = def.groups
-      .map((group) => ({
-        ...group,
-        links: filterLinks(group.links, opts),
-      }))
-      .filter((group) => group.links.length > 0);
-
-    return { platformModule, ...def, groups };
-  });
+function linkShownForModules(
+  link: SettingsNavLink,
+  enabled: PlatformModule[],
+  owner: PlatformModule | null,
+): boolean {
+  const mods = link.showForModules ?? link.accessModules ?? (owner ? [owner] : null);
+  if (!mods || mods.length === 0) return true;
+  return mods.some((mod) => enabled.includes(mod));
 }
 
-export function buildSettingsHubSections(
-  enabledModules: PlatformModule[],
-  opts: SettingsNavFilterOptions = {},
-): SettingsHubSection[] {
-  return getEnabledSettingsModuleDefinitions(enabledModules, opts).map(
-    ({ platformModule, title, description, groups }) => ({
-      id: platformModule,
-      title,
-      description,
-      columns: groups.map((group) => ({
-        id: `${platformModule}-${group.id}`,
-        title: group.title,
-        accentIndex: GROUP_ACCENT[group.id] ?? 2,
-        links: group.links.map((link) => ({
-          ...link,
-          module: link.permissionModule ?? 'settings',
-        })),
-      })),
-    }),
-  );
+function prepareGroup(
+  group: SettingsNavGroup,
+  enabled: PlatformModule[],
+  opts: SettingsNavFilterOptions,
+  owner: PlatformModule | null,
+): SettingsSidebarGroup | null {
+  const links = filterByPlan(group.links, opts)
+    .filter((link) => linkShownForModules(link, enabled, owner))
+    .map((link) => ({
+      ...link,
+      module: link.permissionModule ?? 'settings',
+    }));
+  if (links.length === 0) return null;
+  return { title: group.title, groupId: group.id, links };
 }
 
 export type SettingsSidebarGroup = {
@@ -574,22 +584,180 @@ export type SettingsSidebarModuleBlock = {
   groups: SettingsSidebarGroup[];
 };
 
+const HUB_BANDS: { id: string; title: string; description: string; groupIds: string[] }[] = [
+  {
+    id: 'account',
+    title: 'Account',
+    description: 'Profile, team, and plan for this business',
+    groupIds: ['account', 'team', 'plan'],
+  },
+  {
+    id: 'billing',
+    title: 'Billing',
+    description: 'Invoicing, inventory, store, and accounting',
+    groupIds: [
+      'billing-setup',
+      'accounting',
+      'sales-billing',
+      'online-store',
+      'inventory-items',
+      'billing-general',
+    ],
+  },
+  {
+    id: 'people',
+    title: 'People',
+    description: 'Attendance, leave, payroll, and hiring',
+    groupIds: [
+      'hr-organization',
+      'hr-time-attendance',
+      'hr-leave',
+      'hr-payroll',
+      'hr-hiring',
+      'hr-employee-portal',
+    ],
+  },
+  {
+    id: 'whatsapp',
+    title: 'WhatsApp',
+    description: 'Connection, templates, inbox, and shop',
+    groupIds: ['whatsapp'],
+  },
+  {
+    id: 'system',
+    title: 'Integrations & system',
+    description: 'Apps, appearance, backup, and help',
+    groupIds: ['integrations', 'system', 'help'],
+  },
+];
+
+export function getEnabledSettingsModuleDefinitions(
+  enabledModules: PlatformModule[],
+  opts: SettingsNavFilterOptions = {},
+): Array<{ platformModule: PlatformModule } & SettingsModuleDefinition> {
+  const modules = enabledModules.length > 0 ? enabledModules : (['billing'] as PlatformModule[]);
+
+  return SETTINGS_MODULE_ORDER.filter((m) => modules.includes(m)).map((platformModule) => {
+    const def = SETTINGS_BY_PLATFORM_MODULE[platformModule];
+    const groups: SettingsNavGroup[] = [];
+    for (const group of def.groups) {
+      const prepared = prepareGroup(group, modules, opts, platformModule);
+      if (!prepared) continue;
+      groups.push({
+        id: prepared.groupId,
+        title: prepared.title,
+        links: prepared.links.map(({ module: _module, ...link }) => link),
+      });
+    }
+
+    return {
+      platformModule,
+      title: def.title,
+      description: def.description,
+      groups,
+    };
+  });
+}
+
+/** One level of groups for the sidebar and hub. Shared groups are not repeated. */
+export function buildFlatSettingsGroups(
+  enabledModules: PlatformModule[],
+  opts: SettingsNavFilterOptions = {},
+): SettingsSidebarGroup[] {
+  const modules = enabledModules.length > 0 ? enabledModules : (['billing'] as PlatformModule[]);
+  const groups: SettingsSidebarGroup[] = [];
+
+  const push = (group: SettingsNavGroup, owner: PlatformModule | null) => {
+    const prepared = prepareGroup(group, modules, opts, owner);
+    if (prepared) groups.push(prepared);
+  };
+
+  for (const group of SETTINGS_SHARED_GROUPS) push(group, null);
+  for (const mod of SETTINGS_MODULE_ORDER) {
+    if (!modules.includes(mod)) continue;
+    for (const group of SETTINGS_BY_PLATFORM_MODULE[mod].groups) push(group, mod);
+  }
+  if (modules.includes('billing') || modules.includes('connect')) {
+    push(WHATSAPP_SETTINGS_GROUP, null);
+  }
+  for (const group of SETTINGS_TAIL_GROUPS) push(group, null);
+
+  return groups;
+}
+
+export function buildSettingsHubSections(
+  enabledModules: PlatformModule[],
+  opts: SettingsNavFilterOptions = {},
+): SettingsHubSection[] {
+  const byId = new Map(buildFlatSettingsGroups(enabledModules, opts).map((group) => [group.groupId, group]));
+
+  return HUB_BANDS.map((band) => ({
+    id: band.id,
+    title: band.title,
+    description: band.description,
+    columns: band.groupIds.flatMap((id) => {
+      const group = byId.get(id);
+      if (!group) return [];
+      return [
+        {
+          id: group.groupId,
+          title: group.title,
+          accentIndex: GROUP_ACCENT[group.groupId] ?? 2,
+          links: group.links,
+        },
+      ];
+    }),
+  })).filter((section) => section.columns.length > 0);
+}
+
 export function buildSettingsSidebarBlocks(
   enabledModules: PlatformModule[],
   opts: SettingsNavFilterOptions = {},
 ): SettingsSidebarModuleBlock[] {
-  return getEnabledSettingsModuleDefinitions(enabledModules, opts).map(
-    ({ platformModule, title, groups }) => ({
-      platformModule,
-      label: title.toUpperCase(),
-      groups: groups.map((group) => ({
-        title: group.title,
-        groupId: group.id,
-        links: group.links.map((link) => ({
-          ...link,
-          module: link.permissionModule ?? 'settings',
-        })),
-      })),
-    }),
-  );
+  return [
+    {
+      platformModule: 'billing',
+      label: 'SETTINGS',
+      groups: buildFlatSettingsGroups(enabledModules, opts),
+    },
+  ];
+}
+
+/** Path → modules allowed to open it. Used by the settings route guard. */
+export function collectSettingsPathModules(): Map<string, PlatformModule[]> {
+  const counts = new Map<string, Set<PlatformModule>>();
+
+  const add = (href: string, mods: PlatformModule[]) => {
+    const path = href.split('?')[0].split('#')[0];
+    if (!counts.has(path)) counts.set(path, new Set());
+    for (const mod of mods) counts.get(path)!.add(mod);
+  };
+
+  for (const group of [...SETTINGS_SHARED_GROUPS, ...SETTINGS_TAIL_GROUPS]) {
+    for (const link of group.links) {
+      add(link.href, link.accessModules ?? ALL_MODULES);
+    }
+  }
+
+  for (const mod of SETTINGS_MODULE_ORDER) {
+    for (const group of SETTINGS_BY_PLATFORM_MODULE[mod].groups) {
+      for (const link of group.links) {
+        add(link.href, link.accessModules ?? [mod]);
+      }
+    }
+  }
+
+  for (const link of WHATSAPP_SETTINGS_GROUP.links) {
+    add(link.href, link.accessModules ?? ['billing', 'connect']);
+  }
+
+  for (const item of SETTINGS_ACCESS_ONLY) {
+    add(item.href, item.modules);
+  }
+
+  const map = new Map<string, PlatformModule[]>();
+  for (const [path, mods] of counts) {
+    map.set(path, SETTINGS_MODULE_ORDER.filter((mod) => mods.has(mod)));
+  }
+  return map;
 }

@@ -11,6 +11,8 @@ import {
 } from '@/lib/subscription/effective-plan';
 import { shouldOfferTrialExtension, TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +87,11 @@ export async function GET(request: NextRequest) {
         error: 'This account has been suspended. Please contact Khatario support.',
         code: 'BUSINESS_SUSPENDED',
       });
+    }
+
+    const isConnectAgent = (row as { seat_type?: string | null }).seat_type === 'connect';
+    if (isConnectAgent && row.business_id && !(await hasWhatsAppBotAddon(row.business_id))) {
+      return jsonSessionInvalid(403, { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' });
     }
 
     // --- 2. Branches (reuse existing helper) ---
@@ -172,14 +179,17 @@ export async function GET(request: NextRequest) {
       }>(
         `SELECT bs.plan_id, bs.status, bs.trial_end_date::text, bs.end_date::text,
                 bs.grace_period_end::text,
-                bs.trial_extension_granted, bs.trial_extension_declined_at::text,
+                COALESCE(bs.trial_extension_granted, false) AS trial_extension_granted,
+                bs.trial_extension_declined_at::text,
                 sp.display_name as plan_display_name, sp.features
-         FROM business_subscriptions bs
+         FROM business_module_subscriptions bs
          JOIN subscription_plans sp ON bs.plan_id = sp.id
+         JOIN businesses b ON b.id = bs.business_id
          WHERE bs.business_id = $1
          ORDER BY
+           (bs.module_key = COALESCE(b.primary_module, 'billing')) DESC,
            CASE WHEN bs.status IN ('active', 'trial') THEN 0 ELSE 1 END,
-           bs.updated_at DESC NULLS LAST
+           bs.module_key
          LIMIT 1`,
         [row.business_id],
       );
@@ -242,6 +252,7 @@ export async function GET(request: NextRequest) {
         business.product_line,
         (business as { primary_module?: string | null }).primary_module,
       );
+      if (isConnectAgent) platform = { ...platform, defaultHomePath: CONNECT_AGENT_HOME_PATH };
     }
 
     return NextResponse.json({

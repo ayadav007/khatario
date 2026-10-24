@@ -65,8 +65,11 @@ export function getMobileRouteTitle(
   // —— Suppliers ——
   if (p === '/suppliers') return 'Suppliers';
   if (p === '/suppliers/new') return 'Create supplier';
-  if (p === '/suppliers/hub') return 'Suppliers hub';
-  if (p.startsWith('/suppliers/hub/')) return 'Hub profile';
+  if (p === '/suppliers/hub') return 'Supplier Hub';
+  if (p === '/suppliers/hub/find') return 'Find suppliers';
+  if (p.startsWith('/suppliers/hub/')) return 'Supplier profile';
+  if (p === '/suppliers/catalog') return 'My catalog';
+  if (p === '/suppliers/dashboard/analytics') return 'Area report';
   if (p === '/suppliers/requests') return 'Requests to fulfill';
   if (p.startsWith('/suppliers/')) {
     if (p.endsWith('/edit')) return 'Edit supplier';
@@ -76,9 +79,15 @@ export function getMobileRouteTitle(
   // —— Purchases & stock ——
   if (p === '/purchases/scan-record') return 'Scan & Record Bills';
   if (p === '/purchases/requests') return 'Purchase requests';
+  if (p === '/purchases/incoming') return 'Incoming bills';
+  if (p.startsWith('/purchases/incoming/')) return 'Receive bill';
+  if (p === '/purchases/new-arrivals') return 'New arrivals';
   if (p.startsWith('/purchases/') && !p.endsWith('/new')) return 'Purchase';
   if (p === '/purchases/new') return 'New purchase';
   if (p === '/purchases') return 'Purchases';
+  if (p === '/supply-orders') return 'Supplier orders';
+  if (p === '/supply-orders/new') return 'New order';
+  if (p.startsWith('/supply-orders/')) return 'Order';
   if (p.startsWith('/purchase-orders')) return 'Purchase orders';
   if (p.startsWith('/purchase-returns/')) return 'Purchase return';
   if (p === '/purchase-returns') return 'Purchase returns';
@@ -108,6 +117,8 @@ export function getMobileRouteTitle(
   if (p === '/journal-entries') return 'Journal';
   if (p.startsWith('/ledger/account/')) return 'Ledger account';
   if (p === '/ledger') return 'Ledger';
+  if (p === '/expenses/new') return isEdit ? 'Edit expense' : 'New expense';
+  if (p === '/expenses/items') return 'Expense items';
   if (p.startsWith('/expenses')) return 'Expenses';
   if (p === '/opening-balances/setup') return 'Opening balances';
   if (p.startsWith('/opening-balances')) return 'Opening balances';
@@ -115,6 +126,7 @@ export function getMobileRouteTitle(
   // —— Employees & HR ——
   if (p === '/employees/attendance') return 'Mark attendance';
   if (p === '/employees/attendance/mark') return 'Mark attendance';
+  if (p === '/employees/attendance/mark/advanced') return 'Advanced attendance';
   if (p === '/employees/manager/attendance') return 'Roll call';
   if (p === '/employees/expenses/new') return 'Submit expense';
   if (p === '/employees/leaves/calendar') return 'Team calendar';
@@ -135,6 +147,8 @@ export function getMobileRouteTitle(
   if (p === '/reports/cash-flow') return 'Cash flow';
   if (p === '/reports/credit-risk') return 'Credit risk';
   if (p === '/reports/profit-by-invoice') return 'Profit by invoice';
+  if (p.startsWith('/reports/gst/cash-ledger')) return 'GST cash ledger';
+  if (p.startsWith('/reports/gst/compliance')) return 'GST alerts';
   if (p.startsWith('/reports/gst/gstr1')) return 'GSTR-1';
   if (p.startsWith('/reports/gst/gstr3b')) return 'GSTR-3B';
   if (p.startsWith('/reports/gst/gstr9')) return 'GSTR-9';
@@ -148,6 +162,8 @@ export function getMobileRouteTitle(
   if (p.startsWith('/tools')) return 'Tools';
 
   // —— WhatsApp ——
+  if (p === '/whatsapp/flows') return 'Flows';
+  if (p.startsWith('/whatsapp/flows/')) return 'Flow';
   if (p === '/whatsapp/dashboard') return 'CRM dashboard';
   if (p.startsWith('/whatsapp/campaigns/')) return 'Campaign';
   if (p.startsWith('/whatsapp')) return 'WhatsApp';

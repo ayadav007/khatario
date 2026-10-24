@@ -48,11 +48,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }
   }, [pathname]);
   
-  // Full-width pages (no padding, no top bar)
+  // Full-width pages (no padding, no top bar) — keep BottomNav for mobile tab switching
   const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
 
   return (
-    <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
+    <div className="khatario-brand min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
       <DynamicTitle />
       <Sidebar />
       <div 
@@ -64,12 +64,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {/* TopBar & PromotionBanner: rendered by app/(app)/layout.tsx to prevent duplication */}
         <main className={clsx(
           "min-w-0",
-          isFullWidthPage ? "h-screen" : APP_MAIN_PADDING_CLASS
+          isFullWidthPage ? "h-[calc(100dvh-4rem)] lg:h-screen" : APP_MAIN_PADDING_CLASS
         )}>
           {children}
         </main>
       </div>
-      {!isFullWidthPage && <BottomNav />}
+      <BottomNav />
       <MobileNavPrefetch />
       <PromotionModal />
     </div>

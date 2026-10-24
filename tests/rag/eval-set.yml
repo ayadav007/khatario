@@ -1,0 +1,299 @@
+# Retrieval eval set for `npm run kb:eval`.
+# Each case passes when any `expect` document (doc_key) is in the top results.
+# `confident: false` cases are out-of-scope questions that must NOT be answered confidently.
+# Format is deliberately flat: `- q:` starts a case; `expect`, `audience`, `confident` follow.
+
+- q: How much does Khatario cost per month?
+  expect: [plans, prospect/pricing-and-plans.md]
+- q: kitne ka hai khatario
+  expect: [plans, prospect/pricing-and-plans.md, prospect/faq-hinglish.md]
+- q: Is there a free plan?
+  expect: [prospect/pricing-and-plans.md, prospect/faq-english.md, plans]
+- q: How long is the free trial?
+  expect: [prospect/trial-and-signup.md]
+- q: What happens when my trial ends?
+  expect: [prospect/trial-and-signup.md, prospect/faq-hinglish.md]
+- q: Can I file GSTR-1 from Khatario?
+  expect: [prospect/modules/gst-returns.md, prospect/faq-english.md]
+- q: GST return kaise bhare
+  expect: [prospect/faq-hinglish.md, prospect/modules/gst-returns.md]
+- q: Does Khatario generate e-way bills?
+  expect: [prospect/limitations.md, prospect/modules/gst-returns.md]
+- q: Can it create e-invoice IRN?
+  expect: [prospect/limitations.md, prospect/modules/gst-returns.md]
+- q: Does billing work without internet?
+  expect: [prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: internet nahi hai to bill ban sakta hai
+  expect: [prospect/faq-hinglish.md, prospect/modules/offline-mobile-printing.md]
+- q: bina internet ke bill ban sakta hai?
+  expect: [prospect/faq-hinglish.md, prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: Which thermal printers are supported?
+  expect: [prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: Can I use a USB printer?
+  expect: [prospect/limitations.md, prospect/modules/offline-mobile-printing.md]
+- q: Is there an iPhone app?
+  expect: [prospect/limitations.md, prospect/modules/offline-mobile-printing.md]
+- q: udhaar ka hisaab kaise rakhe
+  expect: [prospect/faq-hinglish.md, prospect/modules/payments-receivables.md]
+- q: Can I send payment reminders on WhatsApp?
+  expect: [prospect/modules/payments-receivables.md, prospect/modules/whatsapp-crm.md]
+- q: Can customers pay by UPI link?
+  expect: [prospect/modules/payments-receivables.md]
+- q: Can I send invoices on WhatsApp?
+  expect: [prospect/modules/whatsapp-crm.md, prospect/faq-hinglish.md]
+- q: What is Khatario Connect?
+  expect: [prospect/modules/whatsapp-crm.md, plans]
+- q: Can I have my own online store?
+  expect: [prospect/modules/online-store.md]
+- q: Does Khatario do payroll and attendance?
+  expect: [prospect/modules/hr-payroll.md]
+- q: how to create a custom user with particular access
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: staff ko sirf billing ka access kaise de
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How much does Khatario HR cost?
+  expect: [prospect/modules/hr-payroll.md, plans]
+- q: Can I track stock in multiple godowns?
+  expect: [prospect/modules/inventory-warehouses.md, prospect/faq-hinglish.md]
+- q: Does it support batch and expiry?
+  expect: [prospect/modules/inventory-warehouses.md, prospect/who-its-for.md]
+- q: Can my staff have separate logins?
+  expect: [prospect/modules/multi-branch-users.md, prospect/faq-english.md, prospect/faq-hinglish.md]
+- q: Does it support multiple branches?
+  expect: [prospect/modules/multi-branch-users.md, prospect/faq-english.md]
+- q: Is my data safe?
+  expect: [prospect/security-and-data.md, prospect/faq-english.md, prospect/faq-hinglish.md]
+- q: Can I export to Tally?
+  expect: [prospect/limitations.md, prospect/switching-to-khatario.md]
+- q: How do I import my items from Excel?
+  expect: [prospect/switching-to-khatario.md, how-to/items-stock.md]
+- q: Is Khatario good for a wholesaler?
+  expect: [prospect/who-its-for.md]
+- q: Does it have KOT for restaurants?
+  expect: [prospect/limitations.md, prospect/who-its-for.md]
+- q: How do I book a demo?
+  expect: [prospect/demo-and-support.md, prospect/faq-hinglish.md, support-contact]
+- q: How do I contact support?
+  expect: [support-contact, prospect/demo-and-support.md]
+- q: Can Khatario read a supplier bill photo?
+  expect: [prospect/modules/purchases-suppliers.md]
+- q: Profit and loss balance sheet reports
+  expect: [prospect/modules/accounting-reports.md]
+- q: How do I create an invoice?
+  audience: tenant_user
+  expect: [how-to/invoices.md, prospect/modules/billing-invoicing.md]
+- q: How do I connect my WhatsApp number?
+  audience: tenant_user
+  expect: [how-to/whatsapp.md]
+- q: How do I take a backup?
+  audience: tenant_user
+  expect: [how-to/settings-users.md, prospect/security-and-data.md]
+- q: How do I match purchases with GSTR-2B?
+  audience: tenant_user
+  expect: [how-to/gst-reports.md, prospect/modules/gst-returns.md]
+- q: How should an owner set up GST in Khatario?
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: GST number kaha dalna hai
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: I am under composition scheme, how do I bill?
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: How does GST setup work in Khatario?
+  audience: prospect
+  expect: [how-to/gst-setup.md]
+- q: How do I change the invoice number prefix?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: invoice number kaise change kare
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I add my signature on the invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I show bank details on invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: Can I print a UPI QR code on my bill?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I add terms and conditions on invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I enter a customer's opening balance?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/getting-started.md]
+- q: purane customer ka baki kaise daale
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md]
+- q: How do I add a supplier?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/purchases.md]
+- q: How do I set the financial year?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md]
+- q: How do I set a low stock alert?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/items-stock.md]
+- q: bill kaise banaye
+  audience: tenant_user
+  expect: [how-to/invoices.md, how-to/invoice-setup.md]
+- q: How do I create item categories?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I enable product variants for size and colour?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I add a godown or warehouse?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md, how-to/items-stock.md]
+- q: How do I design barcode labels?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md, how-to/items-stock.md]
+- q: How do I add a custom field on invoice?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: Can I bill an item when stock is zero?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I start my online store?
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: online store kaise banaye
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: Where do I see orders from my online store?
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: How do I set up email to send invoices?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: How do I add my UPI ID for payment links?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md, how-to/invoice-setup.md]
+- q: How do I set up the AI sales agent on WhatsApp?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: Can I send SMS to customers?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: What are account mappings?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: How do I turn on POS mode?
+  audience: tenant_user
+  expect: [how-to/general-settings.md, how-to/items-inventory-settings.md]
+- q: How do I switch to dark mode or change brand colour?
+  audience: tenant_user
+  expect: [how-to/general-settings.md]
+- q: How do I sync offline bills?
+  audience: tenant_user
+  expect: [how-to/general-settings.md, prospect/modules/offline-mobile-printing.md]
+- q: What is the suppliers directory?
+  audience: tenant_user
+  expect: [how-to/general-settings.md]
+- q: staff ko access kaise de
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How do I create a custom role with permissions?
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How do I deactivate a staff user?
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: What is the weather in Delhi today?
+  confident: false
+- q: Write me a poem about cricket
+  confident: false
+- q: How do I create an invoice?
+  audience: prospect
+  forbid: [how-to/invoices.md]
+
+# GST law corpus (searched only as a second pass for tenant users)
+- q: What is the time limit to issue a credit note?
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Who is liable to register under GST?
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Conditions for claiming input tax credit
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: What details must a tax invoice contain?
+  audience: gst_law
+  expect: [gst-law/cgst-rules.md, gst-law/cgst-act.md]
+- q: Penalty for not issuing an invoice
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Place of supply of goods for inter-state supply
+  audience: gst_law
+  expect: [gst-law/igst-act.md]
+- q: Turnover limit for composition levy
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: When is an e-way bill required?
+  audience: gst_law
+  expect: [gst-law/cgst-rules.md]
+- q: Interest on late payment of GST
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Late fee for delay in filing a return
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: What does section 16 of the CGST Act say?
+  audience: prospect
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md, gst-law/igst-act.md]
+- q: Time limit for credit note under GST law
+  audience: tenant_user
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md]
+- q: How do I create a credit note?
+  audience: tenant_user
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md]
+
+# Owner questions in the app. `route: insights` = answered from the books, never the knowledge search.
+- q: How was sale today?
+  audience: tenant_user
+  route: insights
+- q: aaj kitna sale hua
+  audience: tenant_user
+  route: insights
+- q: Which customer has the highest pending amount?
+  audience: tenant_user
+  route: insights
+- q: udhaar kitna baaki hai
+  audience: tenant_user
+  route: insights
+- q: overdue invoices
+  audience: tenant_user
+  route: insights
+- q: top products this month
+  audience: tenant_user
+  route: insights
+- q: payments received yesterday
+  audience: tenant_user
+  route: insights
+- q: low stock
+  audience: tenant_user
+  route: insights
+- q: pichle mahine ki sales
+  audience: tenant_user
+  route: insights
+- q: summary
+  audience: tenant_user
+  route: insights
+- q: How do I create a sales invoice?
+  audience: tenant_user
+  route: guides
+  expect: [how-to/invoices.md, how-to/getting-started.md]
+- q: How do I record a payment received?
+  audience: tenant_user
+  route: guides
+- q: What is a sales return?
+  audience: tenant_user
+  route: guides
+- q: stock kaise add kare
+  audience: tenant_user
+  route: guides

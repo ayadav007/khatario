@@ -25,6 +25,9 @@ export const GEMINI_INVOICE_MAX_OUTPUT_TOKENS = 32_768;
  */
 export const GEMINI_INVOICE_THINKING_BUDGET = 0;
 
+/** Gemini 3+ replaces thinkingBudget with thinkingLevel and cannot switch thinking off. */
+export const GEMINI_INVOICE_THINKING_LEVEL = 'low' as const;
+
 /**
  * Explicit REST enum. HIGH keeps document-text tiling; the pixel cap is the
  * main image-token reduction. MEDIUM would cut tokens further at accuracy risk.

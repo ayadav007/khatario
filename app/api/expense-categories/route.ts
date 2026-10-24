@@ -6,6 +6,7 @@ import { assertExpenseAccountForBusiness } from '@/lib/expense-category-helpers'
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { DEFAULT_EXPENSE_CATEGORIES } from '@/lib/accounting/default-expense-categories';
 
 /**
  * GET /api/expense-categories
@@ -18,6 +19,21 @@ export async function GET(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
+    await db.query(
+      `INSERT INTO expense_categories (business_id, name, account_id, itc_blocked)
+       SELECT $1, d.name, a.id, d.blocked
+         FROM unnest($2::text[], $3::text[], $4::boolean[]) AS d(name, code, blocked)
+         LEFT JOIN accounts a ON a.business_id = $1 AND a.account_code = d.code AND a.is_active = true
+       WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE business_id = $1)
+       ON CONFLICT (business_id, name) DO NOTHING`,
+      [
+        businessId,
+        DEFAULT_EXPENSE_CATEGORIES.map((c) => c[0]),
+        DEFAULT_EXPENSE_CATEGORIES.map((c) => c[1]),
+        DEFAULT_EXPENSE_CATEGORIES.map((c) => c[2]),
+      ]
+    );
+
     const categories = await db.queryRows(`
       SELECT
         ec.id,
@@ -25,6 +41,7 @@ export async function GET(request: NextRequest) {
         ec.name,
         ec.description,
         ec.account_id,
+        COALESCE(ec.itc_blocked, false) AS itc_blocked,
         ec.created_at,
         ec.updated_at,
         a.account_code AS ledger_account_code,
@@ -57,6 +74,7 @@ export async function POST(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
     const { name, description, account_id } = body;
+    const itcBlocked = body.itc_blocked === true || body.itc_blocked === 'true';
 
     if (!business_id || !name) {
       return NextResponse.json(
@@ -79,10 +97,10 @@ export async function POST(request: NextRequest) {
     if (!acc.ok) return acc.response;
 
     const category = await db.queryOne(`
-      INSERT INTO expense_categories (business_id, name, description, account_id)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, business_id, name, description, account_id, created_at, updated_at
-    `, [business_id, String(name).trim(), description ?? null, account_id || null]);
+      INSERT INTO expense_categories (business_id, name, description, account_id, itc_blocked)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, business_id, name, description, account_id, itc_blocked, created_at, updated_at
+    `, [business_id, String(name).trim(), description ?? null, account_id || null, itcBlocked]);
 
     return NextResponse.json({ category }, { status: 201 });
   } catch (error: any) {

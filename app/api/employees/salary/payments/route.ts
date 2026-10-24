@@ -4,6 +4,7 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { postSalaryPaymentToBooks } from '@/lib/hr/staff-wage-posting';
 import {
   defaultPartialRecoveryNote,
   isPartialAdvanceRecovery,
@@ -415,6 +416,42 @@ export async function POST(request: NextRequest) {
         console.error('Error generating payslip:', payslipError);
         // Don't fail the salary payment if payslip generation fails
       }
+    }
+
+    const named = await queryOne<{ name: string }>(
+      `SELECT u.name FROM users u WHERE u.id = $1`,
+      [employee_id],
+    );
+    try {
+      await postSalaryPaymentToBooks({
+        businessId: business_id,
+        salaryPaymentId: salaryPayment.id,
+        employeeId: employee_id,
+        employeeName: named?.name || 'Employee',
+        paymentDate: String(payment_date).slice(0, 10),
+        paymentMode: payment_mode || 'cash',
+        gross: grossSalary,
+        attendanceDeduction: Number(attendance_deduction || 0),
+        net: netSalary,
+        tds: Number(tds || 0),
+        pf: Number(provident_fund || 0),
+        esi: Number(esi_employee || 0),
+        professionalTax: Number(professional_tax || 0),
+        advanceRecovery: totalAdvanceRecovery,
+        loan: Number(loan_deduction || 0),
+        otherDeductions: Number(other_deductions || 0),
+      });
+    } catch (booksError) {
+      console.error('Salary payment ledger post failed', booksError);
+      return NextResponse.json(
+        {
+          error: booksError instanceof Error
+            ? booksError.message
+            : 'Salary was saved but could not be posted to the books',
+          salary_payment: salaryPayment,
+        },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ 

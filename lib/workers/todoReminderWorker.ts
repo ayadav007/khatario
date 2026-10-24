@@ -2,32 +2,58 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Try to load .env.local first, then .env
+// dotenv never overrides, so earlier files win. The VPS keeps its settings in .env.production.
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env.production') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import { Worker } from 'bullmq';
 import { getRedisConnection } from '../queue/redis';
-import { queryOne } from '../db';
-import {
-  triggerTodoReminder,
-  type TodoForReminder,
-} from '../services/todoReminderService';
 import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
 import { logTodoReminder } from '../todo-reminders/reminderLog';
+import { sweepDueTodoReminders } from '../todo-reminders/sweepDueTodoReminders';
+import { processTodoReminderJob } from '../todo-reminders/processReminderJob';
+
+/**
+ * Delayed BullMQ jobs are lost if Redis is flushed, restarts, or was down when the todo was
+ * saved. The DB sweep delivers anything due that the queue missed, so it runs even without Redis.
+ */
+const SWEEP_INTERVAL_MS = 30_000;
+
+function startDueReminderSweep(): void {
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const r = await sweepDueTodoReminders();
+      if (r.total > 0) {
+        logTodoReminder('worker', 'summary', { phase: 'sweep', ...r });
+      }
+    } catch (err: any) {
+      logTodoReminder('worker', 'failed', { phase: 'sweep', error: err?.message ?? String(err) });
+    } finally {
+      running = false;
+    }
+  };
+  void tick();
+  setInterval(tick, SWEEP_INTERVAL_MS);
+}
 
 // Initialize worker
 async function startWorker() {
   console.log('========================================');
   console.log('[Todo Reminder Worker] Starting BullMQ Worker...');
   console.log('========================================');
-  
-  // Get Redis connection
+
+  startDueReminderSweep();
+  console.log(`[Todo Reminder Worker] DB sweep running every ${SWEEP_INTERVAL_MS / 1000}s`);
+
   const redisConnection = getRedisConnection();
 
   if (!redisConnection) {
-    console.error('[Todo Reminder Worker] Redis connection not available. Please ensure Redis/Memurai is running and REDIS_URL is set in .env');
-    process.exit(1);
+    console.error('[Todo Reminder Worker] REDIS_URL not set — running DB sweep only (no exact-time jobs, no live popups).');
+    return;
   }
 
   // Connect to Redis if not already connected (since lazyConnect is true, we need to connect manually)
@@ -82,102 +108,20 @@ async function startWorker() {
     await waitForRedis();
     console.log('[Todo Reminder Worker] Redis ready, starting worker...');
   } catch (err: any) {
-    console.error('[Todo Reminder Worker] Failed to connect to Redis.');
-    console.error('[Todo Reminder Worker] Please ensure Memurai is running on localhost:6379');
-    console.error('[Todo Reminder Worker] Error:', err.message);
-    console.error('[Todo Reminder Worker] Exiting...');
-    process.exit(1);
+    console.error('[Todo Reminder Worker] Failed to connect to Redis:', err.message);
+    console.error('[Todo Reminder Worker] Running DB sweep only until the next restart.');
+    return;
   }
+
+  // The shared client never retries (retryStrategy: null). Exit so PM2 restarts us with a fresh connection.
+  redisConnection.on('end', () => {
+    console.error('[Todo Reminder Worker] Redis connection ended — exiting so PM2 restarts the worker.');
+    process.exit(1);
+  });
 
   const worker = new Worker(
     'todo-reminders',
-    async (job) => {
-      reminderPipelineLog('worker.job_received', {
-        jobId: job.id,
-        todoId: (job.data as { todoId?: string })?.todoId,
-      });
-      const { todoId } = job.data as { todoId?: string };
-      if (!todoId) {
-        const err = new Error('todo-reminders job missing todoId');
-        logTodoReminder('worker', 'failed', {
-          jobId: job.id,
-          reason: 'missing_todoId',
-          error: err.message,
-        });
-        throw err;
-      }
-
-      const todo = await queryOne<TodoForReminder>(
-        `SELECT * FROM todos WHERE id = $1`,
-        [todoId]
-      );
-
-      if (!todo) {
-        reminderPipelineLog('worker.todo_missing', { todoId, jobId: job.id });
-        logTodoReminder('worker', 'skipped', {
-          todoId,
-          jobId: job.id,
-          reason: 'todo_not_found',
-        });
-        return;
-      }
-
-      reminderPipelineLog('worker.todo_loaded', {
-        todoId,
-        status: todo.status,
-        reminder_sent: (todo as { reminder_sent?: boolean }).reminder_sent,
-        business_id: todo.business_id,
-      });
-
-      try {
-        const result = await triggerTodoReminder(todo);
-
-        reminderPipelineLog('worker.trigger_result', {
-          todoId,
-          status: result.status,
-          reason: result.reason,
-          publishedCount: result.published?.length ?? 0,
-          published: result.published,
-        });
-
-        if (result.status === 'delivered') {
-          logTodoReminder('worker', 'processed', {
-            todoId,
-            jobId: job.id,
-            businessId: todo.business_id,
-            notificationCount: result.published?.length ?? 0,
-          });
-          return;
-        }
-
-        if (result.status === 'invalid') {
-          logTodoReminder('worker', 'skipped', {
-            todoId,
-            jobId: job.id,
-            businessId: todo.business_id,
-            reason: result.reason,
-            outcome: 'invalid',
-          });
-          return;
-        }
-
-        logTodoReminder('worker', 'skipped', {
-          todoId,
-          jobId: job.id,
-          businessId: todo.business_id,
-          reason: result.reason,
-        });
-      } catch (e: any) {
-        logTodoReminder('worker', 'failed', {
-          todoId,
-          jobId: job.id,
-          businessId: todo.business_id,
-          error: e?.message ?? String(e),
-          attempt: job.attemptsMade,
-        });
-        throw e;
-      }
-    },
+    (job) => processTodoReminderJob(job),
     {
       connection: redisConnection as any,
       concurrency: 5,

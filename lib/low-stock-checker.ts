@@ -1,106 +1,165 @@
 /**
- * Low Stock Checker Utility
- * Checks if items have crossed their threshold after stock movements
+ * Low Stock Checker (Supplier Hub)
+ *
+ * The reorder level belongs to the buyer: an item is low when its stock is at or below the
+ * buyer's own `min_stock`. The alert goes to the business linked as that item's default
+ * supplier, only while the link is approved and the buyer shares low stock with it.
+ * Supplier-set thresholds (supplier_item_thresholds) are retired and no longer drive alerts.
  */
 
 import { query, queryRows } from './db';
+import { getBusinessSubscription, isSubscriptionOperationalStatus } from './subscription';
+
+type LowStockCandidate = {
+  item_id: string;
+  item_name: string;
+  current_stock: string | number;
+  min_stock: string | number;
+  customer_business_id: string;
+  customer_name: string;
+  customer_city: string | null;
+  supplier_business_id: string;
+};
+
+/** Buyer items at or below their reorder level whose default supplier may see them. */
+const CANDIDATES_SQL = `
+  SELECT
+    i.id AS item_id,
+    i.name AS item_name,
+    i.current_stock,
+    i.min_stock,
+    i.business_id AS customer_business_id,
+    cb.name AS customer_name,
+    cb.city AS customer_city,
+    s.linked_business_id AS supplier_business_id
+  FROM items i
+  JOIN suppliers s
+    ON s.id = i.default_supplier_id
+   AND s.business_id = i.business_id
+   AND s.linked_business_id IS NOT NULL
+   AND s.approval_status = 'approved'
+   AND s.allow_low_stock_access = true
+   AND s.deleted_at IS NULL
+  JOIN businesses cb ON cb.id = i.business_id
+  WHERE i.deleted_at IS NULL
+    AND COALESCE(i.is_active, true) = true
+    AND COALESCE(i.item_type, 'goods') <> 'service'
+    AND COALESCE(i.min_stock, 0) > 0
+    AND COALESCE(i.current_stock, 0) <= i.min_stock
+`;
+
+async function supplierIsOperational(supplierBusinessId: string, cache: Map<string, boolean>) {
+  if (cache.has(supplierBusinessId)) return cache.get(supplierBusinessId)!;
+  let ok = false;
+  try {
+    const subscription = await getBusinessSubscription(supplierBusinessId, false, 'billing');
+    ok = !!subscription && isSubscriptionOperationalStatus(subscription.status);
+    if (ok && subscription?.end_date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      ok = new Date(subscription.end_date) >= today;
+    }
+  } catch {
+    ok = false;
+  }
+  cache.set(supplierBusinessId, ok);
+  return ok;
+}
+
+/** Open one active alert per supplier/buyer/item and notify the supplier. Returns alerts created. */
+async function raiseAlerts(candidates: LowStockCandidate[]): Promise<number> {
+  const subscriptionCache = new Map<string, boolean>();
+  let created = 0;
+
+  for (const c of candidates) {
+    if (!(await supplierIsOperational(c.supplier_business_id, subscriptionCache))) continue;
+
+    const inserted = await query(
+      `
+      INSERT INTO low_stock_alerts (
+        supplier_business_id, customer_business_id, item_id, threshold_id,
+        current_stock, threshold, alert_status, first_alerted_at
+      )
+      SELECT $1, $2, $3, NULL, $4, $5, 'active', CURRENT_TIMESTAMP
+      WHERE NOT EXISTS (
+        SELECT 1 FROM low_stock_alerts
+        WHERE supplier_business_id = $1 AND customer_business_id = $2
+          AND item_id = $3 AND alert_status = 'active'
+      )
+      `,
+      [c.supplier_business_id, c.customer_business_id, c.item_id, c.current_stock, c.min_stock]
+    );
+    if (!inserted.rowCount) continue;
+    created++;
+
+    await query(
+      `
+      INSERT INTO notifications (
+        business_id, type, title, message, reference_type, reference_id, created_at
+      )
+      VALUES ($1, 'low_stock_alert', $2, $3, 'item', $4, CURRENT_TIMESTAMP)
+      `,
+      [
+        c.supplier_business_id,
+        `Low stock at ${c.customer_name}: ${c.item_name}`,
+        `${c.customer_name}${c.customer_city ? ` (${c.customer_city})` : ''} has ${Number(c.current_stock)} of ${c.item_name} left, at or below their reorder level of ${Number(c.min_stock)}.`,
+        c.item_id,
+      ]
+    );
+  }
+  return created;
+}
+
+/**
+ * Resolve active alerts that no longer apply: stock is back above the reorder level, or the
+ * item's default supplier / sharing changed. Optionally limited to one buyer item.
+ */
+async function resolveStaleAlerts(scope?: { itemId: string; businessId: string }): Promise<number> {
+  const params: any[] = [];
+  let scopeSql = '';
+  if (scope) {
+    params.push(scope.itemId, scope.businessId);
+    scopeSql = 'AND a.item_id = $1 AND a.customer_business_id = $2';
+  }
+  const res = await query(
+    `
+    UPDATE low_stock_alerts a
+    SET alert_status = 'resolved', resolved_at = CURRENT_TIMESTAMP
+    WHERE a.alert_status = 'active'
+      ${scopeSql}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM items i
+        JOIN suppliers s
+          ON s.id = i.default_supplier_id
+         AND s.business_id = i.business_id
+         AND s.linked_business_id = a.supplier_business_id
+         AND s.approval_status = 'approved'
+         AND s.allow_low_stock_access = true
+         AND s.deleted_at IS NULL
+        WHERE i.id = a.item_id
+          AND i.business_id = a.customer_business_id
+          AND i.deleted_at IS NULL
+          AND COALESCE(i.min_stock, 0) > 0
+          AND COALESCE(i.current_stock, 0) <= i.min_stock
+      )
+    `,
+    params
+  );
+  return res.rowCount || 0;
+}
 
 export async function checkLowStockForItem(itemId: string, businessId: string) {
   try {
-    // Find all thresholds for this item where the business is the customer
-    const thresholds = await queryRows(`
-      SELECT 
-        t.id as threshold_id,
-        t.supplier_business_id,
-        t.customer_business_id,
-        t.item_id,
-        t.low_stock_threshold,
-        i.current_stock,
-        i.name as item_name,
-        i.code as item_code,
-        cb.name as customer_name,
-        cb.phone as customer_phone,
-        cb.email as customer_email,
-        cb.address_line1 as customer_address,
-        cb.city as customer_city,
-        cb.state as customer_state,
-        cb.pincode as customer_pincode,
-        sb.name as supplier_name
-      FROM supplier_item_thresholds t
-      JOIN items i ON t.item_id = i.id
-      JOIN businesses cb ON t.customer_business_id = cb.id
-      JOIN businesses sb ON t.supplier_business_id = sb.id
-      WHERE t.item_id = $1 
-      AND t.customer_business_id = $2
-      AND i.current_stock <= t.low_stock_threshold
-    `, [itemId, businessId]);
-
-    // Process each threshold
-    for (const threshold of thresholds) {
-      // Check if an active alert already exists
-      const existingAlert = await queryRows(
-        `SELECT id FROM low_stock_alerts
-        WHERE supplier_business_id = $1 
-        AND customer_business_id = $2 
-        AND item_id = $3 
-        AND alert_status = 'active'`,
-        [threshold.supplier_business_id, threshold.customer_business_id, threshold.item_id]
-      );
-
-      if (existingAlert.length === 0) {
-        // Create new alert
-        await query(`
-          INSERT INTO low_stock_alerts (
-            supplier_business_id, customer_business_id, item_id, threshold_id,
-            current_stock, threshold, alert_status, first_alerted_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-        `, [
-          threshold.supplier_business_id,
-          threshold.customer_business_id,
-          threshold.item_id,
-          threshold.threshold_id,
-          threshold.current_stock,
-          threshold.low_stock_threshold,
-          new Date()
-        ]);
-
-        // Create notification for supplier
-        await query(`
-          INSERT INTO notifications (
-            business_id, type, title, message, reference_type, reference_id, created_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `, [
-          threshold.supplier_business_id,
-          'low_stock_alert',
-          `📦 Low Stock Alert: ${threshold.item_name}`,
-          `${threshold.customer_name} (${threshold.customer_city}, ${threshold.customer_state}) has low stock of ${threshold.item_name}. Current stock: ${threshold.current_stock}, Threshold: ${threshold.low_stock_threshold}. Contact: ${threshold.customer_phone || threshold.customer_email || 'N/A'}. Address: ${threshold.customer_address || 'N/A'}`,
-          'item',
-          threshold.item_id,
-          new Date()
-        ]);
-
-        console.log(`Low stock alert created for item ${threshold.item_name} (${threshold.item_id}) - Supplier: ${threshold.supplier_name}`);
-      }
-    }
-
-    // Also check if stock went above threshold (resolve alerts)
-    await query(`
-      UPDATE low_stock_alerts a
-      SET alert_status = 'resolved', resolved_at = $1
-      FROM items i, supplier_item_thresholds t
-      WHERE a.item_id = i.id
-      AND a.threshold_id = t.id
-      AND i.current_stock > t.low_stock_threshold
-      AND a.alert_status = 'active'
-      AND i.id = $2
-      AND a.customer_business_id = $3
-    `, [new Date(), itemId, businessId]);
-
+    const candidates = await queryRows<LowStockCandidate>(
+      `${CANDIDATES_SQL} AND i.id = $1 AND i.business_id = $2`,
+      [itemId, businessId]
+    );
+    await raiseAlerts(candidates);
+    await resolveStaleAlerts({ itemId, businessId });
   } catch (error) {
+    // Never break the stock movement that triggered the check
     console.error('Error checking low stock for item:', error);
-    // Don't throw - just log the error so it doesn't break the main flow
   }
 }
 
@@ -110,3 +169,10 @@ export async function checkLowStockForMultipleItems(items: Array<{ item_id: stri
   }
 }
 
+/** Full sweep used by the cron job. */
+export async function checkLowStockForAllBusinesses() {
+  const candidates = await queryRows<LowStockCandidate>(CANDIDATES_SQL);
+  const alertsCreated = await raiseAlerts(candidates);
+  const alertsResolved = await resolveStaleAlerts();
+  return { items_checked: candidates.length, alerts_created: alertsCreated, alerts_resolved: alertsResolved };
+}

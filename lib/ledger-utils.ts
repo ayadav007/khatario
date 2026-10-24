@@ -6,6 +6,12 @@
 import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import { Account } from '@/types/database';
+import { computeGoodsCost, getInventoryModel, postCostOfGoods } from '@/lib/inventory/cogs-posting';
+import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
+import { resolveGstScheme } from '@/lib/gst/registration';
+import { recipientMayClaimItc } from '@/lib/gst/scheme-policy';
+import { isItcTimeBarred, thirtyNovAfterFy, todayIst } from '@/lib/gst/time-limits';
+import { cashSaleDebitLines, type CashSalePayment } from '@/lib/accounting/cash-sale-debits';
 
 /** Use the same PoolClient as an outer BEGIN so deferred voucher-balance triggers see all lines at COMMIT. */
 async function ledgerQueryOne<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -276,48 +282,13 @@ export async function getDefaultAccounts(businessId: string): Promise<{
  */
 export async function getAccountForPaymentMode(
   businessId: string,
-  paymentMode: string
+  paymentMode: string,
+  settlementAccountId?: string | null,
 ): Promise<Account | null> {
-  try {
-    // Try to use configured payment mode mapping
-    const { getPaymentModeAccountId } = await import('@/lib/account-mappings');
-    const accountId = await getPaymentModeAccountId(businessId, paymentMode);
-    
-    if (accountId) {
-      const account = await getAccountById(businessId, accountId);
-      if (account) return account;
-    }
-  } catch (error) {
-    console.warn('Error using payment mode mapping, falling back to default:', error);
-  }
-
-  // Fallback to default lookup
-  const mode = paymentMode?.toLowerCase() || 'cash';
-  
-  if (mode === 'cash') {
-    return await getAccountByCode(businessId, '1101') || 
-           await getAccountByName(businessId, 'Cash');
-  }
-  
-  if (mode === 'bank' || mode === 'bank_transfer' || mode === 'neft' || mode === 'rtgs') {
-    return await getAccountByCode(businessId, '1102') || 
-           await getAccountByName(businessId, 'Bank Account');
-  }
-
-  if (mode === 'upi' || mode === 'credit_card' || mode === 'card' || mode === 'cheque') {
-    return (
-      (await getAccountByCode(businessId, '1102')) ||
-      (await getAccountByName(businessId, 'Bank Account')) ||
-      (await getAccountByCode(businessId, '1101')) ||
-      (await getAccountByName(businessId, 'Cash'))
-    );
-  }
-  
-  // Other modes: prefer Cash, then Bank
-  return await getAccountByCode(businessId, '1101') || 
-         await getAccountByName(businessId, 'Cash') ||
-         (await getAccountByCode(businessId, '1102')) ||
-         (await getAccountByName(businessId, 'Bank Account'));
+  const { resolveSettlementForBusiness } = await import('@/lib/accounting/settlement-accounts-db');
+  const resolved = await resolveSettlementForBusiness(businessId, paymentMode, settlementAccountId);
+  if (!resolved.accountId) return null;
+  return await getAccountById(businessId, resolved.accountId);
 }
 
 /**
@@ -569,9 +540,12 @@ export async function createLedgerEntryLine(params: {
     | 'opening_balance'
     | 'credit_note'
     | 'purchase_return'
+    | 'supplier_credit_note'
     | 'debit_note'
     | 'gst_setoff'
-    | 'gst_payment';
+    | 'gst_payment'
+    | 'gst_cash_deposit'
+    | 'gst_cash_utilization';
   accountId: string;
   entryDate: Date | string;
   debit: number;
@@ -715,6 +689,8 @@ export async function createInvoiceLedgerEntries(params: {
   grandTotal: number;
   customerId?: string | null;
   paymentMode?: string;
+  /** Walk-in payments. Used only when they add up to grandTotal. */
+  cashSalePayments?: CashSalePayment[];
   isCashSale: boolean;
   cogsAmount?: number; // Cost of Goods Sold amount (if inventory tracking)
   branchId?: string; // Branch ID for branch-wise accounting
@@ -740,6 +716,7 @@ export async function createInvoiceLedgerEntries(params: {
     invoiceDate,
     grandTotal,
     customerId,
+    cashSalePayments,
     isCashSale,
     cogsAmount = 0,
     taxableValue,
@@ -790,26 +767,56 @@ export async function createInvoiceLedgerEntries(params: {
 
   // Entry 1: Debit Receivables/Cash for grand_total
   if (isCashSale || !customerId) {
-    const cashAccount = accounts.cash || accounts.bank;
-    if (!cashAccount) {
-      throw new Error(
-        `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
-        `Cannot post cash sale invoice ${invoiceNumber}.`,
-      );
+    const split = cashSaleDebitLines(grandTotal, cashSalePayments || []);
+    if (split) {
+      for (const line of split) {
+        const paymentAccount = await getAccountForPaymentMode(
+          businessId,
+          line.mode,
+          line.settlementAccountId,
+        );
+        if (!paymentAccount) {
+          throw new Error(
+            `No Cash/Bank ledger account found for payment mode "${line.mode}". ` +
+            `Cannot post cash sale invoice ${invoiceNumber}.`,
+          );
+        }
+        await createLedgerEntryLine({
+          businessId,
+          voucherId: invoiceId,
+          voucherType: 'invoice',
+          accountId: paymentAccount.id,
+          entryDate: invoiceDate,
+          debit: line.amount,
+          credit: 0,
+          narration: `Cash sale (${line.mode}) - Invoice ${invoiceNumber}`,
+          referenceNumber: invoiceNumber,
+          branchId: params.branchId,
+          poolClient,
+        });
+      }
+    } else {
+      const cashAccount = accounts.cash || accounts.bank;
+      if (!cashAccount) {
+        throw new Error(
+          `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
+          `Cannot post cash sale invoice ${invoiceNumber}.`,
+        );
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: invoiceId,
+        voucherType: 'invoice',
+        accountId: cashAccount.id,
+        entryDate: invoiceDate,
+        debit: grandTotal,
+        credit: 0,
+        narration: `Cash sale - Invoice ${invoiceNumber}`,
+        referenceNumber: invoiceNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
     }
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: invoiceId,
-      voucherType: 'invoice',
-      accountId: cashAccount.id,
-      entryDate: invoiceDate,
-      debit: grandTotal,
-      credit: 0,
-      narration: `Cash sale - Invoice ${invoiceNumber}`,
-      referenceNumber: invoiceNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
   } else {
     if (!accounts.accountsReceivable) {
       throw new Error(
@@ -913,20 +920,35 @@ export async function createInvoiceLedgerEntries(params: {
     }
   }
 
-  // PHASE-4: per-invoice COGS posting is DISABLED for periodic-inventory books.
-  // Periodic books compute COGS at period end via the Trading Account formula:
-  //     COGS = Opening Stock + Net Purchases (5101) − Purchase Returns (5102) − Closing Stock
-  // Posting per-invoice COGS in a periodic system creates two parallel COGS sources
-  // (the cogs_two_sources audit issue). Tally and Ind AS 2 both expect periodic
-  // books to keep 5104 and 1104 untouched between year-end snapshots — only the
-  // Year-End Close JV writes to them.
-  // To switch a business to perpetual later: flip business_settings.inventory_model
-  // and re-enable this block guarded by `inventoryModel === 'perpetual'`.
-  if (cogsAmount > 0) {
-    console.warn(
-      `[PHASE-4] cogsAmount=₹${cogsAmount.toFixed(2)} ignored for invoice ${invoiceNumber} ` +
-      `— inventory_model is periodic; COGS is computed at period end, not per invoice.`,
+  // Perpetual inventory: goods purchases are capitalised in 1104, so each sale moves
+  // its cost (FIFO lots or weighted average, per business setting) to COGS (5104). Cost is
+  // taken from the saved invoice lines; the caller's cogsAmount is ignored.
+  void cogsAmount;
+  if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
+    const lines = await ledgerQueryRows<{ item_id: string | null; quantity: string }>(
+      poolClient,
+      'SELECT item_id, quantity FROM invoice_items WHERE invoice_id = $1',
+      [invoiceId]
     );
+    const cost = await computeGoodsCost(
+      poolClient,
+      businessId,
+      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
+      invoiceDate,
+      params.branchId,
+      { kind: 'invoice', docId: invoiceId }
+    );
+    await postCostOfGoods(poolClient, {
+      businessId,
+      voucherType: 'invoice',
+      voucherId: invoiceId,
+      amount: cost,
+      entryDate: invoiceDate,
+      reference: invoiceNumber,
+      branchId: params.branchId,
+      direction: 'sale',
+    });
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'invoice', invoiceId));
   }
 }
 
@@ -953,7 +975,12 @@ export async function createPurchaseLedgerEntries(params: {
   cessTotal?: number;
   itcEligible?: boolean;       // false → tax stays in Purchases (5101) per s.17(5)
   isReverseCharge?: boolean;   // true → also Cr RCM Output (2155); ITC still Dr Input
-}): Promise<void> {
+  /** Date ITC is being claimed in the books (defaults to today, IST) — s.16(4) check. */
+  itcClaimDate?: string;
+  /** Used when the bill is settled in full and the credit is cash or bank, not Accounts Payable. */
+  paymentMode?: string | null;
+  settlementAccountId?: string | null;
+}): Promise<{ itcEligible: boolean; itcBlockedReason: string | null }> {
   const {
     businessId,
     purchaseId,
@@ -969,9 +996,10 @@ export async function createPurchaseLedgerEntries(params: {
     sgstTotal = 0,
     igstTotal = 0,
     cessTotal = 0,
-    itcEligible = true,
     isReverseCharge = false,
   } = params;
+  let itcEligible = params.itcEligible ?? true;
+  let itcBlockedReason: string | null = null;
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -979,6 +1007,32 @@ export async function createPurchaseLedgerEntries(params: {
     throw new Error(
       `Purchases account (5101) not found for business ${businessId}. ` +
       `Cannot post purchase ${purchaseNumber}.`,
+    );
+  }
+
+  // s.10(4): a composition / unregistered recipient cannot take ITC — GST is part of cost.
+  // Enforced here so every purchase path (create, finalize, conversion) agrees, and the
+  // document flag is aligned so GSTR-3B / 2B read the same treatment.
+  if (itcEligible) {
+    const scheme = await resolveGstScheme(
+      { query: (text, values) => (poolClient ? poolClient.query(text, values) : db.getPool().query(text, values)) as any },
+      businessId,
+      params.branchId ?? null,
+    );
+    if (!recipientMayClaimItc(scheme)) {
+      itcEligible = false;
+      itcBlockedReason = `recipient is ${scheme} (s.10(4))`;
+    }
+  }
+  // s.16(4): ITC on a bill cannot be taken after 30 Nov following the end of its FY.
+  if (itcEligible && isItcTimeBarred(purchaseDate, params.itcClaimDate ?? todayIst())) {
+    itcEligible = false;
+    itcBlockedReason = `ITC time-barred after ${thirtyNovAfterFy(purchaseDate)} (s.16(4))`;
+  }
+  if (itcBlockedReason) {
+    await (poolClient ?? db.getPool()).query(
+      `UPDATE purchases SET itc_eligible = false WHERE id = $1 AND business_id = $2`,
+      [purchaseId, businessId],
     );
   }
 
@@ -1048,16 +1102,24 @@ export async function createPurchaseLedgerEntries(params: {
   // The discount is already accounted for via Cr Discount Received (Entry 5).
   //   - RCM purchase → credit = taxable only (tax leg balanced by Cr RCM Output).
   const rcmReady = isReverseCharge && useGstSplit && !!accounts.rcmOutput;
-  const apCreditNet = rcmReady
+  // RCM without ITC (s.17(5) blocked, or composition recipient): the recipient still owes the
+  // tax in cash (s.9(3)/(4)), the supplier is owed only the taxable value, and the tax is cost.
+  //   Dr Purchases (taxable + tax)  Cr AP (taxable)  Cr RCM Output (tax)
+  const rcmNoItc = isReverseCharge && !useGstSplit && totalGst > 0 && !!accounts.rcmOutput;
+  const apCreditNet = rcmReady || rcmNoItc
     ? Math.max(0, derivedTaxable)
     : grandTotal;
 
   // Entry 1: Credit AP / Cash side (unchanged shape)
   if (isCashPurchase || !supplierId) {
-    const cashAccount = accounts.cash || accounts.bank;
+    const cashAccount = await getAccountForPaymentMode(
+      businessId,
+      params.paymentMode || 'cash',
+      params.settlementAccountId,
+    );
     if (!cashAccount) {
       throw new Error(
-        `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
+        `Cash/Bank account not found for business ${businessId}. ` +
         `Cannot post cash purchase ${purchaseNumber}.`,
       );
     }
@@ -1110,7 +1172,7 @@ export async function createPurchaseLedgerEntries(params: {
     narration: useGstSplit
       ? `Purchases (taxable) - ${purchaseNumber}`
       : (totalGst > 0 && !itcEligible
-          ? `Purchases (incl. blocked ITC) - ${purchaseNumber}`
+          ? `Purchases (incl. blocked ITC${itcBlockedReason ? `: ${itcBlockedReason}` : ''}) - ${purchaseNumber}`
           : `Purchases - ${purchaseNumber}`),
     referenceNumber: purchaseNumber,
     branchId: params.branchId,
@@ -1167,6 +1229,14 @@ export async function createPurchaseLedgerEntries(params: {
         referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
       });
     }
+  } else if (rcmNoItc && accounts.rcmOutput) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.rcmOutput.id, entryDate: purchaseDate,
+      debit: 0, credit: totalGst,
+      narration: `RCM Output Tax Payable (no ITC) - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
   } else if (totalGst > 0 && !splitAccountsReady) {
     console.warn(
       `[PHASE-3 WARN] Purchase ${purchaseNumber} has GST=₹${totalGst.toFixed(2)} but business ${businessId} ` +
@@ -1223,6 +1293,118 @@ export async function createPurchaseLedgerEntries(params: {
       poolClient,
     });
   }
+
+  // Entry 7: capital goods lines are capitalised to Fixed Assets (1201), not expensed.
+  // Blocked ITC is part of the asset's cost, so tax is included when the split did not apply.
+  const capRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(
+             CASE
+               WHEN pi.acquisition_cost IS NOT NULL THEN pi.acquisition_cost::numeric
+               ELSE pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END
+             END
+           ), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '1201' LIMIT 1) AS account_id
+      FROM purchase_items pi
+     WHERE pi.purchase_id = $1 AND pi.itc_type = 'capital_goods'
+  `, [purchaseId, useGstSplit, businessId]);
+  const capitalAmount = Math.round((Number(capRows[0]?.total) || 0) * 100) / 100;
+  const fixedAssetAccountId = capRows[0]?.account_id;
+  if (capitalAmount > 0) {
+    if (!fixedAssetAccountId) {
+      throw new Error(
+        `Fixed Assets account (1201) not found for business ${businessId}. ` +
+        `Cannot capitalise purchase ${purchaseNumber}.`,
+      );
+    }
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: fixedAssetAccountId, entryDate: purchaseDate,
+      debit: capitalAmount, credit: 0,
+      narration: `Capital goods capitalised - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: capitalAmount,
+      narration: `Transfer to fixed assets - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
+
+  // Entry 8: services on a bill (repairs, fees, freight charged as a line) are expenses, not
+  // purchase of stock-in-trade; left in 5101 they inflate cost of goods. They go to 5201
+  // Administrative Expenses. Blocked ITC stays part of the expense, as with capital goods.
+  const svcRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '5201' AND is_active = true LIMIT 1) AS account_id
+      FROM purchase_items pi
+      LEFT JOIN items it ON it.id = pi.item_id
+     WHERE pi.purchase_id = $1
+       AND pi.itc_type IS DISTINCT FROM 'capital_goods'
+       AND COALESCE(pi.line_item_type, it.item_type) = 'service'
+  `, [purchaseId, useGstSplit, businessId]);
+  const serviceAmount = Math.round((Number(svcRows[0]?.total) || 0) * 100) / 100;
+  const serviceAccountId = svcRows[0]?.account_id;
+  if (serviceAmount > 0 && serviceAccountId) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: serviceAccountId, entryDate: purchaseDate,
+      debit: serviceAmount, credit: 0,
+      narration: `Services on bill - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: serviceAmount,
+      narration: `Transfer services to expenses - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
+
+  // Independent charges, and incidental charges that were not capitalized (periodic bills),
+  // are expenses. A capitalized incidental charge is already inside inventory or fixed assets.
+  const chargeRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(
+             pc.taxable_value::numeric + CASE
+               WHEN $2::boolean THEN 0
+               ELSE COALESCE(pc.tax_amount, 0)::numeric
+             END
+           ), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '5201' AND is_active = true LIMIT 1) AS account_id
+      FROM purchase_charges pc
+      JOIN purchases pu ON pu.id = pc.purchase_id
+     WHERE pc.purchase_id = $1
+       AND (
+         pc.classification = 'independent_service'
+         OR (pc.classification = 'incidental_to_goods' AND pu.acquisition_costs_capitalized IS DISTINCT FROM true)
+       )
+  `, [purchaseId, useGstSplit, businessId]);
+  const chargeExpense = Math.round((Number(chargeRows[0]?.total) || 0) * 100) / 100;
+  const chargeAccountId = chargeRows[0]?.account_id;
+  if (chargeExpense > 0 && chargeAccountId) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: chargeAccountId, entryDate: purchaseDate,
+      debit: chargeExpense, credit: 0,
+      narration: `Purchase charges expensed - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: chargeExpense,
+      narration: `Transfer purchase charges to expenses - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
+
+  if (poolClient && inventoryAmount > 0) {
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'purchase', purchaseId));
+  }
+
+  return { itcEligible, itcBlockedReason };
 }
 
 /**
@@ -1238,6 +1420,7 @@ export async function createExpenseLedgerEntries(params: {
   amount: number;
   description?: string;
   paymentMode?: string;
+  settlementAccountId?: string | null;
   expenseAccountId?: string; // Optional: specific expense account
   branchId?: string; // Branch ID for branch-wise accounting
   cgstTotal?: number;
@@ -1254,6 +1437,7 @@ export async function createExpenseLedgerEntries(params: {
     amount,
     description,
     paymentMode,
+    settlementAccountId,
     expenseAccountId,
     cgstTotal = 0,
     sgstTotal = 0,
@@ -1297,7 +1481,11 @@ export async function createExpenseLedgerEntries(params: {
     }
     secondLineAccount = accounts.accountsPayable;
   } else {
-    const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode || 'cash');
+    const paymentAccount = await getAccountForPaymentMode(
+      businessId,
+      paymentMode || 'cash',
+      settlementAccountId,
+    );
     if (!paymentAccount) {
       throw new Error(
         `No Cash/Bank ledger account found for payment mode "${paymentMode || 'cash'}". ` +
@@ -1589,14 +1777,45 @@ export async function createCreditNoteLedgerEntries(params: {
     poolClient,
   });
 
-  // PHASE-4: per-credit-note COGS reversal is DISABLED for periodic-inventory books.
-  // (Same rationale as createInvoiceLedgerEntries above.) Periodic books reverse
-  // COGS implicitly at period end through the Closing Stock revaluation.
-  if (cogsAmount > 0) {
-    console.warn(
-      `[PHASE-4] cogsAmount=₹${cogsAmount.toFixed(2)} ignored for credit note ${creditNoteNumber} ` +
-      `— inventory_model is periodic; COGS reversal happens at period end via Closing Stock.`,
+  // Perpetual inventory: returned goods go back into stock at the cost the original sale took
+  // out (FIFO: that invoice's lot cost; weighted average: the rate on the invoice date and
+  // branch), so the return reverses the invoice's COGS exactly. Unlinked notes use the
+  // rate on the credit note date.
+  void cogsAmount;
+  if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
+    const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
+      poolClient,
+      // Damaged returns (restocked = false) are written off: no stock, so no cost comes back.
+      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
+      [creditNoteId]
     );
+    const [origin] = await ledgerQueryRows<{ invoice_date: string | Date; branch_id: string | null }>(
+      poolClient,
+      `SELECT i.invoice_date, i.branch_id
+         FROM credit_notes cn
+         JOIN invoices i ON i.id = cn.invoice_id AND i.business_id = cn.business_id
+        WHERE cn.id = $1 AND cn.business_id = $2`,
+      [creditNoteId, businessId]
+    );
+    const cost = await computeGoodsCost(
+      poolClient,
+      businessId,
+      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
+      origin?.invoice_date ?? creditNoteDate,
+      origin ? origin.branch_id : params.branchId,
+      { kind: 'credit_note', docId: creditNoteId }
+    );
+    await postCostOfGoods(poolClient, {
+      businessId,
+      voucherType: 'credit_note',
+      voucherId: creditNoteId,
+      amount: cost,
+      entryDate: creditNoteDate,
+      reference: creditNoteNumber,
+      branchId: params.branchId,
+      direction: 'return',
+    });
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'credit_note', creditNoteId));
   }
 }
 
@@ -1616,6 +1835,18 @@ export async function createPurchaseReturnLedgerEntries(params: {
   grandTotal: number;
   supplierId?: string | null;
   inventoryAmount?: number; // Amount to reduce from inventory
+  /**
+   * Acquisition cost leaving inventory. When set, 5102 is debited for the supplier
+   * taxable credit (purchasesCredit) and 5105 is debited once for any unrecovered gap.
+   * Omit it to keep the historical voucher, which debits 5102 for inventoryAmount.
+   */
+  inventoryRelief?: number;
+  /**
+   * Share of a later Landed Cost adjustment still on the returned quantity.
+   * Debited to 5201, the account that adjustment credited. It is not added to 5105
+   * and it does not change acquisition_cost.
+   */
+  landedCostRelief?: number;
   branchId?: string; // Branch ID for branch-wise accounting
   // PHASE-3
   taxableValue?: number;
@@ -1625,6 +1856,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
   cessTotal?: number;
   itcEligible?: boolean;
   isReverseCharge?: boolean;
+  /** purchase_return for goods sent back; supplier_credit_note for a note the supplier issued. */
+  voucherType?: 'purchase_return' | 'supplier_credit_note';
   // PHASE-5: shared transaction client.
   poolClient?: PoolClient;
 }): Promise<void> {
@@ -1636,6 +1869,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
     grandTotal,
     supplierId,
     inventoryAmount = 0,
+    inventoryRelief,
+    landedCostRelief = 0,
     taxableValue,
     cgstTotal = 0,
     sgstTotal = 0,
@@ -1645,6 +1880,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
     isReverseCharge = false,
     poolClient,
   } = params;
+  const voucherType = params.voucherType ?? 'purchase_return';
+  const noteLabel = voucherType === 'supplier_credit_note' ? 'Supplier credit note' : 'Purchase return';
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1655,10 +1892,16 @@ export async function createPurchaseReturnLedgerEntries(params: {
     );
   }
 
+  // Returns go to 5102 so Purchases (5101) stays gross and P&L shows "less: returns";
+  // the cost of revenue (5101 − 5102) is unchanged. Older charts without 5102 keep using 5101.
+  const returnsAccount = (await getAccountByCode(businessId, '5102')) ?? accounts.purchases;
+
   const totalGst = (cgstTotal || 0) + (sgstTotal || 0) + (igstTotal || 0) + (cessTotal || 0);
   const splitAccountsReady = !!(accounts.inputCgst && accounts.inputSgst && accounts.inputIgst);
   const useGstSplit = totalGst > 0 && splitAccountsReady && itcEligible;
   const rcmReady = isReverseCharge && useGstSplit && !!accounts.rcmOutput;
+  // Mirrors the blocked-ITC RCM purchase (Cr AP taxable, Cr RCM Output tax).
+  const rcmNoItc = isReverseCharge && !useGstSplit && totalGst > 0 && !!accounts.rcmOutput;
   const derivedTaxable = totalGst > 0
     ? Math.max(0, Number((grandTotal - totalGst).toFixed(2)))
     : grandTotal;
@@ -1666,20 +1909,20 @@ export async function createPurchaseReturnLedgerEntries(params: {
     ? derivedTaxable
     : (taxableValue && taxableValue > 0 && totalGst === 0 ? taxableValue : grandTotal);
   // Mirror the source-purchase AP behaviour: RCM AP debit = taxable; otherwise grand_total.
-  const apDebit = rcmReady ? derivedTaxable : grandTotal;
+  const apDebit = rcmReady || rcmNoItc ? derivedTaxable : grandTotal;
 
   // Entry 1: Credit Purchases Account (reversal — reduce purchases for taxable only)
   await createLedgerEntryLine({
     businessId,
     voucherId: purchaseReturnId,
-    voucherType: 'purchase_return',
-    accountId: accounts.purchases.id,
+    voucherType,
+    accountId: returnsAccount.id,
     entryDate: returnDate,
     debit: 0,
     credit: purchasesCredit,
     narration: useGstSplit
-      ? `Purchase return (taxable) - ${returnNumber}`
-      : `Purchase return - ${returnNumber}`,
+      ? `${noteLabel} (taxable) - ${returnNumber}`
+      : `${noteLabel} - ${returnNumber}`,
     referenceNumber: returnNumber,
     branchId: params.branchId,
     poolClient,
@@ -1689,7 +1932,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
   if (useGstSplit) {
     if (cgstTotal > 0 && accounts.inputCgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputCgst.id, entryDate: returnDate,
         debit: 0, credit: cgstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input CGST reversal - ${returnNumber}`,
@@ -1698,7 +1941,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (sgstTotal > 0 && accounts.inputSgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputSgst.id, entryDate: returnDate,
         debit: 0, credit: sgstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input SGST reversal - ${returnNumber}`,
@@ -1707,7 +1950,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (igstTotal > 0 && accounts.inputIgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputIgst.id, entryDate: returnDate,
         debit: 0, credit: igstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input IGST reversal - ${returnNumber}`,
@@ -1716,7 +1959,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (cessTotal > 0 && accounts.inputCess) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputCess.id, entryDate: returnDate,
         debit: 0, credit: cessTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input Cess reversal - ${returnNumber}`,
@@ -1727,13 +1970,21 @@ export async function createPurchaseReturnLedgerEntries(params: {
     // RCM source had Cr RCM Output for the tax — so the return must Dr RCM Output to undo it.
     if (rcmReady && accounts.rcmOutput) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.rcmOutput.id, entryDate: returnDate,
         debit: totalGst, credit: 0,
         narration: `RCM Output Tax reversal - ${returnNumber}`,
         referenceNumber: returnNumber, branchId: params.branchId, poolClient,
       });
     }
+  } else if (rcmNoItc && accounts.rcmOutput) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseReturnId, voucherType,
+      accountId: accounts.rcmOutput.id, entryDate: returnDate,
+      debit: totalGst, credit: 0,
+      narration: `RCM Output Tax reversal (ITC not claimed) - ${returnNumber}`,
+      referenceNumber: returnNumber, branchId: params.branchId, poolClient,
+    });
   } else if (totalGst > 0 && !splitAccountsReady) {
     console.warn(
       `[PHASE-3 WARN] Purchase return ${returnNumber} has GST=₹${totalGst.toFixed(2)} but split accounts missing — Purchases credited the full grand_total.`,
@@ -1745,12 +1996,12 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: accounts.accountsPayable.id,
       entryDate: returnDate,
       debit: apDebit,
       credit: 0,
-      narration: `Purchase return ${returnNumber} - Reduce payables`,
+      narration: `${noteLabel} ${returnNumber} - Reduce payables`,
       referenceNumber: returnNumber,
       branchId: params.branchId,
       poolClient,
@@ -1766,7 +2017,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: cashAccount.id,
       entryDate: returnDate,
       debit: apDebit,
@@ -1778,42 +2029,119 @@ export async function createPurchaseReturnLedgerEntries(params: {
     });
   }
 
-  // Entry 3: Credit Inventory (goods going back to supplier)
-  if (inventoryAmount > 0 && accounts.inventory) {
+  // Stock returns credit inventory for the acquisition cost and keep 5102's debit equal
+  // to its credit. Unrecovered freight is one 5105 debit, not a second 5102 debit.
+  const relief = inventoryRelief ?? inventoryAmount;
+  const returnsDebit = inventoryRelief == null ? inventoryAmount : purchasesCredit;
+  if (relief > 0 && accounts.inventory) {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: accounts.inventory.id,
       entryDate: returnDate,
       debit: 0,
-      credit: inventoryAmount,
+      credit: relief,
       narration: `Inventory reduction - Purchase return ${returnNumber}`,
       referenceNumber: returnNumber,
       branchId: params.branchId,
       poolClient,
     });
 
-    // Entry 4: Debit Purchases by the same amount (to reverse the inventory transfer)
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
-      accountId: accounts.purchases.id,
-      entryDate: returnDate,
-      debit: inventoryAmount,
-      credit: 0,
-      narration: `Reverse inventory transfer - Purchase return ${returnNumber}`,
-      referenceNumber: returnNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (returnsDebit > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: returnsAccount.id,
+        entryDate: returnDate,
+        debit: returnsDebit,
+        credit: 0,
+        narration: `Reverse inventory transfer - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+    const landed = inventoryRelief == null ? 0 : Math.round(landedCostRelief * 100) / 100;
+    const unrecovered = Math.round((relief - returnsDebit - landed) * 100) / 100;
+    if (unrecovered < -0.004) {
+      throw new Error('Purchase return inventory relief is below the supplier credit and landed-cost share');
+    }
+    if (inventoryRelief != null && unrecovered > 0.004) {
+      const freightIn = await getAccountByCode(businessId, '5105');
+      if (!freightIn) {
+        throw new Error(`Freight Inward account (5105) not found for business ${businessId}.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: freightIn.id,
+        entryDate: returnDate,
+        debit: unrecovered,
+        credit: 0,
+        narration: `Unrecovered inward freight - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+    if (landed > 0.004) {
+      const admin = await getAccountByCode(businessId, '5201');
+      if (!admin) {
+        throw new Error(`Administrative Expenses account (5201) not found for business ${businessId}.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId: admin.id,
+        entryDate: returnDate,
+        debit: landed,
+        credit: 0,
+        narration: `Landed cost leaving inventory - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+    if (poolClient) {
+      await recostAfterStockChange(
+        poolClient,
+        businessId,
+        await stockItemsForDocument(poolClient, 'purchase_return', purchaseReturnId)
+      );
+    }
   }
 }
 
 /**
  * Create double-entry ledger entries for a payment
  */
+/** 1116 TDS Receivable (asset): tax customers withheld from receipts, adjusted against income-tax liability. */
+async function getOrCreateTdsReceivableAccount(businessId: string, poolClient?: PoolClient): Promise<string> {
+  const existing = await ledgerQueryOne<{ id: string }>(
+    poolClient,
+    `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '1116' LIMIT 1`,
+    [businessId]
+  );
+  if (existing) return existing.id;
+  const created = await ledgerQueryOne<{ id: string }>(
+    poolClient,
+    `INSERT INTO accounts (business_id, account_code, account_name, account_type, account_group_id,
+                           nature, is_system, sort_order, description)
+     SELECT $1, '1116', 'TDS Receivable', 'asset', a.account_group_id, 'debit', true, 16,
+            'TDS deducted by customers on receipts; reconcile with Form 26AS'
+       FROM accounts a WHERE a.business_id = $1 AND a.account_code = '1103'
+     LIMIT 1
+     RETURNING id`,
+    [businessId]
+  );
+  if (!created) throw new Error('Accounts Receivable (1103) not found; cannot create TDS Receivable account.');
+  return created.id;
+}
+
 export async function createPaymentLedgerEntries(params: {
   businessId: string;
   paymentId: string;
@@ -1823,9 +2151,16 @@ export async function createPaymentLedgerEntries(params: {
   customerId?: string | null;
   supplierId?: string | null;
   paymentMode?: string;
+  settlementAccountId?: string | null;
   referenceNumber?: string;
   description?: string;
   branchId?: string; // Branch ID for branch-wise accounting
+  /**
+   * Receipts: TDS the customer withheld (Dr TDS Receivable 1116).
+   * Payments out: TDS we withheld from the supplier (Cr TDS Payable 2102).
+   * Either way it settles the party balance alongside `amount`.
+   */
+  tdsAmount?: number;
   // PHASE-5: shared transaction client.
   poolClient?: PoolClient;
 }): Promise<void> {
@@ -1838,15 +2173,21 @@ export async function createPaymentLedgerEntries(params: {
     customerId,
     supplierId,
     paymentMode,
+    settlementAccountId,
     referenceNumber,
     description,
     poolClient,
   } = params;
+  const tdsAmount = Math.max(0, Number(params.tdsAmount) || 0);
 
   const accounts = await getDefaultAccounts(businessId);
 
   // Get payment account (Cash or Bank)
-  const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode || 'cash');
+  const paymentAccount = await getAccountForPaymentMode(
+    businessId,
+    paymentMode || 'cash',
+    settlementAccountId,
+  );
   if (!paymentAccount) {
     throw new Error(
       `Payment account (Cash/Bank for mode '${paymentMode || 'cash'}') not found for business ${businessId}. ` +
@@ -1864,20 +2205,38 @@ export async function createPaymentLedgerEntries(params: {
       );
     }
 
-    // Debit Cash/Bank
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: paymentId,
-      voucherType: 'payment',
-      accountId: paymentAccount.id,
-      entryDate: paymentDate,
-      debit: amount,
-      credit: 0,
-      narration: description || `Payment received${referenceNumber ? ` - ${referenceNumber}` : ''}`,
-      referenceNumber: referenceNumber || paymentId.substring(0, 8),
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (amount > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: paymentAccount.id,
+        entryDate: paymentDate,
+        debit: amount,
+        credit: 0,
+        narration: description || `Payment received${referenceNumber ? ` - ${referenceNumber}` : ''}`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+
+    if (tdsAmount > 0) {
+      const tdsReceivable = await getOrCreateTdsReceivableAccount(businessId, poolClient);
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: tdsReceivable,
+        entryDate: paymentDate,
+        debit: tdsAmount,
+        credit: 0,
+        narration: `TDS deducted by customer${referenceNumber ? ` - ${referenceNumber}` : ''} (claim via Form 26AS)`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
 
     // Credit Accounts Receivable
     await createLedgerEntryLine({
@@ -1887,7 +2246,7 @@ export async function createPaymentLedgerEntries(params: {
       accountId: accounts.accountsReceivable.id,
       entryDate: paymentDate,
       debit: 0,
-      credit: amount,
+      credit: Math.round((amount + tdsAmount) * 100) / 100,
       narration: description || `Payment received from customer${referenceNumber ? ` - ${referenceNumber}` : ''}`,
       referenceNumber: referenceNumber || paymentId.substring(0, 8),
       branchId: params.branchId,
@@ -1903,14 +2262,13 @@ export async function createPaymentLedgerEntries(params: {
       );
     }
 
-    // Debit Accounts Payable
     await createLedgerEntryLine({
       businessId,
       voucherId: paymentId,
       voucherType: 'payment',
       accountId: accounts.accountsPayable.id,
       entryDate: paymentDate,
-      debit: amount,
+      debit: Math.round((amount + tdsAmount) * 100) / 100,
       credit: 0,
       narration: description || `Payment made${referenceNumber ? ` - ${referenceNumber}` : ''}`,
       referenceNumber: referenceNumber || paymentId.substring(0, 8),
@@ -1918,20 +2276,45 @@ export async function createPaymentLedgerEntries(params: {
       poolClient,
     });
 
-    // Credit Cash/Bank
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: paymentId,
-      voucherType: 'payment',
-      accountId: paymentAccount.id,
-      entryDate: paymentDate,
-      debit: 0,
-      credit: amount,
-      narration: description || `Payment made to supplier${referenceNumber ? ` - ${referenceNumber}` : ''}`,
-      referenceNumber: referenceNumber || paymentId.substring(0, 8),
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (amount > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: paymentAccount.id,
+        entryDate: paymentDate,
+        debit: 0,
+        credit: amount,
+        narration: description || `Payment made to supplier${referenceNumber ? ` - ${referenceNumber}` : ''}`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+
+    if (tdsAmount > 0) {
+      const tdsPayable = await ledgerQueryOne<{ id: string }>(
+        poolClient,
+        `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '2102' AND is_active = true LIMIT 1`,
+        [businessId]
+      );
+      if (!tdsPayable) {
+        throw new Error('TDS Payable account (2102) is missing; cannot post TDS deducted on this payment.');
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: tdsPayable.id,
+        entryDate: paymentDate,
+        debit: 0,
+        credit: tdsAmount,
+        narration: `TDS deducted from supplier${referenceNumber ? ` - ${referenceNumber}` : ''} (deposit via challan, report in 26Q)`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
   }
 }
 

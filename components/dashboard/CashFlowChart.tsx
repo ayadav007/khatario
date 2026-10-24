@@ -114,14 +114,15 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     const height = plotHeight;
     const width = 800;
     const chartPadding = plotHeight < 200 ? 44 : 52;
-    const bottomPadding = series.length > 7 ? 32 : 22;
+    const paddingTop = 4;
+    const bottomPadding = series.length > 7 ? 28 : 16;
     const chartWidth = width - chartPadding * 2;
-    const chartHeight = height - chartPadding - bottomPadding;
+    const chartHeight = height - paddingTop - bottomPadding;
 
     const points = series.map((month, i) => {
       const x = chartPadding + (i / (series.length - 1 || 1)) * chartWidth;
       const normalizedValue = (month.closing - adjustedMin) / adjustedRange;
-      const y = chartPadding + chartHeight - normalizedValue * chartHeight;
+      const y = paddingTop + chartHeight - normalizedValue * chartHeight;
 
       let monthLabel: string;
       if (month.month === 'opening') {
@@ -140,7 +141,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     const numLabels = 6;
     let yAxisLabels = Array.from({ length: numLabels }, (_, i) => {
       const value = adjustedMin + (adjustedRange * (numLabels - 1 - i)) / (numLabels - 1);
-      const y = chartPadding + (i / (numLabels - 1)) * chartHeight;
+      const y = paddingTop + (i / (numLabels - 1)) * chartHeight;
       let label = '';
       if (Math.abs(value) >= 100000) {
         label = `₹${(value / 100000).toFixed(1)}L`;
@@ -155,7 +156,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     if (adjustedMin <= 0 && adjustedMax >= 0) {
       const hasZero = yAxisLabels.some((label) => Math.abs(label.value) < 0.01);
       if (!hasZero) {
-        const zeroY = chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight;
+        const zeroY = paddingTop + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight;
         yAxisLabels.push({ y: zeroY, label: '₹0', value: 0 });
         yAxisLabels.sort((a, b) => b.y - a.y);
       }
@@ -163,7 +164,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
 
     const zeroY =
       adjustedMin <= 0 && adjustedMax >= 0
-        ? chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
+        ? paddingTop + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
         : null;
 
     const svgHeight = height + (series.length > 7 ? 40 : 0);
@@ -221,7 +222,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
           <path
             d={path}
             fill="none"
-            stroke="#3b82f6"
+            stroke="#032B23"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -233,7 +234,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               cx={point.x}
               cy={point.y}
               r="5"
-              fill="#3b82f6"
+              fill="#032B23"
               stroke={c.pointStroke}
               strokeWidth="2"
               className="cursor-pointer"
@@ -282,7 +283,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
 
   if (loading) {
     return (
-      <Card padding="sm" className="md:!p-5">
+      <Card padding="none" className="overflow-hidden border border-border !shadow-none">
         <div className="flex h-36 items-center justify-center md:h-48">
           <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
         </div>
@@ -295,8 +296,8 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
   const closingDate = `31/03/${(selectedYear || 0) + 1}`;
 
   return (
-    <Card padding="sm" className="h-full border border-border md:!p-5">
-      <div className="mb-2 flex items-center justify-between gap-2 md:mb-3">
+    <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
+      <div className="mb-2 flex items-center justify-between gap-2 px-3 pt-3 md:mb-3 md:px-5 md:pt-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
             Cash Flow
@@ -329,7 +330,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </select>
       </div>
 
-      <div className="border-t border-border pt-2 md:pt-3">
+      <div>
         {chartBody}
         {data && data.months.length > 1 && (() => {
           const closings = data.months.map((m) => m.closing);
@@ -347,7 +348,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       </div>
 
       {/* Summary Panel */}
-      <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 md:grid-cols-4 md:gap-3 md:pt-3">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-3 py-3 md:grid-cols-4 md:gap-3 md:px-5 md:py-4">
         <div className="group relative flex flex-col">
           <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
             Cash as on {openingDate}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { cancelModuleScheduledDowngrade } from '@/lib/subscription/module-plan-lifecycle';
-import { cancelScheduledDowngrade } from '@/lib/subscription/lifecycle';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { normalizePlatformModule } from '@/lib/platform-modules';
 
 export const dynamic = 'force-dynamic';
@@ -16,26 +16,15 @@ export async function POST(request: NextRequest) {
     const guard = await applySubscriptionMutationGuard(request, tenant.businessId);
     if (guard) return guard;
 
-    const moduleKey = normalizePlatformModule(body.module_key);
+    const moduleKey =
+      normalizePlatformModule(body.module_key) ??
+      (await getBusinessPlatformContext(tenant.businessId)).primaryModule;
 
-    if (moduleKey) {
-      try {
-        await cancelModuleScheduledDowngrade(tenant.businessId, moduleKey);
-        return NextResponse.json({
-          success: true,
-          message: 'Scheduled downgrade has been cancelled',
-        });
-      } catch (moduleErr) {
-        console.warn('[cancel-downgrade] module path:', moduleErr);
-      }
-    }
-
-    const subscription = await cancelScheduledDowngrade(tenant.businessId);
+    await cancelModuleScheduledDowngrade(tenant.businessId, moduleKey);
 
     return NextResponse.json({
       success: true,
       message: 'Scheduled downgrade has been cancelled',
-      subscription,
     });
   } catch (error: any) {
     console.error('Error cancelling scheduled downgrade:', error);

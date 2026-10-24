@@ -9,6 +9,7 @@ import { NewConversationModal } from './NewConversationModal';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { ExportButton } from './ExportButton';
 import { waChat } from '@/lib/whatsapp-chat-typography';
+import type { InboxState } from './inbox';
 
 export interface Conversation {
   id: string;
@@ -33,6 +34,14 @@ export interface Conversation {
   lead_status?: string;
   conversation_status?: string;
   profile_picture_url?: string | null;
+  bot_paused_until?: string | null;
+  bot_paused_reason?: string | null;
+  handoff_requested_at?: string | null;
+  requested_at?: string | null;
+  inbox_state?: InboxState;
+  /** Intervened by an active team member (an orphaned "intervened" chat counts as Requesting). */
+  is_owned?: boolean;
+  owner_name?: string | null;
 }
 
 export interface FilterState {
@@ -41,6 +50,15 @@ export interface FilterState {
   lead_status?: string;
   conversation_status?: string;
   label_id?: string;
+  inbox_state?: InboxState;
+  /** 'me', 'others' or a user id; only with inbox_state = intervened. */
+  intervened_by?: string;
+}
+
+/** Requesting / Intervened as the list shows it, accounting for chats whose owner left. */
+export function effectiveInboxState(conv: Pick<Conversation, 'inbox_state' | 'is_owned'>): InboxState | undefined {
+  if (conv.inbox_state === 'intervened' && conv.is_owned === false) return 'requesting';
+  return conv.inbox_state;
 }
 
 interface ConversationListProps {
@@ -55,6 +73,20 @@ interface ConversationListProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   businessId?: string;
   initialPhoneNumber?: string;
+  currentUserId?: string | null;
+  /** Called after a new chat is started; the id is null when the chat row does not exist yet. */
+  onConversationStarted?: (conversationId: string | null) => void;
+}
+
+function waitingLabel(since: string | null | undefined, now: number): string | null {
+  if (!since) return null;
+  const mins = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60000));
+  if (!Number.isFinite(mins)) return null;
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 // Helper function to format phone number
@@ -150,11 +182,19 @@ export function ConversationList({
   isLoadingMore = false,
   onScroll,
   businessId,
-  initialPhoneNumber
+  initialPhoneNumber,
+  currentUserId,
+  onConversationStarted
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
-  
+  const [now, setNow] = useState(() => Date.now());
+
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Open modal with initial phone number if provided
   React.useEffect(() => {
     if (initialPhoneNumber && businessId) {
@@ -165,6 +205,7 @@ export function ConversationList({
   const [updatingLabel, setUpdatingLabel] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [availableLabels, setAvailableLabels] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -230,53 +271,110 @@ export function ConversationList({
 
   return (
     <div className="flex flex-col h-full bg-white" style={{ minHeight: 0, overflow: 'hidden' }}>
-      {/* Header - WhatsApp style */}
-      <div className="bg-[#008069] px-4 pt-3 pb-3 flex-shrink-0">
-        <div className="flex items-center justify-between mb-3 min-h-[44px]">
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-              <svg viewBox="0 0 24 24" className="w-6 h-6 text-white fill-current">
+      {/* Header — WhatsApp green with native mobile density */}
+      <div className="flex-shrink-0 bg-[#008069] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] lg:px-4 lg:pt-3">
+        <div className="mb-2.5 flex min-h-[44px] items-center justify-between lg:mb-3">
+          <div className="flex flex-shrink-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/20 lg:h-10 lg:w-10">
+              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current text-white lg:h-6 lg:w-6">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
               </svg>
             </div>
-            <h3 className="text-white font-medium text-lg whitespace-nowrap">WhatsApp</h3>
+            <div className="min-w-0">
+              <h3 className="truncate text-[17px] font-semibold tracking-tight text-white lg:text-lg lg:font-medium">
+                Chats
+              </h3>
+              <p className="hidden text-[11px] text-white/70 sm:block lg:hidden">WhatsApp inbox</p>
+            </div>
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             <button
               onClick={() => setShowNewConversationModal(true)}
               className="p-2 text-white hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
               title="New chat"
+              aria-label="New chat"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
               </svg>
             </button>
-            {businessId && (
-              <ExportButton
-                businessId={businessId}
-                filters={filters}
-                disabled={loading}
-              />
-            )}
-            <button
-              onClick={() => setShowLabelManagerModal(true)}
-              className="p-2 text-white hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
-              title="Manage Labels"
-            >
-              <Tag className="w-5 h-5" />
-            </button>
+            {/* Desktop: Export + Labels as icon buttons */}
+            <div className="hidden lg:flex items-center gap-0.5">
+              {businessId && (
+                <ExportButton
+                  businessId={businessId}
+                  filters={filters}
+                  disabled={loading}
+                  appearance="iconOnDark"
+                />
+              )}
+              <button
+                onClick={() => setShowLabelManagerModal(true)}
+                className="p-2 text-white hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
+                title="Manage Labels"
+                aria-label="Manage labels"
+              >
+                <Tag className="w-5 h-5" />
+              </button>
+            </div>
+            {/* Mobile: overflow menu keeps the teal bar uncluttered */}
+            <div className="relative lg:hidden">
+              <button
+                type="button"
+                onClick={() => setShowHeaderMenu((v) => !v)}
+                className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"
+                title="More actions"
+                aria-label="More actions"
+                aria-expanded={showHeaderMenu}
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+              {showHeaderMenu && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-10 cursor-default"
+                    aria-label="Close menu"
+                    onClick={() => setShowHeaderMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[10rem] rounded-lg bg-white shadow-lg border border-gray-200 py-1 text-sm text-gray-800">
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2.5 text-left hover:bg-gray-50 flex items-center gap-2"
+                      onClick={() => {
+                        setShowHeaderMenu(false);
+                        setShowLabelManagerModal(true);
+                      }}
+                    >
+                      <Tag className="w-4 h-4 text-gray-500" />
+                      Labels
+                    </button>
+                    {businessId && (
+                      <div className="border-t border-gray-100 px-2 py-1.5">
+                        <ExportButton
+                          businessId={businessId}
+                          filters={filters}
+                          disabled={loading}
+                          appearance="menuItem"
+                          onDone={() => setShowHeaderMenu(false)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
         
-        {/* Search - WhatsApp style */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
           <Input
             type="text"
-            placeholder="Ask Meta AI or Search"
+            placeholder="Search name, number or message"
             value={searchQuery}
             onChange={handleSearchChange}
-            className="pl-10 pr-4 py-2 bg-white text-gray-900 placeholder-gray-500 border-0 rounded-lg focus:ring-0 focus:outline-none text-sm"
+            className="rounded-full border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-500 shadow-small focus:outline-none focus:ring-2 focus:ring-white/40"
           />
         </div>
         
@@ -324,20 +422,19 @@ export function ConversationList({
             return (
               <div
                 key={conv.id}
-                className={`px-4 py-3 cursor-pointer transition-colors group ${
+                className={`mobile-list-row cursor-pointer group border-b border-slate-100/80 ${
                   isSelected
                     ? 'bg-[#e9edef]'
-                    : 'hover:bg-[#f5f6f6] active:bg-[#e9edef]'
+                    : 'hover:bg-[#f5f6f6]'
                 }`}
                 onClick={() => onSelect(conv.id)}
               >
-                <div className="flex items-center gap-3 relative">
-                  {/* Avatar - Circular */}
+                <div className="relative flex w-full items-center gap-3">
                   {conv.profile_picture_url ? (
                     <img
                       src={conv.profile_picture_url}
                       alt={displayName}
-                      className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                      className="h-12 w-12 flex-shrink-0 rounded-full object-cover ring-1 ring-black/5"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
                         target.style.display = 'none';
@@ -445,12 +542,47 @@ export function ConversationList({
                       <p className={waChat.listPreview}>
                         {formatLastMessage(conv.last_message_text, conv.last_message_direction)}
                       </p>
+                      {!conv.is_group && effectiveInboxState(conv) === 'requesting' && (() => {
+                        const waited = waitingLabel(conv.requested_at || conv.handoff_requested_at, now);
+                        return (
+                          <span
+                            className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                            title="The customer is waiting for a person"
+                          >
+                            {waited ? `Waiting ${waited}` : 'Requesting'}
+                          </span>
+                        );
+                      })()}
+                      {!conv.is_group && effectiveInboxState(conv) === 'intervened' && (
+                        <span
+                          className="max-w-[90px] flex-shrink-0 truncate rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800"
+                          title={`Handled by ${conv.assigned_to === currentUserId ? 'you' : conv.owner_name || conv.assigned_agent_name || 'a team member'}`}
+                        >
+                          {conv.assigned_to === currentUserId ? 'You' : conv.owner_name || conv.assigned_agent_name || 'Intervened'}
+                        </span>
+                      )}
                       {conv.unread_count > 0 && (
                         <span className="bg-[#25d366] text-white text-xs font-medium rounded-full px-1.5 py-0.5 min-w-[20px] text-center flex-shrink-0">
                           {conv.unread_count > 9 ? '9+' : conv.unread_count}
                         </span>
                       )}
                     </div>
+                    {conv.labels && conv.labels.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {conv.labels.slice(0, 3).map((l) => (
+                          <span
+                            key={l.id}
+                            className="max-w-[110px] truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                            style={{ backgroundColor: `${l.color}22`, color: l.color }}
+                          >
+                            {l.name}
+                          </span>
+                        ))}
+                        {conv.labels.length > 3 && (
+                          <span className="text-[10px] text-[#667781]">+{conv.labels.length - 3}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -471,9 +603,7 @@ export function ConversationList({
         <NewConversationModal
           isOpen={showNewConversationModal}
           onClose={() => setShowNewConversationModal(false)}
-          onSuccess={() => {
-            // Conversation will appear automatically via WebSocket events
-          }}
+          onSuccess={(_phone, conversationId) => onConversationStarted?.(conversationId ?? null)}
           businessId={businessId}
           initialPhoneNumber={initialPhoneNumber}
         />

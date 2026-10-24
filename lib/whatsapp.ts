@@ -274,6 +274,23 @@ const creatingSockets = new Set<string>();
 const revivalTimestamps = globalStore.__waRevivalTimestamps as Map<string, number>;
 const saveStateTimers = globalStore.__waSaveStateTimers as Map<string, NodeJS.Timeout>;
 const lastSavedStates = globalStore.__waLastSavedStates as Map<string, string>;
+/** Businesses whose owner pressed Disconnect, so the resulting logged-out event is not reported as a ban. */
+const ownerInitiatedLogouts = new Set<string>();
+
+/** Tell the owner their QR-linked number was logged out or blocked by WhatsApp. */
+async function notifyWhatsAppSessionLost(businessId: string, blocked: boolean): Promise<void> {
+  const title = blocked ? 'WhatsApp blocked your linked number' : 'WhatsApp logged out your linked number';
+  const message = blocked
+    ? 'WhatsApp refused the connection for your QR-linked number, which usually means the number was restricted for sending too many or unwanted messages. Invoices and reminders are not being sent. Check the number in the WhatsApp app, then reconnect it in Settings → WhatsApp. Connect lets you send through the official WhatsApp Business API instead.'
+    : 'Your QR-linked WhatsApp number was logged out from the phone or by WhatsApp. Invoices and reminders are not being sent until you scan a new QR code in Settings → WhatsApp.';
+  await db
+    .query(
+      `INSERT INTO notifications (business_id, type, title, message, reference_type, created_at)
+       VALUES ($1, 'general', $2, $3, 'whatsapp_session', CURRENT_TIMESTAMP)`,
+      [businessId, title, message],
+    )
+    .catch((err) => console.error('[WA] session-lost notification failed', err));
+}
 
 // Helper to invalidate status cache when session is updated
 function invalidateStatusCache(businessId: string) {
@@ -715,6 +732,25 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
       }
 
       const businessPhone = sessionRecord.phoneNumber || '';
+
+      // Owner updates: the linked owner phone, QR self-chat and LINK codes go to the assistant, never the CRM or bot.
+      if (!isGroup && messageText) {
+        try {
+          const { routeBaileysInbound } = await import('@/lib/whatsapp/inbound-router');
+          const consumed = await routeBaileysInbound({
+            businessId,
+            businessPhone,
+            from: fromNumber,
+            isFromMe: !!isFromMe,
+            isGroup: false,
+            messageId,
+            text: messageText,
+          });
+          if (consumed) continue;
+        } catch (err) {
+          console.error('[WA] owner routing failed (continuing as a normal message):', err);
+        }
+      }
       
       // Handle STOP/START unsubscribe detection (for incoming messages only)
       if (!isFromMe && messageText) {
@@ -918,70 +954,28 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
         continue;
       }
       
-      // Map Baileys status to our status
-      // Baileys uses: 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ
+      // Baileys proto: 0=ERROR, 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ, 5=PLAYED
       if (statusUpdate?.status !== undefined) {
         switch (statusUpdate.status) {
-          case 1: // PENDING
-            newStatus = 'sent';
+          case 0:
+            newStatus = 'failed';
             break;
-          case 2: // SERVER_ACK
-            newStatus = 'sent';
-            break;
-          case 3: // DELIVERY_ACK
+          case 3:
             newStatus = 'delivered';
             break;
-          case 4: // READ
+          case 4:
+          case 5:
             newStatus = 'read';
             break;
           default:
-            // If status is 0 or unknown, keep as sent
             newStatus = 'sent';
         }
       }
-      
+
       if (newStatus) {
-        // Update message status in database (await — no setImmediate; keeps ordering vs other DB work)
         try {
-          const result = await db.query(
-            `UPDATE whatsapp_conversation_messages 
-             SET status = $1
-             WHERE message_id = $2 AND business_id = $3
-             RETURNING conversation_id, id, message_text, message_type, media_url, direction, buttons, created_at`,
-            [newStatus, messageId, businessId]
-          );
-
-          if ((result.rowCount || 0) > 0) {
-            console.log(`[WA] Updated message ${messageId} status to ${newStatus}`);
-
-            const updatedMessage = result.rows[0];
-            if (updatedMessage && updatedMessage.conversation_id) {
-              try {
-                const { emitNewMessage } = await import('@/lib/whatsapp-websocket');
-                emitNewMessage(businessId, updatedMessage.conversation_id, {
-                  ...updatedMessage,
-                  status: newStatus,
-                  message_id: messageId
-                });
-                console.log(`[WA] ✅ Emitted WebSocket update for message ${messageId} status: ${newStatus}`);
-              } catch (wsError) {
-                console.error('[WA] Error emitting WebSocket update for message status:', wsError);
-              }
-            }
-          }
-
-          // Reminder / outbox log (whatsapp_messages) — same Baileys id as conversation row
-          const logUp = await db.query(
-            `UPDATE whatsapp_messages
-             SET status = $1
-             WHERE business_id = $2 AND baileys_message_id = $3`,
-            [newStatus, businessId, messageId]
-          );
-          if ((logUp.rowCount || 0) > 0) {
-            console.log(
-              `[WA] Updated whatsapp_messages log(s) for ${messageId} to ${newStatus} (${logUp.rowCount} row(s))`
-            );
-          }
+          const { applyOutgoingStatus } = await import('@/lib/whatsapp/message-status');
+          await applyOutgoingStatus(businessId, messageId, newStatus as 'sent' | 'delivered' | 'read' | 'failed');
         } catch (err) {
           console.error('[WA] Error updating message status:', err);
         }
@@ -2134,8 +2128,13 @@ export async function getWhatsAppSocket(businessId: string, options?: { syncFull
       }
 
       // Case 1: Logged Out (Explicitly or by phone)
-      if (reason === DisconnectReason.loggedOut) {
-        console.log(`[WA] Logged out. Clearing session.`);
+      if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.forbidden) {
+        const blocked = reason === DisconnectReason.forbidden;
+        console.log(`[WA] ${blocked ? 'Forbidden (likely banned)' : 'Logged out'}. Clearing session.`);
+        const ownerInitiated = ownerInitiatedLogouts.delete(businessId);
+        if (!ownerInitiated && !wasPendingQR) {
+          void notifyWhatsAppSessionLost(businessId, blocked);
+        }
         WACM.onLoggedOut(businessId);
         if (sessionRecord.reconnectTimer) {
           clearTimeout(sessionRecord.reconnectTimer);
@@ -2144,9 +2143,9 @@ export async function getWhatsAppSocket(businessId: string, options?: { syncFull
         await db.query(`
           UPDATE whatsapp_sessions 
           SET status = 'disconnected', auth_state = NULL, last_qr = NULL, phone_number = NULL, 
-              last_error = 'Logged out', updated_at = CURRENT_TIMESTAMP 
+              last_error = $2, updated_at = CURRENT_TIMESTAMP 
           WHERE business_id = $1
-        `, [businessId]);
+        `, [businessId, blocked ? 'Blocked by WhatsApp' : 'Logged out']);
         return;
       }
 
@@ -2950,6 +2949,8 @@ export async function disconnectWhatsApp(businessId: string) {
     
     // Logout and cleanup socket
     if (session.socket) {
+      ownerInitiatedLogouts.add(businessId);
+      setTimeout(() => ownerInitiatedLogouts.delete(businessId), 60_000).unref?.();
       try {
         await session.socket.logout();
       } catch (e) {
@@ -2993,9 +2994,10 @@ export async function sendWhatsAppMessage(
   to: string,
   text: string,
   media?: string | Buffer,
-  messageType: 'text' | 'image' | 'button' | 'document' = 'text',
+  messageType: 'text' | 'image' | 'button' | 'document' | 'video' | 'audio' = 'text',
   buttons?: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }>,
-  footer?: string
+  footer?: string,
+  file?: { mimeType?: string; fileName?: string }
 ) {
   console.log('[WA] sendWhatsAppMessage called with:', {
     messageType,
@@ -3157,13 +3159,26 @@ export async function sendWhatsAppMessage(
       } else {
         throw new Error('Invalid image data');
       }
+    } else if (messageType === 'video' && media) {
+      const video = Buffer.isBuffer(media) ? media : { url: media as string };
+      messageResult = await session.socket.sendMessage(jid, {
+        video,
+        caption: text || undefined,
+        mimetype: file?.mimeType || 'video/mp4'
+      });
+    } else if (messageType === 'audio' && media) {
+      const audio = Buffer.isBuffer(media) ? media : { url: media as string };
+      messageResult = await session.socket.sendMessage(jid, {
+        audio,
+        mimetype: file?.mimeType || 'audio/mp4'
+      });
     } else if (media) {
-      // Document/PDF (existing logic)
+      // Invoice callers pass no file details, so the PDF defaults stay.
       const document = Buffer.isBuffer(media) ? media : { url: media as string };
-      messageResult = await session.socket.sendMessage(jid, { 
-        document: document, 
-        mimetype: 'application/pdf',
-        fileName: 'Invoice.pdf',
+      messageResult = await session.socket.sendMessage(jid, {
+        document: document,
+        mimetype: file?.mimeType || 'application/pdf',
+        fileName: file?.fileName || 'Invoice.pdf',
         caption: text
       });
     } else {
@@ -3221,8 +3236,8 @@ export async function sendWhatsAppMessage(
   let logMessageType = 'text';
   if (messageType === 'button') {
     logMessageType = 'button';
-  } else if (messageType === 'image' && media) {
-    logMessageType = 'image';
+  } else if ((messageType === 'image' || messageType === 'video' || messageType === 'audio') && media) {
+    logMessageType = messageType;
   } else if (media) {
     logMessageType = 'document';
   }

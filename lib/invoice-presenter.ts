@@ -2,6 +2,58 @@ import { getDocumentRule } from './invoice-config';
 import * as db from './db';
 import { enrichInvoiceRenderData } from './custom-fields-render';
 import { parseCustomFieldValues } from './custom-fields';
+import { getStateName } from './gst-utils';
+import {
+  amountInWords,
+  documentLanguageDateLocale,
+  translatePhrase,
+  type DocumentLanguage,
+} from './print-language';
+import { resolveDocumentLanguage } from './print-language/storage';
+import { translatePrintedItemName } from './print-language/item-name';
+
+function placeOfSupplyName(code: unknown): string {
+  const raw = String(code ?? '').trim();
+  if (!raw) return '';
+  const padded = raw.padStart(2, '0');
+  if (padded === '96') return 'Other Country';
+  if (padded === '97') return 'Other Territory';
+  return getStateName(padded) || raw;
+}
+
+const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  scheduled: 'Scheduled',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+/** Job-card fields for the work order template, formatted for print. */
+function workOrderFields(wo: any, formatDate: (d: any) => string, language: DocumentLanguage) {
+  const money = (v: unknown) => Number(v || 0).toFixed(2);
+  const hours = (v: unknown) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
+  const priority = String(wo.priority || 'medium');
+  return {
+    description: wo.work_description || '',
+    location: wo.work_location || '',
+    assigned_to: wo.assigned_to || '',
+    priority: translatePhrase(language, priority.charAt(0).toUpperCase() + priority.slice(1)),
+    status: translatePhrase(language, WORK_ORDER_STATUS_LABELS[wo.status] || wo.status || ''),
+    scheduled_start: formatDate(wo.scheduled_start_date),
+    scheduled_end: formatDate(wo.scheduled_end_date),
+    actual_start: formatDate(wo.actual_start_date),
+    actual_end: formatDate(wo.actual_end_date),
+    estimated_hours: hours(wo.estimated_hours),
+    actual_hours: hours(wo.actual_hours),
+    labor_cost: money(wo.labor_cost),
+    material_cost: money(wo.material_cost),
+    other_cost: money(wo.other_cost),
+    total_cost: money(wo.total_cost),
+    has_labor: Number(wo.labor_cost || 0) > 0,
+    has_other: Number(wo.other_cost || 0) > 0,
+  };
+}
 
 interface RenderData {
   invoice: any;
@@ -55,6 +107,10 @@ async function fetchBankDetails(businessId: string): Promise<{
  */
 export async function prepareInvoiceForRendering(rawData: any, settings: any = {}): Promise<RenderData> {
   const { invoice: rawInvoice, business, customer, items } = rawData;
+  const documentLanguage = await resolveDocumentLanguage(
+    settings?.document_language,
+    business?.business_id || business?.id,
+  );
   
   // Fetch bank details from bank_accounts table if business_id is available
   let bankDetails = null;
@@ -75,6 +131,12 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     invoice_number: rawInvoice.invoice_number || rawInvoice.order_number || rawInvoice.challan_number || rawInvoice.work_order_number || rawInvoice.credit_note_number || rawInvoice.debit_note_number || 'N/A',
     invoice_date: rawInvoice.invoice_date || rawInvoice.order_date || rawInvoice.challan_date || rawInvoice.work_order_date || rawInvoice.credit_note_date || rawInvoice.debit_note_date,
     grand_total: rawInvoice.grand_total || rawInvoice.total_cost || 0,
+    // DB columns differ from the names templates read (place_of_supply_state_code,
+    // purchase_order_number, e_way_bill_number on challans).
+    place_of_supply: rawInvoice.place_of_supply || placeOfSupplyName(rawInvoice.place_of_supply_state_code),
+    po_number: rawInvoice.po_number || rawInvoice.purchase_order_number || '',
+    eway_bill_number: rawInvoice.eway_bill_number || rawInvoice.e_way_bill_number || '',
+    e_way_bill_number: rawInvoice.e_way_bill_number || rawInvoice.eway_bill_number || '',
   };
 
   // 2. Determine Title and Rules
@@ -90,17 +152,27 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   const rule = getDocumentRule(docType);
   
   // Apply document rules to settings
-  const effectiveSettings = { ...settings };
+  const effectiveSettings = { ...settings, document_language: documentLanguage };
+  // Notes/terms typed on the document win over the template's default text, and
+  // always print: the template's show_notes/show_terms switch only governs its default text.
+  if (typeof rawInvoice.notes === 'string' && rawInvoice.notes.trim()) {
+    effectiveSettings.notes = rawInvoice.notes;
+    effectiveSettings.show_notes = true;
+  }
+  if (typeof rawInvoice.terms === 'string' && rawInvoice.terms.trim()) {
+    effectiveSettings.terms = rawInvoice.terms;
+    effectiveSettings.show_terms = true;
+  }
+  // Bill of supply / challan carry no tax, but subtotal, discount and total are still real.
   if (!rule.isTaxable) {
-    effectiveSettings.show_rate = effectiveSettings.show_rate ?? false;
     effectiveSettings.show_tax_rate = false;
     effectiveSettings.show_tax_amount = false;
-    effectiveSettings.show_line_total = effectiveSettings.show_line_total ?? false;
-    effectiveSettings.show_discount = false;
     effectiveSettings.show_tax = false;
-    effectiveSettings.show_subtotal = false;
     effectiveSettings.show_tax_total = false;
-    effectiveSettings.show_grand_total = effectiveSettings.show_grand_total ?? false;
+    effectiveSettings.show_cgst = false;
+    effectiveSettings.show_sgst = false;
+    effectiveSettings.show_igst = false;
+    effectiveSettings.show_cess = false;
   }
 
   // Proforma/Quotation title takes priority even if export is true
@@ -113,6 +185,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   ) {
     invoiceTitle = 'EXPORT INVOICE';
   }
+  invoiceTitle = translatePhrase(documentLanguage, invoiceTitle);
 
   // 3. Formatting Helpers
   const formatCurrency = (val: any) => {
@@ -128,7 +201,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-      return date.toLocaleDateString('en-IN', { 
+      return date.toLocaleDateString(documentLanguageDateLocale(documentLanguage), { 
         day: 'numeric', 
         month: 'long', 
         year: 'numeric' 
@@ -136,26 +209,6 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     } catch (e) {
       return dateStr;
     }
-  };
-
-  // 4. Number to Words (Internal Helper)
-  const numberToWords = (num: number) => {
-    if (isNaN(num) || num === 0) return 'Zero Rupees Only';
-    const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-    const b = ['','', 'Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-    const toWords = (n: number): string => {
-      if (n < 20) return a[n];
-      if (n < 100) return b[Math.floor(n/10)] + (n%10 ? ' ' + a[n%10] : '');
-      if (n < 1000) return a[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + toWords(n%100) : '');
-      if (n < 100000) return toWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + toWords(n%1000) : '');
-      if (n < 10000000) return toWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + toWords(n%100000) : '');
-      return toWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + toWords(n%10000000) : '');
-    };
-    const whole = Math.floor(Math.abs(num));
-    const decimal = Math.round((Math.abs(num) - whole) * 100);
-    const wholeWords = whole === 0 ? 'Zero' : toWords(whole);
-    const decWords = decimal > 0 ? ` and ${toWords(decimal)} Paise` : '';
-    return `${num < 0 ? 'Minus ' : ''}${wholeWords} Rupees${decWords} Only`;
   };
 
   // 5. Process Items (Standardize Tax Splits)
@@ -185,10 +238,11 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
 
     return {
       index: index + 1,
-      item_name: item.item_name || '',
-      description: item.description || '',
+      item_name: translatePrintedItemName(documentLanguage, item.item_name || ''),
+      description: translatePrintedItemName(documentLanguage, item.description || ''),
       hsn_sac: item.hsn_sac || '',
       quantity: qty,
+      charge_line: item.charge_line === true,
       unit: item.unit || 'PCS',
       unit_price: price.toFixed(2),
       discount_percent: discountPercent,
@@ -205,7 +259,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       line_total: Number(lineTotal).toFixed(2),
       image_url: item.image_url || null,
       batch_number: item.batch_number || null,
-      expiry_date: item.expiry_date ? formatDate(item.expiry_date) : null
+      expiry_date: item.expiry_date ? formatDate(item.expiry_date) : null,
+      item_custom_fields: item.item_custom_fields ?? item.custom_fields,
     };
   });
 
@@ -235,7 +290,10 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   const balanceDue = openingBalance + invoiceGrandTotal;
 
   // Calculate total quantity and unit for display
-  const totalQuantity = processedItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
+  const totalQuantity = processedItems.reduce(
+    (sum: number, item: any) => sum + (item.charge_line ? 0 : Number(item.quantity || 0)),
+    0
+  );
   const primaryUnit = processedItems.length > 0 ? processedItems[0].unit || 'Nos' : 'Nos';
 
   // Calculate tax breakdown grouped by HSN/SAC
@@ -246,6 +304,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     cgst_amount: number;
     sgst_rate: number;
     sgst_amount: number;
+    igst_rate: number;
+    igst_amount: number;
     total_tax: number;
   }>();
 
@@ -258,12 +318,15 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       cgst_amount: 0,
       sgst_rate: Number(item.sgst_rate || 0),
       sgst_amount: 0,
+      igst_rate: Number(item.igst_rate || 0),
+      igst_amount: 0,
       total_tax: 0
     };
 
     existing.taxable_value += Number(item.taxable_value || 0);
     existing.cgst_amount += Number(item.cgst_amount || 0);
     existing.sgst_amount += Number(item.sgst_amount || 0);
+    existing.igst_amount += Number(item.igst_amount || 0);
     existing.total_tax += Number(item.tax_amount || 0);
 
     taxBreakdownMap.set(hsn, existing);
@@ -276,6 +339,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     cgst_amount: item.cgst_amount.toFixed(2),
     sgst_rate: item.sgst_rate.toFixed(2).replace(/\.00$/, ''),
     sgst_amount: item.sgst_amount.toFixed(2),
+    igst_rate: item.igst_rate.toFixed(2).replace(/\.00$/, ''),
+    igst_amount: item.igst_amount.toFixed(2),
     total_tax: item.total_tax.toFixed(2)
   }));
 
@@ -287,8 +352,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       invoice_title: invoiceTitle,
       invoice_date: formatDate(invoice.invoice_date),
       due_date: (invoice.due_date || invoice.expected_delivery_date) ? formatDate(invoice.due_date || invoice.expected_delivery_date) : '',
-      amount_in_words: numberToWords(Number(invoice.grand_total)),
-      tax_amount_in_words: numberToWords(Number(invoice.tax_total || 0)),
+      amount_in_words: amountInWords(Number(invoice.grand_total), documentLanguage),
+      tax_amount_in_words: amountInWords(Number(invoice.tax_total || 0), documentLanguage),
       is_igst: isIGST,
       subtotal: Number(invoice.subtotal || 0).toFixed(2),
       tax_total: Number(invoice.tax_total || 0).toFixed(2),
@@ -300,8 +365,11 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       sgst_total: Number(invoice.sgst_total || 0).toFixed(2),
       igst_total: Number(invoice.igst_total || 0).toFixed(2),
       additional_charges: Number(invoice.additional_charges || 0).toFixed(2),
+      charges_included: invoice.charges_included === true,
       round_off: Number(invoice.round_off || 0).toFixed(2),
       total_quantity: totalQuantity,
+      items_have_prices: processedItems.some((i: any) => Number(i.unit_price) > 0),
+      has_tax: Number(invoice.tax_total || 0) > 0,
       total_unit: primaryUnit,
       opening_balance: openingBalance.toFixed(2),
       balance_due: balanceDue.toFixed(2),
@@ -318,7 +386,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       terms_of_delivery: invoice.terms_of_delivery || ''
       ,
       // Tax breakdown grouped by HSN/SAC (for templates like Tally Style)
-      tax_breakdown: taxBreakdown
+      tax_breakdown: taxBreakdown,
+      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate, documentLanguage) : null
     },
     business: {
       ...business,

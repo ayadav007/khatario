@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Camera } from 'lucide-react';
 import { BarcodeScanner } from './BarcodeScanner';
@@ -30,6 +31,7 @@ interface ItemSearchResult {
   purchase_price?: number;
   tax_rate: number;
   hsn_sac?: string;
+  mrp?: number | null;
   current_stock: number;
   image_url?: string;
   has_variants?: boolean;
@@ -44,9 +46,36 @@ interface ItemAutocompleteProps {
   onSelectDone?: () => void;
   disabled?: boolean;
   inputRef?: React.RefObject<HTMLInputElement>;
-  onAddNew?: () => void;
+  onAddNew?: (query?: string) => void;
   className?: string;
   warehouseId?: string;
+  categoryId?: string;
+  searchInputDataAttr?: Record<string, string>;
+}
+
+interface DropdownPosition {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+}
+
+/** Matches the dropdown's max-h-60 (15rem). */
+const DROPDOWN_MAX_HEIGHT = 240;
+const DROPDOWN_GAP = 4;
+
+/** Open below the input, or above it when there isn't room below; keep within the viewport width. */
+function computeDropdownPosition(rect: DOMRect): DropdownPosition {
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const width = Math.min(Math.max(rect.width, 300), viewportW - 16);
+  const left = Math.max(8, Math.min(rect.left, viewportW - width - 8));
+  const spaceBelow = viewportH - rect.bottom;
+  const spaceAbove = rect.top;
+  if (spaceBelow < DROPDOWN_MAX_HEIGHT + DROPDOWN_GAP && spaceAbove > spaceBelow) {
+    return { bottom: viewportH - rect.top + DROPDOWN_GAP, left, width };
+  }
+  return { top: rect.bottom + DROPDOWN_GAP, left, width };
 }
 
 const BARCODE_PATTERN = /\d/;
@@ -64,7 +93,9 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   inputRef: externalInputRef,
   onAddNew,
   className,
-  warehouseId
+  warehouseId,
+  categoryId,
+  searchInputDataAttr,
 }) => {
   const { business, user } = useAuth();
   const [query, setQuery] = useState(value || '');
@@ -76,7 +107,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const suppressOpenRef = useRef(false);
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const [selectedItemForVariant, setSelectedItemForVariant] = useState<ItemSearchResult | null>(null);
   const [showVariantSelector, setShowVariantSelector] = useState(false);
   const [highlightedVariantIndex, setHighlightedVariantIndex] = useState(0);
@@ -120,12 +151,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
       // If input ref not ready, try again after a short delay
       const timer = setTimeout(() => {
         if (inputRef.current && isOpen) {
-          const rect = inputRef.current.getBoundingClientRect();
-          setDropdownPosition({
-            top: rect.bottom + 4,
-            left: rect.left,
-            width: Math.max(rect.width, 300)
-          });
+          setDropdownPosition(computeDropdownPosition(inputRef.current.getBoundingClientRect()));
         }
       }, 10);
       return () => clearTimeout(timer);
@@ -133,14 +159,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
 
     const updatePosition = () => {
       if (inputRef.current) {
-        const rect = inputRef.current.getBoundingClientRect();
-        // Use getBoundingClientRect() for accurate viewport-relative positioning
-        // This ensures the dropdown appears correctly even when page layout changes (e.g., payment section expanded)
-        setDropdownPosition({
-          top: rect.bottom + 4, // Add 4px gap, no need for scrollY since using fixed positioning
-          left: rect.left, // No need for scrollX since using fixed positioning
-          width: Math.max(rect.width, 300)
-        });
+        // Viewport-relative (fixed positioning) so layout shifts don't misplace the dropdown
+        setDropdownPosition(computeDropdownPosition(inputRef.current.getBoundingClientRect()));
       }
     };
 
@@ -243,7 +263,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
 
       if (foundItems.length === 0 && !isAppOffline()) {
         const warehouseParam = warehouseId ? `&warehouse_id=${warehouseId}` : '';
-        const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}`;
+        const categoryParam = categoryId ? `&category_id=${encodeURIComponent(categoryId)}` : '';
+        const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}${categoryParam}`;
         const res = await fetch(searchUrl, { signal: controller.signal });
         if (!res.ok) {
           if (user?.id) {
@@ -371,7 +392,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [business?.id, handleSelect]);
+  }, [business?.id, handleSelect, warehouseId, categoryId]);
 
   useEffect(() => {
     if (suppressOpenRef.current) {
@@ -706,6 +727,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
           }}
           onKeyDown={handleKeyDown}
           disabled={disabled}
+          {...searchInputDataAttr}
         />
       </div>
       {!disabled && (
@@ -726,17 +748,19 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         </button>
       )}
       
-      {/* Dropdown - Fixed positioning to escape overflow constraints */}
-      {isOpen && (dropdownPosition || results.length > 0 || loading) && (
+      {/* Portalled to body: a transformed/filtered ancestor would otherwise become the containing block for `fixed`. */}
+      {isOpen && (dropdownPosition || results.length > 0 || loading) && typeof document !== 'undefined' && createPortal(
         <div 
           ref={dropdownRef}
           className="fixed bg-white border border-border rounded-lg shadow-lg z-[9999] max-h-60 overflow-y-auto"
           style={{
             boxShadow: 'rgba(0,0,0,0.1) 0px 4px 12px',
-            top: dropdownPosition ? `${dropdownPosition.top}px` : 'auto',
+            top: dropdownPosition?.top != null ? `${dropdownPosition.top}px` : 'auto',
+            bottom: dropdownPosition?.bottom != null ? `${dropdownPosition.bottom}px` : 'auto',
             left: dropdownPosition ? `${dropdownPosition.left}px` : 'auto',
             width: dropdownPosition ? `${dropdownPosition.width}px` : '300px',
-            position: 'fixed' // Explicitly set fixed positioning
+            position: 'fixed',
+            visibility: dropdownPosition ? 'visible' : 'hidden',
           }}
         >
           {loading && (
@@ -807,7 +831,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                  onMouseDown={(e) => {
                    e.preventDefault();
                    if (onAddNew) {
-                     onAddNew();
+                     onAddNew(query);
                    } else {
                      window.location.href = '/items/new';
                    }
@@ -817,7 +841,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                </button>
              </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Variant Selector Modal */}

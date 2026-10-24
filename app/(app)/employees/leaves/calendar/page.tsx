@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -187,20 +188,21 @@ export default function LeaveCalendarPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Team Calendar</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            Approved/pending leave and attendance (absent, half day) in one view
-          </p>
-        </div>
-        <Link href="/employees/leaves">
+      <PageHeader
+  title="Team Calendar"
+  subtitle="Approved/pending leave and attendance (absent, half day) in one view"
+
+  actions={
+    <>
+<Link href="/employees/leaves">
           <Button variant="secondary">
             <List className="mr-2 h-4 w-4" />
             List View
           </Button>
         </Link>
-      </div>
+    </>
+  }
+/>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-secondary">
         <span className="inline-flex items-center gap-1.5">

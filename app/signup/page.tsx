@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -16,6 +16,9 @@ import {
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
+import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
+import { AssistantWidget } from '@/components/assistant/AssistantWidget';
+import { trackSignupComplete } from '@/components/marketing/SignupMetaPixel';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -100,7 +103,10 @@ function SignupPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [step, setStep] = useState<'details' | 'otp'>('details');
   const [showPassword, setShowPassword] = useState(false);
+  const completingRef = useRef(false);
 
   const [formData, setFormData] = useState({
     businessName: '',
@@ -114,12 +120,64 @@ function SignupPageContent() {
     password: '',
   });
 
+  const leadToken = searchParams.get('lead');
+  const refFromUrl = searchParams.get('ref');
+  const [partnerRef, setPartnerRef] = useState<string | null>(null);
+  const [leadPhone, setLeadPhone] = useState<string | null>(null);
+  const [leadNotice, setLeadNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      if (refFromUrl?.trim()) {
+        const code = refFromUrl.trim().toUpperCase();
+        sessionStorage.setItem('khatario_partner_ref', code);
+        setPartnerRef(code);
+        return;
+      }
+      const stored = sessionStorage.getItem('khatario_partner_ref');
+      if (stored) setPartnerRef(stored);
+    } catch {
+      if (refFromUrl?.trim()) setPartnerRef(refFromUrl.trim().toUpperCase());
+    }
+  }, [refFromUrl]);
+
+  useEffect(() => {
+    if (!leadToken) return;
+    let cancelled = false;
+    fetch(`/api/public/sales-funnel/lead-prefill?token=${encodeURIComponent(leadToken)}`)
+      .then((r) => r.json())
+      .then((data: { valid?: boolean; reason?: string; name?: string; businessName?: string; businessType?: string; industry?: string; phone?: string }) => {
+        if (cancelled) return;
+        if (!data.valid) {
+          setLeadNotice(data.reason === 'used' ? 'This signup link was already used. Log in, or sign up with a new number.' : null);
+          return;
+        }
+        setFormData((prev) => ({
+          ...prev,
+          businessName: prev.businessName || data.businessName || '',
+          businessType: prev.businessType || data.businessType || '',
+          industry: prev.industry || data.industry || '',
+          userName: prev.userName || data.name || '',
+          userPhone: prev.userPhone || data.phone || '',
+        }));
+        if (data.phone) setLeadPhone(data.phone);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [leadToken]);
+
+  const phoneVerifiedByWhatsApp =
+    Boolean(leadPhone) && formData.userPhone.replace(/\D/g, '').slice(-10) === leadPhone;
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const completeSignup = async () => {
+    if (completingRef.current) return;
+    completingRef.current = true;
     setLoading(true);
     setError('');
     setErrorCode(null);
@@ -128,30 +186,55 @@ function SignupPageContent() {
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, productLine }),
-        credentials: 'same-origin',
+        body: JSON.stringify({
+          ...formData,
+          productLine,
+          ...(leadToken ? { leadToken } : {}),
+          ...(partnerRef ? { ref: partnerRef } : {}),
+        }),
+        credentials: 'include',
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        completingRef.current = false;
         const payload = data as { error?: string; code?: string; details?: string };
         setErrorCode(payload.code ?? null);
         const base = payload.error || 'Signup failed';
         throw new Error(payload.details ? `${base}: ${payload.details}` : base);
       }
 
-      // Full page navigation (not client-side router.push): guarantees the next document
-      // load sends the new httpOnly session cookies. router.push alone can skip a full
-      // reload and left some users stuck on /signup after a successful 201.
-      // /api/signup already sets JWT cookies — user is logged in; /login will redirect
-      // to /dashboard once /api/auth/session hydrates AuthContext.
-      window.location.assign('/login?registered=true');
+      // Full reload so httpOnly session cookies from /api/signup are sent on /dashboard.
+      await trackSignupComplete();
+      window.location.assign('/dashboard');
     } catch (err: unknown) {
+      completingRef.current = false;
       setError(err instanceof Error ? err.message : 'Signup failed');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (step === 'otp') return;
+    setError('');
+    setErrorCode(null);
+    const phoneDigits = formData.userPhone.replace(/\D/g, '').slice(-10);
+    if (phoneDigits.length !== 10) {
+      setError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (phoneVerifiedByWhatsApp) {
+      void completeSignup();
+      return;
+    }
+    setStep('otp');
+  };
+
+  const handleOtpVerified = (ok: boolean) => {
+    setOtpVerified(ok);
+    if (ok) void completeSignup();
   };
 
   /** Wide shell: use horizontal space on large monitors (not a skinny centered column). */
@@ -180,10 +263,21 @@ function SignupPageContent() {
         </div>
       </header>
 
-      <main className={clsx(pageShell, 'pb-16 pt-10 lg:pb-20 lg:pt-14')}>
-        <div className="grid gap-10 lg:grid-cols-2 lg:gap-14 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:gap-20 2xl:gap-24">
+      <main
+        className={clsx(
+          pageShell,
+          step === 'otp' ? 'flex min-h-[calc(100vh-5rem)] items-center justify-center py-10' : 'pb-16 pt-10 lg:pb-20 lg:pt-14',
+        )}
+      >
+        <div
+          className={
+            step === 'otp'
+              ? 'flex w-full justify-center'
+              : 'grid gap-10 lg:grid-cols-2 lg:gap-14 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:gap-20 2xl:gap-24'
+          }
+        >
           {/* Left — value prop */}
-          <div className="order-2 flex min-w-0 flex-col justify-center lg:order-1">
+          <div className={clsx('order-2 min-w-0 flex-col justify-center lg:order-1', step === 'otp' ? 'hidden' : 'flex')}>
             <h1 className="text-2xl font-bold leading-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl xl:leading-tight">
               {copy.title}
             </h1>
@@ -228,28 +322,43 @@ function SignupPageContent() {
           </div>
 
           {/* Right — form (full column width on large screens) */}
-          <div className="order-1 min-w-0 lg:order-2">
-            <div className="mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none xl:pl-4 2xl:pl-8">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl">
-                Hi there! Let&apos;s get you started
-              </h2>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
-                Create your {productLabel} account and go live in a couple of minutes.
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Signing up for{' '}
-                <Link href={`/?product=${productLine}`} className="font-medium text-primary-600 hover:underline">
-                  Khatario {productLabel}
-                </Link>
-                {' · '}
-                <Link href="/?product=billing" className="hover:underline">Billing</Link>
-                {' · '}
-                <Link href="/?product=hr" className="hover:underline">HR</Link>
-                {' · '}
-                <Link href="/?product=connect" className="hover:underline">Connect</Link>
-              </p>
+          <div className={clsx('min-w-0', step === 'otp' ? 'w-full max-w-[420px]' : 'order-1 lg:order-2')}>
+            <div
+              className={
+                step === 'otp'
+                  ? 'w-full'
+                  : 'mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none xl:pl-4 2xl:pl-8'
+              }
+            >
+              {step !== 'otp' ? (
+                <>
+                  <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl">
+                    Hi there! Let&apos;s get you started
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
+                    Create your {productLabel} account and go live in a couple of minutes.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Signing up for{' '}
+                    <Link href={`/?product=${productLine}`} className="font-medium text-primary-600 hover:underline">
+                      Khatario {productLabel}
+                    </Link>
+                    {' · '}
+                    <Link href="/?product=billing" className="hover:underline">Billing</Link>
+                    {' · '}
+                    <Link href="/?product=hr" className="hover:underline">HR</Link>
+                    {' · '}
+                    <Link href="/?product=connect" className="hover:underline">Connect</Link>
+                  </p>
+                </>
+              ) : null}
 
-              <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+              <form onSubmit={handleSubmit} className={step === 'otp' ? 'space-y-5' : 'mt-8 space-y-5'}>
+                {leadNotice && !error && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    {leadNotice}
+                  </div>
+                )}
                 {error && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                     <p>{error}</p>
@@ -264,6 +373,40 @@ function SignupPageContent() {
                   </div>
                 )}
 
+                {step === 'otp' ? (
+                  <div className="space-y-4">
+                    {loading && !error ? (
+                      <p className="text-center text-sm text-slate-600 dark:text-slate-400">Creating your account…</p>
+                    ) : null}
+                    <PublicWhatsAppOtp
+                      purpose="signup"
+                      phone={formData.userPhone}
+                      verified={otpVerified}
+                      onVerified={handleOtpVerified}
+                      autoSend
+                      onCancel={() => {
+                        completingRef.current = false;
+                        setOtpVerified(false);
+                        setStep('details');
+                      }}
+                    />
+                    {otpVerified && error ? (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        className="w-full"
+                        isLoading={loading}
+                        onClick={() => {
+                          completingRef.current = false;
+                          void completeSignup();
+                        }}
+                      >
+                        Try creating account again
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
                 <div className={fieldShell}>
                   <Input
                     label="Business name *"
@@ -390,6 +533,12 @@ function SignupPageContent() {
                         className="min-w-0 flex-1 border-0 bg-transparent px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/30 dark:text-slate-100"
                       />
                     </div>
+                    {phoneVerifiedByWhatsApp && (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                        Verified through WhatsApp. No code needed.
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-5">
@@ -446,6 +595,8 @@ function SignupPageContent() {
                   </Link>
                   .
                 </p>
+                  </>
+                )}
               </form>
 
               <p className="mt-8 text-center text-sm text-slate-600 lg:hidden dark:text-slate-400">
@@ -458,6 +609,7 @@ function SignupPageContent() {
           </div>
         </div>
       </main>
+      <AssistantWidget channel="signup" />
     </div>
   );
 }

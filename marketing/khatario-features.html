@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Khatario — A sale, typed once</title>
+  <meta name="description" content="Khatario is GST billing for Indian shops. The invoice, the stock, the balance, and the WhatsApp share come from one sale. Free, Growth at ₹399, Business at ₹999." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #efeae2;
+      --ink: #161513;
+      --muted: #5c574f;
+      --line: #ddd4c6;
+      --green: #0f6b4c;
+      --green-deep: #0c3d2e;
+      --paper: #fffcf8;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", sans-serif;
+      font-size: 17px;
+      line-height: 1.55;
+    }
+    img { max-width: 100%; display: block; }
+    a { color: inherit; }
+    .nav {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 6vw;
+      background: rgba(239, 234, 226, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+    }
+    .word { font-family: "Source Serif 4", Georgia, serif; font-weight: 600; font-size: 1.35rem; letter-spacing: -0.03em; text-decoration: none; }
+    .nav-links { display: flex; gap: 22px; align-items: center; font-size: 0.92rem; }
+    .nav-links a { text-decoration: none; }
+    .nav-links a:hover { text-decoration: underline; text-underline-offset: 4px; }
+    .go {
+      background: var(--green); color: #f6f3ec; text-decoration: none;
+      padding: 10px 14px; font-size: 0.92rem; font-weight: 500;
+    }
+    .go:hover { background: var(--green-deep); }
+    .textlink { font-weight: 500; }
+    h1, h2, h3 { font-family: "Source Serif 4", Georgia, serif; font-weight: 500; letter-spacing: -0.03em; }
+    h1 { font-size: clamp(2.8rem, 5.5vw, 4.8rem); line-height: 0.98; margin: 0 0 18px; }
+    h2 { font-size: clamp(2rem, 3.5vw, 3rem); line-height: 1.08; margin: 0 0 12px; }
+    h3 { font-size: 1.55rem; line-height: 1.15; margin: 0 0 8px; }
+    .lede { font-size: 1.12rem; max-width: 38rem; margin: 0 0 22px; }
+    .quiet { color: var(--muted); }
+    .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.85fr) 1.15fr;
+      gap: 48px;
+      align-items: end;
+      padding: 56px 6vw 28px;
+    }
+    .stage { position: relative; min-height: 460px; }
+    .laptop {
+      background: #1c1b19;
+      border-radius: 14px 14px 0 0;
+      padding: 10px 10px 0;
+      box-shadow: 0 24px 50px rgba(40, 30, 10, 0.18);
+    }
+    .laptop .bar { height: 14px; display: flex; gap: 5px; align-items: center; padding: 0 6px 8px; }
+    .laptop .bar i { width: 7px; height: 7px; border-radius: 50%; background: #3a3834; display: block; }
+    .laptop img { border-radius: 6px 6px 0 0; width: 100%; height: 420px; object-fit: cover; object-position: left top; }
+    .phone {
+      position: absolute;
+      right: -8px; bottom: -28px;
+      width: min(230px, 42%);
+      background: #111;
+      border-radius: 22px;
+      padding: 8px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+    }
+    .phone img { border-radius: 14px; height: 320px; object-fit: cover; object-position: center top; }
+    .slip {
+      position: absolute;
+      left: -18px; bottom: 18px;
+      width: 148px;
+      transform: rotate(-6deg);
+      filter: drop-shadow(0 12px 16px rgba(40,30,10,0.2));
+    }
+
+    .doors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 64px 6vw 20px; }
+    .door {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      text-decoration: none;
+      display: block;
+    }
+    .door img { height: 220px; width: 100%; object-fit: cover; object-position: top; background: #fff; }
+    .door div { padding: 16px 16px 18px; }
+    .door p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .kicker { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); margin-bottom: 6px; }
+
+    .day {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin: 28px 6vw 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .day article { padding: 22px 18px 26px; border-right: 1px solid var(--line); }
+    .day article:last-child { border-right: 0; }
+    .day time { display: block; font-family: "Source Serif 4", Georgia, serif; font-size: 1.7rem; margin-bottom: 8px; }
+    .day img { height: 140px; width: 100%; object-fit: cover; object-position: left top; margin-bottom: 12px; border: 1px solid var(--line); }
+    .day p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+    .section { padding: 72px 6vw; }
+    .section.head { padding-bottom: 18px; }
+    .strip-wrap { padding: 0 0 20px; }
+    .strip {
+      display: flex; gap: 18px;
+      overflow-x: auto;
+      padding: 10px 6vw 28px;
+      scroll-snap-type: x mandatory;
+    }
+    .strip figure {
+      flex: 0 0 280px;
+      scroll-snap-align: start;
+      margin: 0;
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 12px 12px 10px;
+    }
+    .strip img { height: 360px; width: 100%; object-fit: contain; object-position: top; background: #fafafa; }
+    .strip figcaption { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
+
+    .band {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 48px;
+      align-items: center;
+      padding: 28px 6vw 64px;
+    }
+    .band.reverse { direction: rtl; }
+    .band.reverse > * { direction: ltr; }
+    .frame {
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 10px;
+      box-shadow: 0 16px 40px rgba(40, 30, 10, 0.08);
+    }
+    .frame img { width: 100%; height: 380px; object-fit: cover; object-position: left top; }
+    .area {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .bands { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .bands li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 0.95rem; }
+    .bands strong { font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    .store-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .store-row img { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
+
+    .ca {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 36px;
+      align-items: center;
+      padding: 20px 6vw 72px;
+    }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    .chips span { border: 1px solid var(--ink); padding: 6px 10px; font-size: 0.85rem; background: var(--paper); }
+
+    .plans { padding: 20px 6vw 40px; }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+    td:first-child { color: var(--muted); width: 24%; }
+
+    .close {
+      margin: 20px 6vw 64px;
+      background: var(--green-deep);
+      color: #f6f1e8;
+      padding: 48px 40px;
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 28px;
+      align-items: center;
+    }
+    .close h2 { color: #fff; }
+    .close p { color: #d9d0c3; }
+    .close .go { background: #fff; color: var(--green-deep); }
+    .close .textlink { color: #fff; }
+    footer { padding: 0 6vw 36px; color: var(--muted); font-size: 0.88rem; }
+
+    @media (max-width: 980px) {
+      .hero, .doors, .day, .band, .band.reverse, .ca, .close, .area, .store-row { grid-template-columns: 1fr; display: grid; direction: ltr; }
+      .day article { border-right: 0; border-bottom: 1px solid var(--line); }
+      .phone { position: relative; right: auto; bottom: auto; width: 200px; margin-top: -40px; margin-left: auto; }
+      .slip { display: none; }
+      .laptop img, .frame img { height: 240px; }
+      .nav { padding: 14px 18px; }
+      .hero, .doors, .section, .ca, .plans, .close, footer { padding-left: 18px; padding-right: 18px; }
+      .day { margin-left: 18px; margin-right: 18px; }
+      .nav-links a:not(.go) { display: none; }
+      .strip { padding-left: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a class="word" href="#top">Khatario</a>
+    <div class="nav-links">
+      <a href="#day">The day</a>
+      <a href="#bills">Bills</a>
+      <a href="#area">Wholesalers</a>
+      <a href="#vendors">Vendors</a>
+      <a href="#agent">WhatsApp</a>
+      <a href="#store">Store</a>
+      <a href="#price">Pricing</a>
+      <a href="https://khatario.com/login">Login</a>
+      <a class="go" href="https://khatario.com/signup">Start the trial</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div>
+      <h1>A sale should only be typed once.</h1>
+      <p class="lede">The party, the HSN, the tax, and the balance are filled on one screen. The same bill is what you print, what you send on WhatsApp, and what GSTR-1 is built from.</p>
+      <div class="actions">
+        <a class="go" href="https://khatario.com/signup">Start on your own items</a>
+        <a class="textlink" href="https://khatario.com/book-demo">Or bill the first invoice on a call</a>
+      </div>
+      <p class="quiet" style="margin-top:18px">Full product on trial. No card. Billing continues if the network drops, then syncs. Staff only see the branches they are allowed to open.</p>
+    </div>
+    <div class="stage">
+      <div class="laptop">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <img src="../public/marketing/screens/invoice-new.png" alt="New invoice for Shree Ganesh: Basmati rice, toor dal, oil and detergent, with HSN, tax and a running total." />
+      </div>
+      <div class="phone">
+        <img src="../public/marketing/screens/invoice-share.png" alt="Share sheet for invoice INV-014: WhatsApp, email, a public link, or PDF." />
+      </div>
+      <img class="slip" src="../public/marketing/templates/thermal_80mm.png" alt="80mm thermal bill for Sharma Traders, total ₹68,563.60." />
+    </div>
+  </header>
+
+  <section class="doors" id="doors">
+    <a class="door" href="#day">
+      <img src="../public/marketing/templates/thermal_80mm.png" alt="Thermal counter bill with CGST and SGST printed on the slip." />
+      <div>
+        <div class="kicker">Counter</div>
+        <h3>I bill while they wait.</h3>
+        <p>POS, barcode, and a 58mm or 80mm slip. The quantity on the slip is the quantity that leaves stock.</p>
+      </div>
+    </a>
+    <a class="door" href="#books">
+      <img src="../public/marketing/screens/dashboard.png" alt="Dashboard showing this month’s sales, collection, purchases and profit." />
+      <div>
+        <div class="kicker">The books</div>
+        <h3>I need the month, not another register.</h3>
+        <p>Sales, purchases, collection, and profit on one screen. The ledger and GST file start on Business.</p>
+      </div>
+    </a>
+    <a class="door" href="#share">
+      <img src="../public/marketing/screens/invoice-share.png" alt="WhatsApp share from the shop’s connected account." />
+      <div>
+        <div class="kicker">WhatsApp</div>
+        <h3>They will reply on WhatsApp.</h3>
+        <p>Send the PDF from your number. Connect, at ₹1,499 a month, adds the shared inbox and the assistant.</p>
+      </div>
+    </a>
+  </section>
+
+  <section class="section head" id="day">
+    <h2>Follow one shop through the day.</h2>
+    <p class="lede quiet">These are screens from the product, using a sample shop. The times are the jobs, not a promise that every bill takes a fixed number of seconds.</p>
+  </section>
+  <section class="day">
+    <article>
+      <time>10:12</time>
+      <img src="../public/marketing/screens/invoice-new.png" alt="Invoice lines with HSN, quantity, price and tax." />
+      <p>Name the party, add the items. Price, HSN and GST rate come from the item. CGST and SGST, or IGST, follow the place of supply.</p>
+    </article>
+    <article>
+      <time>14:40</time>
+      <img src="../public/marketing/templates/gst_standard.png" alt="Printed GST tax invoice with HSN lines and a tax summary." />
+      <p>A supplier bill can be photographed. The supplier is matched on GSTIN or exact name before you confirm the purchase and the stock comes in.</p>
+    </article>
+    <article>
+      <time>19:05</time>
+      <img src="../public/marketing/screens/invoices-list.png" alt="Invoice list with Paid and Unpaid, each row marked pending in GSTR-1." />
+      <p>Paid and unpaid sit on the same list. A credit limit shows how much of it is already used. Reminders go from your WhatsApp.</p>
+    </article>
+    <article>
+      <time>1st</time>
+      <img src="../public/marketing/screens/gstr1.png" alt="GSTR-1 report with export to Excel, offline tool, and JSON." />
+      <p>GSTR-1 is already totaled from the final bills. Export it, or hand the file to your CA. Mark the month filed and that month locks.</p>
+    </article>
+  </section>
+
+  <section class="section head" id="bills">
+    <h2>What the party actually receives.</h2>
+    <p class="lede quiet">The same sale can leave as a GST invoice, a Tally-style bill, a challan, a credit note, or a thermal slip. These are Khatario’s own templates.</p>
+  </section>
+  <div class="strip-wrap">
+    <div class="strip">
+      <figure>
+        <img src="../public/marketing/templates/gst_standard.png" alt="GST standard tax invoice." />
+        <figcaption>GST standard</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/tally_style.png" alt="Tally-style invoice with tax summary and acknowledgement." />
+        <figcaption>Tally-style, with acknowledgement</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/gst_detailed.png" alt="Detailed GST invoice." />
+        <figcaption>GST detailed</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/thermal_80mm.png" alt="80mm thermal receipt." />
+        <figcaption>Thermal 80mm</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/thermal_58mm.png" alt="58mm thermal receipt." />
+        <figcaption>Thermal 58mm</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/challan_standard.png" alt="Delivery challan." />
+        <figcaption>Delivery challan</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/credit_standard.png" alt="Credit note." />
+        <figcaption>Credit note</figcaption>
+      </figure>
+      <figure>
+        <img src="../public/marketing/templates/export_invoice.png" alt="Export invoice." />
+        <figcaption>Export invoice</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <section class="band" id="rate">
+    <div class="frame">
+      <img src="../public/marketing/screens/invoice-new.png" alt="Line items with discount and tax calculated before the total." />
+    </div>
+    <div>
+      <div class="kicker">The rate</div>
+      <h2>The wholesaler does not pay the shelf price.</h2>
+      <p>Party pricing stores one rate per customer per item, to the paisa. On the invoice, that rate is fetched before anyone types it. An empty cell falls back to the item price.</p>
+      <p>Offers sit on top: a percent, a flat amount, a discount after the bill crosses a threshold, or buy-X-get-Y. They are calculated in paise. Free units are added to the quantity, so GST stays on what was paid and stock falls by what left the shop. Several offers can apply in order, or only the highest priority one.</p>
+      <p class="quiet">Party pricing, offers, POS, and barcode labels start on Growth.</p>
+    </div>
+  </section>
+
+  <section class="band reverse" id="books">
+    <div class="frame">
+      <img src="../public/marketing/screens/dashboard.png" alt="Monthly sales ₹84,699, collection ₹67,250, purchases ₹33,596, profit ₹18,663." />
+    </div>
+    <div>
+      <div class="kicker">The month</div>
+      <h2>Sales, collection, purchases, profit.</h2>
+      <p>The dashboard adds final invoices, what was collected, purchases, and profit for the range you pick. A proforma is not a sale. A staff login is limited to the branches they can open.</p>
+      <p>If an item’s default supplier is another Khatario business, and stock is at or below the minimum, it becomes a reorder request. They confirm a quantity. You cannot purchase more than they confirmed. If they are short, they can pass the same request to their supplier.</p>
+      <p class="quiet">Dead stock is quantity still on hand with no final sale in 90 days.</p>
+    </div>
+  </section>
+
+  <section class="section" id="area">
+    <div class="kicker">Wholesalers</div>
+    <h2>See which district is selling your goods, and which is only stocking them.</h2>
+    <p class="lede">When your dealers are also on Khatario and they have allowed you to see their stock, the supplier dashboard draws them on a map of India. You can look at the last 30 days, the last 90, or this financial year, by state, city, or PIN code.</p>
+    <div class="area">
+      <div>
+        <p style="margin-top:0">Two numbers sit on every area. <strong>Bought from you</strong> is their posted purchase bills. <strong>Sold onward</strong> is their posted sales of items they buy from you, items where you are the default supplier, or items you set a stock threshold on. A pivot shows which of your items is moving in which state. A ranking shows who is carrying the business.</p>
+        <ul class="bands">
+          <li><strong>Doing well</strong><span>They are buying from you and selling onward.</span></li>
+          <li><strong>Watch</strong><span>Goods went in and less than a quarter of that value has sold through, or the area is only middling next to your other dealers. The stock is not earning its place.</span></li>
+          <li><strong>Needs attention</strong><span>Among the dealers who are billing, this area is in the bottom third.</span></li>
+          <li><strong>No movement</strong><span>No bills in the period. The map only includes customers who granted this access. A dealer who has not linked you does not appear.</span></li>
+        </ul>
+      </div>
+      <div>
+        <p style="margin-top:0">The same screen lists low-stock alerts by dealer: item, quantity on hand, the threshold you agreed, and their phone, city, and PIN. You can raise a refill from that list instead of waiting for them to call.</p>
+        <p class="quiet">This is the wholesaler’s view. A retail shop that only buys, and does not supply other Khatario businesses, will not have dealers on this map.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="vendors">
+    <div class="frame">
+      <img src="../public/marketing/templates/tally_style.png" alt="A supplier-style tax invoice with party details, HSN, and an acknowledgement to sign." />
+    </div>
+    <div>
+      <div class="kicker">Vendors</div>
+      <h2>Your supplier is a ledger, a bill, and a person you can ask for stock.</h2>
+      <p>Each supplier has a balance, a statement, and an ageing of what you owe. Purchase orders become purchases when the goods arrive. Finalising the bill adds stock and posts the payable. A return takes both back. A photo or PDF of their invoice is matched to the supplier on GSTIN or exact name, and each line is matched by name and HSN, before you save it.</p>
+      <p>If that supplier also uses Khatario and you have linked them, they are more than a name in a list. When your stock is at or below the minimum, Khatario suggests a request. They confirm a quantity, and you cannot purchase more than they confirmed. If they do not have it, they can pass the same request to their supplier. A shop, a distributor, and a manufacturer can sit on one thread, each seeing only their side.</p>
+      <p class="quiet">Credit risk is shown for suppliers as well as customers: how much of the limit is already used, and whether it is healthy, on watch, or critical.</p>
+    </div>
+  </section>
+
+  <section class="band" id="share">
+    <div class="frame">
+      <img src="../public/marketing/screens/invoice-share.png" alt="Share invoice by email, WhatsApp, link, or PDF." />
+    </div>
+    <div>
+      <div class="kicker">The message</div>
+      <h2>The bill leaves on your WhatsApp.</h2>
+      <p>From the invoice you send the PDF, copy a link they can open without an account, or send it on WhatsApp from the number you connected. Every billing plan can do this. The daily cap is 20 on Free, 200 on Growth, and 500 on Business.</p>
+      <p>The assistant, on Connect, may answer only from your items and prices. An order line has to be an item name as stored. A payment screenshot is accepted only when the amount matches and the read is confident. Anything else stays on review until a person decides.</p>
+      <p class="quiet">Sending a bill is on every billing plan. The assistant, the inbox, and campaigns are Connect: ₹1,499 a month, ₹14,388 a year, or ₹34,999 for three years. Five users, 1,000 messages a day, 500 AI replies a month.</p>
+    </div>
+  </section>
+
+  <section class="band reverse" id="agent">
+    <div class="frame">
+      <img src="../public/marketing/screens/invoice-share.png" alt="The share sheet sends the invoice on WhatsApp from the shop’s connected account." />
+    </div>
+    <div>
+      <div class="kicker">The assistant</div>
+      <h2>It sells from your list. It is not allowed to invent a price.</h2>
+      <p>The WhatsApp assistant replies in the language the customer wrote: English, Hindi, or Hinglish. It may use only the items, prices, and policies you gave it. If the answer is not there, it says it will check with the team. It does not make up a product or an offer.</p>
+      <p>An order is created only when the item name matches the catalogue. Delivery charges stay in the message. They are not smuggled in as a product line. It remembers the customer’s name and what they asked for in that chat, and it will not open a second order for one that already exists. If they ask for a person, the chat is handed to your staff. Each conversation is marked hot, warm, cold, or not interested, so the team can see who is ready to buy before they reply.</p>
+      <p>A payment screenshot is read for the amount, the UPI id, and the transaction reference. It is marked verified only when it is a payment image, the amount matches the order, and the read is confident. Otherwise it stays on review until someone accepts or rejects it.</p>
+    </div>
+  </section>
+
+  <section class="section" id="campaigns">
+    <div class="kicker">Campaigns</div>
+    <h2>One message to a list, with a count of who received it.</h2>
+    <p class="lede">A campaign is a text, an image, or a message with buttons, sent to a contact group. You can pause it while it is running. The screen shows how many were sent, how many failed, and how many are still waiting. People who have unsubscribed are kept off the next send. Message only customers who agreed to hear from you.</p>
+  </section>
+
+  <section class="band" id="store">
+    <div>
+      <div class="kicker">Your store</div>
+      <h2>The website sells the stock the counter already counts.</h2>
+      <p>On Business, the same items become a shop at an address like yourshop.khatario.com. Customers browse, add to cart, and pay by Razorpay or cash on delivery. You can turn cash on delivery off. The order lands in Khatario, and a sale on the website moves the same quantity as a sale on the counter.</p>
+      <p>The theme studio has two looks you can publish: Studio, and Premium Grocery. You set colours, banners, and the pages a shop needs — about, contact, privacy, refunds, terms — and preview before it goes live. Coupons, ratings, wishlists, quote requests, and customer login with a one-time code are included. Messages from the contact page sit in an enquiries inbox.</p>
+      <p class="quiet">There is no second catalogue to maintain. That is the only reason a billing product should offer a store.</p>
+    </div>
+    <div class="store-row">
+      <img src="../public/store/themes/studio.svg" alt="Studio store theme: an editorial shopfront layout." />
+      <img src="../public/store/themes/grocery.svg" alt="Premium Grocery store theme: a green supermarket layout with category tiles." />
+    </div>
+  </section>
+
+  <section class="ca" id="gst">
+    <div class="frame">
+      <img src="../public/marketing/screens/gstr1.png" alt="GSTR-1 for September 2026: 28 invoices, export Excel, offline tool Excel, and JSON." />
+    </div>
+    <div>
+      <div class="kicker">Your CA</div>
+      <h2>A file, not your GST password.</h2>
+      <p>GSTR-1 is prepared from final bills. You export Excel, the portal’s offline workbook, or JSON. You or your CA upload it. Khatario does not log into the GST portal.</p>
+      <div class="chips">
+        <span>Export Excel</span>
+        <span>Offline tool</span>
+        <span>Export JSON</span>
+      </div>
+      <p>Before you file, the books are checked against GSTR-1: a missing invoice, an extra one, a credit note that does not match, a tax or date difference, or an IGST, CGST, SGST, or cess total that does not add up. GSTR-2B is lined up against the purchase bills you entered.</p>
+      <p class="quiet">The app stores a 12-digit e-way number you already have. It does not create that number, or an IRN, on the government portal. GST reports are on Free. The full ledger starts on Business.</p>
+    </div>
+  </section>
+
+  <section class="section" id="price">
+    <h2>Free already includes unlimited bills.</h2>
+    <p class="lede">These are the prices seeded in the product catalog. An admin can change them later. If the live pricing page disagrees, the database wins. There is no Professional plan and no Enterprise plan.</p>
+    <div class="frame" style="margin-bottom:22px">
+      <img src="../public/marketing/screens/invoices-list.png" alt="Invoice register: final bills marked paid or unpaid, each still pending in GSTR-1 until the return is filed." style="height:280px" />
+    </div>
+  </section>
+  <div class="plans">
+    <table>
+      <thead>
+        <tr><th></th><th>Free</th><th>Growth</th><th>Business</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Monthly</td><td>₹0</td><td>₹399</td><td>₹999</td></tr>
+        <tr><td>Yearly</td><td>₹0</td><td>₹3,588</td><td>₹9,588</td></tr>
+        <tr><td>3 years</td><td>₹0</td><td>₹7,999</td><td>₹21,999</td></tr>
+        <tr><td>Invoices, parties, items</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+        <tr><td>Users · branches</td><td>1 · 1</td><td>3 · 1</td><td>10 · 3</td></tr>
+        <tr><td>WhatsApp / day</td><td>20</td><td>200</td><td>500</td></tr>
+        <tr><td>You are buying</td><td>Bills, purchases, GST reports. No credit notes, sales orders, or purchase orders.</td><td>The counter: POS, party rates, barcodes, payment links, automatic reminders.</td><td>The ledger, warehouses, and the online store on the same items.</td></tr>
+      </tbody>
+    </table>
+    <p class="quiet" style="margin-top:16px">A new trial has Business features, with WhatsApp capped at 200 messages a day. Items import from a CSV. Parties are added while you bill. There is no Tally export and no customer CSV import. Yearly is about 25% less than twelve months on Growth, and about 20% less on Business.</p>
+  </div>
+
+  <section class="close">
+    <div>
+      <h2>Put one party rate on one real item.</h2>
+      <p>That is the trial. You will see whether the tax and the stock still match.</p>
+    </div>
+    <div class="actions">
+      <a class="go" href="https://khatario.com/signup">Start the trial</a>
+      <a class="textlink" href="https://khatario.com/book-demo">Book a demo</a>
+    </div>
+  </section>
+  <footer>Khatario · khatario.com</footer>
+</body>
+</html>

@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Copy, Loader2, Mail, MessageCircle, KeyRound } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import {
   postEmployeePortalInvite,
   formatPortalCredentials,
@@ -44,10 +46,18 @@ export function EmployeePortalInviteCard({
   onPortalInviteViaChange,
 }: EmployeePortalInviteCardProps) {
   const toast = useToastContext();
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
+  const portalEnabled = hasCapability('hr_employee_portal', 'view');
   const [busy, setBusy] = useState<'invite' | 'reset' | false>(false);
   const [lastInvite, setLastInvite] = useState<InviteResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [localChannel, setLocalChannel] = useState<PortalInviteChannel>(portalInviteVia);
+
+  // HR Lite / plans without portal: never leave invite checked.
+  useEffect(() => {
+    if (!snapshotLoaded || portalEnabled) return;
+    if (sendPortalInvite) onSendPortalInviteChange?.(false);
+  }, [snapshotLoaded, portalEnabled, sendPortalInvite, onSendPortalInviteChange]);
 
   const activeChannel =
     mode === 'form' ? portalInviteVia : localChannel;
@@ -146,6 +156,24 @@ export function EmployeePortalInviteCard({
   ]);
 
   if (mode === 'form') {
+    if (snapshotLoaded && !portalEnabled) {
+      return (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-text-primary">Employee portal access</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Employee self-service portal is not on HR Lite. You can still create staff for
+            attendance and salary. Upgrade to HR Pro to send portal login invites.
+          </p>
+          <Link
+            href="/settings/subscription"
+            className="mt-3 inline-block text-sm font-medium text-primary-700 hover:underline"
+          >
+            View HR plans
+          </Link>
+        </Card>
+      );
+    }
+
     return (
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-text-primary">Employee portal access</h3>
@@ -160,6 +188,7 @@ export function EmployeePortalInviteCard({
             className="mt-0.5 h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
             checked={sendPortalInvite}
             onChange={(e) => onSendPortalInviteChange?.(e.target.checked)}
+            disabled={snapshotLoaded && !portalEnabled}
           />
           <span className="text-sm text-text-primary">
             Send portal invite with temporary password
@@ -205,6 +234,24 @@ export function EmployeePortalInviteCard({
             </p>
           </div>
         ) : null}
+      </Card>
+    );
+  }
+
+  if (snapshotLoaded && !portalEnabled) {
+    return (
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold text-text-primary">Employee portal</h3>
+        <p className="mt-1 text-sm text-text-secondary">
+          Portal invites need HR Pro (or a plan with employee portal). Attendance-only staff
+          do not need a portal login.
+        </p>
+        <Link
+          href="/settings/subscription"
+          className="mt-3 inline-block text-sm font-medium text-primary-700 hover:underline"
+        >
+          View HR plans
+        </Link>
       </Card>
     );
   }

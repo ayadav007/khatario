@@ -5,6 +5,7 @@ import { EmployeeTarget } from '@/types/database';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 
 /**
  * GET /api/employees/targets
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_advanced');
+    if (planDenied) return planDenied;
     const employeeId = searchParams.get('employee_id');
     const targetYear = searchParams.get('target_year');
     const targetMonth = searchParams.get('target_month');
@@ -85,6 +88,8 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(business_id, 'hr_advanced');
+    if (planDenied) return planDenied;
     const {
       employee_id,
       target_period,

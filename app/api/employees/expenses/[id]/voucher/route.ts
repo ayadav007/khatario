@@ -43,6 +43,7 @@ export async function GET(
     }, { primary_color: '#000000' });
 
     const templateData = {
+      business_id: expense.business_id,
       expense: {
         ...expense,
         id_short: expense.id.substring(0, 8).toUpperCase(),

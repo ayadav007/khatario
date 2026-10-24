@@ -1,0 +1,22 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "Khatario",
+        "url": "https://khatario.com/login",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "center": true
+      }
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://khatario.com/desktop/updates/latest.json"]
+    }
+  }
+}

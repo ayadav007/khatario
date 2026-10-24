@@ -30,21 +30,21 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import { DarkModeProvider } from "@/contexts/DarkModeContext";
 import { DateRangeProvider } from "@/contexts/DateRangeContext";
 import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegistration";
+import { DisableNumberInputWheel } from "@/components/system/DisableNumberInputWheel";
 import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
 import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
 import { OfflineBannerProvider } from "@/contexts/OfflineBannerContext";
 import { ListenerLeakProbeBoot } from "@/components/debug/ListenerLeakProbeBoot";
 import { RuntimeProbeBoot } from "@/components/debug/RuntimeProbeBoot";
-import { PortalThemeBootScript } from "@/components/portal/PortalThemeBootScript";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
 
 const APP_NAME = "Khatario";
-const APP_DEFAULT_TITLE = "Modern Invoice & Billing";
+const APP_DEFAULT_TITLE = "Khatario — GST Billing & Invoicing";
 const APP_TITLE_TEMPLATE = "%s - Khatario";
 const APP_DESCRIPTION =
-  "Modern invoice and billing application for small businesses";
+  "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.";
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0d9488",
+  themeColor: "#032B23",
 };
 
 export default function RootLayout({
@@ -86,7 +86,6 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-sans antialiased">
-        <PortalThemeBootScript />
         <ListenerLeakProbeBoot />
         <NetworkStatusProvider>
         <OfflineBannerProvider>
@@ -101,6 +100,7 @@ export default function RootLayout({
                       <RuntimeProbeBoot />
                       <DateRangeProvider>
                         <ServiceWorkerRegistration />
+                        <DisableNumberInputWheel />
                         {children}
                       </DateRangeProvider>
                       </CatalogSyncProvider>

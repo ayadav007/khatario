@@ -85,6 +85,7 @@ export function useCapability(
  */
 export function useCapabilityCheck(): {
   hasCapability: (resource: string, action?: string) => boolean;
+  checkCapability: (resource: string, action?: string) => ReturnType<typeof evaluateCapabilityAccess>;
   snapshotLoaded: boolean;
   loading: boolean;
 } {
@@ -97,9 +98,9 @@ export function useCapabilityCheck(): {
     [sessionPermissions]
   );
 
-  const hasCapability = useMemo(() => {
-    return (res: string, act?: string): boolean => {
-      if (!business?.id || !user?.id) return false;
+  const checkCapability = useMemo(() => {
+    return (res: string, act?: string): ReturnType<typeof evaluateCapabilityAccess> => {
+      if (!business?.id || !user?.id) return { allowed: false, indeterminate: true };
       return evaluateCapabilityAccess({
         resource: res,
         action: act,
@@ -107,14 +108,20 @@ export function useCapabilityCheck(): {
         userId: user.id,
         sessionIsPrimaryAdmin,
         sessionPermissions,
-      }).allowed;
+      });
     };
     // snapshotLoaded must be a dependency so consumers (e.g. Sidebar) recompute when
     // LayoutDataContext finishes bootstrap and localStorage snapshot is authoritative.
   }, [user?.id, business?.id, snapshotLoaded, sessionIsPrimaryAdmin, permissionsSignature]);
 
+  const hasCapability = useMemo(
+    () => (res: string, act?: string): boolean => checkCapability(res, act).allowed,
+    [checkCapability]
+  );
+
   return {
     hasCapability,
+    checkCapability,
     snapshotLoaded,
     loading: !snapshotLoaded,
   };

@@ -1,14 +1,17 @@
 /**
- * Subscription Lifecycle Email Notifications
+ * Subscription Lifecycle Notifications
  *
- * Sends email notifications for trial expiry, grace period, cancellations,
- * and usage limit warnings. Tracks sent notifications in subscription_notifications
- * to prevent duplicates.
+ * Trial / grace notices go out by email, platform WhatsApp and in-app bell (many
+ * signups are phone-only, so email alone reaches nobody). Cancellation and usage
+ * warnings are email-only. subscription_notifications records only real deliveries
+ * (with the channels used) and prevents same-day duplicates.
  */
 
 import { query, queryOne, queryRows } from '@/lib/db';
 import { sendPlatformEmail } from '@/lib/platform-email';
-import { getBusinessSubscription, checkLimit } from '@/lib/subscription';
+import { checkLimit } from '@/lib/subscription';
+import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
+import { HR_TRIAL_PLAN_ID, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +20,7 @@ type NotificationType =
   | 'trial_expiring_3'
   | 'trial_expiring_1'
   | 'trial_expired'
+  | 'grace_expiring_3'
   | 'grace_expired'
   | 'cancellation_confirmed'
   | 'usage_limit_80'
@@ -75,10 +79,7 @@ async function sendToRecipients(
   if (recipients.businessEmail) addresses.add(recipients.businessEmail);
   if (recipients.adminEmail) addresses.add(recipients.adminEmail);
 
-  if (addresses.size === 0) {
-    console.warn('[notifications] No recipient email addresses found');
-    return false;
-  }
+  if (addresses.size === 0) return false;
 
   let anySent = false;
   for (const to of addresses) {
@@ -92,6 +93,77 @@ async function sendToRecipients(
     if (ok) anySent = true;
   }
   return anySent;
+}
+
+async function tryTenantWhatsApp(
+  businessId: string,
+  eventKey: 'trial_ending' | 'subscription_ended' | 'subscription_payment_failed',
+  vars: string[],
+): Promise<boolean> {
+  try {
+    const phone = await lookupTenantWhatsAppPhone(businessId);
+    if (!phone) return false;
+    const result = await sendPlatformEventWhatsApp({ eventKey, toPhone: phone, vars });
+    if (!result.sent && result.skipped) {
+      console.warn(`[notifications] WhatsApp ${eventKey} skipped for ${businessId}: ${result.skipped}`);
+    }
+    return result.sent;
+  } catch (err) {
+    console.error(`[notifications] WhatsApp ${eventKey} failed for ${businessId}:`, err);
+    return false;
+  }
+}
+
+/** Bell notification in the app — the one channel that reaches phone-only signups without Meta templates. */
+async function createInAppNotification(
+  businessId: string,
+  title: string,
+  message: string,
+): Promise<boolean> {
+  try {
+    await query(
+      `INSERT INTO notifications (business_id, type, title, message, reference_type, created_at)
+       VALUES ($1, 'general', $2, $3, 'subscription', CURRENT_TIMESTAMP)`,
+      [businessId, title, message],
+    );
+    return true;
+  } catch (err) {
+    console.error(`[notifications] In-app notification failed for ${businessId}:`, err);
+    return false;
+  }
+}
+
+type DeliveryChannel = 'email' | 'whatsapp' | 'in_app';
+
+/**
+ * Sends one lifecycle message on every channel we have for the business and logs it
+ * only if at least one channel actually delivered. Returns whether anything was delivered.
+ */
+async function deliverLifecycleNotification(input: {
+  businessId: string;
+  notificationType: NotificationType;
+  recipients: RecipientInfo;
+  email: { subject: string; html: string; text: string };
+  inApp?: { title: string; message: string };
+  whatsapp?: {
+    eventKey: 'trial_ending' | 'subscription_ended' | 'subscription_payment_failed';
+    vars: string[];
+  };
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  const channels: DeliveryChannel[] = [];
+  if (await sendToRecipients(input.recipients, input.email.subject, input.email.html, input.email.text)) {
+    channels.push('email');
+  }
+  if (input.whatsapp && (await tryTenantWhatsApp(input.businessId, input.whatsapp.eventKey, input.whatsapp.vars))) {
+    channels.push('whatsapp');
+  }
+  if (input.inApp && (await createInAppNotification(input.businessId, input.inApp.title, input.inApp.message))) {
+    channels.push('in_app');
+  }
+  if (channels.length === 0) return false;
+  await logNotification(input.businessId, input.notificationType, { ...input.metadata, channels });
+  return true;
 }
 
 /**
@@ -183,17 +255,17 @@ function wrapHtml(title: string, bodyHtml: string): string {
 export async function sendTrialExpiringEmail(
   businessId: string,
   daysRemaining: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const notifType: NotificationType =
       daysRemaining >= 7 ? 'trial_expiring_7'
       : daysRemaining >= 3 ? 'trial_expiring_3'
       : 'trial_expiring_1';
 
-    if (await wasAlreadySentToday(businessId, notifType)) return;
+    if (await wasAlreadySentToday(businessId, notifType)) return false;
 
     const recipients = await getRecipients(businessId);
-    if (!recipients) return;
+    if (!recipients) return false;
 
     const dayWord = daysRemaining === 1 ? 'day' : 'days';
     const subject = `[Khatario] Your trial expires in ${daysRemaining} ${dayWord}`;
@@ -211,8 +283,8 @@ export async function sendTrialExpiringEmail(
       ${urgencyNote}
       <div class="highlight">
         <strong>What happens next?</strong><br/>
-        After your trial ends you will have a 7-day grace period during which your data remains intact, but some features may be restricted.
-        To avoid any interruption, upgrade to a paid plan today.
+        When your trial ends, your account moves to the Free plan and premium features switch off. Your data stays safe.
+        You can extend the trial once by ${TRIAL_EXTENSION_DAYS} days from the app, or upgrade today to keep everything running.
       </div>
       <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription">Upgrade Now</a></p>
       <p>If you have any questions, reply to this email and we'll be happy to help.</p>
@@ -222,29 +294,38 @@ export async function sendTrialExpiringEmail(
     const text = [
       `Hi,`,
       `Your free trial of Khatario for ${recipients.businessName} will expire in ${daysRemaining} ${dayWord}.`,
-      `After your trial ends you will have a 7-day grace period. To avoid interruption, upgrade today.`,
+      `When your trial ends, your account moves to the Free plan and premium features switch off. Your data stays safe. You can extend once by ${TRIAL_EXTENSION_DAYS} days from the app, or upgrade today.`,
       `Upgrade: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription`,
       `Best regards, The Khatario Team`,
     ].join('\n\n');
 
-    const sent = await sendToRecipients(recipients, subject, html, text);
-    if (sent) {
-      await logNotification(businessId, notifType, { daysRemaining });
-    }
+    return await deliverLifecycleNotification({
+      businessId,
+      notificationType: notifType,
+      recipients,
+      email: { subject, html, text },
+      inApp: {
+        title: `Your trial ends in ${daysRemaining} ${dayWord}`,
+        message: `After that, ${recipients.businessName} moves to the Free plan and premium features switch off. Your data stays safe. Upgrade from Settings → Subscription, or extend once by ${TRIAL_EXTENSION_DAYS} days when it ends.`,
+      },
+      whatsapp: { eventKey: 'trial_ending', vars: [recipients.businessName, String(daysRemaining)] },
+      metadata: { daysRemaining },
+    });
   } catch (err) {
     console.error(`[notifications] sendTrialExpiringEmail failed for business ${businessId}:`, err);
+    return false;
   }
 }
 
 /**
  * Send an email when a trial has just expired (extend-or-free modal in app).
  */
-export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
+export async function sendTrialExpiredEmail(businessId: string): Promise<boolean> {
   try {
-    if (await wasAlreadySentToday(businessId, 'trial_expired')) return;
+    if (await wasAlreadySentToday(businessId, 'trial_expired')) return false;
 
     const recipients = await getRecipients(businessId);
-    if (!recipients) return;
+    if (!recipients) return false;
 
     const subject = '[Khatario] Your trial has expired';
 
@@ -253,7 +334,7 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
       <p>The free trial for <strong>${recipients.businessName}</strong> on Khatario has ended.</p>
       <div class="highlight">
         <strong>One-time extension available</strong><br/>
-        Log in to Khatario to get 7 more days of full access (one time only), or continue on the Free plan.
+        Log in to Khatario to get ${TRIAL_EXTENSION_DAYS} more days of full access (one time only), or continue on the Free plan.
         Your data remains safe either way.
       </div>
       <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard">Open Khatario</a></p>
@@ -264,17 +345,25 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
     const text = [
       `Hi,`,
       `The free trial for ${recipients.businessName} on Khatario has ended.`,
-      `Log in to get a one-time 7-day extension or continue on the Free plan.`,
+      `Log in to get a one-time ${TRIAL_EXTENSION_DAYS}-day extension or continue on the Free plan.`,
       `Open app: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard`,
       `Best regards, The Khatario Team`,
     ].join('\n\n');
 
-    const sent = await sendToRecipients(recipients, subject, html, text);
-    if (sent) {
-      await logNotification(businessId, 'trial_expired');
-    }
+    return await deliverLifecycleNotification({
+      businessId,
+      notificationType: 'trial_expired',
+      recipients,
+      email: { subject, html, text },
+      inApp: {
+        title: 'Your trial has ended',
+        message: `Open Khatario to get ${TRIAL_EXTENSION_DAYS} more days of full access (one time only), or continue on the Free plan. Your data is safe either way.`,
+      },
+      whatsapp: { eventKey: 'subscription_ended', vars: [recipients.businessName] },
+    });
   } catch (err) {
     console.error(`[notifications] sendTrialExpiredEmail failed for business ${businessId}:`, err);
+    return false;
   }
 }
 
@@ -284,12 +373,12 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
  *
  * @param businessId - The business ID
  */
-export async function sendGraceExpiredEmail(businessId: string): Promise<void> {
+export async function sendGraceExpiredEmail(businessId: string): Promise<boolean> {
   try {
-    if (await wasAlreadySentToday(businessId, 'grace_expired')) return;
+    if (await wasAlreadySentToday(businessId, 'grace_expired')) return false;
 
     const recipients = await getRecipients(businessId);
-    if (!recipients) return;
+    if (!recipients) return false;
 
     const subject = '[Khatario] Your account has been downgraded to Free';
 
@@ -318,12 +407,20 @@ export async function sendGraceExpiredEmail(businessId: string): Promise<void> {
       `Best regards, The Khatario Team`,
     ].join('\n\n');
 
-    const sent = await sendToRecipients(recipients, subject, html, text);
-    if (sent) {
-      await logNotification(businessId, 'grace_expired');
-    }
+    return await deliverLifecycleNotification({
+      businessId,
+      notificationType: 'grace_expired',
+      recipients,
+      email: { subject, html, text },
+      inApp: {
+        title: 'Your account is now on the Free plan',
+        message: 'The grace period has ended. Your data is safe; premium features are off and Free-plan limits apply. Upgrade any time to restore full access.',
+      },
+      whatsapp: { eventKey: 'subscription_ended', vars: [recipients.businessName] },
+    });
   } catch (err) {
     console.error(`[notifications] sendGraceExpiredEmail failed for business ${businessId}:`, err);
+    return false;
   }
 }
 
@@ -398,7 +495,7 @@ export async function sendUsageLimitWarningEmail(
   currentCount: number,
   maxLimit: number,
   percentUsed: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const notifType: NotificationType =
       percentUsed >= 100 ? 'usage_limit_100'
@@ -406,10 +503,10 @@ export async function sendUsageLimitWarningEmail(
       : 'usage_limit_80';
 
     const compositeType = `${notifType}_${limitType}` as NotificationType;
-    if (await wasAlreadySentToday(businessId, compositeType)) return;
+    if (await wasAlreadySentToday(businessId, compositeType)) return false;
 
     const recipients = await getRecipients(businessId);
-    if (!recipients) return;
+    if (!recipients) return false;
 
     const friendlyLimit = limitType.replace(/_/g, ' ');
     const subject =
@@ -464,8 +561,10 @@ export async function sendUsageLimitWarningEmail(
         percentUsed,
       });
     }
+    return sent;
   } catch (err) {
     console.error(`[notifications] sendUsageLimitWarningEmail failed for business ${businessId}:`, err);
+    return false;
   }
 }
 
@@ -475,8 +574,9 @@ export async function sendUsageLimitWarningEmail(
  *
  * Checks performed:
  *  1. Trials ending in 7 / 3 / 1 day(s)
- *  2. Grace period ending in 3 days
- *  3. Usage at 80 %+ for any tracked limit
+ *  2. Trial ended yesterday (extend-or-Free reminder)
+ *  3. Paid renewal grace period ending in 3 days
+ *  4. Usage at 80 %+ for any tracked limit
  *
  * Already-sent notifications (same type + business + today) are skipped.
  *
@@ -493,36 +593,49 @@ export async function sendPendingNotifications(): Promise<number> {
     }>(
       `SELECT bs.business_id,
               (bs.trial_end_date::date - CURRENT_DATE) AS days_remaining
-       FROM business_subscriptions bs
+       FROM business_module_subscriptions bs
+       JOIN businesses b ON b.id = bs.business_id
+         AND bs.module_key = COALESCE(b.primary_module, 'billing')
        WHERE bs.status = 'trial'
          AND bs.trial_end_date IS NOT NULL
-         AND (bs.trial_end_date::date - CURRENT_DATE) IN (7, 3, 1)`,
+         AND (bs.trial_end_date::date - CURRENT_DATE) IN (7, 3, 1)
+         AND NOT (COALESCE(bs.trial_extension_granted, false)
+                  AND bs.trial_end_date::date - CURRENT_DATE = 7)`,
     );
 
     for (const row of trialExpiring) {
-      const notifType: NotificationType =
-        row.days_remaining >= 7 ? 'trial_expiring_7'
-        : row.days_remaining >= 3 ? 'trial_expiring_3'
-        : 'trial_expiring_1';
-
-      if (await wasAlreadySentToday(row.business_id, notifType)) continue;
-
-      await sendTrialExpiringEmail(row.business_id, row.days_remaining);
-      sentCount++;
+      if (await sendTrialExpiringEmail(row.business_id, row.days_remaining)) sentCount++;
     }
 
-    // ── 2. Grace period ending in 3 days ────────────────────────────────────
-    // Grace = trial_end_date + 7 days.  3 days before that = trial_end_date + 4 days.
-    const graceEnding = await queryRows<{ business_id: string }>(
+    // ── 2. Trial ended yesterday (first expiry, before any extension) ──────
+    const trialJustExpired = await queryRows<{ business_id: string }>(
       `SELECT bs.business_id
-       FROM business_subscriptions bs
-       WHERE bs.status = 'expired'
-         AND bs.trial_end_date IS NOT NULL
-         AND (bs.trial_end_date::date + INTERVAL '4 days')::date = CURRENT_DATE`,
+       FROM business_module_subscriptions bs
+       JOIN businesses b ON b.id = bs.business_id
+         AND bs.module_key = COALESCE(b.primary_module, 'billing')
+       WHERE bs.plan_id IN ('trial', $1)
+         AND bs.status = 'trial'
+         AND bs.trial_end_date::date = CURRENT_DATE - 1
+         AND COALESCE(bs.trial_extension_granted, false) = false
+         AND bs.trial_extension_declined_at IS NULL`,
+      [HR_TRIAL_PLAN_ID],
+    );
+
+    for (const row of trialJustExpired) {
+      if (await sendTrialExpiredEmail(row.business_id)) sentCount++;
+    }
+
+    // ── 3. Paid renewal grace period ending in 3 days ───────────────────────
+    const graceEnding = await queryRows<{ business_id: string }>(
+      `SELECT DISTINCT bs.business_id
+       FROM business_module_subscriptions bs
+       WHERE bs.status = 'active'
+         AND bs.grace_period_end IS NOT NULL
+         AND bs.grace_period_end::date - CURRENT_DATE = 3`,
     );
 
     for (const row of graceEnding) {
-      const notifType = 'trial_expiring_3' as NotificationType;
+      const notifType: NotificationType = 'grace_expiring_3';
       if (await wasAlreadySentToday(row.business_id, notifType)) continue;
 
       const recipients = await getRecipients(row.business_id);
@@ -547,17 +660,24 @@ export async function sendPendingNotifications(): Promise<number> {
         `Best regards, The Khatario Team`,
       ].join('\n\n');
 
-      const sent = await sendToRecipients(recipients, subject, html, text);
-      if (sent) {
-        await logNotification(row.business_id, notifType, { context: 'grace_period_ending' });
-        sentCount++;
-      }
+      const delivered = await deliverLifecycleNotification({
+        businessId: row.business_id,
+        notificationType: notifType,
+        recipients,
+        email: { subject, html, text },
+        inApp: {
+          title: 'Your grace period ends in 3 days',
+          message: 'After that your account moves to the Free plan and premium features switch off. Renew from Settings → Subscription to keep full access.',
+        },
+        metadata: { context: 'grace_period_ending' },
+      });
+      if (delivered) sentCount++;
     }
 
-    // ── 3. Usage at 80 %+ ──────────────────────────────────────────────────
+    // ── 4. Usage at 80 %+ ──────────────────────────────────────────────────
     const activeBusinesses = await queryRows<{ business_id: string }>(
       `SELECT DISTINCT business_id
-       FROM business_subscriptions
+       FROM business_module_subscriptions
        WHERE status IN ('active', 'trial')`,
     );
 
@@ -577,14 +697,14 @@ export async function sendPendingNotifications(): Promise<number> {
 
           if (await wasAlreadySentToday(biz.business_id, compositeType)) continue;
 
-          await sendUsageLimitWarningEmail(
+          const sent = await sendUsageLimitWarningEmail(
             biz.business_id,
             lt,
             check.current,
             check.limit,
             bucket,
           );
-          sentCount++;
+          if (sent) sentCount++;
         } catch (err) {
           console.error(`[notifications] Usage check failed for ${biz.business_id}/${lt}:`, err);
         }

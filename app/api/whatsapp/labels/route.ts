@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: 'read' }, async ({ businessId }) => {
   try {
     const labels = await queryRows(
       `SELECT id, name, color, created_at, updated_at
@@ -25,7 +25,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   }
 });
 
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ body, businessId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: 'create' }, async ({ body, businessId }) => {
   try {
     const { name, color = '#25D366' } = (body ?? {}) as { name?: string; color?: string };
 

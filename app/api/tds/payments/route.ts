@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/payments
  * List TDS payments
  */
-export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const financialYear = searchParams.get('financial_year');
@@ -53,7 +53,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
  * Record TDS payment to government
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_tds', parseJsonBody: true },
   async ({ body, businessId }) => {
     const pool = getPool();
     const client = await pool.connect();
@@ -128,7 +128,8 @@ export const POST = withPremiumSubscriptionApi(
        WHERE business_id = $4 
          AND financial_year = $5 
          AND quarter = $6
-         AND is_deposited = false`,
+         AND is_deposited = false
+         AND status = 'active'`,
         [deposit_date, challan_number, challan_date, businessId, financial_year, quarter]
       );
 

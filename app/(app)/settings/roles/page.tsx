@@ -18,6 +18,7 @@ interface Role {
   role_name: string;
   role_key: string;
   description?: string;
+  is_system_role?: boolean;
 }
 
 interface Permission {
@@ -42,6 +43,7 @@ export default function RolesPage() {
   const [creating, setCreating] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
+  const [deactivating, setDeactivating] = useState(false);
 
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
 
@@ -175,10 +177,8 @@ export default function RolesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: business.id,
           role_name: newRoleName.trim(),
           description: newRoleDescription.trim() || null,
-          created_by_user_id: user.id,
         }),
       });
 
@@ -198,6 +198,29 @@ export default function RolesPage() {
       toast.error('Failed to create role. Please try again.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeactivateRole = async (role: Role) => {
+    if (!window.confirm(`Deactivate the role "${role.role_name}"? It will no longer be available for new users.`)) {
+      return;
+    }
+    setDeactivating(true);
+    try {
+      const res = await fetch(`/api/settings/roles/${role.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setRoles((prev) => prev.filter((r) => r.id !== role.id));
+        setSelectedRole(null);
+        toast.success('Role deactivated');
+      } else {
+        const errorData = await safeJsonParse(res);
+        toast.error(getApiErrorMessage(errorData, 'Failed to deactivate role'));
+      }
+    } catch (error) {
+      console.error('Error deactivating role:', error);
+      toast.error('Failed to deactivate role. Please try again.');
+    } finally {
+      setDeactivating(false);
     }
   };
 
@@ -280,7 +303,25 @@ export default function RolesPage() {
           {/* Permissions */}
           {selectedRole && (
             <Card className="lg:col-span-2">
-              <h2 className="text-lg font-semibold text-text-primary mb-4">Permissions</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-text-primary">Permissions</h2>
+                {(() => {
+                  const role = roles.find((r) => r.id === selectedRole);
+                  if (!role || role.is_system_role || role.role_key === 'primary_admin') return null;
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeactivateRole(role)}
+                      disabled={deactivating}
+                      className="flex items-center gap-2"
+                    >
+                      {deactivating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Deactivate role
+                    </Button>
+                  );
+                })()}
+              </div>
               {loadingPermissions ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-primary-600" />

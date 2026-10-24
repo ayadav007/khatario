@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     const [holidays, onLeave, celebrations, announcements, tasks, isManager] =
       await Promise.all([
-        fetchUpcomingHolidays(businessId, 3),
+        fetchUpcomingHolidays(businessId, employeeId, 3),
         fetchOnLeaveToday(businessId, employeeId),
         fetchCelebrations(businessId),
         fetchAnnouncements(businessId, 3),

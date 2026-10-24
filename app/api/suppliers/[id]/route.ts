@@ -3,8 +3,10 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { Supplier } from '@/types/database';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, getAuthenticatedUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { normalizePan, panFromGstin } from '@/lib/tax/pan';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +90,7 @@ export async function GET(
     // Get payments for this supplier
     const payments = await db.queryRows(`
       SELECT 
-        id, amount, payment_mode, payment_date, notes
+        id, amount, payment_mode, payment_date, notes, status
       FROM payments
       WHERE supplier_id = $1 AND business_id = $2
         ${branchFilter}
@@ -149,19 +151,25 @@ export async function PUT(
       state_code,
       pincode,
       gstin,
+      pan,
       opening_balance,
       opening_balance_type,
       notes,
       is_active,
       allow_low_stock_access,
-      updated_by_user_id, // REQUIRED for authorization
     } = body;
+    // The acting user comes from the session only; a user id in the body is ignored.
+    const updated_by_user_id = getAuthenticatedUserId(request);
 
-    if (!updated_by_user_id) {
+    if (pan && !normalizePan(pan)) {
       return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
+        { error: `Invalid PAN "${pan}". Expected format: ABCDE1234F` },
         { status: 400 }
       );
+    }
+
+    if (!updated_by_user_id) {
+      return NextResponse.json({ error: 'Sign in again to update this supplier' }, { status: 401 });
     }
 
     // Get supplier first to get business_id and linked_business_id
@@ -205,8 +213,20 @@ export async function PUT(
       return map[name] || '';
     };
 
-    // Use provided state_code or calculate from state name
-    const finalStateCode = state_code || (state ? getStateCode(state) : null);
+    let finalState: string | null | undefined = state;
+    let finalGstin: string | null | undefined = gstin;
+    let gstinStateCode: string | null = null;
+    if (typeof gstin === 'string' && gstin.trim()) {
+      const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      finalGstin = gstinCheck.gstin;
+      finalState = gstinCheck.state;
+      gstinStateCode = gstinCheck.state_code;
+    }
+
+    const finalStateCode = gstinStateCode || state_code || (finalState ? getStateCode(finalState) : null);
     const phoneNorm = phone !== undefined ? normalizePhoneOrNull(phone) : undefined;
 
     // CRITICAL: Enforce subscription feature access
@@ -264,13 +284,15 @@ export async function PUT(
         notes = COALESCE($12, notes),
         is_active = COALESCE($13, is_active),
         allow_low_stock_access = COALESCE($14, allow_low_stock_access),
+        pan = COALESCE($17, pan),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $15 AND business_id = $16
       RETURNING *
     `, [
-      name, phoneNorm, email, address, city, state, finalStateCode, pincode, gstin,
+      name, phoneNorm, email, address, city, finalState, finalStateCode, pincode, finalGstin,
       opening_balance, opening_balance_type, notes, is_active, finalAllowLowStockAccess, supplierId,
       business_id,
+      normalizePan(pan) ?? panFromGstin(finalGstin),
     ]);
 
     if (!supplier) {

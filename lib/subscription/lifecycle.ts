@@ -1,8 +1,8 @@
 /**
  * Subscription Lifecycle Management
  *
- * Handles cancellation scheduling, downgrades, trial expiry checks,
- * and batch processing of expired subscriptions.
+ * Event log, downgrade impact, trial expiry checks, and the cron batch that
+ * processes per-product (business_module_subscriptions) renewals and expiries.
  */
 
 import { query, queryOne, queryRows } from '@/lib/db';
@@ -10,15 +10,15 @@ import {
   getBusinessSubscription,
   clearSubscriptionCache,
   checkLimit,
-  type BusinessSubscription,
   type SubscriptionPlan,
 } from '@/lib/subscription';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { HR_TRIAL_PLAN_ID, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
+import { type PlatformModule } from '@/lib/platform-modules';
 import {
-  getPostTrialFreePlanId,
-  HR_TRIAL_PLAN_ID,
-  normalizeProductLine,
-} from '@/lib/product-lines';
+  isLocalCalendarOnOrBeforeToday,
+  parseLocalDateOnly,
+  startOfLocalToday,
+} from '@/lib/subscription/date-only';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,14 +47,6 @@ export interface TrialExpiryInfo {
   daysRemaining: number;
   graceEndsAt: Date | null;
   isInGracePeriod: boolean;
-}
-
-export interface ExpiredSubscriptionCounts {
-  trialExpired: number;
-  cancelledAtPeriodEnd: number;
-  scheduledDowngrades: number;
-  graceStarted: number;
-  graceExpired: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,52 +107,7 @@ export async function getSubscriptionHistory(
 }
 
 // ---------------------------------------------------------------------------
-// Cancel
-// ---------------------------------------------------------------------------
-
-/**
- * Schedule cancellation at the end of the current billing period.
- *
- * The subscription stays **active** until `end_date` — it is NOT
- * immediately terminated. A background cron job
- * ({@link processExpiredSubscriptions}) finalises the cancellation once the
- * period elapses.
- *
- * @param businessId - Business UUID
- * @param reason     - Optional human-readable cancellation reason
- * @returns The updated subscription row
- */
-export async function cancelSubscription(
-  businessId: string,
-  reason?: string,
-): Promise<BusinessSubscription | null> {
-  const subscription = await getBusinessSubscription(businessId);
-  if (!subscription) {
-    throw new Error(`No active subscription found for business ${businessId}`);
-  }
-
-  await query(
-    `UPDATE business_subscriptions
-     SET cancel_at_period_end = true,
-         cancelled_at         = NOW(),
-         updated_at           = NOW()
-     WHERE business_id = $1
-       AND status IN ('active', 'trial')`,
-    [businessId],
-  );
-
-  await logSubscriptionEvent(businessId, 'cancelled', {
-    from_plan_id: subscription.plan_id,
-    reason: reason ?? null,
-  });
-
-  clearSubscriptionCache(businessId);
-
-  return getBusinessSubscription(businessId, true);
-}
-
-// ---------------------------------------------------------------------------
-// Downgrade
+// Downgrade impact
 // ---------------------------------------------------------------------------
 
 /**
@@ -266,136 +213,14 @@ export async function getDataImpactWarnings(
   return warnings;
 }
 
-/**
- * Schedule a downgrade to a lower-tier plan at the end of the current billing
- * period. The user keeps their current plan until `end_date`, then the cron
- * job ({@link processExpiredSubscriptions}) applies the switch.
- *
- * Call **without** `confirmed` (or `confirmed: false`) to receive a dry-run
- * response containing data-impact warnings. Call with `confirmed: true` to
- * schedule the downgrade.
- *
- * @param businessId   - Business UUID
- * @param targetPlanId - ID of the plan to downgrade to
- * @param options.confirmed - Set to `true` to actually schedule the downgrade
- * @returns `{ dataImpact, scheduled_date, subscription? }`
- */
-export async function downgradeSubscription(
-  businessId: string,
-  targetPlanId: string,
-  options?: { confirmed?: boolean },
-): Promise<{
-  dataImpact: DataImpactWarning[];
-  scheduled_date?: string | null;
-  subscription?: BusinessSubscription | null;
-}> {
-  const currentSubscription = await getBusinessSubscription(businessId);
-  if (!currentSubscription) {
-    throw new Error(`No active subscription found for business ${businessId}`);
-  }
-
-  if (targetPlanId === TRIAL_PLAN_ID) {
-    throw new Error(
-      `Trial cannot be selected as a plan change. Trial is assigned at signup only; choose Free or a paid plan.`,
-    );
-  }
-
-  // Validate target plan exists
-  const targetPlan = await queryOne<{ id: string; sort_order: number }>(
-    `SELECT id, sort_order FROM subscription_plans WHERE id = $1 AND is_active = true`,
-    [targetPlanId],
-  );
-  if (!targetPlan) {
-    throw new Error(`Target plan "${targetPlanId}" not found or inactive`);
-  }
-
-  // Validate it's actually a lower tier (lower sort_order = lower tier)
-  const currentPlan = await queryOne<{ sort_order: number }>(
-    `SELECT sort_order FROM subscription_plans WHERE id = $1`,
-    [currentSubscription.plan_id],
-  );
-  if (currentPlan && targetPlan.sort_order >= currentPlan.sort_order) {
-    throw new Error(
-      `Target plan "${targetPlanId}" is not a lower tier than the current plan "${currentSubscription.plan_id}"`,
-    );
-  }
-
-  const dataImpact = await getDataImpactWarnings(businessId, targetPlanId);
-
-  if (!options?.confirmed) {
-    return { dataImpact, scheduled_date: currentSubscription.end_date };
-  }
-
-  // Schedule the downgrade — don't change plan_id yet
-  await query(
-    `UPDATE business_subscriptions
-     SET scheduled_plan_id = $2,
-         updated_at        = NOW()
-     WHERE business_id = $1
-       AND status IN ('active', 'trial')`,
-    [businessId, targetPlanId],
-  );
-
-  await logSubscriptionEvent(businessId, 'downgrade_scheduled', {
-    from_plan_id: currentSubscription.plan_id,
-    to_plan_id: targetPlanId,
-    scheduled_date: currentSubscription.end_date,
-    data_impact: dataImpact.filter((w) => w.willExceed),
-  });
-
-  clearSubscriptionCache(businessId);
-
-  const updated = await getBusinessSubscription(businessId, true);
-  return {
-    dataImpact,
-    scheduled_date: currentSubscription.end_date,
-    subscription: updated,
-  };
-}
-
-/**
- * Cancel a previously scheduled downgrade.
- */
-export async function cancelScheduledDowngrade(
-  businessId: string,
-): Promise<BusinessSubscription | null> {
-  const subscription = await getBusinessSubscription(businessId);
-  if (!subscription) {
-    throw new Error(`No active subscription found for business ${businessId}`);
-  }
-  if (!subscription.scheduled_plan_id) {
-    throw new Error('No scheduled downgrade to cancel');
-  }
-
-  await query(
-    `UPDATE business_subscriptions
-     SET scheduled_plan_id = NULL,
-         updated_at        = NOW()
-     WHERE business_id = $1`,
-    [businessId],
-  );
-
-  await logSubscriptionEvent(businessId, 'downgrade_cancelled', {
-    from_plan_id: subscription.plan_id,
-    to_plan_id: subscription.scheduled_plan_id,
-  });
-
-  clearSubscriptionCache(businessId);
-
-  return getBusinessSubscription(businessId, true);
-}
-
 // ---------------------------------------------------------------------------
 // Trial expiry
 // ---------------------------------------------------------------------------
 
-const TRIAL_DAYS = 30;
-const GRACE_DAYS = 7;
-
 /**
  * Check whether a business's trial has expired.
  *
- * Trial duration is {@link TRIAL_DAYS} days from signup. After expiry the tenant may
+ * Trial duration is {@link SIGNUP_TRIAL_DAYS} days from signup. After expiry the tenant may
  * use a one-time in-app extension ({@link TRIAL_EXTENSION_DAYS} days). Until they extend
  * or choose Free, entitlements follow the free plan while the extend modal is offered.
  *
@@ -416,227 +241,50 @@ export async function checkTrialExpiry(
     };
   }
 
-  const trialEnd = subscription.trial_end_date
-    ? new Date(subscription.trial_end_date)
-    : new Date(
-        new Date(subscription.start_date).getTime() +
-          TRIAL_DAYS * 24 * 60 * 60 * 1000,
-      );
+  // Calendar dates, same rule as effective-plan: the end date is the last full trial day.
+  let trialEnd = parseLocalDateOnly(subscription.trial_end_date);
+  if (!trialEnd) {
+    const start = parseLocalDateOnly(subscription.start_date) ?? startOfLocalToday();
+    trialEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate() + SIGNUP_TRIAL_DAYS);
+  }
 
-  const now = new Date();
-  const msRemaining = trialEnd.getTime() - now.getTime();
-  const daysRemaining = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+  const isExpired = !isLocalCalendarOnOrBeforeToday(trialEnd);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysRemaining = isExpired
+    ? 0
+    : Math.round((trialEnd.getTime() - startOfLocalToday().getTime()) / dayMs) + 1;
 
-  const isExpired = now > trialEnd;
-  const graceEndsAt = null;
-  const isInGracePeriod = false;
+  return { isExpired, daysRemaining, graceEndsAt: null, isInGracePeriod: false };
+}
 
-  return { isExpired, daysRemaining, graceEndsAt, isInGracePeriod };
+// ---------------------------------------------------------------------------
+// Move to free
+// ---------------------------------------------------------------------------
+
+/**
+ * Move one product (default: the business's primary product) to its free plan.
+ * Used by the trial-extension decline flow, stale-trial cleanup, and scripts.
+ */
+export async function moveSubscriptionToFree(
+  businessId: string,
+  fromPlanId: string,
+  eventType: string,
+  moduleKey?: PlatformModule,
+): Promise<void> {
+  const { getBusinessPlatformContext } = await import('@/lib/business-modules');
+  const { moveModuleSubscriptionToFree } = await import(
+    '@/lib/subscription/module-plan-lifecycle'
+  );
+  const target = moduleKey ?? (await getBusinessPlatformContext(businessId)).primaryModule;
+  await moveModuleSubscriptionToFree(businessId, target, fromPlanId, eventType);
 }
 
 // ---------------------------------------------------------------------------
 // Batch processing (cron)
 // ---------------------------------------------------------------------------
 
-/**
- * Downgrade a single business to the product-line free plan (cron, admin, scripts).
- */
-export async function moveSubscriptionToFree(
-  businessId: string,
-  fromPlanId: string,
-  eventType: string,
-): Promise<void> {
-  const business = await queryOne<{ product_line: string | null }>(
-    `SELECT product_line FROM businesses WHERE id = $1`,
-    [businessId],
-  );
-  const productLine = normalizeProductLine(business?.product_line);
-  const toPlanId = getPostTrialFreePlanId(productLine);
-
-  await query(
-    `UPDATE business_subscriptions
-     SET plan_id              = $2,
-         status               = 'active',
-         trial_end_date       = NULL,
-         end_date             = NULL,
-         grace_period_end     = NULL,
-         scheduled_plan_id    = NULL,
-         cancel_at_period_end = false,
-         cancelled_at         = NULL,
-         downgraded_from      = $3,
-         updated_at           = NOW()
-     WHERE business_id = $1`,
-    [businessId, toPlanId, fromPlanId],
-  );
-
-  await logSubscriptionEvent(businessId, eventType, {
-    from_plan_id: fromPlanId,
-    to_plan_id: toPlanId,
-  });
-
-  clearSubscriptionCache(businessId);
-}
-
-async function downgradeToFree(
-  businessId: string,
-  fromPlanId: string,
-  eventType: string,
-): Promise<void> {
-  await moveSubscriptionToFree(businessId, fromPlanId, eventType);
-}
-
-/**
- * Batch-process expired subscriptions. Designed to be invoked by a cron job.
- *
- * Handles four scenarios:
- * 1. **Extended trials expired** — one-time extension used and `trial_end_date` passed → free
- * 2. **Scheduled cancellations** — `cancel_at_period_end = true` and `end_date` in
- *    the past → set status to cancelled, downgrade to free
- * 3. **Lapsed renewals** — active subscription past `end_date` without
- *    cancellation → start a 7-day grace period
- * 4. **Grace period expired** — `grace_period_end` in the past → downgrade to free
- *
- * @returns Counts of subscriptions processed in each category
- */
-export async function processExpiredSubscriptions(): Promise<ExpiredSubscriptionCounts> {
-  const counts: ExpiredSubscriptionCounts = {
-    trialExpired: 0,
-    cancelledAtPeriodEnd: 0,
-    scheduledDowngrades: 0,
-    graceStarted: 0,
-    graceExpired: 0,
-  };
-
-  // 1. Trials where the one-time extension was used and has now expired
-  const expiredTrials = await queryRows<{
-    business_id: string;
-    plan_id: string;
-  }>(
-    `SELECT business_id, plan_id
-     FROM business_subscriptions
-     WHERE plan_id IN ('trial', $1)
-       AND trial_extension_granted = true
-       AND trial_end_date IS NOT NULL
-       AND trial_end_date < CURRENT_DATE
-       AND trial_extension_declined_at IS NULL`,
-    [HR_TRIAL_PLAN_ID],
-  );
-
-  for (const row of expiredTrials) {
-    await downgradeToFree(row.business_id, row.plan_id, 'trial_expired');
-    counts.trialExpired++;
-  }
-
-  // 2. Scheduled cancellations past end_date
-  const cancelledSubs = await queryRows<{
-    business_id: string;
-    plan_id: string;
-  }>(
-    `SELECT business_id, plan_id
-     FROM business_subscriptions
-     WHERE status = 'active'
-       AND cancel_at_period_end = true
-       AND end_date < NOW()`,
-  );
-
-  for (const row of cancelledSubs) {
-    await query(
-      `UPDATE business_subscriptions
-       SET status = 'cancelled', updated_at = NOW()
-       WHERE business_id = $1`,
-      [row.business_id],
-    );
-    await downgradeToFree(row.business_id, row.plan_id, 'cancelled');
-    counts.cancelledAtPeriodEnd++;
-  }
-
-  // 3. Scheduled downgrades past end_date — apply the plan switch
-  const scheduledDowngrades = await queryRows<{
-    business_id: string;
-    plan_id: string;
-    scheduled_plan_id: string;
-  }>(
-    `SELECT business_id, plan_id, scheduled_plan_id
-     FROM business_subscriptions
-     WHERE status = 'active'
-       AND scheduled_plan_id IS NOT NULL
-       AND end_date < NOW()`,
-  );
-
-  for (const row of scheduledDowngrades) {
-    await query(
-      `UPDATE business_subscriptions
-       SET plan_id            = $2,
-           scheduled_plan_id  = NULL,
-           downgraded_from    = $3,
-           start_date         = CURRENT_DATE,
-           end_date           = (CURRENT_DATE + INTERVAL '1 month')::date,
-           updated_at         = NOW()
-       WHERE business_id = $1`,
-      [row.business_id, row.scheduled_plan_id, row.plan_id],
-    );
-
-    await logSubscriptionEvent(row.business_id, 'downgraded', {
-      from_plan_id: row.plan_id,
-      to_plan_id: row.scheduled_plan_id,
-    });
-
-    clearSubscriptionCache(row.business_id);
-    counts.scheduledDowngrades++;
-  }
-
-  // 4. Active subs past end_date without cancellation → start grace period
-  const lapsedSubs = await queryRows<{
-    business_id: string;
-    plan_id: string;
-    end_date: string;
-  }>(
-    `SELECT business_id, plan_id, end_date
-     FROM business_subscriptions
-     WHERE status = 'active'
-       AND cancel_at_period_end = false
-       AND end_date < NOW()
-       AND grace_period_end IS NULL`,
-  );
-
-  for (const row of lapsedSubs) {
-    await query(
-      `UPDATE business_subscriptions
-       SET grace_period_end = (end_date + INTERVAL '7 days')::date,
-           updated_at       = NOW()
-       WHERE business_id = $1`,
-      [row.business_id],
-    );
-    await logSubscriptionEvent(row.business_id, 'grace_started', {
-      from_plan_id: row.plan_id,
-      grace_period_end: new Date(
-        new Date(row.end_date).getTime() + GRACE_DAYS * 24 * 60 * 60 * 1000,
-      ).toISOString(),
-    });
-    counts.graceStarted++;
-  }
-
-  // 4. Grace period expired
-  const graceExpired = await queryRows<{
-    business_id: string;
-    plan_id: string;
-  }>(
-    `SELECT business_id, plan_id
-     FROM business_subscriptions
-     WHERE grace_period_end IS NOT NULL
-       AND grace_period_end < NOW()
-       AND status = 'active'`,
-  );
-
-  for (const row of graceExpired) {
-    await downgradeToFree(row.business_id, row.plan_id, 'grace_expired');
-    counts.graceExpired++;
-  }
-
-  return counts;
-}
-
 export interface ModuleExpiredSubscriptionCounts {
+  trialExpired: number;
   cancelledAtPeriodEnd: number;
   scheduledDowngrades: number;
   graceStarted: number;
@@ -644,7 +292,13 @@ export interface ModuleExpiredSubscriptionCounts {
 }
 
 /**
- * Batch-process per-module subscription lifecycle (cron companion to legacy processor).
+ * Batch-process per-product subscription lifecycle. Invoked by the check-subscriptions cron.
+ *
+ * 1. Extended trials expired — one-time extension used and `trial_end_date` passed → free
+ * 2. Scheduled cancellations — `cancel_at_period_end` and `end_date` passed → free
+ * 3. Scheduled downgrades — `scheduled_plan_id` and `end_date` passed → switch plan
+ * 4. Lapsed renewals — active past `end_date` → start a 7-day grace period
+ * 5. Grace period expired → free
  */
 export async function processExpiredModuleSubscriptions(): Promise<ModuleExpiredSubscriptionCounts> {
   const { moveModuleSubscriptionToFree } = await import(
@@ -655,11 +309,37 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   );
 
   const counts: ModuleExpiredSubscriptionCounts = {
+    trialExpired: 0,
     cancelledAtPeriodEnd: 0,
     scheduledDowngrades: 0,
     graceStarted: 0,
     graceExpired: 0,
   };
+
+  const expiredTrials = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_id: string;
+  }>(
+    `SELECT business_id, module_key, plan_id
+     FROM business_module_subscriptions
+     WHERE plan_id IN ('trial', $1)
+       AND trial_extension_granted = true
+       AND trial_end_date IS NOT NULL
+       AND trial_end_date < CURRENT_DATE
+       AND trial_extension_declined_at IS NULL`,
+    [HR_TRIAL_PLAN_ID],
+  );
+
+  for (const row of expiredTrials) {
+    await moveModuleSubscriptionToFree(
+      row.business_id,
+      row.module_key as PlatformModule,
+      row.plan_id,
+      'trial_expired',
+    );
+    counts.trialExpired++;
+  }
 
   const cancelledSubs = await queryRows<{
     business_id: string;
@@ -677,7 +357,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   for (const row of cancelledSubs) {
     await moveModuleSubscriptionToFree(
       row.business_id,
-      row.module_key as import('@/lib/platform-modules').PlatformModule,
+      row.module_key as PlatformModule,
       row.plan_id,
       'cancelled',
     );
@@ -703,11 +383,12 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
       `UPDATE business_module_subscriptions
        SET plan_id = $3,
            scheduled_plan_id = NULL,
+           downgraded_from = $4,
            start_date = CURRENT_DATE,
            end_date = (CURRENT_DATE + INTERVAL '1 month')::date,
            updated_at = CURRENT_TIMESTAMP
        WHERE business_id = $1 AND module_key = $2`,
-      [row.business_id, row.module_key, row.scheduled_plan_id],
+      [row.business_id, row.module_key, row.scheduled_plan_id, row.plan_id],
     );
 
     await logSubscriptionEvent(row.business_id, 'downgraded', {
@@ -749,6 +430,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
       module_key: row.module_key,
       from_plan_id: row.plan_id,
     });
+    clearSubscriptionCache(row.business_id);
     counts.graceStarted++;
   }
 
@@ -767,7 +449,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   for (const row of graceExpired) {
     await moveModuleSubscriptionToFree(
       row.business_id,
-      row.module_key as import('@/lib/platform-modules').PlatformModule,
+      row.module_key as PlatformModule,
       row.plan_id,
       'grace_expired',
     );

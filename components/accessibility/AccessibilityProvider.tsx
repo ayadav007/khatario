@@ -4,13 +4,19 @@ import React, { useEffect } from 'react';
 
 interface AccessibilityProviderProps {
   children: React.ReactNode;
+  /**
+   * Turns the skip link, live region and keyboard-focus styling on or off. The provider itself is
+   * always rendered, so switching this when the plan loads does not remount the pages inside it.
+   */
+  enabled?: boolean;
 }
 
 /**
  * Provider for enhanced accessibility features
  */
-export const AccessibilityProvider: React.FC<AccessibilityProviderProps> = ({ children }) => {
+export const AccessibilityProvider: React.FC<AccessibilityProviderProps> = ({ children, enabled = true }) => {
   useEffect(() => {
+    if (!enabled) return;
     const skipLink = document.createElement('a');
     skipLink.href = '#main-content';
     skipLink.className = 'sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:p-4 focus:bg-primary-600 focus:text-white focus:font-semibold';
@@ -43,7 +49,7 @@ export const AccessibilityProvider: React.FC<AccessibilityProviderProps> = ({ ch
       skipLink.remove();
       liveRegion.remove();
     };
-  }, []);
+  }, [enabled]);
 
   return <>{children}</>;
 };

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,7 +12,26 @@ import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import { buildApiUrl, forPdfPrintInBrowser } from '@/lib/api-helpers';
 
+interface CashFlowLine {
+  label: string;
+  amount: number;
+}
+
+const inr = (n: number) => Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+function SignedLine({ line, indent }: { line: CashFlowLine; indent?: boolean }) {
+  return (
+    <div className={`flex justify-between items-center py-1 ${indent ? 'text-sm' : 'py-2'}`}>
+      <span className={indent ? 'pl-4' : ''}>{line.label}</span>
+      <span className={line.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+        {line.amount >= 0 ? '+' : '-'}₹{inr(line.amount)}
+      </span>
+    </div>
+  );
+}
+
 interface CashFlowData {
+  unreconciled_difference?: number;
   period: {
     from_date: string;
     to_date: string;
@@ -20,6 +40,8 @@ interface CashFlowData {
   operating_activities: {
     net_profit: number;
     depreciation: number;
+    adjustments?: CashFlowLine[];
+    working_capital_lines?: CashFlowLine[];
     changes_in_working_capital: {
       receivables_increase: number;
       receivables_decrease: number;
@@ -31,11 +53,13 @@ interface CashFlowData {
     net_cash_from_operating: number;
   };
   investing_activities: {
+    lines?: CashFlowLine[];
     fixed_asset_purchases: number;
     fixed_asset_sales: number;
     net_cash_from_investing: number;
   };
   financing_activities: {
+    lines?: CashFlowLine[];
     capital_introduced: number;
     loans_taken: number;
     net_cash_from_financing: number;
@@ -49,6 +73,7 @@ export default function CashFlowPage() {
   const { business, user } = useAuth();
   const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [fromDate, setFromDate] = useState(() => {
     const now = new Date();
@@ -90,10 +115,10 @@ export default function CashFlowPage() {
   };
 
   useEffect(() => {
-    if (business?.id) {
+    if (business?.id && user?.id) {
       fetchCashFlow();
     }
-  }, [business?.id, fromDate, toDate]);
+  }, [business?.id, user?.id, fromDate, toDate]);
 
   const fetchCashFlow = async () => {
     if (!business?.id) return;
@@ -108,12 +133,18 @@ export default function CashFlowPage() {
       };
 
       const res = await fetch(buildApiUrl('/api/reports/cash-flow', params));
+      const result = await res.json().catch(() => ({}));
       if (res.ok) {
-        const result = await res.json();
+        setError(null);
         setData(result);
+      } else {
+        setData(null);
+        setError(typeof result.error === 'string' ? result.error : 'Could not load the cash flow statement');
       }
     } catch (error) {
       console.error('Error fetching cash flow:', error);
+      setData(null);
+      setError('Could not load the cash flow statement');
     } finally {
       setLoading(false);
     }
@@ -133,7 +164,7 @@ export default function CashFlowPage() {
     return (
       
         <div className="text-center py-12">
-          <p className="text-text-secondary">No data available</p>
+          <p className="text-text-secondary">{error || 'No data available'}</p>
         </div>
       
     );
@@ -142,14 +173,13 @@ export default function CashFlowPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Cash Flow Statement</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              {format(new Date(data.period.from_date), 'dd MMM yyyy')} to {format(new Date(data.period.to_date), 'dd MMM yyyy')}
-            </p>
-          </div>
-          <div className="flex gap-2 no-print">
+        <PageHeader
+  title="Cash Flow Statement"
+  subtitle={<>{format(new Date(data.period.from_date), 'dd MMM yyyy')} to {format(new Date(data.period.to_date), 'dd MMM yyyy')}</>}
+
+  actions={
+    <>
+<div className="flex gap-2 no-print">
             <Button
               type="button"
               variant="secondary"
@@ -164,7 +194,9 @@ export default function CashFlowPage() {
               Download PDF
             </Button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -205,17 +237,25 @@ export default function CashFlowPage() {
                     ₹{data.operating_activities.net_profit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="pl-4">Add: Depreciation</span>
-                  <span className="text-green-600">
-                    ₹{data.operating_activities.depreciation.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                
-                {/* Working Capital Changes */}
+                {data.operating_activities.adjustments ? (
+                  data.operating_activities.adjustments.map((line) => (
+                    <SignedLine key={line.label} line={line} />
+                  ))
+                ) : (
+                  <div className="flex justify-between items-center py-2">
+                    <span className="pl-4">Add: Depreciation</span>
+                    <span className="text-green-600">
+                      ₹{data.operating_activities.depreciation.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
                 <div className="pl-4 mt-4">
                   <h3 className="font-semibold mb-2">Adjustments for Changes in Working Capital:</h3>
-                  {data.operating_activities.changes_in_working_capital.receivables_increase > 0 && (
+                  {data.operating_activities.working_capital_lines?.map((line) => (
+                    <SignedLine key={line.label} line={line} indent />
+                  ))}
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.receivables_increase > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Increase in Receivables</span>
                       <span className="text-red-600">
@@ -223,7 +263,7 @@ export default function CashFlowPage() {
                       </span>
                     </div>
                   )}
-                  {data.operating_activities.changes_in_working_capital.receivables_decrease > 0 && (
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.receivables_decrease > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Decrease in Receivables</span>
                       <span className="text-green-600">
@@ -231,7 +271,7 @@ export default function CashFlowPage() {
                       </span>
                     </div>
                   )}
-                  {data.operating_activities.changes_in_working_capital.payables_increase > 0 && (
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.payables_increase > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Increase in Payables</span>
                       <span className="text-green-600">
@@ -239,7 +279,7 @@ export default function CashFlowPage() {
                       </span>
                     </div>
                   )}
-                  {data.operating_activities.changes_in_working_capital.payables_decrease > 0 && (
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.payables_decrease > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Decrease in Payables</span>
                       <span className="text-red-600">
@@ -247,7 +287,7 @@ export default function CashFlowPage() {
                       </span>
                     </div>
                   )}
-                  {data.operating_activities.changes_in_working_capital.inventory_increase > 0 && (
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.inventory_increase > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Increase in Inventory</span>
                       <span className="text-red-600">
@@ -255,7 +295,7 @@ export default function CashFlowPage() {
                       </span>
                     </div>
                   )}
-                  {data.operating_activities.changes_in_working_capital.inventory_decrease > 0 && (
+                  {!data.operating_activities.working_capital_lines && data.operating_activities.changes_in_working_capital.inventory_decrease > 0 && (
                     <div className="flex justify-between items-center py-1 text-sm">
                       <span className="pl-4">Decrease in Inventory</span>
                       <span className="text-green-600">
@@ -278,7 +318,8 @@ export default function CashFlowPage() {
             <div>
               <h2 className="text-xl font-bold text-text-primary mb-4">Cash Flow from Investing Activities</h2>
               <div className="space-y-2">
-                {data.investing_activities.fixed_asset_purchases > 0 && (
+                {data.investing_activities.lines?.map((line) => <SignedLine key={line.label} line={line} />)}
+                {!data.investing_activities.lines && data.investing_activities.fixed_asset_purchases > 0 && (
                   <div className="flex justify-between items-center py-2">
                     <span>Purchase of Fixed Assets</span>
                     <span className="text-red-600">
@@ -286,7 +327,7 @@ export default function CashFlowPage() {
                     </span>
                   </div>
                 )}
-                {data.investing_activities.fixed_asset_sales > 0 && (
+                {!data.investing_activities.lines && data.investing_activities.fixed_asset_sales > 0 && (
                   <div className="flex justify-between items-center py-2">
                     <span>Sale of Fixed Assets</span>
                     <span className="text-green-600">
@@ -307,7 +348,8 @@ export default function CashFlowPage() {
             <div>
               <h2 className="text-xl font-bold text-text-primary mb-4">Cash Flow from Financing Activities</h2>
               <div className="space-y-2">
-                {data.financing_activities.capital_introduced > 0 && (
+                {data.financing_activities.lines?.map((line) => <SignedLine key={line.label} line={line} />)}
+                {!data.financing_activities.lines && data.financing_activities.capital_introduced > 0 && (
                   <div className="flex justify-between items-center py-2">
                     <span>Capital Introduced</span>
                     <span className="text-green-600">
@@ -315,7 +357,7 @@ export default function CashFlowPage() {
                     </span>
                   </div>
                 )}
-                {data.financing_activities.loans_taken > 0 && (
+                {!data.financing_activities.lines && data.financing_activities.loans_taken > 0 && (
                   <div className="flex justify-between items-center py-2">
                     <span>Loans Taken</span>
                     <span className="text-green-600">
@@ -348,6 +390,12 @@ export default function CashFlowPage() {
                 ₹{data.closing_cash_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
             </div>
+            {Math.abs(data.unreconciled_difference ?? 0) >= 0.01 && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+                Cash ledger movement differs from the statement by ₹{inr(data.unreconciled_difference ?? 0)}. An
+                unbalanced voucher exists in this period; check the trial balance.
+              </p>
+            )}
           </div>
         </Card>
       </div>

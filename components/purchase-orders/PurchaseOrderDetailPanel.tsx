@@ -19,9 +19,12 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import {
   PurchaseOrderSummaryView,
   type PurchaseOrderLineItem,
@@ -89,7 +92,16 @@ export function PurchaseOrderDetailPanel({
   const [downloading, setDownloading] = useState(false);
   const [converting, setConverting] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailModalOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
@@ -264,7 +276,13 @@ export function PurchaseOrderDetailPanel({
             <Edit className="mr-1.5 h-4 w-4" />
             Edit
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setEmailModalOpen(true)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void requestSendEmail()}
+            disabled={emailChecking}
+            isLoading={emailChecking}
+          >
             <Mail className="mr-1.5 h-4 w-4" />
             Send Email
           </Button>
@@ -390,10 +408,7 @@ export function PurchaseOrderDetailPanel({
               <p className="mt-1 text-amber-800/90">{previewError}</p>
             </div>
           ) : (
-            <div
-              className="mx-auto w-full max-w-[210mm] bg-white p-8 shadow-lg print:shadow-none"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <ScaledA4Preview html={html} title="Purchase order preview" />
           )
         ) : (
           <PurchaseOrderSummaryView order={order} items={items} />
@@ -427,9 +442,19 @@ export function PurchaseOrderDetailPanel({
         />
       </SlideOverPanel>
 
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={closeEmailConfigure}
+          onConfigured={onEmailConfigured}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
+
       <SendDocumentEmailModal
         open={emailModalOpen}
-        onClose={() => setEmailModalOpen(false)}
+        onClose={closeEmailCompose}
         onSent={() => setHistoryRefreshKey((k) => k + 1)}
         documentTable="purchase_orders"
         documentId={orderId}

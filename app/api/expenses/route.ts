@@ -1,12 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { createExpenseLedgerEntries } from '@/lib/ledger-utils';
+import {
+  postExpenseVoucher,
+  ExpenseValidationError,
+  readExpenseIdempotencyKey,
+  expensePostingHash,
+  decideExpenseIdempotency,
+  expenseIdempotencyConflictBody,
+  expenseIdempotencyCancelledBody,
+  type ExpenseSplit,
+} from '@/lib/accounting/expense-posting';
+import { EXPENSE_ACCOUNT_REQUIRED } from '@/lib/accounting/expense-account-policy';
+import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
+import {
+  buildExpenseBillFromLines,
+  loadExpenseSupplyStates,
+  replaceExpenseLines,
+  type ExpenseLineBill,
+} from '@/lib/accounting/expense-lines';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+import { checkGstin } from '@/lib/tax/gstin';
+import { parseRegistrationStatus } from '@/lib/gst/rule47a';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
+
+function expenseIdempotencyHttp(
+  row: Parameters<typeof decideExpenseIdempotency>[0],
+  requestHash: string
+) {
+  const decision = decideExpenseIdempotency(row, requestHash);
+  if (decision === 'replay') {
+    return NextResponse.json({ expense: row, idempotent: true }, { status: 200 });
+  }
+  if (decision === 'cancelled') {
+    return NextResponse.json(expenseIdempotencyCancelledBody(), { status: 409 });
+  }
+  return NextResponse.json(expenseIdempotencyConflictBody(), { status: 409 });
+}
 
 /**
  * GET /api/expenses
@@ -14,30 +49,18 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const categoryId = searchParams.get('category_id');
     const fromDate = searchParams.get('from_date');
     const toDate = searchParams.get('to_date');
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'expenses', 'read');
+      await authorize(userId, 'expenses', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -56,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     const isAdmin = await isPrimaryAdminForBusiness(userId, businessId).catch(() => false);
 
-    let whereClause = 'WHERE e.business_id = $1';
+    let whereClause = 'WHERE e.business_id = $1 AND e.deleted_at IS NULL';
     const queryParams: any[] = [businessId];
     let paramIndex = 2;
 
@@ -95,6 +118,12 @@ export async function GET(request: NextRequest) {
         COALESCE(e.cgst_amount, 0)::float AS cgst_amount,
         COALESCE(e.sgst_amount, 0)::float AS sgst_amount,
         COALESCE(e.igst_amount, 0)::float AS igst_amount,
+        COALESCE(e.itc_eligible, true) AS itc_eligible,
+        COALESCE(e.is_reverse_charge, false) AS is_reverse_charge,
+        e.tds_section,
+        COALESCE(e.tds_amount, 0)::float AS tds_amount,
+        e.supplier_id, e.branch_id,
+        to_char(e.updated_at, 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at,
         ec.name AS category_name
       FROM expenses e
       LEFT JOIN expense_categories ec ON e.category_id = ec.id
@@ -118,8 +147,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that incurred this expense
       category_id: rawCategoryId,
@@ -128,17 +160,44 @@ export async function POST(request: NextRequest) {
       expense_date,
       payment_mode,
       reference_number,
-      created_by,
       /** When payment_mode is on_account, optional supplier to increase “amount you owe” (matches Payment Out). */
       supplier_id: rawSupplierId,
       /** Optional: GST on B2B expense bill (ITC). Taxable expense = amount − (cgst+sgst+igst). */
       cgst_amount: rawCgst,
       sgst_amount: rawSgst,
       igst_amount: rawIgst,
+      supplier_gstin: rawSupplierGstin,
+      supply_received_on: rawReceived,
+      supplier_registration_status: rawStatus,
     } = body;
+    const hasLines = Object.prototype.hasOwnProperty.call(body, 'lines');
+    let postedAmount = Number(amount);
+    const registrationStatus = parseRegistrationStatus(rawStatus);
+    const supplyReceivedOn =
+      typeof rawReceived === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawReceived) ? rawReceived : null;
+    let supplierGstin: string | null = null;
+    if (typeof rawSupplierGstin === 'string' && rawSupplierGstin.trim()) {
+      const gstinCheck = checkGstin(rawSupplierGstin);
+      if (!gstinCheck.valid) {
+        return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
+      }
+      supplierGstin = gstinCheck.gstin;
+    }
 
     const category_id =
       rawCategoryId && String(rawCategoryId).trim() ? String(rawCategoryId).trim() : null;
+    let idempotencyKey: string;
+    try {
+      idempotencyKey = readExpenseIdempotencyKey(request.headers.get('x-idempotency-key'), body.idempotency_key);
+    } catch (keyError) {
+      if (keyError instanceof ExpenseValidationError) {
+        return NextResponse.json({ error: keyError.message, code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
+      }
+      throw keyError;
+    }
+    if (!category_id) {
+      return NextResponse.json({ error: EXPENSE_ACCOUNT_REQUIRED, code: 'EXPENSE_ACCOUNT_REQUIRED' }, { status: 400 });
+    }
 
     const isOnAccount = ['on_account', 'pay_later', 'unpaid', 'credit'].includes(
       String(payment_mode || '').toLowerCase()
@@ -146,18 +205,18 @@ export async function POST(request: NextRequest) {
     const supplier_id =
       rawSupplierId && String(rawSupplierId).trim() ? String(rawSupplierId).trim() : null;
 
-    const cgstAmt = Math.max(0, Number(rawCgst) || 0);
-    const sgstAmt = Math.max(0, Number(rawSgst) || 0);
-    const igstAmt = Math.max(0, Number(rawIgst) || 0);
-    const expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
-    if (expenseGstTotal > Number(amount)) {
+    let cgstAmt = Math.max(0, Number(rawCgst) || 0);
+    let sgstAmt = Math.max(0, Number(rawSgst) || 0);
+    let igstAmt = Math.max(0, Number(rawIgst) || 0);
+    let expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
+    if (!hasLines && expenseGstTotal > postedAmount) {
       return NextResponse.json(
         { error: 'GST amounts cannot exceed the expense total amount' },
         { status: 400 }
       );
     }
     const intraComponents = (cgstAmt > 0 ? 1 : 0) + (sgstAmt > 0 ? 1 : 0);
-    if (intraComponents === 1) {
+    if (!hasLines && intraComponents === 1) {
       return NextResponse.json(
         {
           error:
@@ -166,7 +225,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (igstAmt > 0 && intraComponents > 0) {
+    if (!hasLines && igstAmt > 0 && intraComponents > 0) {
       return NextResponse.json(
         {
           error: 'Enter either IGST (inter-state) or CGST+SGST (intra-state), not both.',
@@ -188,16 +247,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!business_id || !amount || !expense_date) {
+    if (!expense_date || (!hasLines && !(postedAmount > 0))) {
       return NextResponse.json(
-        { error: 'business_id, amount, and expense_date are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'amount and expense_date are required' },
         { status: 400 }
       );
     }
@@ -228,7 +280,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission with branch context
     try {
-      await authorize(created_by, 'expenses', 'create', { branchId: finalBranchId });
+      await authorize(created_by, 'expenses', 'create', { businessId: business_id, branchId: finalBranchId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -296,72 +348,207 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const expense = await db.queryOne(`
-      INSERT INTO expenses (
-        business_id, branch_id, category_id, amount, description,
-        expense_date, payment_mode, reference_number, created_by,
-        cgst_amount, sgst_amount, igst_amount
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *
-    `, [
-      business_id, finalBranchId, category_id || null, amount, description,
-      expense_date, payment_mode, reference_number, created_by,
-      cgstAmt, sgstAmt, igstAmt,
-    ]);
+    const gstGuard = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [expense_date],
+      action: 'record this expense',
+      checkGstFiled: expenseGstTotal > 0,
+    });
+    if (gstGuard) return gstGuard;
 
-    let expenseLedgerAccountId: string | undefined;
+    let category: ExpenseCategoryRow | null = null;
     if (category_id) {
-      const catRow = await db.queryOne<{ account_id: string | null }>(
-        `SELECT account_id FROM expense_categories WHERE id = $1 AND business_id = $2`,
+      category = await db.queryOne<ExpenseCategoryRow>(
+        `SELECT account_id, COALESCE(itc_blocked, false) AS itc_blocked
+           FROM expense_categories WHERE id = $1 AND business_id = $2`,
         [category_id, business_id]
       );
-      if (catRow?.account_id) {
-        expenseLedgerAccountId = catRow.account_id;
+      if (!category) {
+        return NextResponse.json({ error: 'Invalid category_id for this business' }, { status: 400 });
       }
     }
-
-    // Ledger must succeed or the expense is rolled back — P&L reads ledger_entry_lines only.
-    try {
-      await createExpenseLedgerEntries({
+    const tax = parseExpenseTaxFields(body, category);
+    let lineBill: ExpenseLineBill | null = null;
+    if (hasLines) {
+      try {
+        const supply = await loadExpenseSupplyStates(
+          business_id,
+          supplier_id,
+          supplierGstin
+        );
+        lineBill = await buildExpenseBillFromLines({
+          businessId: business_id,
+          lines: body.lines,
+          pricesIncludeGst: body.prices_include_gst === true,
+          isReverseCharge: tax.isReverseCharge,
+          expenseDate: String(expense_date),
+          businessState: supply.businessState,
+          supplierState: supply.supplierState,
+        });
+      } catch (lineError) {
+        if (lineError instanceof ExpenseValidationError) {
+          return NextResponse.json({ error: lineError.message, code: 'EXPENSE_INVALID' }, { status: 400 });
+        }
+        throw lineError;
+      }
+      postedAmount = lineBill.amount;
+      cgstAmt = lineBill.cgst;
+      sgstAmt = lineBill.sgst;
+      igstAmt = lineBill.igst;
+      expenseGstTotal = cgstAmt + sgstAmt + igstAmt;
+      if ((cgstAmt > 0) !== (sgstAmt > 0) || (igstAmt > 0 && cgstAmt > 0)) {
+        return NextResponse.json(
+          { error: 'Enter either IGST (inter-state) or CGST+SGST (intra-state), not both.' },
+          { status: 400 }
+        );
+      }
+      const lineGstGuard = await periodGuardResponse({
         businessId: business_id,
+        branchId: finalBranchId,
+        dates: [expense_date],
+        action: 'record this expense',
+        checkGstFiled: expenseGstTotal > 0,
+      });
+      if (lineGstGuard) return lineGstGuard;
+    }
+
+    let expense: any;
+    let split: ExpenseSplit;
+    const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+      '@/lib/accounting/settlement-accounts-db'
+    );
+    const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+    let settlementAccountId: string | null = null;
+    try {
+      const resolved = await resolveSettlementForBusiness(
+        business_id,
+        payment_mode,
+        readSettlementAccountId(body.settlement_account_id),
+      );
+      settlementAccountId = resolved.accountId;
+    } catch (settlementError) {
+      if (settlementError instanceof SettlementAccountError) {
+        return NextResponse.json(
+          { error: settlementError.message, code: settlementError.code },
+          { status: settlementError.status },
+        );
+      }
+      throw settlementError;
+    }
+    const requestHash = expensePostingHash({
+      businessId: business_id,
+      branchId: finalBranchId,
+      categoryId: category_id,
+      amount: postedAmount,
+      description: description ?? null,
+      expenseDate: String(expense_date),
+      paymentMode: payment_mode ?? null,
+      referenceNumber: reference_number ?? null,
+      settlementAccountId,
+      cgst: cgstAmt,
+      sgst: sgstAmt,
+      igst: igstAmt,
+      itcEligible: tax.itcEligible,
+      isReverseCharge: tax.isReverseCharge,
+      tdsSection: tax.tdsSection,
+      tdsAmount: tax.tdsAmount,
+      supplierId: isOnAccount ? supplier_id : null,
+      supplierGstin,
+      supplyReceivedOn,
+      supplierRegistrationStatus: registrationStatus,
+      lines: lineBill?.hashLines,
+      pricesIncludeGst: lineBill?.pricesIncludeGst,
+    });
+    const alreadyPosted = await db.queryOne(
+      `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,
+              to_char(e.supply_received_on, 'YYYY-MM-DD') AS supply_day
+         FROM expenses e
+        WHERE e.business_id = $1 AND e.idempotency_key = $2`,
+      [business_id, idempotencyKey]
+    );
+    if (alreadyPosted) return expenseIdempotencyHttp(alreadyPosted, requestHash);
+    const client = await db.getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const ins = await client.query(
+        `INSERT INTO expenses (
+           business_id, branch_id, category_id, amount, description,
+           expense_date, payment_mode, reference_number, settlement_account_id, created_by,
+           cgst_amount, sgst_amount, igst_amount,
+           itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id,
+           supplier_gstin, supply_received_on, supplier_registration_status, idempotency_key,
+           idempotency_payload_hash, prices_include_gst
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+         RETURNING *`,
+        [
+          business_id, finalBranchId, category_id, postedAmount, description,
+          expense_date, payment_mode, reference_number, settlementAccountId, created_by,
+          cgstAmt, sgstAmt, igstAmt,
+          tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount,
+          isOnAccount ? supplier_id : null,
+          supplierGstin, supplyReceivedOn, registrationStatus, idempotencyKey,
+          requestHash,
+          lineBill?.pricesIncludeGst === true,
+        ]
+      );
+      expense = ins.rows[0];
+      if (lineBill) await replaceExpenseLines(client, business_id, expense.id, lineBill.lines);
+      split = await postExpenseVoucher(client, {
+        businessId: business_id,
+        branchId: finalBranchId,
         expenseId: expense.id,
         expenseDate: expense_date,
-        amount: Number(amount),
-        description: description,
+        categoryId: category_id,
         paymentMode: payment_mode,
-        expenseAccountId: expenseLedgerAccountId,
-        branchId: finalBranchId, // Pass branch_id for branch-wise accounting
-        cgstTotal: cgstAmt,
-        sgstTotal: sgstAmt,
-        igstTotal: igstAmt,
+        settlementAccountId,
+        description: description ?? null,
+        reference: reference_number ?? null,
+        amount: postedAmount,
+        cgst: cgstAmt,
+        sgst: sgstAmt,
+        igst: igstAmt,
+        ...tax,
       });
+      if (isOnAccount && supplier_id) {
+        await client.query(
+          `UPDATE suppliers
+           SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2 AND business_id = $3`,
+          [split.paymentCredit, supplier_id, business_id]
+        );
+      }
+      await markGstReadinessStale(client, business_id, {
+        dates: [String(expense_date).slice(0, 10)],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
+      await client.query('COMMIT');
     } catch (ledgerError: any) {
-      console.error('Error creating ledger entries for expense:', ledgerError);
-      await db.query(`DELETE FROM expenses WHERE id = $1 AND business_id = $2`, [
-        expense.id,
-        business_id,
-      ]);
+      await client.query('ROLLBACK').catch(() => {});
+      if (ledgerError?.code === '23505' && ledgerError?.constraint === 'expenses_business_idempotency_key') {
+        const existing = await db.queryOne(
+          `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,
+                  to_char(e.supply_received_on, 'YYYY-MM-DD') AS supply_day
+             FROM expenses e
+            WHERE e.business_id = $1 AND e.idempotency_key = $2`,
+          [business_id, idempotencyKey]
+        );
+        if (existing) return expenseIdempotencyHttp(existing, requestHash);
+      }
+      const validation = ledgerError instanceof ExpenseValidationError;
+      if (!validation) console.error('Error creating expense:', ledgerError);
       return NextResponse.json(
         {
           error:
             ledgerError?.message ||
             'Could not post this expense to the ledger. Fix the issue below and try again.',
-          code: 'LEDGER_POST_FAILED',
+          code: validation ? 'EXPENSE_INVALID' : 'LEDGER_POST_FAILED',
         },
-        { status: 500 }
+        { status: validation ? 400 : 500 }
       );
-    }
-
-    // Bill received, not yet paid: increase supplier’s “you owe them” if linked (matches settlement via Payment Out)
-    if (isOnAccount && supplier_id) {
-      const amt = Number(amount);
-      await db.query(
-        `UPDATE suppliers
-         SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2 AND business_id = $3`,
-        [amt, supplier_id, business_id]
-      );
+    } finally {
+      client.release();
     }
 
     // CRITICAL: Log activity for audit trail
@@ -369,7 +556,7 @@ export async function POST(request: NextRequest) {
     
     await logActivity({
       business_id,
-      user_id: created_by || null,
+      user_id: created_by,
       action_type: 'create',
       module: 'expenses',
       entity_id: expense.id,
@@ -380,7 +567,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         expense_date,
         branch_id: finalBranchId,
-        amount: Number(amount),
+        amount: postedAmount,
         is_backdated: backdateValidation.isBackdated,
         days_backdated: backdateValidation.daysBackdated,
         backdate_reason: (body as any).backdate_reason || null

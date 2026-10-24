@@ -106,7 +106,7 @@ test('POST /api/subscriptions/current returns 403 for tenants', async ({
   const res = await page.request.post(`${baseUrl}/api/subscriptions/current`, {
     data: {
       business_id: persona.businessId,
-      plan_id: 'enterprise',
+      plan_id: 'business',
       status: 'active',
     },
   });

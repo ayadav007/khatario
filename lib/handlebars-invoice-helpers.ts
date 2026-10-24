@@ -13,6 +13,13 @@ function parseNum(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Block form renders fn/inverse. Subexpressions such as (and a b) have neither and must return a boolean. */
+function renderBlockOrBoolean(this: unknown, result: boolean, options: Handlebars.HelperOptions | undefined): unknown {
+  if (typeof options?.fn !== 'function') return result;
+  if (result) return options.fn(this);
+  return typeof options.inverse === 'function' ? options.inverse(this) : '';
+}
+
 export function registerGlobalInvoiceHandlebarsHelpers(): void {
   if (registered) return;
   registered = true;
@@ -29,20 +36,20 @@ export function registerGlobalInvoiceHandlebarsHelpers(): void {
   });
 
   Handlebars.registerHelper('ifEqual', function (this: unknown, arg1: unknown, arg2: unknown, options: Handlebars.HelperOptions) {
-    return arg1 == arg2 ? options.fn(this) : options.inverse(this);
+    return renderBlockOrBoolean.call(this, arg1 == arg2, options);
   });
 
-  /** Block helper: {{#or a b}}…{{/or}} — must not return bare boolean (prints "true"). */
+  /** Block form {{#or a b}} renders a branch. Subexpression (or a b) returns a boolean. */
   Handlebars.registerHelper('or', function (this: unknown, ...args: unknown[]) {
     const options = args[args.length - 1] as Handlebars.HelperOptions;
     const values = args.slice(0, -1);
-    return values.some((v) => !!v) ? options.fn(this) : options.inverse(this);
+    return renderBlockOrBoolean.call(this, values.some((v) => !!v), options);
   });
 
   Handlebars.registerHelper('and', function (this: unknown, ...args: unknown[]) {
     const options = args[args.length - 1] as Handlebars.HelperOptions;
     const values = args.slice(0, -1);
-    return values.every((v) => !!v) ? options.fn(this) : options.inverse(this);
+    return renderBlockOrBoolean.call(this, values.every((v) => !!v), options);
   });
 
   Handlebars.registerHelper('formatCurrency', function (value: unknown) {

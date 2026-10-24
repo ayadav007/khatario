@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { sendInvoiceEmail } from '@/lib/email';
-import { InvoiceRenderer } from '@/lib/invoice-renderer';
-import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
-import puppeteer from 'puppeteer';
-import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
+import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
@@ -111,75 +108,8 @@ export async function POST(
       throw error;
     }
 
-    // Fetch invoice items
-    const items = await db.queryRows(`
-      SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order
-    `, [invoiceId]);
-
-    // Get template settings from business_template_assignments
-    const assignmentResult = await db.queryOne(`
-      SELECT template_id, settings FROM business_template_assignments 
-      WHERE business_id = $1 AND document_type = 'tax_invoice'
-      LIMIT 1
-    `, [invoice.business_id]);
-
-    let settings = assignmentResult?.settings || {};
-    if (typeof settings === 'string') {
-      settings = JSON.parse(settings);
-    }
-
-    const templateId = invoice.template_id || assignmentResult?.template_id || 'gst_standard';
-
-    // Prepare data for rendering
-    const renderData = await prepareInvoiceForRendering({
-      invoice: {
-        ...invoice,
-        items,
-      },
-      business: {
-        id: invoice.business_id,
-        name: invoice.business_name,
-        email: invoice.business_email,
-        phone: invoice.business_phone,
-        address: invoice.business_address,
-        city: invoice.business_city,
-        state: invoice.business_state,
-        pincode: invoice.business_pincode,
-        gstin: invoice.business_gstin,
-        logo_url: invoice.business_logo,
-      },
-      customer: {
-        name: invoice.customer_name,
-        email: invoice.customer_email,
-        phone: invoice.customer_phone,
-        address: invoice.customer_address,
-        gstin: invoice.customer_gstin,
-      },
-      items: items,
-    }, settings);
-
-    // Generate HTML using InvoiceRenderer
-    const renderer = new InvoiceRenderer();
-    let html = await renderer.renderHtml(templateId, renderData);
-    const { maybeAppendKhatarioPrintFooter } = await import('@/lib/print-branding');
-    html = await maybeAppendKhatarioPrintFooter(html, invoice.business_id);
-
-    // Generate PDF using Puppeteer
-    const browser = await puppeteer.launch(
-      getPuppeteerLaunchOptions({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      })
-    );
-
-    const page = await browser.newPage();
-    await page.setContent(html);
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-    });
-    await browser.close();
+    // Same pipeline as preview/download/WhatsApp so the emailed PDF matches.
+    const pdfBuffer = await generateInvoicePdf(invoiceId);
 
     let onlineViewUrl: string | null = null;
     if (invoice.status === 'final') {

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { GSTR1Generator, GSTR1Filters } from '@/lib/gst/gstr1';
-import { generateGSTR1JSON } from '@/lib/export/json';
+import { generateGSTR1JSON, toIffJson } from '@/lib/export/json';
 import { getPool } from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { checkGstin } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine action based on export format
-    const action = exportFormat === 'json' ? 'export' : 'read';
+    const action = exportFormat === 'json' || exportFormat === 'iff' ? 'export' : 'read';
 
     // AUTHORIZATION: Check read/export permission for GST report (PBAC will check branch access, business ownership)
     // Note: Branch filtering happens AFTER authorization - PBAC enforces scope
@@ -154,10 +155,10 @@ export async function GET(request: NextRequest) {
       const invoiceParams: any[] = [business_id];
       let paramIdx = 2;
 
-      // Add branch filter if provided
-      // Always filter by resolved branchId
-      invoiceQuery += ` AND i.branch_id = $${paramIdx}`;
-      invoiceParams.push(filters.branch_id);
+      // Every branch filing under the resolved branch's GSTIN
+      const { registrationBranchIds } = await import('@/lib/gst/registration');
+      invoiceQuery += ` AND i.branch_id = ANY($${paramIdx}::uuid[])`;
+      invoiceParams.push(await registrationBranchIds(client, business_id, finalBranchId));
       paramIdx++;
 
       if (filters.from_date && filters.to_date) {
@@ -200,7 +201,7 @@ export async function GET(request: NextRequest) {
       (data as any).filing_id = filingId;
       (data as any).filing_period = filingPeriod;
 
-      if (exportFormat === 'json') {
+      if (exportFormat === 'json' || exportFormat === 'iff') {
         // Fetch branch GSTIN if branch_id provided, otherwise use business GSTIN
         let gstin: string | null = null;
         
@@ -244,13 +245,30 @@ export async function GET(request: NextRequest) {
             { status: 400 }
           );
         }
-        
-        const jsonContent = await generateGSTR1JSON(data, filters, gstin);
-        
+
+        const gstinCheck = checkGstin(gstin);
+        if (!gstinCheck.valid) {
+          return NextResponse.json(
+            {
+              error: `GSTIN ${gstin} is not valid: ${gstinCheck.error}`,
+              message: 'Correct the GSTIN in Settings → Business Profile (GST & tax) before exporting GSTR-1.',
+              code: 'GSTIN_INVALID',
+            },
+            { status: 400 }
+          );
+        }
+
+        const jsonContent = exportFormat === 'iff'
+          ? toIffJson(await generateGSTR1JSON(data, filters, gstinCheck.gstin))
+          : await generateGSTR1JSON(data, filters, gstinCheck.gstin);
+        const filename = exportFormat === 'iff'
+          ? `iff_${filters.month}_${filters.year}.json`
+          : `gstr1_${filters.month}_${filters.year}.json`;
+
         return new NextResponse(jsonContent, {
           headers: {
             'Content-Type': 'application/json',
-            'Content-Disposition': `attachment; filename="gstr1_${filters.month}_${filters.year}.json"`
+            'Content-Disposition': `attachment; filename="${filename}"`
           }
         });
       }

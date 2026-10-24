@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { X, ChevronRight, Settings } from 'lucide-react';
 import type { ModuleSettingsMenu } from '@/lib/module-settings';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Props = {
   open: boolean;
@@ -14,10 +15,12 @@ type Props = {
 
 export function ModuleSettingsSheet({ open, onClose, menu }: Props) {
   const { hasFeature } = useFeatureRegistry();
+  const { hasPlatformModule } = useAuth();
 
-  const entries = menu.entries.filter(
-    (e) => !e.featureKey || hasFeature(e.featureKey as Parameters<typeof hasFeature>[0])
-  );
+  const entries = menu.entries.filter((e) => {
+    if (e.requiresModule && !hasPlatformModule(e.requiresModule)) return false;
+    return !e.featureKey || hasFeature(e.featureKey as Parameters<typeof hasFeature>[0]);
+  });
 
   if (!open) return null;
 

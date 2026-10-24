@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw } from 'lucide-react';
@@ -99,12 +100,13 @@ export default function GSTR2BPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">GSTR-2B Report</h1>
-            <p className="text-sm text-gray-500">Auto-drafted ITC statement (Inward Supplies)</p>
-          </div>
-          <div className="flex gap-3">
+        <PageHeader
+  title="GSTR-2B Report"
+  subtitle="Auto-drafted ITC statement (Inward Supplies)"
+
+  actions={
+    <>
+<div className="flex gap-3">
             <button 
               onClick={() => handleExport('csv')}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
@@ -120,7 +122,9 @@ export default function GSTR2BPage() {
               Export JSON
             </button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Filters */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end">

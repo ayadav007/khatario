@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -160,13 +161,11 @@ export default function GSTINValidatorPage() {
       <div className="space-y-6 max-w-3xl mx-auto">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-primary-500" />
-            GSTIN Validator
-          </h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Validate and verify GSTIN (GST Identification Number) format
-          </p>
+          <PageHeader
+  title={<><Building2 className="w-6 h-6 text-primary-500" />
+            GSTIN Validator</>}
+  subtitle="Validate and verify GSTIN (GST Identification Number) format"
+/>
         </div>
 
         {/* Main Card */}

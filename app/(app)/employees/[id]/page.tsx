@@ -15,6 +15,9 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { EmployeePortalInviteCard } from '@/components/hr/EmployeePortalInviteCard';
 import { EmployeeSalaryStructurePanel } from '@/components/hr/EmployeeSalaryStructurePanel';
+import { StaffAppLinkCard } from '@/components/hr/StaffAppLinkCard';
+import { useCapabilityCheck } from '@/hooks/useCapability';
+import { hrPlanFlags } from '@/lib/subscription/hr-lite';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -31,6 +34,8 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
+  const { hasCapability } = useCapabilityCheck();
+  const hrPlan = hrPlanFlags((key) => hasCapability(key, 'view'));
   const employeeId = params.id as string;
   
   const [activeTab, setActiveTab] = useState<'overview' | 'salary' | 'documents' | 'face_enrollment'>('overview');
@@ -155,9 +160,11 @@ export default function EmployeeDetailPage() {
                   <Chip className={getStatusColor()}>
                     {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
                   </Chip>
+                  {hrPlan.portal ? (
                   <Chip className={getAccessTypeColor()}>
                     {employee.access_type === 'full' ? 'Full Access' : 'Attendance Only'}
                   </Chip>
+                  ) : null}
                   {employee.role_name && (
                     <Chip className="bg-gray-100 text-gray-800">
                       {employee.role_name}
@@ -218,7 +225,7 @@ export default function EmployeeDetailPage() {
           </div>
         </Card>
 
-        {business?.id ? (
+        {hrPlan.portal && business?.id ? (
           <EmployeePortalInviteCard
             employeeId={employeeId}
             businessId={business.id}
@@ -228,6 +235,8 @@ export default function EmployeeDetailPage() {
             portalInvitedAt={employee.portal_invited_at}
           />
         ) : null}
+
+        {hrPlan.staffApp && hasCapability('hr_attendance', 'view') ? <StaffAppLinkCard employeeId={employeeId} /> : null}
 
         {/* Tabs */}
         <div className="border-b border-border">
@@ -242,6 +251,7 @@ export default function EmployeeDetailPage() {
             >
               Overview
             </button>
+            {hrPlan.payrollSetup ? (
             <button
               onClick={() => setActiveTab('salary')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -252,6 +262,8 @@ export default function EmployeeDetailPage() {
             >
               Salary structure
             </button>
+            ) : null}
+            {hrPlan.advanced ? (
             <button
               onClick={() => setActiveTab('documents')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -262,6 +274,8 @@ export default function EmployeeDetailPage() {
             >
               Documents ({documents.length})
             </button>
+            ) : null}
+            {hrPlan.staffApp ? (
             <button
               onClick={() => setActiveTab('face_enrollment')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -272,6 +286,7 @@ export default function EmployeeDetailPage() {
             >
               Face Enrollment
             </button>
+            ) : null}
           </div>
         </div>
 
@@ -315,7 +330,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
-                {employee.reporting_manager_name && (
+                {hrPlan.leaves && employee.reporting_manager_name && (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Reporting Manager:</span>
                     <span className="font-medium text-text-primary">
@@ -331,6 +346,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
+                {hrPlan.payrollSetup ? (
                 <button
                   type="button"
                   onClick={() => setActiveTab('salary')}
@@ -338,6 +354,7 @@ export default function EmployeeDetailPage() {
                 >
                   View salary structure →
                 </button>
+                ) : null}
               </div>
             </Card>
 
@@ -405,7 +422,7 @@ export default function EmployeeDetailPage() {
               </Card>
             )}
 
-            {/* Documents Summary */}
+            {hrPlan.payrollSetup ? (
             <Card>
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-5 h-5 text-primary-600" />
@@ -432,10 +449,11 @@ export default function EmployeeDetailPage() {
                 </div>
               </div>
             </Card>
+            ) : null}
           </div>
         )}
 
-        {activeTab === 'salary' && business?.id && user?.id && (
+        {hrPlan.payrollSetup && activeTab === 'salary' && business?.id && user?.id && (
           <EmployeeSalaryStructurePanel
             employeeId={employeeId}
             businessId={business.id}
@@ -448,7 +466,7 @@ export default function EmployeeDetailPage() {
           />
         )}
 
-        {activeTab === 'documents' && (
+        {hrPlan.advanced && activeTab === 'documents' && (
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-text-primary">Documents</h2>
@@ -494,7 +512,7 @@ export default function EmployeeDetailPage() {
           </Card>
         )}
 
-        {activeTab === 'face_enrollment' && (
+        {hrPlan.staffApp && activeTab === 'face_enrollment' && (
           <FaceEnrollmentTab employeeId={employeeId} businessId={business?.id || ''} />
         )}
       </div>

@@ -1,5 +1,6 @@
 import { processIncomingMessage, storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { queryOne } from '@/lib/db';
+import { isBotMessage, markBotMessage, onStaffReply, sentViaKhatario } from '@/lib/ai-agent/conversation';
 import type {
   BaileysIncomingQueueJob,
   BaileysOutgoingQueueJob,
@@ -26,6 +27,21 @@ export async function processWhatsAppMessageJob(data: WhatsAppMessageJob): Promi
     case 'webhook':
       await processWebhook(data);
       return;
+    case 'owner-command': {
+      const { processOwnerCommand } = await import('./whatsapp/owner-command');
+      await processOwnerCommand(data);
+      return;
+    }
+    case 'cloud-incoming': {
+      const { processCloudIncoming } = await import('./whatsapp/cloud-incoming');
+      await processCloudIncoming(data);
+      return;
+    }
+    case 'platform-incoming': {
+      const { processPlatformIncoming } = await import('./whatsapp/platform-incoming');
+      await processPlatformIncoming(data);
+      return;
+    }
     default:
       console.error('[BullMQ] unknown job shape', data);
   }
@@ -37,6 +53,7 @@ async function processWebhook(job: WebhookQueueJob): Promise<void> {
 }
 
 async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<void> {
+  const out: { conversationUuid?: string } = {};
   const r = await processIncomingMessage(
     job.businessId,
     job.senderJid,
@@ -50,10 +67,19 @@ async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<voi
     job.groupJid,
     job.whatsappDisplayName,
     job.sourceTimestampSec,
-    job.originalWaTimestampSec
+    job.originalWaTimestampSec,
+    out
   );
 
-  if (job.enableBotReply && r.response && !job.isGroup) {
+  const willReply = !!(job.enableBotReply && r.response && !job.isGroup);
+  const { queueIfUnanswered } = await import('./whatsapp/inbox-ownership');
+  await queueIfUnanswered(job.businessId, out.conversationUuid, {
+    replied: willReply,
+    handled: r.handled,
+    isGroup: job.isGroup,
+  });
+
+  if (willReply && r.response) {
     const { sendWhatsAppMessage, whatsappSessions: sessions } = await import('./whatsapp');
     const fromNumber = job.fromNumber;
     try {
@@ -79,19 +105,11 @@ async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<voi
       }
 
       const jid = `${fromNumber}@s.whatsapp.net`;
-      if (r.responseType === 'button' && r.buttons && r.buttons.length > 0) {
-        await sendWhatsAppMessage(
-          job.businessId,
-          jid,
-          r.response,
-          undefined,
-          'button',
-          r.buttons,
-          r.footer
-        );
-      } else {
-        await sendWhatsAppMessage(job.businessId, jid, r.response);
-      }
+      const sent =
+        r.responseType === 'button' && r.buttons && r.buttons.length > 0
+          ? await sendWhatsAppMessage(job.businessId, jid, r.response, undefined, 'button', r.buttons, r.footer)
+          : await sendWhatsAppMessage(job.businessId, jid, r.response);
+      if (typeof sent === 'string') await markBotMessage(job.businessId, sent);
     } catch (err) {
       console.error('[BullMQ] bot reply after incoming failed', err);
     }
@@ -141,6 +159,8 @@ async function processOutgoingBaileys(job: BaileysOutgoingQueueJob): Promise<voi
     conversation = { id: newConv!.id };
   }
 
+  const sentBy = job.isGroup ? null : await classifyPhoneEcho(job);
+
   await storeOutgoingMessage(
     job.businessId,
     conversation.id,
@@ -151,11 +171,43 @@ async function processOutgoingBaileys(job: BaileysOutgoingQueueJob): Promise<voi
     job.mediaUrl,
     undefined,
     job.sourceTimestampSec,
-    job.originalWaTimestampSec
+    job.originalWaTimestampSec,
+    { sentBy }
   );
+
+  if (sentBy === 'staff') await onStaffReply(job.businessId, conversation.id);
+}
+
+const STAFF_ECHO_FRESH_SEC = 120;
+const ECHO_RECHECK_MS = 2000;
+
+/**
+ * A fromMe message on the QR session is either our own send (bot / inbox / campaign)
+ * echoed back, or someone typing on the shop's phone. Khatario logs its sends right after
+ * the socket call returns, so the echo can arrive first — recheck once before calling it staff.
+ * History-sync echoes (old timestamps) are left untagged.
+ */
+async function classifyPhoneEcho(job: BaileysOutgoingQueueJob): Promise<'bot' | 'staff' | null> {
+  if (!job.messageId || job.sub !== 'upsert') return null;
+  const known = async (): Promise<'bot' | 'ours' | null> => {
+    if (await isBotMessage(job.businessId, job.messageId)) return 'bot';
+    if (await sentViaKhatario(job.businessId, job.messageId)) return 'ours';
+    return null;
+  };
+  let k = await known();
+  if (k === 'bot') return 'bot';
+  if (k === 'ours') return null;
+  const ts = job.sourceTimestampSec ?? null;
+  if (!ts || Date.now() / 1000 - ts > STAFF_ECHO_FRESH_SEC) return null;
+  await new Promise((res) => setTimeout(res, ECHO_RECHECK_MS));
+  k = await known();
+  if (k === 'bot') return 'bot';
+  if (k === 'ours') return null;
+  return 'staff';
 }
 
 async function processOutgoingAfterSend(job: OutgoingAfterSendQueueJob): Promise<void> {
+  const sentBy = (await isBotMessage(job.businessId, job.messageId)) ? 'bot' : null;
   await storeOutgoingMessage(
     job.businessId,
     job.conversationId,
@@ -166,6 +218,7 @@ async function processOutgoingAfterSend(job: OutgoingAfterSendQueueJob): Promise
     job.outMedia || undefined,
     undefined,
     job.outboxSourceTimestampSec,
-    job.outboxOriginalWaSec
+    job.outboxOriginalWaSec,
+    { sentBy }
   );
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, Loader2, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import { findOfflineItemByBarcode } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
 import toast from 'react-hot-toast';
@@ -37,6 +38,10 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
   businessId
 }) => {
   const { user } = useAuth();
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
+  useEffect(() => {
+    if (snapshotLoaded && !hasCapability('advanced_barcode', 'view')) onClose();
+  }, [snapshotLoaded, hasCapability, onClose]);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastScannedItem, setLastScannedItem] = useState<string | null>(null);
@@ -99,7 +104,7 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
         return null;
       }
 
-      const res = await fetch(`/api/items/search?business_id=${businessId}&q=${encodeURIComponent(barcode)}`);
+      const res = await fetch(`/api/items/search?business_id=${businessId}&q=${encodeURIComponent(barcode)}&scan=1`);
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];

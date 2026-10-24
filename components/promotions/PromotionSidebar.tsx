@@ -19,7 +19,15 @@ function isLikelyVideoUrl(url: string): boolean {
   }
 }
 
-function PromoMedia({ url, className }: { url: string; className: string }) {
+function PromoMedia({
+  url,
+  className,
+  onError,
+}: {
+  url: string;
+  className: string;
+  onError: () => void;
+}) {
   if (isLikelyVideoUrl(url)) {
     return (
       <video
@@ -31,10 +39,11 @@ function PromoMedia({ url, className }: { url: string; className: string }) {
         autoPlay
         preload="metadata"
         aria-hidden
+        onError={onError}
       />
     );
   }
-  return <img src={url} alt="" className={className} draggable={false} />;
+  return <img src={url} alt="" className={className} draggable={false} onError={onError} />;
 }
 
 export function PromotionSidebar({ collapsed = false }: { collapsed?: boolean }) {
@@ -43,6 +52,7 @@ export function PromotionSidebar({ collapsed = false }: { collapsed?: boolean })
   const { promotions, refreshPromotion } = useLayoutData();
   const [promo, setPromo] = useState<Promotion | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const viewTrackedId = useRef<string | null>(null);
 
   const trackInteraction = useCallback(
@@ -114,7 +124,9 @@ export function PromotionSidebar({ collapsed = false }: { collapsed?: boolean })
 
   if (!isVisible || !promo) return null;
 
-  const imageUrl = promo.image_url?.trim() || '';
+  const rawImageUrl = promo.image_url?.trim() || '';
+  const imageUrl = rawImageUrl && rawImageUrl !== failedImageUrl ? rawImageUrl : '';
+  const onImageError = () => setFailedImageUrl(rawImageUrl);
 
   if (collapsed) {
     return (
@@ -131,7 +143,7 @@ export function PromotionSidebar({ collapsed = false }: { collapsed?: boolean })
           title={promo.title}
         >
           {imageUrl ? (
-            <PromoMedia url={imageUrl} className="h-full w-full object-cover" />
+            <PromoMedia url={imageUrl} className="h-full w-full object-cover" onError={onImageError} />
           ) : (
             <Sparkles className="w-5 h-5" />
           )}
@@ -149,7 +161,7 @@ export function PromotionSidebar({ collapsed = false }: { collapsed?: boolean })
       >
         {imageUrl ? (
           <div className="relative h-20 w-full overflow-hidden bg-black/5 dark:bg-white/5">
-            <PromoMedia url={imageUrl} className="h-full w-full object-cover" />
+            <PromoMedia url={imageUrl} className="h-full w-full object-cover" onError={onImageError} />
             {promo.dismissible && (
               <button
                 type="button"

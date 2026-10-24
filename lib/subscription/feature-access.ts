@@ -17,18 +17,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import {
-  getBusinessSubscription,
-  hasWhatsAppBotAddon,
-  hasWhatsAppSendMessageAddon,
-  isSubscriptionOperationalStatus,
-} from '../subscription';
+import { hasWhatsAppBotAddon, hasWhatsAppSendMessageAddon } from '../subscription';
 import { getEntitlementPlanId, isTrialEntitlementActive } from './effective-plan';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import {
   getEntitlementPlanIdForModuleSub,
   getModuleSubscription,
   getOperationalModuleSubscriptions,
+  getPrimaryModuleSubscription,
 } from '@/lib/subscription/module-subscriptions';
 import {
   CORE_BILLING_FEATURE_KEYS,
@@ -38,24 +34,53 @@ import { isModuleSubscriptionOperational } from '@/lib/subscription/module-opera
 import type { PlatformModule } from '@/lib/platform-modules';
 import * as db from '../db';
 import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
+import { SUPPLIER_HUB_FEATURE_ID } from '@/lib/subscription/plan-path-gate';
+import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
 
 /** Built-in matrix when `subscription_plan_features` rows are missing (migration drift). */
 const HR_PLAN_FEATURE_FALLBACKS: Record<string, string[]> = {
-  hr_starter: ['hr_employees', 'hr_attendance', 'settings_multi_user'],
+  hr_staff_lite: [
+    'hr_employees',
+    'hr_attendance',
+    'hr_payroll',
+    'settings_multi_user',
+  ],
+  hr_starter: [
+    'hr_employees',
+    'hr_attendance',
+    'hr_payroll',
+    'hr_staff_app',
+    'hr_shifts',
+    'hr_payroll_setup',
+    'hr_commissions',
+    'settings_multi_user',
+  ],
   hr_pro: [
     'hr_employees',
     'hr_attendance',
     'hr_payroll',
+    'hr_staff_app',
+    'hr_shifts',
+    'hr_payroll_setup',
+    'hr_commissions',
     'hr_leaves',
     'hr_employee_portal',
+    'hr_recruitment',
+    'hr_advanced',
     'settings_multi_user',
   ],
   hr_trial: [
     'hr_employees',
     'hr_attendance',
     'hr_payroll',
+    'hr_staff_app',
+    'hr_shifts',
+    'hr_payroll_setup',
+    'hr_commissions',
     'hr_leaves',
     'hr_employee_portal',
+    'hr_recruitment',
+    'hr_advanced',
     'settings_multi_user',
   ],
   hr_free: [],
@@ -114,6 +139,50 @@ export class FeatureAccessDeniedError extends Error {
   }
 }
 
+/** Platform hide switch. Not a plan denial, so it must not open the upgrade modal. */
+export class SupplierHubHiddenError extends FeatureAccessDeniedError {
+  constructor() {
+    super(SUPPLIER_HUB_FEATURE_ID, 'platform', 'FEATURE_NOT_ENABLED');
+    this.name = 'SupplierHubHiddenError';
+  }
+
+  toNextResponse(): NextResponse {
+    return NextResponse.json(
+      { error: 'Supplier Hub is not available.', code: 'FEATURE_HIDDEN', feature: SUPPLIER_HUB_FEATURE_ID },
+      { status: 404 },
+    );
+  }
+}
+
+const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set([
+  'free',
+  'hr_free',
+  'hr_staff_lite',
+  'connect_free',
+]);
+
+/**
+ * Allows any paid plan (or an active signup trial); denies free/lapsed businesses.
+ * For controls every paying customer should have regardless of tier, e.g. period lock.
+ */
+export async function assertPaidPlan(businessId: string, featureKey: string): Promise<void> {
+  if (!businessId) {
+    throw new FeatureAccessDeniedError(featureKey, 'unknown', 'NO_SUBSCRIPTION');
+  }
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  if (operational.length === 0) {
+    const primary = await getPrimaryModuleSubscription(businessId, true);
+    throw new FeatureAccessDeniedError(
+      featureKey,
+      businessId,
+      primary ? 'SUBSCRIPTION_INACTIVE' : 'NO_SUBSCRIPTION',
+    );
+  }
+  if (operational.every((sub) => NON_PAID_ENTITLEMENT_PLAN_IDS.has(getEntitlementPlanId(sub)))) {
+    throw new FeatureAccessDeniedError(featureKey, businessId, 'FEATURE_NOT_ENABLED');
+  }
+}
+
 /**
  * Map legacy feature keys to Feature Registry IDs
  * This ensures backward compatibility when code uses old feature keys
@@ -122,7 +191,7 @@ export class FeatureAccessDeniedError extends Error {
  * Legacy keys are normalized to canonical form first
  */
 export function resolveRegistryFeatureId(featureKey: string): string {
-  // Normalize to canonical key first
+  // Normalize to canonical key first (includes legacy aliases such as pos_mode).
   const canonicalKey = normalizeFeatureKey(featureKey);
   
   // Map canonical keys to Feature Registry IDs (if different)
@@ -141,6 +210,7 @@ export function resolveRegistryFeatureId(featureKey: string): string {
     [FeatureKeys.MULTI_USER]: 'settings_multi_user',
     [FeatureKeys.MULTI_BRANCH]: 'settings_multi_branch',
     [FeatureKeys.MULTI_WAREHOUSE]: 'settings_multi_warehouse',
+    [FeatureKeys.MULTI_BUSINESS]: 'settings_multi_business',
     [FeatureKeys.BACKUP_RESTORE]: 'settings_backup',
     [FeatureKeys.EMAIL_INVOICING]: 'integration_email',
     [FeatureKeys.PAYMENT_GATEWAY]: 'integration_payment_gateway',
@@ -148,6 +218,9 @@ export function resolveRegistryFeatureId(featureKey: string): string {
     [FeatureKeys.LEDGER_ACCOUNTING]: 'advanced_ledger',
     /** DB row id in {@code platform_features} (see migration 012 — JSONB alias was {@code custom_branding}) */
     [FeatureKeys.CUSTOM_BRANDING]: 'advanced_custom_branding',
+    [FeatureKeys.ONLINE_STORE]: 'advanced_online_store',
+    [FeatureKeys.MULTI_CURRENCY]: 'advanced_multi_currency',
+    [FeatureKeys.BARCODE_SCANNING]: 'advanced_barcode',
     [FeatureKeys.OFFERS_PERCENT_DISCOUNT]: 'offers_percent_discount',
     [FeatureKeys.OFFERS_FLAT_DISCOUNT]: 'offers_flat_discount',
     [FeatureKeys.OFFERS_BOGO]: 'offers_buy_x_get_y',
@@ -177,21 +250,6 @@ async function loadUnionEnabledRegistryFeatureIds(businessId: string): Promise<s
         );
       }
     }
-    if (merged.size > 0) return [...merged];
-  }
-
-  const subscription = await getBusinessSubscription(businessId, true);
-  if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-    return [...merged];
-  }
-  try {
-    const planId = isTrialEntitlementActive(subscription)
-      ? subscription.plan_id
-      : getEntitlementPlanId(subscription);
-    const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
-    ids.forEach((id) => merged.add(id));
-  } catch (error) {
-    console.error('[loadUnionEnabledRegistryFeatureIds] Legacy subscription failed:', error);
   }
   return [...merged];
 }
@@ -271,17 +329,15 @@ async function assertModuleOperationalForFeature(
 
   const operational = await getOperationalModuleSubscriptions(businessId, true);
   if (operational.length === 0) {
-    const subscription = await getBusinessSubscription(businessId, true);
-    if (!subscription) {
+    const primary = await getPrimaryModuleSubscription(businessId, true);
+    if (!primary) {
       throw new FeatureAccessDeniedError(featureKey, businessId, 'NO_SUBSCRIPTION');
     }
-    if (!isSubscriptionOperationalStatus(subscription.status)) {
-      throw new FeatureAccessDeniedError(
-        featureKey,
-        businessId,
-        subscription.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
-      );
-    }
+    throw new FeatureAccessDeniedError(
+      featureKey,
+      businessId,
+      primary.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+    );
   }
 }
 
@@ -445,9 +501,18 @@ export async function assertFeatureAccess(
     );
   }
 
-  await assertOperationalSubscriptionExists(businessId, featureKey);
-
   const canonicalKey = normalizeFeatureKey(featureKey);
+
+  if (
+    featureKey === SUPPLIER_HUB_FEATURE_ID ||
+    String(canonicalKey) === SUPPLIER_HUB_FEATURE_ID
+  ) {
+    if (!(await isSupplierHubVisible())) {
+      throw new SupplierHubHiddenError();
+    }
+  }
+
+  await assertOperationalSubscriptionExists(businessId, featureKey);
   const platformCtx = await getBusinessPlatformContext(businessId);
 
   if (isCoreEntitlementKey(canonicalKey) || CORE_BILLING_FEATURE_KEYS.has(canonicalKey)) {
@@ -485,13 +550,8 @@ export async function assertFeatureAccess(
     );
   }
   
-  // WhatsApp Bot / CRM / inbox — addon only
-  if (
-    featureKey === 'integration_whatsapp_bot' ||
-    canonicalKey === FeatureKeys.WHATSAPP_BOT ||
-    canonicalKey === FeatureKeys.WHATSAPP_AUTO_REMINDERS ||
-    canonicalKey === FeatureKeys.WHATSAPP_CREDIT_ALERTS
-  ) {
+  // Inbox, bot, AI, WABA, templates, shop — paid Connect plan
+  if (featureKey === 'integration_whatsapp_bot' || canonicalKey === FeatureKeys.WHATSAPP_BOT) {
     if (!(await hasWhatsAppBotAddon(businessId))) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
@@ -502,17 +562,13 @@ export async function assertFeatureAccess(
     return;
   }
 
-  // Custom manual sends — Send Message addon OR Bot addon (bot includes send)
+  // Custom and bulk sends beyond invoices/reminders — paid Connect plan
   if (
     featureKey === 'integration_whatsapp_manual' ||
     canonicalKey === FeatureKeys.WHATSAPP_MANUAL ||
     canonicalKey === FeatureKeys.WHATSAPP_SEND_MESSAGE
   ) {
-    const [hasBot, hasSend] = await Promise.all([
-      hasWhatsAppBotAddon(businessId),
-      hasWhatsAppSendMessageAddon(businessId),
-    ]);
-    if (!hasBot && !hasSend) {
+    if (!(await hasWhatsAppSendMessageAddon(businessId))) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
         businessId,
@@ -535,16 +591,13 @@ export async function assertFeatureAccess(
 
   const registryFeatureId = resolveRegistryFeatureId(canonicalKey);
   const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
-  const moduleSub = await resolveModuleSubForFeature(businessId, featureKey);
-  const legacySub = moduleSub ? null : await getBusinessSubscription(businessId, true);
-  const entitlementPlanId = moduleSub
-    ? getEntitlementPlanIdForModuleSub(moduleSub)
-    : legacySub
-      ? getEntitlementPlanId(legacySub)
-      : 'unknown';
-  const planIdForRegistry = moduleSub?.plan_id ?? legacySub?.plan_id;
+  const moduleSub =
+    (await resolveModuleSubForFeature(businessId, featureKey)) ??
+    (await getPrimaryModuleSubscription(businessId, true));
+  const entitlementPlanId = moduleSub ? getEntitlementPlanIdForModuleSub(moduleSub) : 'unknown';
+  const planIdForRegistry = moduleSub?.plan_id;
 
-  // Check if plan is marked as registry_complete (primary / legacy plan)
+  // Check if plan is marked as registry_complete (owning or primary product's plan)
   let isRegistryComplete = false;
   try {
     if (planIdForRegistry) {
@@ -623,6 +676,23 @@ export async function hasFeatureAccess(
   return pending;
 }
 
+/**
+ * Same denial as {@link assertFeatureAccess}, as a 403 response the route can return.
+ * `null` means the plan includes the feature.
+ */
+export async function denyIfFeatureMissing(
+  businessId: string,
+  featureKey: string,
+): Promise<NextResponse | null> {
+  try {
+    await assertFeatureAccess(businessId, featureKey);
+    return null;
+  } catch (error) {
+    if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+    throw error;
+  }
+}
+
 /** Parallel callers with the same `businessId` share one subscription + matrix lookup for enabled ids. */
 const inflightGetEnabledFeatures = new Map<string, Promise<string[]>>();
 
@@ -648,18 +718,7 @@ async function loadEnabledFeatureIdsForBusinessInternal(
   businessId: string
 ): Promise<string[]> {
   const operational = await getOperationalModuleSubscriptions(businessId, true);
-  if (operational.length === 0) {
-    const subscription = await getBusinessSubscription(businessId, true);
-    if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-      return [];
-    }
-    if (subscription.end_date) {
-      const endDate = new Date(subscription.end_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (endDate < today) return [];
-    }
-  }
+  if (operational.length === 0) return [];
 
   const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
   const platformCtx = await getBusinessPlatformContext(businessId);
@@ -672,24 +731,19 @@ async function loadEnabledFeatureIdsForBusinessInternal(
     }
   }
   
-  // Inject addon-based integration features for UI/capability snapshots
-  const [hasBotAddon, hasSendAddon] = await Promise.all([
+  // Connect features follow the Connect subscription, not the union matrix of other modules.
+  const [hasConnect, hasConnectSend] = await Promise.all([
     hasWhatsAppBotAddon(businessId),
     hasWhatsAppSendMessageAddon(businessId),
   ]);
-  if (hasBotAddon || hasSendAddon) {
-    if (!enabledFeatures.includes('integration_whatsapp_manual')) {
-      enabledFeatures.push('integration_whatsapp_manual');
-    }
+  for (const [id, granted] of [
+    ['integration_whatsapp_bot', hasConnect],
+    ['integration_whatsapp_manual', hasConnectSend],
+  ] as const) {
+    const idx = enabledFeatures.indexOf(id);
+    if (granted && idx === -1) enabledFeatures.push(id);
+    if (!granted && idx !== -1) enabledFeatures.splice(idx, 1);
   }
-  if (hasBotAddon) {
-    if (!enabledFeatures.includes('integration_whatsapp_bot')) {
-      enabledFeatures.push('integration_whatsapp_bot');
-    }
-  }
-  
-  // TODO: Add other addon types here when implemented
-  // Example: if (hasOtherAddon) { enabledFeatures.push('other_addon_feature'); }
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[getEnabledFeatures] Final enabled features:', {

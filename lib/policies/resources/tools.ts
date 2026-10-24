@@ -106,6 +106,15 @@ export function getToolsPolicies(): Policy[] {
     },
     {
       resource: 'settings',
+      action: 'delete',
+      requiresPermission: 'settings.delete',
+      priority: 10,
+      conditions: [
+        resourceBelongsToBusiness(),
+      ],
+    },
+    {
+      resource: 'settings',
       action: 'export',
       requiresPermission: 'settings.export',
       priority: 10,

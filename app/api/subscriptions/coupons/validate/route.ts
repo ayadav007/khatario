@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { validateCoupon } from '@/lib/subscription/coupons';
+import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +12,7 @@ export async function POST(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
 
     const { code, plan_id } = body;
-    const billing_cycle =
-      body.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+    const billing_cycle = normalizeBillingCycle(body.billing_cycle);
 
     if (!code || !plan_id) {
       return NextResponse.json(

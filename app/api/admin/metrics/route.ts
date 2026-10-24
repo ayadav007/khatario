@@ -27,26 +27,44 @@ export async function GET(request: NextRequest) {
     `);
     const activeBusinesses = parseInt(activeBusinessesResult?.count || '0');
 
-    // Total subscriptions by plan
+    // Total subscriptions by plan. A calendar-expired trial the owner has not acted on yet
+    // is counted under its free plan, matching what the product enforces.
     const subscriptionsByPlan = await db.queryRows(`
+      WITH effective AS (
+        SELECT bs.business_id,
+               CASE
+                 WHEN bs.plan_id = 'trial' AND bs.trial_end_date < CURRENT_DATE THEN 'free'
+                 WHEN bs.plan_id = 'hr_trial' AND bs.trial_end_date < CURRENT_DATE THEN 'hr_free'
+                 ELSE bs.plan_id
+               END AS plan_id
+        FROM business_module_subscriptions bs
+        WHERE bs.status IN ('active', 'trial')
+      )
       SELECT 
         sp.display_name as plan_name,
         sp.id as plan_id,
-        COUNT(bs.id) as count
+        COUNT(e.business_id) as count
       FROM subscription_plans sp
-      LEFT JOIN business_subscriptions bs ON sp.id = bs.plan_id AND bs.status IN ('active', 'trial')
+      LEFT JOIN effective e ON sp.id = e.plan_id
       GROUP BY sp.id, sp.display_name, sp.sort_order
       ORDER BY sp.sort_order
     `);
 
     // Monthly Recurring Revenue (MRR)
     const mrrResult = await db.queryOne(`
-      SELECT 
-        SUM(sp.price_monthly) as mrr
-      FROM business_subscriptions bs
+      SELECT
+        SUM(
+          CASE bs.billing_cycle
+            WHEN 'yearly' THEN COALESCE(NULLIF(sp.price_yearly, 0) / 12, sp.price_monthly)
+            WHEN 'three_year' THEN COALESCE(NULLIF(sp.price_3year, 0) / 36, sp.price_monthly)
+            ELSE sp.price_monthly
+          END
+        ) as mrr
+      FROM business_module_subscriptions bs
       JOIN subscription_plans sp ON bs.plan_id = sp.id
-      WHERE bs.status IN ('active', 'trial')
-        AND bs.plan_id NOT IN ('free', 'trial')
+      WHERE bs.status = 'active'
+        AND bs.plan_id NOT IN ('trial', 'hr_trial')
+        AND sp.price_monthly > 0
     `);
     const mrr = parseFloat(mrrResult?.mrr || '0');
 
@@ -75,12 +93,14 @@ export async function GET(request: NextRequest) {
     `);
     const newBusinessesThisMonth = parseInt(newBusinessesResult?.count || '0');
 
-    // Trial conversions (businesses that upgraded from free)
+    // Trial conversions: businesses now on a paid plan
     const trialConversionsResult = await db.queryOne(`
       SELECT COUNT(DISTINCT bs.business_id) as count
-      FROM business_subscriptions bs
-      WHERE bs.plan_id NOT IN ('free', 'trial')
-        AND bs.status IN ('active', 'trial')
+      FROM business_module_subscriptions bs
+      JOIN subscription_plans sp ON sp.id = bs.plan_id
+      WHERE bs.plan_id NOT IN ('trial', 'hr_trial')
+        AND sp.price_monthly > 0
+        AND bs.status = 'active'
     `);
     const trialConversions = parseInt(trialConversionsResult?.count || '0');
 
@@ -94,7 +114,10 @@ export async function GET(request: NextRequest) {
         bs.plan_id,
         sp.display_name as plan_name
       FROM businesses b
-      LEFT JOIN business_subscriptions bs ON b.id = bs.business_id AND bs.status IN ('active', 'trial')
+      LEFT JOIN business_module_subscriptions bs
+        ON bs.business_id = b.id
+       AND bs.module_key = COALESCE(b.primary_module, 'billing')
+       AND bs.status IN ('active', 'trial')
       LEFT JOIN subscription_plans sp ON bs.plan_id = sp.id
       ORDER BY b.created_at DESC
       LIMIT 10

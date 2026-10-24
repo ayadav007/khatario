@@ -10,7 +10,14 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-export type WSEventType = 'message:new' | 'conversation:update' | 'summary:update' | 'label:update' | 'agent:update' | 'reaction_update';
+export type WSEventType =
+  | 'message:new'
+  | 'conversation:update'
+  | 'conversation:hidden'
+  | 'summary:update'
+  | 'label:update'
+  | 'agent:update'
+  | 'reaction_update';
 
 export interface WSEvent {
   type: WSEventType;
@@ -34,6 +41,8 @@ interface UseWhatsAppSocketOptions {
   onSseOpen?: () => void;
   onMessage?: (event: WSEvent) => void;
   onConversationUpdate?: (event: WSEvent) => void;
+  /** The chat is no longer visible to this user (transferred away, taken over); drop it from the list. */
+  onConversationHidden?: (event: WSEvent) => void;
   onSummaryUpdate?: (event: WSEvent) => void;
   onLabelUpdate?: (event: WSEvent) => void;
   onAgentUpdate?: (event: WSEvent) => void;
@@ -58,6 +67,7 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
     onSseOpen,
     onMessage,
     onConversationUpdate,
+    onConversationHidden,
     onSummaryUpdate,
     onLabelUpdate,
     onAgentUpdate,
@@ -80,12 +90,13 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
       onSseOpen,
       onMessage,
       onConversationUpdate,
+      onConversationHidden,
       onSummaryUpdate,
       onLabelUpdate,
       onAgentUpdate,
       onReactionUpdate
     };
-  }, [options.businessId, onSseOpen, onMessage, onConversationUpdate, onSummaryUpdate, onLabelUpdate, onAgentUpdate, onReactionUpdate]);
+  }, [options.businessId, onSseOpen, onMessage, onConversationUpdate, onConversationHidden, onSummaryUpdate, onLabelUpdate, onAgentUpdate, onReactionUpdate]);
 
   const handleEvent = useCallback((event: WSEvent) => {
     const handlers = handlersRef.current;
@@ -98,6 +109,9 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
         break;
       case 'conversation:update':
         handlers.onConversationUpdate?.(event);
+        break;
+      case 'conversation:hidden':
+        handlers.onConversationHidden?.(event);
         break;
       case 'summary:update':
         handlers.onSummaryUpdate?.(event);
@@ -114,7 +128,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
     }
   }, []);
 
-  const maxReconnectAttempts = 5;
   const reconnectDelay = 3000; // 3 seconds
 
   const connect = useCallback(() => {
@@ -159,20 +172,17 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
           setConnected(false);
           isConnectingRef.current = false;
 
-          // Only attempt manual reconnect if auto-reconnect failed
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            reconnectAttemptsRef.current++;
-            reconnectTimeoutRef.current = setTimeout(() => {
-              console.log(`[SSE] manual reconnect attempt ${reconnectAttemptsRef.current}`, { businessId });
-              if (eventSourceRef.current) {
-                eventSourceRef.current.close();
-                eventSourceRef.current = null;
-              }
-              connect();
-            }, reconnectDelay);
-          } else {
-            console.error('[SSE] max reconnect attempts reached', { businessId });
-          }
+          // Keep trying (an inbox tab stays open all day); back off up to 30s between attempts.
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(30_000, reconnectDelay * 2 ** Math.min(reconnectAttemptsRef.current - 1, 5));
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log(`[SSE] manual reconnect attempt ${reconnectAttemptsRef.current}`, { businessId });
+            if (eventSourceRef.current) {
+              eventSourceRef.current.close();
+              eventSourceRef.current = null;
+            }
+            connect();
+          }, delay);
         }
       };
 
@@ -192,6 +202,14 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
           handleEvent(event);
         } catch (err) {
           console.error('[WS Hook] Error parsing conversation:update event:', err);
+        }
+      });
+
+      eventSource.addEventListener('conversation:hidden', (e: MessageEvent) => {
+        try {
+          handleEvent(JSON.parse(e.data) as WSEvent);
+        } catch (err) {
+          console.error('[WS Hook] Error parsing conversation:hidden event:', err);
         }
       });
 

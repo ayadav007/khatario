@@ -8,6 +8,7 @@ import {
   Smartphone,
   Store,
   Wallet,
+  Zap,
 } from 'lucide-react';
 import type { PaymentProviderCatalogEntry } from '@/lib/payment-providers-catalog';
 import type { PaymentProviderStatusRow } from '@/components/settings/PaymentProviderCard';
@@ -24,6 +25,8 @@ function providerIcon(id: string): LucideIcon {
       return Smartphone;
     case 'instamojo':
       return Store;
+    case 'easebuzz':
+      return Zap;
     default:
       return Landmark;
   }

@@ -5,6 +5,8 @@ import { Loader2, Printer, X, Minus, Plus, Bluetooth } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
+import { PrinterStatusChip } from '@/components/printer/PrinterStatusChip';
 
 interface PurchaseLabelLine {
   row_id: string;
@@ -42,6 +44,7 @@ export function PrintLabelsModal({
 }: PrintLabelsModalProps) {
   const toast = useToastContext();
   const bt = useBluetoothPrinter();
+  const labelPrinter = usePrinterReady(bt, 'labels');
   const [loading, setLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
   const [lines, setLines] = useState<PurchaseLabelLine[]>([]);
@@ -139,18 +142,6 @@ export function PrintLabelsModal({
     setPrinting(true);
     try {
       if (format === 'bluetooth') {
-        if (!bt.supported) {
-          toast.error(
-            'Bluetooth is not available in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-          );
-          return;
-        }
-        if (bt.savedPrinters.length === 0) {
-          toast.error(
-            'No Bluetooth printer paired. Go to Settings → Print & devices to pair one first.'
-          );
-          return;
-        }
         const res = await fetch(
           `/api/labels/print?business_id=${businessId}`,
           {
@@ -178,11 +169,17 @@ export function PrintLabelsModal({
           mfgDate: l.mfgDate ? new Date(l.mfgDate) : null,
           expiryDate: l.expiryDate ? new Date(l.expiryDate) : null,
         }));
-        await bt.printLabels({
-          template: payload.template,
-          lines: hydratedLines,
-          businessName: payload.businessName || '',
-        });
+        const printed = await labelPrinter.print('Connect a printer to print these labels.', (printer) =>
+          bt.printLabels(
+            {
+              template: payload.template,
+              lines: hydratedLines,
+              businessName: payload.businessName || '',
+            },
+            printer
+          )
+        );
+        if (!printed) return;
         toast.success('Labels sent to Bluetooth printer');
         onClose();
         return;
@@ -409,6 +406,9 @@ export function PrintLabelsModal({
                 Bluetooth printer{bt.supported ? '' : ' (unsupported)'}
               </option>
             </select>
+            {format === 'bluetooth' && (
+              <PrinterStatusChip printer={labelPrinter} reason="Connect a printer to print labels." />
+            )}
             <label className="ml-2 inline-flex items-center gap-1 text-gray-700">
               <input
                 type="checkbox"
@@ -439,6 +439,7 @@ export function PrintLabelsModal({
           </div>
         </div>
       </div>
+      {labelPrinter.dialog}
     </div>
   );
 }

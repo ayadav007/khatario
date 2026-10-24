@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   purchase_management: 'Purchase management',
   expense_tracking: 'Expense tracking',
   supplier_management: 'Supplier management',
+  purchase_supplier_hub: 'Supplier Hub',
   reports_basic: 'Basic reports',
   reports_gst: 'GST reports',
   reports_advanced: 'Advanced reports',
@@ -21,10 +22,12 @@ const LABELS: Record<string, string> = {
   party_pricing: 'Party-wise pricing',
   whatsapp_auto_reminders: 'WhatsApp auto reminders',
   barcode_label_printing: 'Barcode label printing',
+  items_scan_onboarding: 'Scan & Add Items',
   barcode_label_from_purchase: 'Labels from purchase',
   barcode_thermal_printer: 'Thermal printing',
   report_builder: 'Custom report builder',
   settings_backup: 'Backup & restore',
+  settings_document_language: 'Print language',
   soft_delete: 'Recycle bin restore',
 };
 

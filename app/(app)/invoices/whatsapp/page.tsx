@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,10 +18,10 @@ export default function WhatsAppPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">WhatsApp & Sharing</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Connect WhatsApp and configure automated reminders
-          </p>
+          <PageHeader
+  title="WhatsApp & Sharing"
+  subtitle="Connect WhatsApp and configure automated reminders"
+/>
         </div>
 
         {/* Tabs */}

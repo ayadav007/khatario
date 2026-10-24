@@ -3,8 +3,36 @@ import { queryOne, query } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import { parseOpeningBalance } from '@/lib/accounting/account-hierarchy';
+import {
+  AccountRuleError,
+  assertGroupMatchesType,
+  assertValidParentAccount,
+  setAccountOpeningBalance,
+} from '@/lib/accounting/account-rules';
+import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS } from '@/lib/accounting/pl-sections';
+import { hasPlSectionColumn } from '@/lib/accounting/pl-section-column';
+import { getClientIP, getUserAgent, logActivity } from '@/lib/activity-logger';
+
+const plSectionLabel = (v: unknown) => (isPlSection(v) ? PL_SECTION_LABELS[v] : 'default');
 
 export const dynamic = 'force-dynamic';
+
+/** Column names come only from these sets; request keys are never used as SQL identifiers otherwise. */
+const EDITABLE_FIELDS = new Set([
+  'account_name',
+  'account_code',
+  'account_group_id',
+  'parent_account_id',
+  'description',
+  'sort_order',
+  'is_active',
+  'opening_balance',
+  'opening_balance_type',
+  'pl_section',
+]);
+// System accounts keep their P&L section (like Zoho's locked system accounts).
+const SYSTEM_EDITABLE_FIELDS = new Set(['description', 'sort_order', 'is_active']);
 
 /**
  * GET /api/accounts/[id]
@@ -24,7 +52,9 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
       const account = await queryOne<Account & { account_group_name: string }>(`
       SELECT 
         a.*,
-        ag.group_name as account_group_name
+        ag.group_name as account_group_name,
+        ag.group_code as account_group_code,
+        ag.group_type as account_group_type
       FROM accounts a
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
       WHERE a.id = $1 AND a.business_id = $2
@@ -59,15 +89,11 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
               WHEN a.nature = 'debit' THEN (le.debit - le.credit)
               ELSE (le.credit - le.debit)
             END
-          ), 0) + 
-          CASE 
-            WHEN a.opening_balance_type = 'debit' THEN a.opening_balance
-            ELSE -a.opening_balance
-          END as balance
+          ), 0) as balance
         FROM accounts a
-        LEFT JOIN ledger_entries le ON le.account_id = a.id AND le.business_id = $2 ${dateFilter}
+        LEFT JOIN ledger_entry_lines le ON le.account_id = a.id AND le.business_id = $2 ${dateFilter}
         WHERE a.id = $1 AND a.business_id = $2
-        GROUP BY a.id, a.opening_balance, a.opening_balance_type
+        GROUP BY a.id
       `, params);
 
         account.current_balance = parseFloat(balanceResult?.balance?.toString() || '0');
@@ -90,6 +116,7 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
  */
 export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
   {
+    feature: 'accounting_chart',
     parseJsonBody: true,
     resolveActingUserId: ({ body, sessionUserId }) => {
       if (body != null && typeof body === 'object') {
@@ -137,9 +164,18 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         throw error;
       }
 
-      // Get account details including is_system flag
-      const existing = await queryOne(
-        'SELECT id, is_system FROM accounts WHERE id = $1 AND business_id = $2',
+      const existing = await queryOne<{
+        id: string;
+        is_system: boolean;
+        account_code: string;
+        account_name: string;
+        account_type: string;
+        account_group_id: string;
+        opening_balance: string;
+        opening_balance_type: 'debit' | 'credit';
+        [field: string]: unknown;
+      }>(
+        `SELECT * FROM accounts WHERE id = $1 AND business_id = $2`,
         [accountId, business_id]
       );
 
@@ -150,71 +186,183 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         );
       }
 
-      // Prevent editing system accounts (except description and sort_order)
-      if (existing.is_system) {
-        const allowedFields = ['description', 'sort_order', 'is_active'];
-        const updateKeys = Object.keys(updates);
-        const invalidFields = updateKeys.filter(key => !allowedFields.includes(key));
+      const updateKeys = Object.keys(updates).filter((k) => updates[k] !== undefined);
+      const unknown = updateKeys.filter((k) => !EDITABLE_FIELDS.has(k));
+      if (unknown.length > 0) {
+        return NextResponse.json(
+          { error: `These fields cannot be updated: ${unknown.join(', ')}`, code: 'FIELD_NOT_EDITABLE' },
+          { status: 400 }
+        );
+      }
 
-        if (invalidFields.length > 0) {
+      if (existing.is_system) {
+        const invalid = updateKeys.filter((k) => !SYSTEM_EDITABLE_FIELDS.has(k));
+        if (invalid.length > 0) {
           return NextResponse.json(
-            { error: `Cannot update system account fields: ${invalidFields.join(', ')}` },
+            { error: `Cannot update system account fields: ${invalid.join(', ')}` },
             { status: 400 }
           );
         }
       }
 
-      // Check if account has transactions (prevent deleting account_code if used)
-      if (updates.account_code && updates.account_code !== existing.account_code) {
+      if (updates.account_code !== undefined && updates.account_code !== existing.account_code) {
         const hasTransactions = await queryOne(
-          'SELECT COUNT(*) as count FROM ledger_entries WHERE account_id = $1',
-          [accountId]
+          `SELECT COUNT(*) as count FROM ledger_entry_lines
+            WHERE account_id = $1 AND business_id = $2 AND voucher_type <> 'opening_balance'`,
+          [accountId, business_id]
         );
-
         if (parseInt(hasTransactions?.count || '0') > 0) {
           return NextResponse.json(
             { error: 'Cannot change account code for account with transactions' },
             { status: 400 }
           );
         }
+        const dup = await queryOne(
+          'SELECT id FROM accounts WHERE business_id = $1 AND account_code = $2 AND id <> $3',
+          [business_id, updates.account_code, accountId]
+        );
+        if (dup) {
+          return NextResponse.json({ error: 'Account code already exists' }, { status: 409 });
+        }
       }
 
-      // Build dynamic UPDATE query
-      const updateFields: string[] = [];
-      const updateValues: any[] = [];
-      let paramIndex = 1;
-
-      Object.entries(updates).forEach(([key, value]) => {
-        if (value !== undefined) {
-          updateFields.push(`${key} = $${paramIndex}`);
-          updateValues.push(value);
-          paramIndex++;
+      const nextGroup = (updates.account_group_id as string | undefined) ?? existing.account_group_id;
+      if (updates.account_group_id !== undefined) {
+        try {
+          await assertGroupMatchesType(business_id, nextGroup, existing.account_type);
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
         }
-      });
+      }
 
-      if (updateFields.length === 0) {
+      if (updates.pl_section !== undefined) {
+        const section = updates.pl_section;
+        if (!isPlSection(section) || !isAllowedPlSection(existing.account_type, section)) {
+          return NextResponse.json(
+            { error: `pl_section ${String(section)} is not valid for a ${existing.account_type} account`, code: 'INVALID_PL_SECTION' },
+            { status: 400 }
+          );
+        }
+        if (!(await hasPlSectionColumn())) {
+          return NextResponse.json(
+            { error: 'Changing the P&L section needs database migration 334.', code: 'PL_SECTION_UNAVAILABLE' },
+            { status: 409 }
+          );
+        }
+      }
+
+      if (updates.parent_account_id === '') updates.parent_account_id = null;
+      if (updates.parent_account_id !== undefined) {
+        try {
+          await assertValidParentAccount({
+            businessId: business_id,
+            accountType: existing.account_type,
+            parentAccountId: (updates.parent_account_id as string | null) || null,
+            accountId,
+          });
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
+        }
+      }
+
+      if (updates.opening_balance !== undefined || updates.opening_balance_type !== undefined) {
+        const opening = parseOpeningBalance(
+          updates.opening_balance !== undefined ? updates.opening_balance : existing.opening_balance,
+          updates.opening_balance_type ?? existing.opening_balance_type ?? 'debit',
+        );
+        if (!opening.ok) {
+          return NextResponse.json({ error: opening.error, code: 'INVALID_OPENING_BALANCE' }, { status: 400 });
+        }
+        try {
+          await setAccountOpeningBalance({
+            businessId: business_id,
+            accountId,
+            amount: opening.amount,
+            type: opening.type,
+          });
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
+        }
+      }
+
+      const updateFields: string[] = [];
+      const updateValues: unknown[] = [];
+      let paramIndex = 1;
+      for (const key of updateKeys) {
+        if (key === 'opening_balance' || key === 'opening_balance_type') continue;
+        updateFields.push(`${key} = $${paramIndex}`);
+        updateValues.push(updates[key]);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0 && updates.opening_balance === undefined && updates.opening_balance_type === undefined) {
         return NextResponse.json(
           { error: 'No fields to update' },
           { status: 400 }
         );
       }
 
-      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-      updateValues.push(accountId, business_id);
+      let account: Account | null;
+      if (updateFields.length > 0) {
+        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+        updateValues.push(accountId, business_id);
+        account = await queryOne<Account>(
+          `UPDATE accounts
+         SET ${updateFields.join(', ')}
+         WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
+         RETURNING *`,
+          updateValues
+        );
+      } else {
+        account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1 AND business_id = $2', [accountId, business_id]);
+      }
 
-      const account = await queryOne<Account>(
-        `UPDATE accounts
-       SET ${updateFields.join(', ')}
-       WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
-       RETURNING *`,
-        updateValues
-      );
+      if (account) {
+        const after = account as unknown as Record<string, unknown>;
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        for (const key of updateKeys) {
+          if (String(existing[key] ?? '') !== String(after[key] ?? '')) {
+            changes[key] = { from: existing[key] ?? null, to: after[key] ?? null };
+          }
+        }
+        if (Object.keys(changes).length > 0) {
+          await logActivity({
+            business_id,
+            user_id: userId,
+            action_type: 'update',
+            module: 'accounts',
+            entity_id: accountId,
+            entity_type: 'account',
+            description: changes.pl_section
+              ? `Moved ${account.account_code} ${account.account_name} in Profit & Loss from ${plSectionLabel(changes.pl_section.from)} to ${plSectionLabel(changes.pl_section.to)}`
+              : `Updated account ${account.account_code} ${account.account_name} (${Object.keys(changes).join(', ')})`,
+            ip_address: getClientIP(ctx.request),
+            user_agent: getUserAgent(ctx.request),
+            metadata: { changes },
+          });
+        }
+      }
 
       return NextResponse.json({ account });
     } catch (error: any) {
       console.error('Error updating account:', error);
+      if (error instanceof AccountRuleError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      if (error?.code === '23505') {
+        return NextResponse.json({ error: 'Account code already exists' }, { status: 409 });
+      }
       return NextResponse.json(
-        { error: error.message || 'Internal server error' },
+        { error: 'Could not update the account. Check the details and try again.' },
         { status: 500 }
       );
     }
@@ -226,7 +374,7 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
  * Delete account (soft delete - set is_active = false)
  */
 export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
-  {},
+  { feature: 'accounting_chart' },
   async (ctx) => {
     try {
       const accountId = ctx.params.id;
@@ -264,29 +412,51 @@ export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
         );
       }
 
-      // Check if account has transactions
-      const hasTransactions = await queryOne(
-        'SELECT COUNT(*) as count FROM ledger_entries WHERE account_id = $1',
-        [accountId]
+      const childCount = await queryOne<{ count: string }>(
+        'SELECT COUNT(*) as count FROM accounts WHERE parent_account_id = $1 AND business_id = $2',
+        [accountId, businessId]
+      );
+      const hasChildren = parseInt(childCount?.count || '0') > 0;
+
+      // Posted lines are the books. Archived ledger_entries rows still reference the
+      // account, so they block a hard delete until that history is retired.
+      const hasTransactions = await queryOne<{ count: string }>(
+        `SELECT (
+            (SELECT COUNT(*) FROM ledger_entry_lines WHERE account_id = $1 AND business_id = $2)
+            + (SELECT COUNT(*) FROM ledger_entries WHERE account_id = $1)
+          )::text as count`,
+        [accountId, businessId]
       );
 
       if (parseInt(hasTransactions?.count || '0') > 0) {
-        // Soft delete - set is_active = false
         await query(
           'UPDATE accounts SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2',
           [accountId, businessId]
         );
-        return NextResponse.json({ message: 'Account deactivated (has transactions)' });
+        return NextResponse.json({
+          message: hasChildren
+            ? 'Account deactivated. Its sub-accounts and existing transactions were left in place.'
+            : 'Account deactivated (has transactions)',
+        });
       }
 
-      // Hard delete if no transactions
+      if (hasChildren) {
+        return NextResponse.json(
+          {
+            error: 'Move or remove the sub-accounts under this account before deleting it.',
+            code: 'ACCOUNT_HAS_CHILDREN',
+          },
+          { status: 400 }
+        );
+      }
+
       await query('DELETE FROM accounts WHERE id = $1 AND business_id = $2', [accountId, businessId]);
 
       return NextResponse.json({ message: 'Account deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting account:', error);
       return NextResponse.json(
-        { error: error.message || 'Internal server error' },
+        { error: 'Could not delete the account. Check whether it still has sub-accounts or transactions.' },
         { status: 500 }
       );
     }

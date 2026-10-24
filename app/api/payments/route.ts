@@ -1,9 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import {
+  getAuthenticatedUserId,
+  getUserIdFromRequest,
+  getBusinessIdFromRequest,
+  getSessionScopedBusinessId,
+  requireStrictSession,
+} from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+import {
+  blankPaymentId,
+  draftDocumentPaymentError,
+  isPaymentUuid,
+  paymentPartyInvalidError,
+  paymentPartyNotFoundError,
+  resolvePaymentReference,
+  walkInReceiptNotSupportedError,
+  parsePaymentMoney,
+  parsePaymentDay,
+  parsePaymentMode,
+  paymentAmountInvalidError,
+  paymentDateInvalidError,
+  paymentModeInvalidError,
+} from '@/lib/accounting/final-document-payment';
+import {
+  claimPaymentIdempotencyKey,
+  completePaymentIdempotencyKey,
+  findPaymentIdempotencyOutcome,
+  idempotencyKeyReusedError,
+  idempotencyReplayUnavailableError,
+  paymentRequestFingerprint,
+  readPaymentIdempotencyKey,
+  scopedPaymentIdempotencyKey,
+  type PaymentIdempotencyOutcome,
+} from '@/lib/accounting/payment-idempotency';
+import { hasTableColumn } from '@/lib/schema-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +52,11 @@ async function getPaymentTransactionsForOrder(
   userId: string,
   orderId: string
 ): Promise<NextResponse> {
+  const hasBranchId = await hasTableColumn('sales_orders', 'branch_id');
   const order = await queryOne<{ id: string; branch_id: string | null }>(
-    `SELECT id, branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`,
+    hasBranchId
+      ? `SELECT id, branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`
+      : `SELECT id, NULL::uuid AS branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`,
     [orderId, businessId]
   );
 
@@ -74,9 +113,10 @@ async function getPaymentTransactionsForOrder(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
 
     const orderIdParam = searchParams.get('order_id');
     if (orderIdParam) {
@@ -110,7 +150,7 @@ export async function GET(request: NextRequest) {
 
       // AUTHORIZATION: payment reconciliation is admin-only (primary admin or settings.read).
       try {
-        await authorize(userId, 'payments', 'read');
+        await authorize(userId, 'payments', 'read', { businessId });
       } catch (error) {
         if (error instanceof AuthorizationError) {
           return error.toNextResponse();
@@ -207,7 +247,7 @@ export async function GET(request: NextRequest) {
 
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'payments', 'read');
+      await authorize(userId, 'payments', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -322,43 +362,121 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function idempotentPaymentResponse(outcome: PaymentIdempotencyOutcome): NextResponse {
+  if (outcome.kind === 'conflict') {
+    return NextResponse.json(idempotencyKeyReusedError(), { status: 409 });
+  }
+  if (outcome.kind === 'unavailable') {
+    return NextResponse.json(idempotencyReplayUnavailableError(), { status: 409 });
+  }
+  return NextResponse.json(
+    { payment: outcome.payment },
+    { status: 201, headers: { 'Idempotent-Replayed': 'true' } }
+  );
+}
+
 /**
  * POST /api/payments
  * Create a new payment (Payment In or Payment Out)
+ *
+ * Retry protection: send `X-Idempotency-Key` (or `Idempotency-Key`). The same key and request
+ * returns the original payment with `Idempotent-Replayed: true`; the same key with a different
+ * request returns 409 IDEMPOTENCY_KEY_REUSED. A stored record that fails ownership, scope, or
+ * payment-consistency checks returns 409 IDEMPOTENCY_REPLAY_UNAVAILABLE with no payment data.
+ * Requests without a key are never deduplicated.
  */
 export async function POST(request: NextRequest) {
   try {
+    // Writes take the acting user and business from the session only; body identity fields are ignored.
+    const created_by = getAuthenticatedUserId(request);
+    const business_id = getSessionScopedBusinessId(request);
+    if (!created_by || !business_id) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    const keyResult = readPaymentIdempotencyKey(request);
+    if (!keyResult.ok) {
+      return NextResponse.json(keyResult.body, { status: 400 });
+    }
+    const idempotencyKey = keyResult.key;
+
     const body = await request.json();
-    // Writes must never use client-supplied business_id alone — JWT/session is source of truth
-    const sessionBusinessId = getSessionScopedBusinessId(request);
-    const business_id = sessionBusinessId;
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that processed this payment
-      type, // 'receivable' (Payment In) or 'payable' (Payment Out)
       customer_id,
       supplier_id,
-      reference_type, // 'invoice' or 'purchase'
-      reference_id,
-      amount,
-      payment_mode = 'cash',
       payment_date,
       notes,
-      created_by, // User ID who created the payment
+      tds_section,
     } = body;
+    const referenceDecision = resolvePaymentReference({
+      type: body.type,
+      referenceType: body.reference_type,
+      referenceId: body.reference_id,
+    });
+    if (!referenceDecision.ok) {
+      return NextResponse.json(referenceDecision.body, { status: referenceDecision.status });
+    }
+    const { type, referenceType: reference_type, referenceId: reference_id } = referenceDecision;
 
-    if (!business_id || !type || !amount || Number(amount) <= 0) {
+    const amount = parsePaymentMoney(body.amount);
+    if (amount === null) {
+      return NextResponse.json(paymentAmountInvalidError('amount must be a non-negative number'), { status: 400 });
+    }
+    const rawTds = body.tds_amount;
+    const parsedTds = rawTds === undefined || rawTds === null || rawTds === '' ? 0 : parsePaymentMoney(rawTds);
+    if (parsedTds === null) {
+      return NextResponse.json(paymentAmountInvalidError('tds_amount must be a non-negative number'), { status: 400 });
+    }
+    const tdsAmount = Math.round(parsedTds * 100) / 100;
+    const settles = Math.round((amount + tdsAmount) * 100) / 100;
+
+    if (type === 'payable' && tdsAmount > 0 && !tds_section) {
       return NextResponse.json(
-        { error: 'business_id, type, and amount are required' },
+        { error: 'tds_section is required when deducting TDS on a payment out', code: 'TDS_SECTION_REQUIRED' },
         { status: 400 }
       );
     }
 
-    if (!created_by) {
+    if (settles <= 0) {
       return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        paymentAmountInvalidError('type and amount are required'),
         { status: 400 }
       );
     }
+    // An on-account payment has no document to settle with TDS alone, so it must move cash.
+    if (!reference_id && amount <= 0) {
+      return NextResponse.json(
+        paymentAmountInvalidError('An on-account payment must have an amount greater than zero'),
+        { status: 400 }
+      );
+    }
+
+    const paymentDay = parsePaymentDay(payment_date);
+    if (paymentDay === false) {
+      return NextResponse.json(paymentDateInvalidError(), { status: 400 });
+    }
+    const payment_mode = parsePaymentMode(body.payment_mode);
+    if (payment_mode === null) {
+      return NextResponse.json(paymentModeInvalidError(), { status: 400 });
+    }
+
+    const fingerprint = idempotencyKey
+      ? paymentRequestFingerprint({
+          type,
+          referenceType: reference_type,
+          referenceId: reference_id,
+          customerId: !reference_id && type === 'receivable' ? blankPaymentId(customer_id) || null : null,
+          supplierId: !reference_id && type === 'payable' ? blankPaymentId(supplier_id) || null : null,
+          branchId: blankPaymentId(branch_id) || null,
+          amount,
+          tdsAmount,
+          tdsSection: tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          paymentMode: payment_mode,
+          paymentDay,
+          notes: typeof notes === 'string' && notes.length > 0 ? notes : null,
+        })
+      : null;
+    const scopedKey = idempotencyKey ? scopedPaymentIdempotencyKey(idempotencyKey) : null;
 
     // AUTHORIZATION: Check create permission
     // Note: We'll check branch access after branch_id is determined
@@ -432,6 +550,25 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    // A retry of a committed request returns the original payment even if a period has since
+    // been locked or the document is now settled.
+    if (scopedKey && fingerprint) {
+      const prior = await findPaymentIdempotencyOutcome(getPool(), {
+        businessId: business_id,
+        scopedKey,
+        hash: fingerprint.hash,
+      });
+      if (prior) return idempotentPaymentResponse(prior);
+    }
+
+    const lockRes = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [payment_date || new Date()],
+      action: 'record a payment',
+    });
+    if (lockRes) return lockRes;
+
     // Validate branch exists, is active, and belongs to business (if not already validated)
     if (finalBranchId && branch_id) {
       const branchCheck = await queryOne<{ id: string; is_active: boolean }>(`
@@ -454,27 +591,66 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (type === 'receivable' && !customer_id && !reference_id) {
+    const requestedCustomerId = blankPaymentId(customer_id);
+    const requestedSupplierId = blankPaymentId(supplier_id);
+
+    if (!reference_id && requestedCustomerId && requestedSupplierId) {
       return NextResponse.json(
-        { error: 'customer_id or reference_id is required for receivable payments' },
+        paymentPartyInvalidError('A payment can name a customer or a supplier, not both'),
         { status: 400 }
       );
     }
 
-    if (type === 'payable' && !supplier_id && !reference_id) {
+    if (type === 'receivable' && !requestedCustomerId && !reference_id) {
       return NextResponse.json(
-        { error: 'supplier_id or reference_id is required for payable payments' },
+        paymentPartyInvalidError('customer_id is required for an on-account receipt'),
         { status: 400 }
       );
     }
 
-    // Get customer/supplier from reference if not provided
-    let finalCustomerId = customer_id;
-    let finalSupplierId = supplier_id;
+    if (type === 'payable' && !requestedSupplierId && !reference_id) {
+      return NextResponse.json(
+        paymentPartyInvalidError('supplier_id is required for an on-account payment'),
+        { status: 400 }
+      );
+    }
+
+    // Document payments take the party from the document. On-account payments must
+    // name a party that belongs to this session business before any row is written.
+    let finalCustomerId: string | null = null;
+    let finalSupplierId: string | null = null;
+
+    if (!reference_id && type === 'receivable') {
+      if (!isPaymentUuid(requestedCustomerId)) {
+        return NextResponse.json(paymentPartyInvalidError('customer_id must be a customer id'), { status: 400 });
+      }
+      const customer = await queryOne<{ id: string }>(
+        'SELECT id FROM customers WHERE id = $1 AND business_id = $2',
+        [requestedCustomerId, business_id]
+      );
+      if (!customer) {
+        return NextResponse.json(paymentPartyNotFoundError('customer'), { status: 404 });
+      }
+      finalCustomerId = customer.id;
+    }
+
+    if (!reference_id && type === 'payable') {
+      if (!isPaymentUuid(requestedSupplierId)) {
+        return NextResponse.json(paymentPartyInvalidError('supplier_id must be a supplier id'), { status: 400 });
+      }
+      const supplier = await queryOne<{ id: string }>(
+        'SELECT id FROM suppliers WHERE id = $1 AND business_id = $2',
+        [requestedSupplierId, business_id]
+      );
+      if (!supplier) {
+        return NextResponse.json(paymentPartyNotFoundError('supplier'), { status: 404 });
+      }
+      finalSupplierId = supplier.id;
+    }
 
     if (reference_type === 'invoice' && reference_id) {
       const invoice = await queryOne(
-        'SELECT customer_id, business_id FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT customer_id, business_id, status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [reference_id, business_id]
       );
       if (!invoice) {
@@ -490,18 +666,31 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-      finalCustomerId = invoice.customer_id;
-      if (!finalCustomerId && type === 'receivable') {
+      if (invoice.document_type === 'proforma_invoice') {
         return NextResponse.json(
-          { error: 'Invoice does not have a customer associated' },
+          { error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' },
           { status: 400 }
         );
+      }
+      if (invoice.status === 'cancelled') {
+        return NextResponse.json(
+          { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
+          { status: 400 }
+        );
+      }
+      if (invoice.status !== 'final') {
+        return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+      }
+      finalCustomerId = invoice.customer_id;
+      finalSupplierId = null;
+      if (!finalCustomerId) {
+        return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
       }
     }
 
     if (reference_type === 'purchase' && reference_id) {
       const purchase = await queryOne(
-        'SELECT supplier_id, business_id FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT supplier_id, business_id, status FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [reference_id, business_id]
       );
       if (!purchase) {
@@ -517,10 +706,20 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-      finalSupplierId = purchase.supplier_id;
-      if (!finalSupplierId && type === 'payable') {
+      if (purchase.status === 'cancelled') {
         return NextResponse.json(
-          { error: 'Purchase does not have a supplier associated' },
+          { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+          { status: 400 }
+        );
+      }
+      if (purchase.status !== 'final') {
+        return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
+      }
+      finalSupplierId = purchase.supplier_id;
+      finalCustomerId = null;
+      if (!finalSupplierId) {
+        return NextResponse.json(
+          paymentPartyInvalidError('Purchase does not have a supplier associated'),
           { status: 400 }
         );
       }
@@ -532,15 +731,100 @@ export async function POST(request: NextRequest) {
     // the payment row is rolled back too — no orphan payments without ledgers.
     const client = await getPool().connect();
     let payment: any = null;
+    let idempotencyRowId: string | null = null;
     try {
       await client.query('BEGIN');
+
+      if (scopedKey && fingerprint) {
+        const claim = await claimPaymentIdempotencyKey(client, {
+          businessId: business_id,
+          userId: created_by,
+          scopedKey,
+          hash: fingerprint.hash,
+          storedPayload: fingerprint.storedPayload,
+        });
+        if (!claim.claimed) {
+          await client.query('ROLLBACK');
+          return idempotentPaymentResponse(claim.outcome);
+        }
+        idempotencyRowId = claim.rowId;
+      }
+
+      if (reference_id && (reference_type === 'invoice' || reference_type === 'purchase')) {
+        const locked = await client.query<{ status: string; document_type: string | null }>(
+          reference_type === 'invoice'
+            ? `SELECT status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`
+            : `SELECT status, NULL::text AS document_type FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+          [reference_id, business_id]
+        );
+        const doc = locked.rows[0];
+        if (doc) {
+          if (reference_type === 'invoice' && doc.document_type === 'proforma_invoice') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' },
+              { status: 400 }
+            );
+          }
+          if (doc.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              reference_type === 'invoice'
+                ? { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' }
+                : { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+              { status: 400 }
+            );
+          }
+          if (doc.status !== 'final') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(draftDocumentPaymentError(reference_type === 'invoice' ? 'invoice' : 'purchase'), {
+              status: 409,
+            });
+          }
+        }
+      }
+
+      if (type === 'receivable' && !finalCustomerId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
+      }
+      if (type === 'payable' && !finalSupplierId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          paymentPartyInvalidError('A payment out requires a supplier in this business'),
+          { status: 400 }
+        );
+      }
+
+      const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+        '@/lib/accounting/settlement-accounts-db'
+      );
+      const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+      let settlementAccountId: string | null = null;
+      try {
+        const resolved = await resolveSettlementForBusiness(
+          business_id,
+          payment_mode || 'cash',
+          readSettlementAccountId(body.settlement_account_id),
+        );
+        settlementAccountId = resolved.accountId;
+      } catch (settlementError) {
+        await client.query('ROLLBACK');
+        if (settlementError instanceof SettlementAccountError) {
+          return NextResponse.json(
+            { error: settlementError.message, code: settlementError.code },
+            { status: settlementError.status },
+          );
+        }
+        throw settlementError;
+      }
 
       // Insert payment
       const paymentRes = await client.query(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING *`,
         [
           business_id,
@@ -554,6 +838,10 @@ export async function POST(request: NextRequest) {
           payment_mode,
           payment_date || new Date(),
           notes || null,
+          tdsAmount,
+          tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          settlementAccountId,
+          created_by,
         ],
       );
       payment = paymentRes.rows[0];
@@ -561,24 +849,40 @@ export async function POST(request: NextRequest) {
       // Update invoice/purchase paid_amount and customer/supplier balance
       if (reference_type === 'invoice' && reference_id) {
         const invRes = await client.query(
-          'SELECT paid_amount, grand_total, customer_id FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          'SELECT paid_amount, grand_total, customer_id, status FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
           [reference_id, business_id],
         );
         const invoice = invRes.rows[0];
         if (invoice) {
-          const newPaidAmount = Number(invoice.paid_amount || 0) + Number(amount);
-          const balance = Math.max(0, Number(invoice.grand_total || 0) - newPaidAmount);
-          let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-          if (newPaidAmount <= 0) paymentStatus = 'unpaid';
-          else if (balance <= 0) paymentStatus = 'paid';
-          else paymentStatus = 'partially_paid';
+          if (invoice.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
+              { status: 400 },
+            );
+          }
+          const current = await recomputeInvoiceBalance(client, reference_id, business_id);
+          const outstanding = current?.balance_amount ?? 0;
+          if (settles > outstanding + 0.01) {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              {
+                error: `Amount ₹${settles.toFixed(2)}${tdsAmount > 0 ? ' (including TDS)' : ''} exceeds the invoice balance of ₹${outstanding.toFixed(2)} (after credit/debit notes). Record the excess as an advance instead.`,
+                code: 'PAYMENT_EXCEEDS_BALANCE',
+                outstanding,
+              },
+              { status: 400 },
+            );
+          }
 
           await client.query(
             `UPDATE invoices
-             SET paid_amount = $1, balance_amount = $2, payment_status = $3, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $4 AND business_id = $5`,
-            [newPaidAmount, balance, paymentStatus, reference_id, business_id],
+                SET paid_amount = COALESCE(paid_amount, 0) + $1,
+                    tds_received = COALESCE(tds_received, 0) + $2
+              WHERE id = $3 AND business_id = $4`,
+            [amount, tdsAmount, reference_id, business_id],
           );
+          await recomputeInvoiceBalance(client, reference_id, business_id);
 
           if (invoice.customer_id) {
             await client.query(
@@ -586,7 +890,7 @@ export async function POST(request: NextRequest) {
                SET current_balance = current_balance - $1,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = $2 AND business_id = $3`,
-              [amount, invoice.customer_id, business_id],
+              [settles, invoice.customer_id, business_id],
             );
           }
         }
@@ -594,24 +898,41 @@ export async function POST(request: NextRequest) {
 
       if (reference_type === 'purchase' && reference_id) {
         const purRes = await client.query(
-          'SELECT paid_amount, grand_total, supplier_id FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          `SELECT paid_amount, grand_total, tax_total, is_reverse_charge, COALESCE(tds_deducted, 0) AS tds_deducted,
+                  COALESCE(advance_adjusted, 0) AS advance_adjusted, supplier_id, status
+             FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
           [reference_id, business_id],
         );
         const purchase = purRes.rows[0];
         if (purchase) {
-          const newPaidAmount = Number(purchase.paid_amount || 0) + Number(amount);
-          const balance = Math.max(0, Number(purchase.grand_total || 0) - newPaidAmount);
-          let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-          if (newPaidAmount <= 0) paymentStatus = 'unpaid';
-          else if (balance <= 0) paymentStatus = 'paid';
-          else paymentStatus = 'partially_paid';
+          if (purchase.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+              { status: 400 },
+            );
+          }
+          const outstanding = purchaseOutstanding(purchase);
+          if (settles > outstanding + 0.01) {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              {
+                error: `Amount ₹${settles.toFixed(2)}${tdsAmount > 0 ? ' (including TDS)' : ''} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}; reverse-charge GST is paid to the government, not the supplier).`,
+                code: 'PAYMENT_EXCEEDS_BALANCE',
+                outstanding,
+              },
+              { status: 400 },
+            );
+          }
 
           await client.query(
             `UPDATE purchases
-             SET paid_amount = $1, balance_amount = $2, payment_status = $3, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $4 AND business_id = $5`,
-            [newPaidAmount, balance, paymentStatus, reference_id, business_id],
+                SET paid_amount = COALESCE(paid_amount, 0) + $1,
+                    tds_deducted = COALESCE(tds_deducted, 0) + $2
+              WHERE id = $3 AND business_id = $4`,
+            [amount, tdsAmount, reference_id, business_id],
           );
+          await recomputePurchaseBalance(client, reference_id, business_id);
 
           if (purchase.supplier_id) {
             await client.query(
@@ -619,7 +940,7 @@ export async function POST(request: NextRequest) {
                SET current_balance = current_balance - $1,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = $2 AND business_id = $3`,
-              [amount, purchase.supplier_id, business_id],
+              [settles, purchase.supplier_id, business_id],
             );
           }
         }
@@ -632,7 +953,7 @@ export async function POST(request: NextRequest) {
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $2 AND business_id = $3`,
-          [amount, finalCustomerId, business_id],
+          [settles, finalCustomerId, business_id],
         );
       }
 
@@ -642,7 +963,45 @@ export async function POST(request: NextRequest) {
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $2 AND business_id = $3`,
-          [amount, finalSupplierId, business_id],
+          [settles, finalSupplierId, business_id],
+        );
+      }
+
+      if (type === 'payable' && tdsAmount > 0 && finalSupplierId) {
+        const txDate = new Date(payment_date || new Date());
+        const y = txDate.getFullYear();
+        const m = txDate.getMonth() + 1;
+        const financialYear = m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
+        const quarter = m >= 4 && m <= 6 ? 'Q1' : m >= 7 && m <= 9 ? 'Q2' : m >= 10 ? 'Q3' : 'Q4';
+        const section = String(tds_section).slice(0, 20);
+        const catRes = await client.query(
+          `SELECT id FROM tds_categories WHERE section_code = $1 AND (business_id = $2 OR business_id IS NULL)
+            ORDER BY business_id NULLS LAST LIMIT 1`,
+          [section, business_id],
+        );
+        await client.query(
+          `INSERT INTO tds_transactions (
+             business_id, supplier_id, payment_id, purchase_id, tds_category_id, section_code,
+             payment_amount, tds_rate, tds_amount, net_payment_amount,
+             transaction_date, financial_year, quarter, notes, created_by
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            business_id,
+            finalSupplierId,
+            payment.id,
+            reference_type === 'purchase' ? reference_id : null,
+            catRes.rows[0]?.id ?? null,
+            section,
+            settles,
+            Math.round((tdsAmount / settles) * 10000) / 100,
+            tdsAmount,
+            Number(amount) || 0,
+            payment_date || new Date(),
+            financialYear,
+            quarter,
+            'Deducted on payment out',
+            created_by,
+          ],
         );
       }
 
@@ -657,15 +1016,24 @@ export async function POST(request: NextRequest) {
         customerId: finalCustomerId || null,
         supplierId: finalSupplierId || null,
         paymentMode: payment_mode || 'cash',
+        settlementAccountId,
         referenceNumber: reference_id ? `${reference_type}-${reference_id.substring(0, 8)}` : undefined,
         description: notes || `Payment ${type === 'receivable' ? 'received' : 'made'}${reference_id ? ` for ${reference_type}` : ''}`,
         branchId: finalBranchId,
+        tdsAmount,
         poolClient: client,
       });
+
+      if (idempotencyRowId) {
+        await completePaymentIdempotencyKey(client, idempotencyRowId, payment.id);
+      }
 
       await client.query('COMMIT');
     } catch (txError: any) {
       await client.query('ROLLBACK').catch(() => {});
+      if (txError?.name === 'SettlementAccountError') {
+        return NextResponse.json({ error: txError.message, code: txError.code }, { status: txError.status || 400 });
+      }
       console.error('Error creating payment (transaction rolled back):', txError);
       return NextResponse.json(
         {

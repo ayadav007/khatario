@@ -3,26 +3,33 @@
  * Distinguishes subscription/plan denial vs role permission denial.
  */
 
-import { loadCapabilitySnapshot } from '@/lib/capability-snapshot';
+import { loadCapabilitySnapshot, type CapabilitySnapshot } from '@/lib/capability-snapshot';
 import {
-  normalizeModule,
+  FEATURE_ALIAS_MAP,
+  FEATURE_REGISTRY_IDS,
   normalizeFeature,
   normalizeAction,
+  resolvePermissionModuleKeys,
+  type PermissionAction,
 } from '@/lib/capability-normalizer';
-import { getHrPlanFeatureForCapabilityCheck } from '@/lib/hr-plan-features';
 
-function hasAddonFeature(
-  addons: { addon_type: string; status: string; end_date?: string }[] | undefined,
-  addonType: string
-): boolean {
-  if (!Array.isArray(addons) || addons.length === 0) return false;
-  return addons.some(
-    (a) =>
-      a.addon_type === addonType &&
-      a.status === 'active' &&
-      (!a.end_date || new Date(a.end_date) >= new Date())
-  );
+/** Stored role flag for each canonical action, plus legacy key names. */
+const ACTION_FLAGS: Record<PermissionAction, string[]> = {
+  read: ['can_view', 'can_read'],
+  create: ['can_add', 'can_create'],
+  update: ['can_modify', 'can_update'],
+  delete: ['can_delete'],
+  export: ['can_share', 'can_export'],
+};
+
+function planFeatureForModule(resource: string): string | null {
+  if (Object.prototype.hasOwnProperty.call(FEATURE_ALIAS_MAP, resource)) {
+    return FEATURE_ALIAS_MAP[resource];
+  }
+  if ((FEATURE_REGISTRY_IDS as readonly string[]).includes(resource)) return resource;
+  return null;
 }
+import { getHrPlanFeatureForCapabilityCheck } from '@/lib/hr-plan-features';
 
 export type CapabilityDenialReason = 'FEATURE_NOT_IN_PLAN' | 'PERMISSION_DENIED';
 
@@ -40,7 +47,7 @@ export interface CapabilityEvalInput {
  */
 export function evaluateCapabilityAccess(
   input: CapabilityEvalInput
-): { allowed: boolean; denialReason?: CapabilityDenialReason; indeterminate?: boolean } {
+): CapabilityEvalResult {
   const {
     resource: res,
     action,
@@ -54,7 +61,29 @@ export function evaluateCapabilityAccess(
     return { allowed: false, indeterminate: true };
   }
 
-  const snapshot = loadCapabilitySnapshot(businessId, userId);
+  return evaluateCapabilityWithSnapshot(loadCapabilitySnapshot(businessId, userId), {
+    resource: res,
+    action,
+    sessionIsPrimaryAdmin,
+    sessionPermissions,
+  });
+}
+
+/** The parts of a capability snapshot the evaluation reads; the server builds one from the database. */
+export type CapabilityEvalSnapshot = Pick<CapabilitySnapshot, 'permissions' | 'isPrimaryAdmin' | 'enabledFeatures'>;
+
+export type CapabilityEvalResult = {
+  allowed: boolean;
+  denialReason?: CapabilityDenialReason;
+  indeterminate?: boolean;
+};
+
+/** Same rules as `evaluateCapabilityAccess`, on a snapshot the caller supplies (works on the server). */
+export function evaluateCapabilityWithSnapshot(
+  snapshot: CapabilityEvalSnapshot | null,
+  input: Pick<CapabilityEvalInput, 'resource' | 'action' | 'sessionIsPrimaryAdmin' | 'sessionPermissions'>
+): CapabilityEvalResult {
+  const { resource: res, action, sessionIsPrimaryAdmin, sessionPermissions } = input;
 
   const hrPlanFeature = getHrPlanFeatureForCapabilityCheck(res);
   if (hrPlanFeature) {
@@ -63,8 +92,19 @@ export function evaluateCapabilityAccess(
     }
   }
 
-  if (sessionIsPrimaryAdmin) return { allowed: true };
-  if (snapshot?.isPrimaryAdmin) return { allowed: true };
+  // The account owner skips role checks, but not the plan. A missing snapshot does not lock them out.
+  if (sessionIsPrimaryAdmin || snapshot?.isPrimaryAdmin) {
+    const planFeature = planFeatureForModule(res);
+    if (
+      planFeature &&
+      snapshot &&
+      Array.isArray(snapshot.enabledFeatures) &&
+      !snapshot.enabledFeatures.includes(planFeature)
+    ) {
+      return { allowed: false, denialReason: 'FEATURE_NOT_IN_PLAN' };
+    }
+    return { allowed: true };
+  }
 
   const mergedPermissions = {
     ...(sessionPermissions || {}),
@@ -76,25 +116,30 @@ export function evaluateCapabilityAccess(
     return { allowed: false, indeterminate: true };
   }
 
-  const canonicalModule = normalizeModule(res);
   const canonicalAction = normalizeAction(action || 'view');
-  const featureRegistryId = normalizeFeature(res);
+  const moduleKeys = resolvePermissionModuleKeys(res);
 
-  if (
-    featureRegistryId === 'integration_whatsapp_bot' ||
-    featureRegistryId === 'whatsapp_send_message' ||
-    featureRegistryId === 'whatsapp_manual'
-  ) {
-    if (hasAddonFeature(snapshot?.addons || [], 'whatsapp_bot')) {
-      return { allowed: true };
+  // Role-permission module: the role must hold the flag; the plan can only take access away.
+  if (moduleKeys.length > 0) {
+    const flags = ACTION_FLAGS[canonicalAction];
+    const granted = moduleKeys.some((key) => {
+      const perms = mergedPermissions[key];
+      return !!perms && flags.some((flag) => perms[flag] === true);
+    });
+    if (!granted) return { allowed: false, denialReason: 'PERMISSION_DENIED' };
+    const planFeature = planFeatureForModule(res);
+    const enabledFeatures = snapshot?.enabledFeatures;
+    if (planFeature && Array.isArray(enabledFeatures) && !enabledFeatures.includes(planFeature)) {
+      return { allowed: false, denialReason: 'FEATURE_NOT_IN_PLAN' };
     }
+    return { allowed: true };
   }
 
-  const modulePerms = mergedPermissions[canonicalModule];
-  if (modulePerms) {
-    const permKey = `can_${canonicalAction}` as keyof typeof modulePerms;
-    if (modulePerms[permKey]) return { allowed: true };
-  }
+  const normalized = normalizeFeature(res);
+  const featureRegistryId =
+    normalized === 'whatsapp_send_message' || normalized === 'whatsapp_manual'
+      ? 'integration_whatsapp_manual'
+      : normalized;
 
   if (snapshot?.enabledFeatures?.includes(featureRegistryId)) {
     return { allowed: true };

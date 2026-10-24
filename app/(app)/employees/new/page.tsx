@@ -4,15 +4,15 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { Loader2, User, Briefcase, Building, Calendar, DollarSign, Phone, Mail, CreditCard, FileText, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import Link from 'next/link';
 import { Toast, ToastType } from '@/components/ui/Toast';
@@ -24,11 +24,16 @@ import {
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
+import { EmployeeLoginRoleFields } from '@/components/hr/EmployeeLoginRoleFields';
+import { useCapabilityCheck } from '@/hooks/useCapability';
+import { hrPlanFlags } from '@/lib/subscription/hr-lite';
 
 export default function NewEmployeePage() {
   const router = useRouter();
   const { business, user } = useAuth();
   const { canAdd, loading: permissionsLoading } = usePermissions();
+  const { hasCapability } = useCapabilityCheck();
+  const hrPlan = hrPlanFlags((key) => hasCapability(key, 'view'));
   const [loading, setLoading] = useState(false);
   
   // Check authorization before rendering form
@@ -41,7 +46,8 @@ export default function NewEmployeePage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-  const [sendPortalInvite, setSendPortalInvite] = useState(true);
+  // Off by default — HR Lite has no employee portal; invite only when plan allows.
+  const [sendPortalInvite, setSendPortalInvite] = useState(false);
   const [portalInviteVia, setPortalInviteVia] = useState<'email' | 'whatsapp' | 'both'>('whatsapp');
   const [createdInvite, setCreatedInvite] = useState<{
     temporary_password: string;
@@ -59,6 +65,7 @@ export default function NewEmployeePage() {
     email: '',
     phone: '',
     password: '',
+    role_id: '',
     
     // Employee fields
     employee_code: '', // Auto-generated if empty
@@ -69,6 +76,7 @@ export default function NewEmployeePage() {
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
     access_type: 'attendance_only' as 'attendance_only', // Employees only have attendance access
+    pay_basis: 'monthly' as 'daily' | 'monthly',
     salary: '',
     
     // Contact & Emergency
@@ -126,8 +134,10 @@ export default function NewEmployeePage() {
       return;
     }
 
-    // Note: Employees are attendance-only, so password is not required
-    // Only users (with console access) need passwords
+    if (formData.role_id && formData.password.trim().length < 8) {
+      setToast({ message: 'A sign-in role needs a password of at least 8 characters, with a letter and a number', type: 'error' });
+      return;
+    }
 
     setLoading(true);
 
@@ -137,26 +147,27 @@ export default function NewEmployeePage() {
         name: formData.name,
         email: formData.email || null,
         phone: formData.phone,
-        password: null, // Employees are attendance-only, no password needed
+        password: formData.role_id ? formData.password : null,
+        role_id: formData.role_id || null,
         employee_code: formData.employee_code || null, // Auto-generate if empty
         designation: formData.designation || null,
         department: formData.department || null,
-        default_shift_id: formData.default_shift_id || null,
+        default_shift_id: hrPlan.shifts ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: formData.reporting_manager_id || null,
+        reporting_manager_id: hrPlan.leaves ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
+        pay_basis: formData.pay_basis,
         emergency_contact_name: formData.emergency_contact_name || null,
         emergency_contact_phone: formData.emergency_contact_phone.replace(/\D/g, '') || null,
         bank_account_number: formData.bank_account_number || null,
         bank_ifsc: formData.bank_ifsc || null,
         bank_name: formData.bank_name || null,
-        pan_number: formData.pan_number || null,
-        aadhaar_number: formData.aadhaar_number || null,
-        // Note: role_id is not set - employees don't have console access, so no roles
-        created_by_user_id: user?.id, // Required for authorization
-        send_portal_invite: sendPortalInvite,
+        pan_number: hrPlan.payrollSetup ? formData.pan_number || null : null,
+        aadhaar_number: hrPlan.payrollSetup ? formData.aadhaar_number || null : null,
+        created_by_user_id: user?.id,
+        send_portal_invite: hrPlan.portal ? sendPortalInvite : false,
         portal_invite_via: portalInviteVia,
       };
 
@@ -176,7 +187,7 @@ export default function NewEmployeePage() {
         } else {
           setToast({ message: 'Employee created successfully', type: 'success' });
           setTimeout(() => {
-            router.push(`/employees/${data.employee.id}`);
+            router.push('/employees');
           }, 1000);
         }
       } else {
@@ -212,22 +223,18 @@ export default function NewEmployeePage() {
 
   return (
     
-      <div className="space-y-6">
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
         <MobileDuplicatePageChrome
           title="New employee"
-          description="Create a new employee record"
+          description="Staff record for attendance and salary. Console users are added under Settings → Users."
         />
 
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Form */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Basic Information */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <User className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Basic Information</h2>
-                </div>
+          <div className="space-y-6">
+              <AnnotatedFormSection
+                title="Basic information"
+                description="Name and contact details used on attendance and HR records."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <Input
@@ -253,7 +260,7 @@ export default function NewEmployeePage() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="john@example.com"
-                    helperText="Optional — needed only if you send the portal invite by email"
+                    helperText="Optional"
                   />
                   <Input
                     label="Employee Code (Optional)"
@@ -264,20 +271,22 @@ export default function NewEmployeePage() {
                     helperText="Leave empty to auto-generate (EMP001, EMP002, etc.)"
                   />
                   <div className="md:col-span-2">
-                    <p className="text-sm text-text-secondary flex items-center gap-1">
-                      <AlertCircle className="w-4 h-4" />
-                      Note: Employees have attendance-only access. To grant console access (create invoices, purchases, etc.), create a User instead.
-                    </p>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <EmployeeLoginRoleFields
+                        roleId={formData.role_id}
+                        password={formData.password}
+                        onRoleId={(role_id) => setFormData((prev) => ({ ...prev, role_id, password: role_id ? prev.password : '' }))}
+                        onPassword={(password) => setFormData((prev) => ({ ...prev, password }))}
+                      />
+                    </div>
                   </div>
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Employment Details */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Briefcase className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Employment Details</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Employment"
+                description="Role, schedule, and compensation details."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <HrOrgCatalogField
                     businessId={business?.id}
@@ -297,11 +306,13 @@ export default function NewEmployeePage() {
                     onChange={(v) => setFormData({ ...formData, department: v })}
                     placeholder="e.g. Sales"
                   />
-                  <EmployeeShiftSelect
-                    businessId={business?.id}
-                    value={formData.default_shift_id}
-                    onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
-                  />
+                  {hrPlan.shifts ? (
+                    <EmployeeShiftSelect
+                      businessId={business?.id}
+                      value={formData.default_shift_id}
+                      onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
+                    />
+                  ) : null}
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">
                       Employment Type
@@ -317,24 +328,22 @@ export default function NewEmployeePage() {
                       <option value="contract">Contract</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">
-                      Access Type
-                    </label>
-                    <select
-                      name="access_type"
-                      value={formData.access_type}
-                      onChange={handleChange}
-                      className="input"
-                      disabled
-                    >
-                      <option value="attendance_only">Attendance Only</option>
-                    </select>
-                    <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      Employees can only mark attendance via face recognition or OTP login
-                    </p>
-                  </div>
+                  {hrPlan.portal ? (
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        Access Type
+                      </label>
+                      <select
+                        name="access_type"
+                        value={formData.access_type}
+                        onChange={handleChange}
+                        className="input"
+                        disabled
+                      >
+                        <option value="attendance_only">Attendance Only</option>
+                      </select>
+                    </div>
+                  ) : null}
                   <Input
                     label="Joining Date"
                     name="joining_date"
@@ -342,7 +351,7 @@ export default function NewEmployeePage() {
                     value={formData.joining_date}
                     onChange={handleChange}
                   />
-                  {business?.id && user?.id ? (
+                  {hrPlan.leaves && business?.id && user?.id ? (
                     <ReportingManagerSelect
                       businessId={business.id}
                       userId={user.id}
@@ -355,8 +364,23 @@ export default function NewEmployeePage() {
                       }
                     />
                   ) : null}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-primary" htmlFor="pay_basis">
+                      Pay type
+                    </label>
+                    <select
+                      id="pay_basis"
+                      name="pay_basis"
+                      className="input w-full"
+                      value={formData.pay_basis}
+                      onChange={handleChange}
+                    >
+                      <option value="daily">Daily wages</option>
+                      <option value="monthly">Monthly salary</option>
+                    </select>
+                  </div>
                   <Input
-                    label="Salary (Optional)"
+                    label={formData.pay_basis === 'daily' ? 'Daily wage' : 'Monthly salary'}
                     name="salary"
                     type="number"
                     inputMode="decimal"
@@ -365,14 +389,12 @@ export default function NewEmployeePage() {
                     placeholder="0.00"
                   />
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Emergency Contact */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Phone className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Emergency Contact</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Emergency contact"
+                description="Person to reach if the employee cannot be contacted."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Contact Name"
@@ -390,14 +412,12 @@ export default function NewEmployeePage() {
                     nationalPlaceholder="Emergency mobile"
                   />
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Bank Details */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <CreditCard className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Bank Details (Optional)</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Bank details"
+                description="Optional — used for salary payouts."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Account Number"
@@ -423,35 +443,35 @@ export default function NewEmployeePage() {
                     />
                   </div>
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Documents */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Documents (Optional)</h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="PAN Number"
-                    name="pan_number"
-                    value={formData.pan_number}
-                    onChange={handleChange}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                  />
-                  <Input
-                    label="Aadhaar Number"
-                    name="aadhaar_number"
-                    value={formData.aadhaar_number}
-                    onChange={handleChange}
-                    placeholder="1234 5678 9012"
-                    maxLength={12}
-                  />
-                </div>
-              </Card>
+              {hrPlan.payrollSetup ? (
+                <AnnotatedFormSection
+                  title="Documents"
+                  description="Optional identity and tax identifiers."
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="PAN Number"
+                      name="pan_number"
+                      value={formData.pan_number}
+                      onChange={handleChange}
+                      placeholder="ABCDE1234F"
+                      maxLength={10}
+                    />
+                    <Input
+                      label="Aadhaar Number"
+                      name="aadhaar_number"
+                      value={formData.aadhaar_number}
+                      onChange={handleChange}
+                      placeholder="1234 5678 9012"
+                      maxLength={12}
+                    />
+                  </div>
+                </AnnotatedFormSection>
+              ) : null}
 
-              {business?.id ? (
+              {hrPlan.portal && business?.id ? (
                 <EmployeePortalInviteCard
                   mode="form"
                   employeeId=""
@@ -464,58 +484,22 @@ export default function NewEmployeePage() {
                   onPortalInviteViaChange={setPortalInviteVia}
                 />
               ) : null}
-            </div>
 
-            {/* Sidebar - Summary */}
-            <div className="lg:col-span-1">
-              <Card className="sticky top-4">
-                <h3 className="font-semibold text-text-primary mb-4">Summary</h3>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <span className="text-text-secondary">Name:</span>
-                    <p className="font-medium text-text-primary">{formData.name || '—'}</p>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary">Phone:</span>
-                    <p className="font-medium text-text-primary">{formData.phone || '—'}</p>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary">Access Type:</span>
-                    <p className="font-medium text-text-primary">
-                      Attendance Only
-                    </p>
-                  </div>
-                  {formData.designation && (
-                    <div>
-                      <span className="text-text-secondary">Designation:</span>
-                      <p className="font-medium text-text-primary">{formData.designation}</p>
-                    </div>
-                  )}
-                  {formData.department && (
-                    <div>
-                      <span className="text-text-secondary">Department:</span>
-                      <p className="font-medium text-text-primary">{formData.department}</p>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-6 pt-6 border-t border-border">
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Employee'
-                    )}
-                  </Button>
-                </div>
-              </Card>
-            </div>
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.back()}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create employee'
+              )}
+            </Button>
+          </div>
           </div>
         </form>
 

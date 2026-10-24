@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -24,7 +24,8 @@ export async function GET(request: NextRequest) {
     if (actor) {
       businessId = actor.businessId;
     }
-    let userId = getUserIdFromRequest(request);
+    // The signed-in user only; a user_id in the query string is not trusted.
+    let userId = getAuthenticatedUserId(request);
     if (actor && !userId) userId = actor.userId;
     let employeeId = searchParams.get('employee_id');
     const startDate = searchParams.get('start_date');
@@ -95,6 +96,8 @@ export async function GET(request: NextRequest) {
       INNER JOIN users u ON e.id = u.id
       LEFT JOIN shifts s ON a.shift_id = s.id
       WHERE e.business_id = $1
+        AND e.is_active = true
+        AND u.is_active = true
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;

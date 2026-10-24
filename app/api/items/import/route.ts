@@ -9,6 +9,7 @@ import {
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { checkLimit } from '@/lib/subscription';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -156,6 +157,8 @@ export async function POST(request: NextRequest) {
             itemId: item.id,
             quantity: openingStock,
           });
+          const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+          await syncItemOpeningStockLedger(business_id, item.id);
         }
 
         success++;
@@ -165,6 +168,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (success > 0) noteShopChanged(business_id, 'items imported');
     return NextResponse.json({ success, failed, errors });
   } catch (error: any) {
     console.error('Import error', error);

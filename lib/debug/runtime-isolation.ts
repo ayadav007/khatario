@@ -10,8 +10,11 @@
  *   localStorage.setItem('khatario:runtime-probe', '1')
  */
 
-/** Skip EventSource, SSE debounce refetch, and 30s notification poll. Keep mount fetch only. */
-export const DISABLE_NOTIFICATION_SSE = true;
+/**
+ * Skip EventSource, SSE debounce refetch, and 30s notification poll. Keep mount fetch only.
+ * Must stay false outside a local experiment: todo reminder popups only appear via SSE or the poll.
+ */
+export const DISABLE_NOTIFICATION_SSE = false;
 
 /** Freeze promotion carousels on first slide (no setInterval). */
 export const DISABLE_PROMOTION_CAROUSELS = true;

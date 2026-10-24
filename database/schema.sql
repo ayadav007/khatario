@@ -62,16 +62,24 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE,
-    phone VARCHAR(20) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(20) NOT NULL,
     password_hash TEXT,
     role VARCHAR(50) DEFAULT 'user',
     permissions JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
     product_tour_completed_at TIMESTAMPTZ,
+    mobile_nav JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_business_phone
+  ON users (business_id, phone);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_business_email
+  ON users (business_id, lower(email))
+  WHERE email IS NOT NULL AND btrim(email) <> '';
 
 -- User ↔ business membership (multi-company); app-level role per business
 CREATE TABLE IF NOT EXISTS user_businesses (
@@ -257,6 +265,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     subtotal DECIMAL(12,2) DEFAULT 0,
     discount_total DECIMAL(12,2) DEFAULT 0,
     additional_charges DECIMAL(12,2) DEFAULT 0,
+    charges_included BOOLEAN NOT NULL DEFAULT false,
     tax_total DECIMAL(12,2) DEFAULT 0,
     cgst_total DECIMAL(12,2) DEFAULT 0,
     sgst_total DECIMAL(12,2) DEFAULT 0,
@@ -296,7 +305,24 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     sgst_amount DECIMAL(12,2) DEFAULT 0,
     igst_amount DECIMAL(12,2) DEFAULT 0,
     line_total DECIMAL(12,2) NOT NULL,
-    sort_order INTEGER DEFAULT 0
+    sort_order INTEGER DEFAULT 0,
+    charge_line BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS invoice_charges (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    purpose TEXT,
+    amount NUMERIC(12,2) NOT NULL,
+    classification TEXT NOT NULL CHECK (classification IN ('follows_goods', 'separate_supply')),
+    hsn_sac VARCHAR(10),
+    tax_rate NUMERIC(5,2),
+    taxable_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+    cgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    sgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    igst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 -- Purchases
@@ -617,6 +643,7 @@ CREATE TABLE IF NOT EXISTS recurring_invoices (
     last_run_date DATE,
     is_active BOOLEAN DEFAULT true,
     items JSONB NOT NULL, -- Store invoice items template
+    charges JSONB NOT NULL DEFAULT '[]'::jsonb,
     notes TEXT,
     terms TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -651,6 +678,9 @@ CREATE TABLE IF NOT EXISTS estimates (
     grand_total DECIMAL(15, 2) NOT NULL DEFAULT 0,
     additional_charges DECIMAL(10, 2) DEFAULT 0,
     additional_charges_label VARCHAR(100),
+    charge_classification TEXT,
+    charge_hsn_sac VARCHAR(10),
+    charge_tax_rate NUMERIC(5,2),
     notes TEXT,
     terms TEXT,
     converted_invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
@@ -702,6 +732,19 @@ CREATE TABLE IF NOT EXISTS credit_notes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by UUID REFERENCES users(id)
+);
+
+-- Credit from a paid return, applied to a later invoice
+CREATE TABLE IF NOT EXISTS credit_note_applications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    credit_note_id UUID NOT NULL REFERENCES credit_notes(id) ON DELETE RESTRICT,
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
+    amount DECIMAL(15, 2) NOT NULL CHECK (amount > 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID REFERENCES users(id),
+    reversed_at TIMESTAMP,
+    reversed_by UUID REFERENCES users(id)
 );
 
 -- Credit Note Items

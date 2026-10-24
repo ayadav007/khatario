@@ -2,11 +2,13 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Plus, FileText, Calendar, User, CheckCircle, XCircle, Clock, Wrench, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { useFeatureRouteGuard } from '@/hooks/useFeatureRouteGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 
 interface WorkOrder {
@@ -21,13 +23,16 @@ interface WorkOrder {
   priority: string;
   work_description: string;
   assigned_to: string | null;
-  total_cost: number;
+  total_cost: number | string;
   converted_invoice_id: string | null;
+  converted_invoice_number: string | null;
+  converted_invoice_status?: string | null;
 }
 
 export default function WorkOrdersPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const { canRender, loading: planLoading } = useFeatureRouteGuard({ featureKey: 'sales_work_orders' });
   
   // Check authorization before rendering
   // Uses tri-state model: 'loading' | 'allowed' | 'denied'
@@ -94,6 +99,8 @@ export default function WorkOrdersPage() {
     );
   };
 
+  if (planLoading || !canRender) return null;
+
   // Show loading state while checking authorization (tri-state: 'loading')
   if (authStatus === 'loading') {
     return (
@@ -121,19 +128,22 @@ export default function WorkOrdersPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Work Orders</h1>
-            <p className="text-gray-600 text-sm mt-1">Track services and jobs performed for customers</p>
-          </div>
-          <button
+        <PageHeader
+  title="Work Orders"
+  subtitle="Track services and jobs performed for customers"
+
+  actions={
+    <>
+<button
             onClick={() => router.push('/work-orders/new')}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
           >
             <Plus className="w-5 h-5" />
             <span>New Work Order</span>
           </button>
-        </div>
+    </>
+  }
+/>
 
         {/* Filters */}
         <div className="flex space-x-2 overflow-x-auto">
@@ -236,7 +246,7 @@ export default function WorkOrdersPage() {
                       <td className="py-4 px-4">{getPriorityBadge(wo.priority)}</td>
                       <td className="py-4 px-4">
                         <span className="text-sm font-semibold text-gray-900">
-                          ₹{wo.total_cost.toFixed(2)}
+                          ₹{Number(wo.total_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
                       <td className="py-4 px-4">{getStatusBadge(wo.status)}</td>
@@ -245,9 +255,18 @@ export default function WorkOrdersPage() {
                           {wo.converted_invoice_id && (
                             <button
                               onClick={() => router.push(`/invoices/${wo.converted_invoice_id}`)}
-                              className="text-sm text-green-600 hover:underline"
+                              className={`text-sm hover:underline ${wo.converted_invoice_status === 'cancelled' ? 'text-gray-500' : 'text-green-600'}`}
                             >
-                              Invoice
+                              {wo.converted_invoice_number || 'Invoice'}
+                              {wo.converted_invoice_status === 'cancelled' ? ' (cancelled)' : ''}
+                            </button>
+                          )}
+                          {['draft', 'scheduled', 'in_progress'].includes(wo.status) && (
+                            <button
+                              onClick={() => router.push(`/work-orders/edit/${wo.id}`)}
+                              className="text-sm text-gray-600 hover:underline"
+                            >
+                              Edit
                             </button>
                           )}
                           <button

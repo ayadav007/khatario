@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
+import { storedChargeFields } from '@/lib/invoices/invoice-charges';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
@@ -14,28 +15,16 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const status = searchParams.get('status');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'invoices', 'read');
+      await authorize(userId, 'invoices', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -94,7 +83,7 @@ export async function GET(request: NextRequest) {
         i.expiry_date,
         COALESCE(i.estimate_status, 'draft') as status,
         i.grand_total,
-        NULL as converted_invoice_id,
+        i.converted_invoice_id,
         i.created_at,
         i.updated_at
       FROM invoices i
@@ -171,8 +160,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const actorUserId = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       customer_id,
       estimate_number,
@@ -188,20 +180,24 @@ export async function POST(request: NextRequest) {
       additional_charges_label,
       notes,
       terms,
-      created_by,
     } = body;
 
-    if (!business_id || !customer_id || !estimate_number || !estimate_date || !items) {
+    if (!customer_id || !estimate_number || !estimate_date || !items) {
       return NextResponse.json(
-        { error: 'business_id, customer_id, estimate_number, estimate_date, and items are required' },
+        { error: 'customer_id, estimate_number, estimate_date, and items are required' },
         { status: 400 }
       );
     }
 
-    const actorUserId = resolveCreatedByUserId(request, body) ?? created_by;
-    if (!actorUserId) {
-      return NextResponse.json({ error: 'created_by is required' }, { status: 400 });
+    try {
+      await authorize(actorUserId, 'invoices', 'create', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
     }
+
     try {
       await enforceAccess({
         businessId: business_id,
@@ -215,19 +211,50 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    const customer = await db.queryOne(
+      `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [customer_id, business_id]
+    );
+    if (!customer) {
+      return NextResponse.json(
+        { error: 'Customer not found', code: 'CUSTOMER_NOT_FOUND' },
+        { status: 400 }
+      );
+    }
+
+    const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const activeItems = await db.queryRows<{ id: string }>(
+        `SELECT id FROM items
+          WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      if (activeItems.length !== new Set(requestedItemIds).size) {
+        return NextResponse.json(
+          { error: 'Item not found', code: 'ITEM_NOT_FOUND' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create estimate
     const estimate = await db.queryOne(`
       INSERT INTO estimates (
         business_id, customer_id, estimate_number, estimate_date, expiry_date,
         subtotal, discount_total, tax_total, round_off, grand_total,
-        additional_charges, additional_charges_label, notes, terms, created_by
+        additional_charges, additional_charges_label, charge_classification, charge_hsn_sac, charge_tax_rate,
+        notes, terms, created_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `, [
       business_id, customer_id, estimate_number, estimate_date, expiry_date,
       subtotal, discount_total, tax_total, round_off, grand_total,
-      additional_charges, additional_charges_label, notes, terms, created_by
+      additional_charges, additional_charges_label,
+      storedChargeFields(body).classification, storedChargeFields(body).hsnSac, storedChargeFields(body).taxRate,
+      notes, terms, actorUserId
     ]);
 
     // Create estimate items

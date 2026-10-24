@@ -6,12 +6,13 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { shouldHideGlobalBanners } from '@/lib/mobile-navigation';
+import { isConnectAgentSeat } from '@/lib/users/connect-seats';
 import type { Promotion } from '@/contexts/LayoutDataContext';
 
 export function PromotionBanner() {
   const router = useRouter();
   const pathname = usePathname();
-  const { business } = useAuth();
+  const { business, user } = useAuth();
   const { promotions, refreshPromotion } = useLayoutData();
   const [promo, setPromo] = useState<Promotion | null>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -86,7 +87,14 @@ export function PromotionBanner() {
     }
   };
 
-  if (shouldHideGlobalBanners(pathname) || !isVisible || !promo) return null;
+  if (
+    isConnectAgentSeat(user) ||
+    shouldHideGlobalBanners(pathname) ||
+    !isVisible ||
+    !promo
+  ) {
+    return null;
+  }
 
   return (
     <div
@@ -110,7 +118,7 @@ export function PromotionBanner() {
               <button
                 type="button"
                 onClick={handleClick}
-                className="px-4 py-1 bg-white text-gray-900 rounded-full text-xs font-bold hover:bg-opacity-90 transition-all flex items-center gap-1 shadow-sm"
+                className="tap-target-44 px-4 py-1 bg-white text-gray-900 rounded-full text-xs font-bold hover:bg-opacity-90 transition-all flex items-center gap-1 shadow-sm"
                 style={{ color: promo.background_color }}
               >
                 {promo.button_text}
@@ -126,7 +134,7 @@ export function PromotionBanner() {
               <button
                 type="button"
                 onClick={handleDismiss}
-                className="p-1 hover:bg-black hover:bg-opacity-10 rounded-full transition-colors"
+                className="tap-target-44 p-1 hover:bg-black hover:bg-opacity-10 rounded-full transition-colors"
                 aria-label="Dismiss"
               >
                 <X className="w-4 h-4 opacity-80" />

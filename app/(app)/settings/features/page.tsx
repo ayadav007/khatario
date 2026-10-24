@@ -18,7 +18,7 @@ import {
 } from '@/lib/portal-theme';
 
 const PRESET_PRIMARY: { label: string; hex: string }[] = [
-  { label: 'Teal', hex: '#0d9488' },
+  { label: 'Khatario green', hex: '#032B23' },
   { label: 'Blue', hex: '#2563eb' },
   { label: 'Indigo', hex: '#4f46e5' },
   { label: 'Violet', hex: '#7c3aed' },
@@ -27,7 +27,7 @@ const PRESET_PRIMARY: { label: string; hex: string }[] = [
 ];
 
 const PRESET_ACCENT: { label: string; hex: string }[] = [
-  { label: 'Teal', hex: '#00796b' },
+  { label: 'Khatario orange', hex: '#F58220' },
   { label: 'Blue', hex: '#0369a1' },
   { label: 'Slate', hex: '#475569' },
   { label: 'Emerald', hex: '#047857' },
@@ -233,7 +233,7 @@ function UIFeaturesSettingsPage() {
 
   return (
     <SettingsPageShell
-      title="UI features"
+      title="Appearance"
       description="Personal color scheme (this device) and organization-wide portal branding for everyone in your business."
       icon={Layout}
     >

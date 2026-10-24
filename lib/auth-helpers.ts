@@ -41,6 +41,15 @@ export function getUserIdFromRequest(request: NextRequest, body?: any): string |
 }
 
 /**
+ * Authenticated user from the JWT/session only (set by middleware, which strips any
+ * client-supplied copy). No body, query or legacy header fallback: use for actions whose
+ * actor is recorded or authorized and must not be impersonated.
+ */
+export function getAuthenticatedUserId(request: NextRequest): string | null {
+  return request.headers.get('x-authenticated-user-id');
+}
+
+/**
  * Acting user id for create endpoints: prefers `created_by_user_id` or legacy `created_by`
  * in the JSON body, then session/header fallbacks via {@link getUserIdFromRequest}.
  */
@@ -196,6 +205,37 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
     const { AuthorizationError } = await import('./authorization');
     throw new AuthorizationError('Session revoked', 'SESSION_REVOKED', undefined, 401);
   }
+}
+
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export type StrictSessionResult =
+  | { ok: true; userId: string; businessId: string }
+  | { ok: false; response: NextResponse };
+
+/**
+ * Actor and tenant from the middleware-verified session only, with the session generation
+ * checked against the database. Fails closed when either header is absent, so requests that
+ * middleware passes through without a session (store subdomains, public paths) are refused.
+ * No body, query or `x-user-id` fallback.
+ */
+export async function requireStrictSession(request: NextRequest): Promise<StrictSessionResult> {
+  const userId = getAuthenticatedUserId(request);
+  const businessId = getSessionScopedBusinessId(request);
+  if (!userId || !businessId || !SESSION_UUID.test(userId) || !SESSION_UUID.test(businessId)) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 }),
+    };
+  }
+  const version = await assertUserSessionVersionMatches(request, userId);
+  if (!version.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Session revoked', code: 'SESSION_REVOKED' }, { status: 401 }),
+    };
+  }
+  return { ok: true, userId, businessId };
 }
 
 /**

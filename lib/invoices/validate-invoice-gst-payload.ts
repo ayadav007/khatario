@@ -1,4 +1,11 @@
 import type { CreateInvoiceInput } from '@/lib/invoices/invoice-create-service';
+import {
+  authoritativeInvoiceTotals,
+  InvoiceChargeError,
+  type AuthoritativeInvoiceTotals,
+  type InvoiceChargeInput,
+} from '@/lib/invoices/invoice-charges';
+import { isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
 
 const GST_TOLERANCE = 0.05;
 
@@ -23,74 +30,38 @@ function getStateCode(stateName: string): string {
 export function computeInvoiceTotals(
   body: CreateInvoiceInput,
   businessStateCode: string
-): {
-  subtotal: number;
-  taxTotal: number;
-  discountTotal: number;
-  cgstTotal: number;
-  sgstTotal: number;
-  igstTotal: number;
-  grandTotal: number;
-  roundOff: number;
-} {
+): AuthoritativeInvoiceTotals {
   const items = body.items ?? [];
   const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
-  let subtotal = 0;
-  let taxTotal = 0;
-  let discountTotal = 0;
-  let cgstTotal = 0;
-  let sgstTotal = 0;
-  let igstTotal = 0;
-
-  for (const item of items) {
-    const qty = Number(item.quantity) || 0;
-    const unitPrice = Number(item.unit_price) || 0;
-    const itemSubtotal = qty * unitPrice;
-    const itemDiscount = (itemSubtotal * (Number(item.discount_percent) || 0)) / 100;
-    const taxable = itemSubtotal - itemDiscount;
-    const taxRate = Number(item.tax_rate) || 0;
-
-    let taxAmount = 0;
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-
-    if (placeOfSupply && businessStateCode && placeOfSupply === businessStateCode) {
-      const half = taxRate / 2;
-      cgst = (taxable * half) / 100;
-      sgst = (taxable * half) / 100;
-      taxAmount = cgst + sgst;
-    } else {
-      igst = (taxable * taxRate) / 100;
-      taxAmount = igst;
-    }
-
-    subtotal += taxable;
-    discountTotal += itemDiscount;
-    taxTotal += taxAmount;
-    cgstTotal += cgst;
-    sgstTotal += sgst;
-    igstTotal += igst;
-  }
-
-  const additional = Number(body.additional_charges) || 0;
-  const grandTotalRaw = subtotal + taxTotal + additional;
-  let roundOff = Number(body.round_off) || 0;
-  if (body.enable_round_off && !body.round_off) {
-    roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
-  }
-  const grandTotal = grandTotalRaw + roundOff;
-
-  return {
-    subtotal,
-    taxTotal,
-    discountTotal,
-    cgstTotal,
-    sgstTotal,
-    igstTotal,
-    grandTotal,
-    roundOff,
+  const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
+  const exportFields = body as CreateInvoiceInput & {
+    is_export?: boolean | null;
+    supply_type?: string | null;
+    export_type?: string | null;
+    lut_declaration?: boolean | null;
   };
+  const zeroRated =
+    body.document_type === 'bill_of_supply' ||
+    isZeroRatedWithoutTax({
+      is_export: exportFields.is_export,
+      supply_type: exportFields.supply_type,
+      export_type: exportFields.export_type,
+      lut_declaration: exportFields.lut_declaration,
+      place_of_supply_state_code: body.place_of_supply_state_code,
+    });
+  const totals = authoritativeInvoiceTotals({
+    items,
+    charges: (body as CreateInvoiceInput & { charges?: InvoiceChargeInput[] }).charges,
+    additionalCharges: body.additional_charges,
+    intraState,
+    zeroRated,
+    pricesIncludeGst: body.prices_include_gst === true,
+    documentDate: body.invoice_date,
+    roundOff: body.round_off,
+    enableRoundOff: body.enable_round_off,
+  });
+
+  return totals;
 }
 
 /** Server-side GST reconciliation for offline sales payloads. */
@@ -110,7 +81,40 @@ export function validateInvoiceGstPayload(
     grand_total?: number;
   };
 } {
-  const totals = computeInvoiceTotals(body, businessStateCode);
+  let totals: ReturnType<typeof computeInvoiceTotals>;
+  try {
+    totals = computeInvoiceTotals(body, businessStateCode);
+  } catch (error) {
+    if (error instanceof InvoiceChargeError) {
+      return {
+        ok: false,
+        reason: error.message,
+        serverTotals: {
+          itemSubtotal: 0,
+          goodsTaxable: 0,
+          subtotal: 0,
+          discountTotal: 0,
+          taxTotal: 0,
+          cgstTotal: 0,
+          sgstTotal: 0,
+          igstTotal: 0,
+          additionalCharges: 0,
+          chargesIncluded: false,
+          roundOff: 0,
+          grandTotal: 0,
+          lines: [],
+          separateLines: [],
+          charges: [],
+        },
+        clientTotals: {
+          subtotal: body.subtotal,
+          tax_total: body.tax_total,
+          grand_total: body.grand_total,
+        },
+      };
+    }
+    throw error;
+  }
 
   const mismatch =
     (body.subtotal !== undefined &&

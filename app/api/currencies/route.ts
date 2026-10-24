@@ -4,6 +4,7 @@ import { queryRows, queryOne } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 /**
  * GET /api/currencies
@@ -41,6 +42,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_multi_currency');
+    if (planDenied) return planDenied;
     const business_id = tenant.businessId;
     const {
       currency_code,

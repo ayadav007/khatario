@@ -3,13 +3,18 @@
  * Used by checkLimit and checkLimitInTransaction.
  */
 
-import { ACTIVE_EMPLOYEE_COUNT_SQL, CONSOLE_SEAT_COUNT_SQL } from '@/lib/subscription/seat-counting';
+import {
+  ACTIVE_EMPLOYEE_COUNT_SQL,
+  CONNECT_AGENT_SEAT_COUNT_SQL,
+  CONSOLE_SEAT_COUNT_SQL,
+} from '@/lib/subscription/seat-counting';
 
 export type LimitCheckType =
   | 'invoices'
   | 'customers'
   | 'items'
   | 'users'
+  | 'connect_agents'
   | 'whatsapp'
   | 'employees'
   | 'attendance'
@@ -39,6 +44,7 @@ export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   customers: 'max_customers',
   items: 'max_items',
   users: 'max_users',
+  connect_agents: 'max_users',
   whatsapp: 'max_whatsapp_per_day',
   employees: 'max_employees',
   attendance: 'max_attendance_records_per_month',
@@ -82,7 +88,9 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
   switch (limitType) {
     case 'invoices':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM invoices WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM invoices
+              WHERE business_id = $1 AND created_at >= ${monthStart}
+                AND COALESCE(document_type, 'tax_invoice') <> 'proforma_invoice'`,
         params: p,
       };
     case 'customers':
@@ -91,6 +99,8 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       return { sql: `SELECT COUNT(*)::int AS count FROM items WHERE business_id = $1`, params: p };
     case 'users':
       return { sql: CONSOLE_SEAT_COUNT_SQL, params: p };
+    case 'connect_agents':
+      return { sql: CONNECT_AGENT_SEAT_COUNT_SQL, params: p };
     case 'whatsapp':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM whatsapp_messages WHERE business_id = $1 AND sent_at >= ${todayStart}`,
@@ -126,12 +136,17 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       };
     case 'expenses':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM expenses WHERE business_id = $1 AND expense_date >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM expenses WHERE business_id = $1 AND deleted_at IS NULL AND expense_date >= ${monthStart}`,
         params: p,
       };
     case 'estimates':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM estimates WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        // Estimates live in `estimates` (legacy API) and as proforma invoices (invoice form)
+        sql: `SELECT (
+                (SELECT COUNT(*) FROM estimates WHERE business_id = $1 AND created_at >= ${monthStart}) +
+                (SELECT COUNT(*) FROM invoices WHERE business_id = $1 AND created_at >= ${monthStart}
+                   AND document_type = 'proforma_invoice')
+              )::int AS count`,
         params: p,
       };
     case 'credit_notes':

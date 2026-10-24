@@ -2,23 +2,38 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useRouter, useParams } from 'next/navigation';
-import { Loader2, Building2, MapPin } from 'lucide-react';
+import { Loader2, Building2 } from 'lucide-react';
 import { WarehouseBranchLinks } from '@/components/settings/WarehouseBranchLinks';
 import { Card } from '@/components/ui/Card';
-import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
-import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
-import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { INDIAN_STATES } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
+
+function WarehouseSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
+}
 
 export default function EditWarehousePage() {
   const router = useRouter();
@@ -191,15 +206,15 @@ export default function EditWarehousePage() {
   }
 
   return (
-    <SettingsPageShell
-      title="Edit Warehouse"
-      description="Update warehouse details"
-      icon={MapPin}
-    >
-      <FormCard>
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <MobileDuplicatePageChrome
+        title="Edit warehouse"
+        description="Update name, address, type, and branch links."
+      />
+
       <form onSubmit={handleSubmit}>
-      <div className="form-page-shell">
-        <FormSection title="Basic information" description="Name and code for this warehouse.">
+      <div className="space-y-6">
+        <WarehouseSection title="Basic information" description="Name and code for this warehouse.">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 gap-y-6">
             <Input
               label="Warehouse Name *"
@@ -215,9 +230,9 @@ export default function EditWarehousePage() {
               placeholder="e.g., WH-001"
             />
           </div>
-        </FormSection>
+        </WarehouseSection>
 
-        <FormSection title="Address" description="Location details for reference and documents.">
+        <WarehouseSection title="Address" description="Location details for reference and documents.">
           <div className="grid grid-cols-1 gap-4 gap-y-6">
             <Input
               label="Address Line 1"
@@ -269,9 +284,9 @@ export default function EditWarehousePage() {
               placeholder="Country"
             />
           </div>
-        </FormSection>
+        </WarehouseSection>
 
-        <FormSection title="Warehouse type & status" description="How this location is used and whether it is active.">
+        <WarehouseSection title="Warehouse type & status" description="How this location is used and whether it is active.">
           <div className="grid w-full max-w-3xl grid-cols-1 gap-4 md:grid-cols-2 md:items-end">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Warehouse Type *</label>
@@ -299,9 +314,9 @@ export default function EditWarehousePage() {
               </label>
             </div>
           </div>
-        </FormSection>
+        </WarehouseSection>
 
-        <FormSection title="Linked branches" description="Control which branches can use stock at this warehouse.">
+        <WarehouseSection title="Linked branches" description="Control which branches can use stock at this warehouse.">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-text-secondary">Open the manager to attach or detach branches.</p>
             <Button
@@ -313,25 +328,19 @@ export default function EditWarehousePage() {
               Manage branch links
             </Button>
           </div>
-        </FormSection>
+        </WarehouseSection>
       </div>
 
-        <SettingsFloatingSaveBar align="between">
+        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
           <Button
             type="button"
             variant="secondary"
             onClick={() => router.push('/settings/warehouses')}
             disabled={saving}
-            className="flex-1 sm:flex-none"
           >
             Cancel
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={saving}
-            className="flex-1 sm:flex-none"
-          >
+          <Button type="submit" disabled={saving}>
             {saving ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -341,9 +350,8 @@ export default function EditWarehousePage() {
               'Save Changes'
             )}
           </Button>
-        </SettingsFloatingSaveBar>
+        </div>
       </form>
-      </FormCard>
 
       {/* Upgrade Prompt Modal */}
       {showUpgradePrompt && (
@@ -371,6 +379,6 @@ export default function EditWarehousePage() {
           </Card>
         </div>
       )}
-    </SettingsPageShell>
+    </div>
   );
 }

@@ -7,7 +7,7 @@ import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { resolveItemSeo } from '@/lib/store/item-seo';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 import { Heart, Loader2, Package, Minus, Plus } from 'lucide-react';
-import { isKhatarioPack, CHOWK_INK, isAtelierPack, isChowkPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { isKhatarioPack, chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import { StoreKhatarioProductView } from '@/components/store/StoreKhatarioProductView';
 import { StoreProductGallery } from '@/components/store/StoreProductGallery';
 import { StoreStars } from '@/components/store/StoreStars';
@@ -21,10 +21,9 @@ export default function StoreProductPage() {
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const paper = storeCanvas(theme);
-  const chowk = isChowkPack(theme);
-  const atelier = isAtelierPack(theme);
-  const pack = isPackChrome(theme);
   const khatario = isKhatarioPack(theme);
+  const grocery = theme.pack === 'grocery';
+  const ink = chowkInkOn(paper);
 
   useEffect(() => {
     if (!store || !params.id) return;
@@ -100,8 +99,11 @@ export default function StoreProductPage() {
     <StoreShell>
       <div className="grid gap-8 md:grid-cols-2">
         <div
-          className={`relative overflow-hidden ${pack ? '' : 'rounded-2xl bg-gray-100'} ${atelier ? 'rounded-[1.75rem]' : ''}`}
-          style={pack ? { backgroundColor: paper } : undefined}
+          className={clsx(
+            'relative overflow-hidden border',
+            grocery ? 'g-line rounded-[1.75rem] bg-white' : 'rounded-[10px]',
+          )}
+          style={grocery ? undefined : { backgroundColor: 'var(--st-card)', borderColor: 'var(--st-line)' }}
         >
           {gallery.length ? (
             <StoreProductGallery images={gallery} alt={product.name} accent={accent} />
@@ -125,13 +127,25 @@ export default function StoreProductPage() {
             />
           </button>
           {discount > 0 ? (
-            <span className="absolute left-3 top-3 rounded-md px-2 py-1 text-xs font-bold text-white" style={{ backgroundColor: accent }}>
+            <span
+              className={clsx('absolute left-3 top-3 px-2 py-1 text-xs font-bold', grocery ? 'rounded-full bg-amber-400 px-2.5 text-[#172019]' : 'rounded-md text-white')}
+              style={grocery ? undefined : { backgroundColor: accent }}
+            >
               {discount}% OFF
             </span>
           ) : null}
         </div>
         <div>
-          <h1 className={atelier ? 'font-atelier-display text-3xl leading-[1.05] sm:text-5xl' : chowk ? 'font-chowk-display text-3xl leading-[0.95] sm:text-5xl' : 'text-2xl font-semibold text-gray-900'} style={pack ? { color: CHOWK_INK } : undefined}>{product.name}</h1>
+          <h1
+            className={
+              grocery
+                ? 'text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl'
+                : 'st-serif text-3xl font-bold leading-tight sm:text-4xl'
+            }
+            style={{ color: ink }}
+          >
+            {product.name}
+          </h1>
           {product.category_name ? (
             <p className="mt-1 text-sm text-gray-500">{product.category_name}</p>
           ) : null}
@@ -151,7 +165,10 @@ export default function StoreProductPage() {
             />
           </div>
           <div className="mt-4 flex items-baseline gap-2">
-            <p className={pack ? 'text-3xl font-medium tabular-nums' : 'text-3xl font-bold text-gray-900'} style={pack ? { color: CHOWK_INK } : undefined}>
+            <p
+              className={clsx('text-3xl tabular-nums', grocery ? 'font-extrabold' : 'font-bold')}
+              style={{ color: grocery ? accent : ink }}
+            >
               ₹{product.selling_price.toLocaleString('en-IN')}
             </p>
             {product.mrp && product.mrp > product.selling_price ? (
@@ -174,8 +191,8 @@ export default function StoreProductPage() {
 
           {outOfStock ? null : cartItem && !product.has_variants ? (
             <div
-              className={clsx('mt-6 inline-flex items-center', !pack && 'rounded-xl text-white')}
-              style={pack ? { border: `1px solid color-mix(in srgb, ${CHOWK_INK} 20%, transparent)` } : { backgroundColor: accent }}
+              className={clsx('mt-6 inline-flex items-center', grocery ? 'rounded-2xl' : 'rounded-md')}
+              style={{ border: `1px solid color-mix(in srgb, ${ink} 20%, transparent)` }}
             >
               <button
                 type="button"
@@ -200,8 +217,11 @@ export default function StoreProductPage() {
           ) : (
             <button
               type="button"
-              className={clsx('mt-6 min-h-12 px-6 py-3 text-sm font-medium', !pack && 'rounded-xl font-semibold text-white', atelier && 'rounded-2xl')}
-              style={{ backgroundColor: accent, color: pack ? paper : undefined }}
+              className={clsx(
+                'mt-6 min-h-12 px-6 py-3 text-sm',
+                grocery ? 'store-grocery-pulse w-full rounded-2xl font-bold sm:w-auto sm:px-10' : 'rounded-md font-semibold sm:px-10',
+              )}
+              style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
               onClick={() =>
                 addToCart({
                   itemId: product.id,
@@ -215,7 +235,7 @@ export default function StoreProductPage() {
                 })
               }
             >
-              {product.has_variants ? 'Choose options on home' : pack ? 'Add to bag' : 'Add to cart'}
+              {product.has_variants ? 'Choose options on home' : 'Add to cart'}
             </button>
           )}
         </div>

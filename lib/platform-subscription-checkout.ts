@@ -10,6 +10,16 @@ import { query, queryOne } from '@/lib/db';
 
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+
+import {
+  isEasebuzzReady,
+  isRazorpayReady,
+  loadPlatformPaymentSecrets,
+  type PlatformPaymentProviderId,
+  type PlatformPaymentSecrets,
+} from '@/lib/platform-payment-settings';
+
 import {
 
   getBusinessPlatformRecipient,
@@ -26,13 +36,7 @@ import {
 
 } from '@/lib/platform-billing';
 
-import {
-
-  applySubscriptionPlanChange,
-
-  type BillingCycle,
-
-} from '@/lib/subscription/apply-plan-change';
+import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
 
 import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
 
@@ -51,46 +55,61 @@ import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
 
 
-export function getPlatformRazorpayProvider(): RazorpayPaymentProvider | null {
-
-  const keyId = process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-
-  const keySecret =
-
-    process.env.PLATFORM_RAZORPAY_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET;
-
-  const webhookSecret =
-
-    process.env.PLATFORM_RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_WEBHOOK_SECRET;
-
-
-
-  if (!keyId || !keySecret || !webhookSecret) {
-
-    return null;
-
-  }
-
-
-
+function razorpayFrom(s: PlatformPaymentSecrets): RazorpayPaymentProvider | null {
+  if (!isRazorpayReady(s)) return null;
   return new RazorpayPaymentProvider({
-
-    clientId: keyId,
-
-    clientSecret: keySecret,
-
-    webhookSecret,
-
+    clientId: s.razorpay.keyId,
+    clientSecret: s.razorpay.keySecret,
+    webhookSecret: s.razorpay.webhookSecret,
   });
-
 }
 
+function easebuzzFrom(s: PlatformPaymentSecrets): EasebuzzPaymentProvider | null {
+  if (!isEasebuzzReady(s)) return null;
+  return new EasebuzzPaymentProvider({
+    clientId: s.easebuzz.key,
+    clientSecret: s.easebuzz.salt,
+    environment: s.easebuzz.environment,
+  });
+}
 
+/** Khatario's own Razorpay account. Still used for webhooks after switching away, so old links settle. */
+export async function getPlatformRazorpayProvider(): Promise<RazorpayPaymentProvider | null> {
+  return razorpayFrom(await loadPlatformPaymentSecrets());
+}
 
-export function isPlatformRazorpayConfigured(): boolean {
+export async function isPlatformRazorpayConfigured(): Promise<boolean> {
+  return (await getPlatformRazorpayProvider()) !== null;
+}
 
-  return getPlatformRazorpayProvider() !== null;
+/** Khatario's own Easebuzz account (never a business's credentials). */
+export async function getPlatformEasebuzzProvider(): Promise<EasebuzzPaymentProvider | null> {
+  return easebuzzFrom(await loadPlatformPaymentSecrets());
+}
 
+export type { PlatformPaymentProviderId };
+
+/** Admin > Settings > Payments choice; falls back to PLATFORM_PAYMENT_PROVIDER env, then Razorpay. */
+export async function getPlatformPaymentProviderId(): Promise<PlatformPaymentProviderId> {
+  return (await loadPlatformPaymentSecrets()).activeProvider;
+}
+
+export async function getPlatformCheckoutProvider(): Promise<
+  | { id: 'razorpay'; provider: RazorpayPaymentProvider; keyId: string }
+  | { id: 'easebuzz'; provider: EasebuzzPaymentProvider }
+  | null
+> {
+  const secrets = await loadPlatformPaymentSecrets();
+  if (secrets.activeProvider === 'easebuzz') {
+    const provider = easebuzzFrom(secrets);
+    return provider ? { id: 'easebuzz', provider } : null;
+  }
+  const provider = razorpayFrom(secrets);
+  return provider ? { id: 'razorpay', provider, keyId: secrets.razorpay.keyId } : null;
+}
+
+export async function isPlatformPaymentConfigured(): Promise<boolean> {
+  return (await getPlatformCheckoutProvider()) !== null;
 }
 
 
@@ -223,13 +242,15 @@ export async function createSubscriptionCheckout(
 
 
 
-  const provider = getPlatformRazorpayProvider();
+  const checkout = await getPlatformCheckoutProvider();
 
-  if (!provider) {
+  if (!checkout) {
 
     throw new Error('PAYMENT_NOT_CONFIGURED');
 
   }
+
+  const provider = checkout.provider;
 
 
 
@@ -254,7 +275,7 @@ export async function createSubscriptionCheckout(
 
     billingCycle: input.billingCycle,
 
-    paymentMethod: 'razorpay',
+    paymentMethod: checkout.id,
 
     status: 'pending',
 
@@ -308,6 +329,8 @@ export async function createSubscriptionCheckout(
 
       cancel_url: cancelUrl,
 
+      ...(checkout.id === 'easebuzz' ? { easebuzz_context: 'PB' } : {}),
+
     },
 
   });
@@ -334,7 +357,12 @@ export async function createSubscriptionCheckout(
 
         link.providerPaymentId,
 
-        JSON.stringify({ payment_link_id: link.providerPaymentId, short_url: link.paymentUrl }),
+        JSON.stringify({
+          payment_link_id: link.providerPaymentId,
+          short_url: link.paymentUrl,
+          provider: checkout.id,
+          checkout_type: 'subscription',
+        }),
 
       ],
 
@@ -346,13 +374,13 @@ export async function createSubscriptionCheckout(
 
   if (!link.paymentUrl) {
 
-    throw new Error('Razorpay did not return a checkout URL');
+    throw new Error('Payment provider did not return a checkout URL');
 
   }
 
 
 
-  const keyId = process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || '';
+  const keyId = checkout.id === 'razorpay' ? checkout.keyId : '';
 
 
 
@@ -398,7 +426,11 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   gatewayResponse?: unknown;
 
+  paymentMethod?: PlatformPaymentProviderId;
+
 }): Promise<void> {
+
+  const paymentMethod = params.paymentMethod ?? 'razorpay';
 
   const plan = await queryOne<{ display_name: string }>(
 
@@ -453,40 +485,14 @@ export async function completeSubscriptionCheckoutPayment(params: {
     );
   }
 
-  try {
-    await applyModuleSubscriptionPlanChange({
-
-      businessId: params.businessId,
-
-      moduleKey,
-
-      planId: params.planId,
-
-      billingCycle: params.billingCycle,
-
-      paymentMethod: 'razorpay',
-
-      paymentReference: params.providerPaymentId,
-
-    });
-
-  } catch {
-
-    await applySubscriptionPlanChange({
-
-      businessId: params.businessId,
-
-      planId: params.planId,
-
-      billingCycle: params.billingCycle,
-
-      paymentMethod: 'razorpay',
-
-      paymentReference: params.providerPaymentId,
-
-    });
-
-  }
+  await applyModuleSubscriptionPlanChange({
+    businessId: params.businessId,
+    moduleKey,
+    planId: params.planId,
+    billingCycle: params.billingCycle,
+    paymentMethod,
+    paymentReference: params.providerPaymentId,
+  });
 
 
 
@@ -521,6 +527,24 @@ export async function completeSubscriptionCheckoutPayment(params: {
     event: 'upgraded',
 
   });
+
+  // Partner commission: only when payment settled (not on free trial).
+  try {
+    const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
+    const saleAmount =
+      (await queryOne<{ total_amount: string | number }>(
+        `SELECT COALESCE(total_amount, amount, 0) AS total_amount
+         FROM billing_transactions WHERE id = $1`,
+        [params.billingTransactionId],
+      ))?.total_amount ?? params.amount;
+    await maybeCreatePartnerCommissionOnPayment({
+      businessId: params.businessId,
+      billingTransactionId: params.billingTransactionId,
+      saleAmount: Number(saleAmount) || params.amount,
+    });
+  } catch (partnerErr) {
+    console.error('Partner commission on checkout settlement failed:', partnerErr);
+  }
 
 }
 
@@ -578,7 +602,7 @@ export function extractCheckoutMetaFromWebhookNotes(
 
     const billingCycle =
 
-      n.billing_cycle === 'yearly' || n.billing_cycle === 'monthly'
+      n.billing_cycle === 'yearly' || n.billing_cycle === 'monthly' || n.billing_cycle === 'three_year'
 
         ? n.billing_cycle
 

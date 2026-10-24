@@ -19,10 +19,9 @@
  *
  * Limits worth knowing
  * --------------------
- *   - Chinese / Indic text is NOT supported here. Receipt printers need a
- *     font chip for non-CP437 text. For international strings, use
- *     encodeRaster() with an off-screen canvas draw. Indian customer names
- *     in English/Hinglish work fine.
+ *   - Receipt printers have no Indic fonts. Pass `rasterize` (a canvas text
+ *     rasterizer, lib/print/text-raster-browser.ts) and lines with Hindi,
+ *     Gujarati, ₹ etc. print as images; without it they fall back to ASCII.
  *   - Image width is rounded down to a multiple of 8 pixels (ESC/POS
  *     constraint). Feed the exact printer width (384 dots for 58mm @ 203dpi,
  *     576 for 80mm) to avoid scaling.
@@ -38,6 +37,8 @@
 // ---------------------------------------------------------------------------
 // Byte-level constants
 // ---------------------------------------------------------------------------
+
+import { blankBitmap, blit, needsRaster, type MonoBitmap, type TextRasterizer } from '@/lib/print/bitmap';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -64,7 +65,16 @@ export type QrEcLevel = 'L' | 'M' | 'Q' | 'H';
 export interface EscPosBuilderOptions {
   /** Paper width in mm. Controls text wrapping and column math. */
   paperWidthMm: 58 | 80;
+  /** Draws non-ASCII text (Hindi, ₹…) as images. Without it such text falls back to ASCII. */
+  rasterize?: TextRasterizer;
 }
+
+/** One cell of a fixed-width row: `width` is in Font-A characters. */
+export type EscPosColumn = { text: string; width: number; align?: Align };
+
+/** Font A is 12×24 dots. */
+const FONT_A_DOT_WIDTH = 12;
+const FONT_A_DOT_HEIGHT = 24;
 
 // ---------------------------------------------------------------------------
 // Builder
@@ -79,11 +89,18 @@ export class EscPosBuilder {
   readonly paperWidthMm: 58 | 80;
   readonly dotsPerLine: number;
   readonly colsFontA: number;
+  private readonly rasterize?: TextRasterizer;
+  // Current formatting, so text drawn as an image matches the printer's own text.
+  private curAlign: Align = 'left';
+  private curBold = false;
+  private curWidthMul = 1;
+  private curHeightMul = 1;
 
   constructor(opts: EscPosBuilderOptions = { paperWidthMm: 58 }) {
     this.paperWidthMm = opts.paperWidthMm;
     this.dotsPerLine = DOTS_PER_LINE[opts.paperWidthMm];
     this.colsFontA = COLS_FONT_A[opts.paperWidthMm];
+    this.rasterize = opts.rasterize;
   }
 
   // -------------------------------------------------------------------------
@@ -121,6 +138,10 @@ export class EscPosBuilder {
 
   /** ESC @ — reset printer to factory defaults (alignment, size, bold off). */
   init(): this {
+    this.curAlign = 'left';
+    this.curBold = false;
+    this.curWidthMul = 1;
+    this.curHeightMul = 1;
     return this.raw([ESC, 0x40]);
   }
 
@@ -137,6 +158,11 @@ export class EscPosBuilder {
     return this.raw([GS, 0x56, 0x42, 0x00]);
   }
 
+  /** ESC p — pulse the cash drawer port (drawer pin 2, 50 ms on / 500 ms off). */
+  openDrawer(): this {
+    return this.raw([ESC, 0x70, 0x00, 0x19, 0xfa]);
+  }
+
   /** ESC B — beep (only supported on some printers). */
   beep(times = 1, durationTenths = 2): this {
     return this.raw([ESC, 0x42, Math.min(9, times), Math.min(9, durationTenths)]);
@@ -149,11 +175,13 @@ export class EscPosBuilder {
   /** ESC a n — alignment (0 left, 1 center, 2 right). */
   align(align: Align): this {
     const n = align === 'center' ? 1 : align === 'right' ? 2 : 0;
+    this.curAlign = align;
     return this.raw([ESC, 0x61, n]);
   }
 
   /** ESC E n — bold on/off. */
   bold(on = true): this {
+    this.curBold = on;
     return this.raw([ESC, 0x45, on ? 1 : 0]);
   }
 
@@ -168,6 +196,8 @@ export class EscPosBuilder {
    */
   size(width: 1 | 2 | 3 | 4 = 1, height: 1 | 2 | 3 | 4 = 1): this {
     const n = ((width - 1) << 4) | (height - 1);
+    this.curWidthMul = width;
+    this.curHeightMul = height;
     return this.raw([GS, 0x21, n]);
   }
 
@@ -195,11 +225,61 @@ export class EscPosBuilder {
     return this.raw(this.asciiBytes(text));
   }
 
-  /** Write a string followed by a newline. */
+  /** Write a string followed by a newline. Non-ASCII lines print as an image when a rasterizer is set. */
   line(text = ''): this {
+    if (this.rasterize && needsRaster(text)) {
+      return this.rasterBitmap(
+        this.rasterize(text, {
+          heightDots: this.lineHeightDots(),
+          bold: this.curBold,
+          maxWidthDots: this.dotsPerLine,
+        }),
+      );
+    }
     this.text(text);
     this.chunks.push(LF);
     return this;
+  }
+
+  /**
+   * A fixed-width row (item name / qty / amount). Plain ASCII rows print as normal text; a row with
+   * Hindi, ₹ etc. is drawn as one image with each cell in its own column so the columns still line up.
+   */
+  columns(cells: EscPosColumn[]): this {
+    const hasRaster = this.rasterize && cells.some((c) => needsRaster(c.text));
+    if (!hasRaster) {
+      return this.line(cells.map((c) => fitCell(c.text, c.width, c.align)).join(''));
+    }
+    const charDots = FONT_A_DOT_WIDTH * this.curWidthMul;
+    const height = this.lineHeightDots();
+    const row = blankBitmap(this.dotsPerLine, height);
+    let startChar = 0;
+    for (const cell of cells) {
+      const cellDots = cell.width * charDots;
+      if (cell.text) {
+        const img = this.rasterize!(cell.text, { heightDots: height, bold: this.curBold, maxWidthDots: cellDots });
+        const used = Math.min(img.width, cellDots);
+        const offset = cell.align === 'right' ? cellDots - used : cell.align === 'center' ? Math.floor((cellDots - used) / 2) : 0;
+        blit(row, img, startChar * charDots + offset, 0);
+      }
+      startChar += cell.width;
+    }
+    const savedAlign = this.curAlign;
+    this.align('left');
+    this.rasterBitmap(row);
+    return this.align(savedAlign);
+  }
+
+  /** GS v 0 for a packed 1-bit image; the printer advances by its height. */
+  rasterBitmap(bitmap: MonoBitmap): this {
+    const rowBytes = bitmap.width / 8;
+    this.raw([GS, 0x76, 0x30, 0x00, rowBytes & 0xff, (rowBytes >> 8) & 0xff, bitmap.height & 0xff, (bitmap.height >> 8) & 0xff]);
+    return this.raw(bitmap.data);
+  }
+
+  /** Height of one line of the current text size, with room for Indic vowel marks. */
+  private lineHeightDots(): number {
+    return Math.round(FONT_A_DOT_HEIGHT * this.curHeightMul * 1.25);
   }
 
   /**
@@ -390,4 +470,13 @@ export function concatBytes(...parts: Uint8Array[]): Uint8Array {
     offset += p.length;
   }
   return out;
+}
+
+/** Pads or cuts text to exactly `width` characters with the given alignment. */
+function fitCell(text: string, width: number, align: Align = 'left'): string {
+  const t = text.length > width ? text.slice(0, width) : text;
+  const gap = width - t.length;
+  if (align === 'right') return ' '.repeat(gap) + t;
+  if (align === 'center') return ' '.repeat(Math.floor(gap / 2)) + t + ' '.repeat(Math.ceil(gap / 2));
+  return t + ' '.repeat(gap);
 }

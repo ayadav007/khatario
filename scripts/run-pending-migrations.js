@@ -7,6 +7,11 @@
  *   node scripts/run-pending-migrations.js --from 239     # run 239+ only (recommended on VPS)
  *   node scripts/run-pending-migrations.js --mark-below 239  # mark older as applied (existing DB bootstrap)
  *   node scripts/run-pending-migrations.js --stop-on-error
+ *   node scripts/run-pending-migrations.js --accept-already-exists  # legacy bootstrap only: record
+ *       "already exists" failures as accepted (labelled NOT executed) instead of failed
+ *
+ * A file is recorded as successful only when it committed; the success row is
+ * written inside the file's own transaction.
  *
  * Loads .env, .env.production, .env.local (same as run-migration.js).
  */
@@ -44,11 +49,12 @@ function listMigrationFiles() {
 }
 
 function parseArgs(argv) {
-  const args = { dryRun: false, stopOnError: false, from: null, markBelow: null };
+  const args = { dryRun: false, stopOnError: false, from: null, markBelow: null, acceptExisting: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--dry-run') args.dryRun = true;
     else if (arg === '--stop-on-error') args.stopOnError = true;
+    else if (arg === '--accept-already-exists') args.acceptExisting = true;
     else if (arg.startsWith('--from=')) args.from = parseInt(arg.split('=')[1], 10);
     else if (arg === '--from') args.from = parseInt(argv[i + 1], 10);
     else if (arg.startsWith('--mark-below=')) args.markBelow = parseInt(arg.split('=')[1], 10);
@@ -57,11 +63,25 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * Strip one outer BEGIN;/COMMIT; pair (optionally preceded/followed by comment
+ * lines) so the runner's own transaction wraps the file. Returns null when a
+ * transaction-control statement remains at statement level, because running it
+ * would commit part of the file outside the runner's transaction.
+ */
 function unwrapExplicitTransaction(sql) {
-  let s = String(sql || '').trim();
-  s = s.replace(/^\s*BEGIN\s*;/i, '');
-  s = s.replace(/COMMIT\s*;\s*$/i, '');
+  let s = String(sql || '');
+  s = s.replace(/^((?:\s*--[^\n]*\n)*)\s*BEGIN\s*;/i, '$1');
+  s = s.replace(/COMMIT\s*;((?:\s*--[^\n]*)*)\s*$/i, '$1');
+  if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;/im.test(s.replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, ''))) {
+    return null;
+  }
   return s.trim();
+}
+
+/** Files with a concurrent index build cannot run inside a transaction. */
+function needsAutocommit(sql) {
+  return /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(String(sql || ''));
 }
 
 function splitSqlStatements(sql) {
@@ -117,18 +137,47 @@ async function maybeAutoBootstrapExistingDb(client, allFiles) {
     return;
   }
 
-  const baseline = parseInt(process.env.MIGRATION_BASELINE || '239', 10);
+  if (!process.env.MIGRATION_BASELINE) {
+    console.log(
+      'Existing database with empty schema_migrations and no MIGRATION_BASELINE set — nothing auto-marked; all migrations will run (they are expected to be idempotent).\n'
+    );
+    return;
+  }
+  const baseline = parseInt(process.env.MIGRATION_BASELINE, 10);
   if (Number.isNaN(baseline)) return;
 
-  const toMark = allFiles.filter((f) => {
+  const candidates = allFiles.filter((f) => {
     const match = f.match(/^(\d+)_/);
     return match && parseInt(match[1], 10) < baseline;
   });
 
+  // Only mark a file as applied when every table it creates already exists.
+  const toMark = [];
+  const skipped = [];
+  for (const file of candidates) {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'database', 'migrations', file), 'utf8');
+    const tables = [...sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?/gi)].map(
+      (m) => m[1].toLowerCase()
+    );
+    let missing = null;
+    for (const t of tables) {
+      const { rows: r } = await client.query(`SELECT to_regclass($1) IS NOT NULL AS ok`, [`public.${t}`]);
+      if (!r[0]?.ok) {
+        missing = t;
+        break;
+      }
+    }
+    if (missing) skipped.push(`${file} (missing table ${missing})`);
+    else toMark.push(file);
+  }
+
   console.log(
     `Existing database (schema_migrations empty). Auto-marking ${toMark.length} migrations below ${baseline}...`
   );
-  console.log(`(Set MIGRATION_BASELINE in .env.production to change this one-time bootstrap.)\n`);
+  if (skipped.length) {
+    console.log(`Not marked (will run because their tables are missing):\n  ${skipped.join('\n  ')}`);
+  }
+  console.log(`(MIGRATION_BASELINE controls this one-time bootstrap.)\n`);
 
   for (const file of toMark) {
     await client.query(
@@ -167,6 +216,14 @@ async function main() {
     console.log('Connecting to database...');
     console.log(`Migration DB: ${describeMigrationDb(dbConfig)}`);
 
+    // Serialise runners (deploy hook + manual run) so a file is never applied twice concurrently.
+    const lock = await client.query(`SELECT pg_try_advisory_lock(hashtext('khatario_schema_migrations')) AS ok`);
+    if (!lock.rows[0]?.ok) {
+      console.error('Another migration run holds the lock; aborting.');
+      process.exitCode = 1;
+      return;
+    }
+
     await ensureLogTable(client);
 
     await maybeAutoBootstrapExistingDb(client, allFiles);
@@ -177,13 +234,26 @@ async function main() {
         return match && parseInt(match[1], 10) < args.markBelow;
       });
       console.log(`Marking ${toMark.length} migrations below ${args.markBelow} as already applied...`);
+      const keptFailures = [];
       for (const file of toMark) {
-        await client.query(
+        // Never flip a recorded failure to success; it must be fixed and re-run.
+        const res = await client.query(
           `INSERT INTO schema_migrations (migration_name, success, error_message)
            VALUES ($1, true, 'bootstrap: marked below threshold')
-           ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW(), error_message = EXCLUDED.error_message`,
+           ON CONFLICT (migration_name) DO NOTHING
+           RETURNING id`,
           [file]
         );
+        if (res.rowCount === 0) {
+          const prev = await client.query(
+            `SELECT success FROM schema_migrations WHERE migration_name = $1`,
+            [file]
+          );
+          if (prev.rows[0] && prev.rows[0].success === false) keptFailures.push(file);
+        }
+      }
+      if (keptFailures.length) {
+        console.log(`Left as FAILED (not overwritten):\n  ${keptFailures.join('\n  ')}`);
       }
       console.log('Bootstrap complete.\n');
     }
@@ -215,46 +285,46 @@ async function main() {
     let skipped = 0;
     let failed = 0;
 
+    const recordSuccessSql = `INSERT INTO schema_migrations (migration_name, success, error_message)
+           VALUES ($1, true, NULL)
+           ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW(), error_message = NULL`;
+
     for (const file of pending) {
       const filePath = path.join(__dirname, '..', 'database', 'migrations', file);
       const sql = fs.readFileSync(filePath, 'utf8');
 
       if (sql.includes('\\i ')) {
-        console.log(`⏭️  Skip ${file} (uses psql \\i — run manually with psql if needed)`);
-        await client.query(
-          `INSERT INTO schema_migrations (migration_name, success, error_message)
-           VALUES ($1, true, 'skipped: psql meta file')
-           ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW()`,
-          [file]
-        );
+        // Not executed, so never recorded as applied.
+        console.log(`⏭️  Skip ${file} (uses psql \\i — run manually with psql; NOT marked applied)`);
         skipped++;
         continue;
       }
 
       process.stdout.write(`📝 ${file} ... `);
-      const needsAutocommit = /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(sql);
-      const sqlToRun = unwrapExplicitTransaction(sql);
+      const autocommit = needsAutocommit(sql);
+      const sqlToRun = autocommit ? String(sql) : unwrapExplicitTransaction(sql);
       try {
-        if (!needsAutocommit) await client.query('BEGIN');
-        if (needsAutocommit) {
+        if (sqlToRun == null) {
+          throw new Error(
+            'File contains a statement-level BEGIN/COMMIT/ROLLBACK beyond one outer pair; refusing to run it partially outside a transaction'
+          );
+        }
+        if (autocommit) {
           for (const stmt of splitSqlStatements(sqlToRun)) {
             await client.query(stmt);
           }
+          await client.query(recordSuccessSql, [file]);
         } else {
+          await client.query('BEGIN');
           await client.query(sqlToRun);
+          // Recorded inside the same transaction: the row exists iff the file committed.
+          await client.query(recordSuccessSql, [file]);
+          await client.query('COMMIT');
         }
-        if (!needsAutocommit) await client.query('COMMIT');
-
-        await client.query(
-          `INSERT INTO schema_migrations (migration_name, success, error_message)
-           VALUES ($1, true, NULL)
-           ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW(), error_message = NULL`,
-          [file]
-        );
         console.log('✅');
         ok++;
       } catch (error) {
-        if (!needsAutocommit) {
+        if (!autocommit) {
           try {
             await client.query('ROLLBACK');
           } catch {
@@ -262,17 +332,17 @@ async function main() {
           }
         }
 
-        if (
-          isIdempotentError(error.message) ||
-          (needsAutocommit && /cannot run inside a transaction block/i.test(error.message))
-        ) {
+        // Legacy escape hatch for bootstrapping an old database whose objects
+        // pre-date schema_migrations. Nothing in the file was committed, so the
+        // row says so explicitly instead of looking like a normal success.
+        if (args.acceptExisting && !autocommit && isIdempotentError(error.message)) {
           await client.query(
             `INSERT INTO schema_migrations (migration_name, success, error_message)
              VALUES ($1, true, $2)
              ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW(), error_message = $2`,
-            [file, `idempotent: ${error.message.split('\n')[0]}`]
+            [file, `accepted-existing (NOT executed, --accept-already-exists): ${error.message.split('\n')[0]}`]
           );
-          console.log(`⏭️  already applied (${error.message.split('\n')[0]})`);
+          console.log(`⚠️  accepted as existing, NOT executed (${error.message.split('\n')[0]})`);
           skipped++;
           continue;
         }
@@ -345,7 +415,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { unwrapExplicitTransaction, splitSqlStatements, needsAutocommit, isIdempotentError, parseArgs };

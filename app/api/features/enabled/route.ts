@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { getAllFeatureAccessForBusiness } from '@/lib/subscription/feature-access';
+import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
 import * as db from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -89,6 +90,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         features: grouped,
         enabledIds: enabledFeatureIds,
+        supplierHubVisible: await isSupplierHubVisible(),
         source: actualSource
       });
     } catch (error) {

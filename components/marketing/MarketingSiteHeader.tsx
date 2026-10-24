@@ -54,7 +54,7 @@ const INDUSTRY_LINKS: MegaLink[] = [
 ];
 
 const RESOURCE_LINKS: MegaLink[] = [
-  { href: '/guides', label: 'Blogs', icon: BookOpen },
+  { href: '/blog', label: 'Blogs', icon: BookOpen },
   { href: '/guides', label: 'Use Cases', icon: UserCircle },
   { href: '/guides', label: 'Guides', icon: HelpCircle },
   { href: '/#pricing', label: 'Success Stories', icon: Flag },
@@ -214,17 +214,9 @@ export function MarketingSiteHeader() {
             'relative z-[52] flex min-h-[5.25rem] w-full items-center justify-between gap-4 py-3.5 sm:min-h-[5.75rem] sm:py-4'
           )}
         >
-        <Link
-          href="/"
-          className="flex shrink-0 items-center gap-2.5 text-slate-900 dark:text-slate-50"
-          onClick={() => setMobileOpen(false)}
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600 text-lg font-bold text-white sm:h-14 sm:w-14 sm:text-xl">
-            K
-          </span>
-          <span className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-[2rem] lg:leading-none">
-            Khatario
-          </span>
+        <Link href="/" className="flex shrink-0 items-center" onClick={() => setMobileOpen(false)}>
+          <img src="/brand/khatario-wordmark.png" alt="Khatario" className="h-11 w-auto sm:h-14 dark:hidden" />
+          <img src="/brand/khatario-wordmark-light.png" alt="" className="hidden h-11 w-auto sm:h-14 dark:block" />
         </Link>
 
         {/* Desktop nav — centered in remaining width */}

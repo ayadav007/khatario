@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { isUuid, requireNotificationSession } from '@/lib/notifications/notification-session';
+import { markNotificationRead } from '@/lib/notifications/read-state';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * PATCH /api/notifications/[id]/read
- * Mark a notification as read
+ * Mark one of the signed-in user's notifications (or a broadcast in the session business) as read.
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    const session = await requireNotificationSession(request);
+    if (!session.ok) return session.response;
+
     // Handle both sync and async params (Next.js 13+ uses async params)
     const resolvedParams = params instanceof Promise ? await params : params;
     const notificationId = resolvedParams.id;
@@ -23,18 +27,12 @@ export async function PATCH(
       );
     }
 
-    console.log(`[Mark as Read] Marking notification ${notificationId} as read`);
-
-    // Update the notification in the database
-    const result = await query(
-      `UPDATE notifications 
-       SET is_read = true, read_at = NOW() 
-       WHERE id = $1
-       RETURNING id, is_read, read_at`,
-      [notificationId]
-    );
-
-    console.log(`[Mark as Read] Updated notification ${notificationId}:`, result);
+    const updated =
+      isUuid(notificationId) &&
+      (await markNotificationRead(notificationId, session.businessId, session.userId));
+    if (!updated) {
+      return NextResponse.json({ error: 'Notification not found' }, { status: 404 });
+    }
 
     return NextResponse.json({ 
       success: true,

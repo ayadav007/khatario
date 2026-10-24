@@ -5,7 +5,7 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 export const dynamic = 'force-dynamic';
 
 export const POST = withWhatsAppPremiumApi(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ businessId }) => {
     try {
       const result = await syncWhatsAppMessages(businessId);

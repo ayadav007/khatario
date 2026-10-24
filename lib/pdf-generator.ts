@@ -9,6 +9,8 @@ import { validateAndSanitizeTemplate } from '@/lib/template-validator';
 import { compressThermalContent } from '@/lib/content-compressor';
 import { optimizeForThermal } from '@/lib/thermal-transformer';
 import { hasTableColumn } from '@/lib/schema-columns';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { findTemplateAssignment } from '@/lib/template-assignment';
 
 export type DocumentTable = 
   | 'invoices' 
@@ -83,14 +85,30 @@ export async function generateDocumentHtml(
         c.state as customer_state,
         c.state_code as customer_state_code`;
 
+    // credit_notes / debit_notes have no address snapshot columns.
+    const [docHasBilling, docHasShipping, docHasInvoiceId] = await Promise.all([
+      hasTableColumn(table, 'billing_address'),
+      hasTableColumn(table, 'shipping_address'),
+      hasTableColumn(table, 'invoice_id'),
+    ]);
+    const linkedInvoiceJoin = docHasInvoiceId && table !== 'invoices'
+      ? `LEFT JOIN invoices linked_inv ON doc.invoice_id = linked_inv.id`
+      : '';
+    const linkedInvoiceColumns = linkedInvoiceJoin
+      ? `linked_inv.invoice_number as original_invoice_number,
+        linked_inv.invoice_date as linked_invoice_date,`
+      : '';
+
     const doc = await db.queryOne(
       `SELECT doc.*, 
-        doc.billing_address as invoice_billing_address,
-        doc.shipping_address as invoice_shipping_address,
+        ${docHasBilling ? 'doc.billing_address' : 'NULL::text'} as invoice_billing_address,
+        ${docHasShipping ? 'doc.shipping_address' : 'NULL::text'} as invoice_shipping_address,
+        ${linkedInvoiceColumns}
         ${partyColumns},
-        b.name as business_name, b.address_line1 as business_address, b.city as business_city, b.state as business_state, b.pincode as business_pincode, b.gstin as business_gstin, b.logo_url as business_logo, b.signature_url as business_signature, b.phone as business_phone, b.email as business_email, b.iec_code as business_iec_code, b.swift_code as business_swift_code, b.state_code as business_state_code
+        b.name as business_name, b.address_line1 as business_address, b.address_line2 as business_address_line2, b.city as business_city, b.state as business_state, b.pincode as business_pincode, b.gstin as business_gstin, b.pan as business_pan, b.logo_url as business_logo, b.signature_url as business_signature, b.phone as business_phone, b.email as business_email, b.iec_code as business_iec_code, b.swift_code as business_swift_code, b.state_code as business_state_code
        FROM ${table} doc
        ${partyJoin}
+       ${linkedInvoiceJoin}
        JOIN businesses b ON doc.business_id = b.id
        WHERE doc.id = $1`,
       [documentId]
@@ -100,16 +118,51 @@ export async function generateDocumentHtml(
       throw new Error('Document not found');
     }
 
+    if (doc.branch_id) {
+      const reg = await resolveSupplierRegistration(
+        { query: (text: string, params?: unknown[]) => db.query(text, params) as any },
+        doc.business_id,
+        doc.branch_id
+      );
+      if (reg.source === 'branch') {
+        doc.business_gstin = reg.gstin;
+        doc.business_state = reg.stateName;
+        doc.business_state_code = reg.stateCode;
+        if (reg.addressLine1) {
+          doc.business_address = reg.addressLine1;
+          doc.business_address_line2 = reg.addressLine2;
+          doc.business_city = reg.city;
+          doc.business_pincode = reg.pincode;
+        }
+        if (reg.phone) doc.business_phone = reg.phone;
+        if (reg.email) doc.business_email = reg.email;
+      }
+    }
+
     const itemsHaveCustomFields = await hasTableColumn('items', 'custom_fields');
     const itemCustomFieldsSelect = itemsHaveCustomFields
       ? 'i.custom_fields as item_custom_fields'
       : `'{}'::jsonb as item_custom_fields`;
 
+    const [lineHasItemName, lineHasHsn, lineHasSortOrder] = await Promise.all([
+      hasTableColumn(itemTable, 'item_name'),
+      hasTableColumn(itemTable, 'hsn_sac'),
+      hasTableColumn(itemTable, 'sort_order'),
+    ]);
+    // Credit/debit note lines store the product text in `description` only.
+    const itemNameSelect = lineHasItemName
+      ? 'COALESCE(ii.item_name, i.name) as item_name'
+      : 'COALESCE(i.name, ii.description) as item_name';
+    const hsnSelect = lineHasHsn
+      ? 'COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac'
+      : 'i.hsn_sac as hsn_sac';
+    const itemOrderBy = lineHasSortOrder ? 'ii.sort_order, ii.id' : 'ii.id';
+
     const itemsQuery = hasVariants 
       ? `SELECT 
           ii.*, 
-          COALESCE(ii.item_name, i.name) as item_name, 
-          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          ${itemNameSelect}, 
+          ${hsnSelect},
           ${itemCustomFieldsSelect},
           iv.variant_name,
           iv.attributes as variant_attributes
@@ -117,16 +170,16 @@ export async function generateDocumentHtml(
          LEFT JOIN items i ON ii.item_id = i.id
          LEFT JOIN item_variants iv ON ii.variant_id = iv.id
          WHERE ii.${idColumn} = $1
-         ORDER BY ii.sort_order, ii.id`
+         ORDER BY ${itemOrderBy}`
       : `SELECT 
           ii.*, 
-          COALESCE(ii.item_name, i.name) as item_name, 
-          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          ${itemNameSelect}, 
+          ${hsnSelect},
           ${itemCustomFieldsSelect}
          FROM ${itemTable} ii
          LEFT JOIN items i ON ii.item_id = i.id
          WHERE ii.${idColumn} = $1
-         ORDER BY ii.sort_order, ii.id`;
+         ORDER BY ${itemOrderBy}`;
 
     const items = await db.queryRows(itemsQuery, [documentId]);
 
@@ -153,7 +206,12 @@ export async function generateDocumentHtml(
       'delivery_challans': 'delivery_challan',
       'purchase_orders': 'purchase_order',
       'sales_orders': 'sales_order',
-      'work_orders': 'sales_order'
+      'work_orders': 'work_order'
+    };
+
+    // Used when the business has not assigned a template; most documents share the GST layout.
+    const defaultTemplateByTable: Partial<Record<DocumentTable, string>> = {
+      'work_orders': 'work_order/job_card',
     };
 
     // The invoices table holds multiple document types (tax invoice, proforma,
@@ -193,20 +251,11 @@ export async function generateDocumentHtml(
     if (isDev) {
       console.log('[PDF Generator] Step 2: Querying business_template_assignments for document_type:', documentType);
     }
-    let savedSettingsResult = await db.queryOne(
-      `SELECT template_id, settings 
-       FROM business_template_assignments 
-       WHERE business_id = $1 AND document_type = $2
-       LIMIT 1`,
-      [doc.business_id, documentType]
-    );
+    const savedSettingsResult = await findTemplateAssignment(doc.business_id, documentType);
     
     if (savedSettingsResult) {
       assignedTemplateId = savedSettingsResult.template_id;
-      const settings = savedSettingsResult.settings;
-      if (settings) {
-        savedSettings = typeof settings === 'string' ? JSON.parse(settings) : settings;
-      }
+      savedSettings = savedSettingsResult.settings;
       if (isDev) {
         console.log('[PDF Generator] ✅ Step 2 Result: Assignment FOUND');
         console.log('[PDF Generator]   - Assigned Template ID:', assignedTemplateId);
@@ -228,7 +277,7 @@ export async function generateDocumentHtml(
            FROM business_template_assignments 
            WHERE business_id = $1 AND document_type = $2 AND template_id = $3
            LIMIT 1`,
-          [doc.business_id, documentType, providedTemplateId]
+          [doc.business_id, savedSettingsResult.document_type, providedTemplateId]
         );
         
         if (specificAssignment && specificAssignment.settings) {
@@ -300,7 +349,7 @@ export async function generateDocumentHtml(
         console.log('[PDF Generator]   - Final Template ID:', finalTemplateId);
       }
     } else {
-      finalTemplateId = 'gst_standard';
+      finalTemplateId = defaultTemplateByTable[table] || 'gst_standard';
       if (isDev) {
         console.log('[PDF Generator] ⚠️ Step 4 Result: Using DEFAULT template (fallback)');
         console.log('[PDF Generator]   - Final Template ID:', finalTemplateId);
@@ -352,6 +401,10 @@ export async function generateDocumentHtml(
         id: doc.business_id, // Required for fetching bank details
         name: doc.business_name,
         address: doc.business_address,
+        address_line2: doc.business_address_line2,
+        pan: doc.business_pan,
+        iec_code: doc.business_iec_code,
+        swift_code: doc.business_swift_code,
         city: doc.business_city,
         state: doc.business_state,
         pincode: doc.business_pincode,
@@ -372,6 +425,7 @@ export async function generateDocumentHtml(
         email: doc.customer_email,
         state: doc.customer_state,
         state_code: doc.customer_state_code,
+        country: doc.customer_country,
         current_balance: doc.customer_current_balance || 0
       },
       items: items

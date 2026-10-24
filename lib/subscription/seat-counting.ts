@@ -8,12 +8,16 @@
  * - **Employee slot (max_employees):** people on the HR payroll/attendance roster.
  */
 
-/** SQL fragment: users who count toward max_users for a business ($1 = business_id). */
+/**
+ * SQL fragment: Billing/HR console seats counted against those plans' max_users ($1 = business_id).
+ * Connect agents (`seat_type = 'connect'`) are a separate pool on the Connect plan.
+ */
 export const CONSOLE_SEAT_COUNT_SQL = `
   SELECT COUNT(*)::int AS count
   FROM users u
   WHERE u.business_id = $1
     AND COALESCE(u.is_active, true) = true
+    AND COALESCE(u.seat_type, 'billing') <> 'connect'
     AND (
       COALESCE(u.is_primary_admin, false) = true
       OR u.role_id IS NOT NULL
@@ -23,6 +27,15 @@ export const CONSOLE_SEAT_COUNT_SQL = `
           AND COALESCE(e.access_type, 'full') = 'attendance_only'
       )
     )
+`;
+
+/** Active Connect agents, counted against the Connect plan's max_users ($1 = business_id). */
+export const CONNECT_AGENT_SEAT_COUNT_SQL = `
+  SELECT COUNT(*)::int AS count
+  FROM users u
+  WHERE u.business_id = $1
+    AND COALESCE(u.is_active, true) = true
+    AND u.seat_type = 'connect'
 `;
 
 /** Active employees on the HR roster ($1 = business_id). */

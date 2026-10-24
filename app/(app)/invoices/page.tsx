@@ -24,10 +24,13 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { useEntityList } from '@/hooks/useEntityList';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { MobileListRow } from '@/components/layout/MobileList';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { InvoiceDetailPanel } from '@/components/invoices/InvoiceDetailPanel';
 import { clsx } from 'clsx';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { ChannelBadge } from '@/components/orders/ChannelBadge';
+import { CHANNEL_LABEL, INVOICE_CHANNELS, isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 
 type InvoiceStatusFilter = 'all' | 'draft' | 'final' | 'paid' | 'unpaid' | 'cancelled';
 
@@ -68,6 +71,10 @@ function InvoicesPageContent() {
     }
     return 'all';
   });
+  const [channelFilter, setChannelFilter] = useState<InvoiceChannel | 'all'>(() => {
+    const c = searchParams.get('channel');
+    return isInvoiceChannel(c) ? c : 'all';
+  });
   const [page, setPage] = useState(1);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
@@ -94,8 +101,9 @@ function InvoicesPageContent() {
     ) {
       p.status = statusFilter;
     }
+    if (channelFilter !== 'all') p.channel = channelFilter;
     return p;
-  }, [searchParams, isPrimaryAdmin, statusFilter]);
+  }, [searchParams, isPrimaryAdmin, statusFilter, channelFilter]);
 
   const scopeAllBranches =
     isPrimaryAdmin &&
@@ -117,7 +125,11 @@ function InvoicesPageContent() {
 
   // In-memory filtering (works offline): search, status, aging, date
   const filteredInvoices = useMemo(() => {
-    let list = allInvoices.filter((i) => i.status !== 'cancelled' && i.document_type !== 'proforma_invoice');
+    let list = allInvoices.filter((i) => {
+      if (i.document_type === 'proforma_invoice') return false;
+      if (statusFilter !== 'cancelled' && i.status === 'cancelled') return false;
+      return true;
+    });
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -135,6 +147,9 @@ function InvoicesPageContent() {
         if (statusFilter === 'unpaid') return invoice.payment_status === 'unpaid';
         return true;
       });
+    }
+    if (channelFilter !== 'all') {
+      list = list.filter((i) => (i.channel || 'manual') === channelFilter);
     }
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -155,7 +170,7 @@ function InvoicesPageContent() {
       }
     }
     return list;
-  }, [allInvoices, search, statusFilter]);
+  }, [allInvoices, search, statusFilter, channelFilter]);
 
   const paginatedInvoices = useMemo(() => {
     const start = (page - 1) * 25;
@@ -166,7 +181,7 @@ function InvoicesPageContent() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, channelFilter]);
 
   useEffect(() => {
     if (selectedInvoiceId && !allInvoices.some((i) => i.id === selectedInvoiceId)) {
@@ -236,6 +251,19 @@ function InvoicesPageContent() {
               <option value="unpaid">Unpaid</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <select
+              className="input w-auto text-sm"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value as InvoiceChannel | 'all')}
+              aria-label="Source"
+            >
+              <option value="all">All sources</option>
+              {INVOICE_CHANNELS.map((c) => (
+                <option key={c} value={c}>
+                  {CHANNEL_LABEL[c]}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </Card>
@@ -249,6 +277,19 @@ function InvoicesPageContent() {
           className="input pl-10 w-full h-12 rounded-xl"
         />
       </div>
+      <select
+        className="input md:hidden mb-3 w-full h-11 rounded-xl text-sm"
+        value={channelFilter}
+        onChange={(e) => setChannelFilter(e.target.value as InvoiceChannel | 'all')}
+        aria-label="Source"
+      >
+        <option value="all">All sources</option>
+        {INVOICE_CHANNELS.map((c) => (
+          <option key={c} value={c}>
+            {CHANNEL_LABEL[c]}
+          </option>
+        ))}
+      </select>
     </>
   );
 
@@ -328,7 +369,7 @@ function InvoicesPageContent() {
   const fullList = (
     <>
         {/* Invoices List */}
-        <Card className="overflow-hidden" padding="none">
+        <Card className="overflow-hidden max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:shadow-none" padding="none">
           {loading ? (
             <div className="p-12 text-center">
               <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto" />
@@ -366,7 +407,10 @@ function InvoicesPageContent() {
                         className="cursor-pointer border-b border-border last:border-0 transition-colors duration-150 ease-out hover:bg-slate-50 hover:shadow-[inset_3px_0_0_0_rgb(191_219_254)] dark:hover:bg-slate-700/60 dark:hover:shadow-[inset_3px_0_0_0_rgba(56,189,248,0.45)]"
                         onClick={() => setSelectedInvoiceId(invoice.id)}
                       >
-                        <td className="table-cell text-left py-4 px-6 font-semibold text-text-primary">{invoice.invoice_number}</td>
+                        <td className="table-cell text-left py-4 px-6 font-semibold text-text-primary">
+                          <div>{invoice.invoice_number}</div>
+                          <ChannelBadge channel={invoice.channel} className="mt-1" />
+                        </td>
                         <td className="table-cell text-left py-4 px-6 text-text-secondary">{invoice.customer_name || 'Cash Sale'}</td>
                         <td className="table-cell text-left py-4 px-6 text-text-muted text-xs">
                           {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : '-'}
@@ -452,84 +496,56 @@ function InvoicesPageContent() {
                 </table>
               </div>
 
-              {/* Mobile Card View */}
-              <div className="md:hidden space-y-2 p-2">
-                {paginatedInvoices.map((invoice) => (
-                  <div 
-                    key={invoice.id}
-                    className="rounded-xl border border-border bg-surface p-3 shadow-sm transition-colors duration-150 ease-out active:bg-slate-50 dark:active:bg-slate-800/90"
-                    onClick={() => setSelectedInvoiceId(invoice.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <p className="truncate text-sm font-bold text-text-primary">
-                            {invoice.invoice_number}
-                          </p>
-                          {invoice.sync_status && (
-                            <SyncStatusBadge
-                              status={invoice.sync_status as 'pending' | 'synced' | 'failed'}
-                              showLabel={false}
-                            />
-                          )}
-                        </div>
-                        <p className="mt-0.5 truncate text-sm text-text-secondary">
-                          {invoice.customer_name || 'Cash Sale'}
-                        </p>
-                        <p className="mt-1 text-2xs text-text-muted">
-                          {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : '-'}
-                        </p>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <p className="text-lg font-bold leading-tight text-text-primary">
-                          {formatInr(invoice.grand_total)}
-                        </p>
-                        <p className="mt-0.5 text-2xs text-text-secondary tabular-nums" title="Total tax on this invoice">
-                          Tax {formatInr(invoice.tax_total)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1">
-                        <StatusBadge status={invoice.status} className="px-2 py-0 text-2xs" />
-                        <StatusBadge status={invoice.payment_status || 'unpaid'} className="px-2 py-0 text-2xs" />
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openShareForInvoice(invoice);
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white text-text-secondary transition-colors active:bg-slate-50"
-                          aria-label={`Share ${invoice.invoice_number}`}
-                        >
-                          <Share2 className="h-3.5 w-3.5" />
-                        </button>
-                        {invoice.status === 'final' && invoice.payment_status !== 'paid' && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPaymentModalInvoice(invoice);
-                            }}
-                            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-gray-100 px-2.5 text-2xs font-semibold text-gray-900 transition-colors active:bg-gray-200"
+              <div className="-mx-page-x divide-y divide-border border-y border-border bg-surface md:hidden">
+                {paginatedInvoices.map((invoice) => {
+                  const payment = String(invoice.payment_status || 'unpaid').replace(/_/g, ' ');
+                  const when = invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : '';
+                  return (
+                    <MobileListRow
+                      key={invoice.id}
+                      label={invoice.invoice_number}
+                      hint={[invoice.customer_name || 'Cash Sale', when].filter(Boolean).join(' · ')}
+                      onClick={() => setSelectedInvoiceId(invoice.id)}
+                      trailing={
+                        <span className="text-right">
+                          <span className="block text-sm font-semibold tabular-nums text-text-primary">
+                            {formatInr(invoice.grand_total)}
+                          </span>
+                          <span
+                            className={clsx(
+                              'block text-xs capitalize',
+                              payment === 'unpaid' || payment === 'partial' ? 'text-amber-700' : 'text-text-secondary',
+                            )}
                           >
-                            <CreditCard className="h-3.5 w-3.5" />
-                            Add payment
+                            {payment}
+                          </span>
+                        </span>
+                      }
+                      actions={
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openShareForInvoice(invoice)}
+                            className="inline-flex h-9 w-9 items-center justify-center text-text-secondary active:bg-slate-100"
+                            aria-label={`Share ${invoice.invoice_number}`}
+                          >
+                            <Share2 className="h-4 w-4" />
                           </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {invoice.status === 'final' && invoice.document_type !== 'proforma_invoice' && (
-                      <div className="mt-2">
-                        <GSTStatusIndicator status="pending" returnType="GSTR-1" />
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          {invoice.status === 'final' && invoice.payment_status !== 'paid' ? (
+                            <button
+                              type="button"
+                              onClick={() => setPaymentModalInvoice(invoice)}
+                              className="inline-flex h-9 w-9 items-center justify-center text-text-secondary active:bg-slate-100"
+                              aria-label={`Record payment for ${invoice.invoice_number}`}
+                            >
+                              <CreditCard className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </>
+                      }
+                    />
+                  );
+                })}
               </div>
             </>
           )}

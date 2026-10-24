@@ -8,9 +8,9 @@ There are two ways to use it:
 - **Web (Chrome on Android / desktop Chrome / Edge)** — works today, no
   install needed.
 - **Native Android APK (Capacitor shell)** — required for reliable Bluetooth
-  on many Android phones. Uses **BLE only** (same limitation as Web
-  Bluetooth). Classic SPP printers are not supported yet — see
-  `docs/printer-architecture.md`.
+  on many Android phones. Uses **Classic Bluetooth (SPP)** for typical 58/80 mm
+  thermal printers, with BLE as a fallback. Pair in phone Bluetooth settings,
+  then connect in **Settings → Print & devices**.
 
 > iOS is **not supported**. Apple does not allow Web Bluetooth on iOS
 > and there is no Capacitor iOS target in this repo.
@@ -49,8 +49,7 @@ profile. We ship tested profiles for:
 
 Not (currently) supported:
 
-- Classic Bluetooth SPP (Serial Port Profile) printers — Web Bluetooth
-  cannot see them. On native Android they would need a separate driver.
+- Classic Bluetooth SPP from a **browser/PWA** (Web Bluetooth is BLE-only). Use the Android app.
 - Network / Wi-Fi thermal printers — use the standard PDF / HTML flow.
 
 If your printer isn't in the list, try **Generic ESC/POS 58 mm** first — it
@@ -63,13 +62,10 @@ them).
 ## 3. Pairing a printer
 
 1. Enable the `barcode_thermal_printer` feature on the business plan.
-2. Go to **Settings → Bluetooth Printer**.
-3. Tap **Pair a printer**.
-4. (Optional) Pick a profile to narrow the device list.
-5. Select your printer from the OS picker.
-6. Tap **Test print** to confirm. You should see "PRINTER OK" with a QR
-   code.
-7. Optionally mark the printer as default for **labels** or **receipts**.
+2. Turn the printer on and pair it in **phone Settings → Bluetooth** (Android app).
+3. In Khatario go to **Settings → Print & devices**.
+4. Tap **Connect device**, pick the printer (not headphones), then **Test print**.
+5. Optionally mark the printer as default for **labels** or **receipts**.
 
 The pairing is stored in `localStorage`, scoped per business. This means:
 
@@ -99,9 +95,9 @@ The pairing is stored in `localStorage`, scoped per business. This means:
 ## 5. Android APK (Capacitor)
 
 The Android app is a thin Capacitor shell around the production web app.
-It loads `https://<your-host>` in a WebView and exposes the
-`@capacitor-community/bluetooth-le` plugin so the app can talk to BLE
-printers even on phones whose browsers don't support Web Bluetooth.
+It loads `https://<your-host>` in a WebView and uses native **Classic Bluetooth (SPP)**
+(`KhatarioBluetoothSppPlugin`) for typical thermal printers, plus
+`@capacitor-community/bluetooth-le` for BLE models.
 
 ### 5.1 Prerequisites
 

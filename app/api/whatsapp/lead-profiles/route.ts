@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { canViewConversation, getInboxViewer } from '@/lib/whatsapp/inbox-ownership';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const phone = searchParams.get('phone');
@@ -13,7 +14,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) =>
 
     let profile;
     if (conversationId) {
-      const convUuid = await resolveWhatsAppConversationDbId(businessId, conversationId);
+      const convUuid = (await resolveVisibleConversation({ businessId, userId }, conversationId))?.id ?? null;
       if (convUuid) {
         profile = await queryOne(
           `SELECT * FROM whatsapp_lead_profiles 
@@ -38,7 +39,8 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) =>
         [businessId, phone, normalizedPhone]
       );
 
-      if (conversation) {
+      const viewer = await getInboxViewer({ businessId, userId });
+      if (conversation && (await canViewConversation(viewer, conversation.id))) {
         profile = await queryOne(
           `SELECT * FROM whatsapp_lead_profiles 
            WHERE business_id = $1 AND conversation_id = $2`,

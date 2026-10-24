@@ -38,6 +38,9 @@
  *    ===============================
  */
 
+import type { TextRasterizer } from '@/lib/print/bitmap';
+import type { DocumentLanguage } from '@/lib/print-language/codes';
+import { amountInWords } from '@/lib/print-language/amount';
 import { EscPosBuilder } from './escpos';
 
 export interface ReceiptBusiness {
@@ -61,6 +64,11 @@ export interface ReceiptLineItem {
   unit?: string | null;
   unitPrice: number;
   amount: number;
+  /** GST rate in percent; with taxableValue this feeds the HSN-wise tax summary. */
+  taxRate?: number | null;
+  /** Value before tax, after discount. */
+  taxableValue?: number | null;
+  taxAmount?: number | null;
 }
 
 export interface ReceiptData {
@@ -79,12 +87,25 @@ export interface ReceiptData {
   grandTotal: number;
   paidAmount?: number;
   balance?: number;
+  cashTendered?: number;
+  changeGiven?: number;
   paymentMode?: string;
   notes?: string | null;
   /** Optional UPI / URL / invoice link encoded as QR at the footer. */
   footerQr?: string | null;
   /** Free-text footer (thank-you message, return policy, etc.). */
   footerText?: string | null;
+  /** 'bill_of_supply' for composition dealers / exempt sales; anything else prints as a tax invoice. */
+  documentType?: string | null;
+  /** Two-digit GST state code of the place of supply. */
+  placeOfSupplyStateCode?: string | null;
+  placeOfSupplyName?: string | null;
+  isReverseCharge?: boolean;
+  /** e-Invoice details, printed when the bill has an IRN. */
+  irn?: string | null;
+  ackNo?: string | null;
+  ackDate?: string | null;
+  signedQr?: string | null;
 }
 
 export interface BuildReceiptOptions {
@@ -93,6 +114,42 @@ export interface BuildReceiptOptions {
   skipCut?: boolean;
   /** Free/trial businesses — append “Powered by Khatario” before cut. */
   showKhatarioFooter?: boolean;
+  /** Draws Hindi / Gujarati / ₹… as images (lib/print/text-raster-browser.ts). */
+  rasterize?: TextRasterizer;
+  /** Copies in one job; copy 2 onward is marked DUPLICATE. Default 1. */
+  copies?: number;
+  /** Pulse the cash drawer before printing. */
+  openDrawer?: boolean;
+  /** Language for "amount in words" (Hindi etc. print as images when a rasterizer is set). Default English. */
+  language?: DocumentLanguage;
+  /** Print the HSN/SAC-wise tax summary when items carry tax rates. Default true. */
+  showHsnSummary?: boolean;
+  /** Print the total in words. Default true. */
+  showAmountInWords?: boolean;
+}
+
+/** One row of the HSN/SAC-wise tax summary. */
+export type HsnSummaryRow = { hsn: string; rate: number; taxable: number; tax: number };
+
+/** Groups items by HSN/SAC and rate (items without HSN are grouped under "-"). */
+export function hsnSummary(items: ReceiptLineItem[]): HsnSummaryRow[] {
+  const rows = new Map<string, HsnSummaryRow>();
+  for (const item of items) {
+    if (item.taxRate == null || item.taxableValue == null) continue;
+    const hsn = (item.hsn || '').trim() || '-';
+    const rate = Number(item.taxRate) || 0;
+    const key = `${hsn}|${rate}`;
+    const row = rows.get(key) ?? { hsn, rate, taxable: 0, tax: 0 };
+    row.taxable += Number(item.taxableValue) || 0;
+    row.tax += item.taxAmount != null ? Number(item.taxAmount) || 0 : ((Number(item.taxableValue) || 0) * rate) / 100;
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => a.hsn.localeCompare(b.hsn) || a.rate - b.rate);
+}
+
+/** Total quantity across items, for "Items: 4  Qty: 7". */
+function totalQuantity(items: ReceiptLineItem[]): number {
+  return Math.round(items.reduce((s, i) => s + (Number(i.quantity) || 0), 0) * 1000) / 1000;
 }
 
 /**
@@ -103,8 +160,20 @@ export function buildInvoiceReceiptEscPos(
   opts: BuildReceiptOptions = {}
 ): Uint8Array {
   const paper = opts.paperWidthMm ?? 58;
-  const b = new EscPosBuilder({ paperWidthMm: paper });
+  const b = new EscPosBuilder({ paperWidthMm: paper, rasterize: opts.rasterize });
+  const copies = Math.min(5, Math.max(1, Math.floor(opts.copies ?? 1)));
   b.init();
+  if (opts.openDrawer) b.openDrawer();
+  for (let copy = 1; copy <= copies; copy++) {
+    if (copy > 1) b.init();
+    writeReceipt(b, data, opts, copy > 1);
+  }
+  return b.build();
+}
+
+function writeReceipt(b: EscPosBuilder, data: ReceiptData, opts: BuildReceiptOptions, duplicate: boolean): void {
+  const billOfSupply = data.documentType === 'bill_of_supply';
+  const registered = !!data.business.gstin;
 
   // ------------------------ Header
   b.align('center').bold(true).sizeBig().line(trunc(data.business.name, Math.floor(b.colsFontA / 2)));
@@ -120,8 +189,19 @@ export function buildInvoiceReceiptEscPos(
 
   // ------------------------ Invoice meta
   b.separator();
+  if (registered || duplicate) {
+    const title = billOfSupply ? 'BILL OF SUPPLY' : registered ? 'TAX INVOICE' : 'INVOICE';
+    b.align('center').bold(true).line(duplicate ? `${title} - DUPLICATE` : title).bold(false);
+  }
   b.align('left').bold(true).line(`Invoice: ${data.invoiceNumber}`).bold(false);
   b.line(`Date: ${fmtDateTime(data.invoiceDate)}`);
+  if (registered && (data.placeOfSupplyName || data.placeOfSupplyStateCode)) {
+    const pos = [data.placeOfSupplyName, data.placeOfSupplyStateCode ? `(${data.placeOfSupplyStateCode})` : '']
+      .filter(Boolean)
+      .join(' ');
+    for (const seg of wrap(`Place of supply: ${pos}`, b.colsFontA)) b.line(seg);
+  }
+  if (data.isReverseCharge) b.line('Tax payable on reverse charge: Yes');
 
   // ------------------------ Customer
   if (data.customer && (data.customer.name || data.customer.phone)) {
@@ -146,11 +226,11 @@ export function buildInvoiceReceiptEscPos(
     // Name may wrap to second line; qty+amount print on the FIRST line only.
     const nameLines = wrap(item.name, nameWidth);
     const first = nameLines.shift() ?? '';
-    b.line(
-      pad(first, nameWidth) +
-        padLeft(fmtQty(item.quantity, item.unit), 4) +
-        padLeft(fmtAmount(item.amount), 9)
-    );
+    b.columns([
+      { text: first, width: nameWidth },
+      { text: fmtQty(item.quantity, item.unit), width: 4, align: 'right' },
+      { text: fmtAmount(item.amount), width: 9, align: 'right' },
+    ]);
     for (const extra of nameLines) {
       b.line(pad(extra, nameWidth));
     }
@@ -161,6 +241,8 @@ export function buildInvoiceReceiptEscPos(
   }
 
   // ------------------------ Totals
+  b.separator('.');
+  b.line(`Items: ${data.items.length}  Qty: ${totalQuantity(data.items)}`);
   b.separator();
   const leftPad = b.colsFontA - 12; // 12 chars reserved for the right-aligned value
   if (data.discountTotal && data.discountTotal > 0) {
@@ -180,6 +262,29 @@ export function buildInvoiceReceiptEscPos(
   b.bold(true).sizeTall();
   b.line(padLeft('TOTAL', Math.max(1, leftPad - 6)) + padLeft(fmtAmount(data.grandTotal), 18));
   b.sizeNormal().bold(false);
+  if (opts.showAmountInWords !== false && data.grandTotal > 0) {
+    const words = amountInWords(data.grandTotal, opts.language ?? 'en');
+    b.align('left');
+    for (const seg of wrap(words, b.colsFontA)) b.line(seg);
+  }
+
+  // ------------------------ HSN-wise tax summary (GST bills)
+  const summary = registered && !billOfSupply && opts.showHsnSummary !== false ? hsnSummary(data.items) : [];
+  if (summary.length > 0 && summary.some((r) => r.tax > 0)) {
+    const w = b.colsFontA;
+    const rateW = 5;
+    const amtW = Math.floor((w - rateW) / 3);
+    const hsnW = w - rateW - amtW * 2;
+    b.separator('.');
+    b.bold(true).line(pad('HSN/SAC', hsnW) + padLeft('Taxable', amtW) + padLeft('GST%', rateW) + padLeft('Tax', amtW)).bold(false);
+    for (const r of summary) {
+      b.line(pad(r.hsn, hsnW) + padLeft(fmtAmount(r.taxable), amtW) + padLeft(fmtRate(r.rate), rateW) + padLeft(fmtAmount(r.tax), amtW));
+    }
+  }
+  if (billOfSupply) {
+    b.separator('.');
+    for (const seg of wrap('Composition taxable person, not eligible to collect tax on supplies.', b.colsFontA)) b.line(seg);
+  }
 
   // ------------------------ Payment
   if (data.paymentMode || data.paidAmount != null || data.balance != null) {
@@ -188,13 +293,32 @@ export function buildInvoiceReceiptEscPos(
     if (data.paidAmount != null) {
       b.line(`Paid amount: ${fmtAmount(data.paidAmount)}`);
     }
+    if (data.changeGiven != null && data.changeGiven > 0.0001) {
+      if (data.cashTendered != null) {
+        b.line(`Tendered: ${fmtAmount(data.cashTendered)}`);
+      }
+      b.line(`Change: ${fmtAmount(data.changeGiven)}`);
+    }
     if (data.balance != null && data.balance > 0.0001) {
       b.bold(true).line(`Balance due: ${fmtAmount(data.balance)}`).bold(false);
     }
   }
 
+  // ------------------------ e-Invoice
+  if (data.irn) {
+    b.separator();
+    b.align('left');
+    for (const seg of wrap(`IRN: ${data.irn}`, b.colsFontA)) b.line(seg);
+    if (data.ackNo) b.line(trunc(`Ack No: ${data.ackNo}`, b.colsFontA));
+    if (data.ackDate) b.line(trunc(`Ack Date: ${data.ackDate}`, b.colsFontA));
+    if (data.signedQr) {
+      b.align('center');
+      b.qrcode(data.signedQr, { size: 3, ecLevel: 'L' });
+    }
+  }
+
   // ------------------------ Footer
-  if (data.footerQr) {
+  if (data.footerQr && !duplicate) {
     b.separator();
     b.align('center').line('Scan to pay');
     b.qrcode(data.footerQr, { size: 6, ecLevel: 'M' });
@@ -221,7 +345,6 @@ export function buildInvoiceReceiptEscPos(
   } else {
     b.feed(4);
   }
-  return b.build();
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +389,9 @@ function wrap(text: string, width: number): string[] {
 function fmtAmount(v: number): string {
   if (v == null || !Number.isFinite(v)) return '0.00';
   return v.toFixed(2);
+}
+function fmtRate(rate: number): string {
+  return Number.isInteger(rate) ? String(rate) : rate.toFixed(1);
 }
 function fmtQty(qty: number, unit?: string | null): string {
   const s = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);

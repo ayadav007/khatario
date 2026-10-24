@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 200" font-family="system-ui, sans-serif">
+  <rect width="280" height="200" fill="#f6f7f4"/>
+  <rect width="280" height="36" fill="#fff"/>
+  <circle cx="22" cy="18" r="8" fill="#176b45"/>
+  <text x="36" y="22" font-size="11" font-weight="700" fill="#14261c">Grocery</text>
+  <rect x="104" y="10" width="160" height="16" rx="8" fill="#eef1ec"/>
+  <rect x="14" y="46" width="252" height="66" rx="12" fill="#176b45"/>
+  <text x="28" y="72" font-size="13" font-weight="700" fill="#fff">Fresh groceries</text>
+  <text x="28" y="88" font-size="9" fill="#cfe7d9">Delivered to your door</text>
+  <rect x="28" y="94" width="52" height="12" rx="6" fill="#f5c542"/>
+  <circle cx="226" cy="80" r="22" fill="#2e8a5f"/>
+  <g font-size="16" text-anchor="middle">
+    <circle cx="36" cy="136" r="16" fill="#fff"/><text x="36" y="142">🥕</text>
+    <circle cx="88" cy="136" r="16" fill="#fff"/><text x="88" y="142">🍎</text>
+    <circle cx="140" cy="136" r="16" fill="#fff"/><text x="140" y="142">🥛</text>
+    <circle cx="192" cy="136" r="16" fill="#fff"/><text x="192" y="142">🍞</text>
+    <circle cx="244" cy="136" r="16" fill="#fff"/><text x="244" y="142">🧀</text>
+  </g>
+  <g fill="#fff">
+    <rect x="14" y="162" width="80" height="30" rx="8"/>
+    <rect x="100" y="162" width="80" height="30" rx="8"/>
+    <rect x="186" y="162" width="80" height="30" rx="8"/>
+  </g>
+</svg>

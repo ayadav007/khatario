@@ -8,7 +8,11 @@ import { useCapabilityCheck } from '@/hooks/useCapability';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { buildMoreMenuSections } from '@/lib/more-navigation';
-import { HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+import {
+  getHrNavSectionTitle,
+  HR_LITE_NAV_SECTION_TITLE,
+  HR_NAV_SECTION_TITLE,
+} from '@/lib/hr/hr-admin-nav';
 
 /** Hide on detail / composer screens where horizontal nav adds noise. */
 function shouldHideHrSubNav(pathname: string): boolean {
@@ -42,7 +46,15 @@ export function HrMobileSubNav() {
       hasCapability,
       enabledModules,
     });
-    return sections.find((s) => s.title === HR_NAV_SECTION_TITLE)?.items ?? [];
+    const hrTitle = getHrNavSectionTitle((key) => hasCapability(key, 'view'));
+    return (
+      sections.find(
+        (s) =>
+          s.title === hrTitle ||
+          s.title === HR_NAV_SECTION_TITLE ||
+          s.title === HR_LITE_NAV_SECTION_TITLE,
+      )?.items ?? []
+    );
   }, [snapshotLoaded, warehousesEnabled, hasCapability, enabledModules]);
 
   if (!items.length || shouldHideHrSubNav(pathname ?? '')) return null;

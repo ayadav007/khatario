@@ -14,14 +14,36 @@ export function TrialExtensionModal() {
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState<'extend' | 'decline' | null>(null);
 
+  const dismissKey = business?.id ? `trial-extension-dismissed:${business.id}` : null;
+  const isDismissed = useCallback(() => {
+    if (!dismissKey || typeof window === 'undefined') return false;
+    try {
+      return window.sessionStorage.getItem(dismissKey) === '1';
+    } catch {
+      return false;
+    }
+  }, [dismissKey]);
+
+  function dismissForSession() {
+    if (dismissKey) {
+      try {
+        window.sessionStorage.setItem(dismissKey, '1');
+      } catch {
+        /* storage unavailable: closing still works for this render */
+      }
+    }
+    setOpen(false);
+  }
+
   const syncFromSession = useCallback(() => {
+    if (isDismissed()) return true;
     if (subscription?.show_trial_extension_modal) {
       setExtensionDays(subscription.trial_extension_days ?? 7);
       setOpen(true);
       return true;
     }
     return false;
-  }, [subscription]);
+  }, [subscription, isDismissed]);
 
   const checkOffer = useCallback(async () => {
     if (authLoading || !business?.id) {
@@ -107,10 +129,10 @@ export function TrialExtensionModal() {
       <div className="relative w-full max-w-md rounded-xl border border-border bg-white shadow-xl">
         <button
           type="button"
-          onClick={() => void handleAction('decline')}
+          onClick={dismissForSession}
           disabled={submitting !== null}
           className="absolute right-3 top-3 rounded-md p-1 text-text-muted hover:bg-gray-100 hover:text-text-primary disabled:opacity-50"
-          aria-label="Continue on Free plan"
+          aria-label="Close, decide later"
         >
           <X className="h-5 w-5" />
         </button>
@@ -165,8 +187,8 @@ export function TrialExtensionModal() {
           </div>
 
           <p className="mt-4 text-xs text-text-muted">
-            Free plan limits apply until you extend. You can upgrade anytime from Settings →
-            Subscription.
+            Free plan limits apply until you extend. Closing this keeps the offer for your next
+            visit. You can upgrade anytime from Settings → Subscription.
           </p>
         </div>
       </div>

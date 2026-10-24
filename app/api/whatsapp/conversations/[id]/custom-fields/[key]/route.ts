@@ -7,13 +7,13 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string; key: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string; key: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const fieldKey = decodeURIComponent(params.key);
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }

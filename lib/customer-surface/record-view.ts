@@ -15,10 +15,16 @@ async function publishInvoiceViewedEvents(
   const redis = getRedisConnection();
   if (!redis || redis.status !== 'ready') return;
 
+  // users.business_id is the business last switched to, so members are found through
+  // user_businesses as well (same tenant rule as authorize()).
   const users = await queryRows<{ id: string }>(
-    `SELECT id FROM users
-     WHERE business_id = $1 AND is_active = true
-     ORDER BY created_at ASC
+    `SELECT u.id FROM users u
+     WHERE u.is_active = true
+       AND (
+         u.business_id = $1
+         OR EXISTS (SELECT 1 FROM user_businesses ub WHERE ub.user_id = u.id AND ub.business_id = $1)
+       )
+     ORDER BY u.created_at ASC
      LIMIT 50`,
     [businessId]
   );

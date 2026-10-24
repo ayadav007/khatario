@@ -101,7 +101,7 @@ export async function resolveInvoiceByPublicToken(
       : grand - paid;
 
   const surfaceSettings = mergeCustomerSurfaceSettings(row.customer_surface_settings);
-  const sub = await getBusinessSubscription(row.business_id);
+  const sub = await getBusinessSubscription(row.business_id, false, 'billing');
   const effectivePlan = sub ? getEffectivePlanId(sub) : 'free';
   const showPlatformAd =
     surfaceSettings.show_platform_ads !== false &&

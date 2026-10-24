@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: 'read' }, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
@@ -46,10 +46,10 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) =>
 });
 
 export const POST = withWhatsAppPremiumApi(
-  { parseJsonBody: true },
-  async ({ businessId, body }) => {
+  { parseJsonBody: true, managePermission: true },
+  async ({ businessId, userId, body }) => {
   try {
-    const { title, shortcut, message, category, created_by } = (body ?? {}) as Record<string, any>;
+    const { title, shortcut, message, category } = (body ?? {}) as Record<string, any>;
 
     if (!title?.trim()) return NextResponse.json({ error: 'title is required' }, { status: 400 });
     if (!message?.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 });
@@ -64,7 +64,7 @@ export const POST = withWhatsAppPremiumApi(
         shortcut?.trim() || null,
         message.trim(),
         category?.trim() || 'general',
-        created_by || null,
+        userId || null,
       ]
     );
 

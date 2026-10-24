@@ -17,7 +17,7 @@ import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 /**
  * GET /api/gst/charges?period=YYYY-MM&branch_id=optional&filing_date=&payment_date=&is_nil_return=0|1&segment_details=1
  * Interest (delayed payment) and late fee (delayed filing) — separate from GST liability.
- * Segmented interest when ledger has `gst_payment` after due date.
+ * Segmented interest when ledger has `gst_payment` or `gst_cash_utilization` after due date. Deposits are not tax paid.
  * `effective_interest_end_date` = min(max(filing/payment, last payment after due), `as_on_date`).
  * Query `as_on_date=YYYY-MM-DD` (optional) defaults to **today in Asia/Kolkata** — reproducible reports.
  */

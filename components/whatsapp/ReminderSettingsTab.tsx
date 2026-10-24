@@ -1,29 +1,36 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/Card';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Switch } from '@/components/ui/Switch';
+import { Textarea } from '@/components/ui/Textarea';
 import { useAuth } from '@/contexts/AuthContext';
-import { Toast } from '@/components/ui/Toast';
+import { useToastContext } from '@/contexts/ToastContext';
 import { useFeatureUpgradeModal } from '@/contexts/FeatureUpgradeModalContext';
 import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { SettingsBlock } from '@/components/whatsapp/settings/SettingsBlock';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getApiErrorMessage } from '@/lib/api-utils';
 
+type DueRule = {
+  enabled: boolean;
+  days_before: number | null;
+  message_template: string;
+  include_pdf: boolean;
+};
+
+type OverdueRule = {
+  enabled: boolean;
+  interval_days: number | null;
+  message_template: string;
+  include_pdf: boolean;
+};
+
 interface ReminderSettings {
-  payment_due: {
-    enabled: boolean;
-    days_before: number | null;
-    message_template: string;
-    include_pdf: boolean;
-  } | null;
-  overdue: {
-    enabled: boolean;
-    interval_days: number | null;
-    message_template: string;
-    include_pdf: boolean;
-  } | null;
+  payment_due: DueRule | null;
+  overdue: OverdueRule | null;
 }
 
 /** Local clock time + IANA zone for the daily auto reminder run (see business_settings). */
@@ -70,25 +77,57 @@ Please arrange payment immediately to avoid any inconvenience.
 Thank you!
 {business_name}`;
 
+const DEFAULT_DUE: DueRule = { enabled: false, days_before: 1, message_template: DEFAULT_PAYMENT_DUE_TEMPLATE, include_pdf: true };
+const DEFAULT_OVERDUE: OverdueRule = { enabled: false, interval_days: 7, message_template: DEFAULT_OVERDUE_TEMPLATE, include_pdf: true };
+
+const PLACEHOLDERS = '{customer_name}, {invoice_no}, {amount}, {due_date}, {balance_amount}, {business_name}';
+
+function MessageFields({
+  template,
+  includePdf,
+  onTemplate,
+  onIncludePdf,
+}: {
+  template: string;
+  includePdf: boolean;
+  onTemplate: (v: string) => void;
+  onIncludePdf: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <div>
+        <label className="type-label mb-1.5 block">Message</label>
+        <Textarea rows={7} value={template} onChange={(e) => onTemplate(e.target.value)} />
+        <p className="mt-1 text-xs text-text-secondary">You can use: {PLACEHOLDERS}</p>
+      </div>
+      <Switch
+        checked={includePdf}
+        onChange={onIncludePdf}
+        label="Attach the invoice PDF"
+        description="Sends the invoice along with the message."
+      />
+    </>
+  );
+}
+
 export function ReminderSettingsTab() {
   const { business } = useAuth();
+  const toast = useToastContext();
   const { openIfFeatureDeniedResponse } = useFeatureUpgradeModal();
-  const [settings, setSettings] = useState<ReminderSettings>({
-    payment_due: null,
-    overdue: null
-  });
+  const [settings, setSettings] = useState<ReminderSettings>({ payment_due: null, overdue: null });
   const [schedule, setSchedule] = useState<ReminderSchedule>(DEFAULT_SCHEDULE);
+  const [saved, setSaved] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [planDenied, setPlanDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
   useEffect(() => {
-    if (business?.id) {
-      fetchSettings();
-    }
+    if (business?.id) void fetchSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [business?.id]);
+
+  const snapshot = (s: ReminderSettings, sch: ReminderSchedule) => JSON.stringify({ s, sch });
 
   const fetchSettings = async () => {
     if (!business?.id) return;
@@ -97,32 +136,26 @@ export function ReminderSettingsTab() {
       const res = await fetch(`/api/whatsapp/reminders?business_id=${business.id}`);
       if (res.ok) {
         const data = await res.json();
-        setSettings({
-          payment_due: data.settings.payment_due || {
-            enabled: false,
-            days_before: 1,
-            message_template: DEFAULT_PAYMENT_DUE_TEMPLATE,
-            include_pdf: true
-          },
-          overdue: data.settings.overdue || {
-            enabled: false,
-            interval_days: 7,
-            message_template: DEFAULT_OVERDUE_TEMPLATE,
-            include_pdf: true
-          }
-        });
-        if (data.schedule) {
-          setSchedule({
-            reminder_send_time: (data.schedule.reminder_send_time as string) || '09:00',
-            reminder_send_timezone: (data.schedule.reminder_send_timezone as string) || 'Asia/Kolkata',
-          });
-        } else {
-          setSchedule(DEFAULT_SCHEDULE);
-        }
+        const next: ReminderSettings = {
+          payment_due: data.settings.payment_due || DEFAULT_DUE,
+          overdue: data.settings.overdue || DEFAULT_OVERDUE,
+        };
+        const nextSchedule: ReminderSchedule = data.schedule
+          ? {
+              reminder_send_time: (data.schedule.reminder_send_time as string) || '09:00',
+              reminder_send_timezone: (data.schedule.reminder_send_timezone as string) || 'Asia/Kolkata',
+            }
+          : DEFAULT_SCHEDULE;
+        setSettings(next);
+        setSchedule(nextSchedule);
+        setSaved(snapshot(next, nextSchedule));
+      } else {
+        const data = await res.json().catch(() => null);
+        if (openIfFeatureDeniedResponse(res.status, data)) setPlanDenied(true);
+        else setError(getApiErrorMessage(data, 'Failed to load reminder settings'));
       }
-    } catch (error) {
-      console.error('Failed to fetch reminder settings:', error);
-      setError('Failed to load settings');
+    } catch {
+      setError('Failed to load reminder settings');
     } finally {
       setLoading(false);
     }
@@ -135,6 +168,10 @@ export function ReminderSettingsTab() {
     setPlanDenied(false);
 
     try {
+      const normalizedSchedule = {
+        reminder_send_time: schedule.reminder_send_time,
+        reminder_send_timezone: schedule.reminder_send_timezone.trim() || 'Asia/Kolkata',
+      };
       const res = await fetch('/api/whatsapp/reminders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,11 +179,8 @@ export function ReminderSettingsTab() {
           business_id: business.id,
           payment_due: settings.payment_due,
           overdue: settings.overdue,
-          schedule: {
-            reminder_send_time: schedule.reminder_send_time,
-            reminder_send_timezone: schedule.reminder_send_timezone.trim() || 'Asia/Kolkata',
-          },
-        })
+          schedule: normalizedSchedule,
+        }),
       });
 
       const text = await res.text();
@@ -154,9 +188,7 @@ export function ReminderSettingsTab() {
       try {
         if (text.trim()) {
           const parsed = JSON.parse(text);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            data = parsed as Record<string, unknown>;
-          }
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed as Record<string, unknown>;
         }
       } catch {
         if (!res.ok) {
@@ -166,18 +198,16 @@ export function ReminderSettingsTab() {
       }
 
       if (res.ok) {
-        setToast({ message: 'Settings saved successfully', type: 'success' });
+        setSaved(snapshot(settings, schedule));
+        toast.success('Reminder settings saved');
         return;
       }
-
       if (openIfFeatureDeniedResponse(res.status, data)) {
         setPlanDenied(true);
         return;
       }
-
       setError(getApiErrorMessage(data, 'Failed to save settings'));
-    } catch (error) {
-      console.error('Failed to save settings:', error);
+    } catch {
       setError('Failed to save settings');
     } finally {
       setSaving(false);
@@ -185,272 +215,149 @@ export function ReminderSettingsTab() {
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">Loading...</div>;
+    return (
+      <SettingsBlock title="Payment reminders" description="Automatic WhatsApp reminders for unpaid invoices.">
+        <p className="text-sm text-text-secondary">Loading…</p>
+      </SettingsBlock>
+    );
   }
 
-  return (
-    <div className="space-y-6">
-      {planDenied && (
-        <PlanFeatureDeniedCallout
-          featureKey={FeatureKeys.WHATSAPP_AUTO_REMINDERS}
-          title="WhatsApp auto reminders are not on your plan"
-        />
-      )}
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-          {error}
-        </div>
-      )}
+  const due = settings.payment_due ?? DEFAULT_DUE;
+  const overdue = settings.overdue ?? DEFAULT_OVERDUE;
+  const setDue = (p: Partial<DueRule>) => setSettings((s) => ({ ...s, payment_due: { ...(s.payment_due ?? DEFAULT_DUE), ...p } }));
+  const setOverdue = (p: Partial<OverdueRule>) =>
+    setSettings((s) => ({ ...s, overdue: { ...(s.overdue ?? DEFAULT_OVERDUE), ...p } }));
+  const dirty = saved !== '' && saved !== snapshot(settings, schedule);
 
-      <Card padding="lg">
-        <h3 className="text-lg font-semibold text-gray-900 mb-1">When to send auto reminders</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          Choose the local time and time zone for your business. Payment-due and overdue runs both use
-          this window once per day (checked every 15 minutes on the server).
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Local time</label>
-            <input
-              type="time"
-              value={schedule.reminder_send_time.length === 5 ? schedule.reminder_send_time : '09:00'}
-              onChange={(e) =>
-                setSchedule((s) => ({ ...s, reminder_send_time: e.target.value || '09:00' }))
-              }
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-text-primary"
+  return (
+    <>
+      {planDenied || error ? (
+        <div className="space-y-3">
+          {planDenied ? (
+            <PlanFeatureDeniedCallout
+              featureKey={FeatureKeys.WHATSAPP_AUTO_REMINDERS}
+              title="WhatsApp auto reminders are not on your plan"
             />
-          </div>
+          ) : null}
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <SettingsBlock
+        id="reminder-time"
+        title="When reminders go out"
+        description="Both reminder types are sent once a day at this local time. A Cloud API number uses the approved template chosen under Templates."
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label="Local time"
+            type="time"
+            value={schedule.reminder_send_time.length === 5 ? schedule.reminder_send_time : '09:00'}
+            onChange={(e) => setSchedule((s) => ({ ...s, reminder_send_time: e.target.value || '09:00' }))}
+          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Time zone (IANA)</label>
-            <input
+            <Input
+              label="Time zone"
               type="text"
               list="reminder-tz-datalist"
               value={schedule.reminder_send_timezone}
               onChange={(e) =>
-                setSchedule((s) => ({
-                  ...s,
-                  reminder_send_timezone: (e.target.value || 'Asia/Kolkata').trim() || 'Asia/Kolkata',
-                }))
+                setSchedule((s) => ({ ...s, reminder_send_timezone: e.target.value.trim() || 'Asia/Kolkata' }))
               }
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               placeholder="e.g. Asia/Kolkata"
               autoComplete="off"
+              helperText="Pick a suggestion or type any IANA zone, like Asia/Kolkata."
             />
             <datalist id="reminder-tz-datalist">
               {TIMEZONE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value} label={o.label} />
               ))}
             </datalist>
-            <p className="text-xs text-gray-500 mt-1">Pick a suggestion or type any valid IANA zone id.</p>
           </div>
         </div>
-      </Card>
+      </SettingsBlock>
 
-      {/* Payment Due Reminder */}
-      <Card padding="lg">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Payment Due Reminder</h3>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={settings.payment_due?.enabled || false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    payment_due: {
-                      ...(settings.payment_due || {
-                        days_before: 1,
-                        message_template: DEFAULT_PAYMENT_DUE_TEMPLATE,
-                        include_pdf: true
-                      }),
-                      enabled: e.target.checked
-                    }
-                  })
-                }
-                className="mr-2"
+      <SettingsBlock
+        id="reminder-due"
+        title="Before the due date"
+        description="A friendly nudge a few days before an invoice is due."
+      >
+        <Switch
+          checked={due.enabled}
+          onChange={(enabled) => setDue({ enabled })}
+          label="Send a reminder before the due date"
+        />
+        {due.enabled ? (
+          <div className="space-y-4 border-t border-border pt-4 dark:border-border-dark">
+            <div className="max-w-xs">
+              <Input
+                label="Days before the due date"
+                type="number"
+                min="1"
+                max="30"
+                value={due.days_before || 1}
+                onChange={(e) => setDue({ days_before: parseInt(e.target.value) || 1 })}
               />
-              <span className="text-sm text-gray-700">Enable</span>
-            </label>
+            </div>
+            <MessageFields
+              template={due.message_template}
+              includePdf={due.include_pdf !== false}
+              onTemplate={(message_template) => setDue({ message_template })}
+              onIncludePdf={(include_pdf) => setDue({ include_pdf })}
+            />
           </div>
+        ) : null}
+      </SettingsBlock>
 
-          {settings.payment_due?.enabled && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Days Before Due Date
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={settings.payment_due?.days_before || 1}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      payment_due: {
-                        ...settings.payment_due!,
-                        days_before: parseInt(e.target.value) || 1
-                      }
-                    })
-                  }
-                />
-                <p className="text-xs text-gray-500 mt-1">Send reminder X days before the due date</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message Template
-                </label>
-                <textarea
-                  value={settings.payment_due?.message_template || ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      payment_due: {
-                        ...settings.payment_due!,
-                        message_template: e.target.value
-                      }
-                    })
-                  }
-                  rows={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Available placeholders: {'{customer_name}'}, {'{invoice_no}'}, {'{amount}'}, {'{due_date}'}, {'{balance_amount}'}, {'{business_name}'}
-                </p>
-              </div>
-
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={settings.payment_due?.include_pdf !== false}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      payment_due: {
-                        ...settings.payment_due!,
-                        include_pdf: e.target.checked
-                      }
-                    })
-                  }
-                  className="mr-2"
-                />
-                <span className="text-sm text-gray-700">Include PDF attachment</span>
-              </label>
-            </>
-          )}
-        </div>
-      </Card>
-
-      {/* Overdue Reminder */}
-      <Card padding="lg">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Overdue Reminder</h3>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={settings.overdue?.enabled || false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    overdue: {
-                      ...(settings.overdue || {
-                        interval_days: 7,
-                        message_template: DEFAULT_OVERDUE_TEMPLATE,
-                        include_pdf: true
-                      }),
-                      enabled: e.target.checked
-                    }
-                  })
-                }
-                className="mr-2"
+      <SettingsBlock
+        id="reminder-overdue"
+        title="After the due date"
+        description="Repeats until the invoice is paid."
+      >
+        <Switch
+          checked={overdue.enabled}
+          onChange={(enabled) => setOverdue({ enabled })}
+          label="Remind customers about overdue invoices"
+        />
+        {overdue.enabled ? (
+          <div className="space-y-4 border-t border-border pt-4 dark:border-border-dark">
+            <div className="max-w-xs">
+              <Input
+                label="Repeat every (days)"
+                type="number"
+                min="1"
+                max="30"
+                value={overdue.interval_days || 7}
+                onChange={(e) => setOverdue({ interval_days: parseInt(e.target.value) || 7 })}
               />
-              <span className="text-sm text-gray-700">Enable</span>
-            </label>
+            </div>
+            <MessageFields
+              template={overdue.message_template}
+              includePdf={overdue.include_pdf !== false}
+              onTemplate={(message_template) => setOverdue({ message_template })}
+              onIncludePdf={(include_pdf) => setOverdue({ include_pdf })}
+            />
           </div>
+        ) : null}
+      </SettingsBlock>
 
-          {settings.overdue?.enabled && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Interval (Days)
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={settings.overdue?.interval_days || 7}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      overdue: {
-                        ...settings.overdue!,
-                        interval_days: parseInt(e.target.value) || 7
-                      }
-                    })
-                  }
-                />
-                <p className="text-xs text-gray-500 mt-1">Send reminder every X days for overdue invoices</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message Template
-                </label>
-                <textarea
-                  value={settings.overdue?.message_template || ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      overdue: {
-                        ...settings.overdue!,
-                        message_template: e.target.value
-                      }
-                    })
-                  }
-                  rows={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Available placeholders: {'{customer_name}'}, {'{invoice_no}'}, {'{amount}'}, {'{due_date}'}, {'{balance_amount}'}, {'{business_name}'}
-                </p>
-              </div>
-
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={settings.overdue?.include_pdf !== false}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      overdue: {
-                        ...settings.overdue!,
-                        include_pdf: e.target.checked
-                      }
-                    })
-                  }
-                  className="mr-2"
-                />
-                <span className="text-sm text-gray-700">Include PDF attachment</span>
-              </label>
-            </>
-          )}
-        </div>
-      </Card>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
-        </Button>
-      </div>
-
-      {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
-      )}
-    </div>
+      {dirty ? (
+        <SettingsFloatingSaveBar align="between">
+          <span className="text-sm text-text-secondary">You have unsaved reminder changes</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => void fetchSettings()} disabled={saving}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={() => void handleSave()} isLoading={saving}>
+              Save reminders
+            </Button>
+          </div>
+        </SettingsFloatingSaveBar>
+      ) : null}
+    </>
   );
 }
-

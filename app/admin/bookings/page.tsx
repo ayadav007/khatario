@@ -167,6 +167,7 @@ export default function AdminBookingsPage() {
             <option value="social_media">Social Media</option>
             <option value="direct">Direct</option>
             <option value="other">Other</option>
+            <option value="assistant">AI Assistant</option>
           </select>
           <Link
             href="/admin/bookings/time-slots"

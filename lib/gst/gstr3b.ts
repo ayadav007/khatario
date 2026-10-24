@@ -6,9 +6,11 @@ import {
 } from '@/lib/gst/gstr1-reconciliation-basis';
 import { GSTR1Generator } from './gstr1';
 import {
-  computeItcUtilizationDisplay,
+  computeGstr3bCashPayable,
   getItcFromInputLedgerNet,
+  getLedgerBalanceBefore,
   getLedgerNetCreditMinusDebit,
+  GSTR3B_INPUT_CESS,
   GSTR3B_INPUT_CGST,
   GSTR3B_INPUT_IGST,
   GSTR3B_INPUT_SGST,
@@ -18,15 +20,22 @@ import {
   GSTR3B_OUTPUT_SGST,
   GSTR3BLedgerBasis,
   hasInvoiceLedgerEntryDateMismatch,
+  itcCarriedForward,
   resolveRcmLedgerNets,
   round2,
 } from './gstr3b-ledger';
+import { aggregateTable5, type GSTR3BTable5 } from './gstr3b-table5';
+import { registrationBranchIds, resolveSupplierRegistration } from './registration';
+import { loadItcGate, type HeldBill, type ItcHeads } from './itc-2b-gate';
 
 export interface GSTR3BFilters {
   business_id: string;
   month: number;
   year: number;
-  /** When set, ledger lines are scoped like `get_account_balance` (NULL branch + this branch). */
+  /**
+   * The return of this branch's GSTIN: every branch filing under that GSTIN, plus ledger lines
+   * with no branch (like `get_account_balance`).
+   */
   branch_id?: string;
 }
 
@@ -43,8 +52,15 @@ export interface GSTR3BData {
   // Table 3.1 - Tax on outward and reverse charge inward supplies
   outward_taxable_supplies: TaxBreakdown;
   outward_zero_rated: TaxBreakdown;
+  /** 3.1(c) nil-rated and exempted */
   other_outward_supplies: TaxBreakdown;
+  /** 3.1(d) from reverse-charge bills of the period (incl. import of services) */
   inward_reverse_charge: TaxBreakdown;
+  /** 3.1(e) non-GST outward supplies */
+  non_gst_outward_supplies: TaxBreakdown;
+
+  /** Table 3.2 — inter-state supplies to unregistered persons, by place of supply */
+  inter_state_supplies_unregistered: Array<{ place_of_supply: string; taxable_value: number; igst: number }>;
 
   // Table 4 - ITC (amounts from input GST ledger accounts only)
   itc_details: ITCDetails;
@@ -55,13 +71,22 @@ export interface GSTR3BData {
   /** Net tax payable by head after ITC utilization on 2150–2152 plus head-wise RCM when split; excludes pooled RCM (see summary.net_tax_payable). */
   tax_liability: TaxBreakdown;
 
-  // Table 5 - Interest and Late Fee
+  /** Table 5 — exempt, nil-rated, composition-supplier and non-GST inward supplies (from purchase lines). */
+  inward_exempt_nil_non_gst: GSTR3BTable5;
+
+  /** Table 5.1 — interest plus late fee by head (filled by `fillTable51`; zero until then). */
   interest_late_fee: {
     igst: number;
     cgst: number;
     sgst: number;
     cess: number;
   };
+  /** Table 5.1 interest (s.50) by head, when filled by `fillTable51`. */
+  interest?: { igst: number; cgst: number; sgst: number; cess: number };
+  /** Table 5.1 late fee (s.47), CGST and SGST halves, when filled by `fillTable51`. */
+  late_fee?: { cgst: number; sgst: number };
+  /** Filing date the 5.1 figures assume, the return's due date, and days late. */
+  table_51_basis?: { filing_date: string; due_date: string; days_late: number };
 
   // Summary
   summary: {
@@ -93,6 +118,16 @@ export interface GSTR3BData {
   utilization: GSTR3BLedgerBasis['utilization'];
   net_payable: GSTR3BLedgerBasis['net_payable'];
 
+  /**
+   * GSTR-2B gate on 4A(5) (s.16(2)(aa)): books ITC held back because 2B does not show it yet,
+   * and ITC held earlier that 2B or a decision supports from this period.
+   */
+  itc_2b: { reconciled: boolean; held: ItcHeads; released: ItcHeads; held_bills: HeldBill[] };
+  /** Credit left in the electronic credit ledger from earlier periods (s.49(2)). */
+  itc_brought_forward: ItcHeads;
+  /** ITC set off in 6.1: this period's claimable ITC plus the brought-forward balance. */
+  itc_available: ItcHeads;
+
   reconciliation: GSTR3BReconciliation;
   /** Ledger vs GSTR-1 by tax head (2150–2152 + 2153 vs invoice/CDN-derived), incl. CESS. */
   reconciliation_by_head: {
@@ -113,7 +148,11 @@ export interface TaxBreakdown {
 }
 
 export interface ITCDetails {
+  /** 4A(1) import of goods */
   imports: TaxBreakdown;
+  /** 4A(2) import of services */
+  import_services: TaxBreakdown;
+  /** 4A(3) inward supplies liable to reverse charge */
   inward_reverse_charge: TaxBreakdown;
   other_itc: TaxBreakdown;
   itc_reversed: TaxBreakdown;
@@ -145,49 +184,20 @@ function isInterStateDomestic(
   selfState: string | null
 ): boolean {
   const pos = extractStateCode(placeOfSupply);
-  if (pos === '96' || pos === '97') return false;
+  if (pos === '96') return false;
   if (selfState && pos.length === 2) return pos !== selfState;
   return igstAmount > 0;
 }
 
-/**
- * Split domestic taxable value (row 3.1a total = targetTotal) using GSTR-1 B2B/B2CL/B2CS lines.
- * Does not use tax %; optional POS vs registered GSTIN state, else IGST>0 heuristic.
- */
-function domesticTaxableNatureTotals(
-  gstr1Data: Gstr1Bundle,
-  selfState: string | null,
-  targetTotal: number
-): { inter: number; intra: number } {
-  let rawInter = 0;
-  let rawIntra = 0;
+function isExportPlaceOfSupply(placeOfSupply: string | undefined | null): boolean {
+  const pos = extractStateCode(placeOfSupply);
+  // 97 "Other Territory" is a taxable inter-state supply, not zero-rated.
+  return pos === '96';
+}
 
-  for (const row of gstr1Data.b2b) {
-    const inter = isInterStateDomestic(row.place_of_supply, row.igst_amount, selfState);
-    if (inter) rawInter += row.taxable_value;
-    else rawIntra += row.taxable_value;
-  }
-  for (const row of gstr1Data.b2cl) {
-    const inter = isInterStateDomestic(row.place_of_supply, row.igst_amount, selfState);
-    if (inter) rawInter += row.taxable_value;
-    else rawIntra += row.taxable_value;
-  }
-  for (const row of gstr1Data.b2cs) {
-    const inter = isInterStateDomestic(row.place_of_supply, row.igst_amount, selfState);
-    if (inter) rawInter += row.taxable_value;
-    else rawIntra += row.taxable_value;
-  }
-
-  const raw = rawInter + rawIntra;
-  if (targetTotal <= 0) {
-    return { inter: 0, intra: 0 };
-  }
-  if (raw <= 0) {
-    return { inter: 0, intra: round2(targetTotal) };
-  }
-  const inter = round2((rawInter / raw) * targetTotal);
-  const intra = round2(targetTotal - inter);
-  return { inter, intra };
+/** Credit notes reduce outward supplies; debit notes add to them. */
+function noteSign(note: { note_type: 'C' | 'D' }): number {
+  return note.note_type === 'C' ? -1 : 1;
 }
 
 export class GSTR3BGenerator {
@@ -197,8 +207,10 @@ export class GSTR3BGenerator {
     const { business_id, month, year, branch_id } = filters;
 
     const startOfMonth = `${year}-${month.toString().padStart(2, '0')}-01`;
-    const endOfMonth = new Date(year, month, 0).toISOString().split('T')[0];
-    const branch = branch_id ?? null;
+    // Built as text: Date#toISOString shifts to UTC and returns the previous day on IST servers.
+    const endOfMonth = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+    const pool = getPool();
+    const branch = branch_id ? await registrationBranchIds(pool, business_id, branch_id) : null;
 
     const gstr1Data = await this.gstr1Generator.generate({
       business_id,
@@ -263,23 +275,50 @@ export class GSTR3BGenerator {
     const itcCGST = getItcFromInputLedgerNet(netIn1110);
     const itcSGST = getItcFromInputLedgerNet(netIn1111);
     const itcIGST = getItcFromInputLedgerNet(netIn1112);
+    const itcCess = getItcFromInputLedgerNet(
+      await getLedgerNetCreditMinusDebit(business_id, GSTR3B_INPUT_CESS, startOfMonth, endOfMonth, branch)
+    );
 
     const rcmIgstForLiability = rcmResolved.igst ?? 0;
     const rcmCgstForLiability = rcmResolved.cgst ?? 0;
     const rcmSgstForLiability = rcmResolved.sgst ?? 0;
 
-    const igstLiabilityGross = round2(outputIGST + rcmIgstForLiability);
-    const cgstLiabilityGross = round2(outputCGST + rcmCgstForLiability);
-    const sgstLiabilityGross = round2(outputSGST + rcmSgstForLiability);
+    // 4A(5) may hold only credit GSTR-2B supports (s.16(2)(aa)); see itc-2b-gate.
+    const period = `${year}-${month.toString().padStart(2, '0')}`;
+    const gate = await loadItcGate(pool, business_id, period, branch);
 
-    const util = computeItcUtilizationDisplay({
-      igstLiability: igstLiabilityGross,
-      cgstLiability: cgstLiabilityGross,
-      sgstLiability: sgstLiabilityGross,
-      itcIgst: itcIGST,
-      itcCgst: itcCGST,
-      itcSgst: itcSGST,
+    // 6.1 sets off against the electronic credit ledger, which carries unused credit forward.
+    const [inI, inC, inS, inCess, outI, outC, outS, outCess] = await Promise.all(
+      [GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST, GSTR3B_INPUT_CESS,
+        GSTR3B_OUTPUT_IGST, GSTR3B_OUTPUT_CGST, GSTR3B_OUTPUT_SGST, GSTR3B_OUTPUT_CESS].map((code) =>
+        getLedgerBalanceBefore(business_id, code, startOfMonth, branch)
+      )
+    );
+    const itc_brought_forward = itcCarriedForward({
+      inputBalance: { igst: Math.max(0, -inI), cgst: Math.max(0, -inC), sgst: Math.max(0, -inS), cess: Math.max(0, -inCess) },
+      outputBalance: { igst: Math.max(0, outI), cgst: Math.max(0, outC), sgst: Math.max(0, outS), cess: Math.max(0, outCess) },
+      // Released ITC is added to this period below, so it is not also carried forward.
+      held: {
+        igst: gate.held_before.igst + gate.released.igst,
+        cgst: gate.held_before.cgst + gate.released.cgst,
+        sgst: gate.held_before.sgst + gate.released.sgst,
+        cess: gate.held_before.cess + gate.released.cess,
+      },
     });
+    const claimable = (books: number, head: keyof ItcHeads) => Math.max(0, round2(books - gate.held[head] + gate.released[head]));
+    const itc_available: ItcHeads = {
+      igst: round2(claimable(itcIGST, 'igst') + itc_brought_forward.igst),
+      cgst: round2(claimable(itcCGST, 'cgst') + itc_brought_forward.cgst),
+      sgst: round2(claimable(itcSGST, 'sgst') + itc_brought_forward.sgst),
+      cess: round2(claimable(itcCess, 'cess') + itc_brought_forward.cess),
+    };
+
+    const cashWorking = computeGstr3bCashPayable({
+      output: { igst: outputIGST, cgst: outputCGST, sgst: outputSGST, cess: outputCess },
+      itc: itc_available,
+      rcm: rcmResolved,
+    });
+    const util = cashWorking.util;
 
     const gstr1Out = aggregateGstr1OutputByHead(gstr1Data);
     const gstr1Tax = { igst: gstr1Out.igst, cgst: gstr1Out.cgst, sgst: gstr1Out.sgst };
@@ -392,6 +431,7 @@ export class GSTR3BGenerator {
         igst: round2(itcIGST),
         cgst: round2(itcCGST),
         sgst: round2(itcSGST),
+        cess: round2(itcCess),
       },
       utilization: {
         igst_to_igst: util.igst_to_igst,
@@ -401,126 +441,290 @@ export class GSTR3BGenerator {
         cgst_to_igst: util.cgst_to_igst,
         sgst_to_sgst: util.sgst_to_sgst,
         sgst_to_igst: util.sgst_to_igst,
+        cess_to_cess: util.cess_to_cess,
       },
       net_payable: util.net_payable,
     };
 
-    const pool = getPool();
-    const bizRes = await pool.query<{ gstin: string | null }>(
-      `SELECT gstin FROM businesses WHERE id = $1::uuid LIMIT 1`,
-      [business_id]
-    );
-    const selfState =
-      bizRes.rows[0]?.gstin && bizRes.rows[0].gstin.length >= 2
-        ? bizRes.rows[0].gstin.slice(0, 2)
-        : null;
+    // Same registration lookup the invoice tax split uses: a valid GSTIN decides the state,
+    // otherwise the registered state_code. A raw GSTIN prefix would disagree with the documents.
+    const registration = await resolveSupplierRegistration(pool, business_id, branch_id ?? null);
+    const selfState = registration.stateCode;
 
-    const wA =
-      gstr1Data.b2b.reduce((s, r) => s + r.taxable_value, 0) +
-      gstr1Data.b2cl.reduce((s, r) => s + r.taxable_value, 0) +
-      gstr1Data.b2cs.reduce((s, r) => s + r.taxable_value, 0);
-    const wB =
-      gstr1Data.exports.reduce((s, e) => s + e.taxable_value, 0) +
-      gstr1Data.sez.reduce((s, e) => s + e.taxable_value, 0);
-    const wOut = wA + wB;
-    let shareA = 1;
-    let shareB = 0;
-    if (wOut > 0) {
-      shareA = wA / wOut;
-      shareB = wB / wOut;
+    // Table 3.1(a)/(b): tax heads come from the documents themselves, never pro-rated.
+    const interA = emptyTax();
+    const intraA = emptyTax();
+    const zeroB = emptyTax();
+    const interUnreg = new Map<string, { taxable_value: number; igst: number }>();
+    const addTo = (t: TaxBreakdown, sign: number, v: { taxable: number; igst: number; cgst: number; sgst: number; cess: number }) => {
+      t.taxable_value += sign * v.taxable;
+      t.igst += sign * v.igst;
+      t.cgst += sign * v.cgst;
+      t.sgst += sign * v.sgst;
+      t.cess += sign * v.cess;
+    };
+    const addDomestic = (
+      pos: string,
+      v: { taxable: number; igst: number; cgst: number; sgst: number; cess: number },
+      sign = 1,
+      unregistered = false
+    ) => {
+      const inter = isInterStateDomestic(pos, v.igst, selfState);
+      addTo(inter ? interA : intraA, sign, v);
+      if (inter && unregistered) {
+        const code = extractStateCode(pos);
+        const row = interUnreg.get(code) ?? { taxable_value: 0, igst: 0 };
+        row.taxable_value += sign * v.taxable;
+        row.igst += sign * v.igst;
+        interUnreg.set(code, row);
+      }
+    };
+
+    for (const r of gstr1Data.b2b) {
+      addDomestic(r.place_of_supply, { taxable: r.taxable_value, igst: r.igst_amount, cgst: r.cgst_amount, sgst: r.sgst_amount, cess: r.cess_amount });
+    }
+    for (const r of gstr1Data.b2cl) {
+      addDomestic(r.place_of_supply, { taxable: r.taxable_value, igst: r.igst_amount, cgst: 0, sgst: 0, cess: r.cess_amount }, 1, true);
+    }
+    for (const r of gstr1Data.b2cs) {
+      addDomestic(r.place_of_supply, { taxable: r.taxable_value, igst: r.igst_amount, cgst: r.cgst_amount, sgst: r.sgst_amount, cess: r.cess_amount }, 1, true);
+    }
+    for (const r of gstr1Data.exports) {
+      addTo(zeroB, 1, { taxable: r.taxable_value, igst: r.igst_amount, cgst: 0, sgst: 0, cess: 0 });
+    }
+    for (const r of gstr1Data.sez) {
+      addTo(zeroB, 1, { taxable: r.taxable_value, igst: r.igst_amount, cgst: 0, sgst: 0, cess: r.cess_amount });
+    }
+    for (const n of gstr1Data.cdn) {
+      const v = { taxable: n.taxable_value, igst: n.igst_amount, cgst: n.cgst_amount, sgst: n.sgst_amount, cess: n.cess_amount };
+      const isZeroRatedNote =
+        isExportPlaceOfSupply(n.place_of_supply) || n.cdnur_typ === 'EXPWP' || n.cdnur_typ === 'EXPWOP' ||
+        n.note_supply_type.startsWith('SEZ');
+      if (isZeroRatedNote) addTo(zeroB, noteSign(n), v);
+      else addDomestic(n.place_of_supply, v, noteSign(n), !n.gstin_uin_recipient);
+    }
+    // Tax on service advances is payable in 3.1(a) on receipt (GSTR-1 11A) and reduced when adjusted (11B).
+    for (const a of gstr1Data.at ?? []) {
+      addDomestic(a.place_of_supply, { taxable: a.taxable_value, igst: a.igst, cgst: a.cgst, sgst: a.sgst, cess: a.cess });
+    }
+    for (const a of gstr1Data.atadj ?? []) {
+      addDomestic(a.place_of_supply, { taxable: a.taxable_value, igst: a.igst, cgst: a.cgst, sgst: a.sgst, cess: a.cess }, -1);
     }
 
-    const { inter: tvInterA, intra: tvIntraA } = domesticTaxableNatureTotals(gstr1Data, selfState, wA);
+    const roundTax = (t: TaxBreakdown): TaxBreakdown => ({
+      taxable_value: round2(t.taxable_value),
+      igst: round2(t.igst),
+      cgst: round2(t.cgst),
+      sgst: round2(t.sgst),
+      cess: round2(t.cess),
+    });
+    const outward_taxable_supplies_nature = { inter_state: roundTax(interA), intra_state: roundTax(intraA) };
+    const outward_taxable_supplies = roundTax({
+      taxable_value: interA.taxable_value + intraA.taxable_value,
+      igst: interA.igst + intraA.igst,
+      cgst: interA.cgst + intraA.cgst,
+      sgst: interA.sgst + intraA.sgst,
+      cess: interA.cess + intraA.cess,
+    });
+    const outward_zero_rated = roundTax(zeroB);
+    const wA = outward_taxable_supplies.taxable_value;
+    const wB = outward_zero_rated.taxable_value;
 
-    const cessDomestic = round2(outputCess * shareA);
-    const cessZeroRated = round2(outputCess - cessDomestic);
-    let cessInterNat = 0;
-    let cessIntraNat = 0;
-    if (wA > 0.005) {
-      cessInterNat = round2(cessDomestic * (tvInterA / wA));
-      cessIntraNat = round2(cessDomestic - cessInterNat);
-    } else {
-      cessIntraNat = cessDomestic;
-    }
+    const nilExempt = gstr1Data.nil.reduce((s, n) => s + n.nil_supply + n.exempt_supply, 0);
+    const nonGst = gstr1Data.nil.reduce((s, n) => s + n.non_gst_supply, 0);
+    const other_outward_supplies: TaxBreakdown = { ...emptyTax(), taxable_value: round2(nilExempt) };
+    const non_gst_outward_supplies: TaxBreakdown = { ...emptyTax(), taxable_value: round2(nonGst) };
+    const otherTaxable = round2(nilExempt + nonGst);
 
-    const outward_taxable_supplies_nature = {
-      inter_state: {
-        taxable_value: tvInterA,
-        igst: round2(outputIGST * shareA),
-        cgst: 0,
-        sgst: 0,
-        cess: cessInterNat,
-      },
-      intra_state: {
-        taxable_value: tvIntraA,
-        igst: 0,
-        cgst: round2(outputCGST * shareA),
-        sgst: round2(outputSGST * shareA),
-        cess: cessIntraNat,
-      },
-    };
+    const inter_state_supplies_unregistered = [...interUnreg.entries()]
+      .filter(([, v]) => Math.abs(v.taxable_value) > 0.005)
+      .map(([place_of_supply, v]) => ({
+        place_of_supply,
+        taxable_value: round2(v.taxable_value),
+        igst: round2(v.igst),
+      }))
+      .sort((a, b) => a.place_of_supply.localeCompare(b.place_of_supply));
 
-    const outward_taxable_supplies: TaxBreakdown = {
-      taxable_value: wA,
-      igst: round2(outputIGST * shareA),
-      cgst: round2(outputCGST * shareA),
-      sgst: round2(outputSGST * shareA),
-      cess: cessDomestic,
-    };
-
-    const outward_zero_rated: TaxBreakdown = {
-      taxable_value: wB,
-      igst: round2(outputIGST - outward_taxable_supplies.igst),
-      cgst: round2(outputCGST - outward_taxable_supplies.cgst),
-      sgst: round2(outputSGST - outward_taxable_supplies.sgst),
-      cess: cessZeroRated,
-    };
-
-    const otherTaxable = gstr1Data.nil.reduce(
-      (s, n) => s + n.nil_supply + n.exempt_supply + n.non_gst_supply,
-      0
+    // Table 3.1(d) and 4A(1)-(3): inward documents for the period.
+    // A physical purchase return is not in this query. Its ITC reversal is already a credit
+    // on 1110–1112 (voucher type purchase_return), and 4A(5) / ledger_basis.itc read that
+    // ledger net. Subtracting purchase_returns here would remove the same GST twice.
+    // A supplier credit note is a purchases row (document_type supplier_credit_note) and is
+    // signed below; its ITC reversal is the same input-GST credit, voucher type
+    // supplier_credit_note. The regular bucket is not deducted again inside other_itc.
+    const inward = await pool.query(
+      `SELECT
+         CASE WHEN p.is_reverse_charge AND p.supplier_state_code = '96' THEN 'import_service'
+              WHEN p.is_reverse_charge THEN 'rcm'
+              WHEN p.document_type = 'bill_of_entry' THEN 'import_goods'
+              ELSE 'regular' END AS bucket,
+         (p.itc_eligible IS DISTINCT FROM false) AS eligible,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.subtotal ELSE p.subtotal END), 0)   AS taxable,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.igst_total ELSE p.igst_total END), 0) AS igst,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.cgst_total ELSE p.cgst_total END), 0) AS cgst,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.sgst_total ELSE p.sgst_total END), 0) AS sgst
+       FROM purchases p
+      WHERE p.business_id = $1::uuid
+        AND p.deleted_at IS NULL
+        AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
+        AND p.bill_date >= $2::date AND p.bill_date <= $3::date
+        AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))
+      GROUP BY 1, 2
+      UNION ALL
+      SELECT 'rcm', COALESCE(e.itc_eligible, true),
+             COALESCE(SUM(e.amount), 0), COALESCE(SUM(e.igst_amount), 0),
+             COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
+        FROM expenses e
+       WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
+         AND COALESCE(e.is_reverse_charge, false)
+         AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+         AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))
+       GROUP BY 2
+      UNION ALL
+      SELECT 'regular', false,
+             COALESCE(SUM(e.amount - COALESCE(e.igst_amount, 0) - COALESCE(e.cgst_amount, 0) - COALESCE(e.sgst_amount, 0)), 0),
+             COALESCE(SUM(e.igst_amount), 0), COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
+        FROM expenses e
+       WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
+         AND NOT COALESCE(e.is_reverse_charge, false)
+         AND e.itc_eligible = false
+         AND (COALESCE(e.igst_amount, 0) + COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0)) > 0
+         AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+         AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))`,
+      [business_id, startOfMonth, endOfMonth, branch]
     );
-    const other_outward_supplies: TaxBreakdown = {
-      taxable_value: otherTaxable,
-      igst: 0,
-      cgst: 0,
-      sgst: 0,
+    const table5Res = await pool.query(
+      `SELECT CASE WHEN p.document_type = 'supplier_credit_note' THEN -pi.taxable_value ELSE pi.taxable_value END AS taxable_value,
+              CASE WHEN p.document_type = 'supplier_credit_note' THEN -COALESCE(pi.tax_amount, 0) ELSE COALESCE(pi.tax_amount, 0) END AS tax_amount, pi.hsn_sac,
+              COALESCE(p.is_reverse_charge, false) AS is_rcm,
+              (p.document_type = 'bill_of_entry' OR p.supplier_state_code = '96') AS is_import,
+              COALESCE(NULLIF(p.supplier_state_code, ''), LEFT(s.gstin, 2)) AS supplier_state,
+              COALESCE(NULLIF(LEFT(NULLIF(TRIM(br.gstin), ''), 2), ''), $5::text) AS recipient_state
+         FROM purchase_items pi
+         JOIN purchases p ON p.id = pi.purchase_id
+         LEFT JOIN suppliers s ON s.id = p.supplier_id
+         LEFT JOIN branches br ON br.id = p.branch_id
+        WHERE p.business_id = $1::uuid
+          AND p.deleted_at IS NULL
+          AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
+          AND p.bill_date >= $2::date AND p.bill_date <= $3::date
+          AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))`,
+      [business_id, startOfMonth, endOfMonth, branch, selfState ?? null]
+    );
+    const inward_exempt_nil_non_gst = aggregateTable5(
+      table5Res.rows.map((r) => ({
+        taxableValue: Number(r.taxable_value) || 0,
+        taxAmount: Number(r.tax_amount) || 0,
+        hsn: r.hsn_sac,
+        isReverseCharge: r.is_rcm === true,
+        isImport: r.is_import === true,
+        supplierStateCode: r.supplier_state,
+        recipientStateCode: r.recipient_state,
+      }))
+    );
+
+    const bucket = (name: string, eligible?: boolean): TaxBreakdown => {
+      const t = emptyTax();
+      for (const r of inward.rows) {
+        if (r.bucket !== name || (eligible !== undefined && r.eligible !== eligible)) continue;
+        addTo(t, 1, { taxable: Number(r.taxable), igst: Number(r.igst), cgst: Number(r.cgst), sgst: Number(r.sgst), cess: 0 });
+      }
+      return roundTax(t);
+    };
+    const rcmAll = bucket('rcm');
+    const importServiceAll = bucket('import_service');
+    const inward_reverse_charge = roundTax({
+      taxable_value: rcmAll.taxable_value + importServiceAll.taxable_value,
+      igst: rcmAll.igst + importServiceAll.igst,
+      cgst: rcmAll.cgst + importServiceAll.cgst,
+      sgst: rcmAll.sgst + importServiceAll.sgst,
       cess: 0,
+    });
+
+    const itcImports = bucket('import_goods', true);
+    const itcImportServices = bucket('import_service', true);
+    const itcRcm = bucket('rcm', true);
+    // s.17(5) blocked credit: shown in 4A and reversed in 4B(1) (Circular 170/02/2022).
+    const blocked = ['regular', 'rcm', 'import_goods', 'import_service']
+      .map((b) => bucket(b, false))
+      .reduce(
+        (acc, t) => roundTax({
+          taxable_value: acc.taxable_value + t.taxable_value,
+          igst: acc.igst + t.igst,
+          cgst: acc.cgst + t.cgst,
+          sgst: acc.sgst + t.sgst,
+          cess: 0,
+        }),
+        emptyTax()
+      );
+
+    // s.17(5)(h) reversals (stock lost / destroyed / free samples) are credits to input GST in the
+    // ledger; add them back to 4A(5) and report them in 4B(1).
+    const rev = await pool.query(
+      `SELECT a.account_code, COALESCE(SUM(l.credit - l.debit), 0) AS amt
+         FROM ledger_entry_lines l
+         JOIN accounts a ON a.id = l.account_id
+        WHERE l.business_id = $1::uuid
+          AND l.voucher_type IN ('itc_reversal', 'itc_reversal_r37')
+          AND a.account_code IN ($5, $6, $7)
+          AND l.entry_date >= $2::date AND l.entry_date <= $3::date
+          AND ($4::uuid[] IS NULL OR l.branch_id = ANY($4::uuid[]))
+        GROUP BY a.account_code`,
+      [business_id, startOfMonth, endOfMonth, branch, GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST]
+    );
+    const revAmt = (code: string) => round2(Number(rev.rows.find((r) => r.account_code === code)?.amt ?? 0));
+    const stockLossReversal = {
+      igst: revAmt(GSTR3B_INPUT_IGST),
+      cgst: revAmt(GSTR3B_INPUT_CGST),
+      sgst: revAmt(GSTR3B_INPUT_SGST),
     };
 
-    const inward_reverse_charge: TaxBreakdown =
-      rcmResolved.mode === 'split'
-        ? {
-            taxable_value: 0,
-            igst: rcmResolved.igst ?? 0,
-            cgst: rcmResolved.cgst ?? 0,
-            sgst: rcmResolved.sgst ?? 0,
-            cess: 0,
-          }
-        : {
-            taxable_value: 0,
-            igst: 0,
-            cgst: 0,
-            sgst: 0,
-            cess: 0,
-          };
-
-    const empty = emptyTax();
+    // 4A(5): books ITC less the credits reported in 4A(1)-(3) and less what GSTR-2B does not
+    // support yet, plus earlier credit 2B now supports, plus credit reversed in 4B(1).
+    const otherHead = (ledger: number, head: 'igst' | 'cgst' | 'sgst') =>
+      round2(
+        Math.max(
+          0,
+          ledger + stockLossReversal[head] - itcImports[head] - itcImportServices[head] - itcRcm[head] -
+            gate.held[head] + gate.released[head]
+        ) + blocked[head]
+      );
     const other_itc: TaxBreakdown = {
       taxable_value: 0,
-      igst: itcIGST,
-      cgst: itcCGST,
-      sgst: itcSGST,
-      cess: 0,
+      igst: otherHead(itcIGST, 'igst'),
+      cgst: otherHead(itcCGST, 'cgst'),
+      sgst: otherHead(itcSGST, 'sgst'),
+      cess: Math.max(0, round2(itcCess - gate.held.cess + gate.released.cess)),
     };
+    const itc_reversed: TaxBreakdown = roundTax({
+      taxable_value: 0,
+      igst: blocked.igst + stockLossReversal.igst,
+      cgst: blocked.cgst + stockLossReversal.cgst,
+      sgst: blocked.sgst + stockLossReversal.sgst,
+      cess: 0,
+    });
+    const net_itc: TaxBreakdown = roundTax({
+      taxable_value: 0,
+      igst: itcImports.igst + itcImportServices.igst + itcRcm.igst + other_itc.igst - itc_reversed.igst,
+      cgst: itcImports.cgst + itcImportServices.cgst + itcRcm.cgst + other_itc.cgst - itc_reversed.cgst,
+      sgst: itcImports.sgst + itcImportServices.sgst + itcRcm.sgst + other_itc.sgst - itc_reversed.sgst,
+      cess: other_itc.cess,
+    });
+    const itcFromDocs = round2(itcImports.igst + itcImportServices.igst + itcRcm.igst);
+    if (itcFromDocs > round2(itcIGST) + 0.5 || itcRcm.cgst > round2(itcCGST) + 0.5 || itcRcm.sgst > round2(itcSGST) + 0.5) {
+      warnings.push('Import / reverse-charge ITC on bills exceeds input GST in the ledger for the period — check that RCM ITC was booked.');
+    }
 
-    const net_itc: TaxBreakdown = {
-      taxable_value: other_itc.taxable_value,
-      igst: other_itc.igst,
-      cgst: other_itc.cgst,
-      sgst: other_itc.sgst,
-      cess: 0,
-    };
+    if (!gate.reconciled && itcIGST + itcCGST + itcSGST > 0.005) {
+      warnings.push(
+        'GSTR-2B has not been reconciled for this period: 4A(5) shows ITC as per books. Only credit shown in GSTR-2B may be claimed (s.16(2)(aa)).'
+      );
+    }
+    if (gate.held_bills.length > 0) {
+      warnings.push(
+        `${gate.held_bills.length} bill(s) left out of 4A(5) because GSTR-2B does not support their credit yet — see itc_2b.held_bills.`
+      );
+    }
 
     const gross_output_tax: TaxBreakdown = {
       taxable_value: wA + wB + otherTaxable,
@@ -530,24 +734,17 @@ export class GSTR3BGenerator {
       cess: round2(outputCess),
     };
 
-    const netPayableFromUtil =
-      util.net_payable.igst + util.net_payable.cgst + util.net_payable.sgst;
     const rcmPooledComponent =
       rcmResolved.mode === 'pooled' && rcmResolved.total > 0.005 ? round2(rcmResolved.total) : undefined;
-    const net_tax_payable =
-      rcmResolved.mode === 'pooled'
-        ? round2(netPayableFromUtil + rcmResolved.total)
-        : round2(netPayableFromUtil);
 
     const tax_liability: TaxBreakdown = {
       taxable_value: gross_output_tax.taxable_value,
-      igst: util.net_payable.igst,
-      cgst: util.net_payable.cgst,
-      sgst: util.net_payable.sgst,
-      cess: 0,
+      ...cashWorking.payable_by_head,
     };
+    const net_tax_payable = cashWorking.net_tax_payable;
 
-    const grossHeadSum = gross_output_tax.igst + gross_output_tax.cgst + gross_output_tax.sgst;
+    const grossHeadSum =
+      gross_output_tax.igst + gross_output_tax.cgst + gross_output_tax.sgst + gross_output_tax.cess;
     const total_tax_liability = round2(
       grossHeadSum + (rcmResolved.mode === 'pooled' ? rcmResolved.total : 0)
     );
@@ -558,15 +755,19 @@ export class GSTR3BGenerator {
       outward_zero_rated,
       other_outward_supplies,
       inward_reverse_charge,
+      non_gst_outward_supplies,
+      inter_state_supplies_unregistered,
       itc_details: {
-        imports: { ...empty },
-        inward_reverse_charge: { ...empty },
+        imports: itcImports,
+        import_services: itcImportServices,
+        inward_reverse_charge: itcRcm,
         other_itc,
-        itc_reversed: { ...empty },
+        itc_reversed,
         net_itc,
       },
       gross_output_tax,
       tax_liability,
+      inward_exempt_nil_non_gst,
       interest_late_fee: {
         igst: 0,
         cgst: 0,
@@ -587,6 +788,9 @@ export class GSTR3BGenerator {
       itc: ledger_basis.itc,
       utilization: ledger_basis.utilization,
       net_payable: ledger_basis.net_payable,
+      itc_2b: { reconciled: gate.reconciled, held: gate.held, released: gate.released, held_bills: gate.held_bills },
+      itc_brought_forward,
+      itc_available,
       reconciliation,
       reconciliation_by_head,
       warnings,

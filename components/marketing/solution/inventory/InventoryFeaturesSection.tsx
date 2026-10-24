@@ -33,7 +33,7 @@ const FEATURES: { id: string; icon: LucideIcon; title: string; body: string }[] 
   {
     id: 'valuation',
     icon: Scale,
-    title: 'Costing: FIFO, LIFO, weighted average, and more',
+    title: 'Costing: FIFO and weighted average (AS 2 compliant)',
     body: 'Value stock using methods that match how you buy and sell — so margins and reports stay explainable.',
   },
   {

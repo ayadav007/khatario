@@ -1,4 +1,8 @@
 import { queryRows, queryOne } from '@/lib/db';
+import {
+  ensureDefaultHolidayList,
+  resolveHolidayListForEmployee,
+} from '@/lib/hr/shift-overtime/holiday-lists';
 
 export type PortalLeaveBalanceCard = {
   leave_type_id: string;
@@ -167,12 +171,56 @@ export async function fetchPortalLeaveInsights(
   };
 }
 
-export async function fetchUpcomingHolidays(businessId: string, limit = 3) {
+async function holidayListHasDates(holidayListId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM holidays WHERE holiday_list_id = $1 LIMIT 1`,
+    [holidayListId],
+  );
+  return Boolean(row);
+}
+
+/** Branch list when it has dates; otherwise the company default calendar. */
+export async function resolvePortalHolidayListId(
+  businessId: string,
+  employeeId: string,
+): Promise<string> {
+  const list = await resolveHolidayListForEmployee(businessId, employeeId);
+  if (!list.branch_id || (await holidayListHasDates(list.id))) return list.id;
+  const company = await ensureDefaultHolidayList(businessId);
+  return company.id;
+}
+
+export async function fetchEmployeeHolidays(
+  businessId: string,
+  employeeId: string,
+  year: number,
+) {
+  const listId = await resolvePortalHolidayListId(businessId, employeeId);
+  return queryRows<{
+    id: string;
+    holiday_date: string;
+    holiday_name: string;
+    description: string | null;
+  }>(
+    `SELECT id, holiday_date::text, holiday_name, description
+     FROM holidays
+     WHERE holiday_list_id = $1 AND EXTRACT(YEAR FROM holiday_date) = $2
+     ORDER BY holiday_date`,
+    [listId, year],
+  );
+}
+
+export async function fetchUpcomingHolidays(
+  businessId: string,
+  employeeId: string,
+  limit = 3,
+) {
+  const listId = await resolvePortalHolidayListId(businessId, employeeId);
   return queryRows<{ holiday_date: string; holiday_name: string }>(
     `SELECT holiday_date::text, holiday_name FROM holidays
-     WHERE business_id = $1 AND holiday_date >= CURRENT_DATE
+     WHERE holiday_list_id = $1 AND holiday_date >= CURRENT_DATE
      ORDER BY holiday_date ASC LIMIT $2`,
-    [businessId, limit],
+    [listId, limit],
   );
 }
 

@@ -33,6 +33,7 @@ export interface Business {
   state?: string;
   pincode?: string;
   gstin?: string;
+  gst_registration_type?: 'regular' | 'composition' | 'unregistered';
   pan?: string;
   cin?: string;
   logo_url?: string;
@@ -73,6 +74,13 @@ export interface User {
   auth_session_version?: string | number;
   /** Set when the user finishes or dismisses the first-run sidebar tour */
   product_tour_completed_at?: string | null;
+  /** Mobile bottom nav. Null uses the default layout for this account's modules. */
+  mobile_nav?: { slotCount: 4 | 5; middle: string[] } | null;
+  /**
+   * Seat pool: `connect` = WhatsApp agent (Connect plan seats); `billing` = full Billing/HR user.
+   * Omitted/null treated as billing for older cached sessions.
+   */
+  seat_type?: 'billing' | 'connect' | null;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -548,6 +556,8 @@ export interface Account {
   is_system: boolean;
   description?: string;
   sort_order: number;
+  /** P&L section for income/expense accounts (migration 334); null for balance-sheet accounts. */
+  pl_section?: string | null;
   created_at: Date;
   updated_at: Date;
   // Joined fields
@@ -673,6 +683,8 @@ export interface Customer {
   id: string;
   business_id: string;
   name: string;
+  /** Buyer business on Khatario this customer stands for (Supplier Hub link) */
+  linked_business_id?: string | null;
   company_name?: string;
   phone?: string;
   email?: string;
@@ -713,8 +725,10 @@ export interface Supplier {
   state_code?: string; // 2-digit GST state code
   pincode?: string;
   gstin?: string;
+  pan?: string | null;
   opening_balance: number;
   opening_balance_type: 'debit' | 'credit';
+  current_balance?: number;
   linked_business_id?: string | null; // References business account if supplier is also a user
   approval_status?: 'pending' | 'approved' | 'rejected' | 'none'; // Status of supplier relationship
   requested_by_business_id?: string | null; // Business that initiated the supplier relationship request

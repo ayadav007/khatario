@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -389,14 +390,13 @@ export default function ClosingStockPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Closing Stock Management</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Lock inventory value for financial reporting, audit, and period control.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <PageHeader
+  title="Closing Stock Management"
+  subtitle="Lock inventory value for financial reporting, audit, and period control."
+
+  actions={
+    <>
+<div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={exportCsv} disabled={!summary || loading}>
             <FileSpreadsheet className="w-4 h-4 mr-2" />
             Export CSV
@@ -406,7 +406,9 @@ export default function ClosingStockPage() {
             Print
           </Button>
         </div>
-      </div>
+    </>
+  }
+/>
 
       {financialYearHelp && (
         <Card className="border-amber-300 bg-amber-50/90 space-y-4">

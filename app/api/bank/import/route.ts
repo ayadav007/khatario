@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getUserIdFromRequest,
-  getBusinessIdFromRequest,
+  requireTenantBusinessId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne } from '@/lib/db';
 import { extractBankRowsFromCsv } from '@/lib/bank/csv-extract';
 import { extractBankRowsFromPdf } from '@/lib/bank/pdf-extract';
 import type { BankImportPreview } from '@/lib/bank/types';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,11 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get('file');
     const bankAccountId = String(form.get('bank_account_id') || '').trim();
-    const businessId =
-      String(form.get('business_id') || '').trim() || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, String(form.get('business_id') || '').trim() || null);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
+    const businessId = tenant.businessId;
 
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });

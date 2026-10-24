@@ -19,13 +19,29 @@ export default defineConfig({
   reporter: 'html',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+    serviceWorkers: 'block',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 15000,
   },
   timeout: 60000,
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      testIgnore: [/auth\.setup\.ts/, /mobile-audit\.spec\.ts/, /phase3q-staging-browser\.spec\.ts/],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile',
+      dependencies: ['setup'],
+      testMatch: /mobile-audit\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 375, height: 812 },
+        storageState: 'e2e/.auth/auth.json',
+      },
+    },
   ],
   ...(process.env.PLAYWRIGHT_SKIP_WEBSERVER === '1'
     ? {}
@@ -39,6 +55,8 @@ export default defineConfig({
             ...process.env,
             // Lets full-journey signup repeat without 429 when Playwright starts this server.
             E2E_DISABLE_RATE_LIMIT: 'true',
+            SIGNUP_DEBUG: 'true',
+            OTP_DEBUG_PHONES: process.env.OTP_DEBUG_PHONES || '*',
           },
         },
       }),

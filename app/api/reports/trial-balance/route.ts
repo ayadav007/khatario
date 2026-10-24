@@ -59,7 +59,12 @@ export async function GET(request: NextRequest) {
           branchId: branchIdParam,
           businessId: businessId,
         });
-        branchFilter = 'AND branch_id = $4'; // Will be added to queries
+        // Lines posted without a branch (opening balances, head-office journals) belong to the
+        // default branch, so branch trial balances add up to the consolidated one.
+        const { isDefaultBranch } = await import('@/lib/branch-helpers');
+        branchFilter = (await isDefaultBranch(finalBranchId, businessId))
+          ? 'AND (branch_id = $4 OR branch_id IS NULL)'
+          : 'AND branch_id = $4';
       } catch (error: any) {
         if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
           return NextResponse.json(
@@ -83,7 +88,8 @@ export async function GET(request: NextRequest) {
       
       if (accessibleBranchIds.length > 0) {
         // User has branch restrictions - filter by their accessible branches
-        branchFilter = `AND branch_id = ANY($4::uuid[])`;
+        // Business-level lines (opening balances, opening stock) carry no branch.
+        branchFilter = `AND (branch_id = ANY($4::uuid[]) OR branch_id IS NULL)`;
         finalBranchId = null; // Not a single branch, but multiple
       } else {
         // User has no branch restrictions (admin) - show all branches (no filter)
@@ -108,7 +114,7 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Get all active accounts
+    // Inactive accounts that still carry ledger lines must stay, or the trial balance stops balancing.
     const accounts = await queryRows(`
       SELECT 
         a.id,
@@ -118,27 +124,23 @@ export async function GET(request: NextRequest) {
         a.nature,
         a.opening_balance,
         a.opening_balance_type,
+        a.is_active,
         ag.group_name as account_group_name
       FROM accounts a
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
-      WHERE a.business_id = $1 AND a.is_active = true
+      WHERE a.business_id = $1
+        AND (a.is_active = true OR EXISTS (
+          SELECT 1 FROM ledger_entry_lines l WHERE l.account_id = a.id AND l.business_id = a.business_id
+        ))
       ORDER BY a.account_code
     `, [businessId]);
 
     // Calculate balance for each account
     const trialBalance = await Promise.all(
       accounts.map(async (account: any) => {
-        // Get opening balance
-        let openingBalance = 0;
-        if (account.opening_balance_type === 'debit') {
-          openingBalance = account.nature === 'debit' 
-            ? parseFloat(account.opening_balance || '0')
-            : -parseFloat(account.opening_balance || '0');
-        } else {
-          openingBalance = account.nature === 'credit'
-            ? -parseFloat(account.opening_balance || '0')
-            : parseFloat(account.opening_balance || '0');
-        }
+        // Account opening balances are posted as `opening_balance` ledger lines
+        // (see setAccountOpeningBalance), so they are already in the totals below.
+        const openingBalance = 0;
 
         // Get transaction totals up to as_on_date (with branch filter if applicable)
         const transactionParams: any[] = [account.id, businessId, asOnDate];
@@ -159,9 +161,10 @@ export async function GET(request: NextRequest) {
             COALESCE(SUM(debit), 0) as total_debit,
             COALESCE(SUM(credit), 0) as total_credit
           FROM ledger_entry_lines
-          WHERE account_id = $1 
+          WHERE account_id = $1
             AND business_id = $2
             AND entry_date <= $3
+            AND NOT (voucher_type = 'year_close' AND entry_date = $3::date)
             ${branchFilter}
         `, transactionParams);
 
@@ -202,6 +205,7 @@ export async function GET(request: NextRequest) {
           account_name: account.account_name,
           account_type: account.account_type,
           account_group_name: account.account_group_name,
+          is_active: account.is_active,
           opening_balance: openingBalance,
           debit: debitAmount,
           credit: creditAmount,

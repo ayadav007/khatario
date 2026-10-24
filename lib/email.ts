@@ -42,10 +42,10 @@ function getEmailConfig(): EmailConfig {
   return {
     provider: (process.env.EMAIL_PROVIDER as any) || 'smtp',
     smtp_host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    smtp_port: parseInt(process.env.SMTP_PORT || '587'),
+    smtp_port: parseInt(process.env.SMTP_PORT || '587', 10),
     smtp_user: process.env.SMTP_USER,
     smtp_password: process.env.SMTP_PASSWORD,
-    from_email: process.env.EMAIL_FROM || 'noreply@khatario.com',
+    from_email: process.env.EMAIL_FROM || 'help@khatario.com',
     from_name: process.env.EMAIL_FROM_NAME || 'Khatario',
   };
 }
@@ -58,7 +58,7 @@ function createTransporter(config: EmailConfig) {
     return nodemailer.createTransport({
       host: config.smtp_host,
       port: config.smtp_port,
-      secure: config.smtp_port === 465,
+      secure: config.smtp_port === 465 || process.env.SMTP_SECURE === 'true',
       auth: {
         user: config.smtp_user,
         pass: config.smtp_password,
@@ -74,12 +74,17 @@ function createTransporter(config: EmailConfig) {
  * Send email
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  return (await sendEmailWithResult(options)).ok;
+}
+
+/** Like `sendEmail`, but reports why a send failed (missing config, SMTP auth/connection error). */
+export async function sendEmailWithResult(options: EmailOptions): Promise<{ ok: boolean; error?: string }> {
   try {
     const config = getEmailConfig();
 
     if (!config.smtp_user || !config.smtp_password) {
       console.error('Email configuration missing. Please set SMTP credentials in .env');
-      return false;
+      return { ok: false, error: 'SMTP_USER / SMTP_PASSWORD not set in the server environment' };
     }
 
     const transporter = createTransporter(config);
@@ -96,10 +101,10 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     });
 
     console.log('Email sent successfully:', info.messageId);
-    return true;
+    return { ok: true };
   } catch (error) {
     console.error('Error sending email:', error);
-    return false;
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

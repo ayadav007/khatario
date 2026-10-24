@@ -28,11 +28,27 @@ interface Supplier {
   state?: string;
   pincode?: string;
   gstin?: string;
+  pan?: string | null;
   opening_balance: number;
   opening_balance_type: string;
   linked_business_id?: string;
   allow_low_stock_access?: boolean;
 }
+
+interface HubLinkStatus {
+  status: 'pending' | 'approved' | 'rejected' | 'none' | 'disconnected';
+  other_business_id: string;
+  other_business_name: string | null;
+  stock_shared: boolean;
+}
+
+const LINK_LABEL: Record<HubLinkStatus['status'], string> = {
+  approved: 'Connected on Khatario',
+  pending: 'Waiting for the supplier to approve',
+  rejected: 'The supplier declined the link',
+  disconnected: 'Disconnected',
+  none: 'Not connected',
+};
 
 interface Purchase {
   id: string;
@@ -49,6 +65,7 @@ interface Payment {
   payment_mode: string;
   payment_date: string;
   notes?: string;
+  status?: 'active' | 'reversed';
 }
 
 export default function SupplierDetailPage({ params }: { params: { id: string } }) {
@@ -61,6 +78,8 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
   const [totalPayable, setTotalPayable] = useState(0);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [updatingAccess, setUpdatingAccess] = useState(false);
+  const [link, setLink] = useState<HubLinkStatus | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
 
   const { data: supplier, loading, refetch } = useEntityRecord<Supplier>({
     recordId: params.id,
@@ -69,6 +88,59 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
   });
 
   useMobileHeaderTitleOverride(supplier?.name);
+
+  const loadLink = React.useCallback(async () => {
+    if (!supplier?.linked_business_id) {
+      setLink(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/suppliers/hub/link?supplier_id=${supplier.id}`);
+      setLink(res.ok ? await res.json() : null);
+    } catch {
+      setLink(null);
+    }
+  }, [supplier?.id, supplier?.linked_business_id]);
+
+  useEffect(() => {
+    loadLink();
+  }, [loadLink]);
+
+  const disconnect = async () => {
+    if (!supplier) return;
+    if (!confirm(`Disconnect from ${supplier.name}? Past bills stay. New requests, low-stock alerts and bill imports stop.`)) return;
+    setLinkBusy(true);
+    try {
+      const res = await fetch(`/api/suppliers/hub/link?supplier_id=${supplier.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to disconnect');
+      toast.success('Disconnected');
+      await Promise.all([loadLink(), refetch()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to disconnect');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const reconnect = async () => {
+    if (!link) return;
+    setLinkBusy(true);
+    try {
+      const res = await fetch('/api/suppliers/hub/connection-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplier_business_id: link.other_business_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to send the request');
+      toast.success('Connection request sent. The link goes live once the supplier accepts.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to send the request');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!params.id) return;
@@ -81,6 +153,32 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
       })
       .catch(() => {});
   }, [params.id, user?.id]);
+
+  const toggleStockSharing = async (checked: boolean) => {
+    if (!supplier?.linked_business_id) {
+      toast.warning('Supplier must be linked to a business account to grant low stock access.');
+      return;
+    }
+    setUpdatingAccess(true);
+    try {
+      const res = await fetch(`/api/suppliers/${supplier.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow_low_stock_access: checked }),
+      });
+      if (res.ok) {
+        refetch();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.error || 'Failed to update access');
+      }
+    } catch (error) {
+      console.error('Error updating access:', error);
+      toast.error('Failed to update access');
+    } finally {
+      setUpdatingAccess(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -113,8 +211,8 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
 
         {/* Supplier Header */}
         <Card padding="md">
-          <div className="flex items-start justify-between mb-6">
-            <div>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
               <h2 className="text-xl font-bold text-text-primary mb-2 hidden md:block">{supplier.name}</h2>
               {supplier.phone && (
                 <p className="text-text-secondary flex items-center gap-2">
@@ -133,66 +231,11 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
               {supplier.gstin && (
                 <p className="text-text-secondary text-sm mt-1">GSTIN: {supplier.gstin}</p>
               )}
-              {supplier.linked_business_id && (
-                <div className="mt-4 p-3 bg-slate-50 border border-primary-200 rounded-lg">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={supplier.allow_low_stock_access || false}
-                      onChange={async (e) => {
-                        if (!supplier.linked_business_id) {
-                          toast.warning('Supplier must be linked to a business account to grant low stock access.');
-                          return;
-                        }
-                        if (!user?.id || !business?.id) {
-                          toast.error('You must be signed in to update supplier settings.');
-                          return;
-                        }
-                        setUpdatingAccess(true);
-                        try {
-                          const res = await fetch(`/api/suppliers/${supplier.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              business_id: business.id,
-                              allow_low_stock_access: e.target.checked,
-                              updated_by_user_id: user.id,
-                            }),
-                          });
-                          if (res.ok) {
-                            refetch();
-                          } else {
-                            const error = await res.json();
-                            toast.error(error.error || 'Failed to update access');
-                          }
-                        } catch (error) {
-                          console.error('Error updating access:', error);
-                          toast.error('Failed to update access');
-                        } finally {
-                          setUpdatingAccess(false);
-                        }
-                      }}
-                      disabled={updatingAccess || !supplier.linked_business_id}
-                      className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Allow supplier to see low stock</p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {supplier.allow_low_stock_access 
-                          ? 'Supplier can view your low stock alerts'
-                          : 'Enable to allow supplier to view your low stock alerts'}
-                      </p>
-                      {!supplier.linked_business_id && (
-                        <p className="text-xs text-amber-600 mt-1">
-                          Link to business account first to enable this feature
-                        </p>
-                      )}
-                    </div>
-                  </label>
-                </div>
-              )}
+              <p className="text-text-secondary text-sm mt-1">
+                PAN: {supplier.pan || 'Not recorded (TDS at the higher s.206AA rate)'}
+              </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <Button 
                 variant="secondary"
                 onClick={() => {
@@ -225,6 +268,60 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
               />
             </div>
           </div>
+
+          {supplier.linked_business_id && link && (
+            <div className="mb-6 rounded-xl border border-gray-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-text-primary">Supplier Hub</p>
+                <Chip variant={link.status === 'approved' ? 'success' : link.status === 'pending' ? 'warning' : 'default'}>
+                  {LINK_LABEL[link.status] ?? link.status}
+                </Chip>
+              </div>
+              {link.status === 'approved' && (
+                <>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Link href={`/supply-orders/new?supplier_id=${supplier.id}`}>
+                      <Button className="w-full">New order</Button>
+                    </Link>
+                    <Link href={`/suppliers/${supplier.id}/items`}>
+                      <Button variant="secondary" className="w-full">Items they supply</Button>
+                    </Link>
+                    <Link href={`/suppliers/${supplier.id}/item-links`}>
+                      <Button variant="secondary" className="w-full">Item matches</Button>
+                    </Link>
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-slate-50 p-3">
+                    <input
+                      type="checkbox"
+                      checked={supplier.allow_low_stock_access || false}
+                      onChange={(e) => toggleStockSharing(e.target.checked)}
+                      disabled={updatingAccess}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-gray-900">Share stock and sales with this supplier</span>
+                      <span className="mt-0.5 block text-sm text-gray-600">
+                        They are told when their items reach your reorder level and can propose an order for you to
+                        confirm. Your sales of their items count in their area totals, never shown as your shop alone.
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+              <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
+                {(link.status === 'approved' || link.status === 'pending') && (
+                  <Button size="sm" variant="ghost" onClick={disconnect} disabled={linkBusy}>
+                    {link.status === 'pending' ? 'Withdraw link request' : 'Disconnect'}
+                  </Button>
+                )}
+                {(link.status === 'disconnected' || link.status === 'rejected') && (
+                  <Button size="sm" variant="secondary" onClick={reconnect} disabled={linkBusy}>
+                    Ask to reconnect
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -362,7 +459,14 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                           <td className="table-cell text-left">
                             {format(new Date(payment.payment_date), 'dd MMM yyyy')}
                           </td>
-                          <td className="table-cell text-left">{payment.payment_mode}</td>
+                          <td className="table-cell text-left">
+                            {payment.payment_mode}
+                            {payment.status === 'reversed' && (
+                              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                Reversed
+                              </span>
+                            )}
+                          </td>
                           <td className="table-cell text-right font-medium">
                             ₹ {Number(payment.amount).toLocaleString('en-IN')}
                           </td>

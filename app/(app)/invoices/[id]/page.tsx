@@ -4,14 +4,18 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail } from 'lucide-react';
+import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail, Printer } from 'lucide-react';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { CancelInvoiceModal } from '@/components/modals/CancelInvoiceModal';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
+import { isKhatarioDesktop } from '@/lib/desktop/platform';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { ProformaLifecycleManager } from '@/components/invoices/ProformaLifecycleManager';
@@ -24,8 +28,11 @@ import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics } from '@/lib/credit-utils';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
+import { PrinterStatusChip } from '@/components/printer/PrinterStatusChip';
 import { invoicePayloadToReceipt } from '@/lib/bluetooth/invoice-payload-to-receipt';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
@@ -36,6 +43,7 @@ export default function InvoiceDetailPage() {
   const { user, business } = useAuth();
   const toast = useToastContext();
   const bt = useBluetoothPrinter();
+  const receiptPrinter = usePrinterReady(bt, 'receipts');
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
   const [btPrinting, setBtPrinting] = useState(false);
@@ -49,13 +57,21 @@ export default function InvoiceDetailPage() {
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailModalOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [converting, setConverting] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
-  const [convertStatus, setConvertStatus] = useState<'draft' | 'final' | null>(null);
   const [creditMetrics, setCreditMetrics] = useState<{ current?: CreditMetrics; projected?: CreditMetrics } | null>(null);
   const [creditApproval, setCreditApproval] = useState<any>(null);
   const [profitSummary, setProfitSummary] = useState<InvoiceProfitSummaryDto | null>(null);
@@ -191,23 +207,18 @@ export default function InvoiceDetailPage() {
   };
 
   const handleConvertConfirm = async () => {
-    if (!convertStatus) {
-      toast.warning('Please select whether to create as Draft or Final');
-      return;
-    }
-    
     setShowConvertModal(false);
     setConverting(true);
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/convert-to-tax-invoice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: convertStatus })
+        body: JSON.stringify({})
       });
       
       if (res.ok) {
         const data = await res.json();
-        toast.success(`Proforma invoice converted successfully! New tax invoice: ${data.invoice_number} (${convertStatus})`);
+        toast.success(`Proforma invoice converted successfully! New tax invoice: ${data.invoice_number}`);
         router.push(`/invoices/${data.invoice_id}`);
       } else {
         const error = await safeJsonParse(res);
@@ -218,29 +229,31 @@ export default function InvoiceDetailPage() {
       toast.error('Failed to convert proforma invoice');
     } finally {
       setConverting(false);
-      setConvertStatus(null);
     }
   };
 
+  // Khatario for Windows: Print goes straight to the chosen A4 printer (Settings › Print & devices).
+  const handlePrintA4 = async () => {
+    const result = await printInvoiceA4(invoiceId, user?.id, business?.id);
+    if (result.mode === 'printed') toast.success(`Sent to ${result.printer}`);
+    else if (result.error) toast.error(`${result.error} Opened the PDF instead.`);
+  };
+  const a4PrintButton = isKhatarioDesktop() ? (
+    <Button variant="secondary" onClick={handlePrintA4}>
+      <Printer className="w-4 h-4 mr-2" />
+      Print
+    </Button>
+  ) : null;
+
   const handlePrintBluetooth = async () => {
     if (!invoice) return;
-    if (!bt.supported) {
-      toast.error(
-        'Bluetooth printing is not supported in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-      );
-      return;
-    }
-    if (bt.savedPrinters.length === 0) {
-      toast.error(
-        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
-      );
-      return;
-    }
     setBtPrinting(true);
     try {
       const receipt = invoicePayloadToReceipt(invoice, (business as any) || {});
-      await bt.printReceipt(receipt);
-      toast.success('Receipt sent to Bluetooth printer');
+      const printed = await receiptPrinter.print('Connect a printer to print this receipt.', (printer) =>
+        bt.printReceipt(receipt, undefined, printer)
+      );
+      if (printed) toast.success('Receipt sent to Bluetooth printer');
     } catch (err: any) {
       toast.error(err?.message || 'Bluetooth print failed');
     } finally {
@@ -303,18 +316,24 @@ export default function InvoiceDetailPage() {
   const isFinal = status === 'final';
   const isCancelled = status === 'cancelled';
   const isProforma = invoice.document_type === 'proforma_invoice';
+  const canConvertProforma =
+    isProforma &&
+    !isCancelled &&
+    invoice.estimate_status !== 'converted' &&
+    invoice.estimate_status !== 'rejected' &&
+    invoice.estimate_status !== 'expired' &&
+    invoice.proforma_lifecycle_status !== 'converted_to_tax_invoice' &&
+    invoice.proforma_lifecycle_status !== 'cancelled';
 
   const bluetoothPrintButton = canBtPrint ? (
     <Button
       variant="secondary"
       onClick={handlePrintBluetooth}
-      disabled={btPrinting || !bt.supported || bt.savedPrinters.length === 0}
+      disabled={btPrinting}
       title={
-        !bt.supported
-          ? 'Bluetooth not supported in this browser'
-          : bt.savedPrinters.length === 0
-            ? 'Pair a printer in Settings → Print & devices'
-            : 'Print receipt to Bluetooth printer'
+        receiptPrinter.ready && receiptPrinter.printer
+          ? `Print receipt to ${receiptPrinter.printer.name}`
+          : 'Printer not connected. Click to connect a printer.'
       }
     >
       {btPrinting ? (
@@ -322,7 +341,10 @@ export default function InvoiceDetailPage() {
       ) : (
         <Bluetooth className="w-4 h-4 mr-2" />
       )}
-      {btPrinting ? 'Printing…' : 'Print to Bluetooth'}
+      {btPrinting ? 'Printing…' : receiptPrinter.ready ? 'Print to Bluetooth' : 'Printer not connected'}
+      {!btPrinting && !receiptPrinter.ready && (
+        <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+      )}
     </Button>
   ) : null;
   
@@ -377,7 +399,7 @@ export default function InvoiceDetailPage() {
           }
           description={
             <>
-              {invoice.customer?.name || 'Cash Sale'}
+              {invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
               {' • '}
               {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No date'}
               {' • '}
@@ -438,7 +460,12 @@ export default function InvoiceDetailPage() {
                     Record Payment
                   </Button>
                 )}
-                <Button variant="secondary" onClick={() => setEmailModalOpen(true)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void requestSendEmail()}
+                  disabled={emailChecking}
+                  isLoading={emailChecking}
+                >
                   <Mail className="w-4 h-4 mr-2" />
                   Send Email
                 </Button>
@@ -450,6 +477,7 @@ export default function InvoiceDetailPage() {
                   <Download className="w-4 h-4 mr-2" />
                   PDF
                 </Button>
+                {a4PrintButton}
                 {bluetoothPrintButton}
                 <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
                   <Ban className="w-4 h-4 mr-2" />
@@ -459,7 +487,7 @@ export default function InvoiceDetailPage() {
             )}
 
             {/* Convert Proforma to Tax Invoice - Allow conversion from draft or final */}
-            {isProforma && (
+            {canConvertProforma && (
               <Button 
                 variant="primary" 
                 onClick={handleConvertToTaxInvoice}
@@ -532,7 +560,7 @@ export default function InvoiceDetailPage() {
                 </Button>
               </>
             )}
-            {isProforma && (
+            {canConvertProforma && (
               <Button variant="primary" onClick={handleConvertToTaxInvoice} disabled={converting} className="flex-1">
                 {converting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span className="ml-2">Convert</span>
@@ -590,7 +618,18 @@ export default function InvoiceDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-text-secondary">Paid Amount</p>
-                <p className="text-lg font-semibold text-green-600 dark:text-green-400">₹{Number(invoice.paid_amount || 0).toLocaleString('en-IN')}</p>
+                <p className="text-lg font-semibold text-green-600 dark:text-green-400">
+                  ₹{(
+                    invoice.settled_amount != null && invoice.settled_amount !== ''
+                      ? Number(invoice.settled_amount)
+                      : Number(invoice.paid_amount || 0) + Number(invoice.advance_adjusted || 0) + Number(invoice.tds_received || 0)
+                  ).toLocaleString('en-IN')}
+                </p>
+                {Number(invoice.advance_adjusted) > 0 && (
+                  <p className="text-xs text-text-secondary mt-1">
+                    ₹{Number(invoice.advance_adjusted).toLocaleString('en-IN')} from customer advance
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-text-secondary">Balance</p>
@@ -599,10 +638,31 @@ export default function InvoiceDetailPage() {
             </div>
 
             {/* Payment History */}
-            {payments.length > 0 && (
+            {(payments.length > 0 || (invoice.settlements || []).some((row: { kind?: string }) => row.kind && row.kind !== 'payment')) && (
               <div className="mt-4 pt-4 border-t border-border">
                 <h4 className="font-medium text-text-primary mb-2">Payment History</h4>
                 <div className="space-y-2">
+                  {(invoice.settlements || [])
+                    .filter((row: { kind?: string }) => row.kind && row.kind !== 'payment')
+                    .map((row: { id: string; label?: string; amount: number; date?: string | null; detail?: string | null }) => (
+                      <div
+                        key={row.id}
+                        className="flex justify-between items-center gap-2 text-sm rounded-md border border-border bg-slate-100/90 p-2.5 dark:bg-slate-800/70"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-medium text-text-primary">
+                            ₹{Number(row.amount).toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-text-secondary ml-2">
+                            {row.label || 'Adjustment'}
+                            {row.detail ? ` · ${row.detail}` : ''}
+                          </span>
+                        </div>
+                        <span className="shrink-0 text-text-secondary">
+                          {row.date ? new Date(row.date).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                    ))}
                   {payments.map((payment) => (
                     <div
                       key={payment.id}
@@ -613,6 +673,11 @@ export default function InvoiceDetailPage() {
                           ₹{Number(payment.amount).toLocaleString('en-IN')}
                         </span>
                         <span className="text-text-secondary ml-2">via {payment.payment_mode || 'N/A'}</span>
+                        {payment.status === 'reversed' && (
+                          <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                            Reversed
+                          </span>
+                        )}
                         {payment.notes && (
                           <span className="text-text-muted ml-2">({payment.notes})</span>
                         )}
@@ -637,14 +702,9 @@ export default function InvoiceDetailPage() {
           <div className="bg-background/80 p-4 border-b border-border flex justify-between items-center dark:bg-slate-900/40">
             <span className="text-sm font-medium text-text-secondary">Live Preview</span>
           </div>
-          <div className="flex justify-center bg-slate-100 p-8 dark:bg-slate-950/80">
+          <div className="bg-slate-100 p-3 dark:bg-slate-950/80 lg:p-8">
             {html ? (
-              <iframe
-                srcDoc={html}
-                className="w-full max-w-[210mm] h-[297mm] shadow-lg bg-white"
-                style={{ border: 'none' }}
-                title="Invoice Preview"
-              />
+              <ScaledA4Preview html={html} title="Invoice Preview" />
             ) : (
               <div className="flex items-center justify-center h-[297mm] text-text-muted">
                 {loading ? (
@@ -675,10 +735,20 @@ export default function InvoiceDetailPage() {
         />
       )}
 
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={closeEmailConfigure}
+          onConfigured={onEmailConfigured}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
+
       {emailModalOpen && invoice && (
         <SendDocumentEmailModal
           open={emailModalOpen}
-          onClose={() => setEmailModalOpen(false)}
+          onClose={closeEmailCompose}
           documentTable="invoices"
           documentId={invoice.id}
           partyName={invoice.customer?.name || invoice.customer_name || 'Customer'}
@@ -704,6 +774,7 @@ export default function InvoiceDetailPage() {
         />
       )}
 
+      {receiptPrinter.dialog}
       {cancelModalOpen && invoice && (
         <CancelInvoiceModal
           invoiceId={invoice.id}
@@ -722,47 +793,14 @@ export default function InvoiceDetailPage() {
               Convert Proforma Invoice to Tax Invoice
             </h3>
             <p className="text-sm text-text-secondary mb-6">
-              Choose how you want to create the new tax invoice:
+              This creates one final tax invoice. That invoice posts the stock and the accounting. This proforma will be marked converted and cannot be converted again.
             </p>
-            
-            <div className="space-y-3 mb-6">
-              <label className="flex items-center p-4 border-2 border-border rounded-lg cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors">
-                <input
-                  type="radio"
-                  name="convertStatus"
-                  value="draft"
-                  checked={convertStatus === 'draft'}
-                  onChange={(e) => setConvertStatus(e.target.value as 'draft')}
-                  className="mr-3 w-4 h-4 text-primary-600"
-                />
-                <div>
-                  <div className="font-medium text-text-primary">Draft (Editable)</div>
-                  <div className="text-sm text-text-muted">Create as draft so you can review and edit before finalizing</div>
-                </div>
-              </label>
-              
-              <label className="flex items-center p-4 border-2 border-border rounded-lg cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors">
-                <input
-                  type="radio"
-                  name="convertStatus"
-                  value="final"
-                  checked={convertStatus === 'final'}
-                  onChange={(e) => setConvertStatus(e.target.value as 'final')}
-                  className="mr-3 w-4 h-4 text-primary-600"
-                />
-                <div>
-                  <div className="font-medium text-text-primary">Final (Locked)</div>
-                  <div className="text-sm text-text-muted">Create as final invoice immediately (will deduct stock and affect GST)</div>
-                </div>
-              </label>
-            </div>
 
             <div className="flex gap-3">
               <Button
                 variant="secondary"
                 onClick={() => {
                   setShowConvertModal(false);
-                  setConvertStatus(null);
                 }}
                 className="flex-1"
                 disabled={converting}
@@ -773,7 +811,7 @@ export default function InvoiceDetailPage() {
                 variant="primary"
                 onClick={handleConvertConfirm}
                 className="flex-1"
-                disabled={converting || !convertStatus}
+                disabled={converting}
                 isLoading={converting}
               >
                 Convert

@@ -16,6 +16,7 @@ import { runGoogleVisionGroqTextPipeline } from '../lib/services/invoice-extract
 import { runGeminiVisionPipeline } from '../lib/services/invoice-extract/pipeline/geminiVisionPipeline';
 import { runGroqVisionPipeline } from '../lib/services/invoice-extract/pipeline/groqVisionPipeline';
 import type { ExtractionPipelineResult } from '../lib/services/invoice-extract/pipeline/extractionPipelineTypes';
+import { geminiVisionModels, groqVisionModels } from '../lib/services/invoice-extract/pipeline/visionModelFallback';
 
 const imagePath = process.argv[2];
 if (!imagePath) {
@@ -31,9 +32,9 @@ const mimeType = /\.png$/i.test(fileName) ? 'image/png' : 'image/jpeg';
 const provider = (process.env.INVOICE_VISION_PROVIDER || 'gemini').toLowerCase().trim();
 const modelLabel =
   provider === 'gemini'
-    ? `GEMINI_MODEL=${process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite'}`
+    ? `GEMINI models=${geminiVisionModels().join(', ')}`
     : provider === 'groq'
-    ? `GROQ_VISION_MODEL=${process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct'}`
+    ? `GROQ vision models=${groqVisionModels().join(', ')}`
     : `GROQ_MODEL=${process.env.GROQ_MODEL}`;
 
 console.log('\n====================================================');

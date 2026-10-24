@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/campaigns/[id]
  * Get campaign details with recipients
  */
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const campaignId = params.id;
 
@@ -56,7 +56,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
  * PATCH /api/whatsapp/campaigns/[id]
  * Update campaign (start, pause, resume)
  */
-export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, managePermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const campaignId = params.id;
     const { action } = (body ?? {}) as { action?: string }; // 'start', 'pause', 'resume'
@@ -173,7 +173,7 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
  * DELETE /api/whatsapp/campaigns/[id]
  * Delete campaign and all related data
  */
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const campaignId = params.id;
 

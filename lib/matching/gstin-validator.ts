@@ -3,6 +3,8 @@
  * Format: 15 characters - 2 (State) + 10 (PAN) + 1 (Entity) + 1 (Z) + 1 (Check)
  */
 
+import { gstinCheckChar } from '@/lib/tax/gstin';
+
 export interface GSTINValidationResult {
   isValid: boolean;
   stateCode?: string;
@@ -67,6 +69,10 @@ export function validateGSTIN(gstin: string | null | undefined): GSTINValidation
   // Z must be 'Z'
   if (zChar !== 'Z') {
     result.errors.push('13th character must be Z');
+  }
+
+  if (gstinCheckChar(cleanGSTIN.slice(0, 14)) !== checkDigit) {
+    result.errors.push('GSTIN check digit does not match');
   }
 
   // If no errors, it's valid

@@ -178,7 +178,7 @@ test('paid plan upgrade routes to checkout (not instant)', async ({
 }) => {
   if (!persona) throw new Error('persona missing');
 
-  const paidPlan = await pickActivePlanId(['professional', 'business', 'enterprise']);
+  const paidPlan = await pickActivePlanId(['growth', 'business']);
   test.skip(!paidPlan, 'no paid billing plan in DB');
 
   const ctx = await browser.newContext();

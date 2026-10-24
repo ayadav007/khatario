@@ -15,16 +15,16 @@ export const typographyVariants = {
   labelCompact: 'type-label-compact',
   /** Uppercase section headers in forms */
   labelSection: 'type-label-section',
-  /** Default body copy */
+  /** Default body copy — 14px below 768px, 16px from md */
   body: 'type-body',
-  /** Secondary / helper body */
+  /** Secondary / helper body — 14px */
   bodySm: 'type-body-sm',
   bodySecondary: 'type-body-secondary',
-  /** Page H1 (settings, detail screens) */
+  /** Page H1 — 24px below 768px, 30px from md */
   pageTitle: 'type-page-title',
-  /** Card / block section heading */
+  /** Section H2 — 20px below 768px, 24px from md */
   sectionTitle: 'type-section-title',
-  /** Modal / slide-over title */
+  /** Panel H3 — 18px below 768px, 20px from md */
   panelTitle: 'type-panel-title',
   /** Dashboard KPI numbers */
   kpiValue: 'type-kpi-value',

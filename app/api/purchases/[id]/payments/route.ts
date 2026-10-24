@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
+import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import {
-  getBusinessIdFromRequest,
-  getSessionScopedBusinessId,
-  getUserIdFromRequest,
-} from '@/lib/auth-helpers';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,26 +22,15 @@ export async function PATCH(
   try {
     const body = await request.json();
     const { amount, payment_mode = 'cash', reference, payment_date } = body;
-    const userId = getUserIdFromRequest(request, body) || body.user_id;
+    const userId = getAuthenticatedUserId(request);
+    const businessScope = getSessionScopedBusinessId(request);
 
     if (!amount || Number(amount) <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const businessScope =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    if (!userId || !businessScope) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
     const purchase = await queryOne(
@@ -56,6 +44,9 @@ export async function PATCH(
     
     if (purchase.status === 'cancelled') {
       return NextResponse.json({ error: 'Cannot pay a cancelled purchase' }, { status: 400 });
+    }
+    if (purchase.status !== 'final') {
+      return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
     }
 
     // AUTHORIZATION: Check update permission (recording payment is an update operation)
@@ -82,18 +73,13 @@ export async function PATCH(
       throw error;
     }
 
-    const paidAmount = Number(purchase.paid_amount || 0) + Number(amount);
-    const balance = Math.max(0, Number(purchase.grand_total || 0) - paidAmount);
-    
-    // Calculate payment_status
-    let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-    if (paidAmount <= 0) {
-      paymentStatus = 'unpaid';
-    } else if (balance <= 0) {
-      paymentStatus = 'paid';
-    } else {
-      paymentStatus = 'partially_paid';
-    }
+    const lockRes = await periodGuardResponse({
+      businessId: purchase.business_id,
+      branchId: purchase.branch_id ?? null,
+      dates: [payment_date || new Date()],
+      action: 'record a payment',
+    });
+    if (lockRes) return lockRes;
 
     // PHASE-5: wrap payment INSERT, balance updates, and ledger posting in one
     // transaction so the deferred validate_voucher_balance trigger sees both
@@ -103,11 +89,62 @@ export async function PATCH(
     try {
       await client.query('BEGIN');
 
+      const lockedRes = await client.query(
+        `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted,
+                COALESCE(advance_adjusted, 0) AS advance_adjusted, status
+           FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+        [purchase.id, purchase.business_id],
+      );
+      const lockedStatus = lockedRes.rows[0]?.status;
+      if (lockedStatus === 'cancelled') {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Cannot pay a cancelled purchase' }, { status: 400 });
+      }
+      if (lockedStatus !== 'final') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
+      }
+      const outstanding = purchaseOutstanding(lockedRes.rows[0]);
+      if (Number(amount) > outstanding + 0.01) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: `Amount ₹${Number(amount).toFixed(2)} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}).`,
+            code: 'PAYMENT_EXCEEDS_BALANCE',
+            outstanding,
+          },
+          { status: 400 },
+        );
+      }
+
+      const { readSettlementAccountId, resolveSettlementForBusiness } = await import(
+        '@/lib/accounting/settlement-accounts-db'
+      );
+      const { SettlementAccountError } = await import('@/lib/accounting/settlement-accounts');
+      let settlementAccountId: string | null = null;
+      try {
+        const resolved = await resolveSettlementForBusiness(
+          purchase.business_id,
+          payment_mode || 'cash',
+          readSettlementAccountId(body.settlement_account_id),
+        );
+        settlementAccountId = resolved.accountId;
+      } catch (settlementError) {
+        await client.query('ROLLBACK');
+        if (settlementError instanceof SettlementAccountError) {
+          return NextResponse.json(
+            { error: settlementError.message, code: settlementError.code },
+            { status: settlementError.status },
+          );
+        }
+        throw settlementError;
+      }
+
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id`,
         [
           purchase.business_id,
@@ -120,6 +157,8 @@ export async function PATCH(
           payment_mode,
           payment_date || new Date(),
           reference ? String(reference) : null,
+          settlementAccountId,
+          userId,
         ],
       );
       const paymentId = paymentRes.rows[0]?.id;
@@ -133,6 +172,7 @@ export async function PATCH(
           type: 'payable',
           supplierId: purchase.supplier_id,
           paymentMode: payment_mode || 'cash',
+          settlementAccountId,
           referenceNumber: purchase.bill_number || purchaseId.substring(0, 8),
           description: `Payment for purchase ${purchase.bill_number || purchaseId}${reference ? ` - Ref: ${reference}` : ''}`,
           branchId: purchase.branch_id,
@@ -140,16 +180,12 @@ export async function PATCH(
         });
       }
 
-      const updatedRes = await client.query(
-        `UPDATE purchases
-         SET paid_amount = $1,
-             balance_amount = $2,
-             payment_status = $3,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4
-         RETURNING *`,
-        [paidAmount, balance, paymentStatus, purchase.id],
+      await client.query(
+        `UPDATE purchases SET paid_amount = COALESCE(paid_amount, 0) + $1 WHERE id = $2 AND business_id = $3`,
+        [amount, purchase.id, purchase.business_id],
       );
+      await recomputePurchaseBalance(client, purchase.id, purchase.business_id);
+      const updatedRes = await client.query('SELECT * FROM purchases WHERE id = $1', [purchase.id]);
       updated = updatedRes.rows[0];
 
       if (purchase.supplier_id) {
@@ -157,8 +193,8 @@ export async function PATCH(
           `UPDATE suppliers
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [amount, purchase.supplier_id],
+           WHERE id = $2 AND business_id = $3`,
+          [amount, purchase.supplier_id, purchase.business_id],
         );
       }
 

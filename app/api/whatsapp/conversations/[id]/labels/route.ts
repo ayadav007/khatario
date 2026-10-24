@@ -10,12 +10,12 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
@@ -36,7 +36,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
   }
 });
 
-export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
 
@@ -46,7 +46,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
       return NextResponse.json({ error: 'businessId and label_id are required' }, { status: 400 });
     }
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
@@ -76,7 +76,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
   }
 });
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const labelId = searchParams.get('label_id');
@@ -85,7 +85,7 @@ export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params
       return NextResponse.json({ error: 'businessId and label_id are required' }, { status: 400 });
     }
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }

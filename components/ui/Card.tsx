@@ -24,7 +24,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={clsx(
-        'card',
+        'card min-w-0 max-w-full',
         paddingClasses[padding],
         hover && 'hover:shadow-medium transition-shadow duration-200',
         className

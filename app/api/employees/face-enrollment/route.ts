@@ -5,6 +5,7 @@ import { serializeFaceEncoding, averageFaceDescriptors } from '@/lib/face-recogn
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 
 /**
  * POST /api/employees/face-enrollment
@@ -16,6 +17,8 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(business_id, 'hr_staff_app');
+    if (planDenied) return planDenied;
     const {
       employee_id,
       face_encodings, // Array of face encoding JSON strings (captured from multiple angles)
@@ -118,6 +121,8 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_staff_app');
+    if (planDenied) return planDenied;
     if (!employeeId || !businessId) {
       return NextResponse.json(
         { error: 'employee_id and business_id are required' },

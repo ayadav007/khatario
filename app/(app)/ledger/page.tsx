@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,13 +17,65 @@ interface LedgerEntry {
   account_id: string;
   account_code: string;
   account_name: string;
-  voucher_number?: string;
-  voucher_type?: string;
-  reference_number?: string;
+  voucher_number?: string | null;
+  voucher_type?: string | null;
+  reference_number?: string | null;
+  narration?: string | null;
   debit: number;
   credit: number;
-  balance: number;
-  description?: string;
+  source?: string;
+}
+
+const VOUCHER_TYPES: { value: string; label: string }[] = [
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'payment', label: 'Payment' },
+  { value: 'purchase', label: 'Purchase' },
+  { value: 'expense', label: 'Expense' },
+  { value: 'journal', label: 'Journal' },
+  { value: 'contra', label: 'Contra' },
+  { value: 'opening_balance', label: 'Opening balance' },
+  { value: 'opening_stock', label: 'Opening stock' },
+  { value: 'credit_note', label: 'Credit note' },
+  { value: 'debit_note', label: 'Debit note' },
+  { value: 'purchase_return', label: 'Purchase return' },
+  { value: 'supplier_credit_note', label: 'Supplier credit note' },
+  { value: 'credit_note_refund', label: 'Credit note refund' },
+  { value: 'advance_receipt', label: 'Advance receipt' },
+  { value: 'advance_adjustment', label: 'Advance adjustment' },
+  { value: 'advance_refund', label: 'Advance refund' },
+  { value: 'gst_setoff', label: 'GST set-off' },
+  { value: 'gst_payment', label: 'GST payment' },
+  { value: 'gst_cash_deposit', label: 'GST cash deposit' },
+  { value: 'gst_cash_utilization', label: 'GST cash utilisation' },
+  { value: 'stock_adjustment', label: 'Stock adjustment' },
+  { value: 'itc_reversal', label: 'ITC reversal' },
+  { value: 'tds', label: 'TDS' },
+  { value: 'asset_purchase', label: 'Asset purchase' },
+  { value: 'depreciation', label: 'Depreciation' },
+  { value: 'asset_disposal', label: 'Asset disposal' },
+  { value: 'provision', label: 'Provision' },
+  { value: 'tax_provision', label: 'Tax provision' },
+  { value: 'inter_branch_receipt', label: 'Inter-branch receipt' },
+  { value: 'staff_wage_accrual', label: 'Staff wage accrual' },
+  { value: 'staff_wage_payment', label: 'Staff wage payment' },
+  { value: 'salary_advance', label: 'Salary advance' },
+  { value: 'salary_payment', label: 'Salary payment' },
+];
+
+function voucherLabel(type?: string | null): string {
+  if (!type) return '';
+  return VOUCHER_TYPES.find((item) => item.value === type)?.label || type.replace(/_/g, ' ');
+}
+
+/** 1 April of the Indian financial year that contains today. */
+function indianFinancialYearStart(today = new Date()): string {
+  const year = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
+  return format(new Date(year, 3, 1), 'yyyy-MM-dd');
+}
+
+function calendarDate(value: unknown): string | null {
+  const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
 }
 
 export default function LedgerPage() {
@@ -30,10 +83,36 @@ export default function LedgerPage() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState(format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'));
+  const [fromDate, setFromDate] = useState(indianFinancialYearStart);
   const [toDate, setToDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [voucherType, setVoucherType] = useState<string>('all');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
+
+  useEffect(() => {
+    if (!business?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/financial-years?business_id=${business.id}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const current = (data.years || []).find((year: { is_closed?: boolean; start_date?: string; end_date?: string }) => {
+          if (year.is_closed) return false;
+          const start = calendarDate(year.start_date);
+          const end = calendarDate(year.end_date);
+          return !!start && !!end && start <= today && end >= today;
+        });
+        const start = calendarDate(current?.start_date);
+        if (start) setFromDate(start);
+      } catch {
+        // Keep the Indian financial-year default.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   useEffect(() => {
     if (business?.id) {
@@ -85,7 +164,9 @@ export default function LedgerPage() {
       entry.account_name?.toLowerCase().includes(searchLower) ||
       entry.account_code?.toLowerCase().includes(searchLower) ||
       entry.voucher_number?.toLowerCase().includes(searchLower) ||
-      entry.reference_number?.toLowerCase().includes(searchLower)
+      entry.reference_number?.toLowerCase().includes(searchLower) ||
+      entry.narration?.toLowerCase().includes(searchLower) ||
+      voucherLabel(entry.voucher_type).toLowerCase().includes(searchLower)
     );
   });
 
@@ -93,8 +174,10 @@ export default function LedgerPage() {
     
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Ledger</h1>
-          <p className="text-sm text-text-secondary mt-1">View all ledger entries</p>
+          <PageHeader
+  title="Ledger"
+  subtitle="View all ledger entries"
+/>
         </div>
 
         <Card>
@@ -130,11 +213,9 @@ export default function LedgerPage() {
                 className="input"
               >
                 <option value="all">All Types</option>
-                <option value="invoice">Invoice</option>
-                <option value="payment">Payment</option>
-                <option value="purchase">Purchase</option>
-                <option value="expense">Expense</option>
-                <option value="journal">Journal</option>
+                {VOUCHER_TYPES.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -158,15 +239,14 @@ export default function LedgerPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Date</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Account</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Voucher</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Reference</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Narration</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Debit</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Credit</th>
-                    <th className="text-right py-3 px-4 font-semibold text-text-primary">Balance</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEntries.map((entry) => (
-                    <tr key={entry.id} className="border-b border-border hover:bg-gray-50">
+                    <tr key={`${entry.source || 'row'}-${entry.id}`} className="border-b border-border hover:bg-gray-50">
                       <td className="py-4 px-4">
                         {format(new Date(entry.entry_date), 'dd MMM yyyy')}
                       </td>
@@ -177,13 +257,14 @@ export default function LedgerPage() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        {entry.voucher_number && (
-                          <span className="text-sm">{entry.voucher_number}</span>
+                        <div className="text-sm">{entry.voucher_number || entry.reference_number || '—'}</div>
+                        {entry.voucher_type && (
+                          <div className="text-xs text-text-secondary">{voucherLabel(entry.voucher_type)}</div>
                         )}
                       </td>
                       <td className="py-4 px-4">
-                        {entry.reference_number && (
-                          <span className="text-sm text-text-secondary">{entry.reference_number}</span>
+                        {entry.narration && (
+                          <span className="text-sm text-text-secondary">{entry.narration}</span>
                         )}
                       </td>
                       <td className="py-4 px-4 text-right">
@@ -199,9 +280,6 @@ export default function LedgerPage() {
                             ₹{Number(entry.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         )}
-                      </td>
-                      <td className="py-4 px-4 text-right font-semibold">
-                        ₹{Number(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   ))}

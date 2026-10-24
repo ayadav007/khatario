@@ -5,6 +5,7 @@ import { getPool } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 /**
  * GET /api/provisions/[id]
@@ -18,6 +19,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
     const businessId = tenant.businessId;
 
     const provision = await getProvisionById(params.id, businessId);
@@ -51,6 +54,8 @@ export async function PATCH(
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
     const business_id = tenant.businessId;
     const { ...updates } = body;
 
@@ -134,6 +139,8 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
     const businessId = tenant.businessId;
 
     const pool = getPool();

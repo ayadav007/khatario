@@ -36,7 +36,7 @@ Request
   → Route business logic
 ```
 
-**Expired subscription:** all migrated routes return **403** with `code` such as `NO_SUBSCRIPTION`, `SUBSCRIPTION_EXPIRED`, `TRIAL_EXPIRED`, or `BUSINESS_SUSPENDED`.
+**Expired subscription:** all migrated routes return **403** with `code` such as `NO_SUBSCRIPTION`, `SUBSCRIPTION_EXPIRED`, or `BUSINESS_SUSPENDED`. Expired trials pass the gate and fall back to Free-plan entitlements.
 
 ---
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { storedChargeFields } from '@/lib/invoices/invoice-charges';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,28 +14,17 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const status = searchParams.get('status');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    const customerId = searchParams.get('customer_id');
 
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'sales_orders', 'read');
+      await authorize(userId, 'sales_orders', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -49,7 +39,15 @@ export async function GET(request: NextRequest) {
       const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
       accessibleBranchIds = await getUserAccessibleBranchIds(userId);
       if (accessibleBranchIds.length > 0) {
-        branchFilter = `AND so.branch_id = ANY($${accessibleBranchIds.length + 1}::uuid[])`;
+        const hasBranchId = await getPool().query(
+          `SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'sales_orders' AND column_name = 'branch_id' LIMIT 1`,
+        );
+        if (hasBranchId.rows.length > 0) {
+          branchFilter = `AND so.branch_id = ANY($2::uuid[])`;
+        } else {
+          accessibleBranchIds = [];
+        }
       } else {
         // User has no branch access - return empty result
         return NextResponse.json({ salesOrders: [] });
@@ -68,7 +66,10 @@ export async function GET(request: NextRequest) {
         GREATEST(
           0::numeric,
           COALESCE(so.grand_total, 0) - COALESCE(pay.paid_sum, 0)
-        )::text AS payment_remaining
+        )::text AS payment_remaining,
+        COALESCE(inv.invoice_count, 0)::int AS linked_invoice_count,
+        inv.latest_invoice_id,
+        inv.latest_invoice_number
       FROM sales_orders so
       LEFT JOIN customers c ON so.customer_id = c.id
       LEFT JOIN LATERAL (
@@ -80,6 +81,16 @@ export async function GET(request: NextRequest) {
         WHERE pt.business_id = so.business_id
           AND pt.order_id = so.id
       ) pay ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS invoice_count,
+          (ARRAY_AGG(i.id ORDER BY i.created_at DESC NULLS LAST))[1] AS latest_invoice_id,
+          (ARRAY_AGG(i.invoice_number ORDER BY i.created_at DESC NULLS LAST))[1] AS latest_invoice_number
+        FROM invoices i
+        WHERE i.business_id = so.business_id
+          AND i.sales_order_id = so.id
+          AND COALESCE(i.status, '') <> 'cancelled'
+      ) inv ON true
       WHERE so.business_id = $1
         ${branchFilter}
     `;
@@ -92,6 +103,11 @@ export async function GET(request: NextRequest) {
     if (status) {
       query += ` AND so.status = $${params.length + 1}`;
       params.push(status);
+    }
+
+    if (customerId) {
+      query += ` AND so.customer_id = $${params.length + 1}`;
+      params.push(customerId);
     }
 
     query += ` ORDER BY so.order_date DESC, so.created_at DESC`;
@@ -113,6 +129,11 @@ export async function GET(request: NextRequest) {
  * Create a new sales order
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const business_id = session.businessId;
+  const created_by = session.userId;
+
   const pool = getPool();
   const client = await pool.connect();
   
@@ -120,7 +141,6 @@ export async function POST(request: NextRequest) {
     await client.query('BEGIN');
 
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that created this sales order
       customer_id,
@@ -135,34 +155,28 @@ export async function POST(request: NextRequest) {
       grand_total = 0,
       additional_charges = 0,
       additional_charges_label,
+      charge_classification,
+      charge_hsn_sac,
+      charge_tax_rate,
       shipping_address,
       billing_address,
       place_of_supply_state_code,
       notes,
       terms,
-      created_by,
       status = 'draft',
     } = body;
 
-    if (!business_id || !customer_id || !order_number || !order_date || !items || items.length === 0) {
+    if (!customer_id || !order_number || !order_date || !items || items.length === 0) {
       await client.query('ROLLBACK');
       return NextResponse.json(
-        { error: 'business_id, customer_id, order_number, order_date, and items are required' },
+        { error: 'customer_id, order_number, order_date, and items are required' },
         { status: 400 }
       );
     }
 
-    if (!created_by) {
-      await client.query('ROLLBACK');
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    // AUTHORIZATION: Check create permission
+    // AUTHORIZATION: Check create permission against the verified business
     try {
-      await authorize(created_by, 'sales_orders', 'create');
+      await authorize(created_by, 'sales_orders', 'create', { businessId: business_id });
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof AuthorizationError) {
@@ -198,7 +212,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission with branch context
     try {
-      await authorize(created_by, 'sales_orders', 'create', { branchId: finalBranchId });
+      await authorize(created_by, 'sales_orders', 'create', { businessId: business_id, branchId: finalBranchId });
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof AuthorizationError) {
@@ -223,6 +237,36 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    const customer = await client.query(
+      `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [customer_id, business_id]
+    );
+    if (customer.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Customer not found', code: 'CUSTOMER_NOT_FOUND' },
+        { status: 400 }
+      );
+    }
+
+    const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const activeItems = await client.query<{ id: string }>(
+        `SELECT id FROM items
+          WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      if (activeItems.rows.length !== new Set(requestedItemIds).size) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Item not found', code: 'ITEM_NOT_FOUND' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check if sales_orders table has branch_id column
     const hasBranchId = await client.query(`
       SELECT column_name 
@@ -240,15 +284,18 @@ export async function POST(request: NextRequest) {
         INSERT INTO sales_orders (
           business_id, branch_id, customer_id, order_number, order_date, expected_delivery_date,
           status, subtotal, discount_total, tax_total, round_off, grand_total,
-          additional_charges, additional_charges_label, shipping_address, billing_address,
+          additional_charges, additional_charges_label, charge_classification, charge_hsn_sac, charge_tax_rate,
+          shipping_address, billing_address,
           place_of_supply_state_code, notes, terms, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         RETURNING *
       `, [
         business_id, finalBranchId, customer_id, order_number, order_date, expected_delivery_date,
         status, subtotal, discount_total, tax_total, round_off, grand_total,
-        additional_charges, additional_charges_label || null, shipping_address || null, billing_address || null,
+        additional_charges, additional_charges_label || null,
+        storedChargeFields(body).classification, storedChargeFields(body).hsnSac, storedChargeFields(body).taxRate,
+        shipping_address || null, billing_address || null,
         place_of_supply_state_code || null, notes || null, terms || null, created_by || null
       ]);
     } else {
@@ -257,15 +304,18 @@ export async function POST(request: NextRequest) {
         INSERT INTO sales_orders (
           business_id, customer_id, order_number, order_date, expected_delivery_date,
           status, subtotal, discount_total, tax_total, round_off, grand_total,
-          additional_charges, additional_charges_label, shipping_address, billing_address,
+          additional_charges, additional_charges_label, charge_classification, charge_hsn_sac, charge_tax_rate,
+          shipping_address, billing_address,
           place_of_supply_state_code, notes, terms, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         RETURNING *
       `, [
         business_id, customer_id, order_number, order_date, expected_delivery_date,
         status, subtotal, discount_total, tax_total, round_off, grand_total,
-        additional_charges, additional_charges_label || null, shipping_address || null, billing_address || null,
+        additional_charges, additional_charges_label || null,
+        storedChargeFields(body).classification, storedChargeFields(body).hsnSac, storedChargeFields(body).taxRate,
+        shipping_address || null, billing_address || null,
         place_of_supply_state_code || null, notes || null, terms || null, created_by || null
       ]);
     }
@@ -290,6 +340,21 @@ export async function POST(request: NextRequest) {
         item.cgst_amount || 0, item.sgst_amount || 0, item.igst_amount || 0,
         item.line_total || item.total || 0, i
       ]);
+    }
+
+    if (String(status || '').toLowerCase() === 'confirmed') {
+      const { syncSalesOrderReservations } = await import('@/lib/stock/sales-order-reservations');
+      await syncSalesOrderReservations(client, {
+        businessId: business_id,
+        salesOrderId: salesOrder.id,
+        branchId: finalBranchId,
+        userId: created_by || null,
+        lines: items.map((item: any) => ({
+          item_id: item.item_id || null,
+          variant_id: item.variant_id || null,
+          qty: Number(item.qty ?? item.quantity) || 0,
+        })),
+      });
     }
 
     await client.query('COMMIT');

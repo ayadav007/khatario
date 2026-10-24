@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Khatario video studio</title>
+    <style>
+      :root { color-scheme: light; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #f8f3e9; color: #063f35; }
+      main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 32px; margin: 0 0 8px; }
+      p.lead { margin: 0 0 24px; color: #3d5c56; line-height: 1.45; }
+      label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+      input[type="text"], input[type="number"], textarea, select { width: 100%; box-sizing: border-box; border: 1px solid #e4ddd0; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; color: #063f35; }
+      textarea { min-height: 64px; resize: vertical; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      button { border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+      button.primary { background: #063f35; color: #f8f3e9; }
+      button.ghost, .file-btn { background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      .file-btn { position: relative; display: inline-flex; align-items: center; border-radius: 10px; padding: 10px 14px; font-weight: 700; cursor: pointer; overflow: hidden; }
+      .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 40px; }
+      button:disabled { opacity: 0.55; cursor: wait; }
+      .scene { background: #fff; border-radius: 16px; padding: 14px; margin-top: 12px; display: grid; gap: 12px; }
+      .aim { position: relative; width: min(100%, 640px); aspect-ratio: 16 / 9; background: #111; border-radius: 10px; overflow: hidden; cursor: crosshair; }
+      .aim img, .aim video { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .aim i { position: absolute; display: block; box-sizing: border-box; border: 2px solid #f58220; opacity: 0.6; transform: translate(-50%, -50%); cursor: grab; touch-action: none; }
+      .aim i.active { border-width: 3px; opacity: 1; }
+      .aim i.dashed { border-style: dashed; }
+      .aim i.circle { aspect-ratio: 1; border-radius: 999px; }
+      .aim i.rect { border-radius: 8px; }
+      .aim i span { position: absolute; left: -9px; top: -9px; width: 20px; height: 20px; border-radius: 999px; background: #f58220; color: #fff; font: 700 11px/20px system-ui, sans-serif; text-align: center; }
+      .aim i b { position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px; background: #f58220; border-radius: 3px; cursor: nwse-resize; }
+      .hl { border: 1px solid #e4ddd0; border-radius: 12px; padding: 10px; margin-top: 8px; }
+      .hl.active { border-color: #f58220; background: #fff6ec; }
+      .hl .row { align-items: flex-end; }
+      .hl .num { width: 24px; height: 24px; border-radius: 999px; background: #f58220; color: #fff; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+      label.mini { margin: 0; font-size: 12px; }
+      label.mini input, label.mini select { margin-top: 4px; }
+      .hl label.mini:nth-of-type(1) { flex: 1; min-width: 12rem; }
+      .hl label.mini input[type="number"] { width: 5rem; }
+      .row.between { justify-content: space-between; margin-top: 14px; }
+      h3 { margin: 0; font-size: 15px; }
+      button.accent { background: #f58220; color: #fff; margin-top: 6px; }
+      .transport { display: flex; gap: 10px; align-items: center; width: min(100%, 640px); }
+      .transport input[type="range"] { flex: 1; width: auto; padding: 0; }
+      .transport button { padding: 8px 12px; }
+      .time { min-width: 3.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .hint { margin: 6px 0 0; color: #3d5c56; font-size: 13px; font-weight: 600; }
+      .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-weight: 600; }
+      #log { white-space: pre-wrap; background: #063f35; color: #f8f3e9; border-radius: 12px; padding: 12px; min-height: 80px; font-size: 13px; }
+      #player { width: 100%; border-radius: 16px; margin-top: 16px; background: #000; }
+      a.link { display: inline-block; text-decoration: none; background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      h2 { margin: 28px 0 8px; font-size: 20px; }
+      .saved { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #fff; border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Video studio</h1>
+      <p class="lead">To point at something, select words in the spoken line, such as “New invoice”, press Highlight, then click that button on the picture. The circle or rectangle, and the zoom if you pick one, appears exactly when those words are said. Videos keep playing the whole time, and the clip's own sound stays off.</p>
+      <label for="title">Title</label>
+      <input id="title" type="text" value="How to create an invoice" />
+      <label for="subtitle">Subtitle</label>
+      <input id="subtitle" type="text" value="New tax invoice on staging" />
+      <label for="intro">Opening line</label>
+      <input id="intro" type="text" value="Here's how to create a tax invoice in Khatario." />
+      <label class="check"><input id="voice" type="checkbox" checked /> Speak the lines</label>
+      <div class="row" style="margin-top: 16px">
+        <button class="ghost" id="new" type="button">New project</button>
+        <button class="ghost" id="load" type="button">Load invoice screens</button>
+        <label class="file-btn">Add screenshots<input id="shot-files" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple /></label>
+        <button class="ghost" id="add-video" type="button">Add an MP4</button>
+        <button class="primary" id="render" type="button">Make the video</button>
+      </div>
+      <div id="scenes"></div>
+      <label style="margin-top: 20px">Progress</label>
+      <div id="log">Waiting.</div>
+      <p id="error" class="error"></p>
+      <video id="player" controls hidden></video>
+      <div id="finished" class="row" hidden>
+        <a id="download" class="ghost link" href="">Download</a>
+        <button class="ghost" id="delete-current" type="button">Delete from server</button>
+      </div>
+      <h2>Saved videos</h2>
+      <p class="hint">These files sit on the computer that made them. Download a copy, then delete it there so it does not keep using disk.</p>
+      <div id="saved"></div>
+    </main>
+    <script>
+      const scenesEl = document.querySelector('#scenes');
+      const logEl = document.querySelector('#log');
+      let scenes = [];
+
+      function parseClock(value) {
+        const parts = String(value || '').trim().split(':').map((part) => Number(part));
+        if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        return parts[0];
+      }
+
+      function formatTime(seconds) {
+        const tenths = Math.max(0, Math.round((Number(seconds) || 0) * 10));
+        const rest = (tenths % 600) / 10;
+        return Math.floor(tenths / 600) + ':' + (rest < 10 ? '0' : '') + rest.toFixed(1);
+      }
+
+      function words(text) {
+        return String(text || '').toLowerCase().split(/\s+/).map((word) => word.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+      }
+
+      // Mirrors the server: exact phrase, else the first word as a prefix, else not found.
+      function phraseMatch(voice, phrase) {
+        const want = words(phrase);
+        const have = words(voice);
+        if (!want.length) return 'missing';
+        for (let i = 0; i + want.length <= have.length; i += 1) {
+          if (want.every((token, j) => have[i + j] === token)) return 'exact';
+        }
+        return have.some((token) => token.startsWith(want[0])) ? 'word' : 'missing';
+      }
+
+      function highlightsOf(scene) {
+        if (!Array.isArray(scene.highlights)) {
+          const shape = scene.shape || 'circle';
+          scene.highlights = scene.zoomOn ? [{
+            phrase: '', at: scene.zoomAt || 0, x: scene.zoomX ?? 50, y: scene.zoomY ?? 50,
+            w: scene.markW ?? (shape === 'rect' ? 28 : 14), h: scene.markH ?? 16, shape, zoom: 2, hold: Math.min(scene.zoomHold ?? 2, 30),
+          }] : [];
+          scene.zoomOn = false;
+        }
+        return scene.highlights;
+      }
+
+      const voiceOn = () => document.querySelector('#voice').checked;
+      const selection = new WeakMap();
+
+      function el(tag, props, children) {
+        const node = Object.assign(document.createElement(tag), props || {});
+        (children || []).forEach((child) => node.append(child));
+        return node;
+      }
+
+      function sceneCard(scene, index) {
+        const list = highlightsOf(scene);
+        const card = el('article', { className: 'scene' });
+        const aim = el('div', { className: 'aim' });
+        const isVideo = scene.media === 'video';
+        const preview = isVideo
+          ? el('video', { muted: true, playsInline: true, preload: 'auto', src: scene.preview || '' })
+          : el('img', { alt: '', src: scene.image ? '/shots/' + scene.image : scene.preview || '' });
+        aim.appendChild(preview);
+        const hint = el('p', { className: 'hint' });
+        const listEl = el('div');
+        const selected = () => selection.get(scene) ?? null;
+
+        function nowAt() {
+          return isVideo ? Math.round(preview.currentTime * 10) / 10 : 1;
+        }
+
+        function add(patch) {
+          list.push({ phrase: '', at: nowAt(), x: 50, y: 50, w: 14, h: 16, shape: 'circle', zoom: 1.5, hold: 2, ...patch });
+          selection.set(scene, list.length - 1);
+          refresh();
+        }
+
+        function drawMarks() {
+          aim.querySelectorAll('i').forEach((node) => node.remove());
+          list.forEach((item, i) => {
+            const shape = item.shape === 'none' ? 'rect' : item.shape;
+            const mark = el('i', { className: shape + (selected() === i ? ' active' : '') + (item.shape === 'none' ? ' dashed' : '') }, [el('span', { textContent: String(i + 1) })]);
+            mark.style.left = item.x + '%';
+            mark.style.top = item.y + '%';
+            mark.style.width = item.w + '%';
+            mark.style.height = shape === 'rect' ? item.h + '%' : '';
+            mark.addEventListener('pointerdown', (event) => drag(event, i, false, mark));
+            mark.addEventListener('click', (event) => event.stopPropagation());
+            if (selected() === i) {
+              const handle = el('b');
+              handle.addEventListener('pointerdown', (event) => drag(event, i, true, mark));
+              mark.appendChild(handle);
+            }
+            aim.appendChild(mark);
+          });
+          hint.textContent = selected() !== null && list[selected()]
+            ? 'Click the picture to move highlight ' + (selected() + 1) + (isVideo ? ' (it keeps playing)' : '') + '. Drag the corner to resize.'
+            : 'Click the picture to add a highlight there.';
+        }
+
+        function drag(event, i, resizing, mark) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (selected() !== i) {
+            selection.set(scene, i);
+            refresh();
+            return;
+          }
+          const box = aim.getBoundingClientRect();
+          const item = list[i];
+          const origin = { ...item };
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const move = (ev) => {
+            const dx = ((ev.clientX - startX) / box.width) * 100;
+            const dy = ((ev.clientY - startY) / box.height) * 100;
+            if (resizing) {
+              item.w = Math.round(Math.min(90, Math.max(3, origin.w + dx)) * 10) / 10;
+              if (item.shape === 'rect') item.h = Math.round(Math.min(90, Math.max(3, origin.h + dy)) * 10) / 10;
+            } else {
+              item.x = Math.min(100, Math.max(0, Math.round((origin.x + dx) * 10) / 10));
+              item.y = Math.min(100, Math.max(0, Math.round((origin.y + dy) * 10) / 10));
+            }
+            mark.style.left = item.x + '%';
+            mark.style.top = item.y + '%';
+            mark.style.width = item.w + '%';
+            if (item.shape === 'rect') mark.style.height = item.h + '%';
+          };
+          const stop = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', stop);
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', stop);
+        }
+
+        function field(labelText, input) {
+          return el('label', { className: 'mini' }, [labelText, input]);
+        }
+
+        function drawList() {
+          listEl.innerHTML = '';
+          if (!list.length) listEl.append(el('p', { className: 'hint', textContent: 'None yet.' }));
+          list.forEach((item, i) => {
+            const match = voiceOn() ? phraseMatch(scene.voice, item.phrase) : 'missing';
+            const row = el('div', { className: 'hl' + (selected() === i ? ' active' : '') });
+            row.addEventListener('click', () => {
+              if (selected() === i) return;
+              selection.set(scene, i);
+              if (isVideo && preview.paused && match === 'missing') preview.currentTime = Math.min(item.at, Math.max(0, (preview.duration || item.at) - 0.05));
+              drawMarks();
+              listEl.querySelectorAll('.hl').forEach((node, n) => node.classList.toggle('active', n === i));
+            });
+            const phrase = el('input', { type: 'text', value: item.phrase, placeholder: 'e.g. New invoice' });
+            phrase.addEventListener('input', () => { item.phrase = phrase.value; note.textContent = noteText(); time.hidden = phraseMatch(scene.voice, item.phrase) !== 'missing' && voiceOn(); });
+            const shape = el('select', {}, [el('option', { value: 'circle', textContent: 'Circle' }), el('option', { value: 'rect', textContent: 'Rectangle' }), el('option', { value: 'none', textContent: 'Zoom only' })]);
+            shape.value = item.shape;
+            shape.addEventListener('change', () => { item.shape = shape.value; drawMarks(); });
+            const zoom = el('select', {}, [['1', 'None'], ['1.5', '1.5×'], ['2', '2×'], ['2.5', '2.5×']].map(([value, textContent]) => el('option', { value, textContent })));
+            zoom.value = String(item.zoom);
+            zoom.addEventListener('change', () => { item.zoom = Number(zoom.value); });
+            const hold = el('input', { type: 'number', min: '0.5', max: '30', step: '0.5', value: String(item.hold) });
+            hold.addEventListener('input', () => { item.hold = Number(hold.value); });
+            const at = el('input', { type: 'text', value: formatTime(item.at) });
+            at.addEventListener('change', () => { item.at = parseClock(at.value); at.value = formatTime(item.at); });
+            const time = field(isVideo ? 'At video time' : 'After the scene starts', at);
+            time.hidden = match !== 'missing';
+            const remove = el('button', { type: 'button', className: 'ghost', textContent: 'Remove' });
+            remove.addEventListener('click', (event) => {
+              event.stopPropagation();
+              list.splice(i, 1);
+              selection.delete(scene);
+              refresh();
+            });
+            const noteText = () => {
+              const now = voiceOn() ? phraseMatch(scene.voice, item.phrase) : 'missing';
+              if (!voiceOn()) return 'The voice is off, so this shows at the time you set.';
+              if (now === 'exact') return 'Shows when the voice says these words.';
+              if (now === 'word') return 'Only “' + words(item.phrase)[0] + '” matches the spoken line, so it shows on that word.';
+              return item.phrase ? 'These words are not in the spoken line, so it shows at the time you set.' : 'No words picked, so it shows at the time you set.';
+            };
+            const note = el('p', { className: 'hint', textContent: noteText() });
+            row.append(
+              el('div', { className: 'row' }, [
+                el('span', { className: 'num', textContent: String(i + 1) }),
+                field('When the voice says', phrase),
+                field('Mark', shape),
+                field('Zoom', zoom),
+                field('Seconds', hold),
+                time,
+                remove,
+              ]),
+              note,
+            );
+            listEl.appendChild(row);
+          });
+        }
+
+        function refresh() {
+          drawMarks();
+          drawList();
+        }
+
+        aim.addEventListener('click', (event) => {
+          const box = aim.getBoundingClientRect();
+          const x = Math.round(((event.clientX - box.left) / box.width) * 1000) / 10;
+          const y = Math.round(((event.clientY - box.top) / box.height) * 1000) / 10;
+          const i = selected();
+          if (i !== null && list[i]) {
+            Object.assign(list[i], { x, y }, isVideo ? { at: nowAt() } : {});
+            refresh();
+          } else {
+            add({ x, y });
+          }
+        });
+
+        const stage = el('div', {}, [aim]);
+        if (isVideo) {
+          preview.addEventListener('loadeddata', () => preview.play().then(() => preview.pause()).catch(() => {}), { once: true });
+          const play = el('button', { type: 'button', className: 'ghost', textContent: 'Play' });
+          const range = el('input', { type: 'range', min: '0', max: '0', step: '0.1', value: '0' });
+          const clock = el('span', { className: 'time', textContent: formatTime(0) });
+          play.addEventListener('click', () => { if (preview.paused) preview.play().catch(() => {}); else preview.pause(); });
+          preview.addEventListener('play', () => { play.textContent = 'Pause'; });
+          preview.addEventListener('pause', () => { play.textContent = 'Play'; });
+          preview.addEventListener('timeupdate', () => { clock.textContent = formatTime(preview.currentTime); range.value = String(preview.currentTime || 0); });
+          preview.addEventListener('loadedmetadata', () => { range.max = String(preview.duration || 0); });
+          range.addEventListener('input', () => { preview.currentTime = Number(range.value); });
+          stage.appendChild(el('div', { className: 'transport' }, [play, range, clock]));
+        }
+        stage.appendChild(hint);
+
+        const caption = el('textarea', { value: scene.caption || '' });
+        caption.addEventListener('input', () => { scene.caption = caption.value; });
+        const voice = el('textarea', { value: scene.voice || '' });
+        const pickBtn = el('button', { type: 'button', className: 'accent', hidden: true });
+        const pickHint = el('p', { className: 'hint', textContent: 'Select words in the spoken line, such as “New invoice”, to highlight that spot when the voice says them.' });
+        let picked = '';
+        const readPick = () => {
+          picked = voice.value.slice(voice.selectionStart, voice.selectionEnd).trim().slice(0, 80);
+          pickBtn.hidden = !picked || !voiceOn();
+          pickHint.hidden = !pickBtn.hidden;
+          pickBtn.textContent = 'Highlight “' + picked + '” when it is said';
+        };
+        voice.addEventListener('input', () => { scene.voice = voice.value; drawList(); });
+        ['select', 'keyup', 'mouseup'].forEach((name) => voice.addEventListener(name, readPick));
+        pickBtn.addEventListener('mousedown', (event) => event.preventDefault());
+        pickBtn.addEventListener('click', () => {
+          add({ phrase: picked });
+          voice.setSelectionRange(voice.selectionEnd, voice.selectionEnd);
+          readPick();
+        });
+
+        const addBtn = el('button', { type: 'button', className: 'ghost', textContent: 'Add highlight' });
+        addBtn.addEventListener('click', () => add({}));
+
+        const transition = el('select', {}, [['cut', 'Cut'], ['crossfade', 'Crossfade'], ['slide', 'Slide']].map(([value, textContent]) => el('option', { value, textContent })));
+        transition.value = scene.transition || 'crossfade';
+        const seconds = el('input', { type: 'number', min: '0.2', max: '3', step: '0.1', value: String(scene.transitionSeconds ?? 1) });
+        seconds.disabled = transition.value === 'cut';
+        transition.addEventListener('change', () => { scene.transition = transition.value; seconds.disabled = scene.transition === 'cut'; });
+        seconds.addEventListener('input', () => { scene.transitionSeconds = Number(seconds.value); });
+
+        const change = el('button', { type: 'button', className: 'ghost', textContent: 'Change picture' });
+        change.addEventListener('click', () => replacePicture(index));
+        const remove = el('button', { type: 'button', className: 'ghost', textContent: 'Remove scene ' + (index + 1) });
+        remove.addEventListener('click', () => { scenes.splice(index, 1); paint(); });
+
+        const fields = el('div', {}, [
+          el('label', { textContent: 'On-screen caption' }), caption,
+          el('label', { textContent: 'Spoken line' }), voice, pickBtn, pickHint,
+          el('div', { className: 'row between' }, [el('h3', { textContent: 'Highlights' }), addBtn]),
+          listEl,
+          el('div', { className: 'row' }, [field('Transition', transition), field('Transition seconds', seconds)]),
+          el('div', { className: 'row', style: 'margin-top: 12px' }, [change, remove]),
+        ]);
+        refresh();
+        card.append(stage, fields);
+        return card;
+      }
+
+      function paint() {
+        scenesEl.innerHTML = '';
+        scenes.forEach((scene, index) => scenesEl.appendChild(sceneCard(scene, index)));
+      }
+
+      document.querySelector('#voice').addEventListener('change', paint);
+
+      document.querySelector('#load').addEventListener('click', async () => {
+        const preset = await fetch('/api/preset').then((res) => res.json());
+        document.querySelector('#title').value = preset.title;
+        document.querySelector('#subtitle').value = preset.subtitle;
+        if (preset.intro) document.querySelector('#intro').value = preset.intro;
+        document.querySelector('#voice').checked = preset.voice;
+        scenes = preset.scenes.map((scene) => ({ ...scene }));
+        paint();
+        logEl.textContent = 'Loaded the staging invoice screens.';
+      });
+
+      document.querySelector('#new').addEventListener('click', () => {
+        document.querySelector('#title').value = '';
+        document.querySelector('#subtitle').value = '';
+        document.querySelector('#intro').value = '';
+        scenes = [];
+        paint();
+        document.querySelector('#player').hidden = true;
+        logEl.textContent = 'New project. Add a screenshot or an MP4, then write the spoken line for each scene.';
+      });
+
+      function replacePicture(index) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,video/mp4';
+        input.addEventListener('change', () => {
+          const file = input.files && input.files[0];
+          if (!file || !scenes[index]) return;
+          const kind = file.type.indexOf('video/') === 0 ? 'video' : 'image';
+          const reader = new FileReader();
+          reader.onload = () => {
+            const scene = scenes[index];
+            const voice = scene.voice;
+            const caption = scene.caption;
+            scene.media = kind;
+            scene.preview = reader.result;
+            scene.image = '';
+            scene.imageData = kind === 'image' ? reader.result : '';
+            scene.videoData = kind === 'video' ? reader.result : '';
+            scene.voice = voice;
+            scene.caption = caption;
+            paint();
+          };
+          reader.readAsDataURL(file);
+        });
+        input.click();
+      }
+
+      function addScenes(files, kind) {
+        const list = Array.from(files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        if (!list.length) return;
+        Promise.all(list.map((file) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        }))).then((urls) => {
+          urls.forEach((url) => {
+            scenes.push({
+              caption: '',
+              voice: '',
+              transition: 'crossfade',
+              transitionSeconds: 1,
+              media: kind,
+              preview: url,
+              imageData: kind === 'image' ? url : '',
+              videoData: kind === 'video' ? url : '',
+            });
+          });
+          paint();
+          logEl.textContent = urls.length === 1
+            ? 'Added 1 scene. Write the spoken line for it.'
+            : 'Added ' + urls.length + ' scenes, in filename order. Write the spoken line for each one.';
+        }).catch(() => {
+          logEl.textContent = 'Could not read one of the selected files.';
+        });
+      }
+
+      document.querySelector('#shot-files').addEventListener('change', (event) => {
+        addScenes(event.target.files, 'image');
+        event.target.value = '';
+      });
+
+      document.querySelector('#add-video').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'video/mp4';
+        input.addEventListener('change', () => addScenes(input.files, 'video'));
+        input.click();
+      });
+
+      function formatSize(bytes) {
+        if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+
+      async function deleteStamp(stamp) {
+        const res = await fetch('/api/videos/' + stamp, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Could not delete that video');
+        if (document.querySelector('#delete-current').dataset.stamp === stamp) {
+          document.querySelector('#player').hidden = true;
+          document.querySelector('#finished').hidden = true;
+        }
+        await loadSaved();
+      }
+
+      async function loadSaved() {
+        const data = await fetch('/api/videos').then((res) => res.json());
+        const box = document.querySelector('#saved');
+        box.innerHTML = '';
+        (data.videos || []).forEach((video) => {
+          const row = document.createElement('div');
+          row.className = 'saved';
+          const name = document.createElement('span');
+          name.textContent = video.stamp + ' · ' + formatSize(video.bytes);
+          const download = document.createElement('a');
+          download.className = 'ghost link';
+          download.href = '/videos/' + video.stamp + '/video.mp4?download=1';
+          download.textContent = 'Download';
+          const remove = document.createElement('button');
+          remove.className = 'ghost';
+          remove.type = 'button';
+          remove.textContent = 'Delete from server';
+          remove.addEventListener('click', () => deleteStamp(video.stamp).catch((err) => { document.querySelector('#error').textContent = err.message; }));
+          row.append(name, download, remove);
+          box.appendChild(row);
+        });
+        if (!(data.videos || []).length) box.textContent = 'No saved videos.';
+      }
+
+      document.querySelector('#delete-current').addEventListener('click', () => {
+        const stamp = document.querySelector('#delete-current').dataset.stamp;
+        if (stamp) deleteStamp(stamp).catch((err) => { document.querySelector('#error').textContent = err.message; });
+      });
+      loadSaved();
+
+      document.querySelector('#render').addEventListener('click', async () => {
+        const button = document.querySelector('#render');
+        const error = document.querySelector('#error');
+        error.textContent = '';
+        button.disabled = true;
+        logEl.textContent = 'Working. A voiceover render takes a few minutes.';
+        try {
+          const res = await fetch('/api/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: document.querySelector('#title').value,
+              subtitle: document.querySelector('#subtitle').value,
+              intro: document.querySelector('#intro').value,
+              voice: document.querySelector('#voice').checked,
+              scenes,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Render failed');
+          logEl.textContent = (data.logs || []).join('\n');
+          const player = document.querySelector('#player');
+          player.hidden = false;
+          player.src = data.video;
+          const finished = document.querySelector('#finished');
+          finished.hidden = false;
+          document.querySelector('#download').href = data.video + '?download=1';
+          document.querySelector('#delete-current').dataset.stamp = data.job;
+          player.play().catch(() => {});
+          loadSaved();
+        } catch (err) {
+          error.textContent = err.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

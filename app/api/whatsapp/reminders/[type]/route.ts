@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { hasFeature } from '@/lib/subscription';
 import { FEATURE_PLAN_DENIED_RESPONSE_CODE } from '@/lib/subscription/feature-access';
-import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-export const PATCH = withWhatsAppPremiumApi<{ type: string }>(
+export const PATCH = withWhatsAppBaseApi<{ type: string }>(
   { parseJsonBody: true },
   async ({ params, body, businessId }) => {
     try {
@@ -135,7 +135,7 @@ export const PATCH = withWhatsAppPremiumApi<{ type: string }>(
   },
 );
 
-export const DELETE = withWhatsAppPremiumApi<{ type: string }>({}, async ({ params, businessId }) => {
+export const DELETE = withWhatsAppBaseApi<{ type: string }>({}, async ({ params, businessId }) => {
   try {
     const reminderType = params.type;
 

@@ -50,112 +50,92 @@
 
   <!-- ASSETS -->
   <div class="section-title">ASSETS</div>
-  
-  <div class="subsection-title">Current Assets</div>
+
+  {{#each data.asset_sections}}
+  <div class="subsection-title">{{this.title}}</div>
   <table>
-    {{#if data.assets.current.inventory}}
-    <tr>
-      <td class="label">Inventory (Closing Stock)</td>
-      <td class="amount">₹ {{data.assets.current.inventory}}</td>
-    </tr>
-    {{/if}}
-    {{#if data.assets.current.receivables}}
-    <tr>
-      <td class="label">Accounts Receivable</td>
-      <td class="amount">₹ {{data.assets.current.receivables}}</td>
-    </tr>
-    {{/if}}
-    {{#each data.assets.current.accounts}}
+    {{#each this.accounts}}
     <tr>
       <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
       <td class="amount">₹ {{this.balance}}</td>
     </tr>
     {{/each}}
+    {{#if @first}}{{#if ../data.inventory_adjustment}}
+    <tr>
+      <td class="label">Closing stock adjustment (periodic inventory)</td>
+      <td class="amount">₹ {{../data.inventory_adjustment}}</td>
+    </tr>
+    {{/if}}{{/if}}
     <tr class="total-row">
-      <td class="label">Total Current Assets</td>
-      <td class="amount">₹ {{data.assets.current.total}}</td>
+      <td class="label">Total {{this.title}}</td>
+      <td class="amount">₹ {{this.total}}</td>
     </tr>
   </table>
+  {{/each}}
 
-  <div class="subsection-title">Fixed Assets</div>
   <table>
-    {{#if data.assets.fixed.gross_block}}
-    <tr>
-      <td class="label">Gross Block</td>
-      <td class="amount">₹ {{data.assets.fixed.gross_block}}</td>
-    </tr>
-    <tr>
-      <td class="label">Less: Accumulated Depreciation</td>
-      <td class="amount negative">({{data.assets.fixed.accumulated_depreciation}})</td>
-    </tr>
-    <tr class="total-row">
-      <td class="label">Net Block</td>
-      <td class="amount">₹ {{data.assets.fixed.net_block}}</td>
-    </tr>
-    {{else}}
-    {{#each data.assets.fixed.accounts}}
-    <tr>
-      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
-      <td class="amount">₹ {{this.balance}}</td>
-    </tr>
-    {{/each}}
-    {{/if}}
-    <tr class="total-row">
-      <td class="label">Total Fixed Assets</td>
-      <td class="amount">₹ {{data.assets.fixed.total}}</td>
+    <tr class="grand-total-row">
+      <td class="label" style="padding: 12px;">TOTAL ASSETS</td>
+      <td class="amount" style="padding: 12px;">₹ {{data.assets_total}}</td>
     </tr>
   </table>
-
-  <tr class="grand-total-row">
-    <td style="padding: 12px;">TOTAL ASSETS</td>
-    <td class="amount" style="padding: 12px;">₹ {{data.assets.total}}</td>
-  </tr>
 
   <!-- LIABILITIES & EQUITY -->
   <div class="section-title">LIABILITIES & EQUITY</div>
-  
-  <div class="subsection-title">Current Liabilities</div>
+
+  {{#each data.liability_sections}}
+  <div class="subsection-title">{{this.title}}</div>
   <table>
-    {{#if data.liabilities.current.payables}}
-    <tr>
-      <td class="label">Accounts Payable</td>
-      <td class="amount">₹ {{data.liabilities.current.payables}}</td>
-    </tr>
-    {{/if}}
-    {{#each data.liabilities.current.accounts}}
+    {{#each this.accounts}}
     <tr>
       <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
       <td class="amount">₹ {{this.balance}}</td>
     </tr>
     {{/each}}
     <tr class="total-row">
-      <td class="label">Total Current Liabilities</td>
-      <td class="amount">₹ {{data.liabilities.current.total}}</td>
+      <td class="label">Total {{this.title}}</td>
+      <td class="amount">₹ {{this.total}}</td>
+    </tr>
+  </table>
+  {{/each}}
+
+  <table>
+    <tr class="total-row">
+      <td class="label">Total Liabilities</td>
+      <td class="amount">₹ {{data.liabilities_total}}</td>
     </tr>
   </table>
 
   <div class="subsection-title">Equity</div>
   <table>
-    {{#each data.equity.capital.accounts}}
+    {{#each data.equity_accounts}}
     <tr>
       <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
       <td class="amount">₹ {{this.balance}}</td>
     </tr>
     {{/each}}
+    {{#if data.previous_years_profit}}
     <tr>
-      <td class="label">Retained Earnings (P&L A/c)</td>
-      <td class="amount">₹ {{data.equity.retained_earnings_amount}}</td>
+      <td class="label">Profit of earlier years (not yet closed)</td>
+      <td class="amount">₹ {{data.previous_years_profit}}</td>
+    </tr>
+    {{/if}}
+    <tr>
+      <td class="label">Current Year Earnings</td>
+      <td class="amount">₹ {{data.current_year_earnings}}</td>
     </tr>
     <tr class="total-row">
       <td class="label">Total Equity</td>
-      <td class="amount">₹ {{data.equity.total}}</td>
+      <td class="amount">₹ {{data.equity_total}}</td>
     </tr>
   </table>
 
-  <tr class="grand-total-row">
-    <td style="padding: 12px;">TOTAL LIABILITIES & EQUITY</td>
-    <td class="amount" style="padding: 12px;">₹ {{data.total_liabilities_and_equity}}</td>
-  </tr>
+  <table>
+    <tr class="grand-total-row">
+      <td class="label" style="padding: 12px;">TOTAL LIABILITIES & EQUITY</td>
+      <td class="amount" style="padding: 12px;">₹ {{data.total_liabilities_and_equity}}</td>
+    </tr>
+  </table>
 
   <div class="balanced-status {{#if data.is_balanced}}balanced{{else}}not-balanced{{/if}}">
     {{#if data.is_balanced}}

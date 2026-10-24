@@ -161,12 +161,16 @@ export const SettingsFeatures = {
   MULTI_BRANCH: 'multi_branch',
   /** Multi-warehouse support */
   MULTI_WAREHOUSE: 'multi_warehouse',
+  /** Create another company under the same login */
+  MULTI_BUSINESS: 'multi_business',
   /** Backup and restore */
   BACKUP_RESTORE: 'backup_restore',
   /** POS Mode - Retail billing interface */
   POS_MODE: 'settings_pos_mode',
   /** Concurrent multi-device login (off = single-device, new login signs out others) */
   MULTIDEVICE_LOGIN: 'settings_multidevice_login',
+  /** Change the language used on printed documents */
+  DOCUMENT_LANGUAGE: 'settings_document_language',
 } as const;
 
 /**
@@ -269,8 +273,10 @@ export const LegacyFeatureKeyMap: Record<string, FeatureKey> = {
   'settings_multi_user': SettingsFeatures.MULTI_USER,
   'settings_multi_branch': SettingsFeatures.MULTI_BRANCH,
   'settings_multi_warehouse': SettingsFeatures.MULTI_WAREHOUSE,
+  'settings_multi_business': SettingsFeatures.MULTI_BUSINESS,
   'settings_backup': SettingsFeatures.BACKUP_RESTORE,
   'settings_pos_mode': SettingsFeatures.POS_MODE,
+  'pos_mode': SettingsFeatures.POS_MODE,
   
   // Integration domain legacy keys
   'integration_whatsapp_bot': IntegrationFeatures.WHATSAPP_BOT,
@@ -308,9 +314,11 @@ export const CanonicalToLegacyMap: Record<FeatureKey, string[]> = {
   [SettingsFeatures.MULTI_USER]: ['settings_multi_user'],
   [SettingsFeatures.MULTI_BRANCH]: ['settings_multi_branch'],
   [SettingsFeatures.MULTI_WAREHOUSE]: ['settings_multi_warehouse'],
+  [SettingsFeatures.MULTI_BUSINESS]: ['settings_multi_business'],
   [SettingsFeatures.BACKUP_RESTORE]: ['settings_backup'],
   [SettingsFeatures.POS_MODE]: ['settings_pos_mode'],
   [SettingsFeatures.MULTIDEVICE_LOGIN]: [],
+  [SettingsFeatures.DOCUMENT_LANGUAGE]: [],
   
   [IntegrationFeatures.WHATSAPP_BOT]: ['integration_whatsapp_bot', 'whatsapp_bot'],
   [IntegrationFeatures.WHATSAPP_MANUAL]: ['integration_whatsapp_manual'],

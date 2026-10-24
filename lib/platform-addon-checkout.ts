@@ -3,7 +3,6 @@
  */
 
 import { query, queryOne } from '@/lib/db';
-import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
 import {
   recordBillingTransaction,
@@ -14,21 +13,26 @@ import {
   type WhatsAppAddonType,
 } from '@/lib/subscription';
 import { CONNECT_PLAN_ID } from '@/lib/product-lines';
+import { KHATARIO_AI_PRICE_MONTHLY } from '@/lib/ai-agent/billing-constants';
 import {
-  getPlatformRazorpayProvider,
+  getPlatformCheckoutProvider,
+  isPlatformPaymentConfigured,
   isPlatformRazorpayConfigured,
+  type PlatformPaymentProviderId,
 } from '@/lib/platform-subscription-checkout';
 
-export { isPlatformRazorpayConfigured };
+export { isPlatformPaymentConfigured, isPlatformRazorpayConfigured };
 
 export const WHATSAPP_ADDON_PRICING: Record<WhatsAppAddonType, number> = {
   whatsapp_bot: 499,
   whatsapp_send_message: 299,
+  khatario_ai: KHATARIO_AI_PRICE_MONTHLY,
 };
 
 export const WHATSAPP_ADDON_LABELS: Record<WhatsAppAddonType, string> = {
   whatsapp_bot: 'WhatsApp Bot',
   whatsapp_send_message: 'Send Message',
+  khatario_ai: 'Khatario AI',
 };
 
 function appBaseUrl(): string {
@@ -100,10 +104,11 @@ export async function createAddonCheckout(
     throw new Error('Invalid addon type');
   }
 
-  const provider = getPlatformRazorpayProvider();
-  if (!provider) {
+  const checkout = await getPlatformCheckoutProvider();
+  if (!checkout) {
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }
+  const provider = checkout.provider;
 
   const label = WHATSAPP_ADDON_LABELS[input.addonType];
   const recipient = await getBusinessPlatformRecipient(input.businessId);
@@ -114,7 +119,7 @@ export async function createAddonCheckout(
     moduleKey: 'connect',
     amount: price,
     billingCycle: 'monthly',
-    paymentMethod: 'razorpay',
+    paymentMethod: checkout.id,
     status: 'pending',
     description: `${label} add-on — monthly`,
     skipEmails: true,
@@ -140,6 +145,7 @@ export async function createAddonCheckout(
       module_key: 'connect',
       billing_transaction_id: pending.id,
       cancel_url: cancelUrl,
+      ...(checkout.id === 'easebuzz' ? { easebuzz_context: 'PB' } : {}),
     },
   });
 
@@ -156,6 +162,7 @@ export async function createAddonCheckout(
         JSON.stringify({
           payment_link_id: link.providerPaymentId,
           short_url: link.paymentUrl,
+          provider: checkout.id,
           checkout_type: 'whatsapp_addon',
           addon_type: input.addonType,
         }),
@@ -164,7 +171,7 @@ export async function createAddonCheckout(
   }
 
   if (!link.paymentUrl) {
-    throw new Error('Razorpay did not return a checkout URL');
+    throw new Error('Payment provider did not return a checkout URL');
   }
 
   return {
@@ -183,6 +190,7 @@ export async function completeAddonCheckoutPayment(params: {
   providerPaymentId?: string | null;
   amount: number;
   gatewayResponse?: unknown;
+  paymentMethod?: PlatformPaymentProviderId;
 }): Promise<void> {
   const price = WHATSAPP_ADDON_PRICING[params.addonType] ?? params.amount;
 
@@ -208,7 +216,7 @@ export async function completeAddonCheckoutPayment(params: {
       moduleKey: 'connect',
       amount: params.amount,
       billingCycle: 'monthly',
-      paymentMethod: 'razorpay',
+      paymentMethod: params.paymentMethod ?? 'razorpay',
       paymentReference: params.providerPaymentId,
       status: 'completed',
       description: `${WHATSAPP_ADDON_LABELS[params.addonType]} add-on — monthly`,
@@ -216,9 +224,46 @@ export async function completeAddonCheckoutPayment(params: {
     });
   }
 
-  await activateWhatsAppAddon(params.businessId, params.addonType, price);
+  if (params.addonType === 'khatario_ai') {
+    await activateWhatsAppAddon(params.businessId, params.addonType, price);
+  } else {
+    // Checkouts opened before the Bot/Send add-ons were folded into Connect.
+    await grantConnectMonthForLegacyAddon(params.businessId);
+  }
+}
+
+async function grantConnectMonthForLegacyAddon(businessId: string): Promise<void> {
+  await query(
+    `INSERT INTO business_module_subscriptions
+       (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+     VALUES ($1, 'connect', $2, 'active', CURRENT_DATE, (CURRENT_DATE + INTERVAL '1 month')::date, 'monthly')
+     ON CONFLICT (business_id, module_key) DO UPDATE SET
+       plan_id = $2,
+       status = 'active',
+       end_date = (
+         GREATEST(
+           CASE WHEN business_module_subscriptions.plan_id = $2 AND business_module_subscriptions.status = 'active'
+                THEN COALESCE(business_module_subscriptions.end_date, CURRENT_DATE)
+                ELSE CURRENT_DATE END,
+           CURRENT_DATE
+         ) + INTERVAL '1 month'
+       )::date,
+       trial_end_date = NULL,
+       grace_period_end = NULL,
+       scheduled_plan_id = NULL,
+       cancel_at_period_end = false,
+       updated_at = CURRENT_TIMESTAMP`,
+    [businessId, CONNECT_PLAN_ID],
+  );
+  await query(
+    `INSERT INTO business_modules (business_id, module_key, enabled, source)
+     VALUES ($1, 'connect', true, 'legacy_addon_checkout')
+     ON CONFLICT (business_id, module_key) DO UPDATE SET enabled = true`,
+    [businessId],
+  );
+  clearAddonCache(businessId);
 }
 
 export function isWhatsAppAddonType(value: unknown): value is WhatsAppAddonType {
-  return value === 'whatsapp_bot' || value === 'whatsapp_send_message';
+  return value === 'whatsapp_bot' || value === 'whatsapp_send_message' || value === 'khatario_ai';
 }

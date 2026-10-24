@@ -4,10 +4,11 @@ import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import clsx from 'clsx';
 import { hideMobileDuplicatePageChrome } from '@/lib/mobile-page-chrome';
+import { PageHeader } from '@/components/layout/PageHeader';
 
 type MobileDuplicatePageChromeProps = {
   title: React.ReactNode;
-  /** Shown under the title on desktop; hidden on mobile when TopBar carries context. */
+  /** Shown under the title. */
   description?: React.ReactNode;
   onBack?: () => void;
   trailing?: React.ReactNode;
@@ -15,8 +16,8 @@ type MobileDuplicatePageChromeProps = {
 };
 
 /**
- * Page-level mobile header (back + h1). Hidden below md — TopBar shows route context.
- * Desktop always shows the h1 (and optional description).
+ * Composer and detail pages. The mobile TopBar already shows the route title,
+ * so this header is desktop-only while that flag is on. Layout matches PageHeader.
  */
 export function MobileDuplicatePageChrome({
   title,
@@ -28,43 +29,26 @@ export function MobileDuplicatePageChrome({
   const hideOnMobile = hideMobileDuplicatePageChrome();
 
   return (
-    <div
-      className={clsx(
-        hideOnMobile ? 'hidden md:flex' : 'flex',
-        description ? 'flex-col gap-1' : 'flex-row items-center justify-between gap-2',
-        'w-full',
-        className
-      )}
-    >
-      <div
-        className={clsx(
-          'flex min-w-0 flex-1 items-center gap-2',
-          description && 'w-full justify-between'
-        )}
-      >
-        {!hideOnMobile && onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded-full p-2 hover:bg-gray-100 md:hidden dark:hover:bg-slate-800"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-        ) : null}
-        <h1
-          className={clsx(
-            'my-0 py-0 leading-tight text-text-primary',
-            hideOnMobile ? 'list-page-h1' : 'text-xl font-bold md:text-2xl'
-          )}
-        >
-          {title}
-        </h1>
-        {trailing ? <div className="shrink-0">{trailing}</div> : null}
-      </div>
-      {description ? (
-        <p className="text-sm text-text-secondary">{description}</p>
-      ) : null}
+    <div className={clsx(hideOnMobile && 'hidden md:block', 'w-full min-w-0', className)}>
+      <PageHeader
+        title={
+          <>
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="mr-2 inline-flex min-h-10 min-w-10 items-center justify-center rounded-full align-middle hover:bg-gray-100 md:hidden dark:hover:bg-slate-800"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            ) : null}
+            {title}
+          </>
+        }
+        subtitle={description}
+        actions={trailing}
+      />
     </div>
   );
 }

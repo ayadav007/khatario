@@ -2,14 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
-import { isPlatformRazorpayConfigured } from '@/lib/platform-subscription-checkout';
+import { isPlatformPaymentConfigured } from '@/lib/platform-subscription-checkout';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
-import {
-  applySubscriptionPlanChange,
-  computePlanAmount,
-} from '@/lib/subscription/apply-plan-change';
+import { BILLING_CYCLES, computePlanAmount } from '@/lib/subscription/apply-plan-change';
 import {
   applyModuleSubscriptionPlanChange,
 } from '@/lib/subscription/apply-module-plan-change';
@@ -36,7 +33,6 @@ export async function POST(request: NextRequest) {
     const {
       plan_id,
       module_key: moduleKeyBody,
-      billing_cycle = 'monthly',
       payment_method = 'manual',
       payment_reference,
     } = body;
@@ -61,9 +57,10 @@ export async function POST(request: NextRequest) {
       display_name: string;
       price_monthly: number | string;
       price_yearly: number | string;
+      price_3year: number | string | null;
       product_line: string | null;
     }>(
-      `SELECT id, display_name, price_monthly, price_yearly, product_line
+      `SELECT id, display_name, price_monthly, price_yearly, price_3year, product_line
        FROM subscription_plans
        WHERE id = $1 AND is_active = true`,
       [plan_id],
@@ -83,11 +80,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    const cycle = billing_cycle === 'yearly' ? 'yearly' : 'monthly';
-    const amount = computePlanAmount(plan, cycle);
+    // Any priced cycle makes this a paid plan; an unpriced cycle must not become a free upgrade.
+    const amount = Math.max(
+      ...BILLING_CYCLES.map((c) => computePlanAmount(plan, c)),
+    );
+    const cycle = 'monthly' as const;
 
     if (amount > 0) {
-      if (isPlatformRazorpayConfigured()) {
+      if (await isPlatformPaymentConfigured()) {
         return NextResponse.json(
           {
             error: 'This plan requires payment. Start checkout to continue.',
@@ -117,22 +117,12 @@ export async function POST(request: NextRequest) {
       billingCycle: cycle,
       paymentMethod: payment_method,
       paymentReference: payment_reference,
-    }).catch(async (moduleErr) => {
-      console.warn('[upgrade] module plan change failed, trying legacy row:', moduleErr);
-      return applySubscriptionPlanChange({
-        businessId: business_id,
-        planId: plan_id,
-        billingCycle: cycle,
-        paymentMethod: payment_method,
-        paymentReference: payment_reference,
-      });
     });
 
     void (async () => {
       try {
         await recordUpgradeBilling({
           businessId: business_id,
-          subscriptionId: undefined,
           planId: plan_id,
           planDisplayName: plan.display_name,
           moduleKey,

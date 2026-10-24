@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/budgets
  * List budgets
  */
-export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ feature: 'accounting_budgets',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const financialYear = searchParams.get('financial_year');
@@ -45,7 +45,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
  * Create budget
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_budgets', parseJsonBody: true },
   async ({ body, businessId }) => {
     const pool = getPool();
     const client = await pool.connect();

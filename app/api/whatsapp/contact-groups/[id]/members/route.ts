@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/contact-groups/[id]/members
  * Get all members of a contact group
  */
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const groupId = params.id;
 
@@ -55,7 +55,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
  * POST /api/whatsapp/contact-groups/[id]/members
  * Add contacts to a group (bulk)
  */
-export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, managePermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const groupId = params.id;
     const { contact_ids } = (body ?? {}) as Record<string, any>;
@@ -139,7 +139,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
  * DELETE /api/whatsapp/contact-groups/[id]/members
  * Remove contacts from a group
  */
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const groupId = params.id;
     const { searchParams } = new URL(request.url);

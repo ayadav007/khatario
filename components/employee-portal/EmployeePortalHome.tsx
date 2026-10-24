@@ -118,7 +118,7 @@ export function EmployeePortalHome() {
             actionHref={inboxHref}
             description={inboxDescription}
           />
-          <HrHolidaysCard holidays={data.holidays} />
+          <HrHolidaysCard holidays={data.holidays} viewAllHref={`${base}/holidays`} />
           <HrBirthdaysCard birthdays={data.celebrations.birthdays} />
           <HrWorkingRemotelyCard onLeaveToday={data.on_leave_today} />
           <HrAnniversariesCard anniversaries={data.celebrations.anniversaries} />

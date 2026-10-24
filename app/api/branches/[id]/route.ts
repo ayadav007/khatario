@@ -4,6 +4,8 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { panFromGstin } from '@/lib/tax/pan';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,6 +144,27 @@ export async function PATCH(
       }
     }
 
+    let finalGstin = gstin;
+    let finalState = state;
+    let finalStateCode = state_code;
+    if (typeof gstin === 'string' && gstin.trim()) {
+      const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      const biz = await db.queryOne<{ gstin: string | null }>(`SELECT gstin FROM businesses WHERE id = $1`, [business_id]);
+      const bizPan = panFromGstin(biz?.gstin);
+      if (bizPan && gstinCheck.pan && bizPan !== gstinCheck.pan) {
+        return NextResponse.json(
+          { error: `Branch GSTIN must belong to the same PAN as the business (${bizPan}).`, code: 'BRANCH_GSTIN_PAN_MISMATCH' },
+          { status: 400 }
+        );
+      }
+      finalGstin = gstinCheck.gstin;
+      finalState = gstinCheck.state;
+      finalStateCode = gstinCheck.state_code;
+    }
+
     // If setting as default, unset other default branches
     // CRITICAL: Ensure exactly one default branch per business
     if (is_default === true) {
@@ -208,12 +231,12 @@ export async function PATCH(
       business_id,
       name,
       branch_code,
-      gstin,
+      finalGstin,
       address_line1,
       address_line2,
       city,
-      state,
-      state_code,
+      finalState,
+      finalStateCode,
       pincode,
       country,
       phoneNorm,

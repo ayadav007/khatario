@@ -8,40 +8,45 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
-import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle } from 'lucide-react';
+import { ScanVariantPicker, type PickableVariant } from '@/components/invoices/ScanVariantPicker';
+import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle, Phone } from 'lucide-react';
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { buildApiUrl } from '@/lib/api-helpers';
+import { postInvoiceWithBackdateReason } from '@/lib/invoices/save-with-backdate-reason';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { format, addDays, parseISO } from 'date-fns';
 import { Customer, Item } from '@/types/database';
-import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 import {
   calculateRow as engineCalculateRow,
-  calculateTotals as engineCalculateTotals,
   determineTaxType as engineDetermineTaxType,
   numberToWords as engineNumberToWords,
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
+import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
 import { useToastContext } from '@/contexts/ToastContext';
+import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
   useMobileHeaderRightAccessory,
   useMobileHeaderTitleOverride,
 } from '@/contexts/MobileHeaderTitleContext';
-import { customerBalanceHint, isPartyBalanceSettled } from '@/lib/party-balance-ui';
 import { useOfflineSalesFinalize } from '@/hooks/useOfflineSalesFinalize';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { InvoicePaymentModal } from '@/components/modals/InvoicePaymentModal';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-import { CreateCustomerModal } from '@/components/modals/CreateCustomerModal';
+import { CreateCustomerModal, customerDraftFromSearchQuery, type CreateCustomerDraft } from '@/components/modals/CreateCustomerModal';
+import { canPickDeviceCustomer, pickDeviceCustomer, phonesLikelyMatch } from '@/lib/capacitor/device-contacts';
 import { CreateItemModal } from '@/components/modals/CreateItemModal';
 import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
 import { useCustomFieldDefinitions, parseItemCustomFieldsFromApi } from '@/components/custom-fields/CustomFieldsManager';
 import type { CustomFieldValues } from '@/types/custom-fields';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import {
   isThermalTemplateId,
   thermalPreviewIframeWidthClass,
@@ -51,12 +56,15 @@ import {
   getPosMode,
   getPosAutoBluetoothPrint,
   setPosAutoBluetoothPrint,
+  setPosMode as persistPosMode,
   shouldPosPrintViaBluetooth,
 } from '@/lib/pos-settings';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
 import { registerMobileBackInterceptor } from '@/lib/navigation/mobile-back-registry';
 import { POSLayout } from '@/components/pos/POSLayout';
+import { applyPosTenders } from '@/lib/pos-tender';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import type { ReceiptData } from '@/lib/bluetooth/invoice-to-escpos';
 import { toast as hotToast } from 'react-hot-toast';
@@ -65,6 +73,8 @@ import ActionsBar from '@/components/invoices/ActionsBar';
 import CustomerSection from '@/components/invoices/CustomerSection';
 import ItemsTable from '@/components/invoices/ItemsTable';
 import { MobileItemPickerPanel } from '@/components/invoices/MobileItemPickerPanel';
+import { DesktopInvoiceComposer } from '@/components/invoices/composer/DesktopInvoiceComposer';
+import type { ComposerExportState, ComposerMoreDetails, ComposerRow } from '@/components/invoices/composer/types';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
@@ -99,13 +109,21 @@ const getStateCode = (stateName: string): string => {
   return stateCodeMap[name] || '';
 };
 
+const CLASSIC_DESKTOP_FORM_KEY = 'invoiceClassicDesktop';
+
+/** A registered buyer's place of supply defaults to the state in their GSTIN, not the typed address. */
+const stateFromGstin = (gstin: string | null | undefined): string | undefined => {
+  const code = gstin && /^\d{2}/.test(gstin.trim()) ? gstin.trim().slice(0, 2) : '';
+  return code ? INDIAN_STATES.find((s) => getStateCode(s) === code) : undefined;
+};
+
 interface CustomerAutocompleteProps {
   customers: Customer[];
   value: string;
   onChange: (value: string) => void;
   onSelect: (customer: Customer) => void;
   disabled?: boolean;
-  onAddNew?: () => void;
+  onAddNew?: (searchQuery?: string) => void;
   /** Underline-style field (mobile invoice bill details). */
   compact?: boolean;
 }
@@ -174,7 +192,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                   ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 pl-0 pr-7 pt-0.5 text-sm font-medium text-text-primary placeholder:text-text-muted shadow-none outline-none ring-0 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60'
                   : 'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60'
               }
-              placeholder={compact ? 'Cash sale' : 'Search Customer...'}
+              placeholder={compact ? 'Optional — cash sale if empty' : 'Search Customer...'}
               value={query}
               disabled={disabled}
               onChange={(e) => { setQuery(e.target.value); setIsOpen(true); if (e.target.value === '') onChange(''); }}
@@ -197,13 +215,20 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                         {c.company_name && <div className="text-xs text-text-secondary">{c.company_name}</div>}
                         <div className="text-xs text-text-muted">{c.phone || 'No phone'}</div>
                     </div>))}
-                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400 border-t border-border" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(); } else { window.location.href = '/customers/new'; } }}>+ Add New Customer</div></>
+                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400 border-t border-border" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(query); } else { window.location.href = '/customers/new'; } }}>+ Add New Customer</div></>
                 ) : (
-                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(); } else { window.location.href = '/customers/new'; } }}>
+                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(query); } else { window.location.href = '/customers/new'; } }}>
                         {isSearching ? <div className="font-medium text-text-muted">Searching...</div> : <><div className="font-medium text-text-primary">No customer found for "{query}"</div><div className="text-xs text-text-muted mt-1">+ Add New Customer</div></>}
                     </div>
                 )}
             </div>
+        )}
+        {!isOpen && !disabled && query.trim() !== '' && (!selectedCustomer || selectedCustomer.name !== query) && (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300" role="status">
+            {selectedCustomer
+              ? `This bill is still for ${selectedCustomer.name}. Pick from the list to change the customer.`
+              : `"${query.trim()}" is not selected. Pick a customer from the list or add them; otherwise this is saved as a cash sale.`}
+          </p>
         )}
     </div>
   );
@@ -230,6 +255,8 @@ interface InvoiceItemRow {
   total: number;
   gstIncluded?: boolean;
   priceUserOverride?: boolean;
+  code?: string;
+  mrp?: number;
 }
 
 /** Convert GST-inclusive stored price into taxable-exclusive unit rate (matches catalog item picker logic). */
@@ -283,13 +310,19 @@ function NewInvoiceContent() {
   const pathname = usePathname();
   const { business, user } = useAuth();
   const { ensureProfile } = useProfileRequiredGate();
+  // Latest save/print handlers, so finishing the profile modal resumes the action with current invoice state.
+  const handleSaveRef = useRef<((targetStatus: 'draft' | 'final') => Promise<unknown>) | null>(null);
+  const handlePrintBillRef = useRef<(() => Promise<unknown>) | null>(null);
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const toastCtx = useToastContext();
   const { canQueueOffline, queueSalesFinalize, resetIdempotency } =
     useOfflineSalesFinalize();
   const bt = useBluetoothPrinter();
+  const receiptPrinter = usePrinterReady(bt, 'receipts');
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
+  const posAllowed = usePlanFeature('settings_pos_mode');
+  const ewayAllowed = usePlanFeature('eway_bill');
 
   // All state declarations first
   const [loading, setLoading] = useState(false);
@@ -320,6 +353,8 @@ function NewInvoiceContent() {
     });
   }, [currentBranchId, branchLoading, accessibleBranches, isAdmin]);
   const [showContinuousScanner, setShowContinuousScanner] = useState(false);
+  // A scanned barcode shared by several sizes: the item waiting for the cashier to pick one.
+  const [sizeChoice, setSizeChoice] = useState<any | null>(null);
   const [creditMetrics, setCreditMetrics] = useState<{ current?: CreditMetrics; projected?: CreditMetrics } | null>(null);
   const [customerId, setCustomerId] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
@@ -332,6 +367,8 @@ function NewInvoiceContent() {
   const [expiryDate, setExpiryDate] = useState('');
   const [estimateStatus, setEstimateStatus] = useState<'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted'>('draft');
   const [placeOfSupply, setPlaceOfSupply] = useState(business?.state || '');
+  const [pricesIncludeGst, setPricesIncludeGst] = useState(false);
+  const [posDiffersFromGstin, setPosDiffersFromGstin] = useState(false);
   const [invoiceTemplate, setInvoiceTemplate] = useState<string | null>(null);
   const [templateSettings, setTemplateSettings] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -388,12 +425,13 @@ function NewInvoiceContent() {
   const [invoiceMobileLayout, setInvoiceMobileLayout] = useState(false);
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
   const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
-  const [mobileBillMetaOpen, setMobileBillMetaOpen] = useState(false);
   const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
-  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
+  const [creditAvailable, setCreditAvailable] = useState(0);
+  const [creditApply, setCreditApply] = useState(0);
+  const creditEditedRef = useRef(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [savedStatus, setSavedStatus] = useState<'draft' | 'final' | null>(null);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
@@ -403,21 +441,31 @@ function NewInvoiceContent() {
   const [isInvoiceLocked, setIsInvoiceLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [createCustomerModalOpen, setCreateCustomerModalOpen] = useState(false);
+  const [createCustomerDraft, setCreateCustomerDraft] = useState<CreateCustomerDraft>({});
   const [createItemModalOpen, setCreateItemModalOpen] = useState(false);
   const [posMode, setPosMode] = useState(false);
   const [customerPhone, setCustomerPhone] = useState('');
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [composerScannerSuspended, setComposerScannerSuspended] = useState(false);
+  const [classicDesktopForm, setClassicDesktopForm] = useState(false);
+  useEffect(() => {
+    try {
+      setClassicDesktopForm(localStorage.getItem(CLASSIC_DESKTOP_FORM_KEY) === '1');
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
   const prevPathnameRef = useRef(pathname);
   /** Set to true during "Leave page" confirm so the mobile-back interceptor passes through. */
   const confirmingLeaveRef = useRef(false);
 
   // Read POS mode from localStorage on mount and when it changes
   useEffect(() => {
-    setPosMode(getPosMode());
+    setPosMode(posAllowed && getPosMode());
     // Listen for storage changes (when POS mode is toggled in settings)
     const handleStorageChange = () => {
-      setPosMode(getPosMode());
+      setPosMode(posAllowed && getPosMode());
     };
     window.addEventListener('storage', handleStorageChange);
     // Also listen for custom event (for same-tab updates)
@@ -426,7 +474,7 @@ function NewInvoiceContent() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('posModeChanged', handleStorageChange);
     };
-  }, []);
+  }, [posAllowed]);
 
   // Fetch warehouses when branch changes
   useEffect(() => {
@@ -808,8 +856,28 @@ function NewInvoiceContent() {
 
   // Callbacks and Memos
   const calculateRow = useCallback((row: InvoiceItemRow, skipDiscountRecalc: boolean = false): InvoiceItemRow => {
-    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType }, skipDiscountRecalc);
-  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType]);
+    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst }, skipDiscountRecalc);
+  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType, pricesIncludeGst]);
+
+  const isFutureInvoiceDate = !!invoiceDate && invoiceDate > format(new Date(), 'yyyy-MM-dd');
+
+  // Handlers that change export / place of supply call setRows with the previous calculateRow closure,
+  // so re-derive row tax once the new context is in place.
+  const taxContextKey = `${isExport}|${exportType}|${placeOfSupply}|${documentType}`;
+  const taxContextKeyRef = useRef(taxContextKey);
+  useEffect(() => {
+    if (taxContextKeyRef.current === taxContextKey) return;
+    taxContextKeyRef.current = taxContextKey;
+    if (isFinal || isInvoiceLocked) return;
+    setRows((prev) => (prev.length ? prev.map((r) => calculateRow(r, true)) : prev));
+  }, [taxContextKey, calculateRow, isFinal, isInvoiceLocked]);
+
+  const pricesIncludeGstRef = useRef(pricesIncludeGst);
+  useEffect(() => {
+    if (pricesIncludeGstRef.current === pricesIncludeGst) return;
+    pricesIncludeGstRef.current = pricesIncludeGst;
+    setRows((prev) => prev.map((r) => calculateRow(r, true)));
+  }, [pricesIncludeGst, calculateRow]);
 
   const fetchPartyPriceCached = useCallback(async (partyId: string, itemId: string): Promise<number | null> => {
     const cache = partyPriceCacheRef.current;
@@ -964,8 +1032,11 @@ function NewInvoiceContent() {
       let displayName = variantName ? `${item.name} - ${variantName}` : item.name;
       if (displayName === item.barcode && item.code && item.code !== item.barcode) displayName = variantName ? `${item.code} - ${variantName}` : item.code;
       let price = Number(item.selling_price), tr = Number(item.tax_rate || 0);
-      if (item.gst_included && tr > 0) price = price / (1 + tr / 100);
-      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false });
+      if (tr > 0) {
+        if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
+        else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
+      }
+      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
       if (posMode) {
@@ -1050,7 +1121,10 @@ function NewInvoiceContent() {
           }
           let price = Number(item.selling_price);
           const tr = Number(item.tax_rate || 0);
-          if (item.gst_included && tr > 0) price = price / (1 + tr / 100);
+          if (tr > 0) {
+            if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
+            else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
+          }
           const newRowData = calculateRow({
             itemId: item.id,
             name: displayName,
@@ -1092,7 +1166,7 @@ function NewInvoiceContent() {
   const handleGlobalBarcodeScan = useCallback(async (barcode: string) => {
     if (!business?.id) return;
     try {
-      const res = await fetch(`/api/items/search?business_id=${business.id}&q=${encodeURIComponent(barcode)}`);
+      const res = await fetch(`/api/items/search?business_id=${business.id}&q=${encodeURIComponent(barcode)}&scan=1`);
       if (res.ok) {
         const data = await res.json(), foundItems = data.items || [];
         if (foundItems.length === 1) {
@@ -1101,6 +1175,8 @@ function NewInvoiceContent() {
             const { normalizeBarcode } = await import('@/lib/barcode-validator');
             const norm = normalizeBarcode(barcode), variant = item.variants.find((v: any) => v.barcode && normalizeBarcode(v.barcode) === norm);
             if (variant) { handleItemSelect({ ...item, selling_price: variant.selling_price ?? item.selling_price, current_stock: variant.current_stock, tax_rate: item.tax_rate, variantId: variant.id, variantName: variant.variant_name, variantAttributes: variant.attributes }); toastCtx.success(`Variant added!`); return; }
+            // The item's own barcode covers every size: ask which one.
+            setSizeChoice(item); return;
           }
           handleItemSelect(item); toastCtx.success(`Item added!`);
         } else if (foundItems.length > 1) {
@@ -1110,7 +1186,7 @@ function NewInvoiceContent() {
             if (item.barcode && normalizeBarcode(item.barcode) === norm) { match = item; break; }
             if (item.has_variants && item.variants?.length) { const v = item.variants.find((x: any) => x.barcode && normalizeBarcode(x.barcode) === norm); if (v) { match = item; vMatch = v; break; } }
           }
-          if (match) { if (vMatch) handleItemSelect({ ...match, selling_price: vMatch.selling_price ?? match.selling_price, current_stock: vMatch.current_stock, tax_rate: match.tax_rate, variantId: vMatch.id, variantName: vMatch.variant_name }); else handleItemSelect(match); toastCtx.success('Item added!'); }
+          if (match) { if (vMatch) handleItemSelect({ ...match, selling_price: vMatch.selling_price ?? match.selling_price, current_stock: vMatch.current_stock, tax_rate: match.tax_rate, variantId: vMatch.id, variantName: vMatch.variant_name }); else if (match.has_variants && match.variants?.length) { setSizeChoice(match); return; } else handleItemSelect(match); toastCtx.success('Item added!'); }
           else hotToast(`Multiple items match "${barcode}". Please select from list.`, { icon: '🔍' });
         } else toastCtx.error(`Barcode not found.`);
       }
@@ -1122,7 +1198,7 @@ function NewInvoiceContent() {
     if (ref?.current) { ref.current.focus(); ref.current.select(); }
   }, [rows]);
 
-  useBarcodeScanner({ onScan: handleGlobalBarcodeScan, onScanStart: focusFirstEmptyItemField, enabled: !loading && !showContinuousScanner, minLength: 3 });
+  useBarcodeScanner({ onScan: handleGlobalBarcodeScan, onScanStart: focusFirstEmptyItemField, enabled: !loading && !showContinuousScanner && !composerScannerSuspended, minLength: 3 });
 
   const performDocumentTypeChange = useCallback((newDocType: DocumentType) => {
     setDocumentType(newDocType);
@@ -1132,7 +1208,7 @@ function NewInvoiceContent() {
     setCustomerId(''); setSelectedCustomer(null); setRows([]);
     setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
-    setPlaceOfSupply(business?.state || ''); setIsDirty(false); setFormKey(prev => prev + 1);
+    setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setIsDirty(false); setFormKey(prev => prev + 1);
     if (business?.id) {
       // buildApiUrl automatically includes branch_id from global context
       // PHASE 2: Fetch series from API
@@ -1148,7 +1224,7 @@ function NewInvoiceContent() {
     setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
     setRows([]);
-    setPlaceOfSupply(business?.state || ''); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
+    setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
     
     // PHASE 1: Clear prefix/number - let API set it
     setInvoicePrefix(null);
@@ -1157,7 +1233,7 @@ function NewInvoiceContent() {
     // PHASE 2: Fetch series from API
     fetchDocumentSeries(documentType);
     
-    setShareModalOpen(false); setPaymentModalOpen(false); setToastMessage({ message: 'Ready to create a new invoice', type: 'success' });
+    setShareModalOpen(false); setPaymentModalOpen(false);
   }, [business?.id, business?.state, documentType, currentBranchId, fetchDocumentSeries]);
 
   // POS Mode: Start New Bill (clears items, customer, payments, focuses item search)
@@ -1324,8 +1400,8 @@ function NewInvoiceContent() {
       if (customer.shipping_address || customer.address) {
         setShippingAddress(customer.shipping_address || customer.address || '');
       }
-      if (customer.state) {
-        setPlaceOfSupply(customer.state);
+      if (customer.state || stateFromGstin(customer.gstin)) {
+        setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
         setRows(prev => prev.map(r => calculateRow(r, true)));
       }
     } else {
@@ -1336,14 +1412,116 @@ function NewInvoiceContent() {
   }, [calculateRow]);
 
   const totals = useMemo(() => {
-    const calculated = engineCalculateTotals({ rows, extraCharges: extraCharges as any, context: { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType } });
-    if (enableRoundOff) { const rounded = Math.round(calculated.grandTotal); return { ...calculated, grandTotal: rounded, roundOff: rounded - calculated.grandTotal }; }
-    return { ...calculated, roundOff: 0 };
-  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff]);
+    const businessStateCode = business?.state_code || engineGetStateCode(business?.state || '');
+    const placeCode = engineGetStateCode(placeOfSupply || '');
+    const intraState = !!businessStateCode && !!placeCode && businessStateCode === placeCode;
+    const zeroRated = documentType === 'bill_of_supply' || (isExport && exportType === 'wop');
+    const charges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>).map((charge) => ({
+      purpose: charge.purpose,
+      amount: charge.amount,
+      classification: charge.classification,
+      hsn_sac: charge.hsnSac,
+      tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+    }));
+    const goods = authoritativeInvoiceTotals({
+      items: rows.map((row) => ({
+        quantity: row.quantity,
+        unit_price: row.price,
+        discount_percent: row.discountPercent,
+        tax_rate: row.taxPercent,
+      })),
+      intraState,
+      zeroRated,
+      pricesIncludeGst,
+      documentDate: invoiceDate,
+      enableRoundOff,
+    });
+    try {
+      const calculated = authoritativeInvoiceTotals({
+        items: rows.map((row) => ({
+          quantity: row.quantity,
+          unit_price: row.price,
+          discount_percent: row.discountPercent,
+          tax_rate: row.taxPercent,
+        })),
+        charges,
+        intraState,
+        zeroRated,
+        pricesIncludeGst,
+        documentDate: invoiceDate,
+        enableRoundOff,
+      });
+      return {
+        itemSubtotal: calculated.itemSubtotal,
+        totalDiscount: calculated.discountTotal,
+        subtotal: calculated.goodsTaxable,
+        totalExtraCharges: calculated.additionalCharges,
+        taxableAmount: calculated.subtotal,
+        totalCGST: calculated.cgstTotal,
+        totalSGST: calculated.sgstTotal,
+        totalIGST: calculated.igstTotal,
+        totalTax: calculated.taxTotal,
+        grandTotal: calculated.grandTotal,
+        roundOff: calculated.roundOff,
+        chargesNotice: '',
+        chargesReady: true,
+      };
+    } catch (error) {
+      if (!(error instanceof InvoiceChargeError)) throw error;
+      return {
+        itemSubtotal: goods.itemSubtotal,
+        totalDiscount: goods.discountTotal,
+        subtotal: goods.goodsTaxable,
+        totalExtraCharges: charges.reduce((sum, charge) => sum + (Number(charge.amount) || 0), 0),
+        taxableAmount: goods.subtotal,
+        totalCGST: goods.cgstTotal,
+        totalSGST: goods.sgstTotal,
+        totalIGST: goods.igstTotal,
+        totalTax: goods.taxTotal,
+        grandTotal: goods.grandTotal,
+        roundOff: goods.roundOff,
+        chargesNotice: error.message,
+        chargesReady: false,
+      };
+    }
+  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst, invoiceDate]);
 
-  const { itemSubtotal, totalDiscount, subtotal, itemTax, itemCGST, itemSGST, itemIGST, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST } = totals;
+  const { itemSubtotal, totalDiscount, subtotal, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST, chargesNotice, chargesReady } = totals;
   const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = !!bStateCode && !!pStateCode && bStateCode === pStateCode;
-  const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), balance = grandTotal - totalPaid, recordPayment = payments.length > 0 && totalPaid > 0;
+  const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const recordPayment = payments.length > 0 && totalPaid > 0;
+  const posSettlement = posMode
+    ? applyPosTenders(
+        grandTotal,
+        payments.map((p) => ({
+          mode: p.mode,
+          amount: Number(p.amount) || 0,
+          date: p.date,
+          reference: p.reference,
+          settlementAccountId: p.settlementAccountId,
+        }))
+      )
+    : null;
+  const invoicePaidAmount = posSettlement ? posSettlement.paidAmount : totalPaid;
+  const cashDue = posSettlement ? posSettlement.balanceAmount : grandTotal - totalPaid;
+  const creditRoom = Math.max(0, Math.round(cashDue * 100) / 100);
+  const creditApplied =
+    documentType === 'proforma_invoice'
+      ? 0
+      : Math.min(Math.max(0, creditApply), creditAvailable, creditRoom);
+  const balance = Math.max(0, grandTotal - totalPaid - creditApplied);
+  const invoiceBalanceAmount = Math.max(0, cashDue - creditApplied);
+  const invoicePaymentRows = posSettlement
+    ? posSettlement.payments
+    : payments.map((p) => ({
+        amount: p.amount,
+        mode: p.mode,
+        date: p.date,
+        reference: p.reference,
+        settlementAccountId: p.settlementAccountId,
+      }));
+  const invoicePaymentStatus =
+    invoicePaidAmount >= grandTotal ? 'paid' : invoicePaidAmount > 0 ? 'partially_paid' : 'unpaid';
 
   // Build a ReceiptData object from the current in-memory POS state.
   // Used by Bluetooth auto-print / manual BT print so we don't need to
@@ -1388,6 +1566,9 @@ function NewInvoiceContent() {
               unit: r.unit || null,
               unitPrice: price,
               amount: line,
+              taxRate: Number(r.taxPercent) || 0,
+              taxableValue: Number(r.taxableValue) || 0,
+              taxAmount: Number(r.taxAmount) || 0,
             };
           }),
         subtotal,
@@ -1397,9 +1578,11 @@ function NewInvoiceContent() {
         igstTotal: totalIGST,
         roundOff,
         grandTotal,
-        paidAmount: totalPaid,
-        balance,
+        paidAmount: invoicePaidAmount,
+        balance: invoiceBalanceAmount,
         paymentMode: mode,
+        cashTendered: posSettlement?.cashTendered,
+        changeGiven: posSettlement?.changeGiven,
         notes: notes || null,
       };
     },
@@ -1415,8 +1598,9 @@ function NewInvoiceContent() {
       totalIGST,
       roundOff,
       grandTotal,
-      totalPaid,
-      balance,
+      invoicePaidAmount,
+      invoiceBalanceAmount,
+      posSettlement,
       payments,
       notes,
     ]
@@ -1426,18 +1610,6 @@ function NewInvoiceContent() {
   // current on-screen order). Used as a fallback or when auto-print is off.
   const handleBluetoothReprint = useCallback(async () => {
     if (!canBtPrint) return;
-    if (!bt.supported) {
-      toastCtx.error(
-        'Bluetooth printing is not supported in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-      );
-      return;
-    }
-    if (bt.savedPrinters.length === 0) {
-      toastCtx.error(
-        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
-      );
-      return;
-    }
     if (rows.filter((r) => r.name).length === 0) {
       toastCtx.error('Add items before printing');
       return;
@@ -1449,8 +1621,10 @@ function NewInvoiceContent() {
           ? `${invoicePrefix}-${invoiceNumber}`
           : invoiceNumber || 'DRAFT';
       const receipt = buildReceiptFromState(identifier);
-      await bt.printReceipt(receipt);
-      toastCtx.success('Sent to Bluetooth printer');
+      const printed = await receiptPrinter.print('Connect a printer to print this bill.', (printer) =>
+        bt.printReceipt(receipt, undefined, printer)
+      );
+      if (printed) toastCtx.success('Sent to Bluetooth printer');
     } catch (err: any) {
       toastCtx.error(err?.message || 'Bluetooth print failed');
     } finally {
@@ -1475,7 +1649,7 @@ function NewInvoiceContent() {
         documentType,
         (business as { gst_registration_type?: string | null })?.gst_registration_type,
       );
-      if (!ensureProfile(profileContext)) {
+      if (!ensureProfile(profileContext, () => void handlePrintBillRef.current?.())) {
         return;
       }
     }
@@ -1507,6 +1681,20 @@ function NewInvoiceContent() {
           if (loadingTimeout) clearTimeout(loadingTimeout);
           throw new Error('Please add at least one item');
         }
+        if (!chargesReady) {
+          setLoading(false);
+          if (loadingTimeout) clearTimeout(loadingTimeout);
+          throw new Error(chargesNotice || 'Classify each additional charge before saving');
+        }
+        const classifiedCharges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>)
+          .filter((charge) => Number(charge.amount) > 0)
+          .map((charge) => ({
+            purpose: charge.purpose,
+            amount: charge.amount,
+            classification: charge.classification,
+            hsn_sac: charge.hsnSac,
+            tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+          }));
         
         console.log('[POS] Validation passed, preparing payload...');
         console.log('[POS] Invoice data:', {
@@ -1528,9 +1716,12 @@ function NewInvoiceContent() {
           customer_id: customerId || null, 
           invoice_date: invoiceDate, 
           status: 'final', 
+          channel: posMode ? 'counter' : undefined,
           billing_address: billingAddress, 
           shipping_address: shippingAddress, 
           place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+          prices_include_gst: pricesIncludeGst,
+          pos_differs_from_gstin: posDiffersFromGstin,
           document_type: documentType, 
           is_export: isExport, 
           template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
@@ -1550,8 +1741,8 @@ function NewInvoiceContent() {
           bl_number: isExport ? blNumber : undefined, 
           buyer_tax_id: isExport ? buyerTaxId : undefined, 
           lut_declaration: isExport && exportType === 'wop', 
-          eway_bill_number: ewayBillNumber || undefined, 
-          eway_bill_date: ewayBillDate || undefined, 
+          eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
+          eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
           purchase_order_number: purchaseOrderNumber || undefined, 
           purchase_order_date: purchaseOrderDate || undefined, 
           reference_number: referenceNumber || undefined, 
@@ -1578,14 +1769,15 @@ function NewInvoiceContent() {
             hsn_sac: r.hsnSac 
           })), 
           subtotal, 
-          additional_charges: totalExtraCharges, 
+          charges: classifiedCharges, 
           tax_total: totalTax, 
           round_off: roundOff, 
           grand_total: grandTotal, 
-          payments: payments.length > 0 ? payments.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
-          payment_status: totalPaid >= grandTotal ? 'paid' : (totalPaid > 0 ? 'partially_paid' : 'unpaid'), 
-          paid_amount: totalPaid, 
-          balance_amount: balance, 
+          payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference, settlement_account_id: p.settlementAccountId || undefined })) : undefined, 
+          customer_credit_amount: creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
+          payment_status: invoicePaymentStatus, 
+          paid_amount: invoicePaidAmount, 
+          balance_amount: invoiceBalanceAmount, 
           created_by: user?.id || null,
           expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined,
           estimate_status: documentType === 'proforma_invoice' ? estimateStatus : undefined
@@ -1650,9 +1842,12 @@ function NewInvoiceContent() {
                 );
               }
             } else if (isCapacitorNative()) {
-              toastCtx.warning(
-                'No Bluetooth printer ready. Pair one in Settings → Print & devices, then try again.'
-              );
+              const receipt = buildReceiptFromState(offlineResult.displayInvoiceNumber);
+              await receiptPrinter
+                .print('Connect a printer to print this bill.', (printer) => bt.printReceipt(receipt, undefined, printer))
+                .catch((btErr: unknown) =>
+                  toastCtx.warning((btErr as Error)?.message || 'Bluetooth print failed for offline bill')
+                );
             }
 
             setTimeout(() => {
@@ -1698,12 +1893,7 @@ function NewInvoiceContent() {
         
         let res;
         try {
-          res = await fetch('/api/invoices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestPayload),
-            signal: controller.signal,
-          });
+          res = await postInvoiceWithBackdateReason(requestPayload, { signal: controller.signal });
           const requestDuration = Date.now() - requestStartTime;
           console.log('[POS] ✅ Fetch promise resolved', { 
             duration: `${requestDuration}ms`,
@@ -1821,16 +2011,19 @@ function NewInvoiceContent() {
             }
           }
         } else if (isCapacitorNative()) {
-          toastCtx.warning(
-            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
-          );
+          const identifier = data.invoice.invoice_number || invoiceNumber || 'INVOICE';
+          const receipt = buildReceiptFromState(identifier);
+          const printed = await receiptPrinter
+            .print('Connect a printer to print this bill.', (printer) => bt.printReceipt(receipt, undefined, printer))
+            .catch((btErr: unknown) => {
+              toastCtx.error(`Bluetooth print failed: ${(btErr as Error)?.message || 'unknown error'}`);
+              return false;
+            });
+          if (printed) toastCtx.success('Bill sent to Bluetooth printer');
         } else {
           if (user?.id) {
-            console.log('[POS] Opening print dialog...');
-            window.open(
-              `/api/invoices/${invoiceId}/pdf?user_id=${user.id}`,
-              '_blank'
-            );
+            const result = await printInvoiceA4(invoiceId, user.id, business?.id);
+            if (result.mode === 'opened' && result.error) toastCtx.error(`${result.error} Opened the PDF instead.`);
           }
           toastCtx.success('Bill printed successfully');
         }
@@ -1873,14 +2066,18 @@ function NewInvoiceContent() {
           await bt.printReceipt(receipt);
           toastCtx.success('Bill sent to Bluetooth printer');
         } else if (isCapacitorNative()) {
-          toastCtx.warning(
-            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
+          const identifier =
+            invoicePrefix && invoiceNumber
+              ? `${invoicePrefix}-${invoiceNumber}`
+              : (invoiceNumber || 'INVOICE');
+          const receipt = buildReceiptFromState(identifier);
+          const printed = await receiptPrinter.print('Connect a printer to print this bill.', (printer) =>
+            bt.printReceipt(receipt, undefined, printer)
           );
+          if (printed) toastCtx.success('Bill sent to Bluetooth printer');
         } else {
-          window.open(
-            `/api/invoices/${savedInvoiceId}/pdf?user_id=${user.id}`,
-            '_blank'
-          );
+          const result = await printInvoiceA4(savedInvoiceId, user.id, business?.id);
+          if (result.mode === 'opened' && result.error) toastCtx.error(`${result.error} Opened the PDF instead.`);
           toastCtx.success('Bill printed');
         }
         // Start new bill after print (POS mode)
@@ -1898,7 +2095,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -1952,6 +2149,14 @@ function NewInvoiceContent() {
       return;
     }
 
+    if (creditApplied > 0.004 && canFinalizeOffline) {
+      setToastMessage({
+        message: 'Customer credit can only be applied while you are online. Set the credit to 0 to save this bill offline.',
+        type: 'error',
+      });
+      return;
+    }
+
     if (!isSeriesResolved && !canFinalizeOffline) {
       setToastMessage({ message: 'Document number is not ready. Please wait...', type: 'error' });
       return;
@@ -1980,6 +2185,7 @@ function NewInvoiceContent() {
           documentType,
           (business as { gst_registration_type?: string | null })?.gst_registration_type,
         ),
+        () => void handleSaveRef.current?.(targetStatus),
       )
     ) {
       return;
@@ -1998,6 +2204,19 @@ function NewInvoiceContent() {
       // For regular invoices, use targetStatus ('draft' or 'final')
       const finalInvoiceStatus = documentType === 'proforma_invoice' ? 'draft' : targetStatus;
 
+      if (!chargesReady) {
+        throw new Error(chargesNotice || 'Classify each additional charge before saving');
+      }
+      const classifiedCharges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>)
+        .filter((charge) => Number(charge.amount) > 0)
+        .map((charge) => ({
+          purpose: charge.purpose,
+          amount: charge.amount,
+          classification: charge.classification,
+          hsn_sac: charge.hsnSac,
+          tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
+        }));
+
       // CRITICAL: Include branch_id to ensure invoice is created under the correct branch
       // For non-admin users, currentBranchId should never be 'ALL' (enforced by BranchContext)
       // If it is 'ALL', we should not allow creation (this should be caught by validation above)
@@ -2008,9 +2227,12 @@ function NewInvoiceContent() {
         invoice_date: invoiceDate,
         due_date: dueDate || null,
         status: finalInvoiceStatus, 
+        channel: posMode ? 'counter' : undefined,
         billing_address: billingAddress, 
         shipping_address: shippingAddress, 
         place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+        prices_include_gst: pricesIncludeGst,
+        pos_differs_from_gstin: posDiffersFromGstin,
         document_type: documentType, 
         is_export: isExport, 
         template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
@@ -2030,8 +2252,8 @@ function NewInvoiceContent() {
         bl_number: isExport ? blNumber : undefined, 
         buyer_tax_id: isExport ? buyerTaxId : undefined, 
         lut_declaration: isExport && exportType === 'wop', 
-        eway_bill_number: ewayBillNumber || undefined, 
-        eway_bill_date: ewayBillDate || undefined, 
+        eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
+        eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
         purchase_order_number: purchaseOrderNumber || undefined, 
         purchase_order_date: purchaseOrderDate || undefined, 
         reference_number: referenceNumber || undefined, 
@@ -2047,17 +2269,20 @@ function NewInvoiceContent() {
         notes, 
         items: rows.map(r => ({ item_id: r.itemId || null, variant_id: r.variantId || null, item_name: r.name, quantity: r.quantity, unit_price: r.price, unit: r.unit, discount_percent: r.discountPercent, tax_rate: r.taxPercent, hsn_sac: r.hsnSac, location_id: selectedWarehouseId || null })), 
         subtotal, 
-        additional_charges: totalExtraCharges, 
+        charges: classifiedCharges, 
         tax_total: totalTax, 
         round_off: roundOff, 
         grand_total: grandTotal, 
-        payments: payments.length > 0 ? payments.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
-        payment_status: totalPaid >= grandTotal ? 'paid' : (totalPaid > 0 ? 'partially_paid' : 'unpaid'), 
-        paid_amount: totalPaid, 
-        balance_amount: balance, 
+        payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference, settlement_account_id: p.settlementAccountId || undefined })) : undefined, 
+        customer_credit_amount: targetStatus === 'final' && creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
+        payment_status: invoicePaymentStatus, 
+        paid_amount: invoicePaidAmount, 
+        balance_amount: invoiceBalanceAmount, 
         created_by: user?.id || null, 
         expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined, 
-        estimate_status: finalEstimateStatus
+        estimate_status: finalEstimateStatus,
+        work_order_id: searchParams.get('work_order_id') || undefined,
+        supply_order_id: searchParams.get('supply_order_id') || undefined,
       };
       // PHASE 2: Construct full invoice number from prefix + number
       const fullInvoiceNumber = invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber;
@@ -2104,15 +2329,11 @@ function NewInvoiceContent() {
       }
 
       // Existing drafts must use POST with id — PATCH /api/invoices/[id] only supports proforma estimate_status.
-      const res = await fetch('/api/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          savedInvoiceId
-            ? { ...payload, id: savedInvoiceId, invoice_number: fullInvoiceNumber }
-            : { ...payload, invoice_number: fullInvoiceNumber }
-        ),
-      });
+      const res = await postInvoiceWithBackdateReason(
+        savedInvoiceId
+          ? { ...payload, id: savedInvoiceId, invoice_number: fullInvoiceNumber }
+          : { ...payload, invoice_number: fullInvoiceNumber }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { if (res.status === 403 && data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') { setLimitInfo({ current: data.current, limit: data.limit }); setShowUpgradePrompt(true); return; } throw new Error(data.error || 'Failed to save'); }
       setSavedInvoiceId(data.invoice.id); 
@@ -2137,6 +2358,10 @@ function NewInvoiceContent() {
         setToastMessage({ message: successMessage, type: 'success' });
       }
       
+      if (Array.isArray(data.compliance_warnings) && data.compliance_warnings.length > 0) {
+        hotToast(data.compliance_warnings.join(' '), { duration: 10000 });
+      }
+
       // Display stock warnings for proforma invoices (if any)
       
       if (data.stock_warnings && Array.isArray(data.stock_warnings) && data.stock_warnings.length > 0) {
@@ -2170,12 +2395,15 @@ function NewInvoiceContent() {
           window.matchMedia('(max-width: 1023px)').matches;
         if (mobilePost && data.invoice?.id) {
           router.push(
-            `/invoices/${data.invoice.id}/view?from=generate&type=${encodeURIComponent(documentType)}`
+            `/invoices/${data.invoice.id}/view?from=generate&type=${encodeURIComponent(documentType)}${
+              searchParams.get('supply_order_id') ? `&supply_order_id=${encodeURIComponent(searchParams.get('supply_order_id') as string)}` : ''
+            }`
           );
         } else {
           setShareModalOpen(true);
         }
       }
+      return true;
     } catch (e: any) { 
       console.error(e); 
       // Enhanced error message with warehouse stock info
@@ -2197,8 +2425,16 @@ function NewInvoiceContent() {
       }
       setToastMessage({ message: errorMsg, type: 'error' }); 
       hotToast.error(errorMsg, { duration: 8000 });
+      return false;
     } finally { setLoading(false); }
-  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams]);
+  handleSaveRef.current = handleSave;
+  handlePrintBillRef.current = handlePrintBill;
+
+  const handlePosSaveBill = useCallback(async () => {
+    const ok = await handleSave('final');
+    if (ok) setTimeout(() => startNewBill(), 400);
+  }, [handleSave, startNewBill]);
 
   const handlePreview = useCallback(async () => {
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) { setToastMessage({ message: 'Add items', type: 'error' }); return; }
@@ -2209,7 +2445,7 @@ function NewInvoiceContent() {
     setPreviewLoading(true);
     try {
       const items = rows.map((r, i) => ({ index: i + 1, item_name: r.name, quantity: r.quantity, unit: r.unit, unit_price: r.price.toFixed(2), discount_percent: r.discountPercent, discount_amount: r.discountAmount.toFixed(2), tax_rate: r.taxPercent, cgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), sgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), igst_rate: (isExport || !isIntraState ? r.taxPercent : 0).toFixed(2), tax_amount: r.taxAmount.toFixed(2), cgst_amount: r.cgstAmount.toFixed(2), sgst_amount: r.sgstAmount.toFixed(2), igst_amount: r.igstAmount.toFixed(2), taxable_value: (r.quantity * r.price - (r.quantity * r.price * (r.discountPercent || 0)) / 100).toFixed(2), hsn_sac: r.hsnSac, line_total: r.total.toFixed(2) }));
-      const data = { business: { id: business?.id || '', name: business?.name || '', address: business?.address || '', city: business?.city || '', state: business?.state || '', state_code: business?.state_code || getStateCode(business?.state || ''), pincode: business?.pincode || '', phone: business?.phone || '', email: business?.email || '', gstin: business?.gstin || '', logo_url: business?.logo_url || null }, customer: selectedCustomer ? { name: selectedCustomer.name, address: billingAddress || selectedCustomer.address, phone: selectedCustomer.phone, gstin: selectedCustomer.gstin, state: selectedCustomer.state } : { name: '', address: '', state: '' }, invoice: { invoice_number: invoiceNumber || 'PREVIEW', invoice_date: format(new Date(invoiceDate), 'dd-MM-yyyy'), due_date: format(new Date(dueDate || invoiceDate), 'dd-MM-yyyy'), invoice_title: title, document_type: effDoc, is_export: isExport, is_igst: isExport || !isIntraState, place_of_supply: placeOfSupply, subtotal: subtotal.toFixed(2), discount_total: rows.reduce((s, r) => s + r.discountAmount, 0).toFixed(2), additional_charges: totalExtraCharges.toFixed(2), tax_total: totalTax.toFixed(2), grand_total: grandTotal.toFixed(2), paid_amount: totalPaid.toFixed(2), balance_amount: Math.max(0, balance).toFixed(2), round_off: roundOff.toFixed(2), amount_in_words: engineNumberToWords(grandTotal), billing_address: billingAddress, shipping_address: shippingAddress, custom_fields: invoiceCustomFieldValues, notes }, items, settings: templateSettings || {} };
+      const data = { business: { id: business?.id || '', name: business?.name || '', address: business?.address || '', city: business?.city || '', state: business?.state || '', state_code: business?.state_code || getStateCode(business?.state || ''), pincode: business?.pincode || '', phone: business?.phone || '', email: business?.email || '', gstin: business?.gstin || '', logo_url: business?.logo_url || null }, customer: selectedCustomer ? { name: selectedCustomer.name, address: billingAddress || selectedCustomer.address, phone: selectedCustomer.phone, gstin: selectedCustomer.gstin, state: selectedCustomer.state } : { name: '', address: '', state: '' }, invoice: { invoice_number: (invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber) || 'PREVIEW', invoice_date: format(new Date(invoiceDate), 'yyyy-MM-dd'), due_date: format(new Date(dueDate || invoiceDate), 'yyyy-MM-dd'), invoice_title: title, document_type: effDoc, is_export: isExport, is_igst: isExport || !isIntraState, place_of_supply: placeOfSupply, subtotal: subtotal.toFixed(2), discount_total: rows.reduce((s, r) => s + r.discountAmount, 0).toFixed(2), additional_charges: totalExtraCharges.toFixed(2), tax_total: totalTax.toFixed(2), grand_total: grandTotal.toFixed(2), paid_amount: totalPaid.toFixed(2), balance_amount: Math.max(0, balance).toFixed(2), round_off: roundOff.toFixed(2), amount_in_words: engineNumberToWords(grandTotal), billing_address: billingAddress, shipping_address: shippingAddress, custom_fields: invoiceCustomFieldValues, notes }, items };
       const res = await fetch('/api/invoices/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: isExport ? 'export_invoice' : (invoiceTemplate || null), data }) });
       if (res.ok) {
         const resp = await res.json();
@@ -2218,7 +2454,7 @@ function NewInvoiceContent() {
         setPreviewModalOpen(true);
       }
     } catch (e) { console.error(e); } finally { setPreviewLoading(false); }
-  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, totalPaid, balance, roundOff, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, templateSettings, documentType, placeOfSupply, isIntraState, invoicePrefix, invoiceCustomFieldValues]);
+  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, totalPaid, balance, roundOff, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, documentType, placeOfSupply, isIntraState, invoicePrefix, invoiceCustomFieldValues]);
 
   const handleConfirmReset = (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') { setShowResetConfirm(false); setPendingTypeChange(null); return; }
@@ -2339,6 +2575,7 @@ function NewInvoiceContent() {
             setInvoiceNumber(inv.invoice_number || '');
           }
           setPlaceOfSupply(inv.place_of_supply_state_code || ''); 
+          setPricesIncludeGst(inv.prices_include_gst === true);
           // Set document type but don't trigger form reset in edit mode
           const newDocType = inv.document_type || 'tax_invoice';
           if (documentType !== newDocType) {
@@ -2353,7 +2590,17 @@ function NewInvoiceContent() {
           setInvoiceCustomFieldValues(parseItemCustomFieldsFromApi(inv));
           if (inv.is_export) { setExportType(inv.export_type); setPortCode(inv.port_code); setShippingBillNumber(inv.shipping_bill_number); setShippingBillDate(inv.shipping_bill_date?.split('T')[0] || ''); }
           if (inv.items) {
-            setRows(inv.items.map((i: any) => ({ itemId: i.item_id || '', variantId: i.variant_id || undefined, variantName: i.variant_name || undefined, name: i.item_name || '', quantity: Number(i.quantity || 1), freeQty: 0, unit: i.unit || 'PCS', price: Number(i.unit_price || 0), discountPercent: Number(i.discount_percent || 0), discountAmount: Number(i.discount_amount || 0), taxPercent: Number(i.tax_rate || 0), taxAmount: Number(i.tax_amount || 0), hsnSac: i.hsn_sac || '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!i.gst_included, priceUserOverride: true })));
+            setRows(inv.items.filter((i: any) => !i.charge_line).map((i: any) => ({ itemId: i.item_id || '', variantId: i.variant_id || undefined, variantName: i.variant_name || undefined, name: i.item_name || '', quantity: Number(i.quantity || 1), freeQty: 0, unit: i.unit || 'PCS', price: Number(i.unit_price || 0), discountPercent: Number(i.discount_percent || 0), discountAmount: Number(i.discount_amount || 0), taxPercent: Number(i.tax_rate || 0), taxAmount: Number(i.tax_amount || 0), hsnSac: i.hsn_sac || '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!i.gst_included, priceUserOverride: true })));
+          }
+          if (Array.isArray(inv.charges)) {
+            setExtraCharges(inv.charges.map((charge: any, index: number) => ({
+              id: String(charge.id || index + 1),
+              purpose: charge.purpose || '',
+              amount: Number(charge.amount) || 0,
+              classification: charge.classification || '',
+              hsnSac: charge.hsn_sac || '',
+              taxPercent: charge.tax_rate == null ? '' : Number(charge.tax_rate),
+            })));
           }
           if (inv.document_type === 'proforma_invoice') {
             if (inv.expiry_date) setExpiryDate(inv.expiry_date.split('T')[0]);
@@ -2387,6 +2634,7 @@ function NewInvoiceContent() {
 
   useEffect(() => { if (business?.state && !placeOfSupply && !savedInvoiceId) setPlaceOfSupply(business.state); }, [business?.state, savedInvoiceId, placeOfSupply]);
 
+  const workOrderShipRef = useRef<string | null>(null);
   useEffect(() => {
     if (!customerId || !business) { if (!savedInvoiceId) { setSelectedCustomer(null); setBillingAddress(''); setShippingAddress(''); setPlaceOfSupply(business?.state || ''); setCreditMetrics(null); } return; }
     fetch(`/api/customers/${customerId}?user_id=${user?.id}`).then(r => r.json()).then(d => {
@@ -2394,8 +2642,8 @@ function NewInvoiceContent() {
       if (!c) { console.error('Customer not found:', customerId); return; }
       setSelectedCustomer(c);
       setBillingAddress(c.billing_address || c.address || '');
-      setShippingAddress(c.shipping_address || c.address || '');
-      setPlaceOfSupply(c.state || business.state || '');
+      setShippingAddress(workOrderShipRef.current || c.shipping_address || c.address || '');
+      setPlaceOfSupply(stateFromGstin(c.gstin) || c.state || business.state || '');
       setRows(prev => prev.map(r => calculateRow(r, true)));
       
       // PHASE 6: Fetch credit metrics for customer
@@ -2423,6 +2671,45 @@ function NewInvoiceContent() {
       }
     });
   }, [customerId, business, calculateRow, savedInvoiceId, user?.id]);
+
+  useEffect(() => {
+    creditEditedRef.current = false;
+    if (!customerId || documentType === 'proforma_invoice') {
+      setCreditAvailable(0);
+      setCreditApply(0);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/customers/${customerId}/credits`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) {
+          if (!cancelled) setCreditAvailable(0);
+          return;
+        }
+        setCreditAvailable(Number(data.available) || 0);
+        if (data.current_balance != null) {
+          setSelectedCustomer((prev) =>
+            prev && prev.id === customerId ? { ...prev, current_balance: Number(data.current_balance) } : prev
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCreditAvailable(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, documentType]);
+
+  useEffect(() => {
+    const cap = Math.min(creditAvailable, creditRoom);
+    if (!creditEditedRef.current) {
+      setCreditApply(cap);
+      return;
+    }
+    setCreditApply((prev) => Math.min(prev, cap));
+  }, [customerId, creditAvailable, creditRoom]);
 
   useEffect(() => {
     dueDateUserEditedRef.current = false;
@@ -2518,6 +2805,168 @@ function NewInvoiceContent() {
     if (!iid) setPrefilled(true);
   }, [searchParams, customers, business?.id, savedInvoiceId, customerId, rows, calculateRow, prefilled, user?.id]);
 
+  // ?convert_from=<estimateId>: copy the estimate's customer and lines into a new document (own number/date)
+  const convertFromId = searchParams.get('convert_from');
+  const convertPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!convertFromId || !business?.id || !user?.id || savedInvoiceId || branchLoading) return;
+    if (convertPrefillDoneRef.current === convertFromId) return;
+    convertPrefillDoneRef.current = convertFromId;
+    fetch(`/api/invoices/${convertFromId}?user_id=${user.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const est = data?.invoice || data;
+        if (!est?.id) return;
+        if (est.customer_id) setCustomerId(est.customer_id);
+        if (est.place_of_supply_state_code) setPlaceOfSupply(est.place_of_supply_state_code);
+        setBillingAddress(est.billing_address || '');
+        setShippingAddress(est.shipping_address || '');
+        setNotes(est.notes || '');
+        if (Array.isArray(est.items)) {
+          setRows(
+            est.items.map((i: any) =>
+              calculateRow({
+                itemId: i.item_id || '',
+                variantId: i.variant_id || undefined,
+                variantName: i.variant_name || undefined,
+                name: i.item_name || '',
+                quantity: Number(i.quantity || 1),
+                freeQty: 0,
+                unit: i.unit || 'PCS',
+                price: Number(i.unit_price || 0),
+                discountPercent: Number(i.discount_percent || 0),
+                discountAmount: Number(i.discount_amount || 0),
+                taxPercent: Number(i.tax_rate || 0),
+                taxAmount: Number(i.tax_amount || 0),
+                hsnSac: i.hsn_sac || '',
+                taxableValue: 0,
+                cgstAmount: 0,
+                sgstAmount: 0,
+                igstAmount: 0,
+                total: 0,
+                gstIncluded: !!i.gst_included,
+                priceUserOverride: true,
+              }, true)
+            )
+          );
+        }
+        setIsDirty(true);
+      })
+      .catch((err) => console.error('[Convert] Failed to load source estimate:', err));
+  }, [convertFromId, business?.id, user?.id, savedInvoiceId, branchLoading, calculateRow]);
+
+  // ?supply_order_id=: bill a confirmed Supplier Hub order. Customer and lines come from the
+  // order; nothing is saved until Generate/Save, which links the invoice back to the order.
+  const supplyOrderId = searchParams.get('supply_order_id');
+  const supplyOrderPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!supplyOrderId || !business?.id || savedInvoiceId || branchLoading) return;
+    if (supplyOrderPrefillDoneRef.current === supplyOrderId) return;
+    supplyOrderPrefillDoneRef.current = supplyOrderId;
+    fetch(`/api/supply-orders/${supplyOrderId}/invoice-draft`)
+      .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .then(({ ok, data }) => {
+        if (!ok) {
+          toastCtx.error(data?.error || 'Could not load this order');
+          return;
+        }
+        if (data.customer_id) setCustomerId(data.customer_id);
+        setRows(
+          (data.lines || []).map((line: any) => {
+            let price = Number(line.selling_price) || 0;
+            const taxRate = Number(line.tax_rate) || 0;
+            if (line.gst_included && taxRate > 0) price = price / (1 + taxRate / 100);
+            return calculateRow({
+              itemId: line.item_id,
+              name: line.name,
+              quantity: Number(line.quantity) || 1,
+              freeQty: 0,
+              unit: line.unit || 'PCS',
+              price,
+              discountPercent: 0,
+              discountAmount: 0,
+              taxPercent: taxRate,
+              taxAmount: 0,
+              hsnSac: line.hsn_sac || '',
+              taxableValue: 0,
+              cgstAmount: 0,
+              sgstAmount: 0,
+              igstAmount: 0,
+              total: 0,
+              gstIncluded: !!line.gst_included,
+              priceUserOverride: false,
+            });
+          })
+        );
+        setIsDirty(true);
+      })
+      .catch(() => toastCtx.error('Could not load this order'));
+  }, [supplyOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, toastCtx]);
+
+  // ?work_order_id=: open the invoice for review. Nothing is saved until Generate/Save.
+  const workOrderId = searchParams.get('work_order_id');
+  const workOrderPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!workOrderId || !business?.id || savedInvoiceId || branchLoading) return;
+    if (workOrderPrefillDoneRef.current === workOrderId) return;
+    workOrderPrefillDoneRef.current = workOrderId;
+    fetch(`/api/work-orders/${workOrderId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const wo = data?.workOrder;
+        if (!wo?.id) {
+          toastCtx.error('Could not load this work order');
+          return;
+        }
+        if (wo.status !== 'completed') {
+          toastCtx.error('Mark the work order as completed before raising the invoice');
+          return;
+        }
+        if (wo.converted_invoice_id && wo.converted_invoice_status !== 'cancelled') {
+          toastCtx.error('An invoice has already been raised for this work order');
+          return;
+        }
+        if (wo.customer_id) setCustomerId(wo.customer_id);
+        if (wo.place_of_supply_state_code) setPlaceOfSupply(wo.place_of_supply_state_code);
+        workOrderShipRef.current = wo.work_location || null;
+        if (wo.work_location) setShippingAddress(wo.work_location);
+        if (wo.notes) setNotes(wo.notes);
+        const drafts = workOrderInvoiceLineDrafts(wo, data.items || []);
+        if (drafts.length === 0) {
+          toastCtx.error('The work order has no labour cost or materials to invoice');
+          return;
+        }
+        setRows(
+          drafts.map((line) =>
+            calculateRow(
+              {
+                itemId: line.item_id || '',
+                name: line.item_name,
+                quantity: Number(line.quantity) || 1,
+                freeQty: 0,
+                unit: line.unit || 'PCS',
+                price: Number(line.unit_price) || 0,
+                discountPercent: 0,
+                discountAmount: 0,
+                taxPercent: Number(line.tax_rate) || 0,
+                taxAmount: 0,
+                hsnSac: line.hsn_sac || '',
+                taxableValue: 0,
+                cgstAmount: 0,
+                sgstAmount: 0,
+                igstAmount: 0,
+                total: 0,
+                priceUserOverride: true,
+              },
+              true,
+            ),
+          ),
+        );
+        setIsDirty(true);
+      })
+      .catch(() => toastCtx.error('Could not load this work order'));
+  }, [workOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, toastCtx]);
+
   const showMobileInvoiceUi = invoiceMobileLayout && !posMode;
   const mobileBillLabel =
     documentType === 'proforma_invoice'
@@ -2585,6 +3034,123 @@ function NewInvoiceContent() {
     router.back();
   }, [tryBlockNavigation, router]);
 
+  const openCreateCustomer = useCallback((searchQuery?: string) => {
+    const fromSearch = customerDraftFromSearchQuery(searchQuery || '');
+    setCreateCustomerDraft({
+      ...fromSearch,
+      ...(posMode && customerPhone ? { phone: customerPhone } : {}),
+    });
+    setCreateCustomerModalOpen(true);
+  }, [posMode, customerPhone]);
+
+  const applyInvoiceCustomer = useCallback((customer: Customer) => {
+    setCustomerId(customer.id);
+    setSelectedCustomer(customer);
+    setCustomerPhone(customer.phone || '');
+    setBillingAddress(customer.billing_address || customer.address || '');
+    setShippingAddress(customer.shipping_address || customer.address || '');
+    if (customer.state || stateFromGstin(customer.gstin)) {
+      setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
+      setRows((prev) => prev.map((r) => calculateRow(r, true)));
+    }
+  }, [calculateRow]);
+
+  const handleMobileCustomerTap = useCallback(async () => {
+    if (isFinal) return;
+    if (!canPickDeviceCustomer()) return;
+    try {
+      const picked = await pickDeviceCustomer();
+      if (!picked) return;
+      if (!picked.name && !picked.phone) {
+        toastCtx.error('That contact has no name or number');
+        return;
+      }
+
+      const matchLocal = picked.phone
+        ? customers.find((c) => phonesLikelyMatch(c.phone, picked.phone))
+        : undefined;
+      if (matchLocal) {
+        applyInvoiceCustomer(matchLocal);
+        return;
+      }
+
+      if (picked.phone && business?.id && user?.id) {
+        const query = picked.phone.replace(/\D/g, '').slice(-10);
+        const scope = { businessId: business.id, userId: user.id };
+        const fromCatalog = await searchCustomersForBilling(scope, query);
+        const catalogHit = (fromCatalog || []).find((c) => phonesLikelyMatch((c as Customer).phone, picked.phone)) as Customer | undefined;
+        if (catalogHit) {
+          applyInvoiceCustomer(catalogHit);
+          return;
+        }
+        if (!isAppOffline()) {
+          const res = await fetch(
+            `/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user.id}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const hit = (data.customers || []).find((c: Customer) => phonesLikelyMatch(c.phone, picked.phone));
+            if (hit) {
+              applyInvoiceCustomer(hit);
+              return;
+            }
+          }
+        }
+      }
+
+      if (!picked.phone || !business?.id || !user?.id || isAppOffline()) {
+        setCreateCustomerDraft({
+          name: picked.name,
+          phone: picked.phone,
+          email: picked.email,
+        });
+        setCreateCustomerModalOpen(true);
+        return;
+      }
+
+      const createRes = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: picked.name || picked.phone,
+          phone: picked.phone,
+          email: picked.email || '',
+          business_id: business.id,
+          created_by: user.id,
+        }),
+      });
+      if (createRes.ok) {
+        const data = await createRes.json();
+        if (data.customer) {
+          setCustomers((prev) => [...prev, data.customer]);
+          applyInvoiceCustomer(data.customer);
+          toastCtx.success(
+            data.deduplicated
+              ? `Using existing customer "${data.customer.name}"`
+              : `Customer "${data.customer.name}" added`
+          );
+          return;
+        }
+      }
+      setCreateCustomerDraft({
+        name: picked.name,
+        phone: picked.phone,
+        email: picked.email,
+      });
+      setCreateCustomerModalOpen(true);
+    } catch (err) {
+      console.error(err);
+      toastCtx.error('Could not open contacts. Update the Khatario app if this is an older APK.');
+    }
+  }, [
+    applyInvoiceCustomer,
+    business?.id,
+    customers,
+    isFinal,
+    toastCtx,
+    user?.id,
+  ]);
+
   // Early returns — wait for auth/session before showing AccessDenied (avoids flash while loading)
   if (authLoading || !user?.id || !business?.id) {
     return (
@@ -2609,6 +3175,17 @@ function NewInvoiceContent() {
 
   const renderDesktopForm = () => (
     <div className="space-y-4">
+      {!posMode && classicDesktopForm && (
+        <div className="hidden justify-end lg:flex">
+          <button
+            type="button"
+            onClick={() => setClassicDesktopPreference(false)}
+            className="text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300"
+          >
+            Switch to the new invoice form
+          </button>
+        </div>
+      )}
       {isInvoiceLocked && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5"><svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg></div>
@@ -2628,7 +3205,7 @@ function NewInvoiceContent() {
                   setShippingAddress(c.shipping_address || c.address || ''); 
                 }
               }} 
-              onAddNewCustomer={() => setCreateCustomerModalOpen(true)}
+              onAddNewCustomer={openCreateCustomer}
               placeOfSupply={placeOfSupply} 
               onPlaceOfSupplyChange={(v) => { setPlaceOfSupply(v); setRows(prev => prev.map(r => calculateRow(r, true))); }} 
               isFinal={isFinal} 
@@ -2690,6 +3267,9 @@ function NewInvoiceContent() {
               disabled={isFinal || isInvoiceLocked}
               className="!px-3 !py-2 !text-sm"
             />
+            {isFutureInvoiceDate ? (
+              <p className="mt-1 text-2xs text-amber-700">Date is in the future</p>
+            ) : null}
           </div>
           <div className="w-[138px] lg:w-[160px] min-w-0">
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">Due Date</label>
@@ -2786,8 +3366,8 @@ function NewInvoiceContent() {
           {showAdditionalInfo && (
             <div className="mt-2 p-4 bg-surface rounded-lg border border-border shadow-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number <span className="text-red-500">*</span></label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="E-way bill number" disabled={isFinal} className={!ewayBillNumber ? 'border-red-500' : ''} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date <span className="text-red-500">*</span></label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} className={!ewayBillDate ? 'border-red-500' : ''} /></div>
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="12 digits, or add it after the bill" disabled={isFinal} /></div> : null}
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} placeholder="PO number" disabled={isFinal} /></div>
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Reference number" disabled={isFinal} /></div>
@@ -2840,11 +3420,11 @@ function NewInvoiceContent() {
               {exportType === 'wop' && (<div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded"><p className="text-xs text-yellow-800 dark:text-yellow-200"><strong>LUT Export:</strong> This invoice is for export under LUT without payment of IGST. IGST at 0%.</p></div>)}
           </div>
       )}
-      <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} />
+      <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
-          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
           <ActionsBar
             onPreview={handlePreview}
             onSaveDraft={() => handleSave('draft')}
@@ -2857,6 +3437,7 @@ function NewInvoiceContent() {
             savedInvoiceId={savedInvoiceId}
             invoicePrefix={invoicePrefix}
             invoiceNumber={invoiceNumber}
+            affectsGst={documentType !== 'proforma_invoice'}
             credit={
               creditMetrics?.current
                 ? {
@@ -2872,21 +3453,272 @@ function NewInvoiceContent() {
     </div>
   );
 
+  const pageTitle = (() => {
+    const urlType = searchParams.get('type') as DocumentType | null;
+    const docType = urlType && allowedDocTypes.includes(urlType) ? urlType : documentType || initialDocType;
+    if (docType === 'proforma_invoice') return isEditMode ? 'Edit Estimate' : 'New Estimate';
+    return `${isEditMode ? 'Edit' : 'New'} ${DOCUMENT_TYPE_NAMES[docType]}`;
+  })();
+
+  const useNewDesktopComposer = !showMobileInvoiceUi && !posMode && !classicDesktopForm;
+
+  const setClassicDesktopPreference = (classic: boolean) => {
+    try {
+      if (classic) localStorage.setItem(CLASSIC_DESKTOP_FORM_KEY, '1');
+      else localStorage.removeItem(CLASSIC_DESKTOP_FORM_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    setClassicDesktopForm(classic);
+  };
+
+  const patchComposerRow = (index: number, patch: Partial<ComposerRow>, skipDiscountRecalc = false) => {
+    setRows((prev) => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      next[index] = calculateRow({ ...prev[index], ...patch } as InvoiceItemRow, skipDiscountRecalc);
+      return next;
+    });
+  };
+
+  const exportState: ComposerExportState = {
+    exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate,
+    countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode,
+    awbNumber, blNumber, buyerTaxId,
+  };
+  const exportSetters: { [K in keyof ComposerExportState]: (v: ComposerExportState[K]) => void } = {
+    exportType: setExportType, portCode: setPortCode, shippingBillNumber: setShippingBillNumber,
+    shippingBillDate: setShippingBillDate, invoiceCurrency: setInvoiceCurrency, exchangeRate: setExchangeRate,
+    countryOfOrigin: setCountryOfOrigin, portOfLoading: setPortOfLoading, portOfDischarge: setPortOfDischarge,
+    placeOfDelivery: setPlaceOfDelivery, incoterms: setIncoterms, transportMode: setTransportMode,
+    awbNumber: setAwbNumber, blNumber: setBlNumber, buyerTaxId: setBuyerTaxId,
+  };
+  const patchExport = (patch: Partial<ComposerExportState>) => {
+    (Object.keys(patch) as Array<keyof ComposerExportState>).forEach((k) => {
+      (exportSetters[k] as (v: unknown) => void)(patch[k]);
+    });
+  };
+
+  const moreDetails: ComposerMoreDetails = {
+    purchaseOrderNumber, purchaseOrderDate, ewayBillNumber, ewayBillDate, referenceNumber, deliveryNote,
+    paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery,
+  };
+  const moreDetailSetters: { [K in keyof ComposerMoreDetails]: (v: string) => void } = {
+    purchaseOrderNumber: setPurchaseOrderNumber, purchaseOrderDate: setPurchaseOrderDate,
+    ewayBillNumber: setEwayBillNumber, ewayBillDate: setEwayBillDate, referenceNumber: setReferenceNumber,
+    deliveryNote: setDeliveryNote, paymentTerms: setPaymentTerms, otherReferences: setOtherReferences,
+    dispatchedThrough: setDispatchedThrough, destination: setDestination, termsOfDelivery: setTermsOfDelivery,
+  };
+  const patchMoreDetails = (patch: Partial<ComposerMoreDetails>) => {
+    (Object.keys(patch) as Array<keyof ComposerMoreDetails>).forEach((k) => moreDetailSetters[k](patch[k] ?? ''));
+  };
+
+  const uploadInvoiceAttachments = async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingFiles(true);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      fd.append('business_id', business?.id || '');
+      fd.append('document_type', 'invoice');
+      const res = await fetch('/api/upload/attachments', { method: 'POST', body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments((prev) => [
+          ...prev,
+          ...data.files.map((f: any) => ({ id: f.id || Math.random().toString(), name: f.file_name, url: f.file_path, size: f.file_size })),
+        ]);
+      } else toastCtx.error('Upload failed');
+    } catch (err) {
+      console.error(err);
+      toastCtx.error('Upload failed');
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const savedInvoicePdfUrl = savedInvoiceId ? `/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}` : '';
+
+  const renderDesktopComposer = () => {
+    const readOnly = isFinal || isInvoiceLocked;
+    const statusLabel =
+      documentType === 'proforma_invoice'
+        ? estimateStatus !== 'draft' || savedInvoiceId
+          ? estimateStatus.charAt(0).toUpperCase() + estimateStatus.slice(1)
+          : null
+        : offlineSyncPending
+          ? 'Saved offline, sync pending'
+          : savedStatus === 'final'
+            ? 'Final'
+            : savedStatus === 'draft'
+              ? 'Draft'
+              : null;
+
+    const banners = (
+      <>
+        {isInvoiceLocked && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="font-semibold text-amber-900 dark:text-amber-200">Invoice locked</p>
+            <p className="text-amber-700 dark:text-amber-300">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p>
+          </div>
+        )}
+        {(business as any)?.gst_registration_type === 'composition' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="font-semibold text-amber-900 dark:text-amber-200">Composition taxable person: not eligible to collect tax on supplies</p>
+            <p className="text-xs text-amber-700 dark:text-amber-300">As per Section 10 of the CGST Act, all documents are issued as Bill of Supply without GST.</p>
+          </div>
+        )}
+        {customerId && selectedCustomer && creditMetrics?.current && (
+          <CreditWarningBanner
+            metrics={creditMetrics.current}
+            projectedMetrics={creditMetrics.projected}
+            partyType="customer"
+            partyName={selectedCustomer.name}
+          />
+        )}
+        {currentBranchId && warehousesEnabled && warehouses.length === 0 && !warehousesLoading && (
+          <div className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm dark:border-yellow-900 dark:bg-yellow-950/30">
+            <p className="font-medium text-yellow-800 dark:text-yellow-200">No warehouses linked to this branch</p>
+            <p className="text-xs text-yellow-700 dark:text-yellow-300">Link warehouses in Settings → Warehouses, or stock tracking won&apos;t apply to these items.</p>
+          </div>
+        )}
+      </>
+    );
+
+    return (
+      <DesktopInvoiceComposer
+        title={pageTitle}
+        documentType={documentType as 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply'}
+        statusLabel={statusLabel}
+        onBack={handleComposerBack}
+        onUseClassicForm={() => setClassicDesktopPreference(true)}
+        readOnly={readOnly}
+        isFinal={isFinal}
+        keyboardBlocked={
+          createCustomerModalOpen || createItemModalOpen || paymentModalOpen || previewModalOpen ||
+          shareModalOpen || showNavigationWarning || showResetConfirm || showUpgradePrompt || showContinuousScanner
+        }
+        banners={banners}
+        businessId={business.id}
+        userId={user?.id}
+        branchId={currentBranchId && currentBranchId !== 'ALL' ? currentBranchId : undefined}
+        customers={customers}
+        customer={selectedCustomer}
+        onSelectCustomer={applyInvoiceCustomer}
+        onClearCustomer={() => {
+          setCustomerId('');
+          setSelectedCustomer(null);
+          setCustomerPhone('');
+        }}
+        onCreateCustomer={openCreateCustomer}
+        billingAddress={billingAddress}
+        setBillingAddress={setBillingAddress}
+        shippingAddress={shippingAddress}
+        setShippingAddress={setShippingAddress}
+        credit={
+          creditMetrics?.current
+            ? { available: creditMetrics.current.available_credit, limit: creditMetrics.current.credit_limit }
+            : null
+        }
+        invoicePrefix={invoicePrefix}
+        invoiceNumber={invoiceNumber}
+        offlineNumber={offlineDisplayNumber}
+        seriesLoading={seriesLoading}
+        seriesError={seriesError}
+        invoiceDate={invoiceDate}
+        setInvoiceDate={setInvoiceDate}
+        isFutureDate={isFutureInvoiceDate}
+        dueDate={dueDate}
+        setDueDate={(v) => {
+          dueDateUserEditedRef.current = true;
+          setDueDate(v);
+        }}
+        placeOfSupply={placeOfSupply}
+        setPlaceOfSupply={setPlaceOfSupply}
+        states={INDIAN_STATES}
+        sellerState={business?.state || ''}
+        sellerStateCode={bStateCode || ''}
+        posStateCode={pStateCode || ''}
+        isIntraState={isIntraState}
+        warehouses={warehouses}
+        warehousesLoading={warehousesLoading}
+        selectedWarehouseId={selectedWarehouseId}
+        setSelectedWarehouseId={setSelectedWarehouseId}
+        isExport={isExport}
+        setIsExport={(v) => {
+          setIsExport(v);
+          if (!v) {
+            setPortCode('');
+            setShippingBillNumber('');
+            setShippingBillDate('');
+          }
+        }}
+        exportState={exportState}
+        patchExport={patchExport}
+        moreDetails={moreDetails}
+        patchMoreDetails={patchMoreDetails}
+        customFields={
+          invoiceCustomFieldDefs.length > 0 ? (
+            <CustomFieldValuesForm
+              definitions={invoiceCustomFieldDefs}
+              values={invoiceCustomFieldValues}
+              onChange={setInvoiceCustomFieldValues}
+              disabled={readOnly}
+            />
+          ) : null
+        }
+        customFieldsRequired={invoiceCustomFieldDefs.some((d) => d.is_required)}
+        rows={rows}
+        patchRow={patchComposerRow}
+        removeRow={(idx) => setRows((prev) => prev.filter((_, i) => i !== idx))}
+        onApplyPicked={handleMobilePickerApply}
+        onBarcode={handleGlobalBarcodeScan}
+        onCreateItem={() => setCreateItemModalOpen(true)}
+        onScannerSuspendChange={setComposerScannerSuspended}
+        pricesIncludeGst={pricesIncludeGst}
+        setPricesIncludeGst={setPricesIncludeGst}
+        notes={notes}
+        setNotes={setNotes}
+        attachments={attachments}
+        onUploadAttachments={uploadInvoiceAttachments}
+        onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((x) => x.id !== id))}
+        uploadingAttachments={uploadingFiles}
+        totals={{ itemSubtotal, totalDiscount, taxableAmount, totalCGST, totalSGST, totalIGST, totalTax, totalExtraCharges, roundOff, grandTotal }}
+        amountInWords={engineNumberToWords(grandTotal)}
+        extraCharges={extraCharges}
+        setExtraCharges={setExtraCharges}
+        enableRoundOff={enableRoundOff}
+        setEnableRoundOff={setEnableRoundOff}
+        payments={payments}
+        setPayments={setPayments}
+        onOpenPaymentDetails={() => setPaymentModalOpen(true)}
+        totalPaid={totalPaid}
+        balance={balance}
+        saving={loading}
+        previewLoading={previewLoading}
+        savedInvoiceId={savedInvoiceId}
+        onPreview={handlePreview}
+        onSaveDraft={() => handleSave('draft')}
+        onSaveFinal={() => handleSave('final')}
+        onShare={() => setShareModalOpen(true)}
+        onPrint={() => savedInvoicePdfUrl && window.open(savedInvoicePdfUrl, '_blank')}
+        onDownload={() => {
+          if (!savedInvoicePdfUrl) return;
+          const link = document.createElement('a');
+          link.href = savedInvoicePdfUrl;
+          link.download = `${invoicePrefix}-${invoiceNumber}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }}
+        onStartNew={resetFormForNewInvoice}
+      />
+    );
+  };
+
   const renderMobileComposer = () => {
     const money = (n: number) =>
       `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    const partyBalance =
-      selectedCustomer?.current_balance == null ? null : Number(selectedCustomer.current_balance);
-    const partyBalanceLabel =
-      partyBalance != null && Number.isFinite(partyBalance) && !isPartyBalanceSettled(partyBalance)
-        ? `${customerBalanceHint(partyBalance)} ₹${Math.abs(partyBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-        : '';
-    const customerSubtitle = selectedCustomer
-      ? [
-          selectedCustomer.gstin ? `GSTIN ${selectedCustomer.gstin}` : selectedCustomer.phone,
-          partyBalanceLabel,
-        ].filter(Boolean).join(' · ') || 'Tap to change customer'
-      : 'Tap to add customer';
     const itemCount = rows.filter((r) => r.itemId || r.name).length;
     const payMode = String(payments[0]?.mode || 'upi');
     const settlement = totalPaid <= 0.009 ? 'credit' : Math.abs(balance) < 0.05 ? 'full' : 'partial';
@@ -2932,48 +3764,74 @@ function NewInvoiceContent() {
             <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
           </div>
         )}
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
-          <div className="min-w-0 flex-1">
-            {customerPickerOpen && !isFinal ? (
-              <div className="space-y-1">
-                <CustomerAutocomplete
-                  compact
-                  customers={customers}
-                  value={customerId}
-                  onChange={setCustomerId}
-                  onSelect={(c) => {
-                    if (c) {
-                      setSelectedCustomer(c);
-                      setBillingAddress(c.billing_address || c.address || '');
-                      setShippingAddress(c.shipping_address || c.address || '');
-                      setCustomerPickerOpen(false);
-                    }
-                  }}
-                  disabled={isFinal}
-                  onAddNew={() => setCreateCustomerModalOpen(true)}
-                />
-                <button type="button" onClick={() => setCustomerPickerOpen(false)} className="text-xs font-semibold text-primary-600">
-                  Done
-                </button>
-              </div>
-            ) : (
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
+          <div className="min-w-0 space-y-0.5">
+            <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
+            <Input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              disabled={isFinal || isInvoiceLocked}
+              className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            />
+            {isFutureInvoiceDate ? (
+              <p className="text-2xs text-amber-700">Date is in the future</p>
+            ) : null}
+          </div>
+          <div className="min-w-0 space-y-0.5">
+            <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
+              Due date <span className="font-normal normal-case text-text-muted">(optional)</span>
+            </label>
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => {
+                dueDateUserEditedRef.current = true;
+                setDueDate(e.target.value);
+              }}
+              disabled={isFinal || isInvoiceLocked}
+              className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            />
+          </div>
+        </div>
+        <div className="w-full rounded-lg border border-border bg-surface">
+          <div className="flex w-full items-end gap-1 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Customer</label>
+              <CustomerAutocomplete
+                compact
+                customers={customers}
+                value={customerId}
+                onChange={(id) => {
+                  setCustomerId(id);
+                  if (!id) setSelectedCustomer(null);
+                }}
+                onSelect={(c) => {
+                  if (c) {
+                    setSelectedCustomer(c);
+                    setBillingAddress(c.billing_address || c.address || '');
+                    setShippingAddress(c.shipping_address || c.address || '');
+                  }
+                }}
+                disabled={isFinal}
+                onAddNew={openCreateCustomer}
+              />
+            </div>
+            {canPickDeviceCustomer() && !isFinal ? (
               <button
                 type="button"
-                className="w-full text-left disabled:opacity-100"
-                onClick={() => { if (!isFinal) setCustomerPickerOpen(true); }}
-                disabled={isFinal}
+                title="Choose from phone contacts"
+                onClick={() => { void handleMobileCustomerTap(); }}
+                className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-700"
               >
-                <p className="truncate text-sm font-semibold leading-tight text-text-primary">
-                  {selectedCustomer?.name || 'Cash sale'}
-                </p>
-                <p className="truncate text-[10px] leading-tight text-text-muted">{customerSubtitle}</p>
+                <Phone className="h-4 w-4" />
               </button>
-            )}
+            ) : null}
           </div>
           <button
             type="button"
             onClick={() => setAddressSupplyOpen((open) => !open)}
-            className="shrink-0 text-[11px] font-semibold text-primary-700"
+            className="w-full border-t border-border px-2 py-1.5 text-left text-[11px] font-semibold text-primary-700"
             aria-expanded={addressSupplyOpen}
           >
             Address
@@ -2997,6 +3855,20 @@ function NewInvoiceContent() {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              {!isExport && selectedCustomer?.gstin && stateFromGstin(selectedCustomer.gstin) && placeOfSupply && stateFromGstin(selectedCustomer.gstin) !== placeOfSupply ? (
+                <label className="mt-1 flex items-start gap-2 text-xs text-amber-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={posDiffersFromGstin}
+                    onChange={(e) => setPosDiffersFromGstin(e.target.checked)}
+                    disabled={isFinal}
+                  />
+                  <span>
+                    Differs from the buyer&apos;s GSTIN state ({stateFromGstin(selectedCustomer.gstin)}). Tick only if goods are shipped to {placeOfSupply}.
+                  </span>
+                </label>
+              ) : null}
             </div>
             {selectedCustomer ? (
               <>
@@ -3012,27 +3884,12 @@ function NewInvoiceContent() {
             ) : null}
           </div>
         ) : null}
-        {mobileBillMetaOpen ? (
-          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface p-2">
-            <div className="min-w-0 space-y-0.5">
-              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
-              <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
-            </div>
-            <div className="min-w-0 space-y-0.5">
-              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Due date</label>
-              <Input type="date" value={dueDate} onChange={(e) => { dueDateUserEditedRef.current = true; setDueDate(e.target.value); }} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
-            </div>
-          </div>
-        ) : null}
         <div className="flex items-center gap-1">
           <h2 className="text-xs font-bold uppercase tracking-wider text-text-primary">Items</h2>
           <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-text-secondary">{itemCount}</span>
           <div className="ml-auto flex items-center gap-0.5">
             <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={handlePreview} disabled={previewLoading || !isSeriesResolved}>
               {previewLoading ? '…' : 'Preview'}
-            </button>
-            <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={() => setMobileBillMetaOpen((o) => !o)}>
-              Date
             </button>
             {!isFinal ? (
               <>
@@ -3089,33 +3946,6 @@ function NewInvoiceContent() {
             <div className="space-y-3 border-t border-border p-3">
         <div className="space-y-3">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2">
-              <div className="min-w-0 space-y-0.5">
-                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
-                <Input
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                />
-              </div>
-              <div className="min-w-0 space-y-0.5">
-                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
-                  Due date <span className="text-text-muted normal-case font-normal">(optional)</span>
-                </label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => {
-                    dueDateUserEditedRef.current = true;
-                    setDueDate(e.target.value);
-                  }}
-                  disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                />
-              </div>
-            </div>
             {invoiceCustomFieldDefs.length > 0 && !isFinal && (
               <div className="space-y-3 border-b border-border pb-2">
                 <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -3216,7 +4046,7 @@ function NewInvoiceContent() {
           ) : null}
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
         </div>
-        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
         {words ? <p className="text-[10px] leading-snug text-text-muted">{words}</p> : null}
         {!isFinal && documentType !== 'proforma_invoice' ? (
           <div className="flex flex-wrap items-center gap-1">
@@ -3260,8 +4090,8 @@ function NewInvoiceContent() {
             <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">More details</p>
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3">
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div>
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div> : null}
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} disabled={isFinal} /></div>
@@ -3319,11 +4149,11 @@ function NewInvoiceContent() {
           )}
         </div>
       </div>
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 px-2 py-1.5 supports-[padding:max(0px)]:pb-[max(6px,env(safe-area-inset-bottom))]">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-primary-600 px-2 py-1.5 shadow-[0_-6px_20px_rgba(15,23,42,0.18)] supports-[padding:max(0px)]:pb-[max(6px,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-[1600px] items-center gap-1.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-semibold uppercase tracking-wide text-text-muted">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
-            <p className="truncate text-base font-bold leading-tight tabular-nums text-primary-700">{money(grandTotal)}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-white/80">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
+            <p className="truncate text-base font-bold leading-tight tabular-nums text-white">{money(grandTotal)}</p>
           </div>
           {!isFinal ? (
             <>
@@ -3332,7 +4162,7 @@ function NewInvoiceContent() {
                 title="Save draft"
                 onClick={() => handleSave('draft')}
                 disabled={!isSeriesResolved || loading}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/40 text-white disabled:opacity-50"
               >
                 <Bookmark className="h-4 w-4" />
               </button>
@@ -3342,14 +4172,14 @@ function NewInvoiceContent() {
                   if (savedInvoiceId) setShareModalOpen(true);
                   else toastCtx.error('Save a draft or generate first, then share on WhatsApp.');
                 }}
-                className="flex h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-text-secondary"
+                className="flex h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white"
               >
                 <MessageCircle className="h-4 w-4" />
               </button>
               <Button
                 variant="primary"
                 size="sm"
-                className="h-10 shrink-0 font-bold"
+                className="h-10 shrink-0 font-bold !bg-white !text-primary-700 hover:!bg-primary-50"
                 onClick={() => handleSave('final')}
                 isLoading={loading}
                 disabled={!isSeriesResolved && !canQueueOffline}
@@ -3359,8 +4189,8 @@ function NewInvoiceContent() {
             </>
           ) : (
             <>
-              <Button variant="secondary" size="sm" className="h-10" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="h-4 w-4" /></Button>
-              <Button variant="primary" size="sm" className="h-10" onClick={() => setShareModalOpen(true)}>Share</Button>
+              <Button variant="secondary" size="sm" className="h-10 !bg-white/15 !text-white !border-white/40" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="h-4 w-4" /></Button>
+              <Button variant="primary" size="sm" className="h-10 !bg-white !text-primary-700 hover:!bg-primary-50" onClick={() => setShareModalOpen(true)}>Share</Button>
             </>
           )}
         </div>
@@ -3433,6 +4263,7 @@ function NewInvoiceContent() {
           })));
         }}
         onPrintBill={handlePrintBill}
+        onSaveBill={handlePosSaveBill}
         isPrinting={loading}
         offlinePending={offlineSyncPending}
         offlineInvoiceLabel={offlineDisplayNumber}
@@ -3443,13 +4274,19 @@ function NewInvoiceContent() {
         customerPhone={customerPhone}
         onCustomerPhoneChange={handleCustomerPhoneChange}
         onCustomerSelect={handleCustomerSelectFromPhone}
-        onAddNewCustomer={() => setCreateCustomerModalOpen(true)}
+        onAddNewCustomer={() => openCreateCustomer()}
         onResumeBill={(bill) => {
           restoreInvoiceState(bill.data);
         }}
         getInvoiceState={getInvoiceState}
         restoreInvoiceState={restoreInvoiceState}
         onStartNewBill={startNewBill}
+        onAddNewItem={() => setCreateItemModalOpen(true)}
+        onClearAllItems={() => setRows([])}
+        onExitPos={() => {
+          persistPosMode(false);
+          setPosMode(false);
+        }}
         itemSearchInputRef={itemInputRefs.current[0] || undefined}
         itemCount={rows.length}
         itemRows={rows.map(r => ({ itemId: r.itemId, name: r.name, quantity: r.quantity }))}
@@ -3464,34 +4301,31 @@ function NewInvoiceContent() {
           },
           onReprint: handleBluetoothReprint,
           isReprinting: btPrinting,
+          printerHint: bt.activePrinter
+            ? `Connected to ${bt.activePrinter.name}`
+            : bt.savedPrinters[0]
+              ? `${bt.savedPrinters[0].name} — turn it on; it connects when you print`
+              : undefined,
         }}
       >
+        {receiptPrinter.dialog}
         <div
           key={`${documentType}-${formKey}`}
           className={`max-w-[1600px] mx-auto ${showMobileInvoiceUi ? 'space-y-1.5 -mt-1' : 'space-y-3 md:space-y-4 -mt-2 md:-mt-1'}`}
         >
-          {!posMode && (
+          {!posMode && !useNewDesktopComposer && (
             <MobileDuplicatePageChrome
               className="mb-0 mt-0"
               onBack={handleComposerBack}
-              title={(() => {
-                const urlType = searchParams.get('type') as DocumentType | null;
-                const docType =
-                  urlType && allowedDocTypes.includes(urlType)
-                    ? urlType
-                    : documentType || initialDocType;
-                return isEditMode
-                  ? docType === 'proforma_invoice'
-                    ? 'Edit Estimate'
-                    : `Edit ${DOCUMENT_TYPE_NAMES[docType]}`
-                  : docType === 'proforma_invoice'
-                    ? 'New Estimate'
-                    : `New ${DOCUMENT_TYPE_NAMES[docType]}`;
-              })()}
+              title={pageTitle}
               trailing={savedStatus ? <StatusBadge status={savedStatus} /> : undefined}
             />
           )}
-          {showMobileInvoiceUi ? renderMobileComposer() : renderDesktopForm()}
+          {showMobileInvoiceUi
+            ? renderMobileComposer()
+            : useNewDesktopComposer
+              ? renderDesktopComposer()
+              : renderDesktopForm()}
         </div>
       </POSLayout>
       {previewModalOpen && (
@@ -3517,24 +4351,22 @@ function NewInvoiceContent() {
               </button>
             </div>
             <div
-              className={`flex-1 overflow-auto bg-gray-200 dark:bg-slate-800 ${
-                isThermalTemplateId(previewTemplateId) ? 'flex justify-center items-start py-4 px-3' : ''
+              className={`flex-1 overflow-auto bg-gray-200 px-3 dark:bg-slate-800 ${
+                isThermalTemplateId(previewTemplateId) ? 'flex items-start justify-center py-4' : ''
               }`}
             >
-              <iframe
-                srcDoc={previewHtml}
-                title="Invoice Preview"
-                className={`border-0 bg-transparent ${
-                  isThermalTemplateId(previewTemplateId)
-                    ? `${thermalPreviewIframeWidthClass(previewTemplateId)} min-h-[120px]`
-                    : 'w-full min-h-[70vh]'
-                }`}
-                style={
-                  isThermalTemplateId(previewTemplateId)
-                    ? { height: 'calc(95vh - 140px)', maxHeight: 'calc(95vh - 140px)' }
-                    : undefined
-                }
-              />
+              {isThermalTemplateId(previewTemplateId) ? (
+                <iframe
+                  srcDoc={previewHtml}
+                  title="Invoice Preview"
+                  className={`border-0 bg-transparent ${thermalPreviewIframeWidthClass(previewTemplateId)} min-h-[120px]`}
+                  style={{ height: 'calc(95vh - 140px)', maxHeight: 'calc(95vh - 140px)' }}
+                />
+              ) : (
+                <div className="mx-auto w-full max-w-[850px] py-4">
+                  <ScaledA4Preview html={previewHtml} title="Invoice Preview" />
+                </div>
+              )}
             </div>
             <div className="p-4 border-t flex justify-end flex-shrink-0">
               <Button variant="secondary" onClick={() => setPreviewModalOpen(false)}>Close</Button>
@@ -3543,13 +4375,29 @@ function NewInvoiceContent() {
         </div>
       )}
       {shareModalOpen && savedInvoiceId && <ShareInvoiceModal invoiceId={savedInvoiceId} invoiceNumber={invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : 'N/A'} customerEmail={selectedCustomer?.email} customerPhone={selectedCustomer?.phone} onClose={() => setShareModalOpen(false)} onCreateAnother={resetFormForNewInvoice} />}
-      {paymentModalOpen && <InvoicePaymentModal grandTotal={grandTotal} payments={payments} onSave={setPayments} onClose={() => setPaymentModalOpen(false)} />}
+      {paymentModalOpen && <InvoicePaymentModal grandTotal={Math.max(0, grandTotal - creditApplied)} payments={payments} onSave={setPayments} onClose={() => setPaymentModalOpen(false)} />}
       {showUpgradePrompt && limitInfo && <UpgradeModal limitType="invoices" currentCount={limitInfo.current} limit={limitInfo.limit} onClose={() => setShowUpgradePrompt(false)} onUpgradeSuccess={() => window.location.reload()} />}
-      {showContinuousScanner && business?.id && (<ContinuousBarcodeScanner businessId={business.id} onItemScanned={(item) => { if (!item?.id) return; handleItemSelect(item); }} onClose={() => setShowContinuousScanner(false)} />)}
+      {showContinuousScanner && business?.id && (<ContinuousBarcodeScanner businessId={business.id} onItemScanned={(item) => { if (!item?.id) return; if (item.has_variants && item.variants?.length && !(item as any).variantId) { setSizeChoice(item); return; } handleItemSelect(item); }} onClose={() => setShowContinuousScanner(false)} />)}
+      {sizeChoice && (
+        <ScanVariantPicker
+          itemName={sizeChoice.name}
+          variants={(sizeChoice.variants || []) as PickableVariant[]}
+          onCancel={() => setSizeChoice(null)}
+          onPick={(v) => {
+            const item = sizeChoice;
+            setSizeChoice(null);
+            handleItemSelect({ ...item, selling_price: v.selling_price ?? item.selling_price, current_stock: v.current_stock, tax_rate: item.tax_rate, variantId: v.id, variantName: v.variant_name, variantAttributes: v.attributes });
+            toastCtx.success(`${v.variant_name} added`);
+          }}
+        />
+      )}
       {createCustomerModalOpen && (
         <CreateCustomerModal
           isOpen={createCustomerModalOpen}
-          onClose={() => setCreateCustomerModalOpen(false)}
+          onClose={() => {
+            setCreateCustomerModalOpen(false);
+            setCreateCustomerDraft({});
+          }}
           onSuccess={(customer) => {
             // Add the new customer to the customers list
             setCustomers(prev => [...prev, customer]);
@@ -3564,8 +4412,8 @@ function NewInvoiceContent() {
             setBillingAddress(customer.billing_address || customer.address || '');
             setShippingAddress(customer.shipping_address || customer.address || '');
             // Update place of supply if customer has state
-            if (customer.state) {
-              setPlaceOfSupply(customer.state);
+            if (customer.state || stateFromGstin(customer.gstin)) {
+              setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
               setRows(prev => prev.map(r => calculateRow(r, true)));
             }
             // Close modal
@@ -3581,7 +4429,7 @@ function NewInvoiceContent() {
               }, 100);
             }
           }}
-          initialData={posMode && customerPhone ? { phone: customerPhone } : {}}
+          initialData={createCustomerDraft}
         />
       )}
 

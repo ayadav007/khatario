@@ -1,3 +1,5 @@
+import './module-subscription-mock';
+
 jest.mock('@/lib/subscription', () => {
   const actual = jest.requireActual('@/lib/subscription');
   return {
@@ -21,6 +23,16 @@ jest.mock('@/lib/subscription/lifecycle', () => {
   };
 });
 jest.mock('@/lib/db');
+jest.mock('@/lib/subscription/feature-access', () => {
+  const actual = jest.requireActual('@/lib/subscription/feature-access');
+  return {
+    ...actual,
+    assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+    hasFeatureAccess: jest.fn().mockResolvedValue(true),
+    assertReportAccess: jest.fn().mockResolvedValue(undefined),
+    denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
+  };
+});
 jest.mock('@/lib/authorization', () => ({
   authorize: jest.fn().mockResolvedValue(undefined),
   AuthorizationError: class AuthorizationError extends Error {

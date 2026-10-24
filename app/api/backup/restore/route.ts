@@ -2,10 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { Pool, PoolClient } from 'pg';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
+
+/** Child tables without business_id: ownership is proven through the parent row. */
+const RESTORE_PARENT_SCOPE: Record<string, { column: string; table: string }> = {
+  invoice_items: { column: 'invoice_id', table: 'invoices' },
+  purchase_items: { column: 'purchase_id', table: 'purchases' },
+  estimate_items: { column: 'estimate_id', table: 'estimates' },
+  credit_note_items: { column: 'credit_note_id', table: 'credit_notes' },
+  debit_note_items: { column: 'debit_note_id', table: 'debit_notes' },
+  recurring_invoice_history: { column: 'recurring_invoice_id', table: 'recurring_invoices' },
+  stock_transfer_items: { column: 'transfer_id', table: 'stock_transfers' },
+  item_batches: { column: 'item_id', table: 'items' },
+  location_stock: { column: 'location_id', table: 'warehouses' },
+  branch_warehouses: { column: 'branch_id', table: 'branches' },
+  user_branches: { column: 'user_id', table: 'users' },
+  user_warehouses: { column: 'user_id', table: 'users' },
+  journal_entry_lines: { column: 'journal_entry_id', table: 'journal_entries' },
+  gstr2b_invoices: { column: 'import_id', table: 'gstr2b_imports' },
+  gstr2b_reconciliation: { column: 'import_id', table: 'gstr2b_imports' },
+};
 
 /**
  * POST /api/backup/restore
@@ -19,7 +38,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { backup, restore_mode = 'replace_all', selected_modules } = body;
-    const userId = getUserIdFromRequest(request, body);
+    const userId = getUserIdFromRequest(request);
 
     if (!userId) {
       return NextResponse.json(
@@ -28,13 +47,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    try {
-      await authorize(userId, 'settings', 'create');
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
-      }
-      throw error;
+    if (!['replace_all', 'merge_smart', 'selective'].includes(restore_mode)) {
+      return NextResponse.json({ error: 'Invalid restore_mode' }, { status: 400 });
     }
 
     // Validate backup file
@@ -52,7 +66,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const businessId = backup.business_id;
+    // A backup can only be restored into the business the user is signed in to.
+    const tenant = requireTenantBusinessId(request, backup.business_id);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
+
+    try {
+      await authorize(userId, 'settings', 'create', { businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
+    }
 
     // Verify business exists
     const business = await db.queryOne(`
@@ -190,32 +216,77 @@ export async function POST(request: NextRequest) {
     // Helper function to restore table data
     const restoreTable = async (tableName: string, records: any[], conflictColumns: string[] = ['id']) => {
       if (!client) throw new Error('Database client not initialized');
-      if (!records || records.length === 0) {
+      if (!Array.isArray(records) || records.length === 0) {
+        stats[tableName] = 0;
+        return;
+      }
+
+      const colRes = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = $1`,
+        [tableName]
+      );
+      const tableColumns = new Set(colRes.rows.map((r) => r.column_name));
+      if (tableColumns.size === 0) {
+        stats[tableName] = 0;
+        return;
+      }
+      const hasBusinessId = tableColumns.has('business_id');
+      const parent = RESTORE_PARENT_SCOPE[tableName];
+      if (!hasBusinessId && (!parent || !tableColumns.has(parent.column))) {
+        // Cannot prove tenant ownership for this table; skip rather than risk cross-tenant writes.
         stats[tableName] = 0;
         return;
       }
 
       let insertedCount = 0;
-      
-      for (const record of records) {
+      const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
+
+      for (const raw of records) {
+        if (!raw || typeof raw !== 'object') continue;
+        const record: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          if (tableColumns.has(k)) record[k] = v;
+        }
+        if (hasBusinessId) {
+          if (record.business_id != null && record.business_id !== businessId) {
+            throw new Error(`Backup row in ${tableName} belongs to another business`);
+          }
+          record.business_id = businessId;
+        } else if (parent) {
+          const parentId = record[parent.column];
+          if (parentId == null) continue;
+          const owner = await client.query(
+            `SELECT 1 FROM ${parent.table} WHERE id = $1 AND business_id = $2`,
+            [parentId, businessId]
+          );
+          if (owner.rowCount === 0) {
+            throw new Error(`Backup row in ${tableName} references a record outside this business`);
+          }
+        }
+
         const columns = Object.keys(record);
+        if (columns.length === 0) continue;
         const values = Object.values(record);
         const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-        
-        const conflictAction = restore_mode === 'merge_smart'
-          ? `ON CONFLICT (${conflictColumns.join(', ')}) DO UPDATE SET ${columns.map(col => `${col} = EXCLUDED.${col}`).join(', ')}`
-          : `ON CONFLICT (${conflictColumns.join(', ')}) DO NOTHING`;
-        
-        const query = `
-          INSERT INTO ${tableName} (${columns.join(', ')})
-          VALUES (${placeholders})
-          ${conflictAction}
-        `;
-        
-        await client.query(query, values);
-        insertedCount++;
+        const conflict = conflictColumns.filter((c) => tableColumns.has(c)).map(q).join(', ');
+
+        let conflictAction = '';
+        if (conflict) {
+          conflictAction =
+            restore_mode === 'merge_smart' && hasBusinessId
+              ? `ON CONFLICT (${conflict}) DO UPDATE SET ${columns.map((col) => `${q(col)} = EXCLUDED.${q(col)}`).join(', ')}
+                 WHERE ${q(tableName)}.business_id = EXCLUDED.business_id`
+              : `ON CONFLICT (${conflict}) DO NOTHING`;
+        }
+
+        const res = await client.query(
+          `INSERT INTO ${q(tableName)} (${columns.map(q).join(', ')}) VALUES (${placeholders}) ${conflictAction}`,
+          values
+        );
+        insertedCount += res.rowCount || 0;
       }
-      
+
       stats[tableName] = insertedCount;
     };
 

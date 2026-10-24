@@ -106,8 +106,14 @@ export async function GET(request: NextRequest) {
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     if (branchIdParam) params.branch_id = branchIdParam;
+    const { accountOutstandingStoreOrders } = await import('@/lib/store/fulfill-paid-order');
+    const postedStoreSales = await accountOutstandingStoreOrders(businessId, userId).catch((err) => {
+      console.error('[store invoice]', err);
+      return 0;
+    });
+
     const cacheKey = getCacheKey('/api/dashboard/overview', params);
-    const cached = getCached(cacheKey);
+    const cached = postedStoreSales > 0 ? null : getCached(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
     }
@@ -221,6 +227,7 @@ export async function GET(request: NextRequest) {
          FROM payments
          WHERE business_id = $1
            AND deleted_at IS NULL
+           AND status = 'active'
            AND type = 'receivable'
            ${collectionDateFilter}
            ${collectionBranchFilter}`,
@@ -369,7 +376,9 @@ export async function GET(request: NextRequest) {
             0
           ) as current_stock,
           i.min_stock,
-          i.unit
+          i.unit,
+          i.pack_size,
+          i.pack_unit
         FROM items i
         WHERE i.business_id = $1
           AND i.is_active = true
@@ -421,7 +430,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const [recentInvoices, lowStockItems, overdueInvoices, dueTomorrow, dueIn3Days, draftCountRow] =
+    const [recentInvoices, lowStockItems, lowStockCountRow, overdueInvoices, dueTomorrow, dueIn3Days, draftCountRow] =
       await Promise.all([
       queryRows(
         `SELECT i.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone
@@ -435,6 +444,10 @@ export async function GET(request: NextRequest) {
         recentInvoicesParams
       ),
       queryRows(lowStockItemsSql, lowStockItemsParams),
+      queryOne<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM (${lowStockItemsSql.replace(/\s+ORDER BY[\s\S]*$/i, '')}) low_stock`,
+        lowStockItemsParams
+      ),
       queryOne<{ count: number; total_amount: number }>(
         `SELECT 
           COUNT(*) as count,
@@ -503,6 +516,7 @@ export async function GET(request: NextRequest) {
       recentInvoices,
       draftInvoicesCount,
       lowStockItems,
+      lowStockCount: Number(lowStockCountRow?.c ?? lowStockItems.length),
       invoiceAlerts: {
         overdue: {
           count: Number(overdueInvoices?.count || 0),

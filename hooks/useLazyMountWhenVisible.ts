@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Defer mounting heavy children until the placeholder enters (or nears) the viewport.
  * Reduces idle work for below-the-fold dashboard charts/widgets.
  */
 export function useLazyMountWhenVisible(rootMargin = '120px') {
-  const ref = useRef<HTMLDivElement>(null);
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (mounted) return;
-    const el = ref.current;
-    if (!el) return;
+    if (mounted || !node) return;
 
     if (typeof IntersectionObserver === 'undefined') {
       setMounted(true);
@@ -29,9 +27,9 @@ export function useLazyMountWhenVisible(rootMargin = '120px') {
       { rootMargin }
     );
 
-    observer.observe(el);
+    observer.observe(node);
     return () => observer.disconnect();
-  }, [mounted, rootMargin]);
+  }, [mounted, node, rootMargin]);
 
-  return { ref, mounted };
+  return { ref: setNode, mounted };
 }

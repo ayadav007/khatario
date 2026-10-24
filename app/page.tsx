@@ -1,117 +1,49 @@
-'use client';
+import type { Metadata } from 'next';
+import { LandingPage } from '@/components/marketing/landing/LandingPage';
+import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
+import { marketingRobots, resolveCanonical } from '@/lib/marketing-builder/seo';
+import { isSafeImageSrc } from '@/lib/marketing-builder/safe-url';
+import { loadPricingCatalog } from '@/lib/subscription/pricing-catalog';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { isCapacitorNative } from '@/lib/capacitor/platform';
-import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
-import { LandingFinalCta } from '@/components/marketing/landing/LandingFinalCta';
-import { LandingFooter } from '@/components/marketing/landing/LandingFooter';
-import { LandingHero } from '@/components/marketing/landing/LandingHero';
-import { LandingKeyFeatures } from '@/components/marketing/landing/LandingKeyFeatures';
-import { LandingComparison } from '@/components/marketing/landing/LandingComparison';
-import { LandingPricing, type LandingPricingPlan } from '@/components/marketing/landing/LandingPricing';
-import { LandingProblemSolution } from '@/components/marketing/landing/LandingProblemSolution';
-import { LandingScenarios } from '@/components/marketing/landing/LandingScenarios';
-import { LandingConnectedSupply } from '@/components/marketing/landing/LandingConnectedSupply';
-import { LandingSocialProof } from '@/components/marketing/landing/LandingSocialProof';
-import { LandingTestimonials } from '@/components/marketing/landing/LandingTestimonials';
-import { LandingTrustStrip } from '@/components/marketing/landing/LandingTrustStrip';
-import { LandingWalkthrough } from '@/components/marketing/landing/LandingWalkthrough';
-import { LandingWhoItsFor } from '@/components/marketing/landing/LandingWhoItsFor';
-import { LandingScrollTrialModal } from '@/components/marketing/landing/LandingScrollTrialModal';
-import { LandingProductPicker } from '@/components/marketing/landing/LandingProductPicker';
-import { LandingScrollProgress } from '@/components/marketing/landing/LandingScrollProgress';
-import { LandingMobileCta } from '@/components/marketing/landing/LandingMobileCta';
-import {
-  LandingProductProvider,
-  readProductLineFromSearchParam,
-} from '@/components/marketing/landing/LandingProductContext';
+export const revalidate = 300;
 
-function LandingPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
-  const [isNativeApp] = useState(() => isCapacitorNative());
-  const [plans, setPlans] = useState<LandingPricingPlan[]>([]);
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [loading, setLoading] = useState(true);
-  const initialProductLine = readProductLineFromSearchParam(searchParams.get('product'));
+const TITLE = 'Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops';
+const DESCRIPTION =
+  'Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.';
 
-  useEffect(() => {
-    if (!isNativeApp || authLoading) return;
-    router.replace(user ? '/dashboard' : '/login');
-  }, [isNativeApp, authLoading, user, router]);
-
-  useEffect(() => {
-    if (isNativeApp) return;
-    void fetchPlans();
-  }, [isNativeApp]);
-
-  async function fetchPlans() {
-    try {
-      const response = await fetch('/api/admin/subscriptions/plans');
-      const data = await response.json();
-      setPlans(data.plans || []);
-    } catch (error) {
-      console.error('Error fetching plans:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (isNativeApp) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" aria-label="Loading" />
-      </div>
-    );
-  }
-
-  return (
-    <LandingProductProvider initialProductLine={initialProductLine}>
-      <div className="min-h-screen bg-white pb-20 md:pb-0">
-        <LandingScrollProgress />
-        <MarketingSiteHeader />
-
-        <LandingProductPicker />
-        <LandingHero />
-        <LandingSocialProof />
-        <LandingConnectedSupply />
-        <LandingProblemSolution />
-        <LandingWhoItsFor />
-        <LandingScenarios />
-        <LandingWalkthrough />
-        <LandingKeyFeatures />
-        <LandingComparison />
-        <LandingTestimonials />
-        <LandingTrustStrip />
-        <LandingPricing
-          plans={plans}
-          loading={loading}
-          billingCycle={billingCycle}
-          onBillingCycle={setBillingCycle}
-        />
-        <LandingFinalCta />
-        <LandingFooter />
-        <LandingScrollTrialModal />
-        <LandingMobileCta />
-      </div>
-    </LandingProductProvider>
-  );
+function rootText(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-export default function LandingPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-white">
-          <Loader2 className="h-8 w-8 animate-spin text-primary-600" aria-label="Loading" />
-        </div>
-      }
-    >
-      <LandingPageContent />
-    </Suspense>
-  );
+export async function generateMetadata(): Promise<Metadata> {
+  const doc = await getPublishedMarketingDocument('home');
+  const props = (doc?.root?.props ?? {}) as Record<string, unknown>;
+  const title = rootText(props.title, TITLE);
+  const description = rootText(props.description, DESCRIPTION);
+  const ogTitle = rootText(props.ogTitle, title);
+  const ogDescription = rootText(props.ogDescription, description);
+  const ogImage = typeof props.ogImage === 'string' && isSafeImageSrc(props.ogImage) ? props.ogImage : null;
+  const images = ogImage ? [{ url: ogImage }] : undefined;
+  const canonical = resolveCanonical(props.canonical);
+  const hidden = marketingRobots(props.robots) === 'noindex';
+
+  return {
+    title: { absolute: title },
+    description,
+    ...(canonical ? { alternates: { canonical } } : {}),
+    ...(hidden ? { robots: { index: false, follow: false } } : {}),
+    openGraph: { title: ogTitle, description: ogDescription, type: 'website', siteName: 'Khatario', ...(images ? { images } : {}) },
+    twitter: { card: 'summary_large_image', title: ogTitle, description: ogDescription, ...(images ? { images: images.map((i) => i.url) } : {}) },
+  };
+}
+
+export default async function Page() {
+  const [document, pricingCatalog] = await Promise.all([
+    getPublishedMarketingDocument('home'),
+    loadPricingCatalog().catch((error) => {
+      console.error('Home page pricing failed to load:', error);
+      return null;
+    }),
+  ]);
+  return <LandingPage document={document} pricingCatalog={pricingCatalog} />;
 }

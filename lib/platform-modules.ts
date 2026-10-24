@@ -68,6 +68,8 @@ export const NAV_SECTION_MODULE: Record<string, PlatformModule | null> = {
   Reports: 'billing',
   Supplier: 'billing',
   'HR & Employees': 'hr',
+  Staff: 'hr',
+  Connect: 'connect',
   Tools: null,
   More: null,
   'Settings & data': null,
@@ -93,7 +95,6 @@ export const SETTINGS_HUB_LINK_MODULE: Partial<Record<string, PlatformModule>> =
   '/settings/period-locks': 'billing',
   '/settings/user-warehouses': 'billing',
   '/settings/payments': 'billing',
-  '/settings/whatsapp': 'connect',
   '/settings/integrations?category=crm': 'crm',
   '/items/categories': 'billing',
 };

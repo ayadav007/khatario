@@ -80,7 +80,7 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
  * Create a new account group
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_chart', parseJsonBody: true },
   async (ctx) => {
     try {
       const body = ctx.body as Record<string, unknown>;

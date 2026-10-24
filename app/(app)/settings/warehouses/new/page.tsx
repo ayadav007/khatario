@@ -2,22 +2,36 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
-import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
-import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
-import { MapPin } from 'lucide-react';
 import { INDIAN_STATES } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
+
+function WarehouseSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
+}
 
 export default function NewLocationPage() {
   const router = useRouter();
@@ -207,15 +221,15 @@ export default function NewLocationPage() {
   };
 
   return (
-      <SettingsPageShell
-        title="Add New Warehouse"
-        description="Enter warehouse details"
-        icon={MapPin}
-      >
-        <FormCard>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="Add new warehouse"
+          description="Name, address, and type for stock tracking and transfers."
+        />
+
         <form onSubmit={handleSubmit}>
-        <div className="form-page-shell">
-          <FormSection
+        <div className="space-y-6">
+          <WarehouseSection
             title="Basic information"
             description="Name and optional code for reporting and transfers."
           >
@@ -234,9 +248,9 @@ export default function NewLocationPage() {
                 placeholder="e.g., WH-001"
               />
             </div>
-          </FormSection>
+          </WarehouseSection>
 
-          <FormSection
+          <WarehouseSection
             title="Address"
             description="Physical or mailing location for this warehouse."
           >
@@ -291,9 +305,9 @@ export default function NewLocationPage() {
                 placeholder="Country"
               />
             </div>
-          </FormSection>
+          </WarehouseSection>
 
-          <FormSection
+          <WarehouseSection
             title="Warehouse type"
             description="How stock at this location behaves in purchase and sales flows."
           >
@@ -312,29 +326,23 @@ export default function NewLocationPage() {
                 </select>
               </div>
             </div>
-          </FormSection>
+          </WarehouseSection>
         </div>
 
-          <SettingsFloatingSaveBar align="between">
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
             <Button
               type="button"
               variant="secondary"
               onClick={() => router.push('/locations')}
               disabled={saving}
-              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={saving}
-              className="flex-1 sm:flex-none"
-            >
+            <Button type="submit" disabled={saving}>
               {saving ? 'Creating...' : 'Create Warehouse'}
             </Button>
-          </SettingsFloatingSaveBar>
+          </div>
         </form>
-        </FormCard>
 
         {/* Migration Prompt Modal */}
         {showMigrationPrompt && (
@@ -378,7 +386,7 @@ export default function NewLocationPage() {
             }}
           />
         )}
-      </SettingsPageShell>
+      </div>
   );
 }
 

@@ -97,7 +97,7 @@ export default function PeriodLocksPage() {
           period_end: formData.period_end,
           is_locked: formData.is_locked,
           notes: formData.notes || null,
-          created_by_user_id: user?.id, // Required for authorization
+          user_id: user?.id,
         }),
       });
 
@@ -130,7 +130,7 @@ export default function PeriodLocksPage() {
     }
 
     try {
-      const response = await fetch(`/api/period-locks?id=${lockId}`, {
+      const response = await fetch(`/api/period-locks?id=${lockId}&business_id=${business?.id}&user_id=${user?.id}`, {
         method: 'DELETE',
       });
 

@@ -1,0 +1,5861 @@
+[
+  {
+    "file": "app/(app)/accounts/new/page.tsx",
+    "route": "/accounts/new",
+    "group": "(app)",
+    "lines": 399,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 29,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/accounts/page.tsx",
+    "route": "/accounts",
+    "group": "(app)",
+    "lines": 583,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 70,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/accounts/[id]/edit/page.tsx",
+    "route": "/accounts/[id]/edit",
+    "group": "(app)",
+    "lines": 340,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 23,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/accounts/[id]/page.tsx",
+    "route": "/accounts/[id]",
+    "group": "(app)",
+    "lines": 269,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/accounts/[id]/reconciliation/page.tsx",
+    "route": "/accounts/[id]/reconciliation",
+    "group": "(app)",
+    "lines": 206,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/activity-logs/page.tsx",
+    "route": "/activity-logs",
+    "group": "(app)",
+    "lines": 191,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 24,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/advances/page.tsx",
+    "route": "/advances",
+    "group": "(app)",
+    "lines": 480,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 53,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/bank/import/page.tsx",
+    "route": "/bank/import",
+    "group": "(app)",
+    "lines": 307,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 45,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/bank/reconciliation/page.tsx",
+    "route": "/bank/reconciliation",
+    "group": "(app)",
+    "lines": 1143,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 13,
+    "usesSharedButton": false,
+    "classCount": 148,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/connect/whatsapp/page.tsx",
+    "route": "/connect/whatsapp",
+    "group": "(app)",
+    "lines": 6,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/contra/page.tsx",
+    "route": "/contra",
+    "group": "(app)",
+    "lines": 226,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 29,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/credit-approvals/page.tsx",
+    "route": "/credit-approvals",
+    "group": "(app)",
+    "lines": 336,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 44,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/credit-notes/new/page.tsx",
+    "route": "/credit-notes/new",
+    "group": "(app)",
+    "lines": 658,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 57,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/credit-notes/page.tsx",
+    "route": "/credit-notes",
+    "group": "(app)",
+    "lines": 316,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 57,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/credit-notes/[id]/page.tsx",
+    "route": "/credit-notes/[id]",
+    "group": "(app)",
+    "lines": 21,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/customers/new/page.tsx",
+    "route": "/customers/new",
+    "group": "(app)",
+    "lines": 672,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 41,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/customers/page.tsx",
+    "route": "/customers",
+    "group": "(app)",
+    "lines": 805,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/MobileList",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 12,
+    "usesSharedButton": true,
+    "classCount": 112,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/customers/[id]/edit/page.tsx",
+    "route": "/customers/[id]/edit",
+    "group": "(app)",
+    "lines": 404,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 23,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/customers/[id]/page.tsx",
+    "route": "/customers/[id]",
+    "group": "(app)",
+    "lines": 697,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 76,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/customers/[id]/statement/page.tsx",
+    "route": "/customers/[id]/statement",
+    "group": "(app)",
+    "lines": 366,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 68,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/dashboard/page.tsx",
+    "route": "/dashboard",
+    "group": "(app)",
+    "lines": 540,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 16,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debit-notes/new/page.tsx",
+    "route": "/debit-notes/new",
+    "group": "(app)",
+    "lines": 319,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 23,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debit-notes/page.tsx",
+    "route": "/debit-notes",
+    "group": "(app)",
+    "lines": 185,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 52,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debit-notes/[id]/page.tsx",
+    "route": "/debit-notes/[id]",
+    "group": "(app)",
+    "lines": 21,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debug/dashboard-refresh/page.tsx",
+    "route": "/debug/dashboard-refresh",
+    "group": "(app)",
+    "lines": 94,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debug/sqlite/page.tsx",
+    "route": "/debug/sqlite",
+    "group": "(app)",
+    "lines": 143,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 17,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/debug/webview/page.tsx",
+    "route": "/debug/webview",
+    "group": "(app)",
+    "lines": 70,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/delivery-challans/edit/[id]/page.tsx",
+    "route": "/delivery-challans/edit/[id]",
+    "group": "(app)",
+    "lines": 12,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/delivery-challans/new/page.tsx",
+    "route": "/delivery-challans/new",
+    "group": "(app)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/delivery-challans/page.tsx",
+    "route": "/delivery-challans",
+    "group": "(app)",
+    "lines": 245,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": false,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/delivery-challans/[id]/page.tsx",
+    "route": "/delivery-challans/[id]",
+    "group": "(app)",
+    "lines": 101,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/attendance/mark/advanced/page.tsx",
+    "route": "/employees/attendance/mark/advanced",
+    "group": "(app)",
+    "lines": 276,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 16,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/attendance/mark/page.tsx",
+    "route": "/employees/attendance/mark",
+    "group": "(app)",
+    "lines": 30,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/attendance/page.tsx",
+    "route": "/employees/attendance",
+    "group": "(app)",
+    "lines": 370,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 50,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/commissions/page.tsx",
+    "route": "/employees/commissions",
+    "group": "(app)",
+    "lines": 386,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 65,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/expenses/new/page.tsx",
+    "route": "/employees/expenses/new",
+    "group": "(app)",
+    "lines": 415,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/expenses/page.tsx",
+    "route": "/employees/expenses",
+    "group": "(app)",
+    "lines": 494,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 70,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/leaves/calendar/page.tsx",
+    "route": "/employees/leaves/calendar",
+    "group": "(app)",
+    "lines": 408,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 44,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/leaves/new/page.tsx",
+    "route": "/employees/leaves/new",
+    "group": "(app)",
+    "lines": 380,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 26,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/leaves/page.tsx",
+    "route": "/employees/leaves",
+    "group": "(app)",
+    "lines": 356,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 45,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/manager/approvals/page.tsx",
+    "route": "/employees/manager/approvals",
+    "group": "(app)",
+    "lines": 287,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/manager/attendance/page.tsx",
+    "route": "/employees/manager/attendance",
+    "group": "(app)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/manager/page.tsx",
+    "route": "/employees/manager",
+    "group": "(app)",
+    "lines": 143,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 30,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/manager/team/page.tsx",
+    "route": "/employees/manager/team",
+    "group": "(app)",
+    "lines": 92,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 10,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/new/page.tsx",
+    "route": "/employees/new",
+    "group": "(app)",
+    "lines": 539,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 21,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/org-chart/page.tsx",
+    "route": "/employees/org-chart",
+    "group": "(app)",
+    "lines": 114,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/page.tsx",
+    "route": "/employees",
+    "group": "(app)",
+    "lines": 656,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast",
+      "@/components/ui/Switch"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 112,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/performance/page.tsx",
+    "route": "/employees/performance",
+    "group": "(app)",
+    "lines": 273,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/recruitment/candidates/[id]/page.tsx",
+    "route": "/employees/recruitment/candidates/[id]",
+    "group": "(app)",
+    "lines": 587,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 47,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/recruitment/candidates/[id]/tasks/[taskId]/page.tsx",
+    "route": "/employees/recruitment/candidates/[id]/tasks/[taskId]",
+    "group": "(app)",
+    "lines": 182,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 14,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/recruitment/jobs/new/page.tsx",
+    "route": "/employees/recruitment/jobs/new",
+    "group": "(app)",
+    "lines": 144,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 15,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/recruitment/jobs/[id]/page.tsx",
+    "route": "/employees/recruitment/jobs/[id]",
+    "group": "(app)",
+    "lines": 157,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 18,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/recruitment/page.tsx",
+    "route": "/employees/recruitment",
+    "group": "(app)",
+    "lines": 178,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 30,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/salary/advances/new/page.tsx",
+    "route": "/employees/salary/advances/new",
+    "group": "(app)",
+    "lines": 223,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/salary/advances/page.tsx",
+    "route": "/employees/salary/advances",
+    "group": "(app)",
+    "lines": 235,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/salary/payments/new/page.tsx",
+    "route": "/employees/salary/payments/new",
+    "group": "(app)",
+    "lines": 837,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 46,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/salary/payments/page.tsx",
+    "route": "/employees/salary/payments",
+    "group": "(app)",
+    "lines": 227,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 40,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/salary/payslips/[id]/page.tsx",
+    "route": "/employees/salary/payslips/[id]",
+    "group": "(app)",
+    "lines": 95,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/targets/page.tsx",
+    "route": "/employees/targets",
+    "group": "(app)",
+    "lines": 395,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 44,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/tasks/new/page.tsx",
+    "route": "/employees/tasks/new",
+    "group": "(app)",
+    "lines": 200,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/tasks/page.tsx",
+    "route": "/employees/tasks",
+    "group": "(app)",
+    "lines": 217,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 29,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/[id]/edit/page.tsx",
+    "route": "/employees/[id]/edit",
+    "group": "(app)",
+    "lines": 645,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 33,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/employees/[id]/page.tsx",
+    "route": "/employees/[id]",
+    "group": "(app)",
+    "lines": 798,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": true,
+    "classCount": 158,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/estimates/page.tsx",
+    "route": "/estimates",
+    "group": "(app)",
+    "lines": 894,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/PageToolbar",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 14,
+    "usesSharedButton": false,
+    "classCount": 170,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/expenses/categories/page.tsx",
+    "route": "/expenses/categories",
+    "group": "(app)",
+    "lines": 325,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 34,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/expenses/new/page.tsx",
+    "route": "/expenses/new",
+    "group": "(app)",
+    "lines": 7,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/expenses/page.tsx",
+    "route": "/expenses",
+    "group": "(app)",
+    "lines": 691,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 7,
+    "usesSharedButton": false,
+    "classCount": 97,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/fixed-assets/page.tsx",
+    "route": "/fixed-assets",
+    "group": "(app)",
+    "lines": 608,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 83,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/dashboard/page.tsx",
+    "route": "/hr/dashboard",
+    "group": "(app)",
+    "lines": 101,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 5,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/documents/page.tsx",
+    "route": "/hr/documents",
+    "group": "(app)",
+    "lines": 223,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 16,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/engagement/page.tsx",
+    "route": "/hr/engagement",
+    "group": "(app)",
+    "lines": 348,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 36,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/exits/page.tsx",
+    "route": "/hr/exits",
+    "group": "(app)",
+    "lines": 348,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 31,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/leaves/import-balances/page.tsx",
+    "route": "/hr/leaves/import-balances",
+    "group": "(app)",
+    "lines": 109,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 12,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/leaves/year-end/page.tsx",
+    "route": "/hr/leaves/year-end",
+    "group": "(app)",
+    "lines": 141,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 27,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/reports/page.tsx",
+    "route": "/hr/reports",
+    "group": "(app)",
+    "lines": 219,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 14,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/shifts/bulk-assign/page.tsx",
+    "route": "/hr/shifts/bulk-assign",
+    "group": "(app)",
+    "lines": 157,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/hr/shifts/roster/page.tsx",
+    "route": "/hr/shifts/roster",
+    "group": "(app)",
+    "lines": 98,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 10,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/inventory-adjustments/new/page.tsx",
+    "route": "/inventory-adjustments/new",
+    "group": "(app)",
+    "lines": 856,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/ItemAutocomplete"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 113,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/inventory-adjustments/page.tsx",
+    "route": "/inventory-adjustments",
+    "group": "(app)",
+    "lines": 396,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 62,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/inventory-adjustments/[id]/page.tsx",
+    "route": "/inventory-adjustments/[id]",
+    "group": "(app)",
+    "lines": 352,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 81,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/mock/page.tsx",
+    "route": "/invoices/mock",
+    "group": "(app)",
+    "lines": 580,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 47,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/invoices/new/page.tsx",
+    "route": "/invoices/new",
+    "group": "(app)",
+    "lines": 4298,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/ContinuousBarcodeScanner",
+      "@/components/ui/StatusBadge"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 19,
+    "usesSharedButton": true,
+    "classCount": 322,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/page.tsx",
+    "route": "/invoices",
+    "group": "(app)",
+    "lines": 702,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip",
+      "@/components/ui/StatusBadge",
+      "@/components/ui/SyncStatusBadge",
+      "@/components/ui/GSTStatusIndicator"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/MobileList",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 10,
+    "usesSharedButton": true,
+    "classCount": 86,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/recurring/page.tsx",
+    "route": "/invoices/recurring",
+    "group": "(app)",
+    "lines": 188,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 48,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/whatsapp/page.tsx",
+    "route": "/invoices/whatsapp",
+    "group": "(app)",
+    "lines": 189,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 50,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/[id]/edit/page.tsx",
+    "route": "/invoices/[id]/edit",
+    "group": "(app)",
+    "lines": 47,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/[id]/page.tsx",
+    "route": "/invoices/[id]",
+    "group": "(app)",
+    "lines": 783,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 97,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/invoices/[id]/view/page.tsx",
+    "route": "/invoices/[id]/view",
+    "group": "(app)",
+    "lines": 304,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 42,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/items/barcodes/page.tsx",
+    "route": "/items/barcodes",
+    "group": "(app)",
+    "lines": 630,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 64,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/items/categories/page.tsx",
+    "route": "/items/categories",
+    "group": "(app)",
+    "lines": 244,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 28,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/items/new/page.tsx",
+    "route": "/items/new",
+    "group": "(app)",
+    "lines": 2190,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Switch",
+      "@/components/ui/AnnotatedFormSection",
+      "@/components/ui/Button",
+      "@/components/ui/HSNLookup",
+      "@/components/ui/BarcodeScanner"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 12,
+    "usesSharedButton": true,
+    "classCount": 186,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/items/page.tsx",
+    "route": "/items",
+    "group": "(app)",
+    "lines": 1092,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/PageToolbar",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 11,
+    "usesSharedButton": true,
+    "classCount": 141,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/items/[id]/page.tsx",
+    "route": "/items/[id]",
+    "group": "(app)",
+    "lines": 609,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 128,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/journal-entries/new/page.tsx",
+    "route": "/journal-entries/new",
+    "group": "(app)",
+    "lines": 691,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 56,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/journal-entries/page.tsx",
+    "route": "/journal-entries",
+    "group": "(app)",
+    "lines": 324,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/journal-entries/templates/page.tsx",
+    "route": "/journal-entries/templates",
+    "group": "(app)",
+    "lines": 190,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 25,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/journal-entries/[id]/page.tsx",
+    "route": "/journal-entries/[id]",
+    "group": "(app)",
+    "lines": 356,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 58,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/ledger/account/[id]/page.tsx",
+    "route": "/ledger/account/[id]",
+    "group": "(app)",
+    "lines": 308,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 50,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/ledger/page.tsx",
+    "route": "/ledger",
+    "group": "(app)",
+    "lines": 250,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 39,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/more/page.tsx",
+    "route": "/more",
+    "group": "(app)",
+    "lines": 185,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/MobileAccountCard",
+      "@/components/layout/MobileList"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/notifications/page.tsx",
+    "route": "/notifications",
+    "group": "(app)",
+    "lines": 263,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/opening-balances/setup/page.tsx",
+    "route": "/opening-balances/setup",
+    "group": "(app)",
+    "lines": 531,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 64,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/orders/page.tsx",
+    "route": "/orders",
+    "group": "(app)",
+    "lines": 360,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 10,
+    "usesSharedButton": false,
+    "classCount": 68,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/payments/in/page.tsx",
+    "route": "/payments/in",
+    "group": "(app)",
+    "lines": 772,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/SplitPaneLayout",
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 94,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/payments/reconciliation/page.tsx",
+    "route": "/payments/reconciliation",
+    "group": "(app)",
+    "lines": 444,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/StatusBadge"
+    ],
+    "layoutImports": [
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 67,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/pricing/party-item/page.tsx",
+    "route": "/pricing/party-item",
+    "group": "(app)",
+    "lines": 417,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 31,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/provisions/page.tsx",
+    "route": "/provisions",
+    "group": "(app)",
+    "lines": 533,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 61,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-orders/new/page.tsx",
+    "route": "/purchase-orders/new",
+    "group": "(app)",
+    "lines": 755,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/ItemAutocomplete"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 97,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-orders/page.tsx",
+    "route": "/purchase-orders",
+    "group": "(app)",
+    "lines": 487,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 9,
+    "usesSharedButton": true,
+    "classCount": 95,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-orders/[id]/page.tsx",
+    "route": "/purchase-orders/[id]",
+    "group": "(app)",
+    "lines": 27,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-returns/new/page.tsx",
+    "route": "/purchase-returns/new",
+    "group": "(app)",
+    "lines": 738,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/AnnotatedFormSection"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-returns/page.tsx",
+    "route": "/purchase-returns",
+    "group": "(app)",
+    "lines": 284,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 59,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchase-returns/[id]/page.tsx",
+    "route": "/purchase-returns/[id]",
+    "group": "(app)",
+    "lines": 523,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 73,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/categories/page.tsx",
+    "route": "/purchases/categories",
+    "group": "(app)",
+    "lines": 26,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/new/page.tsx",
+    "route": "/purchases/new",
+    "group": "(app)",
+    "lines": 2304,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/AnnotatedFormSection",
+      "@/components/ui/Input",
+      "@/components/ui/NumericBlurField",
+      "@/components/ui/Button",
+      "@/components/ui/ItemAutocomplete",
+      "@/components/ui/StatusBadge"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 7,
+    "usesSharedButton": true,
+    "classCount": 189,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/new/select-item/page.tsx",
+    "route": "/purchases/new/select-item",
+    "group": "(app)",
+    "lines": 56,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/page.tsx",
+    "route": "/purchases",
+    "group": "(app)",
+    "lines": 842,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/StatusBadge",
+      "@/components/ui/GSTStatusIndicator",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 15,
+    "usesSharedButton": true,
+    "classCount": 135,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/requests/page.tsx",
+    "route": "/purchases/requests",
+    "group": "(app)",
+    "lines": 1207,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 109,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/scan-record/page.tsx",
+    "route": "/purchases/scan-record",
+    "group": "(app)",
+    "lines": 53,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 3,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/purchases/[id]/page.tsx",
+    "route": "/purchases/[id]",
+    "group": "(app)",
+    "lines": 286,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 50,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/recurring-invoices/page.tsx",
+    "route": "/recurring-invoices",
+    "group": "(app)",
+    "lines": 352,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 42,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/aging/payables/page.tsx",
+    "route": "/reports/aging/payables",
+    "group": "(app)",
+    "lines": 14,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/aging/receivables/page.tsx",
+    "route": "/reports/aging/receivables",
+    "group": "(app)",
+    "lines": 14,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/balance-sheet/page.tsx",
+    "route": "/reports/balance-sheet",
+    "group": "(app)",
+    "lines": 374,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 40,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/builder/page.tsx",
+    "route": "/reports/builder",
+    "group": "(app)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/cash-flow/page.tsx",
+    "route": "/reports/cash-flow",
+    "group": "(app)",
+    "lines": 406,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 68,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/credit-risk/page.tsx",
+    "route": "/reports/credit-risk",
+    "group": "(app)",
+    "lines": 361,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 59,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/deleted/page.tsx",
+    "route": "/reports/deleted",
+    "group": "(app)",
+    "lines": 4,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/cash-ledger/page.tsx",
+    "route": "/reports/gst/cash-ledger",
+    "group": "(app)",
+    "lines": 412,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 68,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/compliance/page.tsx",
+    "route": "/reports/gst/compliance",
+    "group": "(app)",
+    "lines": 418,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 90,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/gstr1/page.tsx",
+    "route": "/reports/gst/gstr1",
+    "group": "(app)",
+    "lines": 875,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 169,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/gstr2b/page.tsx",
+    "route": "/reports/gst/gstr2b",
+    "group": "(app)",
+    "lines": 347,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 36,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/gstr2b-reconciliation/page.tsx",
+    "route": "/reports/gst/gstr2b-reconciliation",
+    "group": "(app)",
+    "lines": 653,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 8,
+    "usesSharedButton": false,
+    "classCount": 81,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/gstr3b/page.tsx",
+    "route": "/reports/gst/gstr3b",
+    "group": "(app)",
+    "lines": 507,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 118,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/gstr9/page.tsx",
+    "route": "/reports/gst/gstr9",
+    "group": "(app)",
+    "lines": 798,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 133,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/gst/reconciliation/page.tsx",
+    "route": "/reports/gst/reconciliation",
+    "group": "(app)",
+    "lines": 854,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 121,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/inter-branch-reconciliation/page.tsx",
+    "route": "/reports/inter-branch-reconciliation",
+    "group": "(app)",
+    "lines": 301,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 70,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/label-print-log/page.tsx",
+    "route": "/reports/label-print-log",
+    "group": "(app)",
+    "lines": 409,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 79,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/reports/page.tsx",
+    "route": "/reports",
+    "group": "(app)",
+    "lines": 364,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 103,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/profit-by-invoice/page.tsx",
+    "route": "/reports/profit-by-invoice",
+    "group": "(app)",
+    "lines": 297,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/profit-loss/page.tsx",
+    "route": "/reports/profit-loss",
+    "group": "(app)",
+    "lines": 578,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileReportHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 55,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/profit-loss/validation/page.tsx",
+    "route": "/reports/profit-loss/validation",
+    "group": "(app)",
+    "lines": 923,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 117,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/purchase/[reportType]/page.tsx",
+    "route": "/reports/purchase/[reportType]",
+    "group": "(app)",
+    "lines": 507,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 31,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/sales/[reportType]/page.tsx",
+    "route": "/reports/sales/[reportType]",
+    "group": "(app)",
+    "lines": 861,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 261,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/stock/closing-stock/page.tsx",
+    "route": "/reports/stock/closing-stock",
+    "group": "(app)",
+    "lines": 924,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 152,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/stock/fifo-lots/page.tsx",
+    "route": "/reports/stock/fifo-lots",
+    "group": "(app)",
+    "lines": 367,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 69,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/stock/summary/page.tsx",
+    "route": "/reports/stock/summary",
+    "group": "(app)",
+    "lines": 765,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 153,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/stock/valuation/page.tsx",
+    "route": "/reports/stock/valuation",
+    "group": "(app)",
+    "lines": 285,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 34,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/reports/trial-balance/page.tsx",
+    "route": "/reports/trial-balance",
+    "group": "(app)",
+    "lines": 363,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 61,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/sales-orders/new/page.tsx",
+    "route": "/sales-orders/new",
+    "group": "(app)",
+    "lines": 1010,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/ItemAutocomplete"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 46,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/sales-orders/page.tsx",
+    "route": "/sales-orders",
+    "group": "(app)",
+    "lines": 320,
+    "uiImports": [
+      "@/components/ui/StatusBadge"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/PageToolbar"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 7,
+    "usesSharedButton": false,
+    "classCount": 61,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/sales-orders/[id]/page.tsx",
+    "route": "/sales-orders/[id]",
+    "group": "(app)",
+    "lines": 397,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 52,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/search/page.tsx",
+    "route": "/search",
+    "group": "(app)",
+    "lines": 287,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 44,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/account-mappings/page.tsx",
+    "route": "/settings/account-mappings",
+    "group": "(app)",
+    "lines": 400,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 45,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/activity/page.tsx",
+    "route": "/settings/activity",
+    "group": "(app)",
+    "lines": 234,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 29,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/ai-agent/page.tsx",
+    "route": "/settings/ai-agent",
+    "group": "(app)",
+    "lines": 6,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/ai-assistant/page.tsx",
+    "route": "/settings/ai-assistant",
+    "group": "(app)",
+    "lines": 6,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/ai-config/page.tsx",
+    "route": "/settings/ai-config",
+    "group": "(app)",
+    "lines": 6,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/attendance-policy/page.tsx",
+    "route": "/settings/attendance-policy",
+    "group": "(app)",
+    "lines": 353,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 32,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/attendance-regularization/page.tsx",
+    "route": "/settings/attendance-regularization",
+    "group": "(app)",
+    "lines": 229,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 14,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/automation/page.tsx",
+    "route": "/settings/automation",
+    "group": "(app)",
+    "lines": 30,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/backup/page.tsx",
+    "route": "/settings/backup",
+    "group": "(app)",
+    "lines": 846,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 17,
+    "usesSharedButton": false,
+    "classCount": 135,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/bluetooth-printer/diagnostics/page.tsx",
+    "route": "/settings/bluetooth-printer/diagnostics",
+    "group": "(app)",
+    "lines": 148,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 17,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/bluetooth-printer/page.tsx",
+    "route": "/settings/bluetooth-printer",
+    "group": "(app)",
+    "lines": 363,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 42,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/branches/new/page.tsx",
+    "route": "/settings/branches/new",
+    "group": "(app)",
+    "lines": 340,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 23,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/branches/page.tsx",
+    "route": "/settings/branches",
+    "group": "(app)",
+    "lines": 330,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 55,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/branches/[id]/edit/page.tsx",
+    "route": "/settings/branches/[id]/edit",
+    "group": "(app)",
+    "lines": 365,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 22,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/business/page.tsx",
+    "route": "/settings/business",
+    "group": "(app)",
+    "lines": 55,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/commission-rules/page.tsx",
+    "route": "/settings/commission-rules",
+    "group": "(app)",
+    "lines": 416,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 41,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/custom-fields/page.tsx",
+    "route": "/settings/custom-fields",
+    "group": "(app)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/departments/page.tsx",
+    "route": "/settings/departments",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/email/page.tsx",
+    "route": "/settings/email",
+    "group": "(app)",
+    "lines": 31,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/employee-portal/page.tsx",
+    "route": "/settings/employee-portal",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/export/page.tsx",
+    "route": "/settings/export",
+    "group": "(app)",
+    "lines": 19,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/features/page.tsx",
+    "route": "/settings/features",
+    "group": "(app)",
+    "lines": 342,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 30,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/financial-years/page.tsx",
+    "route": "/settings/financial-years",
+    "group": "(app)",
+    "lines": 257,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 32,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/gst-config/page.tsx",
+    "route": "/settings/gst-config",
+    "group": "(app)",
+    "lines": 19,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/help/how-to/page.tsx",
+    "route": "/settings/help/how-to",
+    "group": "(app)",
+    "lines": 30,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/help/page.tsx",
+    "route": "/settings/help",
+    "group": "(app)",
+    "lines": 140,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/hiring/page.tsx",
+    "route": "/settings/hiring",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/holiday-lists/page.tsx",
+    "route": "/settings/holiday-lists",
+    "group": "(app)",
+    "lines": 821,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 46,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/holidays/page.tsx",
+    "route": "/settings/holidays",
+    "group": "(app)",
+    "lines": 261,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 32,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/hr-approval/page.tsx",
+    "route": "/settings/hr-approval",
+    "group": "(app)",
+    "lines": 212,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 18,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/hr-employee/page.tsx",
+    "route": "/settings/hr-employee",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/hr-exit/page.tsx",
+    "route": "/settings/hr-exit",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/integrations/page.tsx",
+    "route": "/settings/integrations",
+    "group": "(app)",
+    "lines": 94,
+    "uiImports": [
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/invoice/page.tsx",
+    "route": "/settings/invoice",
+    "group": "(app)",
+    "lines": 19,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/label-templates/new/page.tsx",
+    "route": "/settings/label-templates/new",
+    "group": "(app)",
+    "lines": 40,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/label-templates/page.tsx",
+    "route": "/settings/label-templates",
+    "group": "(app)",
+    "lines": 355,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 32,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/label-templates/[id]/page.tsx",
+    "route": "/settings/label-templates/[id]",
+    "group": "(app)",
+    "lines": 109,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 10,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/leave-plan/page.tsx",
+    "route": "/settings/leave-plan",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/leave-types/page.tsx",
+    "route": "/settings/leave-types",
+    "group": "(app)",
+    "lines": 350,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 46,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/number-series/page.tsx",
+    "route": "/settings/number-series",
+    "group": "(app)",
+    "lines": 433,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/offer-letter/page.tsx",
+    "route": "/settings/offer-letter",
+    "group": "(app)",
+    "lines": 602,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/offline-sync/page.tsx",
+    "route": "/settings/offline-sync",
+    "group": "(app)",
+    "lines": 417,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 54,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/onboarding-templates/page.tsx",
+    "route": "/settings/onboarding-templates",
+    "group": "(app)",
+    "lines": 275,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/online-store/enquiries/page.tsx",
+    "route": "/settings/online-store/enquiries",
+    "group": "(app)",
+    "lines": 266,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/online-store/orders/page.tsx",
+    "route": "/settings/online-store/orders",
+    "group": "(app)",
+    "lines": 721,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/BarcodeScanner"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 96,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/online-store/page.tsx",
+    "route": "/settings/online-store",
+    "group": "(app)",
+    "lines": 877,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 102,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/online-store/studio/page.tsx",
+    "route": "/settings/online-store/studio",
+    "group": "(app)",
+    "lines": 480,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 3,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/ot-policy/page.tsx",
+    "route": "/settings/ot-policy",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/page.tsx",
+    "route": "/settings",
+    "group": "(app)",
+    "lines": 23,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/payments/page.tsx",
+    "route": "/settings/payments",
+    "group": "(app)",
+    "lines": 160,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 14,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/payroll/page.tsx",
+    "route": "/settings/payroll",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/period-locks/page.tsx",
+    "route": "/settings/period-locks",
+    "group": "(app)",
+    "lines": 388,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 5,
+    "usesSharedButton": false,
+    "classCount": 58,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/products/page.tsx",
+    "route": "/settings/products",
+    "group": "(app)",
+    "lines": 294,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 32,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/roles/page.tsx",
+    "route": "/settings/roles",
+    "group": "(app)",
+    "lines": 463,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 53,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/salary-components/page.tsx",
+    "route": "/settings/salary-components",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/shifts/page.tsx",
+    "route": "/settings/shifts",
+    "group": "(app)",
+    "lines": 311,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 34,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/signature/page.tsx",
+    "route": "/settings/signature",
+    "group": "(app)",
+    "lines": 23,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/subscription/page.tsx",
+    "route": "/settings/subscription",
+    "group": "(app)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/suppliers-directory/page.tsx",
+    "route": "/settings/suppliers-directory",
+    "group": "(app)",
+    "lines": 429,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/tax/page.tsx",
+    "route": "/settings/tax",
+    "group": "(app)",
+    "lines": 20,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/templates/customize/page.tsx",
+    "route": "/settings/templates/customize",
+    "group": "(app)",
+    "lines": 964,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 117,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/templates/page.tsx",
+    "route": "/settings/templates",
+    "group": "(app)",
+    "lines": 814,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 8,
+    "usesSharedButton": true,
+    "classCount": 132,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/user-branches/page.tsx",
+    "route": "/settings/user-branches",
+    "group": "(app)",
+    "lines": 394,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 5,
+    "usesSharedButton": false,
+    "classCount": 57,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/user-management/page.tsx",
+    "route": "/settings/user-management",
+    "group": "(app)",
+    "lines": 110,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/user-warehouses/page.tsx",
+    "route": "/settings/user-warehouses",
+    "group": "(app)",
+    "lines": 330,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 5,
+    "usesSharedButton": false,
+    "classCount": 48,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/users/page.tsx",
+    "route": "/settings/users",
+    "group": "(app)",
+    "lines": 822,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 74,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/warehouses/new/page.tsx",
+    "route": "/settings/warehouses/new",
+    "group": "(app)",
+    "lines": 393,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 17,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/warehouses/page.tsx",
+    "route": "/settings/warehouses",
+    "group": "(app)",
+    "lines": 436,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 51,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(app)/settings/warehouses/[id]/edit/page.tsx",
+    "route": "/settings/warehouses/[id]/edit",
+    "group": "(app)",
+    "lines": 385,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 26,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/weekly-off/page.tsx",
+    "route": "/settings/weekly-off",
+    "group": "(app)",
+    "lines": 156,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/ai-agent/page.tsx",
+    "route": "/settings/whatsapp/ai-agent",
+    "group": "(app)",
+    "lines": 42,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/inbox/page.tsx",
+    "route": "/settings/whatsapp/inbox",
+    "group": "(app)",
+    "lines": 96,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/notifications/page.tsx",
+    "route": "/settings/whatsapp/notifications",
+    "group": "(app)",
+    "lines": 66,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/page.tsx",
+    "route": "/settings/whatsapp",
+    "group": "(app)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/shop/page.tsx",
+    "route": "/settings/whatsapp/shop",
+    "group": "(app)",
+    "lines": 36,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/team/page.tsx",
+    "route": "/settings/whatsapp/team",
+    "group": "(app)",
+    "lines": 48,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/settings/whatsapp/templates/page.tsx",
+    "route": "/settings/whatsapp/templates",
+    "group": "(app)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/stock-transfers/new/page.tsx",
+    "route": "/stock-transfers/new",
+    "group": "(app)",
+    "lines": 486,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button",
+      "@/components/ui/ItemAutocomplete"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 38,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/stock-transfers/page.tsx",
+    "route": "/stock-transfers",
+    "group": "(app)",
+    "lines": 430,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 8,
+    "usesSharedButton": false,
+    "classCount": 47,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/stock-transfers/[id]/page.tsx",
+    "route": "/stock-transfers/[id]",
+    "group": "(app)",
+    "lines": 376,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 49,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/stock-transfers/[id]/receive/page.tsx",
+    "route": "/stock-transfers/[id]/receive",
+    "group": "(app)",
+    "lines": 347,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 37,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/dashboard/analytics/page.tsx",
+    "route": "/suppliers/dashboard/analytics",
+    "group": "(app)",
+    "lines": 246,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 53,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/dashboard/page.tsx",
+    "route": "/suppliers/dashboard",
+    "group": "(app)",
+    "lines": 607,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 103,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/dashboard/thresholds/page.tsx",
+    "route": "/suppliers/dashboard/thresholds",
+    "group": "(app)",
+    "lines": 305,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 34,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/hub/page.tsx",
+    "route": "/suppliers/hub",
+    "group": "(app)",
+    "lines": 168,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 20,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/hub/[businessId]/page.tsx",
+    "route": "/suppliers/hub/[businessId]",
+    "group": "(app)",
+    "lines": 301,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 34,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/new/page.tsx",
+    "route": "/suppliers/new",
+    "group": "(app)",
+    "lines": 844,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/IntlPhoneInput",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": true,
+    "classCount": 99,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/page.tsx",
+    "route": "/suppliers",
+    "group": "(app)",
+    "lines": 504,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader",
+      "@/components/layout/SplitPaneLayout"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 9,
+    "usesSharedButton": true,
+    "classCount": 87,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/requests/page.tsx",
+    "route": "/suppliers/requests",
+    "group": "(app)",
+    "lines": 716,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 66,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/suppliers/[id]/page.tsx",
+    "route": "/suppliers/[id]",
+    "group": "(app)",
+    "lines": 444,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 72,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tds/categories/page.tsx",
+    "route": "/tds/categories",
+    "group": "(app)",
+    "lines": 326,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 33,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tds/certificates/page.tsx",
+    "route": "/tds/certificates",
+    "group": "(app)",
+    "lines": 402,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 58,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tds/page.tsx",
+    "route": "/tds",
+    "group": "(app)",
+    "lines": 100,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 30,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tds/payments/page.tsx",
+    "route": "/tds/payments",
+    "group": "(app)",
+    "lines": 404,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 56,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tds/transactions/page.tsx",
+    "route": "/tds/transactions",
+    "group": "(app)",
+    "lines": 240,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 45,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/currency-converter/page.tsx",
+    "route": "/tools/currency-converter",
+    "group": "(app)",
+    "lines": 267,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 37,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/discount-calculator/page.tsx",
+    "route": "/tools/discount-calculator",
+    "group": "(app)",
+    "lines": 194,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 35,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/emi-calculator/page.tsx",
+    "route": "/tools/emi-calculator",
+    "group": "(app)",
+    "lines": 292,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/google-lead-extractor/page.tsx",
+    "route": "/tools/google-lead-extractor",
+    "group": "(app)",
+    "lines": 460,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 71,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/gst-calculator/page.tsx",
+    "route": "/tools/gst-calculator",
+    "group": "(app)",
+    "lines": 224,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 50,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/gstin-validator/page.tsx",
+    "route": "/tools/gstin-validator",
+    "group": "(app)",
+    "lines": 319,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 39,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/hsn-finder/page.tsx",
+    "route": "/tools/hsn-finder",
+    "group": "(app)",
+    "lines": 204,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 42,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/image-background-remover/page.tsx",
+    "route": "/tools/image-background-remover",
+    "group": "(app)",
+    "lines": 409,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 65,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/image-size-reducer/page.tsx",
+    "route": "/tools/image-size-reducer",
+    "group": "(app)",
+    "lines": 432,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/interest-calculator/page.tsx",
+    "route": "/tools/interest-calculator",
+    "group": "(app)",
+    "lines": 230,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 45,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/invoice-number-generator/page.tsx",
+    "route": "/tools/invoice-number-generator",
+    "group": "(app)",
+    "lines": 325,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 51,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/page.tsx",
+    "route": "/tools",
+    "group": "(app)",
+    "lines": 252,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 23,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/pan-validator/page.tsx",
+    "route": "/tools/pan-validator",
+    "group": "(app)",
+    "lines": 271,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 33,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/price-margin-calculator/page.tsx",
+    "route": "/tools/price-margin-calculator",
+    "group": "(app)",
+    "lines": 361,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 58,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/tds-calculator/page.tsx",
+    "route": "/tools/tds-calculator",
+    "group": "(app)",
+    "lines": 215,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 43,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/todo/page.tsx",
+    "route": "/tools/todo",
+    "group": "(app)",
+    "lines": 1450,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Textarea",
+      "@/components/ui/Toast",
+      "@/components/ui/DateTimePicker"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": true,
+    "classCount": 148,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/tools/whatsapp-group-extractor/page.tsx",
+    "route": "/tools/whatsapp-group-extractor",
+    "group": "(app)",
+    "lines": 688,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 81,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/upgrade/page.tsx",
+    "route": "/upgrade",
+    "group": "(app)",
+    "lines": 98,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 24,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/bot-rules/page.tsx",
+    "route": "/whatsapp/bot-rules",
+    "group": "(app)",
+    "lines": 9,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/campaigns/page.tsx",
+    "route": "/whatsapp/campaigns",
+    "group": "(app)",
+    "lines": 628,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 8,
+    "usesSharedButton": true,
+    "classCount": 91,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/campaigns/[id]/page.tsx",
+    "route": "/whatsapp/campaigns/[id]",
+    "group": "(app)",
+    "lines": 650,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Chip",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 132,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/contacts/groups/page.tsx",
+    "route": "/whatsapp/contacts/groups",
+    "group": "(app)",
+    "lines": 511,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": true,
+    "classCount": 69,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/contacts/page.tsx",
+    "route": "/whatsapp/contacts",
+    "group": "(app)",
+    "lines": 527,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 5,
+    "usesSharedButton": true,
+    "classCount": 57,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/conversations/page.tsx",
+    "route": "/whatsapp/conversations",
+    "group": "(app)",
+    "lines": 105,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 15,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/dashboard/page.tsx",
+    "route": "/whatsapp/dashboard",
+    "group": "(app)",
+    "lines": 125,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/MobileDuplicatePageChrome"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/flows/page.tsx",
+    "route": "/whatsapp/flows",
+    "group": "(app)",
+    "lines": 165,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [
+      "@/components/layout/ListPageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 17,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/flows/[id]/page.tsx",
+    "route": "/whatsapp/flows/[id]",
+    "group": "(app)",
+    "lines": 209,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 19,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/group-extractor/page.tsx",
+    "route": "/whatsapp/group-extractor",
+    "group": "(app)",
+    "lines": 693,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 81,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/orders/page.tsx",
+    "route": "/whatsapp/orders",
+    "group": "(app)",
+    "lines": 501,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Badge",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 99,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/page.tsx",
+    "route": "/whatsapp",
+    "group": "(app)",
+    "lines": 6,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/reminders/page.tsx",
+    "route": "/whatsapp/reminders",
+    "group": "(app)",
+    "lines": 74,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/saved-replies/page.tsx",
+    "route": "/whatsapp/saved-replies",
+    "group": "(app)",
+    "lines": 293,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Input",
+      "@/components/ui/Textarea",
+      "@/components/ui/Card",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 2,
+    "usesSharedButton": true,
+    "classCount": 52,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/send-message/page.tsx",
+    "route": "/whatsapp/send-message",
+    "group": "(app)",
+    "lines": 100,
+    "uiImports": [
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 15,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/unsubscribes/page.tsx",
+    "route": "/whatsapp/unsubscribes",
+    "group": "(app)",
+    "lines": 401,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card",
+      "@/components/ui/Toast"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 54,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/whatsapp/who-to-message/page.tsx",
+    "route": "/whatsapp/who-to-message",
+    "group": "(app)",
+    "lines": 322,
+    "uiImports": [
+      "@/components/ui/Button",
+      "@/components/ui/Card"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 3,
+    "usesSharedButton": true,
+    "classCount": 44,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/work-orders/edit/[id]/page.tsx",
+    "route": "/work-orders/edit/[id]",
+    "group": "(app)",
+    "lines": 12,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/work-orders/new/page.tsx",
+    "route": "/work-orders/new",
+    "group": "(app)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/work-orders/page.tsx",
+    "route": "/work-orders",
+    "group": "(app)",
+    "lines": 292,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/PageHeader"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 6,
+    "usesSharedButton": false,
+    "classCount": 60,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(app)/work-orders/[id]/page.tsx",
+    "route": "/work-orders/[id]",
+    "group": "(app)",
+    "lines": 138,
+    "uiImports": [
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(customer)/i/[token]/page.tsx",
+    "route": "/i/[token]",
+    "group": "(customer)",
+    "lines": 18,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(customer)/portal/[slug]/page.tsx",
+    "route": "/portal/[slug]",
+    "group": "(customer)",
+    "lines": 22,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(customer)/track/[token]/page.tsx",
+    "route": "/track/[token]",
+    "group": "(customer)",
+    "lines": 156,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 43,
+    "independentStyling": true
+  },
+  {
+    "file": "app/(public-business)/[slug]/candidates/page.tsx",
+    "route": "/[slug]/candidates",
+    "group": "(public-business)",
+    "lines": 31,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/candidates/tasks/[taskId]/page.tsx",
+    "route": "/[slug]/candidates/tasks/[taskId]",
+    "group": "(public-business)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/attendance/page.tsx",
+    "route": "/[slug]/employees/attendance",
+    "group": "(public-business)",
+    "lines": 278,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 24,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/engagement/page.tsx",
+    "route": "/[slug]/employees/engagement",
+    "group": "(public-business)",
+    "lines": 145,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 25,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/expenses/page.tsx",
+    "route": "/[slug]/employees/expenses",
+    "group": "(public-business)",
+    "lines": 159,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 21,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/kiosk/page.tsx",
+    "route": "/[slug]/employees/kiosk",
+    "group": "(public-business)",
+    "lines": 122,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 20,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/leaves/new/page.tsx",
+    "route": "/[slug]/employees/leaves/new",
+    "group": "(public-business)",
+    "lines": 151,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 12,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/leaves/page.tsx",
+    "route": "/[slug]/employees/leaves",
+    "group": "(public-business)",
+    "lines": 34,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/overtime/new/page.tsx",
+    "route": "/[slug]/employees/overtime/new",
+    "group": "(public-business)",
+    "lines": 125,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button",
+      "@/components/ui/Input"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/page.tsx",
+    "route": "/[slug]/employees",
+    "group": "(public-business)",
+    "lines": 32,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/payslips/page.tsx",
+    "route": "/[slug]/employees/payslips",
+    "group": "(public-business)",
+    "lines": 90,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": true,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/profile/page.tsx",
+    "route": "/[slug]/employees/profile",
+    "group": "(public-business)",
+    "lines": 25,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/team/approvals/page.tsx",
+    "route": "/[slug]/employees/team/approvals",
+    "group": "(public-business)",
+    "lines": 32,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/team/page.tsx",
+    "route": "/[slug]/employees/team",
+    "group": "(public-business)",
+    "lines": 32,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/(public-business)/[slug]/employees/todo/page.tsx",
+    "route": "/[slug]/employees/todo",
+    "group": "(public-business)",
+    "lines": 25,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/assistant/page.tsx",
+    "route": "/admin/assistant",
+    "group": "(root)",
+    "lines": 578,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 8,
+    "usesSharedButton": false,
+    "classCount": 121,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/billing/page.tsx",
+    "route": "/admin/billing",
+    "group": "(root)",
+    "lines": 12,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/bookings/page.tsx",
+    "route": "/admin/bookings",
+    "group": "(root)",
+    "lines": 273,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 69,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/bookings/time-slots/page.tsx",
+    "route": "/admin/bookings/time-slots",
+    "group": "(root)",
+    "lines": 312,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 5,
+    "usesSharedButton": false,
+    "classCount": 44,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/bookings/[id]/page.tsx",
+    "route": "/admin/bookings/[id]",
+    "group": "(root)",
+    "lines": 297,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 76,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/businesses/page.tsx",
+    "route": "/admin/businesses",
+    "group": "(root)",
+    "lines": 337,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 62,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/businesses/[id]/page.tsx",
+    "route": "/admin/businesses/[id]",
+    "group": "(root)",
+    "lines": 342,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 84,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/hsn-codes/page.tsx",
+    "route": "/admin/hsn-codes",
+    "group": "(root)",
+    "lines": 440,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 84,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/login/page.tsx",
+    "route": "/admin/login",
+    "group": "(root)",
+    "lines": 125,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 20,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/page.tsx",
+    "route": "/admin",
+    "group": "(root)",
+    "lines": 270,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 56,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/partners/page.tsx",
+    "route": "/admin/partners",
+    "group": "(root)",
+    "lines": 764,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 12,
+    "usesSharedButton": false,
+    "classCount": 123,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/partners/[id]/page.tsx",
+    "route": "/admin/partners/[id]",
+    "group": "(root)",
+    "lines": 231,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 37,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/plans/page.tsx",
+    "route": "/admin/plans",
+    "group": "(root)",
+    "lines": 786,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 9,
+    "usesSharedButton": false,
+    "classCount": 133,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/policies/page.tsx",
+    "route": "/admin/policies",
+    "group": "(root)",
+    "lines": 371,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 86,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/releases/page.tsx",
+    "route": "/admin/releases",
+    "group": "(root)",
+    "lines": 124,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 36,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/reports/page.tsx",
+    "route": "/admin/reports",
+    "group": "(root)",
+    "lines": 441,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 4,
+    "usesSharedButton": false,
+    "classCount": 67,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/sales-flow/page.tsx",
+    "route": "/admin/sales-flow",
+    "group": "(root)",
+    "lines": 74,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/settings/page.tsx",
+    "route": "/admin/settings",
+    "group": "(root)",
+    "lines": 223,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 57,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/site-builder/page.tsx",
+    "route": "/admin/site-builder",
+    "group": "(root)",
+    "lines": 22,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/site-builder/preview/page.tsx",
+    "route": "/admin/site-builder/preview",
+    "group": "(root)",
+    "lines": 26,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/social/page.tsx",
+    "route": "/admin/social",
+    "group": "(root)",
+    "lines": 8,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/admin/subscriptions/page.tsx",
+    "route": "/admin/subscriptions",
+    "group": "(root)",
+    "lines": 269,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 73,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/users/page.tsx",
+    "route": "/admin/users",
+    "group": "(root)",
+    "lines": 339,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 64,
+    "independentStyling": true
+  },
+  {
+    "file": "app/admin/videos/page.tsx",
+    "route": "/admin/videos",
+    "group": "(root)",
+    "lines": 519,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 11,
+    "usesSharedButton": false,
+    "classCount": 65,
+    "independentStyling": true
+  },
+  {
+    "file": "app/attendance/kiosk/page.tsx",
+    "route": "/attendance/kiosk",
+    "group": "(root)",
+    "lines": 38,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/attendance/login/page.tsx",
+    "route": "/attendance/login",
+    "group": "(root)",
+    "lines": 39,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/auth/impersonate/page.tsx",
+    "route": "/auth/impersonate",
+    "group": "(root)",
+    "lines": 71,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 9,
+    "independentStyling": false
+  },
+  {
+    "file": "app/book-demo/page.tsx",
+    "route": "/book-demo",
+    "group": "(root)",
+    "lines": 484,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 84,
+    "independentStyling": true
+  },
+  {
+    "file": "app/guides/page.tsx",
+    "route": "/guides",
+    "group": "(root)",
+    "lines": 32,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 7,
+    "independentStyling": false
+  },
+  {
+    "file": "app/login/page.tsx",
+    "route": "/login",
+    "group": "(root)",
+    "lines": 440,
+    "uiImports": [
+      "@/components/ui/Card",
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 4,
+    "usesSharedButton": true,
+    "classCount": 31,
+    "independentStyling": false
+  },
+  {
+    "file": "app/offline/page.tsx",
+    "route": "/offline",
+    "group": "(root)",
+    "lines": 35,
+    "uiImports": [],
+    "layoutImports": [
+      "@/components/layout/LastRouteTracker"
+    ],
+    "usesDesignSystem": true,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/page.tsx",
+    "route": "/page.tsx",
+    "group": "(root)",
+    "lines": 36,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/partners/deals/page.tsx",
+    "route": "/partners/deals",
+    "group": "(root)",
+    "lines": 221,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 32,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/earnings/page.tsx",
+    "route": "/partners/earnings",
+    "group": "(root)",
+    "lines": 103,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 21,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/kit/page.tsx",
+    "route": "/partners/kit",
+    "group": "(root)",
+    "lines": 87,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 14,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/link/page.tsx",
+    "route": "/partners/link",
+    "group": "(root)",
+    "lines": 66,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 11,
+    "independentStyling": false
+  },
+  {
+    "file": "app/partners/login/page.tsx",
+    "route": "/partners/login",
+    "group": "(root)",
+    "lines": 94,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 17,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/page.tsx",
+    "route": "/partners",
+    "group": "(root)",
+    "lines": 117,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 17,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/payouts/page.tsx",
+    "route": "/partners/payouts",
+    "group": "(root)",
+    "lines": 96,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 18,
+    "independentStyling": true
+  },
+  {
+    "file": "app/partners/profile/page.tsx",
+    "route": "/partners/profile",
+    "group": "(root)",
+    "lines": 113,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 10,
+    "independentStyling": false
+  },
+  {
+    "file": "app/partners/team/page.tsx",
+    "route": "/partners/team",
+    "group": "(root)",
+    "lines": 151,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 2,
+    "usesSharedButton": false,
+    "classCount": 24,
+    "independentStyling": true
+  },
+  {
+    "file": "app/pay/complete/page.tsx",
+    "route": "/pay/complete",
+    "group": "(root)",
+    "lines": 60,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/pay/upi/[token]/page.tsx",
+    "route": "/pay/upi/[token]",
+    "group": "(root)",
+    "lines": 68,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 13,
+    "independentStyling": true
+  },
+  {
+    "file": "app/privacy/page.tsx",
+    "route": "/privacy",
+    "group": "(root)",
+    "lines": 27,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/signup/page.tsx",
+    "route": "/signup",
+    "group": "(root)",
+    "lines": 630,
+    "uiImports": [
+      "@/components/ui/Input",
+      "@/components/ui/Button"
+    ],
+    "layoutImports": [],
+    "usesDesignSystem": true,
+    "rawButtons": 1,
+    "usesSharedButton": true,
+    "classCount": 93,
+    "independentStyling": false
+  },
+  {
+    "file": "app/solution/accounting/page.tsx",
+    "route": "/solution/accounting",
+    "group": "(root)",
+    "lines": 61,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/solution/inventory/page.tsx",
+    "route": "/solution/inventory",
+    "group": "(root)",
+    "lines": 61,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 1,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/about/page.tsx",
+    "route": "/store/about",
+    "group": "(root)",
+    "lines": 17,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 2,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/account/page.tsx",
+    "route": "/store/account",
+    "group": "(root)",
+    "lines": 127,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 1,
+    "usesSharedButton": false,
+    "classCount": 17,
+    "independentStyling": true
+  },
+  {
+    "file": "app/store/cart/page.tsx",
+    "route": "/store/cart",
+    "group": "(root)",
+    "lines": 65,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 3,
+    "usesSharedButton": false,
+    "classCount": 12,
+    "independentStyling": true
+  },
+  {
+    "file": "app/store/checkout/page.tsx",
+    "route": "/store/checkout",
+    "group": "(root)",
+    "lines": 36,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/contact/page.tsx",
+    "route": "/store/contact",
+    "group": "(root)",
+    "lines": 87,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/page.tsx",
+    "route": "/store",
+    "group": "(root)",
+    "lines": 8,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/privacy/page.tsx",
+    "route": "/store/privacy",
+    "group": "(root)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/products/[id]/page.tsx",
+    "route": "/store/products/[id]",
+    "group": "(root)",
+    "lines": 246,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 4,
+    "usesSharedButton": false,
+    "classCount": 27,
+    "independentStyling": true
+  },
+  {
+    "file": "app/store/refund/page.tsx",
+    "route": "/store/refund",
+    "group": "(root)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/terms/page.tsx",
+    "route": "/store/terms",
+    "group": "(root)",
+    "lines": 10,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  },
+  {
+    "file": "app/store/wishlist/page.tsx",
+    "route": "/store/wishlist",
+    "group": "(root)",
+    "lines": 47,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 4,
+    "independentStyling": false
+  },
+  {
+    "file": "app/terms/page.tsx",
+    "route": "/terms",
+    "group": "(root)",
+    "lines": 26,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 6,
+    "independentStyling": false
+  },
+  {
+    "file": "app/wa-shop/[token]/page.tsx",
+    "route": "/wa-shop/[token]",
+    "group": "(root)",
+    "lines": 14,
+    "uiImports": [],
+    "layoutImports": [],
+    "usesDesignSystem": false,
+    "rawButtons": 0,
+    "usesSharedButton": false,
+    "classCount": 0,
+    "independentStyling": false
+  }
+]

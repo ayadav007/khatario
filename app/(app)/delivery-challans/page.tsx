@@ -7,6 +7,7 @@ import { Plus, FileText, Calendar, User, CheckCircle, XCircle, Clock, Truck, Pac
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { useFeatureRouteGuard } from '@/hooks/useFeatureRouteGuard';
 
 interface DeliveryChallan {
   id: string;
@@ -23,11 +24,13 @@ interface DeliveryChallan {
   e_way_bill_number: string | null;
   vehicle_number: string | null;
   place_of_delivery: string | null;
+  grand_total?: number | string | null;
 }
 
 export default function DeliveryChallansPage() {
   const router = useRouter();
   const { business } = useAuth();
+  const { canRender, loading: planLoading } = useFeatureRouteGuard({ featureKey: 'sales_delivery_challans' });
   const [deliveryChallans, setDeliveryChallans] = useState<DeliveryChallan[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -69,6 +72,8 @@ export default function DeliveryChallansPage() {
       </div>
     );
   };
+
+  if (planLoading || !canRender) return null;
 
   return (
     
@@ -146,6 +151,7 @@ export default function DeliveryChallansPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Delivery Date</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Linked To</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Vehicle</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Value</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -199,6 +205,11 @@ export default function DeliveryChallansPage() {
                         <span className="text-sm text-gray-600">
                           {challan.vehicle_number || '-'}
                         </span>
+                      </td>
+                      <td className="py-4 px-4 text-right text-sm text-gray-700">
+                        {Number(challan.grand_total || 0) > 0
+                          ? `₹${Number(challan.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : '-'}
                       </td>
                       <td className="py-4 px-4">{getStatusBadge(challan.status)}</td>
                       <td className="py-4 px-4">

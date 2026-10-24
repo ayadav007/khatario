@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Download } from 'lucide-react';
@@ -157,10 +158,10 @@ export default function ProfitByInvoiceReportPage() {
       <Breadcrumbs />
 
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Profit by invoice</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Gross profit per finalized invoice (same basis as invoice detail profit summary).
-        </p>
+        <PageHeader
+  title="Profit by invoice"
+  subtitle="Gross profit per finalized invoice (same basis as invoice detail profit summary)."
+/>
       </div>
 
       <Card padding="md" className="border border-border">

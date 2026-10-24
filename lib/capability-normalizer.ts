@@ -65,6 +65,7 @@ export const FEATURE_REGISTRY_IDS = [
   // Purchase domain (Registry IDs)
   'purchase_management',
   'purchase_suppliers',
+  'purchase_supplier_hub',
   'purchase_expenses',
   'purchase_orders',
   
@@ -115,8 +116,10 @@ export const FEATURE_REGISTRY_IDS = [
   'settings_multi_user',
   'settings_multi_branch',
   'settings_multi_warehouse',
+  'settings_multi_business',
   'settings_backup',
   'settings_pos_mode',
+  'settings_document_language',
   
   // Advanced (Registry IDs)
   'online_store',
@@ -139,6 +142,35 @@ export const FEATURE_REGISTRY_IDS = [
   'hr_attendance',
   'hr_payroll',
   'hr_leaves',
+  'hr_employee_portal',
+  'hr_staff_app',
+  'hr_shifts',
+  'hr_payroll_setup',
+  'hr_commissions',
+  'hr_recruitment',
+  'hr_advanced',
+
+  'sales_delivery_challans',
+  'sales_work_orders',
+  'sales_new_invoice',
+  'eway_bill',
+  'e_invoice',
+  'advanced_online_store',
+  'advanced_multi_currency',
+  'advanced_barcode',
+  'items_scan_onboarding',
+  'advanced_custom_branding',
+  'advanced_ledger',
+  'workflow_automation',
+  'settings_multidevice_login',
+  'report_builder',
+  'party_pricing',
+  'accounting_bank',
+  'accounting_tds',
+  'accounting_provisions',
+  'accounting_credit_approvals',
+  'accounting_budgets',
+  'accounting_chart',
 ] as const;
 
 export type FeatureRegistryId = typeof FEATURE_REGISTRY_IDS[number];
@@ -194,8 +226,10 @@ export const CANONICAL_FEATURE_KEYS = [
   'multi_user',
   'multi_branch',
   'multi_warehouse',
+  'multi_business',
   'backup_restore',
   'pos_mode',
+  'settings_document_language',
   'online_store',
   'barcode_scanning',
   'multi_currency',
@@ -272,6 +306,7 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'multi_user': 'settings_multi_user',
   'multi_branch': 'settings_multi_branch',
   'multi_warehouse': 'settings_multi_warehouse',
+  'multi_business': 'settings_multi_business',
   'backup_restore': 'settings_backup',
   'pos_mode': 'settings_pos_mode',
   'template_customization': 'template_customization',
@@ -287,10 +322,12 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'sales_recurring_invoices': 'sales_recurring_invoices',
   'sales_sales_orders': 'sales_sales_orders',
   'purchase_suppliers': 'purchase_suppliers',
+  'purchase_supplier_hub': 'purchase_supplier_hub',
   'purchase_expenses': 'purchase_expenses',
   'settings_multi_user': 'settings_multi_user',
   'settings_multi_branch': 'settings_multi_branch',
   'settings_multi_warehouse': 'settings_multi_warehouse',
+  'settings_multi_business': 'settings_multi_business',
   'settings_backup': 'settings_backup',
   'settings_template_customization': 'template_customization',
   'integration_whatsapp_bot': 'integration_whatsapp_bot',
@@ -302,6 +339,35 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'hr_attendance': 'hr_attendance',
   'hr_payroll': 'hr_payroll',
   'hr_leaves': 'hr_leaves',
+  'hr_employee_portal': 'hr_employee_portal',
+  'hr_staff_app': 'hr_staff_app',
+  'hr_shifts': 'hr_shifts',
+  'hr_payroll_setup': 'hr_payroll_setup',
+  'hr_commissions': 'hr_commissions',
+  'hr_recruitment': 'hr_recruitment',
+  'hr_advanced': 'hr_advanced',
+
+  'online_store': 'advanced_online_store',
+  'advanced_online_store': 'advanced_online_store',
+  'multi_currency': 'advanced_multi_currency',
+  'advanced_multi_currency': 'advanced_multi_currency',
+  'barcode_scanning': 'advanced_barcode',
+  'advanced_barcode': 'advanced_barcode',
+  'items_scan_onboarding': 'items_scan_onboarding',
+  'custom_branding': 'advanced_custom_branding',
+  'ledger_accounting': 'advanced_ledger',
+  'advanced_ledger': 'advanced_ledger',
+  'workflow_automation': 'workflow_automation',
+  'sales_delivery_challans': 'sales_delivery_challans',
+  'sales_work_orders': 'sales_work_orders',
+  'eway_bill': 'eway_bill',
+  'e_invoice': 'e_invoice',
+  'accounting_bank': 'accounting_bank',
+  'accounting_tds': 'accounting_tds',
+  'accounting_provisions': 'accounting_provisions',
+  'accounting_credit_approvals': 'accounting_credit_approvals',
+  'accounting_budgets': 'accounting_budgets',
+  'accounting_chart': 'accounting_chart',
 };
 
 // ============================================================================
@@ -426,6 +492,82 @@ export function normalizeAction(action: string): PermissionAction {
   }
   
   return 'read';
+}
+
+// ============================================================================
+// RBAC MODULE RESOLUTION
+// ============================================================================
+
+/**
+ * Resource keys that authorize() maps to a different role_permissions module_key.
+ * Mirrors permissionModuleMap in lib/authorization.ts.
+ */
+const SERVER_PERMISSION_MODULE_MAP: Record<string, string> = {
+  inventory_adjustment: 'items',
+  inventory_adjustments: 'items',
+  warehouse: 'warehouses',
+  warehouse_transfers: 'warehouse_transfer',
+  stock_transfer: 'warehouse_transfer',
+  stock_transfers: 'warehouse_transfer',
+  report: 'reports',
+  'report.financial': 'reports',
+  'report.inventory': 'reports',
+  'report.gst': 'reports',
+  hr: 'employees',
+};
+
+/** Mirrors RBAC_MODULE_ALIASES in lib/permissions.ts. */
+const SERVER_RBAC_ALIASES: Record<string, string[]> = {
+  leave_requests: ['leaves'],
+  leaves: ['leave_requests'],
+  hr: ['employees'],
+  employees: ['hr'],
+  payroll: ['employees'],
+};
+
+/** role_permissions module keys that are not in PERMISSION_MODULES. */
+const EXTRA_RBAC_MODULE_KEYS = [
+  'tools',
+  'payment_reversals',
+  'warehouse_transfer',
+  'inventory_adjustment',
+  'journal',
+  'accounting_period',
+  'leave_requests',
+  'payroll',
+  'recruitment',
+  'hr',
+  'whatsapp',
+  'whatsapp_inbox',
+  'whatsapp_inbox_supervise',
+];
+
+/**
+ * True when the resource is checked against role_permissions (not a plan-only feature key).
+ */
+export function isPermissionModule(resource: string): boolean {
+  return (
+    PERMISSION_MODULES.includes(resource as PermissionModule) ||
+    EXTRA_RBAC_MODULE_KEYS.includes(resource) ||
+    Object.prototype.hasOwnProperty.call(MODULE_ALIAS_MAP, resource) ||
+    Object.prototype.hasOwnProperty.call(SERVER_PERMISSION_MODULE_MAP, resource)
+  );
+}
+
+/**
+ * role_permissions module keys that may grant the resource, in lookup order.
+ * Empty when the resource is a plan-only feature key.
+ */
+export function resolvePermissionModuleKeys(resource: string): string[] {
+  if (!isPermissionModule(resource)) return [];
+  const serverKey = SERVER_PERMISSION_MODULE_MAP[resource] ?? resource;
+  const keys = [
+    resource,
+    serverKey,
+    ...(SERVER_RBAC_ALIASES[serverKey] ?? []),
+    Object.prototype.hasOwnProperty.call(MODULE_ALIAS_MAP, resource) ? MODULE_ALIAS_MAP[resource] : undefined,
+  ].filter((k): k is string => typeof k === 'string' && k.length > 0);
+  return [...new Set(keys)];
 }
 
 // ============================================================================

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { RefreshCw, AlertCircle, CheckCircle, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -120,12 +121,13 @@ export default function InterBranchReconciliationPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inter-Branch Reconciliation</h1>
-            <p className="text-gray-600 text-sm mt-1">Validate inter-branch receivables and payables</p>
-          </div>
-          <div className="flex items-center space-x-3">
+        <PageHeader
+  title="Inter-Branch Reconciliation"
+  subtitle="Validate inter-branch receivables and payables"
+
+  actions={
+    <>
+<div className="flex items-center space-x-3">
             <input
               type="date"
               value={asOnDate}
@@ -140,7 +142,9 @@ export default function InterBranchReconciliationPage() {
               <span>Refresh</span>
             </button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Status Banner */}
         <div className={`rounded-lg p-4 ${

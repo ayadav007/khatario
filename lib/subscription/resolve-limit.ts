@@ -91,6 +91,18 @@ async function resolveAccountWideLimit(
   return { maxLimit: best, moduleKey: 'account' };
 }
 
+/**
+ * Connect's max_users is its own pool of WhatsApp agents (`connect_agents`), so it never adds
+ * Billing/HR users. Other account-wide limits (daily WhatsApp messages) still take the highest plan.
+ */
+export function seatSourceSubs(
+  limitType: LimitCheckType,
+  subs: ModuleSubscriptionRow[],
+): ModuleSubscriptionRow[] {
+  if (limitType !== 'users') return subs;
+  return subs.filter((s) => s.module_key !== 'connect');
+}
+
 export async function resolveBusinessLimit(
   businessId: string,
   limitType: LimitCheckType,
@@ -101,7 +113,7 @@ export async function resolveBusinessLimit(
   const operational = await getOperationalModuleSubscriptions(businessId, true);
 
   if (isAccountWideLimit(limitType)) {
-    return resolveAccountWideLimit(businessId, limitKey, operational, queryFn);
+    return resolveAccountWideLimit(businessId, limitKey, seatSourceSubs(limitType, operational), queryFn);
   }
 
   const owner = getLimitOwnerModule(limitType);

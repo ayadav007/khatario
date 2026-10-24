@@ -65,7 +65,7 @@ export const QuickActionsFAB: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-3 lg:bottom-6 lg:right-6"
+      className="fixed bottom-24 right-4 z-40 hidden flex-col items-end gap-3 lg:bottom-6 lg:right-6 lg:flex"
     >
       {isOpen && (
         <div className="flex flex-col items-end gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">

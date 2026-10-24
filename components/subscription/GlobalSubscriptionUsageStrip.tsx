@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscriptionUsage } from '@/hooks/useSubscriptionUsage';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { shouldHideGlobalBanners } from '@/lib/mobile-navigation';
+import { isConnectAgentSeat } from '@/lib/users/connect-seats';
 
 /** Pages that already show a dedicated usage banner — avoid duplicate nudges. */
 const SKIP_PATH_PREFIXES = [
@@ -17,7 +19,7 @@ const SKIP_PATH_PREFIXES = [
 
 export function GlobalSubscriptionUsageStrip() {
   const pathname = usePathname();
-  const { business } = useAuth();
+  const { business, user } = useAuth();
   const { nudgeRows, loading } = useSubscriptionUsage(business?.id);
 
   const worst = useMemo(() => {
@@ -26,10 +28,14 @@ export function GlobalSubscriptionUsageStrip() {
   }, [nudgeRows]);
 
   const skipPath =
-    pathname != null &&
-    SKIP_PATH_PREFIXES.some((prefix) =>
-      prefix === '/settings' ? pathname === '/settings' || pathname.startsWith('/settings/') : pathname === prefix
-    );
+    shouldHideGlobalBanners(pathname) ||
+    isConnectAgentSeat(user) ||
+    (pathname != null &&
+      SKIP_PATH_PREFIXES.some((prefix) =>
+        prefix === '/settings'
+          ? pathname === '/settings' || pathname.startsWith('/settings/')
+          : pathname === prefix
+      ));
 
   if (loading || !worst || !pathname || skipPath) {
     return null;

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/certificates
  * List TDS certificates
  */
-export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const supplierId = searchParams.get('supplier_id');
@@ -65,7 +65,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
  * Generate TDS certificate (Form 16A)
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_tds', parseJsonBody: true },
   async ({ body, businessId }) => {
     const pool = getPool();
     const client = await pool.connect();
@@ -112,6 +112,7 @@ export const POST = withPremiumSubscriptionApi(
         AND financial_year = $3
         AND quarter = $4
         AND is_deposited = true
+        AND status = 'active'
     `, [businessId, supplier_id, financial_year, quarter]);
 
       if (parseFloat(tdsTotal?.total || '0') === 0) {

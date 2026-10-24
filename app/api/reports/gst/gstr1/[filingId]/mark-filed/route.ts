@@ -94,8 +94,8 @@ export async function POST(
       finalLockDate = lock_date;
     } else {
       const [year, month] = filing.filing_period.split('-');
-      const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0);
-      finalLockDate = lastDay.toISOString().split('T')[0];
+      const lastDay = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10), 0)).getUTCDate();
+      finalLockDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
     }
 
     const periodParts = /^(\d{4})-(\d{2})$/.exec(filing.filing_period);

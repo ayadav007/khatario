@@ -10,6 +10,8 @@ import {
   clearSessionCookie,
 } from '@/lib/jwt';
 import { queryOne } from '@/lib/db';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 function sessionRevokedResponse(): NextResponse {
   const res = NextResponse.json(
@@ -35,9 +37,15 @@ export async function POST(request: NextRequest) {
     return sessionRevokedResponse();
   }
 
-  const row = await queryOne<{ auth_session_version: string }>(
-    `SELECT auth_session_version::text AS auth_session_version
-     FROM users WHERE id = $1 AND is_active = true`,
+  const row = await queryOne<{
+    auth_session_version: string;
+    seat_type: string | null;
+    business_id: string | null;
+  }>(
+    `SELECT u.auth_session_version::text AS auth_session_version,
+            to_jsonb(u)->>'seat_type' AS seat_type,
+            u.business_id
+     FROM users u WHERE u.id = $1 AND u.is_active = true`,
     [payload.userId]
   );
 
@@ -48,6 +56,15 @@ export async function POST(request: NextRequest) {
   const dbSv = Number(row.auth_session_version);
   if (payload.sv !== dbSv) {
     return sessionRevokedResponse();
+  }
+
+  if (row.seat_type === 'connect' && row.business_id && !(await hasWhatsAppBotAddon(row.business_id))) {
+    const res = NextResponse.json(
+      { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' },
+      { status: 403 }
+    );
+    clearSessionCookie(res);
+    return res;
   }
 
   const tokenPayload = {

@@ -17,6 +17,47 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/** The primary product's subscription row (active/trial rows first), joined to its plan. */
+async function loadPrimarySubscriptionRow(businessId: string) {
+  return db.queryOne(`
+    SELECT
+      bs.business_id || ':' || bs.module_key AS subscription_id,
+      bs.business_id,
+      bs.module_key,
+      bs.plan_id,
+      bs.status,
+      bs.start_date,
+      bs.end_date,
+      bs.trial_end_date,
+      true AS auto_renew,
+      bs.cancel_at_period_end,
+      bs.cancelled_at,
+      bs.grace_period_end,
+      bs.downgraded_from,
+      bs.scheduled_plan_id,
+      bs.billing_cycle,
+      COALESCE(bs.trial_extension_granted, false) AS trial_extension_granted,
+      bs.trial_extension_declined_at,
+      sp.id as plan_code,
+      sp.name as plan_name,
+      sp.display_name as plan_display_name,
+      sp.description as plan_description,
+      sp.price_monthly,
+      sp.price_yearly,
+      sp.currency,
+      sp.features
+    FROM business_module_subscriptions bs
+    JOIN subscription_plans sp ON bs.plan_id = sp.id
+    JOIN businesses b ON b.id = bs.business_id
+    WHERE bs.business_id = $1
+    ORDER BY
+      (bs.module_key = COALESCE(b.primary_module, 'billing')) DESC,
+      CASE WHEN bs.status IN ('active', 'trial') THEN 0 ELSE 1 END,
+      bs.module_key
+    LIMIT 1
+  `, [businessId]);
+}
+
 /**
  * GET /api/subscriptions/current
  * Get the current subscription for a business
@@ -30,40 +71,7 @@ export async function GET(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
-    const subscription = await db.queryOne(`
-      SELECT 
-        bs.id as subscription_id,
-        bs.business_id,
-        bs.plan_id,
-        bs.status,
-        bs.start_date,
-        bs.end_date,
-        bs.trial_end_date,
-        bs.auto_renew,
-        bs.cancel_at_period_end,
-        bs.cancelled_at,
-        bs.grace_period_end,
-        bs.downgraded_from,
-        bs.scheduled_plan_id,
-        bs.billing_cycle,
-        bs.trial_extension_granted,
-        bs.trial_extension_declined_at,
-        sp.id as plan_code,
-        sp.name as plan_name,
-        sp.display_name as plan_display_name,
-        sp.description as plan_description,
-        sp.price_monthly,
-        sp.price_yearly,
-        sp.currency,
-        sp.features
-      FROM business_subscriptions bs
-      JOIN subscription_plans sp ON bs.plan_id = sp.id
-      WHERE bs.business_id = $1
-      ORDER BY
-        CASE WHEN bs.status IN ('active', 'trial') THEN 0 ELSE 1 END,
-        bs.created_at DESC
-      LIMIT 1
-    `, [businessId]);
+    const subscription = await loadPrimarySubscriptionRow(businessId);
 
     if (!subscription) {
       return NextResponse.json(
@@ -92,41 +100,9 @@ export async function GET(request: NextRequest) {
         businessId,
         subscription.plan_id,
         'trial_expired_sync',
+        subscription.module_key,
       );
-      const refreshed = await db.queryOne(`
-        SELECT 
-          bs.id as subscription_id,
-          bs.business_id,
-          bs.plan_id,
-          bs.status,
-          bs.start_date,
-          bs.end_date,
-          bs.trial_end_date,
-          bs.auto_renew,
-          bs.cancel_at_period_end,
-          bs.cancelled_at,
-          bs.grace_period_end,
-          bs.downgraded_from,
-          bs.scheduled_plan_id,
-          bs.billing_cycle,
-          bs.trial_extension_granted,
-          bs.trial_extension_declined_at,
-          sp.id as plan_code,
-          sp.name as plan_name,
-          sp.display_name as plan_display_name,
-          sp.description as plan_description,
-          sp.price_monthly,
-          sp.price_yearly,
-          sp.currency,
-          sp.features
-        FROM business_subscriptions bs
-        JOIN subscription_plans sp ON bs.plan_id = sp.id
-        WHERE bs.business_id = $1
-        ORDER BY
-          CASE WHEN bs.status IN ('active', 'trial') THEN 0 ELSE 1 END,
-          bs.created_at DESC
-        LIMIT 1
-      `, [businessId]);
+      const refreshed = await loadPrimarySubscriptionRow(businessId);
       if (refreshed) {
         Object.assign(subscription, refreshed);
         Object.assign(subForEffective, {

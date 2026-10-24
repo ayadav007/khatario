@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/bank-statements/reconciliation-report
  * Generate bank reconciliation report
  */
-export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ feature: 'accounting_bank',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const bankAccountId = searchParams.get('bank_account_id');

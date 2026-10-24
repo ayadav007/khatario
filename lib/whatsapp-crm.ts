@@ -9,6 +9,35 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
 import { LeadAnalyzer } from './services/lead-analyzer';
 import { generatePaymentLinkForBusiness } from './services/payment-service';
+import { loadAgentSettings } from './ai-agent/settings';
+import { runAgentGate } from './ai-agent/gate';
+import { parseAgentReply } from './ai-agent/prompt';
+import { performHandoff } from './ai-agent/conversation';
+import { loadLeadAnswers, applyLeadAnswers } from './ai-agent/leads';
+import {
+  applyStoredAnswers,
+  combineMemory,
+  loadAgentMemory,
+  memoryFromTranscript,
+  rememberAgentTurn,
+} from './ai-agent/memory';
+import { DEFAULT_HANDOFF_MESSAGE } from './ai-agent/types';
+import {
+  ORDER_NOT_CREATED_REPLY,
+  parseCreateOrderTag,
+  isPlaceholderName,
+  loadChatCustomerName,
+  parseCustomerTag,
+  resolveOrderItems,
+  saveChatCustomerName,
+  saveCollectedCustomerDetails,
+  stripOrderTags,
+} from './ai-agent/order-items';
+import {
+  completePaidWhatsAppOrder,
+  formatOrderLines as formatDraftOrderConfirmationLines,
+  orderConfirmedMessage as whatsAppOrderConfirmedMessage,
+} from './whatsapp/paid-order';
 import {
   evaluatePaymentOcrWithRules,
   verifyPaymentScreenshot
@@ -53,7 +82,7 @@ function logTimestampDriftFromDbRow(
  * newly created conversation to the next agent in the pool and advances the
  * pointer atomically. Skips assignment for group chats.
  */
-async function autoAssignConversation(
+export async function autoAssignConversation(
   businessId: string,
   conversationId: string,
   isGroup: boolean
@@ -169,7 +198,7 @@ export type ConversationState =
   | 'waiting_customer_address'
   | 'waiting_payment';
 
-interface ConversationContext {
+export interface ConversationContext {
   items?: Array<{ name: string; quantity: number; price?: number; item_id?: string }>;
   current_item?: string;
   invoice_id?: string;
@@ -356,8 +385,6 @@ export async function storeIncomingMessage(
         ]
       );
       conversation = { id: newConv!.id, customer_id: customer?.id };
-      // Fire-and-forget: auto-assign to next agent in pool if enabled
-      autoAssignConversation(businessId, newConv!.id, isGroup).catch(() => {});
       // Fire-and-forget: cache profile picture for new conversation
       cacheProfilePicture(businessId, newConv!.id, conversationId, fromJid, isGroup);
     } else {
@@ -620,7 +647,8 @@ export async function storeOutgoingMessage(
   mediaUrl?: string,
   buttons?: string, // JSON string of buttons array
   sourceTimestampSec?: number | null,
-  originalWaTimestampSec?: number | null
+  originalWaTimestampSec?: number | null,
+  sender?: { sentBy?: 'bot' | 'staff' | 'system' | null; sentByUserId?: string | null }
 ) {
   const normalizedTo = extractPhoneFromJid(toNumber);
 
@@ -658,16 +686,27 @@ export async function storeOutgoingMessage(
     const result = await queryOne<{ id: string }>(
       `INSERT INTO whatsapp_conversation_messages 
        (business_id, conversation_id, message_id, from_number, to_number, 
-        message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp)
+        message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp,
+        sent_by, sent_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'outgoing', 'sent', $9, to_timestamp($10::double precision),
          CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
-           THEN to_timestamp($11::double precision) ELSE NULL END)
+           THEN to_timestamp($11::double precision) ELSE NULL END,
+         $12, $13)
          ON CONFLICT (message_id) DO UPDATE SET
          message_text = EXCLUDED.message_text,
          message_type = EXCLUDED.message_type,
-         media_url = EXCLUDED.media_url,
+         -- Inbox sends save the file first; a later echo of the same message must not replace it.
+         media_url = CASE
+           WHEN whatsapp_conversation_messages.media_url LIKE '/api/whatsapp/media/%' THEN whatsapp_conversation_messages.media_url
+           ELSE COALESCE(EXCLUDED.media_url, whatsapp_conversation_messages.media_url)
+         END,
          buttons = EXCLUDED.buttons,
-         status = 'sent'
+         sent_by = COALESCE(EXCLUDED.sent_by, whatsapp_conversation_messages.sent_by),
+         sent_by_user_id = COALESCE(EXCLUDED.sent_by_user_id, whatsapp_conversation_messages.sent_by_user_id),
+         status = CASE
+           WHEN whatsapp_conversation_messages.status IN ('delivered', 'read', 'failed') THEN whatsapp_conversation_messages.status
+           ELSE 'sent'
+         END
        RETURNING id`,
       [
         businessId,
@@ -680,7 +719,9 @@ export async function storeOutgoingMessage(
         mediaUrl || null,
         btn,
         normSec,
-        origSec
+        origSec,
+        sender?.sentBy ?? null,
+        sender?.sentByUserId ?? null
       ]
     );
 
@@ -870,7 +911,7 @@ async function getConversationState(
 /**
  * Update conversation state
  */
-async function updateConversationState(
+export async function updateConversationState(
   businessId: string,
   conversationId: string,
   state: ConversationState,
@@ -938,28 +979,9 @@ function isWebhookGraceExceeded(
   return Date.now() - baseMs >= WHATSAPP_PAYMENT_WEBHOOK_GRACE_MS;
 }
 
-async function formatDraftOrderConfirmationLines(orderId: string): Promise<string> {
-  const orderItems = await queryRows<{
-    item_name: string;
-    qty: number | string;
-    line_total: string | number | null;
-  }>(
-    `SELECT item_name, qty, unit_price, line_total
-     FROM sales_order_items
-     WHERE sales_order_id = $1
-     ORDER BY id ASC`,
-    [orderId]
-  );
-  return orderItems
-    .map(
-      (item, idx) =>
-        `${idx + 1}. ${item.item_name} × ${item.qty} = ₹${parseFloat(String(item.line_total ?? 0))}`
-    )
-    .join('\n');
-}
-
-function whatsAppOrderConfirmedMessage(itemsList: string, grandTotal: number): string {
-  return `✅ Payment received! Your order has been confirmed.\n\n📦 *Order Details:*\n${itemsList}\n\n💰 *Total: ₹${grandTotal}*\n\nThank you for your order! We'll process it shortly.`;
+/** Invoice + PDF bill for a gateway-paid order; the text confirmation is handled by the caller. */
+function followUpPaidOrder(businessId: string, orderId: string, confirmationSent: boolean): void {
+  void completePaidWhatsAppOrder(businessId, orderId, { confirmationSent });
 }
 
 /**
@@ -1059,6 +1081,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
   const od = order.ocr_data as Record<string, unknown> | undefined;
   if (od?.whatsapp_order_confirmed === true) {
     await clearConversationState(businessId, normalizedFrom);
+    followUpPaidOrder(businessId, order.id, true);
     return {
       response: 'Your payment is already confirmed. Thank you!',
       shouldStore: true
@@ -1095,6 +1118,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
 
   if (!confirmed) {
     await clearConversationState(businessId, normalizedFrom);
+    followUpPaidOrder(businessId, order.id, true);
     return {
       response: 'Your payment is already confirmed. Thank you!',
       shouldStore: true
@@ -1104,8 +1128,9 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
   const itemsList = await formatDraftOrderConfirmationLines(order.id);
   const grandTotal = parseFloat(order.grand_total);
   await clearConversationState(businessId, normalizedFrom);
+  followUpPaidOrder(businessId, order.id, true);
   return {
-    response: whatsAppOrderConfirmedMessage(itemsList, grandTotal),
+    response: await whatsAppOrderConfirmedMessage(businessId, itemsList, grandTotal),
     shouldStore: true
   };
 }
@@ -1134,245 +1159,78 @@ async function createCashSaleInvoice(
   items: Array<{ item_id: string; quantity: number; price?: number; name?: string }>,
   customerId?: string
 ): Promise<{ invoice_id: string; invoice_number: string }> {
-  const { queryOne, queryRows, getPool } = await import('@/lib/db');
-  const { checkLimitInTransaction } = await import('@/lib/subscription');
-  const pool = getPool();
-  const client = await pool.connect();
+  const { queryOne, getPool } = await import('@/lib/db');
+  const { createInvoiceInTransaction } = await import('@/lib/invoices/invoice-create-service');
+  const { todayIsoDate } = await import('@/lib/invoices/convert-to-invoice');
 
+  const owner = await queryOne<{ id: string }>(
+    `SELECT id FROM users WHERE business_id = $1 AND is_active = true
+      ORDER BY is_primary_admin DESC NULLS LAST, created_at ASC LIMIT 1`,
+    [businessId]
+  );
+  if (!owner) throw new Error('No active user found for this business. Cannot create WhatsApp invoice.');
+
+  const lines = [];
+  for (const itemInput of items) {
+    const item = await queryOne<{ id: string; name: string; selling_price: number; tax_rate: number; unit: string; hsn_sac: string | null }>(
+      `SELECT id, name, selling_price, tax_rate, unit, hsn_sac FROM items WHERE id = $1 AND business_id = $2`,
+      [itemInput.item_id, businessId]
+    );
+    if (!item) throw new Error(`Item ${itemInput.item_id} not found`);
+    lines.push({
+      item_id: item.id,
+      item_name: item.name,
+      hsn_sac: item.hsn_sac,
+      quantity: Number(itemInput.quantity) || 0,
+      unit: item.unit || undefined,
+      unit_price: Number(itemInput.price || item.selling_price) || 0,
+      tax_rate: Number(item.tax_rate) || 0,
+    });
+  }
+
+  const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-
-    // CRITICAL: Check subscription limit INSIDE transaction with locking
-    // This prevents WhatsApp bot from bypassing invoice limits
-    const limitCheck = await checkLimitInTransaction(client, businessId, 'invoices');
-    
-    if (!limitCheck.allowed) {
-      // Subscription limit exceeded - rollback transaction
-      await client.query('ROLLBACK');
-      client.release();
-      throw new Error(limitCheck.message || 'Invoice limit reached. Cannot create invoice via WhatsApp bot.');
-    }
-
-    // Limit check passed - proceed with invoice creation
-
-    // Get business settings for invoice number
-    const business = await queryOne<{ next_invoice_number: number; invoice_prefix: string }>(
-      `SELECT next_invoice_number, invoice_prefix FROM businesses WHERE id = $1`,
-      [businessId]
-    );
-
-    if (!business) {
-      throw new Error('Business not found');
-    }
-
-    const invoiceNumber = `${business.invoice_prefix || 'INV'}-${String(business.next_invoice_number).padStart(4, '0')}`;
-
-    // Fetch item details
-    const invoiceItems = [];
-    let subtotal = 0;
-    let taxTotal = 0;
-    let cgstTotal = 0;
-    let sgstTotal = 0;
-    let igstTotal = 0;
-
-    for (const itemInput of items) {
-      const item = await queryOne<{
-        id: string;
-        name: string;
-        selling_price: number;
-        tax_rate: number;
-        unit: string;
-        current_stock: number;
-      }>(
-        `SELECT id, name, selling_price, tax_rate, unit, current_stock 
-         FROM items WHERE id = $1 AND business_id = $2`,
-        [itemInput.item_id, businessId]
-      );
-
-      if (!item) {
-        throw new Error(`Item ${itemInput.item_id} not found`);
-      }
-
-      const price = itemInput.price || item.selling_price;
-      const quantity = itemInput.quantity;
-      const lineTotal = price * quantity;
-      const taxRate = item.tax_rate || 0;
-      const taxAmount = (lineTotal * taxRate) / 100;
-      
-      // For simplicity, assume CGST/SGST (half each) for now
-      // In production, you'd need to check business state and customer state
-      const cgstAmount = taxAmount / 2;
-      const sgstAmount = taxAmount / 2;
-
-      subtotal += lineTotal;
-      taxTotal += taxAmount;
-      cgstTotal += cgstAmount;
-      sgstTotal += sgstAmount;
-
-      invoiceItems.push({
-        ...item,
-        quantity,
-        price,
-        taxRate,
-        taxAmount,
-        lineTotal,
-        cgstAmount,
-        sgstAmount
-      });
-    }
-
-    const grandTotal = subtotal + taxTotal;
-    const today = new Date().toISOString().split('T')[0];
-
     const defaultBranchRes = await client.query(
       `SELECT id FROM branches WHERE business_id = $1 AND is_default = true LIMIT 1`,
       [businessId]
     );
-    const defaultBranchIdForInvoice = defaultBranchRes.rows[0]?.id as string | undefined;
-    if (!defaultBranchIdForInvoice) {
-      await client.query('ROLLBACK');
-      client.release();
-      throw new Error('No default branch configured for this business. Cannot create WhatsApp invoice.');
-    }
+    const branchId = defaultBranchRes.rows[0]?.id as string | undefined;
+    if (!branchId) throw new Error('No default branch configured for this business. Cannot create WhatsApp invoice.');
 
-    // Create invoice
-    const invoiceRes = await client.query(
-      `INSERT INTO invoices (
-        business_id, branch_id, customer_id, invoice_number, invoice_date, due_date,
-        status, payment_status, subtotal, discount_total, additional_charges, tax_total,
-        round_off, grand_total, paid_amount, balance_amount,
-        cgst_total, sgst_total, igst_total, document_type
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-      RETURNING id, invoice_number`,
-      [
-        businessId,
-        defaultBranchIdForInvoice,
-        customerId || null,
-        invoiceNumber,
-        today,
-        today,
-        'final', // Auto-finalize bot invoices
-        'unpaid', // Cash sale is unpaid by default (can be updated later)
-        subtotal,
-        0, // discount_total
-        0, // additional_charges
-        taxTotal,
-        0, // round_off
-        grandTotal,
-        0, // paid_amount (unpaid by default)
-        grandTotal, // balance_amount
-        cgstTotal,
-        sgstTotal,
-        igstTotal,
-        'tax_invoice'
-      ]
-    );
-
-    const invoice = invoiceRes.rows[0];
-
-    // Get default warehouse if warehouse mode is enabled (reuse for all items)
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
-    const warehouseModeEnabled = await isWarehouseModeEnabled(businessId);
-    let defaultLocationId: string | null = null;
-    
-    if (warehouseModeEnabled) {
+    let locationId: string | null = null;
+    if (await isWarehouseModeEnabled(businessId)) {
       const { getDefaultWarehouseForBranch } = await import('./warehouse-access');
-      defaultLocationId = await getDefaultWarehouseForBranch(defaultBranchIdForInvoice);
-      
-      if (!defaultLocationId) {
-        await client.query('ROLLBACK');
-        client.release();
+      locationId = await getDefaultWarehouseForBranch(branchId);
+      if (!locationId) {
         throw new Error('Warehouse mode is enabled but no default warehouse found. Please configure a default warehouse for your default branch.');
       }
     }
 
-    // Create invoice items and update stock
-    for (const itemData of invoiceItems) {
-      await client.query(
-        `INSERT INTO invoice_items (
-          invoice_id, item_id, item_name, quantity, unit_price, tax_rate,
-          line_total, cgst_rate, cgst_amount, sgst_rate, sgst_amount, igst_rate, igst_amount,
-          location_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [
-          invoice.id,
-          itemData.id,
-          itemData.name,
-          itemData.quantity,
-          itemData.price,
-          itemData.taxRate,
-          itemData.lineTotal,
-          itemData.taxRate / 2, // CGST rate
-          itemData.cgstAmount,
-          itemData.taxRate / 2, // SGST rate
-          itemData.sgstAmount,
-          0, // IGST rate
-          0, // IGST amount
-          defaultLocationId
-        ]
-      );
-
-      // Update stock
-      const itemTypeRes = await client.query('SELECT item_type FROM items WHERE id = $1', [itemData.id]);
-      const itemType = itemTypeRes.rows[0]?.item_type || 'goods';
-
-      if (itemType === 'goods') {
-        if (warehouseModeEnabled && defaultLocationId) {
-          // Warehouse mode: update location_stock
-          await client.query(
-            `INSERT INTO location_stock (location_id, item_id, current_stock_qty, last_updated)
-             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-             ON CONFLICT (location_id, item_id)
-             DO UPDATE SET
-               current_stock_qty = location_stock.current_stock_qty - $3,
-               last_updated = CURRENT_TIMESTAMP`,
-            [defaultLocationId, itemData.id, itemData.quantity]
-          );
-        } else if (!warehouseModeEnabled) {
-          const { adjustBranchItemStock, refreshItemGlobalStockFromBranches } = await import('./branch-stock');
-          await adjustBranchItemStock(
-            client,
-            businessId,
-            defaultBranchIdForInvoice,
-            itemData.id,
-            -itemData.quantity
-          );
-          await refreshItemGlobalStockFromBranches(client, businessId, itemData.id);
-        }
-
-        // Record stock movement (always include location_id when provided)
-        await client.query(
-          `INSERT INTO stock_movements (business_id, item_id, location_id, type, quantity, reference_type, reference_id, notes)
-           VALUES ($1, $2, $3, 'out', $4, 'invoice', $5, $6)`,
-          [businessId, itemData.id, defaultLocationId, itemData.quantity, invoice.id, `Invoice ${invoiceNumber}`]
-        );
-      }
-    }
-
-    // Update next invoice number
-    await client.query(
-      `UPDATE businesses SET next_invoice_number = next_invoice_number + 1 WHERE id = $1`,
-      [businessId]
-    );
-
-    // Update customer balance if customer exists
+    let placeOfSupply: string | null = null;
     if (customerId) {
-      await client.query(
-        `UPDATE customers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2`,
-        [grandTotal, customerId]
-      );
+      const c = await client.query(`SELECT state_code FROM customers WHERE id = $1 AND business_id = $2`, [customerId, businessId]);
+      placeOfSupply = c.rows[0]?.state_code || null;
     }
 
+    const today = todayIsoDate();
+    const result = await createInvoiceInTransaction(client, {
+      business_id: businessId,
+      created_by: owner.id,
+      branch_id: branchId,
+      customer_id: customerId || null,
+      invoice_date: today,
+      due_date: today,
+      status: 'final',
+      document_type: 'tax_invoice',
+      place_of_supply_state_code: placeOfSupply,
+      items: lines.map((l) => ({ ...l, location_id: locationId })),
+    });
     await client.query('COMMIT');
-
-    return {
-      invoice_id: invoice.id,
-      invoice_number: invoice.invoice_number
-    };
+    return { invoice_id: result.invoiceId, invoice_number: result.invoiceNumber };
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     client.release();
@@ -1383,7 +1241,7 @@ async function createCashSaleInvoice(
  * Create sales order from WhatsApp bot
  * This is used for pending orders that require manual payment verification
  */
-async function createSalesOrderFromWhatsApp(
+export async function createSalesOrderFromWhatsApp(
   businessId: string,
   items: Array<{ item_id?: string; quantity: number; price: number; name: string }>,
   conversationId: string,
@@ -2153,13 +2011,18 @@ export async function processIncomingMessage(
   groupJid?: string,
   whatsappDisplayName?: string, // WhatsApp display name (pushName) - may be from phone address book or profile
   sourceTimestampSec?: number | null,
-  originalWaTimestampSec?: number | null
+  originalWaTimestampSec?: number | null,
+  /** Receives the stored conversation's DB id so callers can queue unanswered chats for a person. */
+  out?: { conversationUuid?: string; replyId?: string | null }
 ): Promise<{ 
   response?: string; 
   shouldStore?: boolean;
+  /** True when the message needs no person even though no `response` is returned (duplicate, already answered). */
+  handled?: boolean;
   responseType?: string;
   buttons?: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }>;
   footer?: string;
+  list?: { buttonText: string; rows: Array<{ id: string; title: string; description?: string }> };
   mediaUrl?: string;
   delaySeconds?: number;
   enableTyping?: boolean;
@@ -2211,10 +2074,11 @@ export async function processIncomingMessage(
       sourceTimestampSec,
       originalWaTimestampSec
     );
+    if (out && conversationId) out.conversationUuid = conversationId;
 
     if (existingMsg) {
       console.log('[CRM] Duplicate message_id — stored/updated only, skipping bot reply:', messageId);
-      return { shouldStore: true };
+      return { shouldStore: true, handled: true };
     }
     
     // Extract normalized phone for state / bot rules (groups may use participant or 'unknown')
@@ -2226,6 +2090,11 @@ export async function processIncomingMessage(
         console.warn('[CRM] Could not extract phone number from JID:', fromJid);
         return { shouldStore: false };
       }
+    }
+
+    // Throttled internally (every 3rd message or on strong signals) and gated by lead_analyzer_enabled.
+    if (!isGroup && conversationId && messageText.trim()) {
+      void analyzeAndUpdateLeadProfile(businessId, conversationId, normalizedFrom, customerId ?? undefined, messageText);
     }
 
     // Get current conversation state (individual chats only)
@@ -2259,6 +2128,71 @@ export async function processIncomingMessage(
         normalizedFrom
       });
       if (paidImmediate) return paidImmediate;
+    }
+
+    // A person is handling this chat (intervened, or the bot is paused): no keyword rules, shop or AI replies.
+    if (!isGroup && conversationId) {
+      const human = await queryOne<{ handled_by_human: boolean }>(
+        `SELECT (inbox_state = 'intervened'
+                 OR (bot_paused_until IS NOT NULL AND bot_paused_until > NOW())) AS handled_by_human
+           FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
+        [conversationId, businessId]
+      ).catch(() => null);
+      if (human?.handled_by_human) {
+        console.log('[CRM] Chat is handled by a person — stored only, no automatic reply');
+        const { logRouting } = await import('@/lib/whatsapp/flows/log');
+        await logRouting({ businessId, conversationId, messageId, handler: 'human' });
+        return { shouldStore: true };
+      }
+    }
+
+    const replyId = out?.replyId ?? null;
+
+    const runShopReply = async (textForShop: string) => {
+      const { respondToShopRequest } = await import('./whatsapp-shop/intent');
+      const shopReply = await respondToShopRequest({
+        businessId,
+        phone: normalizedFrom,
+        conversationUuid: conversationId,
+        text: textForShop,
+      }).catch((e) => {
+        console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
+        return null;
+      });
+      if (!shopReply) return null;
+      const { logRouting } = await import('@/lib/whatsapp/flows/log');
+      await logRouting({ businessId, conversationId, messageId, handler: 'shop' });
+      return shopReply.response
+        ? { response: shopReply.response, shouldStore: true, delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0 }
+        : { shouldStore: true, handled: true as const };
+    };
+
+    if (!isGroup && conversationId && convState !== 'waiting_payment' && (messageType === 'text' || replyId)) {
+      const { tryFlowSessionOrHard } = await import('@/lib/whatsapp/flows/hook');
+      const first = await isFirstMessage(businessId, normalizedFrom);
+      const flowHit = await tryFlowSessionOrHard({
+        businessId,
+        conversationId,
+        messageId,
+        text: messageText,
+        replyId,
+        isFirstMessage: first,
+        phone: normalizedFrom,
+      });
+      if (flowHit && 'openShop' in flowHit && flowHit.openShop) {
+        const shop = await runShopReply('shop');
+        if (shop) return shop;
+      } else if (flowHit && !('openShop' in flowHit)) {
+        return { ...flowHit, delaySeconds: flowHit.delaySeconds ?? (botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0) };
+      }
+    }
+
+    if (!isGroup && messageType === 'text' && conversationId) {
+      const { isShopRequest } = await import('./whatsapp-shop/intent');
+      if (isShopRequest(messageText)) {
+        const shop = await runShopReply(messageText);
+        if (shop) return shop;
+      }
     }
 
     // Check if we're in a chained conversation flow
@@ -2301,6 +2235,14 @@ export async function processIncomingMessage(
     });
 
     if (matchedRule) {
+      const { logRouting } = await import('@/lib/whatsapp/flows/log');
+      await logRouting({
+        businessId,
+        conversationId,
+        messageId,
+        handler: 'bot_rule',
+        reason: matchedRule.name,
+      });
       // If rule has next_rule_id or response_options, set state to wait for user input
       if (matchedRule.response_options || matchedRule.next_rule_id) {
         await updateConversationState(businessId, normalizedFrom, 'waiting_for_option', {
@@ -2650,7 +2592,7 @@ export async function processIncomingMessage(
             await clearConversationState(businessId, normalizedFrom);
 
             return {
-              response: whatsAppOrderConfirmedMessage(itemsList, expectedAmount),
+              response: await whatsAppOrderConfirmedMessage(businessId, itemsList, expectedAmount),
               shouldStore: true
             };
           }
@@ -2670,6 +2612,32 @@ export async function processIncomingMessage(
 
     // AI Sales Agent - Try to generate response if no manual rule matched (individual chats only)
     // Note: We allow AI to respond even in waiting_payment state, but payment confirmations are handled first above
+    if (!isGroup && conversationId && convState !== 'waiting_payment' && (messageType === 'text' || replyId) && !matchedRule) {
+      const { tryFlowRouter } = await import('@/lib/whatsapp/flows/hook');
+      const routed = await tryFlowRouter({
+        businessId,
+        conversationId,
+        messageId,
+        text: messageText,
+        replyId,
+        isFirstMessage: false,
+        phone: normalizedFrom,
+      });
+      if (routed && routed !== 'ai_agent') {
+        if ('openShop' in routed && routed.openShop) {
+          const shop = await runShopReply('shop');
+          if (shop) return shop;
+        } else if (!('openShop' in routed)) {
+          if (routed.response || routed.handled) {
+            return {
+              ...routed,
+              delaySeconds: routed.delaySeconds ?? (botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0),
+            };
+          }
+        }
+      }
+    }
+
     if (!isGroup && messageType === 'text' && messageText.trim()) {
       console.log('[CRM] 🔍 Pre-AI Check:', {
         isGroup,
@@ -2805,36 +2773,85 @@ export async function processIncomingMessage(
           return { shouldStore: true };
         }
 
-        console.log('[CRM] ✅ Business info fetched, fetching conversation history...');
-        
-        // Get recent conversation history (last 10 messages)
-        // conversationId here is the UUID from whatsapp_conversations.id
+        const agentSettings = await loadAgentSettings(businessId);
+        const replyDelay = botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0;
+        const fallbackReply = (): string => {
+          const custom = agentSettings.fallbackMessage.trim();
+          if (custom) return custom;
+          const phone = String(businessInfo?.phone || '').trim();
+          const callLine = phone
+            ? `Please call us at ${phone} and we’ll help you right away.`
+            : 'Please call us and we’ll help you right away.';
+          return `Sorry — we’re having trouble replying automatically right now.\n\n${callLine}`;
+        };
+
+        const gate = await runAgentGate({
+          businessId,
+          conversationId,
+          message: messageText,
+          settings: agentSettings,
+          customerLabel: whatsappDisplayName || normalizedFrom,
+        });
+        if (gate.action === 'stop') {
+          console.log('[CRM] 🤖 AI paused for this conversation — stored only');
+          return { shouldStore: true };
+        }
+
+        // Recent lines for tone, plus the saved memory of everything older than that window.
         const conversationHistory = await queryRows<any>(
-          `SELECT direction, message_text, created_at, message_id
+          `SELECT direction, message_text, created_at, message_id, sent_by
            FROM whatsapp_conversation_messages
            WHERE business_id = $1 AND conversation_id = $2
            ORDER BY created_at DESC, message_id DESC
            LIMIT 10`,
           [businessId, conversationId]
         );
-        
-        console.log('[CRM] 📜 Conversation history fetched:', {
-          historyCount: conversationHistory.length,
-          conversationId
-        });
 
-        // Format history for AI (DB returns newest first, so we reverse it to be chronological)
+        // Chronological; staff replies are context, not the agent's own words.
         const history = conversationHistory.reverse().map((msg: any) => ({
           role: msg.direction === 'outgoing' ? 'assistant' : 'user' as 'user' | 'assistant',
-          content: msg.message_text || ''
+          content:
+            msg.direction === 'outgoing' && msg.sent_by === 'staff'
+              ? `[A staff member replied]: ${msg.message_text || ''}`
+              : msg.message_text || ''
         }));
 
-          // Get customer info if available
-          let customerInfo: any = undefined;
+        const storedFields = await loadLeadAnswers(businessId, conversationId);
+        let conversationMemory = applyStoredAnswers(
+          await loadAgentMemory(businessId, conversationId),
+          storedFields,
+        );
+        if (!conversationMemory.summary.trim()) {
+          const prior = history.at(-1)?.role === 'user' ? history.slice(0, -1) : history;
+          conversationMemory = combineMemory(memoryFromTranscript(prior), conversationMemory);
+        }
+        const remember = (assistantReply: string, leadData?: Record<string, string>) =>
+          rememberAgentTurn(
+            businessId,
+            conversationId,
+            { userMessage: messageText, assistantReply, priorMessages: history, leadData },
+            {
+              customerId,
+              placeholderNames: [whatsappDisplayName, normalizedFrom],
+              base: conversationMemory,
+            },
+          ).catch((err) => console.error('[CRM] Saving agent memory failed:', err));
+
+        if (gate.action === 'reply') {
+          await remember(gate.response);
+          return { response: gate.response, shouldStore: true, delaySeconds: replyDelay };
+        }
+        const greetingPrefix = gate.greeting ? `${gate.greeting}\n\n` : '';
+
+          const chatName = (await loadChatCustomerName(businessId, conversationId)) || conversationMemory.facts.name || null;
+          let customerInfo: any = {
+            name: chatName,
+            profileName: whatsappDisplayName && !isPlaceholderName(whatsappDisplayName) ? whatsappDisplayName : null,
+          };
           if (customerId) {
             const customer = await queryOne<any>(
-              `SELECT name FROM customers WHERE id = $1`,
-              [customerId]
+              `SELECT name FROM customers WHERE id = $1 AND business_id = $2`,
+              [customerId, businessId]
             );
             
             const orderStats = await queryOne<any>(
@@ -2848,7 +2865,8 @@ export async function processIncomingMessage(
 
             if (customer) {
               customerInfo = {
-                name: customer.name,
+                ...customerInfo,
+                name: chatName || (isPlaceholderName(customer.name, [whatsappDisplayName]) ? null : customer.name),
                 previousOrders: orderStats?.total_orders || 0,
                 totalSpent: orderStats?.total_spent || 0
               };
@@ -2912,57 +2930,100 @@ export async function processIncomingMessage(
               state: convState,
               context: convContext
             },
-            pendingOrder: pendingOrderInfo
+            pendingOrder: pendingOrderInfo,
+            customerPhone: normalizedFrom,
+            live: aiConfig?.mode !== 'dev',
+            settingsOverride: agentSettings,
+            conversationMemory,
           };
 
-          let aiResponse = await chatbot.generateResponse(
-            businessId,
-            salesAgentRequest
-          );
+          let aiResult = await chatbot.generate(businessId, salesAgentRequest);
 
-          let aiTrimmed =
-            typeof aiResponse === 'string' ? aiResponse.trim() : '';
-
-          if (!aiTrimmed) {
-            console.warn(
-              '[CRM] ⚠️ AI Sales Agent returned empty — retrying once with stricter prompt'
-            );
-            aiResponse = await chatbot.generateResponse(businessId, {
-              ...salesAgentRequest,
-              retryAfterEmpty: true
-            });
-            aiTrimmed =
-              typeof aiResponse === 'string' ? aiResponse.trim() : '';
+          if (!aiResult.content?.trim() && (aiResult.failure === 'empty' || aiResult.failure === 'error')) {
+            console.warn('[CRM] ⚠️ AI Sales Agent returned empty — retrying once with stricter prompt');
+            aiResult = await chatbot.generate(businessId, { ...salesAgentRequest, retryAfterEmpty: true });
           }
 
+          const aiRaw = aiResult.content?.trim() || '';
+          if (!aiRaw) {
+            if (aiResult.failure === 'daily_limit' || aiResult.failure === 'disabled' || aiResult.failure === 'not_configured') {
+              return { shouldStore: true };
+            }
+            console.warn('[CRM] ⚠️ AI Sales Agent produced no reply — sending fallback:', aiResult.failure);
+            const missed = fallbackReply();
+            await remember(missed);
+            return { response: missed, shouldStore: true, delaySeconds: replyDelay };
+          }
+
+          const parsedReply = parseAgentReply(aiRaw);
+          if (parsedReply.handoff && agentSettings.handoff.enabled) {
+            await performHandoff(businessId, conversationId, agentSettings, {
+              customerLabel: whatsappDisplayName || normalizedFrom,
+            });
+          }
+          if (Object.keys(parsedReply.leadData).length) {
+            await applyLeadAnswers(businessId, conversationId, agentSettings, parsedReply.leadData, {
+              customerLabel: whatsappDisplayName || normalizedFrom,
+            });
+          }
+          const quickReplyButtons = (agentSettings.quickRepliesEnabled ? parsedReply.quickReplies : []).map((title, i) => ({
+            id: `qr_${i + 1}`,
+            title,
+            type: 'quick_reply' as const,
+          }));
+          const aiTrimmed = parsedReply.text || (parsedReply.handoff
+            ? agentSettings.handoff.message.trim() || DEFAULT_HANDOFF_MESSAGE
+            : '');
+
           if (!aiTrimmed) {
-            console.warn(
-              '[CRM] ⚠️ AI Sales Agent still empty after retry — sending fallback'
-            );
-            const phone = String(businessInfo?.phone || '').trim();
-            const callLine = phone
-              ? `Please call us at ${phone} and we’ll help you right away.`
-              : 'Please call us and we’ll help you right away.';
-            return {
-              response: `Sorry — we’re having trouble replying automatically right now.\n\n${callLine}`,
-              shouldStore: true,
-              delaySeconds: botTypingSettings.typingEnabled
-                ? botTypingSettings.delaySeconds
-                : 0
-            };
+            const missed = fallbackReply();
+            await remember(missed);
+            return { response: missed, shouldStore: true, delaySeconds: replyDelay };
           }
 
           if (aiTrimmed) {
             console.log('[CRM] 🤖 AI Sales Agent generated response');
 
-            let finalAiResponse = aiTrimmed;
+            const collectedCustomer = parseCustomerTag(aiTrimmed);
+            let finalAiResponse = aiTrimmed.replace(/CUSTOMER:\s*\{[\s\S]*?\}\s*/g, '');
+            if (collectedCustomer?.name && collectedCustomer.name !== chatName) {
+              await saveChatCustomerName(businessId, conversationId, collectedCustomer.name).catch((err) =>
+                console.error('[CRM] Saving the customer name for this chat failed:', err)
+              );
+            }
+            if (collectedCustomer && customerId && !finalAiResponse.includes('CREATE_ORDER:')) {
+              await saveCollectedCustomerDetails(businessId, customerId, collectedCustomer, [
+                whatsappDisplayName,
+                normalizedFrom,
+              ]).catch((err) => console.error('[CRM] Saving collected customer details failed:', err));
+            }
 
             // 1. Check for order creation tag
             if (finalAiResponse.includes('CREATE_ORDER:')) {
+              // The model already told the customer the order is placed; if it isn't, that must not go out.
+              let orderSaved = false;
               try {
+                // Prepaid WhatsApp orders require a payment gateway (no manual UPI / screenshot path).
+                const { listBusinessPaymentProviderIds } = await import('@/lib/payments');
+                const gatewayProviders = await listBusinessPaymentProviderIds(businessId).catch(() => []);
+                if (gatewayProviders.length === 0) {
+                  finalAiResponse = finalAiResponse.replace(/CREATE_ORDER:.*$/m, '').trim();
+                  const phone = String(businessInfo?.phone || '').trim();
+                  const callLine = phone
+                    ? `Please call us at ${phone} and we'll help you place the order.`
+                    : `Please message us and we'll help you place the order.`;
+                  const unavailable = `Sorry — online ordering isn't available right now because payments aren't set up.\n\n${callLine}`;
+                  await remember(unavailable, parsedReply.leadData);
+                  return {
+                    response: unavailable,
+                    shouldStore: true,
+                    delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0,
+                  };
+                }
+
                 // Check if there's already a draft order for this conversation (prevent duplicates)
                 const existingOrder = await queryOne<any>(
-                  `SELECT id, order_number, grand_total, status 
+                  `SELECT id, order_number, grand_total, status, customer_id
                    FROM sales_orders 
                    WHERE business_id = $1 AND whatsapp_conversation_id = $2 AND status = 'draft'
                    ORDER BY created_at DESC LIMIT 1`,
@@ -2971,37 +3032,19 @@ export async function processIncomingMessage(
 
                 if (existingOrder) {
                   console.log('[CRM] ⚠️ Draft order already exists:', existingOrder.order_number);
+                  orderSaved = true;
+                  if (collectedCustomer && existingOrder.customer_id) {
+                    await saveCollectedCustomerDetails(businessId, existingOrder.customer_id, collectedCustomer, [
+                      whatsappDisplayName,
+                      normalizedFrom,
+                    ]);
+                  }
                   // A+B: Update existing draft to match AI intent (items/qty), using DB prices.
-                  const orderPart = finalAiResponse.split('CREATE_ORDER:')[1].trim();
-                  const jsonMatch = orderPart.match(/\[.*\]/);
-                  if (jsonMatch) {
-                    const items = JSON.parse(jsonMatch[0]);
-                    console.log('[CRM] 📦 Extracting items for draft update:', items);
-
-                    const itemsWithIds = await Promise.all(
-                      items.map(async (item: any) => {
-                        const name = String(item?.name || '').trim();
-                        const quantity = Number(item?.qty || item?.quantity || 1) || 1;
-                        const dbItem = await queryOne<{ id: string; name: string; selling_price: number }>(
-                          `SELECT id, name, selling_price
-                           FROM items
-                           WHERE business_id = $1 AND name ILIKE $2
-                           ORDER BY selling_price ASC, created_at DESC
-                           LIMIT 1`,
-                          [businessId, name]
-                        );
-                        if (!dbItem) {
-                          throw new Error(`Item not found in catalog: ${name}`);
-                        }
-                        return {
-                          item_id: dbItem.id,
-                          name: dbItem.name,
-                          quantity,
-                          price: Number(dbItem.selling_price) || 0
-                        };
-                      })
-                    );
-
+                  const lines = parseCreateOrderTag(finalAiResponse);
+                  const resolved = lines ? await resolveOrderItems(businessId, lines) : null;
+                  if (resolved?.unmatched.length) console.warn('[CRM] Order lines not in catalogue:', resolved.unmatched);
+                  if (resolved?.items.length) {
+                    const itemsWithIds = resolved.items;
                     const updated = await updateDraftSalesOrderFromWhatsApp({
                       businessId,
                       orderId: existingOrder.id,
@@ -3043,131 +3086,62 @@ export async function processIncomingMessage(
                 } else {
                   // No existing order, check if we have customer information
                   let finalCustomerId = customerId;
-                  let customerName = convContext.customer_name;
-                  let customerPhone = convContext.customer_phone || normalizedFrom;
-                  let customerAddress = convContext.customer_address || convContext.shipping_address;
+                  const customerName = collectedCustomer?.name || chatName || convContext.customer_name;
+                  const customerPhone = convContext.customer_phone || normalizedFrom;
+                  const customerAddress =
+                    collectedCustomer?.address || convContext.customer_address || convContext.shipping_address;
+                  const convData = await queryOne<{ whatsapp_display_name: string | null }>(
+                    `SELECT whatsapp_display_name FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
+                    [conversationId, businessId]
+                  );
+                  const placeholderNames = [whatsappDisplayName, convData?.whatsapp_display_name, normalizedFrom];
 
-                  // If no customer exists, create one from conversation data
                   if (!finalCustomerId) {
-                    // Get customer name from WhatsApp display name or conversation
-                    const convData = await queryOne<any>(
-                      `SELECT whatsapp_display_name, from_number 
-                       FROM whatsapp_conversations 
-                       WHERE id = $1 AND business_id = $2`,
-                      [conversationId, businessId]
-                    );
-
-                    // Try to find or create customer
-                    const existingCustomer = await queryOne<{ id: string }>(
-                      `SELECT id FROM customers WHERE business_id = $1 AND phone = $2 LIMIT 1`,
-                      [businessId, normalizedFrom]
-                    );
+                    const phoneDigits = normalizedFrom.replace(/\D/g, '');
+                    const existingCustomer = phoneDigits.length >= 10
+                      ? await queryOne<{ id: string }>(
+                          `SELECT id FROM customers
+                            WHERE business_id = $1 AND deleted_at IS NULL
+                              AND RIGHT(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = RIGHT($2, 10)
+                            ORDER BY created_at ASC LIMIT 1`,
+                          [businessId, phoneDigits]
+                        )
+                      : null;
 
                     if (existingCustomer) {
                       finalCustomerId = existingCustomer.id;
-                      console.log('[CRM] ✅ Found existing customer:', finalCustomerId);
-                      
-                      // Update customer with information collected by AI if available
-                      if (customerName || customerAddress) {
-                        const updateFields: string[] = [];
-                        const updateValues: any[] = [];
-                        let paramIndex = 1;
-                        
-                        if (customerName) {
-                          updateFields.push(`name = $${paramIndex++}`);
-                          updateValues.push(customerName);
-                        }
-                        
-                        if (customerAddress) {
-                          updateFields.push(`shipping_address = $${paramIndex++}`);
-                          updateValues.push(customerAddress);
-                        }
-                        
-                        if (updateFields.length > 0) {
-                          updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-                          updateValues.push(finalCustomerId);
-                          await query(
-                            `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
-                            updateValues
-                          );
-                          console.log('[CRM] ✅ Updated customer with collected information');
-                        }
-                      }
                     } else {
-                      // Create a new customer record with collected information
                       const newCustomer = await queryOne<{ id: string }>(
-                        `INSERT INTO customers (business_id, name, phone, shipping_address, created_at, updated_at)
-                         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        `INSERT INTO customers (business_id, name, phone, email, shipping_address, created_at, updated_at)
+                         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                          RETURNING id`,
                         [
                           businessId,
                           customerName || convData?.whatsapp_display_name || `Customer ${normalizedFrom.substring(normalizedFrom.length - 4)}`,
-                          customerPhone || normalizedFrom,
+                          customerPhone,
+                          collectedCustomer?.email || null,
                           customerAddress || null
                         ]
                       );
                       finalCustomerId = newCustomer?.id;
-                      console.log('[CRM] ✅ Created new customer with collected information:', finalCustomerId);
-                    }
-                  } else {
-                    // Customer exists, update with collected information if available
-                    if (customerName || customerAddress) {
-                      const updateFields: string[] = [];
-                      const updateValues: any[] = [];
-                      let paramIndex = 1;
-                      
-                      if (customerName) {
-                        updateFields.push(`name = $${paramIndex++}`);
-                        updateValues.push(customerName);
-                      }
-                      
-                      if (customerAddress) {
-                        updateFields.push(`shipping_address = $${paramIndex++}`);
-                        updateValues.push(customerAddress);
-                      }
-                      
-                      if (updateFields.length > 0) {
-                        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-                        updateValues.push(finalCustomerId);
-                        await query(
-                          `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
-                          updateValues
-                        );
-                        console.log('[CRM] ✅ Updated existing customer with collected information');
-                      }
                     }
                   }
 
-                  const orderPart = finalAiResponse.split('CREATE_ORDER:')[1].trim();
-                  const jsonMatch = orderPart.match(/\[.*\]/);
-                  if (jsonMatch) {
-                    const items = JSON.parse(jsonMatch[0]);
-                    console.log('[CRM] 📦 Extracting items for order creation:', items);
-                    
-                    // Fetch item IDs and ALWAYS use DB price (do not trust AI price).
-                    const itemsWithIds = await Promise.all(
-                      items.map(async (item: any) => {
-                        const name = String(item?.name || '').trim();
-                        const quantity = Number(item?.qty || item?.quantity || 1) || 1;
-                        const dbItem = await queryOne<{ id: string; name: string; selling_price: number }>(
-                          `SELECT id, name, selling_price
-                           FROM items
-                           WHERE business_id = $1 AND name ILIKE $2
-                           ORDER BY selling_price ASC, created_at DESC
-                           LIMIT 1`,
-                          [businessId, name]
-                        );
-                        if (!dbItem) {
-                          throw new Error(`Item not found in catalog: ${name}`);
-                        }
-                        return {
-                          item_id: dbItem.id,
-                          name: dbItem.name,
-                          quantity,
-                          price: Number(dbItem.selling_price) || 0
-                        };
-                      })
+                  if (finalCustomerId) {
+                    await saveCollectedCustomerDetails(
+                      businessId,
+                      finalCustomerId,
+                      { name: customerName, email: collectedCustomer?.email, address: customerAddress },
+                      placeholderNames
                     );
+                  }
+
+                  const lines = parseCreateOrderTag(finalAiResponse);
+                  // Always the catalogue price, never the AI's.
+                  const resolved = lines ? await resolveOrderItems(businessId, lines) : null;
+                  if (resolved?.unmatched.length) console.warn('[CRM] Order lines not in catalogue:', resolved.unmatched);
+                  if (resolved?.items.length) {
+                    const itemsWithIds = resolved.items;
 
                     // Get customer address if available
                     const customerData = finalCustomerId ? await queryOne<any>(
@@ -3206,6 +3180,7 @@ export async function processIncomingMessage(
                     );
 
                     console.log('[CRM] ✅ Created sales order:', orderResult.order_number);
+                    orderSaved = true;
 
                     // Update context for this message processing
                     convContext.total_amount = orderResult.total_amount;
@@ -3239,6 +3214,10 @@ export async function processIncomingMessage(
                 }
               } catch (e) {
                 console.error('[CRM] Failed to parse order items from AI response:', e);
+              }
+              if (!orderSaved) {
+                console.warn('[CRM] AI order not created; sending a holding reply instead of a false confirmation');
+                finalAiResponse = ORDER_NOT_CREATED_REPLY;
               }
             }
 
@@ -3374,7 +3353,9 @@ export async function processIncomingMessage(
                 aiLower.includes('transfer')
               ));
 
-            if (isRequestingPaymentLink) {
+            if (isRequestingPaymentLink && !agentSettings.skills.paymentLinks) {
+              finalAiResponse = finalAiResponse.replace(/\[insert payment link\]|\[payment link\]/g, '').trim();
+            } else if (isRequestingPaymentLink) {
               // Fetch latest draft order if we don't have it in context
               let orderAmount = convContext.total_amount;
               let orderId = convContext.order_id;
@@ -3401,14 +3382,17 @@ export async function processIncomingMessage(
                   paymentInfo = await generatePaymentLinkForBusiness(businessId, {
                     orderId,
                     amount: orderAmount,
-                    customerName: whatsappDisplayName || normalizedFrom
+                    customerName: whatsappDisplayName || normalizedFrom,
+                    pspOnly: true,
                   });
                 } catch (e: any) {
                   console.error('[CRM] ⚠️ Payment link generation failed:', e);
                   const phone = String(businessInfo?.phone || '').trim();
                   const callLine = phone ? `Please call us at ${phone} and we’ll help you right away.` : 'Please call us and we’ll help you right away.';
+                  const paymentFailed = `Sorry — we’re facing a technical issue right now.\n\n${callLine}`;
+                  await remember(paymentFailed, parsedReply.leadData);
                   return {
-                    response: `Sorry — we’re facing a technical issue right now.\n\n${callLine}`,
+                    response: paymentFailed,
                     shouldStore: true,
                     delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
                   };
@@ -3420,14 +3404,36 @@ export async function processIncomingMessage(
                   const cleaned = finalAiResponse.replace(/\[insert payment link\]|\[payment link\]/g, '').trim();
                   const phone = String(businessInfo?.phone || '').trim();
                   const callLine = phone ? `Please call us at ${phone} and we’ll help you right away.` : 'Please call us and we’ll help you right away.';
+                  const noLink = `${cleaned}\n\nSorry — we couldn’t generate a payment link right now.\n\n${callLine}`.trim();
+                  await remember(noLink, parsedReply.leadData);
                   return {
-                    response: `${cleaned}\n\nSorry — we couldn’t generate a payment link right now.\n\n${callLine}`.trim(),
+                    response: noLink,
                     shouldStore: true,
                     delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
                   };
                 }
 
                 if (paymentInfo) {
+                  if (paymentInfo.source === 'psp' && orderId) {
+                    try {
+                      const items = await queryRows<{ item_id: string | null; qty: string }>(
+                        `SELECT item_id, qty::text FROM sales_order_items WHERE sales_order_id = $1`,
+                        [orderId],
+                      );
+                      const { reserveWhatsAppShopOrder } = await import('@/lib/whatsapp-shop/reserve');
+                      await reserveWhatsAppShopOrder({
+                        businessId,
+                        orderId,
+                        lines: items.map((r) => ({
+                          item_id: r.item_id,
+                          quantity: Number(r.qty) || 0,
+                        })),
+                      });
+                    } catch (reserveErr) {
+                      console.error('[CRM] WhatsApp stock reserve failed:', reserveErr);
+                    }
+                  }
+
                   // Remove placeholder if exists from text
                   if (finalAiResponse.includes('[insert payment link]')) {
                     finalAiResponse = finalAiResponse.replace('[insert payment link]', '').trim();
@@ -3470,6 +3476,7 @@ export async function processIncomingMessage(
                   }
 
                     // Return as plain text (no button) - UPI links work better as clickable text links
+                  await remember(finalAiResponse, parsedReply.leadData);
                   return {
                     response: finalAiResponse,
                       shouldStore: true,
@@ -3495,6 +3502,7 @@ export async function processIncomingMessage(
                     }
 
                     // Return with button for HTTP/HTTPS links
+                    await remember(finalAiResponse, parsedReply.leadData);
                     return {
                       response: finalAiResponse,
                       shouldStore: true,
@@ -3539,9 +3547,9 @@ export async function processIncomingMessage(
               // Non-critical: continue even if event logging fails
             }
             
+            const taggedReply = `${greetingPrefix}${finalAiResponse.trim()}`;
             // Clean up any JSON or technical tags from AI response before sending to customer
-            // Remove CREATE_ORDER tags if not already removed
-            finalAiResponse = finalAiResponse.replace(/CREATE_ORDER:.*$/gm, '').trim();
+            finalAiResponse = stripOrderTags(finalAiResponse);
             
             // Remove any JSON arrays that might have leaked into the response
             finalAiResponse = finalAiResponse.replace(/\[\s*\{[^}]+\}\s*\]/g, '').trim();
@@ -3549,19 +3557,30 @@ export async function processIncomingMessage(
             // Clean up any double newlines
             finalAiResponse = finalAiResponse.replace(/\n{3,}/g, '\n\n');
             
-            // Note: Lead analysis already triggered after storing incoming message above
-            // No need to call again here to avoid duplicate analysis
-            
+            const replyText = `${greetingPrefix}${finalAiResponse.trim()}`;
+            await remember(taggedReply, parsedReply.leadData);
+            if (quickReplyButtons.length) {
+              return {
+                response: replyText,
+                shouldStore: true,
+                responseType: 'button',
+                buttons: quickReplyButtons,
+                delaySeconds: replyDelay
+              };
+            }
             return {
-              response: finalAiResponse.trim(),
+              response: replyText,
               shouldStore: true,
-              delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
+              delaySeconds: replyDelay
             };
           }
       } catch (error) {
         console.error('[CRM] ❌ AI Sales Agent error:', error);
         console.error('[CRM] AI Error Stack:', error instanceof Error ? error.stack : 'No stack trace');
-        // Requirement: if anything breaks, apologize and ask to call us (do not silently fail).
+        // Requirement: if anything breaks, apologize (owner's fallback message, else ask to call).
+        const saved = await loadAgentSettings(businessId).catch(() => null);
+        const custom = saved?.fallbackMessage.trim();
+        if (custom) return { response: custom, shouldStore: true };
         const bizPhone = await queryOne<{ phone?: string }>(
           `SELECT phone FROM businesses WHERE id = $1`,
           [businessId]

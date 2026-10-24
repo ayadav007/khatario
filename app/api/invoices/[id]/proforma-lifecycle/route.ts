@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { getUserIdFromRequest, requirePortalSession, getSessionScopedBusinessId, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requirePortalSession, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,13 +149,11 @@ export async function POST(
 
     const { id: invoiceId } = params;
     const body = await request.json();
-    const { status, notes, userId } = body;
+    const { status, notes } = body;
 
-    // Get user ID from request body, headers, or query params
-    const finalUserId = userId || getUserIdFromRequest(request, body);
-
+    const finalUserId = getAuthenticatedUserId(request);
     if (!finalUserId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
     // Validate status
@@ -165,12 +164,21 @@ export async function POST(
       );
     }
 
-    const businessScope =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+    if (status === 'converted_to_tax_invoice') {
+      return NextResponse.json(
+        {
+          error: 'Convert this proforma to a tax invoice. Lifecycle status cannot mark it converted.',
+          code: 'PROFORMA_CONVERSION_REQUIRED',
+        },
+        { status: 409 }
+      );
+    }
+
+    const businessScope = getSessionScopedBusinessId(request);
     if (!businessScope) {
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
@@ -184,8 +192,9 @@ export async function POST(
       let invoiceRes;
       try {
         invoiceRes = await client.query(
-          `SELECT id, document_type, proforma_lifecycle_status
-           FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+          `SELECT id, document_type, status, branch_id, proforma_lifecycle_status
+           FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+           FOR UPDATE`,
           [invoiceId, businessScope]
         );
       } catch (colError: any) {
@@ -214,6 +223,38 @@ export async function POST(
         return NextResponse.json(
           { error: 'This endpoint is only for proforma invoices' },
           { status: 400 }
+        );
+      }
+
+      try {
+        await authorize(finalUserId, 'invoices', 'update', {
+          businessId: businessScope,
+          branchId: invoice.branch_id,
+          resourceId: invoiceId,
+        });
+      } catch (error) {
+        if (error instanceof AuthorizationError) {
+          await client.query('ROLLBACK');
+          return error.toNextResponse();
+        }
+        throw error;
+      }
+
+      if (invoice.status === 'cancelled' || invoice.proforma_lifecycle_status === 'cancelled') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'A cancelled proforma cannot change lifecycle status.', code: 'PROFORMA_CANCELLED' },
+          { status: 409 }
+        );
+      }
+      if (invoice.proforma_lifecycle_status === 'converted_to_tax_invoice') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'A converted proforma cannot be moved back to an earlier lifecycle status.',
+            code: 'PROFORMA_ALREADY_CONVERTED',
+          },
+          { status: 409 }
         );
       }
 

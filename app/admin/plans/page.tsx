@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3 } from 'lucide-react';
+import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3, Tags } from 'lucide-react';
 import { PlanFeatureMatrix } from '@/components/admin/PlanFeatureMatrix';
 import { PlanLimitsMatrix } from '@/components/admin/PlanLimitsMatrix';
+import { PricingDisplaySettings } from '@/components/admin/PricingDisplaySettings';
+import { SupplierHubVisibilitySwitch } from '@/components/admin/SupplierHubVisibilitySwitch';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
@@ -15,6 +17,7 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  price_3year: number;
   currency: string;
   features: {
     limits: {
@@ -44,6 +47,7 @@ export default function PlansManagement() {
   const [featureMatrixPlan, setFeatureMatrixPlan] = useState<{ id: string; name: string } | null>(null);
   const [showLimitsMatrix, setShowLimitsMatrix] = useState(false);
   const [limitsMatrixPlan, setLimitsMatrixPlan] = useState<{ id: string; name: string } | null>(null);
+  const [showPricingDisplay, setShowPricingDisplay] = useState(false);
 
   useEffect(() => {
     fetchPlans();
@@ -80,6 +84,7 @@ export default function PlansManagement() {
       description: '',
       price_monthly: 0,
       price_yearly: 0,
+      price_3year: 0,
       currency: 'INR',
       features: {
         limits: {
@@ -180,23 +185,38 @@ export default function PlansManagement() {
           <h1 className="text-3xl font-bold text-gray-900">Subscription Plans</h1>
           <p className="text-gray-600 mt-2">Manage pricing and features for all subscription tiers</p>
         </div>
-        <button
-          onClick={createNewPlan}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Create Plan</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowPricingDisplay(true)}
+            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+          >
+            <Tags className="w-5 h-5" />
+            <span>Pricing page</span>
+          </button>
+          <button
+            onClick={createNewPlan}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Create Plan</span>
+          </button>
+        </div>
       </div>
+
+      <SupplierHubVisibilitySwitch />
 
       {/* Plans Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         {plans.map((plan) => (
           <div
             key={plan.id}
-            className={`bg-white rounded-xl shadow-sm border-2 ${
-              plan.id === 'professional' ? 'border-primary-500' : 'border-gray-200'
-            } p-6 hover:shadow-lg transition`}
+            className={`rounded-xl shadow-sm border-2 p-6 hover:shadow-lg transition ${
+              !plan.is_active
+                ? 'border-amber-300 bg-amber-50/40'
+                : plan.id === 'growth'
+                  ? 'border-primary-500 bg-white'
+                  : 'border-gray-200 bg-white'
+            }`}
           >
             {/* Header */}
             <div className="flex justify-between items-start mb-4">
@@ -207,7 +227,13 @@ export default function PlansManagement() {
                 </div>
                 <p className="text-sm text-gray-600">{plan.description}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getPlanColor(plan.id)}`}>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  plan.is_active
+                    ? getPlanColor(plan.id)
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}
+              >
                 {plan.is_active ? 'Active' : 'Inactive'}
               </span>
             </div>
@@ -221,6 +247,11 @@ export default function PlansManagement() {
               {plan.price_yearly > 0 && (
                 <p className="text-sm text-green-600 mt-1">
                   ₹{plan.price_yearly}/year (Save {Math.round((1 - plan.price_yearly / (plan.price_monthly * 12)) * 100)}%)
+                </p>
+              )}
+              {Number(plan.price_3year) > 0 && (
+                <p className="text-sm text-green-600">
+                  ₹{plan.price_3year} for 3 years (Save {Math.round((1 - Number(plan.price_3year) / (plan.price_monthly * 36)) * 100)}%)
                 </p>
               )}
             </div>
@@ -373,6 +404,12 @@ export default function PlansManagement() {
                     <span className="text-gray-600">Yearly Price:</span>
                     <span className="font-semibold">₹{selectedPlan.price_yearly}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">3-Year Price:</span>
+                    <span className="font-semibold">
+                      {Number(selectedPlan.price_3year) > 0 ? `₹${selectedPlan.price_3year}` : 'Not offered'}
+                    </span>
+                  </div>
                   {selectedPlan.price_yearly > 0 && (
                     <div className="flex justify-between text-green-600">
                       <span>Yearly Savings:</span>
@@ -408,6 +445,8 @@ export default function PlansManagement() {
           onClose={handleFeatureMatrixClose}
         />
       )}
+
+      {showPricingDisplay && <PricingDisplaySettings onClose={() => setShowPricingDisplay(false)} />}
 
       {/* Limits Matrix Modal */}
       {showLimitsMatrix && limitsMatrixPlan && (
@@ -572,7 +611,7 @@ function EditPlanModal({
           </div>
 
           {/* Pricing */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Monthly Price *
@@ -595,6 +634,18 @@ function EditPlanModal({
                 step="0.01"
                 value={formData.price_yearly}
                 onChange={(e) => updateField('price_yearly', parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                3-Year Price (0 = not offered)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.price_3year ?? 0}
+                onChange={(e) => updateField('price_3year', parseFloat(e.target.value) || 0)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, Filter, RefreshCw, ChevronDown, AlertCircle, FileCheck } from 'lucide-react';
@@ -170,7 +171,7 @@ function GSTR1PageContent() {
     }
   };
 
-  const handleExport = async (format: 'xlsx' | 'xlsx_offline_v22' | 'json') => {
+  const handleExport = async (format: 'xlsx' | 'xlsx_offline_v22' | 'json' | 'iff') => {
     if (!business) return;
     if (!ensureProfile(profileContext)) return;
     
@@ -192,21 +193,30 @@ function GSTR1PageContent() {
           month: month.toString(),
           year: year.toString(),
           customer_type: customerType,
-          export: 'json'
+          export: format === 'iff' ? 'iff' : 'json'
         });
         url = `/api/reports/gst/gstr1?${query}`;
-        filename = `GSTR1_${month.toString().padStart(2, '0')}_${year}.json`;
+        filename = format === 'iff'
+          ? `IFF_${month.toString().padStart(2, '0')}_${year}.json`
+          : `GSTR1_${month.toString().padStart(2, '0')}_${year}.json`;
       }
       
+      const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+      const gate = await confirmReturnDownload('gstr1', `${year}-${month.toString().padStart(2, '0')}`);
+      if (!gate.ok) {
+        if (gate.message) toast.error(gate.message);
+        return;
+      }
+
       const res = await fetch(url);
       if (!res.ok) {
-        const error = await res.json();
-        if (error.code === 'GSTIN_MISSING') {
+        const error = await res.json().catch(() => null);
+        if (error?.code === 'GSTIN_MISSING') {
           toast.error(`${error.error} — ${error.message}`);
           ensureProfile(profileContext);
           return;
         }
-        toast.error(error.error || 'Export failed');
+        toast.error(error?.error || 'Export failed. The file was not created.');
         return;
       }
       
@@ -260,8 +270,10 @@ function GSTR1PageContent() {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">GSTR-1 Report</h1>
-            <p className="text-sm text-gray-500">Details of outward supplies of goods or services</p>
+            <PageHeader
+  title="GSTR-1 Report"
+  subtitle="Details of outward supplies of goods or services"
+/>
             {filingInfo && (
               <div className="mt-2 flex items-center gap-2">
                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -322,6 +334,15 @@ function GSTR1PageContent() {
             >
               <FileText className="w-4 h-4" />
               Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport('iff')}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              title="For quarterly filers. B2B invoices and credit notes for this month only."
+            >
+              <FileText className="w-4 h-4" />
+              IFF JSON
             </button>
           </div>
         </div>

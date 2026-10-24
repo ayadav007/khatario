@@ -2,21 +2,37 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useMemo, useEffect } from 'react';
+import { isValidGstin } from '@/lib/tax/gstin';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { FormSection } from '@/components/ui/FormSection';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Link2, Building2, ChevronDown, ChevronUp } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2, Link2, Building2, ChevronDown, ChevronUp } from 'lucide-react';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useEntityMutation } from '@/hooks/useEntityMutation';
 import { useToastContext } from '@/contexts/ToastContext';
+
+function SupplierSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
+}
 
 export default function NewSupplierPage() {
   const router = useRouter();
@@ -49,6 +65,7 @@ export default function NewSupplierPage() {
     state: '',
     pincode: '',
     gstin: '',
+    pan: '',
     opening_balance: '0',
     opening_balance_type: 'credit',
     allow_low_stock_access: false,
@@ -164,9 +181,7 @@ export default function NewSupplierPage() {
       return;
     }
 
-    // Validate GSTIN format
-    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstinRegex.test(formData.gstin)) {
+    if (!isValidGstin(formData.gstin)) {
       setGstinError(true);
       setGstinVerified(false);
       return;
@@ -285,6 +300,7 @@ export default function NewSupplierPage() {
       state_code: stateCode,
       pincode: formData.pincode || null,
       gstin: formData.gstin || null,
+      pan: formData.pan.trim().toUpperCase() || null,
       opening_balance: parseFloat(formData.opening_balance) || 0,
       opening_balance_type: formData.opening_balance_type || 'credit',
       business_id: business.id,
@@ -302,8 +318,8 @@ export default function NewSupplierPage() {
         router.push('/suppliers');
         return;
       }
-      if (linkedBusiness && formData.allow_low_stock_access) {
-        toast.success('Supplier created successfully! Access to low stock alerts has been granted.');
+      if (linkedBusiness) {
+        toast.success(`Supplier created. ${linkedBusiness.name} must approve the link before it becomes active.`);
       } else {
         toast.success('Supplier created successfully!');
       }
@@ -334,26 +350,15 @@ export default function NewSupplierPage() {
   }
 
   return (
-    
-      <div className="w-full min-w-0 max-w-none">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <Link
-            href="/suppliers"
-            className="p-2 hover:bg-surface rounded-lg transition border border-border"
-          >
-            <ArrowLeft className="w-5 h-5 text-text-secondary" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Add New Supplier</h1>
-            <p className="text-text-secondary text-sm mt-1">Enter supplier details</p>
-          </div>
-        </div>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="Add new supplier"
+          description="Contact, address, and tax details used on purchase orders and payments."
+        />
 
-        <Card className="p-6 sm:p-8 lg:p-10">
         <form onSubmit={handleSubmit}>
-          <div className="form-page-shell">
-          <FormSection
+          <div className="space-y-6">
+          <SupplierSection
             title="Basic details"
             description="Supplier name and contact details used on purchase orders and payments."
           >
@@ -537,10 +542,10 @@ export default function NewSupplierPage() {
                   disabled={!!linkedBusiness}
                 />
             </div>
-          </FormSection>
+          </SupplierSection>
 
           {linkedBusiness ? (
-            <FormSection
+            <SupplierSection
               title="Business linking"
               description="This supplier is linked to another business on Khatario for shared workflows."
             >
@@ -556,7 +561,7 @@ export default function NewSupplierPage() {
                     <p className="font-medium text-primary-900">Linked to Business Account</p>
                     <p className="text-sm text-primary-700 mt-1">{linkedBusiness.name}</p>
                     <p className="text-xs text-primary-600 mt-2">
-                        Relationship established immediately.
+                        The link becomes active once {linkedBusiness.name} approves it.
                     </p>
                   </div>
                 </div>
@@ -587,10 +592,10 @@ export default function NewSupplierPage() {
                   </label>
                 </div>
               </div>
-            </FormSection>
+            </SupplierSection>
           ) : null}
 
-          <FormSection
+          <SupplierSection
             title="Address"
             description="Registered or usual billing location for this supplier."
           >
@@ -635,9 +640,9 @@ export default function NewSupplierPage() {
                 />
               </div>
             </div>
-          </FormSection>
+          </SupplierSection>
 
-          <FormSection
+          <SupplierSection
             title="GST & balance"
             description="Tax ID and opening balance for payables. Fetch GSTIN details when the API is available."
           >
@@ -719,6 +724,18 @@ export default function NewSupplierPage() {
                   </p>
                 )}
               </div>
+              <div className="max-w-xs">
+                <Input
+                  label="PAN"
+                  value={formData.pan}
+                  onChange={(e) => handleChange('pan', e.target.value.toUpperCase())}
+                  placeholder={formData.gstin.length === 15 ? formData.gstin.slice(2, 12).toUpperCase() : 'ABCDE1234F'}
+                  maxLength={10}
+                />
+                <p className="mt-1 text-xs text-text-secondary">
+                  Taken from the GSTIN if left blank. Without a PAN, TDS is deducted at the higher s.206AA rate.
+                </p>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 gap-y-6 max-w-2xl">
                 <Input
                   label="Opening Balance"
@@ -744,12 +761,12 @@ export default function NewSupplierPage() {
                 </div>
               </div>
             </div>
-          </FormSection>
+          </SupplierSection>
 
           </div>
 
-          <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
-            <Button type="button" variant="ghost" onClick={() => router.push('/suppliers')}>
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.push('/suppliers')}>
               Cancel
             </Button>
             <Button type="submit" isLoading={saving}>
@@ -757,7 +774,6 @@ export default function NewSupplierPage() {
             </Button>
           </div>
         </form>
-        </Card>
 
         {/* Duplicate Warning Modal */}
         {showDuplicateModal && (
@@ -822,7 +838,6 @@ export default function NewSupplierPage() {
           </div>
         )}
       </div>
-    
   );
 }
 

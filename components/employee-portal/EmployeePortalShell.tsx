@@ -11,6 +11,7 @@ import {
   Megaphone,
   Clock,
   Calendar,
+  PartyPopper,
   Receipt,
 } from 'lucide-react';
 import { useEmployeePortal } from './EmployeePortalContext';
@@ -142,6 +143,13 @@ export function EmployeePortalShell({ children }: { children: React.ReactNode })
       icon: Calendar,
     });
   }
+
+  navItems.push({
+    key: 'holidays',
+    label: 'Holidays',
+    href: `${base}/holidays`,
+    icon: PartyPopper,
+  });
 
   if (ent.expenses && !isManager) {
     navItems.push({

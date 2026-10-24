@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/reports/expense/profit-loss
- * Get Profit & Loss report
+ * Sales vs purchases summary from document totals (GST-inclusive). Not the Profit & Loss
+ * statement — that is /api/reports/profit-loss, built from the ledger.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(e.amount), 0) as total_expenses,
         COUNT(*) as expense_count
       FROM expenses e
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter.replace(/transaction_date/g, 'e.expense_date')}
     `, queryParams);
 
@@ -142,6 +143,10 @@ export async function GET(request: NextRequest) {
     const netProfit = grossProfit - totalExpenses;
 
     return NextResponse.json({
+      report: 'sales_vs_purchases_summary',
+      note:
+        'Document totals including GST, not a Profit & Loss statement. ' +
+        'Use /reports/profit-loss for profit from the ledger.',
       income: {
         sales: totalSales,
         tax_collected: parseFloat(sales?.tax_collected || 0),

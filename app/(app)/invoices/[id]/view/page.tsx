@@ -1,5 +1,6 @@
 'use client';
 
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Download, Loader2, Printer, Share2, Pencil } from 'lucide-react';
@@ -7,6 +8,8 @@ import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
+import { InvoicePlanExtras } from '@/components/invoices/EwayBillField';
 
 type InvoiceSummary = {
   id: string;
@@ -17,43 +20,10 @@ type InvoiceSummary = {
   customer_name?: string;
   customer_phone?: string;
   document_type?: string;
+  status?: string;
+  eway_bill_number?: string | null;
+  eway_bill_date?: string | null;
 };
-
-/** A4-ish preview scaled to fit a phone-width card */
-const PREVIEW_PAGE_W = 794;
-const PREVIEW_PAGE_H = 1123;
-const PREVIEW_CARD_W = 280;
-const PREVIEW_SCALE = PREVIEW_CARD_W / PREVIEW_PAGE_W;
-const PREVIEW_CARD_H = Math.round(PREVIEW_PAGE_H * PREVIEW_SCALE);
-
-function MinifiedInvoicePreview({ html }: { html: string }) {
-  if (!html) {
-    return (
-      <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
-        Preview unavailable
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="relative mx-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md"
-      style={{ width: PREVIEW_CARD_W, height: PREVIEW_CARD_H }}
-    >
-      <iframe
-        srcDoc={html}
-        title="Invoice preview"
-        className="absolute left-0 top-0 border-0 pointer-events-none"
-        style={{
-          width: PREVIEW_PAGE_W,
-          height: PREVIEW_PAGE_H,
-          transform: `scale(${PREVIEW_SCALE})`,
-          transformOrigin: '0 0',
-        }}
-      />
-    </div>
-  );
-}
 
 function PostGenerateAction({
   icon: Icon,
@@ -83,8 +53,11 @@ export default function PublicInvoiceViewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const invoiceId = params.id as string;
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const fromGenerate = searchParams.get('from') === 'generate';
+  // Billed from a Supplier Hub order: say where the bill went and lead back to the order.
+  const supplyOrderId = searchParams.get('supply_order_id');
+  const doneHref = supplyOrderId ? `/supply-orders/${encodeURIComponent(supplyOrderId)}` : '/invoices';
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState('');
   const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
@@ -117,6 +90,9 @@ export default function PublicInvoiceViewPage() {
           customer_name: inv.customer_name,
           customer_phone: inv.customer_phone,
           document_type: inv.document_type,
+          status: inv.status,
+          eway_bill_number: inv.eway_bill_number,
+          eway_bill_date: inv.eway_bill_date,
         });
       }
     } catch (error) {
@@ -136,8 +112,9 @@ export default function PublicInvoiceViewPage() {
     window.open(pdfUrl, '_blank');
   };
 
+  // Khatario for Windows prints straight to the chosen A4 printer; elsewhere the PDF opens.
   const handlePrint = () => {
-    window.open(pdfUrl, '_blank');
+    void printInvoiceA4(invoiceId, user?.id, business?.id);
   };
 
   const paymentLabel = (() => {
@@ -196,8 +173,14 @@ export default function PublicInvoiceViewPage() {
 
         <div className="flex-1 overflow-y-auto">
           {/* Minified document preview */}
-          <div className="bg-slate-200/70 dark:bg-slate-900/50 px-4 py-6 flex justify-center">
-            <MinifiedInvoicePreview html={html} />
+          <div className="bg-slate-200/70 px-3 py-4 dark:bg-slate-900/50">
+            {html ? (
+              <ScaledA4Preview html={html} title="Invoice preview" />
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
+                Preview unavailable
+              </div>
+            )}
           </div>
 
           {invoice ? (
@@ -231,6 +214,23 @@ export default function PublicInvoiceViewPage() {
             </div>
           ) : null}
 
+          {supplyOrderId && invoice ? (
+            <p className="mx-4 mt-3 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">
+              Sent to {invoice.customer_name || 'the buyer'} in the Supplier Hub. It becomes their purchase when they receive it.
+            </p>
+          ) : null}
+
+          {invoice && invoice.status !== 'cancelled' ? (
+            <div className="mx-4 mt-3">
+              <InvoicePlanExtras
+                invoiceId={invoiceId}
+                ewayNumber={invoice.eway_bill_number}
+                ewayDate={invoice.eway_bill_date}
+                onSaved={() => void load()}
+              />
+            </div>
+          ) : null}
+
           {/* Print · Download · Share — below preview, always visible */}
           <div className="px-6 pt-8 pb-2 flex items-center justify-center gap-6 sm:gap-10">
             <PostGenerateAction icon={Printer} label="Print" onClick={handlePrint} />
@@ -242,9 +242,9 @@ export default function PublicInvoiceViewPage() {
             <Button
               variant="primary"
               className="w-full h-12 text-base font-semibold rounded-xl"
-              onClick={() => router.push('/invoices')}
+              onClick={() => router.push(doneHref)}
             >
-              Done
+              {supplyOrderId ? 'Back to order' : 'Done'}
             </Button>
           </div>
         </div>
@@ -273,19 +273,31 @@ export default function PublicInvoiceViewPage() {
                 <Share2 className="w-4 h-4 mr-2" />
                 Share
               </Button>
-              <Button variant="primary" onClick={() => router.push('/invoices')}>
-                Done
+              <Button variant="primary" onClick={() => router.push(doneHref)}>
+                {supplyOrderId ? 'Back to order' : 'Done'}
               </Button>
             </div>
           </div>
 
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
-            <iframe
-              srcDoc={html}
-              className="w-full h-[842px] border-0"
-              title="Invoice Preview"
-            />
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-slate-100 p-6 shadow-lg">
+            {html ? (
+              <ScaledA4Preview html={html} title="Invoice preview" />
+            ) : (
+              <div className="flex h-64 items-center justify-center text-sm text-text-muted">
+                Preview unavailable
+              </div>
+            )}
           </div>
+          {invoice && invoice.status !== 'cancelled' ? (
+            <div className="mt-4">
+              <InvoicePlanExtras
+                invoiceId={invoiceId}
+                ewayNumber={invoice.eway_bill_number}
+                ewayDate={invoice.eway_bill_date}
+                onSaved={() => void load()}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

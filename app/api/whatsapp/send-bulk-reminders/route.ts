@@ -2,11 +2,22 @@ import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { checkLimit } from '@/lib/subscription';
-import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
+import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
+import {
+  BAILEYS_BULK_GAP_MS,
+  BAILEYS_BULK_MAX_BATCH as BAILEYS_MAX_BATCH,
+  randomGapMs,
+  sleep,
+} from '@/lib/whatsapp/baileys-pacing';
 
 export const dynamic = 'force-dynamic';
 
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ body, businessId }) => {
+function baileysGapMs(): number {
+  return randomGapMs(BAILEYS_BULK_GAP_MS);
+}
+
+export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ body, businessId }) => {
   try {
     const { invoice_ids, message_template, include_pdf } = (body ?? {}) as {
       invoice_ids?: string[];
@@ -25,7 +36,31 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ bod
       return NextResponse.json({ error: 'message_template is required' }, { status: 400 });
     }
 
+    const outbound = await whatsAppOutboundReady(businessId);
+    if (!outbound.ready) {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp is not connected. Scan a QR code or connect the WhatsApp Business API before sending reminders.',
+          code: 'WHATSAPP_NOT_CONNECTED',
+        },
+        { status: 409 },
+      );
+    }
+
     const uniqueInvoiceIds = [...new Set(invoice_ids)];
+
+    const transport = outbound.transport;
+    if (transport === 'baileys' && uniqueInvoiceIds.length > BAILEYS_MAX_BATCH) {
+      return NextResponse.json(
+        {
+          error: `Select up to ${BAILEYS_MAX_BATCH} invoices at a time when WhatsApp is linked by QR code. Sending many messages at once can get the number restricted by WhatsApp.`,
+          code: 'BATCH_TOO_LARGE',
+          max_batch: BAILEYS_MAX_BATCH,
+        },
+        { status: 400 },
+      );
+    }
 
     const invoicePlaceholders = uniqueInvoiceIds.map((_, i) => `$${i + 2}`).join(', ');
     const invoices = await db.queryRows(
@@ -71,7 +106,8 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ bod
     let successCount = 0;
     let failedCount = 0;
 
-    for (const invoiceId of uniqueInvoiceIds) {
+    for (const [index, invoiceId] of uniqueInvoiceIds.entries()) {
+      if (transport === 'baileys' && index > 0) await sleep(baileysGapMs());
       try {
         const result = await sendReminderMessage(
           invoiceId,

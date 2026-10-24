@@ -7,6 +7,7 @@ import {
   compileOfferLetterHtml,
   generateOfferLetterPreviewHtml,
 } from '@/lib/offer-letter-render';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 
 export { generateOfferLetterPreviewHtml } from '@/lib/offer-letter-render';
 
@@ -61,7 +62,8 @@ export async function generateOfferLetterHtml(offerId: string): Promise<string> 
 
   const { template_id, settings } = await getOfferLetterTemplateSettings(row.business_id);
   const model = buildViewModelFromOfferRow(row, settings);
-  return compileOfferLetterHtml(template_id, model);
+  const language = await getBusinessDocumentLanguage(row.business_id);
+  return compileOfferLetterHtml(template_id, model, language);
 }
 
 export async function generateOfferLetterPdf(offerId: string): Promise<Buffer> {

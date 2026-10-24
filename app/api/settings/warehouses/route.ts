@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryOne } from '@/lib/db';
+import { getPool, queryOne } from '@/lib/db';
+import { requireTenantBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  moveBranchStockIntoWarehouses,
+  rollWarehouseStockIntoBranches,
+  WarehouseSwitchError,
+} from '@/lib/inventory/warehouse-mode-switch';
 
 export const dynamic = 'force-dynamic';
-
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/settings/warehouses
@@ -130,6 +135,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    try {
+      await authorize(userId, 'settings', 'update', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
     // Column exists, proceed with update
     try {
       // Check if settings exist
@@ -137,6 +153,34 @@ export async function PATCH(request: NextRequest) {
         'SELECT * FROM business_settings WHERE business_id = $1',
         [business_id]
       );
+
+      const wasEnabled = existingSettings?.warehouses_enabled === true;
+      const willEnable = warehouses_enabled === true;
+      let stockSwitch: unknown = null;
+      if (warehouses_enabled !== undefined && wasEnabled !== willEnable) {
+        const client = await getPool().connect();
+        try {
+          await client.query('BEGIN');
+          stockSwitch = willEnable
+            ? await moveBranchStockIntoWarehouses(client, business_id)
+            : { branch_rows: await rollWarehouseStockIntoBranches(client, business_id) };
+          await client.query(
+            `INSERT INTO business_settings (business_id, warehouses_enabled)
+             VALUES ($1, $2)
+             ON CONFLICT (business_id) DO UPDATE SET warehouses_enabled = EXCLUDED.warehouses_enabled, updated_at = CURRENT_TIMESTAMP`,
+            [business_id, willEnable]
+          );
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (error instanceof WarehouseSwitchError) {
+            return NextResponse.json({ error: error.message, code: error.code, details: error.details }, { status: 409 });
+          }
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
 
       let updatedSettings;
 
@@ -198,7 +242,8 @@ export async function PATCH(request: NextRequest) {
       
       return NextResponse.json({ 
         warehouses_enabled: updatedSettings.warehouses_enabled === true,
-        auto_assign_branch_warehouses: (updatedSettings as any).auto_assign_branch_warehouses ?? true
+        auto_assign_branch_warehouses: (updatedSettings as any).auto_assign_branch_warehouses ?? true,
+        stock_switch: stockSwitch,
       });
     } catch (error: any) {
       console.error('Error updating warehouses setting:', error.message);

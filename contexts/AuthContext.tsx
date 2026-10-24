@@ -24,6 +24,7 @@ import {
   type PlatformModule,
 } from '@/lib/platform-modules';
 import type { BusinessPlatformContext } from '@/lib/business-modules';
+import { withConnectAgentHomePath } from '@/lib/users/connect-seats';
 
 /** Legacy unscoped key — migrated away on successful session fetch to prevent cross-business bleed. */
 const PORTAL_THEME_LEGACY_KEY = 'portalTheme';
@@ -40,21 +41,23 @@ function persistPortalThemeFromSession(portalTheme: PortalTheme, businessId: str
 function sessionUserUnchanged(prev: User | null, next: User | null): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return prev.id === next.id && prev.business_id === next.business_id;
+  return (
+    prev.id === next.id &&
+    prev.business_id === next.business_id &&
+    JSON.stringify(prev.mobile_nav ?? null) === JSON.stringify(next.mobile_nav ?? null)
+  );
 }
 
 function sessionBusinessUnchanged(prev: Business | null, next: Business | null): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return prev.id === next.id && prev.name === next.name;
+  return JSON.stringify(prev) === JSON.stringify(next);
 }
 
 function sessionBranchUnchanged(prev: unknown, next: unknown): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  const a = prev as { id?: string; name?: string; branch_code?: string };
-  const b = next as { id?: string; name?: string; branch_code?: string };
-  return a.id === b.id && a.name === b.name && a.branch_code === b.branch_code;
+  return JSON.stringify(prev) === JSON.stringify(next);
 }
 
 function sessionBranchesUnchanged(prev: unknown[], next: unknown[]): boolean {
@@ -224,18 +227,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsPrimaryAdmin((prev) => (prev === parsedAdmin ? prev : parsedAdmin));
     }
     const storedPlatform = localStorage.getItem(PLATFORM_SESSION_STORAGE_KEY);
+    const cachedUserForHome = storedUser
+      ? (() => {
+          try {
+            return JSON.parse(storedUser) as User;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
     if (storedPlatform) {
       const parsedPlatform = parsePlatformSession(JSON.parse(storedPlatform));
       if (parsedPlatform) {
+        const nextPlatform = withConnectAgentHomePath(parsedPlatform, cachedUserForHome);
         setPlatformSession((prev) =>
-          prev && JSON.stringify(prev) === JSON.stringify(parsedPlatform) ? prev : parsedPlatform,
+          prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
         );
+        // Persist corrected agent home so login / BottomNav do not bounce to /dashboard offline.
+        if (nextPlatform.defaultHomePath !== parsedPlatform.defaultHomePath) {
+          try {
+            localStorage.setItem(PLATFORM_SESSION_STORAGE_KEY, JSON.stringify(nextPlatform));
+          } catch {
+            /* ignore */
+          }
+        }
       }
     } else if (storedBusiness) {
       try {
         const b = JSON.parse(storedBusiness) as Business;
         setPlatformSession((prev) => {
-          const next = derivePlatformSessionFromBusiness(b);
+          const next = withConnectAgentHomePath(
+            derivePlatformSessionFromBusiness(b),
+            cachedUserForHome,
+          );
           return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
         });
       } catch {
@@ -429,9 +453,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           removeAllPortalThemeClientStorage();
         }
 
-        const nextPlatform =
+        const nextPlatform = withConnectAgentHomePath(
           parsePlatformSession(data.platform) ??
-          derivePlatformSessionFromBusiness(data.business ?? null);
+            derivePlatformSessionFromBusiness(data.business ?? null),
+          data.user,
+        );
         setPlatformSession((prev) =>
           prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
         );
@@ -461,10 +487,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           let hardLogout = false;
           try {
             const body = await res.clone().json();
+            // UNAUTHENTICATED while online means middleware found no valid tokens; keeping the
+            // cached user would leave a shell where every API call fails.
             hardLogout =
               body?.code === 'BUSINESS_NOT_FOUND' ||
               body?.code === 'USER_NOT_FOUND' ||
-              body?.code === 'SESSION_REVOKED';
+              body?.code === 'SESSION_REVOKED' ||
+              body?.code === 'UNAUTHENTICATED';
           } catch {
             if (onPublicSurface) {
               clearLocalState();
@@ -605,9 +634,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 removeAllPortalThemeClientStorage();
               }
 
-              const nextPlatform =
+              const nextPlatform = withConnectAgentHomePath(
                 parsePlatformSession(data.platform) ??
-                derivePlatformSessionFromBusiness(data.business ?? null);
+                  derivePlatformSessionFromBusiness(data.business ?? null),
+                data.user,
+              );
               setPlatformSession((prev) =>
                 prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
               );
@@ -699,9 +730,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.business) setBusiness(data.business);
     if (data.branch) setBranch(data.branch);
 
-    const nextPlatform =
+    const nextPlatform = withConnectAgentHomePath(
       parsePlatformSession(data.platform) ??
-      derivePlatformSessionFromBusiness(data.business ?? null);
+        derivePlatformSessionFromBusiness(data.business ?? null),
+      data.user,
+    );
     setPlatformSession(nextPlatform);
 
     localStorage.setItem('user', JSON.stringify(data.user));

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { checkLimit } from '@/lib/subscription';
+import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,20 +10,11 @@ export const dynamic = 'force-dynamic';
  * POST /api/customers/[id]/send-reminder
  * Send WhatsApp reminders for all outstanding invoices of a customer
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const POST = withWhatsAppBaseApi<{ id: string }>(
+  { parseJsonBody: true, module: 'customers', action: 'read' },
+  async ({ params, businessId: business_id }) => {
   try {
-    const { business_id } = await request.json();
     const customerId = params.id;
-
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     // Get customer details
     const customer = await db.queryOne(
@@ -185,7 +177,8 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+  },
+);
 
 /**
  * Default reminder message template

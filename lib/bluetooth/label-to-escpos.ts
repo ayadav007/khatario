@@ -26,6 +26,7 @@
  * add a dynamic import.
  */
 
+import type { TextRasterizer } from '@/lib/print/bitmap';
 import type { LabelTemplate, LabelLine, LabelFieldConfig, LabelFieldKey } from '../label-document-builder';
 import type { LabelSymbology } from '../barcode-renderer';
 import { EscPosBuilder, type BarcodeKind } from './escpos';
@@ -36,6 +37,8 @@ export interface BuildLabelEscPosArgs {
   businessName: string;
   /** 58 or 80. Falls back to 58 if unspecified. */
   paperWidthMm?: 58 | 80;
+  /** Draws Hindi / Gujarati / ₹… as images. */
+  rasterize?: TextRasterizer;
 }
 
 /**
@@ -44,7 +47,7 @@ export interface BuildLabelEscPosArgs {
  */
 export function buildLabelEscPos(args: BuildLabelEscPosArgs): Uint8Array {
   const paper = args.paperWidthMm ?? 58;
-  const builder = new EscPosBuilder({ paperWidthMm: paper });
+  const builder = new EscPosBuilder({ paperWidthMm: paper, rasterize: args.rasterize });
   builder.init();
 
   let isFirst = true;

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getUserIdFromRequest,
-  getBusinessIdFromRequest,
+  requireTenantBusinessId,
   resolveCreatedByUserId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne, query } from '@/lib/db';
 import { isBankStatementReconciliationCompleted } from '@/lib/bank/statement-workflow';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,11 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const businessId = (body.business_id as string) || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
+    const businessId = tenant.businessId;
     const userId = resolveCreatedByUserId(request, body);
     if (!businessId || !userId) {
       return NextResponse.json({ error: 'business_id and user context are required' }, { status: 400 });

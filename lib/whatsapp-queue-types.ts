@@ -85,8 +85,81 @@ export type WebhookQueueJob = WhatsAppQueueJobBase & {
   body: Record<string, unknown>;
 };
 
+/** A message from the business owner (or a LINK code) on the business's own number. */
+export type OwnerCommandQueueJob = WhatsAppQueueJobBase & {
+  type: 'owner-command';
+  kind: 'owner' | 'link';
+  provider: 'cloud' | 'baileys';
+  businessId: string;
+  messageId: string;
+  /** Sender digits; also the ordering key. */
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  text: string;
+  /** QR "Message yourself" chat: the owner's number is the business number. */
+  selfChat: boolean;
+};
+
+/** A customer message that reached the business's Cloud API number. */
+export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
+  type: 'cloud-incoming';
+  businessId: string;
+  messageId: string;
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  profileName: string | null;
+  text: string;
+  messageType: string;
+  businessPhone: string;
+  sourceTimestampSec: number | null;
+  /** Cart sent from the business's catalog (`messageType: 'order'`). */
+  order?: {
+    catalogId: string | null;
+    note: string | null;
+    items: Array<{ retailerId: string; quantity: number }>;
+  } | null;
+  /** Meta media id for photos, videos, voice notes, stickers and files. */
+  media?: {
+    kind: 'image' | 'video' | 'audio' | 'document' | 'sticker';
+    id: string;
+    mimeType: string | null;
+    filename: string | null;
+  } | null;
+  /** Tapped reply button or list row id. */
+  replyId?: string | null;
+};
+
+/** A message to Khatario's own WhatsApp number (prospects and existing users). */
+export type PlatformIncomingQueueJob = WhatsAppQueueJobBase & {
+  type: 'platform-incoming';
+  /** Always 'platform'; kept so job ids and order keys work like the business jobs. */
+  businessId: string;
+  messageId: string;
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  profileName: string | null;
+  text: string;
+  /** Id of the tapped button / list row, when the message is a reply. */
+  replyId?: string | null;
+  /** Click-to-WhatsApp ad that opened the chat (first message only). */
+  referral?: {
+    sourceId: string | null;
+    sourceType: string | null;
+    sourceUrl: string | null;
+    headline: string | null;
+    body: string | null;
+    ctwaClid: string | null;
+  } | null;
+};
+
 export type WhatsAppMessageJob =
   | BaileysIncomingQueueJob
   | BaileysOutgoingQueueJob
   | OutgoingAfterSendQueueJob
-  | WebhookQueueJob;
+  | WebhookQueueJob
+  | OwnerCommandQueueJob
+  | CloudIncomingQueueJob
+  | PlatformIncomingQueueJob;

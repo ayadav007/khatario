@@ -227,11 +227,12 @@ export async function GET(request: NextRequest) {
           ('PAY-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
           p.payment_date as transaction_date,
           'payment' as transaction_type,
-          CONCAT('Payment - ', p.payment_mode) as description,
+          CONCAT('Payment - ', p.payment_mode, CASE WHEN p.status = 'reversed' THEN ' (reversed)' ELSE '' END) as description,
           0 as debit,
           p.amount as credit,
           0 as paid_amount,
-          0 as balance
+          0 as balance,
+          p.status as payment_status
         FROM payments p
         WHERE p.business_id = $1 
           AND p.deleted_at IS NULL
@@ -240,6 +241,30 @@ export async function GET(request: NextRequest) {
           ${paymentDateFilter.filter}
           ${paymentBranchFilter}
       `, [...paymentDateFilter.params, accessibleBranchIds]);
+
+      const reversalDateFilter = buildDateFilter('pr.reversal_date', baseParams, 3);
+      const reversalBranchFilter = ` AND p.branch_id = ANY($${reversalDateFilter.params.length + 1}::uuid[])`;
+      const paymentReversals = await db.queryRows(`
+        SELECT 
+          pr.id,
+          ('REV-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
+          pr.reversal_date as transaction_date,
+          'payment_reversal' as transaction_type,
+          CONCAT('Payment reversal - ', p.payment_mode) as description,
+          pr.amount as debit,
+          0 as credit,
+          0 as paid_amount,
+          0 as balance,
+          p.id as payment_id
+        FROM payment_reversals pr
+        JOIN payments p ON p.id = pr.payment_id AND p.business_id = pr.business_id
+        WHERE pr.business_id = $1 
+          AND p.deleted_at IS NULL
+          AND p.customer_id = $2
+          AND p.type = 'receivable'
+          ${reversalDateFilter.filter}
+          ${reversalBranchFilter}
+      `, [...reversalDateFilter.params, accessibleBranchIds]);
 
       // Advance received (Credit) - Note: advance_payments may not have branch_id
       const advanceDateFilter = buildDateFilter('ap.payment_date', baseParams, 3);
@@ -261,7 +286,52 @@ export async function GET(request: NextRequest) {
           ${advanceDateFilter.filter}
       `, advanceDateFilter.params);
 
-      transactions = [...invoices, ...payments, ...advances];
+      // Credit notes (sales returns) lower what the customer owes (Credit).
+      const creditNoteDateFilter = buildDateFilter('cn.credit_note_date', baseParams, 3);
+      const creditNoteBranchFilter = ` AND cn.branch_id = ANY($${creditNoteDateFilter.params.length + 1}::uuid[])`;
+      const creditNotes = await db.queryRows(`
+        SELECT
+          cn.id,
+          cn.credit_note_number as reference_number,
+          cn.credit_note_date as transaction_date,
+          'credit_note' as transaction_type,
+          CONCAT('Sales return', COALESCE(' - ' || NULLIF(cn.reason, ''), '')) as description,
+          0 as debit,
+          cn.grand_total as credit,
+          0 as paid_amount,
+          0 as balance
+        FROM credit_notes cn
+        WHERE cn.business_id = $1
+          AND cn.customer_id = $2
+          AND cn.status = 'active'
+          ${creditNoteDateFilter.filter}
+          ${creditNoteBranchFilter}
+      `, [...creditNoteDateFilter.params, accessibleBranchIds]);
+
+      // Money paid back against a credit note (Debit).
+      const refundDateFilter = buildDateFilter('r.refund_date', baseParams, 3);
+      const hasRefunds = await db.queryOne<{ t: string | null }>(`SELECT to_regclass('public.credit_note_refunds') AS t`);
+      const creditNoteRefunds = hasRefunds?.t
+        ? await db.queryRows(`
+            SELECT
+              r.id,
+              r.voucher_number as reference_number,
+              r.refund_date as transaction_date,
+              'credit_note_refund' as transaction_type,
+              CONCAT('Refund paid (', UPPER(r.mode), ') on ', cn.credit_note_number) as description,
+              r.amount as debit,
+              0 as credit,
+              0 as paid_amount,
+              0 as balance
+            FROM credit_note_refunds r
+            JOIN credit_notes cn ON cn.id = r.credit_note_id
+            WHERE r.business_id = $1
+              AND r.customer_id = $2
+              ${refundDateFilter.filter}
+          `, refundDateFilter.params)
+        : [];
+
+      transactions = [...invoices, ...payments, ...paymentReversals, ...advances, ...creditNotes, ...creditNoteRefunds];
     } else if (partyType === 'supplier') {
       // Purchases (Credit) - Filter by branch
       const purchaseDateFilter = buildDateFilter('p.bill_date', baseParams, 3);
@@ -295,11 +365,12 @@ export async function GET(request: NextRequest) {
           ('PAY-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
           p.payment_date as transaction_date,
           'payment' as transaction_type,
-          CONCAT('Payment - ', p.payment_mode) as description,
+          CONCAT('Payment - ', p.payment_mode, CASE WHEN p.status = 'reversed' THEN ' (reversed)' ELSE '' END) as description,
           p.amount as debit,
           0 as credit,
           0 as paid_amount,
-          0 as balance
+          0 as balance,
+          p.status as payment_status
         FROM payments p
         WHERE p.business_id = $1 
           AND p.deleted_at IS NULL
@@ -308,6 +379,30 @@ export async function GET(request: NextRequest) {
           ${paymentDateFilter.filter}
           ${paymentBranchFilter}
       `, [...paymentDateFilter.params, accessibleBranchIds]);
+
+      const reversalDateFilter = buildDateFilter('pr.reversal_date', baseParams, 3);
+      const reversalBranchFilter = ` AND p.branch_id = ANY($${reversalDateFilter.params.length + 1}::uuid[])`;
+      const paymentReversals = await db.queryRows(`
+        SELECT 
+          pr.id,
+          ('REV-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
+          pr.reversal_date as transaction_date,
+          'payment_reversal' as transaction_type,
+          CONCAT('Payment reversal - ', p.payment_mode) as description,
+          0 as debit,
+          pr.amount as credit,
+          0 as paid_amount,
+          0 as balance,
+          p.id as payment_id
+        FROM payment_reversals pr
+        JOIN payments p ON p.id = pr.payment_id AND p.business_id = pr.business_id
+        WHERE pr.business_id = $1 
+          AND p.deleted_at IS NULL
+          AND p.supplier_id = $2
+          AND p.type = 'payable'
+          ${reversalDateFilter.filter}
+          ${reversalBranchFilter}
+      `, [...reversalDateFilter.params, accessibleBranchIds]);
 
       // Advance paid (Debit)
       const advanceDateFilter = buildDateFilter('ap.payment_date', baseParams, 3);
@@ -329,7 +424,7 @@ export async function GET(request: NextRequest) {
           ${advanceDateFilter.filter}
       `, advanceDateFilter.params);
 
-      transactions = [...purchases, ...payments, ...advances];
+      transactions = [...purchases, ...payments, ...paymentReversals, ...advances];
     }
 
     // Get financial year start date for opening balance

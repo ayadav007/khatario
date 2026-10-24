@@ -158,7 +158,7 @@ export function mergeGstPaymentEventsByDate(
 export function computeSegmentedGstInterest(params: {
   dueDate: string;
   initialCashLiability: number;
-  /** Sorted or unsorted; must be only cash `gst_payment` rows with date > dueDate. */
+  /** Sorted or unsorted; liability debits from `gst_payment` or `gst_cash_utilization` with date > dueDate. */
   paymentEvents: GstInterestPaymentEventInput[];
   /** Last date to accrue on any remaining balance (e.g. max(filing, payment)). */
   interestEndDate: string;

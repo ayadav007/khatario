@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/unsubscribes
  * List all unsubscribed numbers for a business
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const checkPhone = searchParams.get('check_phone'); // Check if specific phone is unsubscribed
@@ -70,11 +70,11 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
  * POST /api/whatsapp/unsubscribes
  * Add phone(s) to unsubscribe list
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { phone, phones } = (body ?? {}) as Record<string, any>;
 
-    if (! (!phone && !phones)) {
+    if (!phone && !phones) {
       return NextResponse.json(
         { error: 'Business ID and phone(s) are required' },
         { status: 400 }
@@ -140,7 +140,7 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ req
  * DELETE /api/whatsapp/unsubscribes
  * Remove phone(s) from unsubscribe list (re-subscribe)
  */
-export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const phone = searchParams.get('phone');

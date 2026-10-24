@@ -5,6 +5,7 @@ import { RazorpayPaymentProvider } from './providers/razorpay-payment-provider';
 import { PayuPaymentProvider } from './providers/payu-payment-provider';
 import { PhonePePaymentProvider } from './providers/phonepe-payment-provider';
 import { InstamojoPaymentProvider } from './providers/instamojo-payment-provider';
+import { EasebuzzPaymentProvider } from './providers/easebuzz-payment-provider';
 import {
   mergePaymentProviderConfigWithEnv,
   resolvePaymentProviderConfigForBusiness,
@@ -85,6 +86,10 @@ export function registerBuiltinPaymentProviders(): void {
   registerPaymentProviderFactory(
     'instamojo',
     (config) => new InstamojoPaymentProvider(config)
+  );
+  registerPaymentProviderFactory(
+    'easebuzz',
+    (config) => new EasebuzzPaymentProvider(config)
   );
 }
 

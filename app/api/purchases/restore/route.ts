@@ -46,8 +46,9 @@ export async function POST(request: NextRequest) {
     business_id: string;
     branch_id: string | null;
     deleted_at: string | null;
+    status: string | null;
   }>(
-    `SELECT id, business_id, branch_id, deleted_at
+    `SELECT id, business_id, branch_id, deleted_at, status
      FROM purchases
      WHERE id = $1 AND business_id = $2`,
     [id, businessScope]
@@ -55,6 +56,17 @@ export async function POST(request: NextRequest) {
 
   if (!row?.deleted_at) {
     return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
+  }
+  // A final bill deleted before cancellations existed has had its stock and postings removed;
+  // un-hiding it would show a final bill with nothing behind it. Re-enter it instead.
+  if (row.status === 'final') {
+    return NextResponse.json(
+      {
+        error: 'This bill was deleted with its stock and postings and cannot be restored. Enter it again as a new bill.',
+        code: 'PURCHASE_NOT_RESTORABLE',
+      },
+      { status: 409 }
+    );
   }
 
   try {

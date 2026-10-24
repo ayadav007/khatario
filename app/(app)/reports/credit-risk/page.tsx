@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
@@ -136,8 +137,10 @@ export default function CreditRiskDashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Credit Risk Dashboard</h1>
-            <p className="text-sm text-gray-600 mt-1">Monitor credit utilization and risk across customers and suppliers</p>
+            <PageHeader
+  title="Credit Risk Dashboard"
+  subtitle="Monitor credit utilization and risk across customers and suppliers"
+/>
           </div>
         </div>
 

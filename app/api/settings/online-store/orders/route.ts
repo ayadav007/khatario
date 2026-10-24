@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryRows, queryOne, query } from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
-import { resolveDeliveryProvider } from '@/lib/store/delivery';
-import { canBookShipment } from '@/lib/store/fulfillment-rules';
-import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
-import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
+import { isStoreOrderStatus } from '@/lib/store/fulfillment-rules';
+import {
+  applyStoreOrderStatus,
+  syncStoreFulfilmentQuietly,
+  type StoreDispatchMode,
+} from '@/lib/store/apply-store-status';
+import { accountOutstandingStoreOrders, createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
+import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
+import { collectStoreOrderCash, StoreCashCollectError } from '@/lib/store/store-receipt';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_STATUSES = ['pending', 'confirmed', 'ready', 'delivered', 'cancelled'];
 const VALID_DISPATCH = ['pickup', 'self', 'shiprocket'];
 
 const ORDER_SELECT = `
   so.id, so.order_number, so.customer_name, so.customer_phone,
   so.customer_email, so.customer_address, so.customer_pincode,
-  so.delivery_mode, so.status, so.notes, so.payment_status,
+  so.delivery_mode, so.status, so.notes, so.payment_status, so.payment_provider,
   so.subtotal::text, so.tax_total::text, so.delivery_charge::text, so.grand_total::text,
   so.cancelled_reason, so.created_at, so.awb, so.tracking_url, so.shipment_id,
   so.invoice_id, so.dispatch_mode, so.courier_scanned_at, so.cash_collected_at,
@@ -93,7 +99,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
+  await accountOutstandingStoreOrders(businessId, getAuthenticatedUserId(request)).catch((err) => {
+    console.error('[store invoice]', err);
+  });
 
   const orderId = searchParams.get('order_id');
   if (orderId) {
@@ -160,6 +171,8 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const action = typeof body.action === 'string' ? body.action : null;
@@ -168,18 +181,42 @@ export async function PATCH(request: NextRequest) {
   if (action === 'scan') {
     return handleScan(businessId, body);
   }
+  if (action === 'refund') {
+    if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
+    const actorUserId = getAuthenticatedUserId(request);
+    if (!actorUserId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    try {
+      const result = await refundStoreOrder({ businessId, orderId, actorUserId });
+      return NextResponse.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof StoreRefundError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+      }
+      throw error;
+    }
+  }
+
   if (action === 'collect_cash') {
     if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
-    const updated = await queryOne(
-      `UPDATE store_orders
-       SET cash_collected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND business_id = $2 AND payment_status = 'cod'
-       RETURNING id`,
-      [orderId, businessId],
-    );
-    if (!updated) {
-      return NextResponse.json({ error: 'COD order not found' }, { status: 404 });
+    const actorUserId = getAuthenticatedUserId(request);
+    try {
+      await createInvoiceForStoreOrder(orderId, businessId, actorUserId);
+    } catch (err) {
+      console.error('[store invoice on cash collect]', err);
+      const message = err instanceof Error ? err.message : 'The sale could not be posted to the accounts';
+      return NextResponse.json({ error: message, code: 'STORE_INVOICE_FAILED' }, { status: 409 });
     }
+    try {
+      await collectStoreOrderCash(orderId, businessId, actorUserId);
+    } catch (err) {
+      if (err instanceof StoreCashCollectError) {
+        return NextResponse.json({ error: err.message, code: err.code }, { status: err.statusCode });
+      }
+      throw err;
+    }
+    await syncStoreFulfilmentQuietly(businessId, orderId, actorUserId);
     const detail = await loadOrder(orderId, businessId);
     return NextResponse.json({ success: true, kind: 'cash', ...detail });
   }
@@ -194,104 +231,43 @@ export async function PATCH(request: NextRequest) {
       ? (body.dispatch_mode as string)
       : null;
 
-  if (!VALID_STATUSES.includes(status)) {
+  if (!isStoreOrderStatus(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 
-  if (status === 'cancelled') {
-    const current = await queryOne<{ payment_status: string; shipment_id: string | null }>(
-      `SELECT payment_status, shipment_id FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [orderId, businessId],
-    );
-    if (current?.shipment_id && current.shipment_id !== 'self') {
-      try {
-        const provider = await resolveDeliveryProvider(businessId);
-        await provider.cancelShipment?.(current.shipment_id);
-      } catch (err) {
-        console.error('[store cancel shipment]', err);
-      }
-    }
-    if (current && current.payment_status !== 'unpaid') {
-      const items = await queryRows<{
-        item_id: string;
-        variant_id: string | null;
-        quantity: string;
-      }>(
-        `SELECT soi.item_id, soi.variant_id, soi.quantity::text
-         FROM store_order_items soi
-         INNER JOIN store_orders so ON so.id = soi.order_id
-         WHERE soi.order_id = $1 AND so.business_id = $2 AND so.status != 'cancelled'`,
-        [orderId, businessId],
-      );
-
-      for (const item of items) {
-        const qty = parseFloat(item.quantity);
-        if (item.variant_id) {
-          await query(
-            `UPDATE item_variants SET current_stock = current_stock + $1 WHERE id = $2`,
-            [qty, item.variant_id],
-          );
-        } else {
-          await query(
-            `UPDATE items SET current_stock = current_stock + $1 WHERE id = $2 AND business_id = $3`,
-            [qty, item.item_id, businessId],
-          );
-        }
-      }
-    }
-  }
-
-  if (status === 'ready') {
-    const payRow = await queryOne<{ payment_status: string }>(
-      `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [orderId, businessId],
-    );
-    if (payRow && !canBookShipment(payRow.payment_status)) {
-      return NextResponse.json(
-        { error: 'Cannot ship until payment is received' },
-        { status: 409 },
-      );
-    }
-  }
-
-  const updated = await queryOne(
-    `UPDATE store_orders
-     SET status = $1,
-         cancelled_reason = $2,
-         dispatch_mode = COALESCE($3, dispatch_mode),
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $4 AND business_id = $5
-     RETURNING id, status`,
-    [status, cancelled_reason ?? null, dispatchMode, orderId, businessId],
-  );
-
-  if (!updated) {
-    return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-  }
-
-  if (status === 'confirmed') {
-    await createInvoiceForStoreOrder(orderId, businessId).catch((err) => {
-      console.error('[store invoice on confirm]', err);
+  const actorUserId = getAuthenticatedUserId(request);
+  let applied;
+  try {
+    applied = await applyStoreOrderStatus({
+      businessId,
+      orderId,
+      to: status,
+      cancelledReason: typeof cancelled_reason === 'string' ? cancelled_reason : null,
+      dispatchMode: dispatchMode as StoreDispatchMode | null,
+      actorUserId,
     });
-  }
-
-  if (status === 'ready') {
-    if (dispatchMode === 'self' || dispatchMode === 'pickup') {
-      await markSelfDispatch(orderId, businessId);
-      if (dispatchMode === 'pickup') {
-        await query(
-          `UPDATE store_orders SET dispatch_mode = 'pickup', updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND business_id = $2`,
-          [orderId, businessId],
-        );
-      }
-    } else {
-      await bookStoreCourierIfNeeded(orderId, businessId);
+  } catch (error) {
+    if (error instanceof InvoiceCancelError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
     }
+    throw error;
+  }
+  const { moved, invoiceError, bookingError, bookingWarning } = applied;
+  if (!moved.ok) {
+    return NextResponse.json(
+      { error: moved.error, code: moved.code, current_status: moved.from ?? null },
+      { status: moved.status },
+    );
   }
 
   const detail = await loadOrder(orderId, businessId);
-  return NextResponse.json({ success: true, ...detail });
+  return NextResponse.json({
+    success: true,
+    invoice_error: invoiceError,
+    booking_error: bookingError,
+    booking_warning: bookingWarning,
+    ...detail,
+  });
 }
 
 async function handleScan(businessId: string, body: Record<string, unknown>) {
@@ -405,6 +381,7 @@ async function handleScan(businessId: string, body: Record<string, unknown>) {
        WHERE id = $2 AND business_id = $3`,
       [code, awbTarget, businessId],
     );
+    await syncStoreFulfilmentQuietly(businessId, awbTarget, null);
     const detail = await loadOrder(awbTarget, businessId);
     return NextResponse.json({ success: true, kind: 'awb', ...detail });
   }

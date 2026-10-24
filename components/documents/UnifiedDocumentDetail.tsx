@@ -18,7 +18,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import type { DocumentTable } from '@/lib/pdf-generator';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { useToastContext } from '@/contexts/ToastContext';
 
@@ -31,6 +34,10 @@ interface UnifiedDocumentDetailProps {
   pdfUrlPrefix?: string;
   /** Renders below the header toolbar (e.g. sales order payment summary). */
   topContent?: ReactNode;
+  /** Hide the Edit button for documents that can no longer change. */
+  canEdit?: (document: any) => boolean;
+  /** Extra toolbar buttons; `reload` refetches the document and preview. */
+  headerActions?: (document: any, reload: () => void) => ReactNode;
 }
 
 export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
@@ -41,6 +48,8 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
   editUrlPrefix,
   pdfUrlPrefix = '/api/documents',
   topContent,
+  canEdit,
+  headerActions,
 }) => {
   const router = useRouter();
   const { business, user } = useAuth();
@@ -51,7 +60,16 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailModalOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
 
   const emailableTables: DocumentTable[] = [
     'invoices',
@@ -63,6 +81,21 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
     'work_orders',
   ];
   const canEmail = emailableTables.includes(table as DocumentTable);
+
+  const docNumber: string | undefined =
+    documentData?.invoice_number ||
+    documentData?.order_number ||
+    documentData?.challan_number ||
+    documentData?.work_order_number ||
+    documentData?.credit_note_number ||
+    documentData?.debit_note_number;
+  const docDate: string | undefined =
+    documentData?.invoice_date ||
+    documentData?.order_date ||
+    documentData?.challan_date ||
+    documentData?.work_order_date ||
+    documentData?.credit_note_date ||
+    documentData?.debit_note_date;
 
   useEffect(() => {
     if (documentId && business?.id) {
@@ -125,7 +158,7 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${documentData?.invoice_number || documentData?.order_number || documentData?.challan_number || 'document'}.pdf`;
+      a.download = `${docNumber || 'document'}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -167,7 +200,7 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
         <div className="no-print">
           <Breadcrumbs items={[
             { label: title + 's', href: backUrl },
-            { label: documentData.invoice_number || documentData.order_number || documentData.challan_number || 'Detail' }
+            { label: docNumber || 'Detail' }
           ]} />
         </div>
 
@@ -178,10 +211,12 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
             </Button>
             <div>
               <h1 className="text-xl font-bold text-gray-900">
-                {title} {documentData.invoice_number || documentData.order_number || documentData.challan_number}
+                {title} {docNumber}
               </h1>
               <p className="text-sm text-gray-500">
-                {documentData.party_name} • {new Date(documentData.invoice_date || documentData.order_date || documentData.challan_date).toLocaleDateString()}
+                {[documentData.party_name, docDate ? new Date(docDate).toLocaleDateString() : null]
+                  .filter(Boolean)
+                  .join(' • ')}
               </p>
             </div>
           </div>
@@ -195,12 +230,31 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
               <Download className="w-4 h-4 mr-2" />
               PDF
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => router.push(`${editUrlPrefix}/${documentId}?edit=true`)}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
+            {(!canEdit || canEdit(documentData)) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  router.push(
+                    editUrlPrefix.endsWith('/new')
+                      ? `${editUrlPrefix}?edit=${documentId}`
+                      : `${editUrlPrefix}/${documentId}`
+                  )
+                }
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
+            )}
+            {headerActions?.(documentData, fetchData)}
             {canEmail && (
-              <Button variant="secondary" size="sm" onClick={() => setEmailModalOpen(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void requestSendEmail()}
+                disabled={emailChecking}
+                isLoading={emailChecking}
+              >
                 <Mail className="w-4 h-4 mr-2" />
                 Send Email
               </Button>
@@ -219,31 +273,33 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
               <p className="text-xs text-amber-700/80">PDF may still work if generation uses a different path. Try Download PDF or check the server log.</p>
             </div>
           ) : (
-            <div
-              className="bg-white shadow-lg my-8 p-[1in] w-[210mm] min-h-[297mm] print:shadow-none print:my-0 print:p-0 print:w-full"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <div className="p-3 lg:p-8">
+              {html ? <ScaledA4Preview html={html} title={`${title} preview`} /> : null}
+            </div>
           )}
         </Card>
+
+        {canEmail && business?.id && (
+          <ConfigureBusinessEmailModal
+            open={emailConfigureOpen}
+            businessId={business.id}
+            onClose={closeEmailConfigure}
+            onConfigured={onEmailConfigured}
+            forbidden={emailConfigureForbidden}
+          />
+        )}
 
         {canEmail && emailModalOpen && (
           <SendDocumentEmailModal
             open={emailModalOpen}
-            onClose={() => setEmailModalOpen(false)}
+            onClose={closeEmailCompose}
             documentTable={table as DocumentTable}
             documentId={documentId}
             partyName={documentData.party_name || 'Recipient'}
             partyEmail={documentData.party_email}
-            documentNumber={
-              documentData.invoice_number ||
-              documentData.order_number ||
-              documentData.challan_number ||
-              documentId
-            }
-            documentDate={
-              documentData.invoice_date || documentData.order_date || documentData.challan_date
-            }
-            amount={documentData.grand_total}
+            documentNumber={docNumber || documentId}
+            documentDate={docDate}
+            amount={documentData.grand_total ?? documentData.total_cost}
             businessName={business?.name || 'Your business'}
             fromEmail={business?.email || user?.email || ''}
             fromName={business?.name}

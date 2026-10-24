@@ -1,0 +1,578 @@
+import { NextRequest, NextResponse } from 'next/server';
+import type { PoolClient } from 'pg';
+import { getPool } from '@/lib/db';
+import { orderTrackingUrl } from '@/lib/customer-surface/urls';
+import {
+  getOrderHubRow,
+  isHubSource,
+  loadOrderFulfilments,
+  loadOrderLines,
+  loadShipFrom,
+  loadShipTo,
+  type HubSource,
+  type OrderHubRow,
+} from '@/lib/fulfilment/hub';
+import { resolveHubAuth } from '@/lib/fulfilment/hub-scope';
+import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
+import {
+  canDispatch,
+  canTransitionFulfilment,
+  isFulfilmentMethod,
+  isFulfilmentStatus,
+  requiresPaymentFor,
+  type FulfilmentMethod,
+  type FulfilmentStatus,
+} from '@/lib/fulfilment/rules';
+import {
+  addShipment,
+  ensureFulfilment,
+  fulfilmentPaymentState,
+  markCodCollected,
+  removeShipment,
+  setFulfilmentShipping,
+  syncStoreOrderFulfilment,
+  transitionFulfilment,
+  type FulfilmentDetails,
+  type FulfilmentRow,
+  type FulfilmentShipping,
+} from '@/lib/fulfilment/service';
+import {
+  bookFulfilmentWithShiprocket,
+  cancelShiprocketBooking,
+  shiprocketLabelUrl,
+} from '@/lib/fulfilment/shiprocket-booking';
+import { isInvoiceChannel } from '@/lib/invoices/channel';
+import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
+import { applyStoreOrderStatus, syncStoreFulfilmentQuietly, type StoreDispatchMode } from '@/lib/store/apply-store-status';
+import { bookStoreCourierIfNeeded } from '@/lib/store/book-store-shipment';
+import type { StoreOrderStatus } from '@/lib/store/fulfillment-rules';
+import { ensureReturnForReturnedFulfilment } from '@/lib/returns/service';
+import { loadParcelContents, ParcelItemsError, setParcelItems } from '@/lib/fulfilment/parcel-items';
+import { ensureRiderToken, riderMessage, riderUrl } from '@/lib/fulfilment/rider';
+import { actOnFailedDelivery, isNdrAction, NdrError } from '@/lib/fulfilment/ndr';
+import { OrderEditError, removeItemsBeforePacking } from '@/lib/fulfilment/order-edit';
+
+export const dynamic = 'force-dynamic';
+
+type Ctx = { params: Promise<{ source: string; id: string }> | { source: string; id: string } };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveParams(ctx: Ctx): Promise<{ source: HubSource; id: string } | null> {
+  const p = await ctx.params;
+  if (!isHubSource(p.source) || !UUID_RE.test(p.id)) return null;
+  return { source: p.source, id: p.id };
+}
+
+async function detail(businessId: string, row: OrderHubRow) {
+  const [lines, fulfilments, shipTo, shipFrom] = await Promise.all([
+    loadOrderLines(businessId, row.source_type, row.source_id),
+    loadOrderFulfilments(businessId, row.source_type, row.source_id),
+    loadShipTo(businessId, row.source_type, row.source_id),
+    loadShipFrom(businessId),
+  ]);
+  const contents = await loadParcelContents(
+    getPool(),
+    businessId,
+    { kind: row.source_type, id: row.source_id },
+    fulfilments.map((f) => ({ id: f.id, seq: Number((f as Record<string, unknown>).seq), status: String((f as Record<string, unknown>).status) })),
+  ).catch(() => new Map());
+  return {
+    order: row,
+    lines,
+    ship_to: shipTo,
+    ship_from: shipFrom,
+    fulfilments: fulfilments.map((f) => ({
+      ...f,
+      public_url: f.public_token ? orderTrackingUrl(f.public_token) : null,
+      items: contents.get(f.id) ?? [],
+    })),
+  };
+}
+
+function parseParcelItems(raw: unknown): Array<{ line_id: string; quantity: number }> | null {
+  if (!Array.isArray(raw)) return null;
+  return (raw as Record<string, unknown>[])
+    .filter((i) => i && typeof i.line_id === 'string' && UUID_RE.test(i.line_id))
+    .map((i) => ({ line_id: String(i.line_id), quantity: Number(i.quantity) || 0 }));
+}
+
+export async function GET(request: NextRequest, ctx: Ctx) {
+  const auth = await resolveHubAuth(request, 'read');
+  if (!auth.ok) return auth.response;
+  const p = await resolveParams(ctx);
+  if (!p) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+  const row = await getOrderHubRow(auth.scope, p.source, p.id);
+  if (!row) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+  return NextResponse.json(await detail(auth.scope.businessId, row));
+}
+
+function str(v: unknown, max = 200): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = String(v).trim();
+  return s ? s.slice(0, max) : null;
+}
+
+function parseDetails(raw: unknown): FulfilmentDetails {
+  const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const out: FulfilmentDetails = {};
+  if (d.method !== undefined) out.method = isFulfilmentMethod(d.method) ? d.method : null;
+  if (d.partner_name !== undefined) out.partnerName = str(d.partner_name, 100);
+  if (d.awb !== undefined) out.awb = str(d.awb, 100);
+  if (d.tracking_url !== undefined) out.trackingUrl = str(d.tracking_url, 1000);
+  if (d.rider_name !== undefined) out.riderName = str(d.rider_name, 100);
+  if (d.rider_phone !== undefined) out.riderPhone = str(d.rider_phone, 20);
+  if (d.proof_photo_url !== undefined) out.proofPhotoUrl = str(d.proof_photo_url, 1000);
+  if (d.failure_reason !== undefined) out.failureReason = str(d.failure_reason, 500);
+  if (d.cod_amount !== undefined) {
+    const n = Number(d.cod_amount);
+    out.codAmount = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  return out;
+}
+
+function parseShipping(raw: unknown): FulfilmentShipping | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  const out: FulfilmentShipping = {};
+  if (s.address !== undefined) out.address = str(s.address, 500);
+  if (s.pincode !== undefined) out.pincode = str(s.pincode, 10);
+  if (s.packages !== undefined) out.packages = Number(s.packages);
+  if (s.weight_kg !== undefined && s.weight_kg !== null && s.weight_kg !== '') out.weightKg = Number(s.weight_kg);
+  if (s.length_cm != null && s.length_cm !== '') out.lengthCm = Number(s.length_cm);
+  if (s.breadth_cm != null && s.breadth_cm !== '') out.breadthCm = Number(s.breadth_cm);
+  if (s.height_cm != null && s.height_cm !== '') out.heightCm = Number(s.height_cm);
+  return out;
+}
+
+/** Fulfilment status onto the coarse store order status, when it changes the store order at all. */
+function storeTargetFor(to: FulfilmentStatus, current: string): StoreOrderStatus | null {
+  const map: Partial<Record<FulfilmentStatus, StoreOrderStatus>> = {
+    confirmed: 'confirmed',
+    ready_for_pickup: 'ready',
+    shipped: 'ready',
+    out_for_delivery: 'ready',
+    delivered: 'delivered',
+    cancelled: 'cancelled',
+  };
+  const target = map[to] ?? null;
+  return target && target !== current ? target : null;
+}
+
+function dispatchModeFor(method: FulfilmentMethod | null | undefined, to: FulfilmentStatus): StoreDispatchMode | null {
+  if (to === 'ready_for_pickup' || method === 'pickup') return 'pickup';
+  if (method === 'shiprocket') return 'shiprocket';
+  if (method) return 'self';
+  return null;
+}
+
+async function inTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const out = await fn(client);
+    await client.query('COMMIT');
+    return out;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function firstOrStart(c: PoolClient, businessId: string, row: OrderHubRow, userId: string): Promise<string> {
+  if (row.fulfilment_id) return row.fulfilment_id;
+  if (row.source_type === 'store_order') {
+    await syncStoreOrderFulfilment(c, { businessId, storeOrderId: row.source_id, actorType: 'staff', actorUserId: userId });
+    const r = await c.query<{ id: string }>(
+      `SELECT id FROM order_fulfilments WHERE business_id = $1 AND store_order_id = $2 ORDER BY seq LIMIT 1`,
+      [businessId, row.source_id],
+    );
+    if (!r.rows[0]) throw new Error('Store order delivery record could not be created');
+    return r.rows[0].id;
+  }
+  const channel = isInvoiceChannel(row.channel) ? row.channel : 'manual';
+  const status: FulfilmentStatus =
+    isFulfilmentStatus(row.delivery_status) && row.delivery_status !== 'new' ? row.delivery_status : 'confirmed';
+  const { row: f } = await ensureFulfilment(c, {
+    businessId,
+    channel,
+    salesOrderId: row.source_type === 'sales_order' ? row.source_id : null,
+    invoiceId: row.invoice_id,
+    branchId: row.branch_id,
+    customerId: row.customer_id,
+    buyerName: row.customer_name,
+    buyerPhone: row.customer_phone,
+    status,
+    method: channel === 'counter' ? 'pickup' : null,
+    actorType: 'staff',
+    actorUserId: userId,
+    note: 'Delivery tracking started',
+  });
+  return f.id;
+}
+
+/**
+ * POST /api/orders/{source}/{id}
+ * Actions: start | transition {to, details, note, pickup_code, shipping} | cod_collected | set_shipping |
+ * add_shipment | remove_shipment | book_courier | cancel_booking | shiprocket_label.
+ * Store orders move through the store lifecycle (invoice, courier booking) first. Dispatching
+ * other orders "via Shiprocket" without an AWB books the courier before marking shipped.
+ */
+export async function POST(request: NextRequest, ctx: Ctx) {
+  const auth = await resolveHubAuth(request, 'update');
+  if (!auth.ok) return auth.response;
+  const p = await resolveParams(ctx);
+  if (!p) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+  const { businessId } = auth.scope;
+  const row = await getOrderHubRow(auth.scope, p.source, p.id);
+  if (!row) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const action = String(body.action ?? '');
+  const own = await loadOrderFulfilments(businessId, row.source_type, row.source_id);
+  const requested = typeof body.fulfilment_id === 'string' ? body.fulfilment_id : null;
+  if (requested && !own.some((f) => f.id === requested)) {
+    return NextResponse.json({ error: 'Shipment not found on this order' }, { status: 404 });
+  }
+
+  let warning: string | null = null;
+  let labelUrl: string | null = null;
+  let activeId: string | null = null;
+  const bookingFailed = async (error: string) => {
+    const fresh = await getOrderHubRow(auth.scope, row.source_type, row.source_id);
+    return NextResponse.json(
+      { error, code: 'BOOKING_FAILED', ...(fresh ? await detail(businessId, fresh) : {}) },
+      { status: 422 },
+    );
+  };
+
+  if (action === 'start') {
+    if (row.source_type === 'store_order') {
+      await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
+    } else {
+      await inTx((c) => firstOrStart(c, businessId, row, auth.userId));
+    }
+  } else if (action === 'add_shipment') {
+    const base = requested ?? own[0]?.id;
+    if (!base) return NextResponse.json({ error: 'Start delivery tracking first' }, { status: 409 });
+    const items = parseParcelItems(body.items);
+    let added: Awaited<ReturnType<typeof addShipment>>;
+    try {
+      added = await inTx(async (c) => {
+        const out = await addShipment(c, { businessId, fulfilmentId: base, actorUserId: auth.userId });
+        // The new parcel can be given its items in the same step ("send these now, the rest later").
+        if (out.ok && items && items.length > 0) await setParcelItems(c, { businessId, fulfilmentId: out.row.id, items });
+        return out;
+      });
+    } catch (error) {
+      if (error instanceof ParcelItemsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      throw error;
+    }
+    if (!added.ok) {
+      return NextResponse.json({ error: added.error, code: added.code }, { status: added.code === 'NOT_FOUND' ? 404 : 409 });
+    }
+    activeId = added.row.id;
+  } else if (action === 'rider_link') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const token = await inTx((c) => ensureRiderToken(c, businessId, target));
+    if (!token) return NextResponse.json({ error: 'Parcel not found' }, { status: 404 });
+    const parcel = own.find((f) => f.id === target) as Record<string, unknown> | undefined;
+    const shipTo = await loadShipTo(businessId, row.source_type, row.source_id);
+    const url = riderUrl(token);
+    const codDue = parcel?.cod_collected_at ? 0 : Number(parcel?.cod_amount) || 0;
+    return NextResponse.json({
+      rider_url: url,
+      rider_phone: (parcel?.rider_phone as string | null) ?? null,
+      message: riderMessage({
+        orderNumber: row.order_number,
+        buyerName: row.customer_name,
+        buyerPhone: row.customer_phone,
+        address: (parcel?.ship_address as string | null) || shipTo.address,
+        pincode: (parcel?.ship_pincode as string | null) || shipTo.pincode,
+        codDue,
+        url,
+      }),
+    });
+  } else if (action === 'ndr') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    if (!isNdrAction(body.ndr_action)) return NextResponse.json({ error: 'Choose what to do next' }, { status: 400 });
+    try {
+      const out = await actOnFailedDelivery({
+        businessId,
+        fulfilmentId: target,
+        userId: auth.userId,
+        action: body.ndr_action,
+        note: str(body.note, 500),
+        reattemptDate: str(body.reattempt_date, 10),
+        phone: str(body.phone, 20),
+        address: str(body.address, 500),
+        pincode: str(body.pincode, 10),
+      });
+      if (out.change) triggerFulfilmentNotification(businessId, out.change);
+      if (out.viaCourier) warning = 'Sent to Shiprocket. The status updates when the courier acts on it.';
+    } catch (error) {
+      if (error instanceof NdrError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  } else if (action === 'remove_items') {
+    if (!row.invoice_id) {
+      return NextResponse.json({ error: 'This order has no bill yet; edit the order itself instead' }, { status: 409 });
+    }
+    const lines = Array.isArray(body.lines)
+      ? (body.lines as Record<string, unknown>[])
+          .filter((l) => l && typeof l.invoice_item_id === 'string' && UUID_RE.test(l.invoice_item_id))
+          .map((l) => ({ invoice_item_id: String(l.invoice_item_id), quantity: Number(l.quantity) || 0 }))
+      : [];
+    const refundRaw = (body.refund ?? null) as Record<string, unknown> | null;
+    const refund =
+      refundRaw && ['store_credit', 'cash', 'upi', 'bank'].includes(String(refundRaw.method))
+        ? { method: refundRaw.method as 'store_credit' | 'cash' | 'upi' | 'bank', reference: str(refundRaw.reference, 100) ?? null }
+        : null;
+    try {
+      const { authorize } = await import('@/lib/authorization');
+      await authorize(auth.userId, 'credit_notes', 'create', { businessId });
+      const out = await inTx((c) =>
+        removeItemsBeforePacking(c, {
+          businessId,
+          userId: auth.userId,
+          invoiceId: row.invoice_id!,
+          fulfilmentIds: own.map((f) => f.id),
+          lines,
+          note: str(body.note, 300),
+          refund,
+        }),
+      );
+      warning = `Credit note ${out.creditNoteNumber} posted for ₹${out.creditAmount.toLocaleString('en-IN')}; the items are back in stock.`;
+    } catch (error) {
+      if (error instanceof OrderEditError) return NextResponse.json({ error: error.message }, { status: error.status });
+      const { AuthorizationError } = await import('@/lib/authorization');
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+  } else if (action === 'set_parcel_items') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const items = parseParcelItems(body.items) ?? [];
+    try {
+      await inTx((c) => setParcelItems(c, { businessId, fulfilmentId: target, items }));
+    } catch (error) {
+      if (error instanceof ParcelItemsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      throw error;
+    }
+    activeId = target;
+  } else if (action === 'remove_shipment') {
+    if (!requested) return NextResponse.json({ error: 'Choose the parcel to remove' }, { status: 400 });
+    const removed = await inTx((c) => removeShipment(c, { businessId, fulfilmentId: requested }));
+    if (!removed) {
+      return NextResponse.json(
+        { error: 'Only an extra parcel that has not been dispatched or booked can be removed' },
+        { status: 409 },
+      );
+    }
+  } else if (action === 'shiprocket_label') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const label = await shiprocketLabelUrl(businessId, target);
+    if (!label.ok) return NextResponse.json({ error: label.error }, { status: 409 });
+    labelUrl = label.url;
+  } else if (action === 'book_courier') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const current = own.find((x) => x.id === target) as { status?: string; seq?: number } | undefined;
+    if (current?.status !== 'shipped') {
+      return NextResponse.json({ error: 'Use Dispatch to book this parcel' }, { status: 409 });
+    }
+    if (row.source_type === 'store_order' && current.seq === 1) {
+      const booking = await bookStoreCourierIfNeeded(row.source_id, businessId, auth.userId);
+      if (booking.error) return bookingFailed(booking.error);
+      warning = booking.warning ?? null;
+      await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
+    } else {
+      const booked = await bookFulfilmentWithShiprocket(businessId, target, { actorUserId: auth.userId });
+      if (!booked.ok) return bookingFailed(booked.error);
+      warning = booked.warning ?? null;
+    }
+  } else if (action === 'cancel_booking') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const cancelled = await cancelShiprocketBooking(businessId, target, { actorUserId: auth.userId });
+    if (!cancelled.ok) return NextResponse.json({ error: cancelled.error }, { status: cancelled.status });
+  } else if (action === 'cod_collected') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No cash on delivery on this order' }, { status: 409 });
+    if (row.source_type === 'store_order') {
+      const { createInvoiceForStoreOrder } = await import('@/lib/store/fulfill-paid-order');
+      const { collectStoreOrderCash, StoreCashCollectError } = await import('@/lib/store/store-receipt');
+      try {
+        await createInvoiceForStoreOrder(row.source_id, businessId, auth.userId);
+        await collectStoreOrderCash(row.source_id, businessId, auth.userId);
+      } catch (err) {
+        if (err instanceof StoreCashCollectError) {
+          return NextResponse.json({ error: err.message, code: err.code }, { status: err.statusCode });
+        }
+        const message = err instanceof Error ? err.message : 'Cash could not be recorded';
+        return NextResponse.json({ error: message, code: 'STORE_INVOICE_FAILED' }, { status: 409 });
+      }
+      await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
+    }
+    const parcel = own.find((x) => x.id === target) as { cod_amount?: string | number } | undefined;
+    // Direct-UPI store orders have no COD on the parcel; the receipt above is the whole action.
+    const upiOnly = row.source_type === 'store_order' && !(Number(parcel?.cod_amount) > 0);
+    if (!upiOnly) {
+      const res = await inTx((c) => markCodCollected(c, { businessId, fulfilmentId: target, actorUserId: auth.userId }));
+      if (!res.ok) return NextResponse.json({ error: 'No cash on delivery on this shipment' }, { status: 409 });
+    }
+  } else if (action === 'set_shipping') {
+    const shipping = parseShipping(body.shipping);
+    if (!shipping) return NextResponse.json({ error: 'Nothing to save' }, { status: 400 });
+    await inTx(async (c) => {
+      const target = requested ?? (await firstOrStart(c, businessId, row, auth.userId));
+      await setFulfilmentShipping(c, { businessId, fulfilmentId: target, ...shipping });
+    });
+  } else if (action === 'transition') {
+    if (!isFulfilmentStatus(body.to)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    const to = body.to;
+    const details = parseDetails(body.details);
+    const note = str(body.note, 500) ?? null;
+    const shipping = parseShipping(body.shipping);
+
+    if (to === 'shipped' && details.method !== 'pickup') {
+      const current = requested ? own.find((x) => x.id === requested) : own[0];
+      const saved = (current as { ship_address?: string | null } | undefined)?.ship_address;
+      const override = shipping?.address !== undefined ? shipping.address : saved;
+      const address = override || (await loadShipTo(businessId, row.source_type, row.source_id)).address;
+      if (!address) {
+        return NextResponse.json(
+          { error: 'Add the delivery address before dispatching', code: 'ADDRESS_REQUIRED' },
+          { status: 422 },
+        );
+      }
+    }
+
+    const isStoreFirst = row.source_type === 'store_order' && (!requested || requested === own[0]?.id);
+    const bookShiprocket = to === 'shipped' && details.method === 'shiprocket' && !details.awb;
+
+    if (isStoreFirst && shipping) {
+      // The store lifecycle books the courier, so the corrected address must be saved first.
+      await inTx(async (c) => {
+        const target = requested ?? (await firstOrStart(c, businessId, row, auth.userId));
+        await setFulfilmentShipping(c, { businessId, fulfilmentId: target, ...shipping });
+      });
+    }
+
+    if (bookShiprocket && !isStoreFirst) {
+      const pre = await inTx(async (c) => {
+        const fulfilmentId = requested ?? (await firstOrStart(c, businessId, row, auth.userId));
+        if (shipping) await setFulfilmentShipping(c, { businessId, fulfilmentId, ...shipping });
+        const r = await c.query<FulfilmentRow>(
+          `SELECT * FROM order_fulfilments WHERE id = $1 AND business_id = $2`,
+          [fulfilmentId, businessId],
+        );
+        const f = r.rows[0];
+        if (!f) return { error: 'Delivery record not found', status: 404 as const };
+        if (f.status !== 'shipped' && !canTransitionFulfilment(f.status, 'shipped')) {
+          return { error: `Cannot dispatch a ${f.status.replace(/_/g, ' ')} order`, status: 409 as const };
+        }
+        if (requiresPaymentFor('shipped') && row.source_type !== 'store_order') {
+          const codAmount = details.codAmount != null ? details.codAmount : Number(f.cod_amount) || 0;
+          if (details.codAmount != null) {
+            await c.query(`UPDATE order_fulfilments SET cod_amount = $3 WHERE id = $1 AND business_id = $2`, [
+              fulfilmentId,
+              businessId,
+              Math.max(0, codAmount),
+            ]);
+          }
+          const pay = await fulfilmentPaymentState(c, { ...f, cod_amount: String(codAmount) });
+          if (!canDispatch(pay)) {
+            return { error: 'Cannot dispatch until the order is paid or marked cash on delivery', status: 409 as const };
+          }
+        }
+        return { fulfilmentId };
+      });
+      if ('error' in pre) return NextResponse.json({ error: pre.error }, { status: pre.status });
+      const booked = await bookFulfilmentWithShiprocket(businessId, pre.fulfilmentId, { actorUserId: auth.userId });
+      if (!booked.ok) return bookingFailed(booked.error);
+      warning = booked.warning ?? null;
+      details.awb = booked.awb;
+      details.partnerName = `${booked.courierName} (Shiprocket)`;
+      details.trackingUrl = booked.trackingUrl;
+    }
+
+    if (isStoreFirst) {
+      const storeTo = storeTargetFor(to, row.order_status);
+      if (storeTo) {
+        try {
+          const { moved, invoiceError, bookingError, bookingWarning } = await applyStoreOrderStatus({
+            businessId,
+            orderId: row.source_id,
+            to: storeTo,
+            dispatchMode: storeTo === 'ready' ? dispatchModeFor(details.method, to) : null,
+            cancelledReason: storeTo === 'cancelled' ? note : null,
+            actorUserId: auth.userId,
+          });
+          if (!moved.ok) {
+            return NextResponse.json({ error: moved.error, code: moved.code }, { status: moved.status });
+          }
+          if (invoiceError) warning = `Order confirmed, but the bill was not posted to the accounts: ${invoiceError}`;
+          else if (bookingError) warning = `Shiprocket booking failed: ${bookingError}`;
+          else if (bookingWarning) warning = bookingWarning;
+        } catch (error) {
+          if (error instanceof InvoiceCancelError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+          }
+          throw error;
+        }
+      }
+    }
+
+    const fresh = row.source_type === 'store_order' ? await getOrderHubRow(auth.scope, row.source_type, row.source_id) : row;
+    const result = await inTx(async (c) => {
+      const fulfilmentId =
+        requested ?? (await firstOrStart(c, businessId, { ...row, fulfilment_id: fresh?.fulfilment_id ?? null }, auth.userId));
+      if (shipping) await setFulfilmentShipping(c, { businessId, fulfilmentId, ...shipping });
+      const moved = await transitionFulfilment(c, {
+        businessId,
+        fulfilmentId,
+        to,
+        actorType: 'staff',
+        actorUserId: auth.userId,
+        note,
+        details,
+        pickupCode: str(body.pickup_code, 8) ?? null,
+        requirePickupCode: true,
+        skipPaymentGate: row.source_type === 'store_order',
+      });
+      if (moved.ok && moved.changed && to === 'returned') {
+        await ensureReturnForReturnedFulfilment(c, {
+          businessId,
+          fulfilmentId: moved.fulfilmentId,
+          userId: auth.userId,
+          wasDelivered: moved.from === 'delivered',
+        });
+      }
+      if (moved.ok && moved.changed && to === 'cancelled' && row.source_type === 'sales_order' && !row.invoice_id) {
+        await c.query(
+          `UPDATE sales_orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND business_id = $2 AND converted_invoice_id IS NULL`,
+          [row.source_id, businessId],
+        );
+      }
+      return moved;
+    });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
+    }
+    if (result.changed) triggerFulfilmentNotification(businessId, { fulfilmentId: result.fulfilmentId, to: result.to });
+  } else {
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+  }
+
+  const updated = await getOrderHubRow(auth.scope, row.source_type, row.source_id);
+  const extra = { warning, label_url: labelUrl, active_fulfilment_id: activeId };
+  return NextResponse.json(updated ? { ...(await detail(businessId, updated)), ...extra } : { ok: true, ...extra });
+}

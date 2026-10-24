@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic';
  * Look up customer business_id from supplier relationship
  */
 export async function GET(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const supplierBusinessId = searchParams.get('supplier_business_id');
@@ -20,6 +24,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (supplierBusinessId !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only look up customers for your own business', code: 'TENANT_MISMATCH' },
+        { status: 403 }
+      );
+    }
+
     // Find supplier where linked_business_id = supplierBusinessId and business name matches customer_name
     // The supplier.business_id is the customer's business_id
     const result = await queryOne(`
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
       JOIN businesses b ON s.business_id = b.id
       WHERE s.linked_business_id = $1
       AND s.deleted_at IS NULL
-      AND s.allow_low_stock_access = true
+      AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
       AND b.name = $2
       LIMIT 1
     `, [supplierBusinessId, customerName]);

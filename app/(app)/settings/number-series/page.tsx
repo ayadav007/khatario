@@ -28,6 +28,7 @@ interface BranchConfig {
   name: string;
   invoice_prefix: string | null; // Legacy field, kept for backward compatibility
   next_invoice_number: number;
+  next_numbers?: Record<string, number>;
   is_default: boolean;
 }
 
@@ -125,12 +126,19 @@ function NumberSeriesPage() {
           return DOCUMENT_RULES[docType as keyof typeof DOCUMENT_RULES]?.prefix || 'INV';
         };
 
+        const branchNextNumber = (docType: string, legacy: number | undefined): number => {
+          const values = branchesData
+            .map((b: BranchConfig) => b.next_numbers?.[docType])
+            .filter((n: number | undefined): n is number => typeof n === 'number');
+          return values.length > 0 ? Math.max(...values) : legacy || 1;
+        };
+
         const configs: DocumentConfig[] = [
           { 
             type: 'tax_invoice', 
             label: 'Tax Invoice', 
             prefix: getDisplayPrefix('tax_invoice'), 
-            startingNumber: String(data.business.next_tax_invoice_number || 1).padStart(5, '0'), 
+            startingNumber: String(branchNextNumber('tax_invoice', data.business.next_tax_invoice_number)).padStart(5, '0'), 
             currentNumber: data.currentStats?.tax_invoice || 0,
             branchNumbers: buildBranchNumbers('tax_invoice'),
           },
@@ -138,7 +146,7 @@ function NumberSeriesPage() {
             type: 'proforma_invoice', 
             label: 'Proforma Invoice', 
             prefix: getDisplayPrefix('proforma_invoice'), 
-            startingNumber: String(data.business.next_proforma_invoice_number || 1).padStart(5, '0'), 
+            startingNumber: String(branchNextNumber('proforma_invoice', data.business.next_proforma_invoice_number)).padStart(5, '0'), 
             currentNumber: data.currentStats?.proforma_invoice || 0,
             branchNumbers: buildBranchNumbers('proforma_invoice'),
           },
@@ -146,7 +154,7 @@ function NumberSeriesPage() {
             type: 'bill_of_supply', 
             label: 'Bill of Supply', 
             prefix: getDisplayPrefix('bill_of_supply'), 
-            startingNumber: String(data.business.next_tax_invoice_number || 1).padStart(5, '0'), 
+            startingNumber: String(branchNextNumber('bill_of_supply', data.business.next_tax_invoice_number)).padStart(5, '0'), 
             currentNumber: data.currentStats?.bill_of_supply || 0,
             branchNumbers: buildBranchNumbers('bill_of_supply'),
           },
@@ -381,7 +389,7 @@ function NumberSeriesPage() {
                       <div className="flex flex-col gap-1">
                         {branches.map((branch) => {
                           const branchNum = config.branchNumbers?.[branch.id] || 0;
-                          const nextNum = branch.next_invoice_number || 1;
+                          const nextNum = branch.next_numbers?.[config.type] ?? branchNum + 1;
                           // Use branch-specific prefix for this document type if it exists, otherwise use document type default prefix
                           const branchPrefix = branchPrefixes[branch.id]?.[config.type] || DOCUMENT_RULES[config.type as keyof typeof DOCUMENT_RULES]?.prefix || 'INV';
                           return (

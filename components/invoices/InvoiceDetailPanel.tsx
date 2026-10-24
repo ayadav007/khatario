@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Receipt,
   FileText,
+  BookOpen,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { DetailPanelShell, DetailPanelTab } from '@/components/layout/DetailPanelShell';
@@ -22,14 +23,37 @@ interface InvoiceDetailPanelProps {
   onClose: () => void;
 }
 
-type TabId = 'overview' | 'transactions' | 'history';
+type TabId = 'overview' | 'transactions' | 'journal' | 'history';
+
+interface JournalLine {
+  id: string;
+  account_code: string | null;
+  account_name: string | null;
+  debit: string;
+  credit: string;
+  narration: string | null;
+}
+
+interface InvoiceJournal {
+  voucher_type: string;
+  voucher_id: string;
+  label: string;
+  reference: string | null;
+  entry_date: string | null;
+  reversed: boolean;
+  lines: JournalLine[];
+}
 
 interface PaymentRow {
   id: string;
   amount: number;
-  payment_mode: string;
-  payment_date: string;
+  payment_mode?: string | null;
+  payment_date?: string;
   notes?: string | null;
+  kind?: string;
+  label?: string;
+  date?: string | null;
+  detail?: string | null;
 }
 
 interface HistoryEntry {
@@ -56,6 +80,8 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
 
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [journal, setJournal] = useState<{ journals: InvoiceJournal[]; reversed: boolean } | null>(null);
+  const [journalLoading, setJournalLoading] = useState(false);
 
   const fetchInvoice = useCallback(async () => {
     if (!invoiceId || !user?.id) return;
@@ -67,7 +93,7 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
       if (res.ok) {
         const data = await res.json();
         setInvoice(data.invoice);
-        setPayments(data.invoice?.payments || []);
+        setPayments(data.invoice?.settlements?.length ? data.invoice.settlements : data.invoice?.payments || []);
       } else {
         setInvoice(null);
       }
@@ -94,9 +120,29 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
     }
   }, [invoiceId, user?.id]);
 
+  const fetchJournal = useCallback(async () => {
+    if (!user?.id || !invoiceId) return;
+    setJournalLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/journal?user_id=${user.id}`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const journals: InvoiceJournal[] = Array.isArray(data.journals) ? data.journals : [];
+        setJournal({ journals, reversed: !!data.reversed });
+      } else {
+        setJournal({ journals: [], reversed: false });
+      }
+    } finally {
+      setJournalLoading(false);
+    }
+  }, [invoiceId, user?.id]);
+
   useEffect(() => {
     setActiveTab('overview');
     setHistory(null);
+    setJournal(null);
     fetchInvoice();
   }, [invoiceId, fetchInvoice]);
 
@@ -106,10 +152,17 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
     }
   }, [activeTab, history, fetchHistory]);
 
+  useEffect(() => {
+    if (activeTab === 'journal' && journal === null) {
+      fetchJournal();
+    }
+  }, [activeTab, journal, fetchJournal]);
+
   const tabs: DetailPanelTab[] = useMemo(
     () => [
       { id: 'overview', label: 'Overview', icon: ClipboardList },
       { id: 'transactions', label: 'Payments', icon: Receipt },
+      { id: 'journal', label: 'Journals', icon: BookOpen },
       { id: 'history', label: 'History', icon: HistoryIcon },
     ],
     []
@@ -135,15 +188,22 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
   }
 
   const grand = Number(invoice.grand_total) || 0;
-  const paid = Number(invoice.paid_amount) || 0;
+  const cashPaid = Number(invoice.paid_amount) || 0;
+  const paid =
+    invoice.settled_amount != null && invoice.settled_amount !== ''
+      ? Number(invoice.settled_amount) || 0
+      : cashPaid + (Number(invoice.advance_adjusted) || 0) + (Number(invoice.tds_received) || 0);
   const balance = Number(invoice.balance_amount ?? grand - paid) || 0;
+  const advanceAdjusted = Number(invoice.advance_adjusted) || 0;
   const paymentStatusForBadge =
     invoice.status === 'cancelled'
       ? invoice.payment_status || 'unpaid'
-      : deriveInvoicePaymentStatus(invoice.grand_total, invoice.paid_amount, invoice.balance_amount ?? balance);
+      : deriveInvoicePaymentStatus(invoice.grand_total, paid, invoice.balance_amount ?? balance);
   const openInvoiceView = () => {
     window.location.assign(`/invoices/${invoiceId}/view`);
   };
+
+  const postedJournals = (journal?.journals || []).filter((entry) => entry.lines.length > 0 || entry.reversed);
 
   const moreActions: NonNullable<React.ComponentProps<typeof DetailPanelShell>['moreActions']> = [
     {
@@ -209,6 +269,9 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
             <div>
               <div className="text-text-secondary text-xs">Paid</div>
               <div className="font-medium text-text-primary">{formatINR(paid)}</div>
+              {advanceAdjusted > 0.009 && (
+                <div className="text-xs text-text-secondary mt-1">{formatINR(advanceAdjusted)} from customer advance</div>
+              )}
             </div>
             {invoice.document_type && (
               <div>
@@ -250,9 +313,14 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
                   {payments.map((p) => (
                     <tr key={p.id} className="border-b border-border">
                       <td className="py-2 px-2">
-                        {p.payment_date ? format(new Date(p.payment_date), 'dd MMM yyyy') : '-'}
+                        {(p.date || p.payment_date)
+                          ? format(new Date(p.date || p.payment_date || ''), 'dd MMM yyyy')
+                          : '-'}
                       </td>
-                      <td className="py-2 px-2 capitalize">{p.payment_mode}</td>
+                      <td className="py-2 px-2 capitalize">
+                        {p.label || p.payment_mode}
+                        {p.detail ? <span className="text-text-secondary"> · {p.detail}</span> : null}
+                      </td>
                       <td className="py-2 px-2 text-right font-semibold text-emerald-700">
                         {formatINR(p.amount)}
                       </td>
@@ -260,6 +328,95 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'journal' && (
+        <div className="p-4 md:p-6">
+          {journalLoading && journal === null ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+            </div>
+          ) : !postedJournals.length ? (
+            <div className="text-center py-12 text-text-secondary">
+              <BookOpen className="w-10 h-10 mx-auto text-text-muted mb-3" />
+              <p>This invoice has not been posted to the books yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {postedJournals.map((entry) => {
+                const debitTotal = entry.lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+                const creditTotal = entry.lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+                const dated = entry.entry_date ? format(new Date(entry.entry_date), 'dd MMM yyyy') : null;
+                return (
+                  <section key={`${entry.voucher_type}:${entry.voucher_id}`}>
+                    <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <h3 className="text-sm font-semibold text-text-primary">{entry.label}</h3>
+                      {entry.reference && (
+                        <span className="text-sm capitalize text-text-secondary">{entry.reference}</span>
+                      )}
+                      {dated && <span className="text-xs text-text-secondary">{dated}</span>}
+                      {entry.reversed && (
+                        <span className="text-xs font-medium text-amber-700">Reversed</span>
+                      )}
+                    </div>
+                    {entry.lines.length === 0 ? (
+                      <p className="text-sm text-text-secondary">
+                        {entry.reversed
+                          ? 'This voucher was reversed and is no longer on the books.'
+                          : 'Nothing posted for this voucher.'}
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="border-b border-border text-text-secondary">
+                            <tr>
+                              <th className="text-left py-2 px-2 font-medium">Account</th>
+                              <th className="text-right py-2 px-2 font-medium">Debit</th>
+                              <th className="text-right py-2 px-2 font-medium">Credit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.lines.map((line) => {
+                              const debit = Number(line.debit) || 0;
+                              const credit = Number(line.credit) || 0;
+                              return (
+                                <tr key={line.id} className="border-b border-border">
+                                  <td className="py-2 px-2">
+                                    <div className="font-medium text-text-primary">{line.account_name || 'Account'}</div>
+                                    {line.account_code && (
+                                      <div className="text-xs text-text-secondary font-mono">{line.account_code}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-2 px-2 text-right tabular-nums">
+                                    {debit > 0 ? debit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                                  </td>
+                                  <td className="py-2 px-2 text-right tabular-nums">
+                                    {credit > 0 ? credit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="font-semibold text-text-primary">
+                              <td className="py-2 px-2">Total</td>
+                              <td className="py-2 px-2 text-right tabular-nums">
+                                {debitTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-2 px-2 text-right tabular-nums">
+                                {creditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>

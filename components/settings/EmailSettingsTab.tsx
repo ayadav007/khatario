@@ -6,19 +6,31 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { BusinessEmailConfigPublic } from '@/lib/business-email';
+import { isPublicEmailConfigReady } from '@/lib/business-email-client';
 
 interface EmailSettingsTabProps {
   businessId: string;
+  /** When no config exists yet, start with "Enable outbound email" checked. */
+  preferEnabledWhenEmpty?: boolean;
+  /** After a successful save that leaves email ready, call this (e.g. open compose). */
+  onReady?: () => void;
+  /** Primary save button label when `onReady` is set. */
+  readyActionLabel?: string;
 }
 
-export function EmailSettingsTab({ businessId }: EmailSettingsTabProps) {
+export function EmailSettingsTab({
+  businessId,
+  preferEnabledWhenEmpty = false,
+  onReady,
+  readyActionLabel = 'Save & continue to email',
+}: EmailSettingsTabProps) {
   const toast = useToastContext();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(preferEnabledWhenEmpty);
   const [smtpHost, setSmtpHost] = useState('smtp.gmail.com');
   const [smtpPort, setSmtpPort] = useState(587);
   const [smtpSecure, setSmtpSecure] = useState(false);
@@ -54,6 +66,7 @@ export function EmailSettingsTab({ businessId }: EmailSettingsTabProps) {
         setFromName(cfg.from_name || '');
         setReplyTo(cfg.reply_to_email || '');
       } else {
+        if (preferEnabledWhenEmpty) setEnabled(true);
         setFromEmail(defaults?.from_email || '');
         setFromName(defaults?.from_name || '');
       }
@@ -63,7 +76,7 @@ export function EmailSettingsTab({ businessId }: EmailSettingsTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [businessId, toast]);
+  }, [businessId, preferEnabledWhenEmpty, toast]);
 
   useEffect(() => {
     load();
@@ -94,9 +107,16 @@ export function EmailSettingsTab({ businessId }: EmailSettingsTabProps) {
         toast.error(data.error || 'Failed to save');
         return;
       }
-      setHasPassword(Boolean(data.config?.has_password));
+      const saved = data.config as BusinessEmailConfigPublic | null;
+      const passwordJustSet = Boolean(smtpPassword.trim());
+      setHasPassword(Boolean(saved?.has_password));
       setSmtpPassword('');
       toast.success('Email settings saved');
+      if (onReady && isPublicEmailConfigReady(saved)) {
+        onReady();
+      } else if (onReady && enabled && !saved?.has_password && !passwordJustSet) {
+        toast.warning('Enter an SMTP password, then save again to continue.');
+      }
     } catch {
       toast.error('Failed to save email settings');
     } finally {
@@ -236,7 +256,7 @@ export function EmailSettingsTab({ businessId }: EmailSettingsTabProps) {
 
       <div className="flex flex-wrap gap-3 border-t border-border pt-4">
         <Button onClick={handleSave} isLoading={saving}>
-          Save settings
+          {onReady ? readyActionLabel : 'Save settings'}
         </Button>
         <Button variant="secondary" onClick={handleTest} isLoading={testing}>
           Test connection

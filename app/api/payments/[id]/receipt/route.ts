@@ -83,6 +83,7 @@ export async function GET(
     }, { primary_color: '#3b82f6' });
 
     const templateData = {
+      business_id: payment.business_id,
       payment: {
         ...payment,
         date: new Date(String(payment.payment_date)).toLocaleDateString('en-IN'),

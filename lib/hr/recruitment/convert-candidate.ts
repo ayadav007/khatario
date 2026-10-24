@@ -98,7 +98,7 @@ export async function convertCandidateToEmployee(
       id, business_id, employee_code, designation, department, joining_date,
       reporting_manager_id, employment_type, access_type, is_active,
       pan_number, aadhaar_number, bank_account_number, bank_ifsc, bank_name
-    ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, 'full_time', 'full', true, $8, $9, $10, $11, $12)`,
+    ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, 'full_time', 'attendance_only', true, $8, $9, $10, $11, $12)`,
     [
       userId,
       params.businessId,

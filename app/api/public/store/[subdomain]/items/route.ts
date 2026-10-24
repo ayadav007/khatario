@@ -70,7 +70,16 @@ export async function GET(
     if (store.is_demo) {
       const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
       return NextResponse.json(
-        filterDemoCatalog({ categoryId, search, page, limit, featuredOnly, discountedOnly, maxPrice }),
+        filterDemoCatalog({
+          pack: store.store_theme?.pack,
+          categoryId,
+          search,
+          page,
+          limit,
+          featuredOnly,
+          discountedOnly,
+          maxPrice,
+        }),
       );
     }
 
@@ -111,7 +120,7 @@ export async function GET(
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
 
-    const categories = await queryRows<{ id: string; name: string }>(
+    const categories = await queryRows<{ id: string; name: string; item_count: number }>(
       q.categorySql,
       q.categoryParams,
     );

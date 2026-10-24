@@ -15,7 +15,7 @@ export const PRODUCT_LINE_LABELS: Record<ProductLine, string> = {
 export const PRODUCT_LINE_DESCRIPTIONS: Record<ProductLine, string> = {
   billing: 'GST invoicing, inventory, purchases, and reports for Indian shops.',
   hr: 'Employees, attendance, payroll, and leave — without the billing suite.',
-  connect: 'WhatsApp CRM, bot, and messaging — pay only for the add-ons you need.',
+  connect: 'Official WhatsApp Business API, shared inbox, AI agent, templates and automation.',
 };
 
 export const LANDING_HERO_COPY: Record<
@@ -23,12 +23,12 @@ export const LANDING_HERO_COPY: Record<
   { badges: string[]; headline: string; subhead: string; cta: string; footnote: string }
 > = {
   billing: {
-    badges: ['GST-ready invoicing', 'Made for India'],
+    badges: ['GST-ready invoicing', 'Offline-ready billing'],
     headline: 'Still billing by hand at closing time? There is a simpler way.',
     subhead:
-      'Khatario turns your counter into one simple flow: bill with correct GST, share on WhatsApp, track who has paid, and file reports — without wrestling spreadsheets or the CA at midnight.',
+      'Turn every sale into a GST bill, WhatsApp share, payment update, and accurate stock movement. Keep billing at the counter when the internet drops, then sync when it returns.',
     cta: 'Start Billing trial',
-    footnote: 'No credit card to start · Works on phone & computer',
+    footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
   },
   hr: {
     badges: ['Attendance & payroll', 'Made for India'],
@@ -39,18 +39,29 @@ export const LANDING_HERO_COPY: Record<
     footnote: '30-day HR Pro trial · No credit card to start',
   },
   connect: {
-    badges: ['WhatsApp CRM', 'No platform fee'],
+    badges: ['Official WhatsApp API', 'No markup on Meta charges'],
     headline: 'Customers on WhatsApp, replies all over the place? There is a simpler way.',
     subhead:
-      'Run conversations, bot rules, and outbound messages from one inbox. Pay only for the WhatsApp add-ons you enable.',
-    cta: 'Create free Connect account',
-    footnote: 'Free platform · Bot & Send Message add-ons when you need them',
+      'Run conversations, bot rules, AI replies, templates and campaigns from one shared inbox on the official WhatsApp Business API.',
+    cta: 'Create Connect account',
+    footnote: 'Connect plan from ₹1,199/month billed yearly · Meta conversation charges at cost',
   },
 };
 
+/** Length of the signup trial for Billing and HR (days). */
+export const SIGNUP_TRIAL_DAYS = 30;
+
+/** One-time self-serve extension offered after the trial ends (days). */
+export const TRIAL_EXTENSION_DAYS = 7;
+
 export const HR_TRIAL_PLAN_ID = 'hr_trial' as const;
 export const HR_FREE_PLAN_ID = 'hr_free' as const;
+/** Complimentary HR with every Billing package (incl. Free): 30 staff, simple payroll. */
+export const HR_STAFF_LITE_PLAN_ID = 'hr_staff_lite' as const;
+/** Paid Connect plan (WABA, inbox, AI, templates, automation). */
 export const CONNECT_PLAN_ID = 'connect' as const;
+/** Connect row when Connect is not bought or has lapsed: no premium WhatsApp features. */
+export const CONNECT_FREE_PLAN_ID = 'connect_free' as const;
 
 /** Top-level sidebar sections hidden per product line (label match). */
 export const HIDDEN_NAV_LABELS_BY_PRODUCT_LINE: Record<ProductLine, Set<string>> = {
@@ -93,23 +104,23 @@ export function getSignupPlanConfig(productLine: ProductLine): SignupPlanConfig 
         productLine: 'hr',
         planId: HR_TRIAL_PLAN_ID,
         status: 'trial',
-        trialDays: 30,
+        trialDays: SIGNUP_TRIAL_DAYS,
         postTrialPlanId: HR_FREE_PLAN_ID,
       };
     case 'connect':
       return {
         productLine: 'connect',
-        planId: CONNECT_PLAN_ID,
+        planId: CONNECT_FREE_PLAN_ID,
         status: 'active',
         trialDays: null,
-        postTrialPlanId: CONNECT_PLAN_ID,
+        postTrialPlanId: CONNECT_FREE_PLAN_ID,
       };
     default:
       return {
         productLine: 'billing',
         planId: 'trial',
         status: 'trial',
-        trialDays: 30,
+        trialDays: SIGNUP_TRIAL_DAYS,
         postTrialPlanId: 'free',
       };
   }

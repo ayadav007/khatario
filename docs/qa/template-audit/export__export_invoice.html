@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --primary-color: #4A90E2;
+      --table-header-color: #4A90E2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: Arial, sans-serif, Arial, sans-serif; 
+      font-size: 12px; 
+      color: #000000; 
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    .invoice-container { 
+      width: 100%; 
+      max-width: 800px; 
+      margin: 0 auto; 
+      padding: 20px; 
+      background: #fff; 
+    }
+    
+    /* Header Section */
+    .header-top {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .invoice-title {
+      font-size: 24px;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .gstin-header {
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .export-banner {
+      background: var(--primary-color);
+      color: white;
+      padding: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      margin: 10px 0;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .original-label {
+      text-align: right;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+    
+    /* Invoice Details - Two Column Layout */
+    .invoice-details {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+    .invoice-details-left, .invoice-details-right {
+      flex: 1;
+    }
+    .invoice-details-left {
+      padding-right: 20px;
+    }
+    .invoice-details-right {
+      padding-left: 20px;
+    }
+    .detail-row {
+      display: flex;
+      margin-bottom: 5px;
+    }
+    .detail-label {
+      font-weight: bold;
+      width: 140px;
+    }
+    .detail-value {
+      flex: 1;
+    }
+    
+    /* Bill To and Ship To Sections */
+    .parties-section {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .party-box {
+      flex: 1;
+      border: 1px solid #ddd;
+    }
+    .party-header {
+      background: var(--primary-color);
+      color: white;
+      padding: 8px;
+      font-weight: bold;
+      font-size: 12px;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .party-content {
+      padding: 10px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .party-company {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    /* Items Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+    thead th {
+      background: #e3f2fd;
+      background: color-mix(in srgb, var(--table-header-color) 14%, white);
+      padding: 8px 5px;
+      text-align: left;
+      font-weight: bold;
+      border: 1px solid #ddd;
+      font-size: 10px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    tbody td {
+      padding: 8px 5px;
+      border: 1px solid #ddd;
+    }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    
+    /* IGST Column Header */
+    .igst-header {
+      text-align: center;
+    }
+    .igst-subheader {
+      display: flex;
+      border-top: 1px solid #ddd;
+    }
+    .igst-subheader th {
+      flex: 1;
+      padding: 5px;
+      font-size: 10px;
+    }
+    
+    /* Summary Section */
+    .summary-section {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+      font-size: 11px;
+    }
+    .summary-left {
+      flex: 1;
+      padding-right: 20px;
+    }
+    .summary-right {
+      width: 300px;
+    }
+    .summary-box {
+      border: 1px solid #ddd;
+      padding: 10px;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    .summary-label {
+      font-weight: bold;
+    }
+    .certification {
+      margin-top: 15px;
+      font-size: 10px;
+      font-style: italic;
+    }
+    .signature-section {
+      margin-top: 40px;
+      text-align: right;
+    }
+    .signature-company {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .signature-line {
+      border-top: 1px solid #333;
+      width: 200px;
+      margin-top: 40px;
+      margin-left: auto;
+    }
+    
+    /* Amount in Words */
+    .amount-words {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    .payment-terms {
+      margin-top: 10px;
+    }
+    
+    /* Terms & Conditions */
+    .terms-section {
+      margin-top: 20px;
+      font-size: 10px;
+    }
+    .terms-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .terms-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .terms-list li {
+      margin-bottom: 3px;
+    }
+    
+    /* Business Info */
+    .business-info {
+      margin-bottom: 15px;
+      font-size: 11px;
+    }
+        .business-logo {
+          height: 60px;
+          margin-bottom: 10px;
+        }
+    .footer-text {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 10px;
+      color: #666;
+    }
+    .signature-image {
+      max-height: 50px;
+      max-width: 160px;
+      display: block;
+      margin: 8px 0 0 auto;
+    }
+  </style>
+<style id="khatario-print-system">
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+
+  .no-break {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+</style>
+</head>
+<body class="print-root orientation-portrait format-A4">
+  <div class="invoice-container">
+    <div class="header-top">
+      <div class="invoice-title">EXPORT INVOICE</div>
+          <div class="gstin-header">GSTIN: 27ZZZZZ9999Z1Z9</div>
+      <div class="original-label">Original for recipient</div>
+    </div>
+
+    <div class="business-info">
+          <img src="https://cdn.example.com/zqlogo.png" class="business-logo" />
+        <div style="font-weight: bold; font-size: 14px;">ZQBIZ Enterprises</div>
+        <div style="margin-top: 5px;">
+          ZQBADDR Unit 4 Hinjewadi
+          Pune, Maharashtra
+           - 411057
+        </div>
+          <div>Phone: 9000011111</div>
+          <div>Email: zqbiz@example.com</div>
+          <div style="margin-top: 5px; font-weight: bold;">IEC Code: ZQIEC12345</div>
+          <div>SWIFT: ZQSWIFTX</div>
+    </div>
+
+    <div class="invoice-details">
+      <div class="invoice-details-left">
+          <div class="detail-row">
+            <span class="detail-label">Invoice No:</span>
+            <span class="detail-value">ZQEXP-0009</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Invoice date:</span>
+            <span class="detail-value">20 September 2026</span>
+          </div>
+            <div class="detail-row">
+              <span class="detail-label">Due Date:</span>
+              <span class="detail-value">21 October 2026</span>
+            </div>
+          <div class="detail-row">
+            <span class="detail-label">Reverse Charge Y/N:</span>
+            <span class="detail-value">N</span>
+          </div>
+            <div class="detail-row">
+              <span class="detail-label">State:</span>
+              <span class="detail-value">Maharashtra</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Code:</span>
+              <span class="detail-value">27</span>
+            </div>
+        <div class="detail-row"><div class="detail-label">PO Number</div><div class="detail-value">ZQPO-7781</div></div>
+        <div class="detail-row"><div class="detail-label">Reference</div><div class="detail-value">ZQREF-5566</div></div>
+        <div class="detail-row"><div class="detail-label">E-Way Bill</div><div class="detail-value">ZQEWB-331122</div></div>
+        <div class="detail-row"><div class="detail-label">Delivery Note</div><div class="detail-value">ZQDN-11</div></div>
+        <div class="detail-row"><div class="detail-label">Payment Terms</div><div class="detail-value">ZQPT-Net45</div></div>
+        <div class="detail-row"><div class="detail-label">Other References</div><div class="detail-value">ZQOR-22</div></div>
+        <div class="detail-row"><div class="detail-label">Dispatched Through</div><div class="detail-value">ZQDT-BlueDart</div></div>
+        <div class="detail-row"><div class="detail-label">Destination</div><div class="detail-value">ZQDEST-Chakan</div></div>
+        <div class="detail-row"><div class="detail-label">Terms of Delivery</div><div class="detail-value">ZQTOD-DoorDelivery</div></div>
+      </div>
+      <div class="invoice-details-right">
+            <div class="detail-row">
+              <span class="detail-label">Currency:</span>
+              <span class="detail-value">USD</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Exchange Rate:</span>
+              <span class="detail-value">83.1234</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Place of Supply:</span>
+              <span class="detail-value">Other Country (96)</span>
+            </div>
+              <div class="detail-row">
+                <span class="detail-label">Country of Origin:</span>
+                <span class="detail-value">ZQCOO-India</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Port of Loading:</span>
+                <span class="detail-value">ZQPOL-Nhava Sheva</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Port of Discharge:</span>
+                <span class="detail-value">ZQPOD-Jebel Ali</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Place of Delivery:</span>
+                <span class="detail-value">ZQPODEL-Dubai</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Incoterms:</span>
+                <span class="detail-value">ZQINCO-CIF</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Transport Mode:</span>
+                <span class="detail-value">ZQTM-Road</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">AWB Number:</span>
+                <span class="detail-value">ZQAWB-7788</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">BL Number:</span>
+                <span class="detail-value">ZQBL-9900</span>
+              </div>
+            <div class="detail-row">
+              <span class="detail-label">Shipping Bill No:</span>
+              <span class="detail-value">ZQSB-4455</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Port Code:</span>
+              <span class="detail-value">ZQPC-INNSA1</span>
+            </div>
+          <div class="detail-row custom-field-row">
+            <span class="detail-label">Site Code:</span>
+            <span class="detail-value">ZQCF-SITE9</span>
+          </div>
+      </div>
+    </div>
+
+    <div class="parties-section">
+        <div class="party-box">
+          <div class="party-header">Bill To</div>
+          <div class="party-content">
+              <div class="party-company">ZQCUST Traders</div>
+              <div>ZQIBILL 12 MG Road Pune</div>
+              <div>Phone: 9812345670</div>
+              <div>Email: zqcust@example.com</div>
+                <div style="margin-top: 5px;">GSTIN: 27ABCDE1234F1Z5</div>
+              <div>State: Dubai</div>
+              <div>Code: 96</div>
+                <div style="margin-top: 5px; font-weight: bold;">Country: ZQCOUNTRY-UAE</div>
+                <div style="margin-top: 5px;">Tax/VAT ID: ZQTAXID-AE100</div>
+          </div>
+        </div>
+
+          <div class="party-box">
+            <div class="party-header">Ship To</div>
+            <div class="party-content">
+                <div class="party-company">ZQCUST Traders</div>
+              <div>ZQISHIP Plot 9 Chakan</div>
+                <div>Country: ZQCOUNTRY-UAE</div>
+            </div>
+          </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 5%">S. No.</th>
+          <th>Product Description</th>
+          <th>HSN Code</th>
+          <th class="text-center">Qty</th>
+          <th class="text-right">Rate</th>
+          <th class="text-right">Disc %</th>
+          <th class="text-right">Discount</th>
+          <th class="text-right">Taxable value</th>
+          <th class="text-center">IGST %</th>
+          <th class="text-right">IGST Amt</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="text-center">1</td>
+            <td>
+              ZQAlpha Widget
+              <br><small style="color: #666;">ZQDESC-ALPHA</small>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: ZQCOLOUR-Teal</div>
+            </td>
+          <td class="text-center">84713010</td>
+          <td class="text-center">3 BOX</td>
+          <td class="text-right">1,111.11</td>
+          <td class="text-right">5%</td>
+          <td class="text-right">166.67</td>
+          <td class="text-right">3,166.66</td>
+          <td class="text-center">18.00</td>
+          <td class="text-right">570.00</td>
+          <td class="text-right">3,736.66</td>
+        </tr>
+        <tr>
+          <td class="text-center">2</td>
+            <td>
+              ZQBeta Gadget
+              <br><small style="color: #666;">ZQDESC-BETA</small>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: —</div>
+            </td>
+          <td class="text-center">85176290</td>
+          <td class="text-center">7 KGS</td>
+          <td class="text-right">222.22</td>
+          <td class="text-right">-</td>
+          <td class="text-right">-</td>
+          <td class="text-right">1,555.54</td>
+          <td class="text-center">12.00</td>
+          <td class="text-right">186.66</td>
+          <td class="text-right">1,742.20</td>
+        </tr>
+      </tbody>
+    </table>
+
+        <div style="margin-top: 20px; font-size: 10px; border-top: 1px solid #ddd; padding-top: 10px;">
+          <strong>Bank Details:</strong><br>
+          ZQBANK of India
+          <br>Account No: 001122334455
+          <br>IFSC: ZQBK0001234
+          <br>SWIFT: ZQSWIFTX
+          <br>Branch: ZQBR-Baner
+        </div>
+
+    <div class="summary-section">
+      <div class="summary-left">
+          <div class="amount-words">
+            Total invoice amount in words: Five Thousand Six Hundred Thirty Rupees Only
+          </div>
+            <div class="payment-terms">
+              <strong>Payment Terms:</strong>
+              <div style="white-space: pre-line;">ZQSETPT settings payment terms</div>
+            </div>
+            <div class="terms-section">
+              <div class="terms-title">Terms &amp; conditions</div>
+              <div style="white-space: pre-line;">ZQINVTERMS goods once sold</div>
+            </div>
+            <div class="terms-section">
+              <div class="terms-title">Notes</div>
+              <div style="white-space: pre-line;">ZQINVNOTE thanks for the order</div>
+            </div>
+      </div>
+
+      <div class="summary-right">
+        <div class="summary-box">
+            <div class="summary-row">
+              <span class="summary-label">Total Amount before Tax:</span>
+              <span>4,722.20</span>
+            </div>
+          
+            <div class="summary-row">
+              <span>Less: Discount</span>
+              <span>- 166.67</span>
+            </div>
+          
+          
+          
+            <div class="summary-row">
+              <span>Add: IGST</span>
+              <span>756.66</span>
+            </div>
+          
+            <div class="summary-row">
+              <span>Freight &amp; Insurance</span>
+              <span>150.25</span>
+            </div>
+          
+          
+            <div class="summary-row">
+              <span>Round Off</span>
+              <span>0.89</span>
+            </div>
+          
+            <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; padding-top: 5px; margin-top: 5px;">
+              <span>Total Amount after Tax (USD):</span>
+              <span>5,630.00</span>
+            </div>
+          
+            <div class="summary-row">
+              <span>Paid</span>
+              <span>1,234.56</span>
+            </div>
+          
+            <div class="summary-row">
+              <span>Balance Due</span>
+              <span>4,395.44</span>
+            </div>
+
+              <div class="certification" style="margin-top: 10px;">
+                We hereby certify that the goods mentioned are of Indian origin and the information is true and correct.
+              </div>
+          <div class="signature-section">
+            <div class="signature-company">For ZQBIZ Enterprises</div>
+            
+              <img src="https://cdn.example.com/zqsign.png" class="signature-image" alt="Signature" />
+            
+            <div class="signature-line"></div>
+            <div style="margin-top: 5px; font-size: 10px;">Authorised signatory</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+      <div class="footer-text">ZQSETFOOTER</div>
+  </div>
+</body>
+</html>

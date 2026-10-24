@@ -7,7 +7,10 @@ import { allocateStockOnSale } from '@/lib/stock-valuation';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import {
@@ -36,12 +39,11 @@ export async function PATCH(
   const id = params.id;
 
   const body = await request.json().catch(() => ({}));
-  const businessScope =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+  const businessScope = getSessionScopedBusinessId(request);
   if (!businessScope) {
     return NextResponse.json(
-      { error: 'business_id is required' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -59,13 +61,11 @@ export async function PATCH(
   }
   const stockBranchId = inv.branch_id as string;
 
-  // Get user_id from request body
-  const userId = body.user_id || body.updated_by;
-  
+  const userId = getAuthenticatedUserId(request);
   if (!userId) {
     return NextResponse.json(
-      { error: 'user_id is required for authorization' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -89,6 +89,8 @@ export async function PATCH(
     return NextResponse.json({ invoice: inv });
   }
 
+  // A proforma is not a posted sale, so finalizing it must not touch stock.
+  if (inv.document_type !== 'proforma_invoice') {
   // Preflight: bundle component stock before opening the stock transaction
   {
     const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
@@ -140,15 +142,36 @@ export async function PATCH(
       }
     }
   }
+  }
 
   // CRITICAL: Only check limit if finalizing a draft (not already final)
   // If already final, no limit check needed (already counted)
   // Deduct stock with batch/serial tracking support
+  const guard = await periodGuardResponse({
+    businessId: inv.business_id,
+    branchId: stockBranchId,
+    dates: [inv.invoice_date],
+    action: 'finalize this invoice',
+    checkGstFiled: inv.document_type !== 'proforma_invoice',
+  });
+  if (guard) return guard;
+
   const pool = getPool();
   const client = await pool.connect();
+  let updated: any = null;
 
   try {
     await client.query('BEGIN');
+
+    const historicalPayment = await historicalDraftPaymentBlock(client, {
+      businessId: inv.business_id,
+      referenceType: 'invoice',
+      documentId: id,
+    });
+    if (historicalPayment) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(historicalPayment, { status: 409 });
+    }
 
     try {
       await enforceAccess({
@@ -184,8 +207,10 @@ export async function PATCH(
         
         // Calculate new invoice amount (balance after any payments)
         // Use ?? instead of || to avoid treating 0 as falsy
-        const invoiceBalance = inv.balance_amount ?? (parseFloat(inv.grand_total ?? '0') - parseFloat(inv.paid_amount ?? '0'));
-        const newTotalBalance = currentBalance + invoiceBalance;
+        const invoiceBalance = Number(
+          inv.balance_amount ?? (parseFloat(inv.grand_total ?? '0') - parseFloat(inv.paid_amount ?? '0'))
+        ) || 0;
+        const newTotalBalance = Number(currentBalance) + invoiceBalance;
 
         // Only enforce if credit_limit > 0 (0 means unlimited credit)
         if (creditLimit > 0 && newTotalBalance > creditLimit) {
@@ -228,6 +253,7 @@ export async function PATCH(
     const warehouseModeEnabled = await isWarehouseModeEnabled(inv.business_id);
     
     for (const row of current.items) {
+      if (inv.document_type === 'proforma_invoice') break;
       if (!row.item_id) continue;
       
       // Validate warehouse is accessible by branch (if warehouse_id provided)
@@ -637,6 +663,75 @@ export async function PATCH(
       }
     }
 
+    const lockedRes = await client.query(
+      `SELECT * FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+      [id, businessScope]
+    );
+    const lockedInv = lockedRes.rows[0];
+    if (!lockedInv || lockedInv.status === 'final') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Invoice was finalized by another request', code: 'ALREADY_FINAL' },
+        { status: 409 }
+      );
+    }
+
+    const updatedRes = await client.query(
+      `UPDATE invoices
+       SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+       RETURNING *`,
+      [id, businessScope]
+    );
+    updated = updatedRes.rows[0] ?? null;
+
+    // The finalized invoice must carry its full accounting impact in this same
+    // transaction; any failure below rolls back stock and status as well.
+    if (lockedInv.document_type !== 'proforma_invoice') {
+      const posted = await client.query(
+        `SELECT 1 FROM ledger_entry_lines WHERE voucher_type = 'invoice' AND voucher_id = $1 LIMIT 1`,
+        [id]
+      );
+      if (posted.rowCount === 0) {
+        if (lockedInv.customer_id) {
+          const balanceToAdd =
+            Number(lockedInv.balance_amount ?? (Number(lockedInv.grand_total) - Number(lockedInv.paid_amount || 0))) || 0;
+          await client.query(
+            `UPDATE customers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2 AND business_id = $3`,
+            [balanceToAdd, lockedInv.customer_id, businessScope]
+          );
+        }
+        const invoicePayments = await client.query(
+          `SELECT payment_mode, amount
+             FROM payments
+            WHERE reference_type = 'invoice' AND reference_id = $1
+              AND deleted_at IS NULL AND status = 'active'
+            ORDER BY created_at`,
+          [id]
+        );
+        const walkIn = !lockedInv.customer_id;
+        await createInvoiceLedgerEntries({
+          businessId: lockedInv.business_id,
+          invoiceId: id,
+          invoiceNumber: lockedInv.invoice_number,
+          invoiceDate: lockedInv.invoice_date,
+          grandTotal: Number(lockedInv.grand_total) || 0,
+          customerId: lockedInv.customer_id || null,
+          paymentMode: invoicePayments.rows[0]?.payment_mode || 'cash',
+          cashSalePayments: walkIn ? invoicePayments.rows : undefined,
+          isCashSale: walkIn,
+          cogsAmount: 0,
+          branchId: stockBranchId,
+          taxableValue: Number(lockedInv.subtotal) || 0,
+          cgstTotal: Number(lockedInv.cgst_total) || 0,
+          sgstTotal: Number(lockedInv.sgst_total) || 0,
+          igstTotal: Number(lockedInv.igst_total) || 0,
+          poolClient: client,
+        });
+      }
+    }
+
     await client.query('COMMIT');
   } catch (error: any) {
     await client.query('ROLLBACK');
@@ -644,14 +739,6 @@ export async function PATCH(
   } finally {
     client.release();
   }
-
-  const updated = await queryOne(
-    `UPDATE invoices
-     SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-     RETURNING *`,
-    [id, businessScope]
-  );
 
   if (updated) {
     try {

@@ -11,7 +11,7 @@ import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const POST = withWhatsAppPremiumApi<{ id: string }>(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ params, body, businessId }) => {
     try {
       const ruleId = params.id;
@@ -61,7 +61,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
   },
 );
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId }) => {
   try {
     const ruleId = params.id;
     const { searchParams } = new URL(request.url);

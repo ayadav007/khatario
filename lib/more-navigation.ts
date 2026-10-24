@@ -1,13 +1,15 @@
 /**
  * Mobile "More" menu — same section titles and labels as desktop Sidebar,
- * filtered by module permissions and plan features (RBAC).
+ * filtered by module permissions and plan features (RBAC). The phone app gets this
+ * same menu from GET /api/navigation/more, so this is the only list to edit.
  */
 
 import {
   isNavSectionVisible,
   type PlatformModule,
 } from '@/lib/platform-modules';
-import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+import { buildHrNavSection } from '@/lib/hr/hr-admin-nav';
+import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
 
 export type MoreNavItem = {
   href: string;
@@ -23,12 +25,25 @@ export type MoreNavSection = {
   items: MoreNavItem[];
 };
 
+export type MoreCapabilityResult = {
+  allowed: boolean;
+  denialReason?: string | null;
+  indeterminate?: boolean;
+};
+
 export type MoreNavContext = {
   isSupplier: boolean;
   warehousesEnabled: boolean;
   hasCapability: (resource: string, action?: string) => boolean;
+  /**
+   * Prefer this when available — matches Sidebar: allow nav when role grants
+   * the module even if the plan feature is missing (upgrade-locked UI).
+   */
+  checkCapability?: (resource: string, action?: string) => MoreCapabilityResult;
   /** Enabled platform modules (billing, hr, connect, crm). Tools always shown. */
   enabledModules: PlatformModule[];
+  /** False removes Supplier Hub links. Omitted keeps them (plan lock still applies). */
+  supplierHubVisible?: boolean;
 };
 
 /** Match Sidebar: hasFeature === hasCapability(featureKey, 'view') */
@@ -39,26 +54,26 @@ function hasFeature(
   return hasCapability(featureKey, 'view');
 }
 
-/** Same rules as Sidebar `isItemVisible` */
+/** Match Sidebar `roleAllowsModule` */
+function roleAllowsModule(
+  ctx: MoreNavContext,
+  moduleKey: string,
+  action: string
+): boolean {
+  if (ctx.checkCapability) {
+    const result = ctx.checkCapability(moduleKey, action);
+    return result.allowed || result.denialReason === 'FEATURE_NOT_IN_PLAN';
+  }
+  return ctx.hasCapability(moduleKey, action);
+}
+
+/** Same rules as Sidebar `isItemVisible` + `roleAllowsModule` */
 export function isMoreNavItemVisible(
   item: MoreNavItem,
   ctx: MoreNavContext
 ): boolean {
-  const { hasCapability, warehousesEnabled } = ctx;
-
   if (!item.module) return true;
-
-  // Match Sidebar: warehouses entry visible when feature is enabled in settings
-  if (item.module === 'warehouses' && warehousesEnabled) return true;
-
-  if (
-    item.isLocked ||
-    (item.featureKey && !hasFeature(hasCapability, item.featureKey))
-  ) {
-    return true;
-  }
-
-  return hasCapability(item.module, 'view');
+  return roleAllowsModule(ctx, item.module, 'view');
 }
 
 function filterItems(items: MoreNavItem[], ctx: MoreNavContext): MoreNavItem[] {
@@ -68,55 +83,86 @@ function filterItems(items: MoreNavItem[], ctx: MoreNavContext): MoreNavItem[] {
 function section(
   title: string,
   items: MoreNavItem[],
-  ctx: MoreNavContext
+  ctx: MoreNavContext,
+  options?: { skipModuleGate?: boolean }
 ): MoreNavSection | null {
-  if (!isNavSectionVisible(title, ctx.enabledModules)) return null;
+  if (!options?.skipModuleGate && !isNavSectionVisible(title, ctx.enabledModules)) {
+    return null;
+  }
   const vis = filterItems(items, ctx);
   if (vis.length === 0) return null;
   return { title, items: vis };
 }
 
+/** Sections start open (no entry); one tap closes an open section. */
+export function toggleMoreSection(
+  prev: Record<string, boolean>,
+  title: string
+): Record<string, boolean> {
+  return { ...prev, [title]: prev[title] === false };
+}
+
 /**
  * Build grouped links for /more — titles align with desktop Sidebar.
  */
+function withSupplierHubLock(item: MoreNavItem, hubLocked: boolean): MoreNavItem {
+  return { ...item, featureKey: 'purchase_supplier_hub', isLocked: hubLocked };
+}
+
 export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const { isSupplier, warehousesEnabled, hasCapability } = ctx;
   const out: MoreNavSection[] = [];
+  const showHub = ctx.supplierHubVisible !== false;
+  const hubLocked = !hasFeature(hasCapability, 'purchase_supplier_hub');
 
-  if (isSupplier && isNavSectionVisible('Supplier', ctx.enabledModules)) {
+  if (showHub && isSupplier && isNavSectionVisible('Supplier', ctx.enabledModules)) {
     const s = section(
       'Supplier',
       [
+        { href: '/suppliers/hub', label: 'Supplier Hub' },
         { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
+        { href: '/suppliers/catalog', label: 'My Catalog' },
+        { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
         { href: '/suppliers/requests', label: 'Requests to Fulfill' },
-      ],
+      ].map((item) => withSupplierHubLock(item, hubLocked)),
       ctx
     );
     if (s) out.push(s);
   }
 
-  const sales = section(
-    'Sales',
-    [
-      { href: '/customers', label: 'Customers', module: 'customers' },
-      { href: '/invoices', label: 'All Invoices', module: 'invoices' },
-      { href: '/estimates', label: 'Quotations', module: 'invoices' },
-      { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
-      { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices' },
-      { href: '/work-orders', label: 'Work Orders', module: 'work_orders' },
-      { href: '/credit-notes', label: 'Credit Notes', module: 'credit_notes' },
-      { href: '/debit-notes', label: 'Debit Notes', module: 'debit_notes' },
-    ],
-    ctx
-  );
+  const salesItems: MoreNavItem[] = SALES_NAV_ITEMS.map((item) => ({
+    href: item.href,
+    label: item.label,
+    module: item.module,
+    featureKey: item.featureKey,
+    isLocked: item.featureKey ? !hasFeature(hasCapability, item.featureKey) : false,
+  }));
+  let sales = section('Sales', salesItems, ctx);
+  // Connect agents on connect-only accounts still need sales lookups when RBAC allows.
+  if (!sales) {
+    const lookup = filterItems(salesItems, ctx);
+    if (lookup.length > 0) {
+      sales = { title: 'Sales', items: lookup };
+    }
+  }
   if (sales) out.push(sales);
 
   const purchases = section(
     'Purchases',
     [
       { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
+      ...(showHub
+        ? [
+            withSupplierHubLock({ href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/purchases/incoming', label: 'Incoming Bills', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/supply-orders', label: 'Supplier Orders', module: 'purchases' }, hubLocked),
+            withSupplierHubLock({ href: '/purchases/new-arrivals', label: 'New Arrivals', module: 'purchases' }, hubLocked),
+          ]
+        : []),
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-      { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
+      ...(showHub
+        ? [withSupplierHubLock({ href: '/purchases/requests', label: 'Requests', module: 'purchases' }, hubLocked)]
+        : []),
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
       { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', module: 'expenses' },
@@ -127,6 +173,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
 
   const invItems: MoreNavItem[] = [
     { href: '/items', label: 'Items', module: 'items' },
+    { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
   ];
   if (hasFeature(hasCapability, 'barcode_label_printing')) {
     invItems.push({
@@ -157,19 +204,38 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
     { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' }
   );
-  const inventory = section('Inventory', invItems, ctx);
+  let inventory = section('Inventory', invItems, ctx);
+  if (!inventory) {
+    const lookup = filterItems(
+      [
+        { href: '/items', label: 'Items', module: 'items' },
+        { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+      ],
+      ctx
+    );
+    if (lookup.length > 0) {
+      inventory = { title: 'Inventory', items: lookup };
+    }
+  }
   if (inventory) out.push(inventory);
 
   const accounting = section(
     'Accounting',
     [
-      { href: '/accounts', label: 'Chart of Accounts', module: 'settings' },
+      { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart', isLocked: !hasFeature(hasCapability, 'accounting_chart') },
       { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
+      { href: '/contra', label: 'Contra', module: 'journal' },
+      { href: '/advances', label: 'Advances', module: 'journal' },
+      { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
+      { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },
+      { href: '/bank/import', label: 'Bank import', module: 'settings' },
+      { href: '/bank/reconciliation', label: 'Bank reconciliation', module: 'settings' },
       { href: '/ledger', label: 'Ledger', module: 'invoices' },
       { href: '/payments/in', label: 'Payments In', module: 'payments' },
       { href: '/payments/out', label: 'Payments Out', module: 'payments' },
-      { href: '/provisions', label: 'Provisions', module: 'settings' },
-      { href: '/tds', label: 'TDS/TCS', module: 'settings' },
+      { href: '/payments/reconciliation', label: 'Reconciliation', module: 'payments' },
+      { href: '/provisions', label: 'Provisions', module: 'settings', featureKey: 'accounting_provisions', isLocked: !hasFeature(hasCapability, 'accounting_provisions') },
+      { href: '/tds', label: 'TDS/TCS', module: 'settings', featureKey: 'accounting_tds', isLocked: !hasFeature(hasCapability, 'accounting_tds') },
     ],
     ctx
   );
@@ -187,25 +253,166 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/aging/receivables', label: 'Receivables Aging', module: 'reports' },
       { href: '/reports/aging/payables', label: 'Payables Aging', module: 'reports' },
       { href: '/reports/gst/gstr1', label: 'GST Returns (GSTR-1)', module: 'reports' },
+      { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
       { href: '/reports/sales/summary', label: 'Sales — Summary', module: 'reports' },
+      { href: '/reports/sales/invoice-wise', label: 'Sales — Invoice-wise', module: 'reports' },
+      { href: '/reports/sales/item-wise', label: 'Sales — Item-wise', module: 'reports' },
+      { href: '/reports/sales/party-wise', label: 'Sales — Party-wise', module: 'reports' },
+      { href: '/reports/sales/tax-wise', label: 'Sales — Tax-wise', module: 'reports' },
+      { href: '/reports/sales/payment-mode', label: 'Sales — Payment mode', module: 'reports' },
+      { href: '/reports/sales/discount', label: 'Sales — Discount', module: 'reports' },
+      { href: '/reports/sales/credit', label: 'Sales — Credit', module: 'reports' },
+      { href: '/reports/sales/cancelled', label: 'Sales — Cancelled', module: 'reports' },
+      { href: '/reports/sales/returns', label: 'Sales — Returns', module: 'reports' },
+      { href: '/reports/sales/b2b-b2c', label: 'Sales — B2B vs B2C', module: 'reports' },
       { href: '/reports/purchase/summary', label: 'Purchase — Summary', module: 'reports' },
+      { href: '/reports/purchase/invoice-wise', label: 'Purchase — Invoice-wise', module: 'reports' },
+      { href: '/reports/purchase/supplier-wise', label: 'Purchase — Supplier-wise', module: 'reports' },
+      { href: '/reports/purchase/item-wise', label: 'Purchase — Item-wise', module: 'reports' },
+      { href: '/reports/purchase/returns', label: 'Purchase — Returns', module: 'reports' },
+      { href: '/reports/purchase/credit', label: 'Purchase — Credit', module: 'reports' },
+      { href: '/reports/purchase/tax-wise', label: 'Purchase — Tax-wise', module: 'reports' },
+      { href: '/reports/gst/compliance', label: 'GST alerts', module: 'reports' },
+      { href: '/reports/gst/gstr2b', label: 'GSTR-2B', module: 'reports' },
+      { href: '/reports/gst/gstr2b-reconciliation', label: 'GSTR-2B reconciliation', module: 'reports' },
+      { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
+      { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
+      { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+      { href: '/reports/deleted', label: 'Deleted items', module: 'reports' },
+      { href: '/reports/stock/valuation', label: 'Stock valuation', module: 'reports' },
+      { href: '/reports/credit-risk', label: 'Credit risk', module: 'reports' },
     ],
     ctx
   );
   if (reports) out.push(reports);
 
-  const hr = section(
-    HR_NAV_SECTION_TITLE,
-    HR_ADMIN_NAV_ITEMS.map((item) => ({
-      href: item.href,
-      label: item.label,
-      module: item.module,
-      featureKey: item.featureKey,
-      isLocked: item.featureKey ? !hasFeature(hasCapability, item.featureKey) : false,
-    })),
-    ctx
-  );
-  if (hr) out.push(hr);
+  const hr = buildHrNavSection({
+    hasFeature: (key) => hasFeature(hasCapability, key),
+    roleAllowsModule: (moduleKey) => roleAllowsModule(ctx, moduleKey, 'view'),
+    enabledModules: ctx.enabledModules,
+  });
+  if (hr) {
+    out.push({
+      title: hr.title,
+      items: hr.items.map((item) => ({
+        href: item.href,
+        label: item.label,
+        module: item.module,
+        featureKey: item.featureKey,
+      })),
+    });
+  }
+
+  // Mirror desktop Sidebar: Connect tree, or billing-only WhatsApp settings link.
+  const hasConnect = ctx.enabledModules.includes('connect');
+  const hasBilling = ctx.enabledModules.includes('billing');
+  const whatsappUnlocked = hasFeature(hasCapability, 'whatsapp_bot');
+
+  if (hasConnect) {
+    const connect = section(
+      'Connect',
+      [
+        {
+          href: '/whatsapp/dashboard',
+          label: 'Dashboard',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/conversations',
+          label: 'Conversations',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/reminders',
+          label: 'Payment Reminders',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/orders',
+          label: 'Order Verification',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/flows',
+          label: 'Flows',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/send-message',
+          label: 'Send Message',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/who-to-message',
+          label: 'Who to message',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/campaigns',
+          label: 'Campaigns',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/contacts',
+          label: 'Contacts',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/contacts/groups',
+          label: 'Contact Groups',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/group-extractor',
+          label: 'Group Extractor',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/unsubscribes',
+          label: 'Unsubscribes',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/settings/whatsapp',
+          label: 'WhatsApp Settings',
+          module: 'whatsapp',
+        },
+      ],
+      ctx
+    );
+    if (connect) out.push(connect);
+  } else if (hasBilling) {
+    // Sidebar: billing-only businesses get a WhatsApp settings link under More (not Connect).
+    const items = filterItems(
+      [{ href: '/settings/whatsapp', label: 'WhatsApp', module: 'whatsapp' }],
+      ctx
+    );
+    if (items.length) out.push({ title: 'WhatsApp', items });
+  }
 
   const toolsItems: MoreNavItem[] = [
     { href: '/search', label: 'Search' },
@@ -219,6 +426,15 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/tools/hsn-finder', label: 'HSN/SAC Finder' },
     { href: '/tools/gst-calculator', label: 'GST Calculator' },
     { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+    { href: '/tools/tds-calculator', label: 'TDS Calculator' },
+    { href: '/tools/discount-calculator', label: 'Discount Calculator' },
+    { href: '/tools/price-margin-calculator', label: 'Price Calculator' },
+    { href: '/tools/pan-validator', label: 'PAN Validator' },
+    { href: '/tools/gstin-validator', label: 'GSTIN Validator' },
+    { href: '/tools/interest-calculator', label: 'Interest Calculator' },
+    { href: '/tools/emi-calculator', label: 'EMI Calculator' },
+    { href: '/tools/currency-converter', label: 'Currency Converter' },
+    { href: '/tools/invoice-number-generator', label: 'Invoice Generator' },
   ];
   const tools = section('Tools', toolsItems, ctx);
   if (tools) out.push(tools);
@@ -227,10 +443,6 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     'Settings & data',
     [
       { href: '/settings', label: 'Settings', module: 'settings' },
-      { href: '/settings/email', label: 'Email (SMTP)', module: 'settings' },
-      { href: '/settings/users', label: 'Manage Users', module: 'settings' },
-      { href: '/settings/backup', label: 'Backup & restore', module: 'settings' },
-      { href: '/settings/offline-sync', label: 'Offline sync', module: 'settings' },
     ],
     ctx
   );

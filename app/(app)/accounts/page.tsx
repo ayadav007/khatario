@@ -2,21 +2,32 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import { PageHeader } from '@/components/layout/PageHeader';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Plus, Search, ChevronRight, ChevronDown, Loader2, FileText, Edit, Settings, RefreshCw } from 'lucide-react';
+import { Plus, Search, ChevronRight, ChevronDown, Loader2, FileText, Edit, Settings, RefreshCw, Layers } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Account, AccountGroup } from '@/types/database';
 import Link from 'next/link';
+import { AddAccountDialog } from '@/components/accounts/AddAccountDialog';
+import { MyAccountsView } from '@/components/accounts/MyAccountsView';
 import { useToastContext } from '@/contexts/ToastContext';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { effectivePlSection, PL_SECTIONS, PL_SECTION_LABELS, type PlSection } from '@/lib/accounting/pl-sections';
 
 interface AccountWithGroup extends Account {
   account_group_name: string;
   account_group_code: string;
+  parent_account_code?: string | null;
+  parent_account_name?: string | null;
   children?: AccountWithGroup[];
+}
+
+function plSectionLabel(account: AccountWithGroup): string {
+  const section = effectivePlSection({ ...account, group_code: account.account_group_code });
+  return section ? PL_SECTION_LABELS[section] : '—';
 }
 
 export default function AccountsPage() {
@@ -25,19 +36,30 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountWithGroup[]>([]);
   const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
+  const [chartTab, setChartTab] = useState<'mine' | 'all'>('mine');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterSection, setFilterSection] = useState<PlSection | 'all'>('all');
   const [initializing, setInitializing] = useState(false);
+  const [addingIndustry, setAddingIndustry] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
+  const fetchSeq = useRef(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     if (business?.id) {
       fetchAccounts();
       fetchGroups();
     }
-  }, [business?.id, viewMode, filterType, pagination.page]);
+  }, [business?.id, viewMode, filterType, filterSection, debouncedSearch, pagination.page]);
 
   useEffect(() => {
     if (business?.id) {
@@ -45,17 +67,20 @@ export default function AccountsPage() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, viewMode, filterType]);
+  }, [business?.id, viewMode, filterType, filterSection, debouncedSearch]);
 
   const fetchAccounts = async () => {
     if (!business?.id) return;
 
+    const seq = ++fetchSeq.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         business_id: business.id,
         user_id: user?.id || '', // Required for authorization
         ...(filterType !== 'all' && { account_type: filterType }),
+        ...(viewMode === 'list' && filterSection !== 'all' && { pl_section: filterSection }),
+        ...(viewMode === 'list' && debouncedSearch && { search: debouncedSearch }),
         ...(viewMode === 'tree' && { tree: 'true' }),
         ...(viewMode === 'list' && { 
           page: pagination.page.toString(),
@@ -64,6 +89,7 @@ export default function AccountsPage() {
       });
 
       const res = await fetch(`/api/accounts?${params}`);
+      if (seq !== fetchSeq.current) return;
       if (res.ok) {
         const data = await res.json();
         setAccounts(data.accounts || []);
@@ -74,7 +100,7 @@ export default function AccountsPage() {
     } catch (error) {
       console.error('Error fetching accounts:', error);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   };
 
@@ -134,7 +160,49 @@ export default function AccountsPage() {
     }
   };
 
-  const filteredAccounts = accounts.filter(account => {
+  const handleAddIndustryLedgers = async () => {
+    setAddingIndustry(true);
+    try {
+      const previewRes = await fetch('/api/accounts/industry-pack');
+      const preview = await previewRes.json();
+      if (!previewRes.ok) {
+        toast.error(preview.error || 'Failed to load industry ledgers');
+        return;
+      }
+      const labels = (preview.packs as Array<{ label: string }>).map((p) => p.label).join(', ');
+      if (!labels) {
+        toast.info('No industry ledgers for this business. Set the industry and business type in Business Profile.');
+        return;
+      }
+      const ledgers = preview.missing_ledgers.length;
+      const categories = preview.missing_categories.length;
+      if (ledgers === 0 && categories === 0) {
+        toast.info(`Your chart already has the ledgers for ${labels}.`);
+        return;
+      }
+      if (!confirm(`Add ${ledgers} ledgers and ${categories} expense categories for ${labels}? Existing accounts are not changed.`)) {
+        return;
+      }
+      const res = await fetch('/api/accounts/industry-pack', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to add industry ledgers');
+        return;
+      }
+      toast.success(`Added ${data.accounts_created} ledgers and ${data.categories_created} expense categories.`);
+      if (data.conflicting_codes?.length) {
+        toast.warning(`Codes ${data.conflicting_codes.join(', ')} are already used by other accounts, so those ledgers were skipped.`);
+      }
+      fetchAccounts();
+    } catch (error) {
+      console.error('Error adding industry ledgers:', error);
+      toast.error('Failed to add industry ledgers');
+    } finally {
+      setAddingIndustry(false);
+    }
+  };
+
+  const matchesSearch = (account: AccountWithGroup) => {
     if (!search) return true;
     const searchLower = search.toLowerCase();
     return (
@@ -142,7 +210,22 @@ export default function AccountsPage() {
       account.account_code.toLowerCase().includes(searchLower) ||
       account.account_group_name?.toLowerCase().includes(searchLower)
     );
-  });
+  };
+  const matchesSection = (account: AccountWithGroup) =>
+    filterSection === 'all' || effectivePlSection({ ...account, group_code: account.account_group_code }) === filterSection;
+  // The tree is loaded whole, so the section filter runs here and keeps parents of matching sub-accounts.
+  const pruneTree = (nodes: AccountWithGroup[]): AccountWithGroup[] =>
+    nodes.flatMap((n) => {
+      const children = pruneTree(n.children || []);
+      return matchesSection(n) || children.length ? [{ ...n, children }] : [];
+    });
+  const pruneBySearch = (nodes: AccountWithGroup[]): AccountWithGroup[] =>
+    nodes.flatMap((n) => {
+      const children = pruneBySearch(n.children || []);
+      return matchesSearch(n) || children.length ? [{ ...n, children }] : [];
+    });
+  const sectioned = viewMode === 'tree' && filterSection !== 'all' ? pruneTree(accounts) : accounts;
+  const filteredAccounts = viewMode === 'tree' ? pruneBySearch(sectioned) : sectioned.filter(matchesSearch);
 
   const renderTreeView = () => {
     if (loading) {
@@ -155,18 +238,21 @@ export default function AccountsPage() {
 
     const renderAccount = (account: AccountWithGroup, level: number = 0) => {
       const hasChildren = account.children && account.children.length > 0;
-      const isExpanded = expandedGroups.has(account.id);
+      const isExpanded = expandedGroups.has(account.id) || filterSection !== 'all' || search.trim().length > 0;
 
       return (
         <div key={account.id} className="border-b border-border">
           <div
-            className={`flex items-center py-3 px-4 hover:bg-gray-50 ${level > 0 ? 'pl-8' : ''}`}
-            style={{ paddingLeft: `${level * 24 + 16}px` }}
+            className="flex min-w-0 items-center gap-2 py-3 pr-3 hover:bg-gray-50"
+            style={{ paddingLeft: `${level * 20 + 12}px` }}
           >
             {hasChildren ? (
               <button
+                type="button"
                 onClick={() => toggleGroup(account.id)}
-                className="mr-2 text-text-secondary hover:text-text-primary"
+                className="mr-1 shrink-0 text-text-secondary hover:text-text-primary"
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? `Collapse ${account.account_name}` : `Expand ${account.account_name}`}
               >
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4" />
@@ -175,12 +261,23 @@ export default function AccountsPage() {
                 )}
               </button>
             ) : (
-              <span className="w-6" />
+              <span className="w-5 shrink-0" />
             )}
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-sm text-text-secondary">{account.account_code}</span>
-                <span className="font-medium">{account.account_name}</span>
+                <span className="font-medium break-words">{account.account_name}</span>
+                {hasChildren && (
+                  <span className="px-2 py-0.5 bg-slate-100 text-primary-800 text-xs rounded">Parent</span>
+                )}
+                {level > 0 && (
+                  <span className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs rounded">Sub-account</span>
+                )}
+                <span className={`px-2 py-0.5 rounded text-xs ${
+                  account.nature === 'debit' ? 'bg-slate-100 text-primary-800' : 'bg-green-100 text-green-800'
+                }`}>
+                  {account.nature}
+                </span>
                 {account.is_system && (
                   <span className="px-2 py-0.5 bg-slate-100 text-primary-800 text-xs rounded">System</span>
                 )}
@@ -188,11 +285,12 @@ export default function AccountsPage() {
                   <span className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs rounded">Inactive</span>
                 )}
               </div>
-              <div className="text-sm text-text-secondary mt-1">
+              <div className="text-sm text-text-secondary mt-1 break-words">
                 {account.account_group_name} • {account.account_type}
+                {(account.account_type === 'income' || account.account_type === 'expense') && ` • P&L: ${plSectionLabel(account)}`}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1">
               <Link href={`/accounts/${account.id}`}>
                 <Button size="sm" variant="ghost">
                   <FileText className="w-4 h-4" />
@@ -275,6 +373,7 @@ export default function AccountsPage() {
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Account Name</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Group</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Type</th>
+              <th className="text-left py-3 px-4 font-semibold text-text-primary">Profit &amp; Loss section</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Nature</th>
               <th className="text-center py-3 px-4 font-semibold text-text-primary">Status</th>
               <th className="text-center py-3 px-4 font-semibold text-text-primary">Actions</th>
@@ -284,12 +383,22 @@ export default function AccountsPage() {
             {filteredAccounts.map((account) => (
               <tr key={account.id} className="border-b border-border hover:bg-gray-50">
                 <td className="py-4 px-4 font-mono text-sm">{account.account_code}</td>
-                <td className="py-4 px-4 font-medium">{account.account_name}</td>
+                <td className="py-4 px-4 font-medium">
+                  <div className="break-words">{account.account_name}</div>
+                  {account.parent_account_name && (
+                    <div className="text-xs font-normal text-text-secondary">
+                      Sub-account of {account.parent_account_code} {account.parent_account_name}
+                    </div>
+                  )}
+                </td>
                 <td className="py-4 px-4 text-sm text-text-secondary">{account.account_group_name}</td>
                 <td className="py-4 px-4">
                   <span className="px-2 py-1 rounded-md text-xs bg-gray-100 text-gray-800">
                     {account.account_type}
                   </span>
+                </td>
+                <td className="py-4 px-4 text-sm text-text-secondary">
+                  {plSectionLabel(account)}
                 </td>
                 <td className="py-4 px-4">
                   <span className={`px-2 py-1 rounded-md text-xs ${
@@ -359,14 +468,15 @@ export default function AccountsPage() {
   };
 
   return (
-    
+    <>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Chart of Accounts</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage your accounting accounts</p>
-          </div>
-          <div className="flex gap-3">
+        <PageHeader
+  title="Chart of Accounts"
+  subtitle="Manage your accounting accounts"
+
+  actions={
+    <>
+<div className="flex gap-3">
             <Link href="/settings/account-mappings">
               <Button variant="secondary">
                 <Settings className="w-4 h-4 mr-2" />
@@ -387,17 +497,57 @@ export default function AccountsPage() {
                 Initialize Default Accounts
               </Button>
             )}
-            <Link href="/accounts/new">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Account
+            {accounts.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={handleAddIndustryLedgers}
+                disabled={addingIndustry}
+                data-testid="accounts-add-industry-ledgers"
+              >
+                {addingIndustry ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Layers className="w-4 h-4 mr-2" />
+                )}
+                Add Industry Ledgers
               </Button>
-            </Link>
+            )}
+            <Button type="button" onClick={() => setAddOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Account
+            </Button>
           </div>
+    </>
+  }
+/>
+
+        <div role="tablist" aria-label="Chart of accounts" className="flex gap-2">
+          <Button
+            type="button"
+            role="tab"
+            aria-selected={chartTab === 'mine'}
+            variant={chartTab === 'mine' ? 'secondary' : 'ghost'}
+            onClick={() => setChartTab('mine')}
+          >
+            My Accounts
+          </Button>
+          <Button
+            type="button"
+            role="tab"
+            aria-selected={chartTab === 'all'}
+            variant={chartTab === 'all' ? 'secondary' : 'ghost'}
+            onClick={() => setChartTab('all')}
+          >
+            All Accounts
+          </Button>
         </div>
 
+        {chartTab === 'mine' && business?.id ? (
+          <MyAccountsView businessId={business.id} />
+        ) : (
+        <>
         <Card>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
               <Input
@@ -419,6 +569,20 @@ export default function AccountsPage() {
                 <option value="income">Income</option>
                 <option value="expense">Expenses</option>
                 <option value="capital">Capital</option>
+              </select>
+            </div>
+            <div>
+              <select
+                value={filterSection}
+                onChange={(e) => setFilterSection(e.target.value as PlSection | 'all')}
+                className="input"
+                aria-label="Profit & Loss section"
+                data-testid="accounts-pl-section-filter"
+              >
+                <option value="all">All P&amp;L sections</option>
+                {PL_SECTIONS.map((s) => (
+                  <option key={s} value={s}>{PL_SECTION_LABELS[s]}</option>
+                ))}
               </select>
             </div>
             <div className="flex gap-2">
@@ -470,8 +634,11 @@ export default function AccountsPage() {
             </div>
           )}
         </Card>
+        </>
+        )}
       </div>
-    
+      <AddAccountDialog open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => { fetchAccounts(); }} />
+    </>
   );
 }
 

@@ -88,12 +88,13 @@ export function POSPaymentInputs({ grandTotal, payments, onChange }: POSPaymentI
           return (
             <div key={method.mode} className="flex items-center gap-3">
               <label className="w-32 text-display font-semibold text-gray-700 uppercase">
-                {method.label}
+                {method.mode === 'cash' ? 'Received' : method.label}
               </label>
               <div className="flex-1">
                 <Input
                   type="number"
                   inputMode="decimal"
+                  id={method.mode === 'cash' ? 'pos-received-cash' : undefined}
                   value={payment.amount > 0 ? payment.amount.toString() : ''}
                   onChange={(e) => {
                     const value = parseFloat(e.target.value) || 0;
@@ -118,12 +119,17 @@ export function POSPaymentInputs({ grandTotal, payments, onChange }: POSPaymentI
             </span>
           </div>
           {returnAmount > 0 && (
-            <div className="flex justify-between items-center">
-              <span className="text-display font-semibold text-text-secondary">Return Amount:</span>
-              <span className="text-display-lg font-bold text-gray-900">
-                ₹{returnAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-display font-semibold text-text-secondary">Return Amount:</span>
+                <span className="text-display-lg font-bold text-gray-900">
+                  ₹{returnAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary">
+                Give this change to the customer. Save records the bill as fully paid (₹0 balance), not as extra credit.
+              </p>
+            </>
           )}
         </div>
       )}

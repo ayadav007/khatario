@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne, queryRows } from '@/lib/db';
 import {
@@ -27,6 +28,8 @@ export async function GET(request: NextRequest) {
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
     }
+    const planDenied = await denyIfFeatureMissing(businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     try {
       await authorize(userId, 'settings', 'read', { businessId });

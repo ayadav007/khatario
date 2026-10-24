@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
@@ -270,10 +271,10 @@ export default function PartyItemPricingPage() {
       <Breadcrumbs />
 
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Party item prices</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Set catalog overrides per customer. Empty custom price keeps the default selling price from the item master.
-        </p>
+        <PageHeader
+  title="Party item prices"
+  subtitle="Set catalog overrides per customer. Empty custom price keeps the default selling price from the item master."
+/>
       </div>
 
       <Card className="p-4 md:p-6">

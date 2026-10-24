@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Check, Loader2 } from 'lucide-react';
 
 interface HSNResult {
   code: string;
   description: string;
-  gst_rate: number;
+  gst_rate: number | null;
   category: string;
   is_service: boolean;
+  rate_condition?: string | null;
   source?: string;
   confidence?: string;
   warnings?: string[];
@@ -37,7 +39,9 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
   const [loading, setLoading] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
 
   // Sync with external value
   useEffect(() => {
@@ -47,13 +51,39 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
   // Click outside handler
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      if (wrapperRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setIsOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function placeMenu() {
+      const input = inputRef.current;
+      if (!input) return;
+      const rect = input.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 260 && rect.top > spaceBelow;
+      setMenuStyle({
+        position: 'fixed',
+        top: openUp ? rect.top - 4 : rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        transform: openUp ? 'translateY(-100%)' : undefined,
+        zIndex: 80,
+      });
+    }
+    placeMenu();
+    window.addEventListener('scroll', placeMenu, true);
+    window.addEventListener('resize', placeMenu);
+    return () => {
+      window.removeEventListener('scroll', placeMenu, true);
+      window.removeEventListener('resize', placeMenu);
+    };
+  }, [isOpen, results, loading, query]);
 
   // Debounced search
   useEffect(() => {
@@ -71,7 +101,7 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
         if (res.ok) {
           const data = await res.json();
           setResults(data.results || []);
-          setIsOpen(data.results?.length > 0);
+          setIsOpen(true);
         } else {
           setResults([]);
         }
@@ -153,12 +183,12 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
         )}
       </div>
 
-      {isOpen && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+      {isOpen && results.length > 0 && menuStyle && createPortal(
+        <div ref={menuRef} style={menuStyle} className="bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
           {results.map((result, index) => (
             <div
-              key={result.code}
-              onClick={() => handleSelect(result)}
+              key={`${result.code}-${result.gst_rate ?? 'none'}-${index}`}
+              onMouseDown={() => handleSelect(result)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
                 index === highlightedIndex
                   ? 'bg-slate-50 border-l-2 border-primary-500'
@@ -176,9 +206,11 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
                     }`}>
                       {result.is_service ? 'SAC' : 'HSN'}
                     </span>
-                    <span className="text-xs text-text-secondary">
-                      {result.gst_rate}% GST
-                    </span>
+                    {result.gst_rate != null && (
+                      <span className="text-xs text-text-secondary">
+                        {result.gst_rate}% GST
+                      </span>
+                    )}
                     {result.source === 'ai' && (
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         result.confidence === 'high'
@@ -194,6 +226,11 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
                   <p className="text-sm text-text-secondary line-clamp-1">
                     {result.description}
                   </p>
+                  {result.rate_condition && (
+                    <p className="text-xs text-text-secondary mt-1 line-clamp-2">
+                      {result.rate_condition}
+                    </p>
+                  )}
                   {result.useCase && (
                     <p className="text-xs text-primary-600 mt-1 font-medium">
                       💡 {result.useCase}
@@ -225,13 +262,15 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
               </div>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
 
-      {isOpen && !loading && query.length >= 2 && results.length === 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-text-secondary">
+      {isOpen && !loading && query.length >= 2 && results.length === 0 && menuStyle && createPortal(
+        <div ref={menuRef} style={menuStyle} className="bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-text-secondary">
           No HSN/SAC codes found for "{query}"
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

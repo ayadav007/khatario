@@ -5,6 +5,18 @@ export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
+/** Mirrors the valid_upi_id CHECK on payment_methods (migration 351). */
+const UPI_ID_RE = /^[a-zA-Z0-9._-]{2,99}@[a-zA-Z0-9]{2,64}$/;
+
+function normalizeUpiId(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, value: null };
+  const value = String(raw).trim().replace(/\s+/g, '');
+  if (!UPI_ID_RE.test(value)) {
+    return { ok: false, error: 'Enter a valid UPI ID, like yourname@okhdfcbank' };
+  }
+  return { ok: true, value };
+}
+
 /**
  * GET /api/payment-methods
  * List payment methods for a business
@@ -62,6 +74,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const upi = normalizeUpiId(upi_id);
+    if (!upi.ok) return NextResponse.json({ error: upi.error }, { status: 400 });
+    if (method_type === 'upi' && !upi.value) {
+      return NextResponse.json({ error: 'UPI ID is required' }, { status: 400 });
+    }
+
     // If setting as default, unset other defaults for this business
     if (is_default) {
       await query(
@@ -80,7 +98,7 @@ export async function POST(request: NextRequest) {
         business_id,
         method_type,
         method_name,
-        upi_id || null,
+        upi.value,
         bank_account_id || null,
         wallet_provider || null,
         account_details || '{}',
@@ -132,6 +150,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const upi = normalizeUpiId(upi_id);
+    if (!upi.ok) return NextResponse.json({ error: upi.error }, { status: 400 });
+
     // If setting as default, unset other defaults for this business
     if (is_default) {
       await query(
@@ -155,7 +176,7 @@ export async function PUT(request: NextRequest) {
     }
     if (upi_id !== undefined) {
       updates.push(`upi_id = $${paramIndex++}`);
-      values.push(upi_id || null);
+      values.push(upi.value);
     }
     if (bank_account_id !== undefined) {
       updates.push(`bank_account_id = $${paramIndex++}`);

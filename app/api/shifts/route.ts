@@ -6,6 +6,7 @@ import { Shift } from '@/types/database';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 
 /**
  * GET /api/shifts
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_shifts');
+    if (planDenied) return planDenied;
     const activeOnly = searchParams.get('active_only') === 'true';
 
     if (!businessId) {
@@ -60,6 +63,8 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(business_id, 'hr_shifts');
+    if (planDenied) return planDenied;
     const {
       shift_name,
       start_time,

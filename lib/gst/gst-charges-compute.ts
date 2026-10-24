@@ -63,7 +63,7 @@ export interface ComputeGstChargesFullResult {
 }
 
 /**
- * Late fee + interest with optional **segmented** interest when `gst_payment` rows exist after due date.
+ * Late fee + interest with optional **segmented** interest when `gst_payment` or `gst_cash_utilization` rows exist after due date.
  * Falls back to the legacy single-interval formula when there are no such payments (flag `segmented: false`).
  *
  * **Cross-period:** `cash_liability_initial` uses `getOutstandingGst` on the due date and may include

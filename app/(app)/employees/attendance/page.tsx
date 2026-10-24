@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -15,6 +16,9 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
 import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
+import { AttendanceHistoryMatrix } from '@/components/hr/AttendanceHistoryMatrix';
+import { StaffPunchReviewQueue } from '@/components/hr/StaffPunchReviewQueue';
+import { useHrPlan } from '@/hooks/useFullHr';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
   employee_code: string;
@@ -25,6 +29,7 @@ interface AttendanceWithEmployee extends EmployeeAttendance {
 
 export default function AttendanceManagementPage() {
   const { business, user } = useAuth();
+  const hrPlan = useHrPlan();
   
   // Authorization guard: Check if user can read attendance
   // Uses tri-state model: 'loading' | 'allowed' | 'denied'
@@ -36,11 +41,13 @@ export default function AttendanceManagementPage() {
   
   const [attendance, setAttendance] = useState<AttendanceWithEmployee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'half_day' | 'leave'>('all');
   const [isMobile, setIsMobile] = useState(false);
+  const [view, setView] = useState<'list' | 'matrix'>('list');
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
@@ -61,21 +68,25 @@ export default function AttendanceManagementPage() {
 
     setLoading(true);
     try {
+      setLoadError(null);
       const params = new URLSearchParams({
         business_id: business.id,
-        user_id: user?.id || '', // Required for authorization
         start_date: startDate,
         end_date: endDate,
         ...(statusFilter !== 'all' && { status: statusFilter }),
       });
 
       const res = await fetch(`/api/employees/attendance?${params}`);
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         setAttendance(data.attendance || []);
+      } else {
+        setAttendance([]);
+        setLoadError(data.error || 'Could not load attendance.');
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
+      setLoadError('Could not load attendance.');
     } finally {
       setLoading(false);
     }
@@ -123,27 +134,84 @@ export default function AttendanceManagementPage() {
 
   // authStatus === 'allowed' - render page content
 
+  const viewTabs = (
+    <div className="flex w-fit max-w-full gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Attendance views">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === 'list'}
+        onClick={() => setView('list')}
+        className={`min-h-10 rounded-md px-3 text-sm font-medium ${
+          view === 'list' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary'
+        }`}
+      >
+        Daily list
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === 'matrix'}
+        onClick={() => setView('matrix')}
+        className={`min-h-10 rounded-md px-3 text-sm font-medium ${
+          view === 'matrix' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary'
+        }`}
+      >
+        Attendance matrix
+      </button>
+    </div>
+  );
+
   if (isMobile) {
-    return <ManagerTeamRollCall />;
+    return (
+      <div className="space-y-3">
+        {viewTabs}
+        {view === 'matrix' ? (
+          <AttendanceHistoryMatrix />
+        ) : (
+          <>
+            <div className="flex justify-end">
+              <Link
+                href="/employees/attendance/mark/advanced"
+                className="text-sm font-medium text-text-secondary underline-offset-2 hover:underline"
+              >
+                Advanced
+              </Link>
+            </div>
+            <ManagerTeamRollCall simpleStatuses />
+          </>
+        )}
+      </div>
+    );
   }
 
   return (
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Attendance Management</h1>
-            <p className="text-sm text-text-secondary mt-1">View and manage employee attendance</p>
-          </div>
-          <Link href="/employees/attendance/mark">
+        <PageHeader
+  title="Attendance Management"
+  subtitle="View and manage employee attendance"
+
+  actions={
+    <>
+<Link href="/employees/attendance/mark">
             <Button>
               <Plus className="w-4 h-4 mr-2" />
               Mark Attendance
             </Button>
           </Link>
-        </div>
+    </>
+  }
+/>
 
+        <StaffPunchReviewQueue onResolved={fetchAttendance} />
+
+        {viewTabs}
+
+        {view === 'matrix' ? (
+          <AttendanceHistoryMatrix />
+        ) : (
+        <>
         {/* Filters */}
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -182,7 +250,7 @@ export default function AttendanceManagementPage() {
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
                 <option value="half_day">Half Day</option>
-                <option value="leave">Leave</option>
+                {hrPlan.leaves ? <option value="leave">Leave</option> : null}
               </select>
             </div>
           </div>
@@ -197,7 +265,7 @@ export default function AttendanceManagementPage() {
           ) : filteredAttendance.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-text-secondary">No attendance records found</p>
+              <p className="text-text-secondary">{loadError ?? 'No attendance records found'}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -296,6 +364,8 @@ export default function AttendanceManagementPage() {
             </div>
           )}
         </Card>
+        </>
+        )}
       </div>
     
   );

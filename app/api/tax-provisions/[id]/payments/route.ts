@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordTaxPayment, getTaxPayments } from '@/lib/services/tax-provision-calculator';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +53,10 @@ export async function POST(
         { status: 400 }
       );
     }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
 
     const paymentId = await recordTaxPayment(
       business_id,

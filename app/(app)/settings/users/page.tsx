@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import Link from 'next/link';
-import { Plus, Edit, Trash2, User, UserCheck, UserX, Loader2, Warehouse, Building2 } from 'lucide-react';
+import { Edit, Trash2, User, UserCheck, UserX, Loader2, Warehouse, Building2 } from 'lucide-react';
 import { UserWarehouseAccess } from '@/components/settings/UserWarehouseAccess';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -32,6 +32,7 @@ interface UserData {
   last_active_at?: string;
   created_at: string;
   display_role?: string;
+  seat_type?: 'billing' | 'connect';
   employee_id?: string;
   employee_code?: string;
   designation?: string;
@@ -55,9 +56,10 @@ interface Branch {
 }
 
 export default function ManageUsersPage() {
-  const { business, user } = useAuth();
+  const { business, user, hasPlatformModule } = useAuth();
   const toast = useToastContext();
   const [users, setUsers] = useState<UserData[]>([]);
+  const hasConnect = hasPlatformModule('connect');
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,6 +249,34 @@ export default function ManageUsersPage() {
     }
   };
 
+  const handleMoveSeat = async (userData: UserData) => {
+    const toConnect = userData.seat_type !== 'connect';
+    const confirmed = confirm(
+      toConnect
+        ? `Move ${userData.name} to a WhatsApp agent seat? They will only chat with customers and view customers, items, invoices and orders.`
+        : `Move ${userData.name} to a Billing user seat? Their role stays the same until you edit it.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/settings/users/${userData.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seat_type: toConnect ? 'connect' : 'billing' }),
+      });
+      if (res.ok) {
+        toast.success(toConnect ? `${userData.name} is now a WhatsApp agent` : `${userData.name} is now a Billing user`);
+        fetchUsers();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Could not move user');
+      }
+    } catch (error) {
+      console.error('Failed to move user:', error);
+      toast.error('Could not move user');
+    }
+  };
+
   const handleEdit = (userData: UserData) => {
     setEditingUser(userData);
     setEditFormData({
@@ -351,14 +381,8 @@ export default function ManageUsersPage() {
     <>
     <SettingsPageShell
         title="Manage Users"
-        description="Add and manage team members"
+        description="People who can sign in. Add someone new from Employees, then give them a role there."
         icon={User}
-        actions={
-          <Button onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add New User
-          </Button>
-        }
       >
         <SubscriptionUsageBanner
           businessId={business?.id}
@@ -374,7 +398,7 @@ export default function ManageUsersPage() {
         ) : users.length === 0 ? (
           <Card padding="lg" className="text-center">
             <User className="mx-auto mb-4 h-12 w-12 text-text-muted" />
-            <p className="type-body-secondary">No users found. Add your first team member!</p>
+            <p className="type-body-secondary">No one with a login yet. Add them from Employees and choose a sign-in role.</p>
           </Card>
         ) : (
           <div className="space-y-2">
@@ -431,6 +455,11 @@ export default function ManageUsersPage() {
                       userData.role_name ||
                       (userData.is_primary_admin ? 'Primary admin' : 'No role')}
                   </span>
+                  {userData.seat_type === 'connect' ? (
+                    <span className="chip bg-green-50 text-green-800 dark:bg-green-950/35 dark:text-green-300">
+                      WhatsApp agent
+                    </span>
+                  ) : null}
                   {userData.designation ? (
                     <span className="text-xs text-text-secondary">
                       {userData.designation}
@@ -505,6 +534,15 @@ export default function ManageUsersPage() {
                     </Button>
                   </div>
                 )}
+                {!userData.is_primary_admin && (hasConnect || userData.seat_type === 'connect') ? (
+                  <button
+                    type="button"
+                    className="link-primary mt-2 text-xs"
+                    onClick={() => handleMoveSeat(userData)}
+                  >
+                    {userData.seat_type === 'connect' ? 'Move to Billing users' : 'Move to WhatsApp agents'}
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>

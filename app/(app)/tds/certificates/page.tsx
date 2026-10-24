@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -156,8 +157,10 @@ export default function TDSCertificatesPage() {
               <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">TDS Certificates</h1>
-              <p className="text-gray-600 text-sm mt-1">Generate Form 16A certificates</p>
+              <PageHeader
+  title="TDS Certificates"
+  subtitle="Generate Form 16A certificates"
+/>
             </div>
           </div>
           <Button onClick={() => setShowAddForm(!showAddForm)} variant={showAddForm ? 'secondary' : 'primary'}>

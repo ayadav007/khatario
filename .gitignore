@@ -13,7 +13,7 @@ __pycache__/
 
 # Next.js
 .next/
-out/
+/out/
 
 # Build output
 dist/
@@ -26,6 +26,7 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+workers/marketing/.dev.vars
 /env
 
 # gstack local session state (global install uses ~/.gstack)
@@ -36,6 +37,9 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+e2e/.auth/
+screenshots/
+mobile-report.json
 
 # Logs
 *.log
@@ -66,6 +70,7 @@ public/workbox-*.js.map
 next-env.d.ts
 
 # Tooling caches
+graphify-out/
 .turbo/
 .swc/
 .cache/
@@ -109,3 +114,13 @@ Desktop.ini
 .kiro/steering/byterover-rules.md
 .qoder/rules/byterover-rules.md
 .augment/rules/byterover-rules.md
+
+# Site builder uploads (per environment, lives on the VPS disk)
+/storage/marketing-media/
+/storage/marketing-creatives/
+/storage/sales-flow/
+/storage/whatsapp-media/
+
+# Khatario Staff face models (npm run face:models)
+models/face/*.onnx
+models/face/*.part

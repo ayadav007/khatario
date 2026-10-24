@@ -1,15 +1,16 @@
 import { queryOne } from '@/lib/db';
-import { enableBusinessModule, getBusinessPlatformContext } from '@/lib/business-modules';
+import { enableBusinessModule } from '@/lib/business-modules';
 import { type PlatformModule } from '@/lib/platform-modules';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
 import {
   computeSubscriptionPeriodEnd,
+  unusedTrialDays,
   type BillingCycle,
 } from '@/lib/subscription/apply-plan-change';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
-import { syncLegacySubscriptionFromPrimaryModule } from '@/lib/subscription/sync-legacy-subscription';
+import { ensureComplimentaryHrForBilling } from '@/lib/subscription/ensure-complimentary-hr';
 
 export interface ApplyModulePlanChangeResult {
   business_id: string;
@@ -19,53 +20,6 @@ export interface ApplyModulePlanChangeResult {
   start_date: string;
   end_date: string;
   billing_cycle: BillingCycle;
-}
-
-async function syncLegacyRowIfPrimary(
-  businessId: string,
-  moduleKey: PlatformModule,
-  planId: string,
-  billingCycle: BillingCycle,
-  startDate: string,
-  endDate: string,
-  paymentMethod: string,
-  paymentReference: string | null,
-): Promise<void> {
-  const ctx = await getBusinessPlatformContext(businessId);
-  if (ctx.primaryModule !== moduleKey) return;
-
-  const existing = await queryOne<{ id: string }>(
-    `SELECT id FROM business_subscriptions WHERE business_id = $1`,
-    [businessId],
-  );
-
-  if (existing) {
-    await queryOne(
-      `UPDATE business_subscriptions
-       SET plan_id = $1,
-           status = 'active',
-           start_date = $2,
-           end_date = $3,
-           billing_cycle = $4,
-           payment_method = $5,
-           payment_reference = $6,
-           trial_end_date = NULL,
-           scheduled_plan_id = NULL,
-           cancel_at_period_end = false,
-           cancelled_at = NULL,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $7`,
-      [planId, startDate, endDate, billingCycle, paymentMethod, paymentReference, businessId],
-    );
-  } else {
-    await queryOne(
-      `INSERT INTO business_subscriptions (
-         business_id, plan_id, status, start_date, end_date,
-         billing_cycle, payment_method, payment_reference
-       ) VALUES ($1, $2, 'active', $3, $4, $5, $6, $7)`,
-      [businessId, planId, startDate, endDate, billingCycle, paymentMethod, paymentReference],
-    );
-  }
 }
 
 /**
@@ -81,16 +35,18 @@ export async function applyModuleSubscriptionPlanChange(params: {
 }): Promise<ApplyModulePlanChangeResult> {
   await assertPlanMatchesModule(params.planId, params.moduleKey);
 
-  const startDate = new Date().toISOString().split('T')[0];
-  const endDate = computeSubscriptionPeriodEnd(params.billingCycle);
   const paymentMethod = params.paymentMethod ?? 'manual';
   const paymentReference = params.paymentReference?.trim() || null;
 
-  const existing = await queryOne<{ plan_id: string }>(
-    `SELECT plan_id FROM business_module_subscriptions
+  const existing = await queryOne<{ plan_id: string; trial_end_date: string | null }>(
+    `SELECT plan_id, trial_end_date::text FROM business_module_subscriptions
      WHERE business_id = $1 AND module_key = $2`,
     [params.businessId, params.moduleKey],
   );
+
+  const trialDaysCarried = unusedTrialDays(existing);
+  const startDate = new Date().toISOString().split('T')[0];
+  const endDate = computeSubscriptionPeriodEnd(params.billingCycle, trialDaysCarried);
 
   const row = await queryOne<ApplyModulePlanChangeResult>(
     `INSERT INTO business_module_subscriptions (
@@ -105,6 +61,9 @@ export async function applyModuleSubscriptionPlanChange(params: {
        billing_cycle = EXCLUDED.billing_cycle,
        trial_end_date = NULL,
        scheduled_plan_id = NULL,
+       grace_period_end = NULL,
+       cancel_at_period_end = false,
+       cancelled_at = NULL,
        updated_at = CURRENT_TIMESTAMP
      RETURNING business_id, module_key, plan_id, status,
                start_date::text, end_date::text, billing_cycle`,
@@ -124,20 +83,13 @@ export async function applyModuleSubscriptionPlanChange(params: {
 
   await enableBusinessModule(params.businessId, params.moduleKey, 'upgrade');
 
-  await syncLegacyRowIfPrimary(
-    params.businessId,
-    params.moduleKey,
-    params.planId,
-    params.billingCycle,
-    startDate,
-    endDate,
-    paymentMethod,
-    paymentReference,
-  );
+  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
+  if (params.moduleKey === 'billing') {
+    await ensureComplimentaryHrForBilling(params.businessId);
+  }
 
   clearSubscriptionCache(params.businessId);
   clearModuleSubscriptionCache(params.businessId);
-  await syncLegacySubscriptionFromPrimaryModule(params.businessId);
 
   await logSubscriptionEvent(params.businessId, 'upgraded', {
     module_key: params.moduleKey,
@@ -145,6 +97,8 @@ export async function applyModuleSubscriptionPlanChange(params: {
     from_plan_id: existing?.plan_id,
     billing_cycle: params.billingCycle,
     payment_method: paymentMethod,
+    payment_reference: paymentReference,
+    trial_days_carried: trialDaysCarried,
   });
 
   return row;

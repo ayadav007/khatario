@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
         AND i.deleted_at IS NULL
       WHERE p.business_id = $1
         AND p.deleted_at IS NULL
+        AND p.status = 'active'
         AND p.type = 'receivable'
         ${dateFilter}
         ${branchFilter}

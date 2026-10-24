@@ -18,6 +18,7 @@ export const GSTR3B_RCM_IGST = '2158';
 export const GSTR3B_INPUT_CGST = '1110';
 export const GSTR3B_INPUT_SGST = '1111';
 export const GSTR3B_INPUT_IGST = '1112';
+export const GSTR3B_INPUT_CESS = '1113';
 
 export interface GSTR3BLedgerBasis {
   outward_supplies: { igst: number; cgst: number; sgst: number };
@@ -34,7 +35,7 @@ export interface GSTR3BLedgerBasis {
     itc_claimed_total: number;
     possible_rcm_itc_mismatch: boolean;
   };
-  itc: { igst: number; cgst: number; sgst: number };
+  itc: { igst: number; cgst: number; sgst: number; cess?: number };
   utilization: {
     igst_to_igst: number;
     igst_to_cgst: number;
@@ -43,8 +44,10 @@ export interface GSTR3BLedgerBasis {
     cgst_to_igst: number;
     sgst_to_sgst: number;
     sgst_to_igst: number;
+    cess_to_cess: number;
   };
-  net_payable: { igst: number; cgst: number; sgst: number };
+  /** Cash payable on output tax after ITC; RCM is paid in cash on top of this (see GSTR-3B summary). */
+  net_payable: { igst: number; cgst: number; sgst: number; cess: number };
 }
 
 export interface ResolvedRcmLedger {
@@ -66,7 +69,7 @@ export async function resolveRcmLedgerNets(
   businessId: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<ResolvedRcmLedger> {
   const [a2156, a2157, a2158] = await Promise.all([
     getAccountByCode(businessId, GSTR3B_RCM_CGST),
@@ -137,6 +140,27 @@ export async function resolveRcmLedgerNets(
 }
 
 /**
+ * Settlement and carry-forward vouchers move GST balances without being a supply or an ITC
+ * event of the period; counting them would understate 3.1/4A after a set-off or payment.
+ */
+export const GSTR3B_NON_SUPPLY_VOUCHER_TYPES = [
+  'gst_setoff',
+  'gst_payment',
+  'gst_cash_deposit',
+  'gst_cash_utilization',
+  'opening_balance',
+  'year_close',
+] as const;
+
+/** One branch, the branches of one GSTIN (see `registrationBranchIds`), or null for all. */
+export type BranchScope = string | readonly string[] | null | undefined;
+
+function branchIdList(scope: BranchScope): string[] | null {
+  if (scope == null) return null;
+  return typeof scope === 'string' ? [scope] : [...scope];
+}
+
+/**
  * Generic ledger net for liability-style interpretation: SUM(credit) − SUM(debit).
  * Uses `ledger_entry_lines` (debit/credit columns; no invoice-derived tax).
  */
@@ -145,17 +169,24 @@ export async function getLedgerNetCreditMinusDebit(
   accountCode: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<number> {
   const acc = await getAccountByCode(businessId, accountCode);
   if (!acc) return 0;
 
   const pool = getPool();
-  const params: string[] = [businessId, acc.id, fromDate, toDate];
+  const params: (string | readonly string[])[] = [
+    businessId,
+    acc.id,
+    fromDate,
+    toDate,
+    GSTR3B_NON_SUPPLY_VOUCHER_TYPES,
+  ];
   let branchClause = '';
-  if (branchId) {
-    branchClause = ' AND (branch_id IS NULL OR branch_id = $5::uuid)';
-    params.push(branchId);
+  const branchIds = branchIdList(branchId);
+  if (branchIds) {
+    branchClause = ' AND (branch_id IS NULL OR branch_id = ANY($6::uuid[]))';
+    params.push(branchIds);
   }
 
   const { rows } = await pool.query<{ credit: string; debit: string }>(
@@ -168,6 +199,7 @@ export async function getLedgerNetCreditMinusDebit(
       AND account_id = $2::uuid
       AND entry_date >= $3::date
       AND entry_date <= $4::date
+      AND voucher_type <> ALL($5::text[])
       ${branchClause}
     `,
     params
@@ -179,6 +211,60 @@ export async function getLedgerNetCreditMinusDebit(
 }
 
 /**
+ * Account balance as SUM(credit) − SUM(debit) of every line dated before `beforeDate`, including
+ * settlement, payment and opening vouchers — the position carried into the period.
+ */
+export async function getLedgerBalanceBefore(
+  businessId: string,
+  accountCode: string,
+  beforeDate: string,
+  branchId?: BranchScope
+): Promise<number> {
+  const acc = await getAccountByCode(businessId, accountCode);
+  if (!acc) return 0;
+  const branchIds = branchIdList(branchId);
+  const { rows } = await getPool().query<{ net: string }>(
+    `SELECT COALESCE(SUM(credit) - SUM(debit), 0)::text AS net
+       FROM ledger_entry_lines
+      WHERE business_id = $1::uuid AND account_id = $2::uuid AND entry_date < $3::date
+        AND ($4::uuid[] IS NULL OR branch_id IS NULL OR branch_id = ANY($4::uuid[]))`,
+    [businessId, acc.id, beforeDate, branchIds]
+  );
+  return round2(parseFloat(rows[0]?.net ?? '0'));
+}
+
+/**
+ * ITC left in the electronic credit ledger at the start of a period (s.49(2)), by head. Earlier
+ * output tax still on the books is settled first under the same Rule 88A order, so months whose
+ * set-off was never posted do not carry forward credit they would have used. `held` is ITC the
+ * books hold that GSTR-2B has not supported yet (see `itc-2b-gate`), which is not in the ledger.
+ */
+export function itcCarriedForward(params: {
+  inputBalance: { igst: number; cgst: number; sgst: number; cess: number };
+  outputBalance: { igst: number; cgst: number; sgst: number; cess: number };
+  held: { igst: number; cgst: number; sgst: number; cess: number };
+}): { igst: number; cgst: number; sgst: number; cess: number } {
+  const itc = (h: 'igst' | 'cgst' | 'sgst' | 'cess') => Math.max(0, round2(params.inputBalance[h] - params.held[h]));
+  const avail = { igst: itc('igst'), cgst: itc('cgst'), sgst: itc('sgst'), cess: itc('cess') };
+  const u = computeItcUtilizationDisplay({
+    igstLiability: params.outputBalance.igst,
+    cgstLiability: params.outputBalance.cgst,
+    sgstLiability: params.outputBalance.sgst,
+    cessLiability: params.outputBalance.cess,
+    itcIgst: avail.igst,
+    itcCgst: avail.cgst,
+    itcSgst: avail.sgst,
+    itcCess: avail.cess,
+  });
+  return {
+    igst: round2(avail.igst - u.igst_to_igst - u.igst_to_cgst - u.igst_to_sgst),
+    cgst: round2(avail.cgst - u.cgst_to_cgst - u.cgst_to_igst),
+    sgst: round2(avail.sgst - u.sgst_to_sgst - u.sgst_to_igst),
+    cess: round2(avail.cess - u.cess_to_cess),
+  };
+}
+
+/**
  * True when any `invoice` voucher line in the period uses `entry_date` ≠ `invoices.invoice_date`.
  * GSTR-1 is invoice-date based; GSTR-3B output ledgers use entry_date — divergence causes reconciliation noise.
  */
@@ -186,14 +272,15 @@ export async function hasInvoiceLedgerEntryDateMismatch(
   businessId: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<boolean> {
   const pool = getPool();
-  const params: string[] = [businessId, fromDate, toDate];
+  const params: (string | string[])[] = [businessId, fromDate, toDate];
   let branchClause = '';
-  if (branchId) {
-    branchClause = ' AND (lel.branch_id IS NULL OR lel.branch_id = $4::uuid)';
-    params.push(branchId);
+  const branchIds = branchIdList(branchId);
+  if (branchIds) {
+    branchClause = ' AND (lel.branch_id IS NULL OR lel.branch_id = ANY($4::uuid[]))';
+    params.push(branchIds);
   }
   const { rows } = await pool.query<{ ex: boolean }>(
     `
@@ -224,8 +311,49 @@ export function round2(n: number): number {
 }
 
 /**
- * Statutory ITC utilization order (display / working): IGST ITC → IGST, CGST, SGST; then CGST ITC →
- * CGST, IGST; then SGST ITC → SGST, IGST. No CGST ↔ SGST cross-utilization.
+ * GSTR-3B Table 6.1 cash working: ITC is set off against output tax only; RCM (split heads or
+ * pooled 2155) is added afterwards as cash (s.49(4) with s.2(82) — RCM is not "output tax").
+ */
+export function computeGstr3bCashPayable(params: {
+  output: { igst: number; cgst: number; sgst: number; cess: number };
+  itc: { igst: number; cgst: number; sgst: number; cess: number };
+  rcm: Pick<ResolvedRcmLedger, 'mode' | 'igst' | 'cgst' | 'sgst' | 'total'>;
+}) {
+  const util = computeItcUtilizationDisplay({
+    igstLiability: params.output.igst,
+    cgstLiability: params.output.cgst,
+    sgstLiability: params.output.sgst,
+    cessLiability: params.output.cess,
+    itcIgst: params.itc.igst,
+    itcCgst: params.itc.cgst,
+    itcSgst: params.itc.sgst,
+    itcCess: params.itc.cess,
+  });
+  const split = params.rcm.mode === 'split';
+  const rcmHead = (v: number | null) => (split ? Math.max(0, round2(v ?? 0)) : 0);
+  const payable_by_head = {
+    igst: round2(util.net_payable.igst + rcmHead(params.rcm.igst)),
+    cgst: round2(util.net_payable.cgst + rcmHead(params.rcm.cgst)),
+    sgst: round2(util.net_payable.sgst + rcmHead(params.rcm.sgst)),
+    cess: util.net_payable.cess,
+  };
+  const rcm_pooled_cash = split ? 0 : Math.max(0, round2(params.rcm.total));
+  const net_tax_payable = round2(
+    payable_by_head.igst + payable_by_head.cgst + payable_by_head.sgst + payable_by_head.cess + rcm_pooled_cash
+  );
+  return { util, payable_by_head, rcm_pooled_cash, net_tax_payable };
+}
+
+/**
+ * ITC utilization per s.49(5) and Rule 88A. Pass OUTPUT tax only: RCM liability (s.49(4)) is
+ * discharged in cash and must not be offered to this function.
+ *
+ * - IGST ITC goes to IGST first; the balance may go to CGST and SGST "in any order and in any
+ *   proportion" (Rule 88A). It is allocated to the CGST/SGST liability that own-head ITC cannot
+ *   cover, so eligible CGST/SGST ITC is not stranded while cash is paid on the other head.
+ * - IGST ITC is exhausted (as far as liability allows) before CGST/SGST ITC is used.
+ * - CGST ITC → CGST, then IGST; SGST ITC → SGST, then IGST. No CGST ↔ SGST cross-utilization.
+ * - Cess ITC is usable only against cess (Compensation Cess Act s.11(2) proviso).
  */
 export function computeItcUtilizationDisplay(params: {
   igstLiability: number;
@@ -234,25 +362,35 @@ export function computeItcUtilizationDisplay(params: {
   itcIgst: number;
   itcCgst: number;
   itcSgst: number;
+  cessLiability?: number;
+  itcCess?: number;
 }): GSTR3BLedgerBasis['utilization'] & { net_payable: GSTR3BLedgerBasis['net_payable'] } {
-  let igstLiability = round2(params.igstLiability);
-  let cgstLiability = round2(params.cgstLiability);
-  let sgstLiability = round2(params.sgstLiability);
+  const pos = (n: number) => Math.max(0, round2(n));
+  let igstLiability = pos(params.igstLiability);
+  let cgstLiability = pos(params.cgstLiability);
+  let sgstLiability = pos(params.sgstLiability);
 
-  let igstITC = round2(params.itcIgst);
-  let cgstITC = round2(params.itcCgst);
-  let sgstITC = round2(params.itcSgst);
+  let igstITC = pos(params.itcIgst);
+  let cgstITC = pos(params.itcCgst);
+  let sgstITC = pos(params.itcSgst);
 
   const igst_to_igst = round2(Math.min(igstITC, igstLiability));
   igstITC = round2(igstITC - igst_to_igst);
   igstLiability = round2(igstLiability - igst_to_igst);
 
-  const igst_to_cgst = round2(Math.min(igstITC, cgstLiability));
-  igstITC = round2(igstITC - igst_to_cgst);
+  const cgstGap = pos(cgstLiability - cgstITC);
+  const sgstGap = pos(sgstLiability - sgstITC);
+  let igst_to_cgst = round2(Math.min(igstITC, cgstGap));
+  let igst_to_sgst = round2(Math.min(igstITC - igst_to_cgst, sgstGap));
+  igstITC = round2(igstITC - igst_to_cgst - igst_to_sgst);
+  // Remaining IGST ITC must still be used before CGST/SGST ITC (Rule 88A proviso).
+  const extraC = round2(Math.min(igstITC, cgstLiability - igst_to_cgst));
+  igst_to_cgst = round2(igst_to_cgst + extraC);
+  igstITC = round2(igstITC - extraC);
+  const extraS = round2(Math.min(igstITC, sgstLiability - igst_to_sgst));
+  igst_to_sgst = round2(igst_to_sgst + extraS);
+  igstITC = round2(igstITC - extraS);
   cgstLiability = round2(cgstLiability - igst_to_cgst);
-
-  const igst_to_sgst = round2(Math.min(igstITC, sgstLiability));
-  igstITC = round2(igstITC - igst_to_sgst);
   sgstLiability = round2(sgstLiability - igst_to_sgst);
 
   const cgst_to_cgst = round2(Math.min(cgstITC, cgstLiability));
@@ -271,10 +409,14 @@ export function computeItcUtilizationDisplay(params: {
   sgstITC = round2(sgstITC - sgst_to_igst);
   igstLiability = round2(igstLiability - sgst_to_igst);
 
+  const cessLiability = pos(params.cessLiability ?? 0);
+  const cess_to_cess = round2(Math.min(pos(params.itcCess ?? 0), cessLiability));
+
   const net_payable = {
-    igst: Math.max(0, round2(igstLiability)),
-    cgst: Math.max(0, round2(cgstLiability)),
-    sgst: Math.max(0, round2(sgstLiability)),
+    igst: pos(igstLiability),
+    cgst: pos(cgstLiability),
+    sgst: pos(sgstLiability),
+    cess: pos(cessLiability - cess_to_cess),
   };
 
   return {
@@ -285,6 +427,7 @@ export function computeItcUtilizationDisplay(params: {
     cgst_to_igst,
     sgst_to_sgst,
     sgst_to_igst,
+    cess_to_cess,
     net_payable,
   };
 }

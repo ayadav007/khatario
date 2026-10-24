@@ -16,6 +16,12 @@ import {
 } from '@/lib/closing-stock-period-lock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
+import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
+import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
+import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
+import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -59,12 +65,14 @@ export interface CreateInvoiceInput {
   subtotal?: number;
   tax_total?: number;
   additional_charges?: number;
+  charges?: InvoiceChargeInput[];
   round_off?: number;
   grand_total?: number;
   notes?: string | null;
   billing_address?: string | null;
   shipping_address?: string | null;
   place_of_supply_state_code?: string | null;
+  prices_include_gst?: boolean;
   document_type?: string;
   is_export?: boolean;
   template_id?: string | null;
@@ -73,6 +81,7 @@ export interface CreateInvoiceInput {
     mode?: string;
     date?: string;
     reference?: string;
+    settlement_account_id?: string | null;
   }>;
   paid_amount?: number;
   balance_amount?: number;
@@ -81,6 +90,9 @@ export interface CreateInvoiceInput {
   /** Client TMP reference — never used as legal invoice number on replay */
   offline_reference_number?: string | null;
   invoice_number?: string | null;
+  /** Where the sale came from; defaults to 'manual'. Callers must not pass a browser value unchecked. */
+  channel?: InvoiceChannel;
+  sales_order_id?: string | null;
 }
 
 export interface CreateInvoiceOptions {
@@ -88,6 +100,8 @@ export interface CreateInvoiceOptions {
   forceServerInvoiceNumber?: boolean;
   replayLogId?: string | null;
   deviceId?: string | null;
+  /** Recurring invoices: a draft is numbered and saved but posts no stock, balance or ledger. */
+  allowDraft?: boolean;
 }
 
 export interface CreateInvoiceResult {
@@ -118,16 +132,13 @@ async function allocateBranchInvoiceNumber(
 ): Promise<string> {
   const config = DOCUMENT_TYPE_CONFIG[documentType] || DOCUMENT_TYPE_CONFIG.tax_invoice;
   const branchRes = await client.query(
-    `SELECT invoice_prefix, next_invoice_number FROM branches WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+    `SELECT invoice_prefix FROM branches WHERE id = $1 AND business_id = $2`,
     [branchId, businessId]
   );
   if (branchRes.rows.length === 0) {
     throw new InvoiceCreateServiceError('Branch not found', 400, 'BRANCH_NOT_FOUND');
   }
-  const branch = branchRes.rows[0] as {
-    invoice_prefix?: string;
-    next_invoice_number?: number;
-  };
+  const branch = branchRes.rows[0] as { invoice_prefix?: string };
 
   let invoicePrefix = branch.invoice_prefix || config.prefix;
   try {
@@ -142,8 +153,8 @@ async function allocateBranchInvoiceNumber(
     if ((error as { code?: string }).code !== '42P01') throw error;
   }
 
-  const currentCounter = branch.next_invoice_number || 1;
-  const invoiceNumber = `${invoicePrefix}-${String(currentCounter).padStart(3, '0')}`;
+  const issuedNumber = await reserveDocumentNumber(client, branchId, documentType);
+  const invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
 
   const dup = await client.query(
     `SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL`,
@@ -156,11 +167,6 @@ async function allocateBranchInvoiceNumber(
       'DUPLICATE_INVOICE_NUMBER'
     );
   }
-
-  await client.query(
-    `UPDATE branches SET next_invoice_number = next_invoice_number + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2`,
-    [branchId, businessId]
-  );
 
   return invoiceNumber;
 }
@@ -322,7 +328,7 @@ export async function createInvoiceInTransaction(
   const created_by = body.created_by;
   const status = body.status ?? 'final';
   const items = body.items ?? [];
-  const document_type = body.document_type ?? 'tax_invoice';
+  let document_type = body.document_type ?? 'tax_invoice';
 
   if (!business_id || !body.invoice_date || items.length === 0) {
     throw new InvoiceCreateServiceError(
@@ -334,7 +340,8 @@ export async function createInvoiceInTransaction(
   if (!created_by) {
     throw new InvoiceCreateServiceError('created_by is required', 400, 'VALIDATION_ERROR');
   }
-  if (status !== 'final') {
+  const isDraft = status === 'draft' && options.allowDraft === true;
+  if (status !== 'final' && !isDraft) {
     throw new InvoiceCreateServiceError(
       'Offline replay only supports status final',
       400,
@@ -374,18 +381,24 @@ export async function createInvoiceInTransaction(
     userId: created_by,
     branchId: finalBranchId,
     feature: FeatureKeys.INVOICE_CREATION,
-    limitType: 'invoices',
+    limitType: body.document_type === 'proforma_invoice' ? 'estimates' : 'invoices',
     poolClient: client,
   });
 
+  let customerRow:
+    | { id: string; gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null }
+    | undefined;
   if (body.customer_id) {
-    const cust = await client.query(
-      `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    const cust = await client.query<{
+      id: string; gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null;
+    }>(
+      `SELECT id, gstin, state_code, state, shipping_state FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
       [body.customer_id, business_id]
     );
     if (cust.rows.length === 0) {
       throw new InvoiceCreateServiceError('Customer not found', 400, 'CUSTOMER_NOT_FOUND');
     }
+    customerRow = cust.rows[0];
   }
 
   for (const item of items) {
@@ -406,17 +419,72 @@ export async function createInvoiceInTransaction(
   }
 
   const businessRes = await client.query(
-    `SELECT state_code, state FROM businesses WHERE id = $1`,
+    `SELECT state_code, state, aggregate_turnover_above_5cr AS above, gst_registration_type FROM businesses WHERE id = $1`,
     [business_id]
   );
   if (businessRes.rows.length === 0) {
     throw new InvoiceCreateServiceError('Business not found', 400, 'BUSINESS_NOT_FOUND');
   }
-  const business = businessRes.rows[0] as { state_code?: string; state?: string };
+  const business = businessRes.rows[0] as {
+    state_code?: string;
+    state?: string;
+    above?: boolean | null;
+    gst_registration_type?: string | null;
+  };
+  const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const taxPolicy = outwardTaxPolicy({
+    scheme: effectiveGstScheme(business.gst_registration_type, registration.gstin),
+    documentType: document_type,
+  });
+  document_type = taxPolicy.documentType;
+  body.document_type = document_type;
   const businessStateCode =
-    business.state_code || getStateCode(business.state || '');
+    registration.stateCode || business.state_code || getStateCode(business.state || '');
 
-  const totals = computeInvoiceTotals(body, businessStateCode);
+  const itemIds = items.map((it) => it.item_id).filter((id): id is string => !!id);
+  const masterHsn = new Map<string, string | null>();
+  if (itemIds.length > 0) {
+    const hsnRows = await client.query<{ id: string; hsn_sac: string | null }>(
+      'SELECT id, hsn_sac FROM items WHERE id = ANY($1::uuid[]) AND business_id = $2',
+      [itemIds, business_id]
+    );
+    for (const r of hsnRows.rows) masterHsn.set(r.id, r.hsn_sac);
+  }
+  const compliance = checkInvoiceCompliance({
+    lines: items.map((it) => ({
+      item_name: it.item_name,
+      hsn_sac: it.hsn_sac,
+      tax_rate: it.tax_rate,
+      master_hsn_sac: it.item_id ? masterHsn.get(it.item_id) ?? null : null,
+    })),
+    invoiceDate: body.invoice_date,
+    status,
+    documentType: document_type,
+    customerGstin: customerRow?.gstin ?? null,
+    customerStateCode: customerRow
+      ? stateCodeFromName(customerRow.shipping_state) ??
+        (customerRow.state_code?.trim() || stateCodeFromName(customerRow.state))
+      : null,
+    supplierStateCode: businessStateCode || null,
+    placeOfSupply: body.place_of_supply_state_code,
+    isExport: !!body.is_export,
+    turnoverAbove5Cr: business.above === true,
+    allowPosDifferentFromGstin: (body as { pos_differs_from_gstin?: unknown }).pos_differs_from_gstin === true,
+  });
+  if (!compliance.ok) {
+    throw new InvoiceCreateServiceError(compliance.error, 400, compliance.code);
+  }
+  if (compliance.placeOfSupply) body.place_of_supply_state_code = compliance.placeOfSupply;
+
+  let totals: ReturnType<typeof computeInvoiceTotals>;
+  try {
+    totals = computeInvoiceTotals(body, businessStateCode);
+  } catch (error) {
+    if (error instanceof InvoiceChargeError) {
+      throw new InvoiceCreateServiceError(error.message, 400, error.code);
+    }
+    throw error;
+  }
   const paymentEntries = body.payments ?? [];
   let paidAmount = body.paid_amount ?? 0;
   if (paymentEntries.length > 0) {
@@ -462,7 +530,7 @@ export async function createInvoiceInTransaction(
       paymentStatus,
       totals.subtotal,
       totals.discountTotal,
-      Number(body.additional_charges) || 0,
+      totals.additionalCharges,
       totals.taxTotal,
       totals.roundOff,
       totals.grandTotal,
@@ -475,7 +543,7 @@ export async function createInvoiceInTransaction(
       totals.cgstTotal,
       totals.sgstTotal,
       totals.igstTotal,
-      false,
+      isDraft,
       document_type,
       body.is_export ?? false,
       created_by,
@@ -486,30 +554,27 @@ export async function createInvoiceInTransaction(
 
   const invoice = invoiceRes.rows[0] as Record<string, unknown>;
   const invoiceId = String(invoice.id);
+  if (body.prices_include_gst === true) {
+    await client.query('UPDATE invoices SET prices_include_gst = true WHERE id = $1', [invoiceId]);
+    invoice.prices_include_gst = true;
+  }
+  const channel: InvoiceChannel = isInvoiceChannel(body.channel) ? body.channel : 'manual';
+  if (channel !== 'manual' || body.sales_order_id) {
+    await client.query('UPDATE invoices SET channel = $2, sales_order_id = $3 WHERE id = $1', [
+      invoiceId,
+      channel,
+      body.sales_order_id || null,
+    ]);
+    invoice.channel = channel;
+    invoice.sales_order_id = body.sales_order_id || null;
+  }
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const qty = Number(item.quantity) || 0;
     const unitPrice = Number(item.unit_price) || 0;
-    const itemSubtotal = qty * unitPrice;
-    const itemDiscount = (itemSubtotal * (Number(item.discount_percent) || 0)) / 100;
-    const taxable = itemSubtotal - itemDiscount;
-    const taxRate = Number(item.tax_rate) || 0;
-    const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-    let taxAmount = 0;
-    if (placeOfSupply && businessStateCode && placeOfSupply === businessStateCode) {
-      const half = taxRate / 2;
-      cgst = (taxable * half) / 100;
-      sgst = (taxable * half) / 100;
-      taxAmount = cgst + sgst;
-    } else {
-      igst = (taxable * taxRate) / 100;
-      taxAmount = igst;
-    }
-    const lineTotal = taxable + taxAmount;
+    const taxRate = totals.lines[i].taxRate;
+    const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = totals.lines[i];
 
     await client.query(
       `
@@ -544,13 +609,37 @@ export async function createInvoiceInTransaction(
       ]
     );
 
-    await deductGoodsStockForLine(client, {
-      businessId: business_id,
-      branchId: finalBranchId,
+    if (!isDraft) {
+      await deductGoodsStockForLine(client, {
+        businessId: business_id,
+        branchId: finalBranchId,
+        invoiceId,
+        customerId: body.customer_id || null,
+        item,
+      });
+    }
+  }
+
+  await persistInvoiceCharges(client, {
+    invoiceId,
+    businessId: business_id,
+    totals,
+    goodsLineCount: items.length,
+  });
+
+  if (isDraft) {
+    return {
+      invoice,
       invoiceId,
-      customerId: body.customer_id || null,
-      item,
-    });
+      invoiceNumber,
+      offlineReferenceNumber: null,
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      grandTotal: totals.grandTotal,
+      cgstTotal: totals.cgstTotal,
+      sgstTotal: totals.sgstTotal,
+      igstTotal: totals.igstTotal,
+    };
   }
 
   const insertedPayments: Array<{
@@ -559,6 +648,7 @@ export async function createInvoiceInTransaction(
     mode: string;
     date: string | Date;
     reference?: string;
+    settlementAccountId?: string | null;
   }> = [];
 
   if (paymentEntries.length > 0) {
@@ -569,9 +659,9 @@ export async function createInvoiceInTransaction(
         `
         INSERT INTO payments (
           business_id, branch_id, type, customer_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
+          amount, payment_mode, payment_date, notes, settlement_account_id
         )
-        VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8)
+        VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8, $9)
         RETURNING id
         `,
         [
@@ -585,6 +675,7 @@ export async function createInvoiceInTransaction(
           p.reference
             ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}`
             : `Payment for Invoice ${invoiceNumber}`,
+          p.settlement_account_id || null,
         ]
       );
       insertedPayments.push({
@@ -593,6 +684,7 @@ export async function createInvoiceInTransaction(
         mode: p.mode || 'cash',
         date: p.date || body.invoice_date,
         reference: p.reference,
+        settlementAccountId: p.settlement_account_id || null,
       });
     }
   }
@@ -615,6 +707,7 @@ export async function createInvoiceInTransaction(
     grandTotal: totals.grandTotal,
     customerId: body.customer_id || null,
     paymentMode,
+    cashSalePayments: isCashSale ? insertedPayments : undefined,
     isCashSale,
     cogsAmount: 0,
     branchId: finalBranchId,
@@ -635,6 +728,7 @@ export async function createInvoiceInTransaction(
         type: 'receivable',
         customerId: body.customer_id,
         paymentMode: p.mode,
+        settlementAccountId: p.settlementAccountId,
         referenceNumber: invoiceNumber,
         description: `Receipt against Invoice ${invoiceNumber}${p.reference ? ` (Ref: ${p.reference})` : ''}`,
         branchId: finalBranchId,

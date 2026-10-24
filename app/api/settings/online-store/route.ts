@@ -3,7 +3,10 @@ import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
+import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,11 +30,13 @@ export async function GET(request: NextRequest) {
            store_tagline, store_hero_image_url,
            store_min_order_amount::text,
            COALESCE(store_allow_cod, true) AS store_allow_cod,
+           store_return_window_days,
            COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
            store_theme, store_about_md, store_contact_md,
            store_privacy_md, store_refund_md, store_terms_md,
            store_shiprocket_email,
            (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
+           (store_shiprocket_webhook_token_hash IS NOT NULL) AS shiprocket_webhook_configured,
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
            store_promo_sheet
          FROM business_settings
@@ -67,6 +72,7 @@ export async function GET(request: NextRequest) {
       store_hero_image_url: (row as { store_hero_image_url?: string | null })?.store_hero_image_url ?? null,
       store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
       store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
+      store_return_window_days: (row as { store_return_window_days?: number | null })?.store_return_window_days ?? 7,
       store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
       store_theme: sanitizeStoreTheme((row as { store_theme?: unknown })?.store_theme),
       store_about_md: (row as { store_about_md?: string | null })?.store_about_md ?? null,
@@ -76,6 +82,8 @@ export async function GET(request: NextRequest) {
       store_terms_md: (row as { store_terms_md?: string | null })?.store_terms_md ?? null,
       store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
       shiprocket_configured: !!(row as { shiprocket_configured?: boolean })?.shiprocket_configured,
+      shiprocket_webhook_configured: !!(row as { shiprocket_webhook_configured?: boolean })
+        ?.shiprocket_webhook_configured,
       store_hide_khatario_badge: !!(row as { store_hide_khatario_badge?: boolean })?.store_hide_khatario_badge,
       store_promo_sheet: sanitizeStorePromoSheet(
         (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
@@ -95,6 +103,8 @@ export async function PATCH(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, body.business_id ?? searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const {
@@ -102,8 +112,19 @@ export async function PATCH(request: NextRequest) {
     store_allow_cod, store_delivery_provider, store_theme, store_about_md, store_contact_md,
     store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
-    store_promo_sheet,
+    store_promo_sheet, store_shiprocket_webhook_token, store_return_window_days,
   } = body;
+
+  if (
+    store_shiprocket_webhook_token !== undefined &&
+    store_shiprocket_webhook_token !== null &&
+    !isValidShiprocketWebhookToken(store_shiprocket_webhook_token)
+  ) {
+    return NextResponse.json(
+      { error: 'Shiprocket webhook token must be 24–128 letters or digits' },
+      { status: 400 },
+    );
+  }
 
   // Validate subdomain format
   if (store_subdomain !== undefined && store_subdomain !== null) {
@@ -124,7 +145,7 @@ export async function PATCH(request: NextRequest) {
     const reserved = new Set([
       'www', 'staging', 'app', 'api', 'admin', 'mail', 'cdn',
       'assets', 'static', 'status', 'help', 'support', 'docs',
-      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir',
+      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether', 'theme-grocery', 'theme-studio',
     ]);
     if (reserved.has(sd)) {
       return NextResponse.json(
@@ -180,6 +201,11 @@ export async function PATCH(request: NextRequest) {
     sets.push(`store_allow_cod = $${idx}`);
     params.push(Boolean(store_allow_cod));
   }
+  if (store_return_window_days !== undefined) {
+    idx++;
+    sets.push(`store_return_window_days = $${idx}`);
+    params.push(Math.min(90, Math.max(0, Math.round(Number(store_return_window_days) || 0))));
+  }
   if (store_delivery_provider !== undefined) {
     idx++;
     sets.push(`store_delivery_provider = $${idx}`);
@@ -225,6 +251,15 @@ export async function PATCH(request: NextRequest) {
     sets.push(`store_shiprocket_password_enc = $${idx}`);
     params.push(encryptPaymentSecret(String(store_shiprocket_password)));
   }
+  if (store_shiprocket_webhook_token !== undefined) {
+    idx++;
+    sets.push(`store_shiprocket_webhook_token_hash = $${idx}`);
+    params.push(
+      store_shiprocket_webhook_token === null
+        ? null
+        : hashStoreWebhookToken(store_shiprocket_webhook_token),
+    );
+  }
   if (store_hide_khatario_badge !== undefined) {
     idx++;
     sets.push(`store_hide_khatario_badge = $${idx}`);
@@ -244,14 +279,24 @@ export async function PATCH(request: NextRequest) {
   idx++;
   params.push(businessId);
 
-  const updated = await queryOne(
-    `INSERT INTO business_settings (business_id) VALUES ($${idx})
-     ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
-     RETURNING store_subdomain, store_enabled, store_tagline,
-       store_hero_image_url, store_min_order_amount::text`,
-    params,
-  );
+  let updated;
+  try {
+    updated = await queryOne(
+      `INSERT INTO business_settings (business_id) VALUES ($${idx})
+       ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
+       RETURNING store_subdomain, store_enabled, store_tagline,
+         store_hero_image_url, store_min_order_amount::text`,
+      params,
+    );
+  } catch (error: unknown) {
+    const pg = error as { code?: string; constraint?: string };
+    if (pg.code === '23505' && pg.constraint === 'uq_business_settings_shiprocket_webhook_token') {
+      return NextResponse.json({ error: 'Generate a new Shiprocket webhook token' }, { status: 409 });
+    }
+    throw error;
+  }
 
+  noteShopChanged(businessId, 'store settings saved');
   return NextResponse.json({
     store_subdomain: (updated as any)?.store_subdomain ?? null,
     store_enabled: (updated as any)?.store_enabled ?? false,

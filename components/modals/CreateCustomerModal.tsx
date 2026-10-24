@@ -7,25 +7,40 @@ import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
 import { X } from 'lucide-react';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
+import { checkGstin, isValidGstin } from '@/lib/tax/gstin';
 import { Customer } from '@/types/database';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { useToastContext } from '@/contexts/ToastContext';
+
+export type CreateCustomerDraft = Partial<{
+  name: string;
+  company_name: string;
+  phone: string;
+  email: string;
+  gstin: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+}>;
+
+/** Prefill add-customer from the invoice search box (name vs phone). */
+export function customerDraftFromSearchQuery(query: string): CreateCustomerDraft {
+  const q = query.trim();
+  if (!q) return {};
+  const digits = q.replace(/\D/g, '');
+  const compact = q.replace(/[\s()-]/g, '');
+  if (digits.length >= 8 && (compact.startsWith('+') || /^\d+$/.test(compact))) {
+    return { phone: compact.startsWith('+') ? compact : digits };
+  }
+  return { name: q };
+}
 
 interface CreateCustomerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (customer: Customer) => void;
-  initialData?: Partial<{
-    name: string;
-    company_name: string;
-    phone: string;
-    email: string;
-    gstin: string;
-    address: string;
-    city: string;
-    state: string;
-    pincode: string;
-  }>;
+  initialData?: CreateCustomerDraft;
 }
 
 export function CreateCustomerModal({
@@ -43,6 +58,8 @@ export function CreateCustomerModal({
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [sameAsBilling, setSameAsBilling] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<{ field: 'phone' | 'email'; message: string } | null>(null);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
   const hasCheckedLimitsRef = useRef(false);
   const prevIsOpenRef = useRef(false);
 
@@ -90,6 +107,7 @@ export function CreateCustomerModal({
       setGstinVerified(false);
       setGstinError(false);
       setSameAsBilling(false);
+      setShowMoreDetails(false);
       hasCheckedLimitsRef.current = false;
       
       // Check subscription limits ONCE when modal opens
@@ -114,6 +132,15 @@ export function CreateCustomerModal({
     
     prevIsOpenRef.current = isOpen;
   }, [isOpen, business?.id]); // Removed initialData from deps to prevent re-runs
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
 
   // Helper function to build multiline shipping address from billing fields
   const buildShippingAddress = (billingAddr: string, city: string, state: string, pincode: string): string => {
@@ -140,9 +167,15 @@ export function CreateCustomerModal({
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
       
+      if (name === 'email') setDuplicateError(null);
       if (name === 'gstin') {
         setGstinVerified(false);
         setGstinError(false);
+        const check = checkGstin(value);
+        if (check.valid && check.stateName && (INDIAN_STATES as readonly string[]).includes(check.stateName)) {
+          newData.state = check.stateName;
+        }
+        else if (value.trim().length === 15) setGstinError(true);
       }
       
       if (sameAsBilling && (name === 'billing_address' || name === 'city' || name === 'state' || name === 'pincode')) {
@@ -164,8 +197,7 @@ export function CreateCustomerModal({
       return;
     }
 
-    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstinRegex.test(formData.gstin)) {
+    if (!isValidGstin(formData.gstin)) {
       setGstinError(true);
       setGstinVerified(false);
       return;
@@ -274,10 +306,16 @@ export function CreateCustomerModal({
 
       if (res.ok) {
         const data = await res.json();
+        if (data.deduplicated) {
+          const field = data.code === 'DUPLICATE_EMAIL' ? 'email' : 'phone';
+          const message = String(data.error || 'A customer with these details already exists.');
+          setDuplicateError({ field, message });
+          toast.warning(message);
+          return;
+        }
         const customer = data.customer;
         
         if (customer) {
-          // Call onSuccess with the created customer
           onSuccess(customer);
           onClose();
         }
@@ -302,39 +340,56 @@ export function CreateCustomerModal({
 
   return (
     <>
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4" 
+      <div
+        className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
         onClick={onClose}
       >
-        <div 
-          className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto relative" 
+        <div
+          className="relative flex h-auto max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-lg"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">Add New Customer</h2>
-            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          </div>
-          
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="flex min-h-0 max-h-[92dvh] flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-xl font-bold text-gray-900">Add New Customer</h2>
+              <button type="button" onClick={onClose} className="rounded-full p-1 hover:bg-gray-100">
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
+              <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
                 <Input label="Customer Name" name="name" value={formData.name} onChange={handleChange} required placeholder="e.g. Rahul Kumar" />
               </div>
-              
+              <div className="md:col-span-2">
+                <IntlPhoneInput
+                  label="Phone Number"
+                  value={formData.phone}
+                  onChange={(full) => {
+                    setDuplicateError(null);
+                    setFormData((prev) => ({ ...prev, phone: full }));
+                  }}
+                  error={duplicateError?.field === 'phone' ? duplicateError.message : undefined}
+                  nationalPlaceholder="Mobile number"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMoreDetails((open) => !open)}
+                  aria-expanded={showMoreDetails}
+                  className="bg-transparent p-0 text-sm font-medium text-primary-700 underline-offset-2 hover:underline"
+                >
+                  {showMoreDetails ? 'Hide extra details' : 'Add more details'}
+                </button>
+              </div>
+              {showMoreDetails ? (
+                <>
               <div className="md:col-span-2">
                 <Input label="Company Name (Optional)" name="company_name" value={formData.company_name} onChange={handleChange} placeholder="e.g. Rahul Traders" />
               </div>
-              
-              <IntlPhoneInput
-                label="Phone Number"
-                value={formData.phone}
-                onChange={(full) => setFormData((prev) => ({ ...prev, phone: full }))}
-                nationalPlaceholder="Mobile number"
-              />
-              <Input label="Email (Optional)" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="rahul@example.com" />
+              <Input label="Email (Optional)" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="rahul@example.com" error={duplicateError?.field === 'email' ? duplicateError.message : undefined} />
               
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-text-secondary mb-1.5">GSTIN (Optional)</label>
@@ -507,9 +562,12 @@ export function CreateCustomerModal({
                   />
                 </div>
               </div>
+                </>
+              ) : null}
             </div>
-
-            <div className="flex justify-end gap-4 pt-6 mt-6 border-t border-border">
+              </div>
+            </div>
+            <div className="flex shrink-0 justify-end gap-4 border-t border-border bg-white px-6 py-4">
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
               <Button type="submit" isLoading={loading}>Save Customer</Button>
             </div>

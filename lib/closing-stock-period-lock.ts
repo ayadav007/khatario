@@ -17,31 +17,44 @@ export class ClosingStockPeriodLockedError extends Error {
   }
 }
 
-/** Latest locked snapshot date for the business (inclusive cutoff). */
+/**
+ * Calendar day for a DATE value. node-pg builds a Date at local midnight, so
+ * `toISOString()` moves the day backward in timezones ahead of UTC (Asia/Kolkata).
+ * Local year/month/day is the day Postgres stored. A `YYYY-MM-DD` string is kept as-is.
+ */
+export function calendarDateOnly(value: Date | string | null | undefined): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : null;
+  }
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
+/** Latest locked snapshot date for the business (inclusive cutoff), as YYYY-MM-DD. */
 export async function getClosingStockLockedCutoffDate(businessId: string): Promise<string | null> {
   if (await hasClosingStockV2Schema()) {
-    const row = await queryOne<{ d: Date | string | null }>(
-      `SELECT MAX(snapshot_date) AS d
+    const row = await queryOne<{ d: string | null }>(
+      `SELECT to_char(MAX(snapshot_date), 'YYYY-MM-DD') AS d
        FROM closing_stock_snapshot_headers
        WHERE business_id = $1 AND is_locked = true`,
       [businessId]
     );
-    if (!row?.d) return null;
-    if (row.d instanceof Date) return row.d.toISOString().slice(0, 10);
-    return String(row.d).slice(0, 10);
+    return calendarDateOnly(row?.d ?? null);
   }
 
-  const legacy = await queryOne<{ d: Date | string | null }>(
-    `SELECT MAX(css.snapshot_date) AS d
+  const legacy = await queryOne<{ d: string | null }>(
+    `SELECT to_char(MAX(css.snapshot_date), 'YYYY-MM-DD') AS d
      FROM closing_stock_snapshots css
      INNER JOIN closing_stock_summary s
        ON s.business_id = css.business_id AND s.financial_year = css.financial_year
      WHERE css.business_id = $1 AND s.is_finalized = true`,
     [businessId]
   );
-  if (!legacy?.d) return null;
-  if (legacy.d instanceof Date) return legacy.d.toISOString().slice(0, 10);
-  return String(legacy.d).slice(0, 10);
+  return calendarDateOnly(legacy?.d ?? null);
 }
 
 /**

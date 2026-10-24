@@ -6,7 +6,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
-import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +31,11 @@ export async function PATCH(
   const id = params.id;
 
   const body = await request.json().catch(() => ({}));
-  const businessScope =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+  const businessScope = getSessionScopedBusinessId(request);
   if (!businessScope) {
     return NextResponse.json(
-      { error: 'business_id is required' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -65,12 +65,11 @@ export async function PATCH(
     return NextResponse.json({ purchase });
   }
 
-  const userId = body.user_id || body.updated_by;
-  
+  const userId = getAuthenticatedUserId(request);
   if (!userId) {
     return NextResponse.json(
-      { error: 'user_id is required for authorization' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -98,12 +97,52 @@ export async function PATCH(
     throw error;
   }
 
+  const billDay = purchase.bill_date instanceof Date
+    ? `${purchase.bill_date.getFullYear()}-${String(purchase.bill_date.getMonth() + 1).padStart(2, '0')}-${String(purchase.bill_date.getDate()).padStart(2, '0')}`
+    : String(purchase.bill_date).slice(0, 10);
+  try {
+    const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
+    await assertGstPeriodNotFiledForDocumentDate(purchase.business_id, stockBranchId, billDay, 'finalize purchase');
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'GST period is filed', code: 'GST_PERIOD_FILED' }, { status: 403 });
+  }
+  try {
+    const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
+    await assertPeriodNotLocked(purchase.business_id, stockBranchId, billDay, 'purchase');
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Period is locked', code: 'PERIOD_LOCKED' }, { status: 403 });
+  }
+
   // Add stock with batch/serial tracking support
   const pool = getPool();
   const client = await pool.connect();
+  let updated: any = null;
+  let itcWarning: string | null = null;
 
   try {
     await client.query('BEGIN');
+    const lockedRow = await client.query(
+      `SELECT status FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [id, purchase.business_id]
+    );
+    if (lockedRow.rows[0]?.status === 'final') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ purchase });
+    }
+    if (lockedRow.rows[0]?.status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Cannot finalize cancelled purchase' }, { status: 400 });
+    }
+
+    const historicalPayment = await historicalDraftPaymentBlock(client, {
+      businessId: purchase.business_id,
+      referenceType: 'purchase',
+      documentId: id,
+    });
+    if (historicalPayment) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(historicalPayment, { status: 409 });
+    }
 
     if (!purchase.branch_id) {
       await client.query(
@@ -124,8 +163,10 @@ export async function PATCH(
         const currentBalance = parseFloat(supplierData.rows[0].current_balance ?? '0');
         
         // Calculate new purchase amount (balance after any payments)
-        const purchaseBalance = purchase.balance_amount ?? (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'));
-        const newTotalBalance = currentBalance + purchaseBalance;
+        const purchaseBalance = Number(
+          purchase.balance_amount ?? (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'))
+        ) || 0;
+        const newTotalBalance = Number(currentBalance) + purchaseBalance;
 
         // Only enforce if credit_limit > 0 (0 means unlimited credit)
         if (creditLimit > 0 && newTotalBalance > creditLimit) {
@@ -208,7 +249,21 @@ export async function PATCH(
       }
     }
 
+    const { applyStoredAcquisition } = await import('@/lib/purchases/save-purchase-acquisition');
+    await applyStoredAcquisition(client, id, purchase.business_id);
+    const costRows = await client.query<{ id: string; acquisition_cost: string | null }>(
+      `SELECT id, acquisition_cost::text FROM purchase_items WHERE purchase_id = $1`,
+      [id]
+    );
+    const acquisitionByItem = new Map(costRows.rows.map((row) => [row.id, row.acquisition_cost]));
+
     for (const row of current.items) {
+      const isServiceLine =
+        row.line_item_type === 'service' ||
+        row.itc_type === 'capital_goods' ||
+        /^99/.test(String(row.hsn_sac || '').trim());
+      if (isServiceLine) continue;
+
       let resolvedItemId =
         row.item_id && String(row.item_id).trim() !== '' ? String(row.item_id).trim() : null;
       if (!resolvedItemId && row.item_name) {
@@ -227,7 +282,9 @@ export async function PATCH(
       const lineIntent = (row.line_item_type as string) || 'goods';
       const qty = Number(row.quantity) || 0;
       const taxable = Number(row.taxable_value) || 0;
-      const unitCostForLine = qty > 0 ? taxable / qty : Number(row.unit_price) || 0;
+      const storedCost = acquisitionByItem.get(row.id);
+      const unitCostForLine =
+        qty > 0 ? (storedCost != null ? Number(storedCost) : taxable) / qty : Number(row.unit_price) || 0;
 
       if (!resolvedItemId && String(row.item_name || '').trim().length > 0 && lineIntent === 'goods') {
         try {
@@ -293,7 +350,7 @@ export async function PATCH(
             variant_id: row.variant_id || null,
             item_name: row.item_name,
             quantity: Number(row.quantity) || 0,
-            unit_price: Number(row.unit_price) || 0,
+            unit_price: unitCostForLine,
             location_id: row.location_id || null,
             batch_number: row.batch_number ?? null,
             serial_numbers: row.serial_numbers,
@@ -317,6 +374,88 @@ export async function PATCH(
       }
     }
 
+    // A draft posts nothing, so the purchase voucher and supplier balance are booked here.
+    const already = await client.query(
+      `SELECT 1 FROM ledger_entry_lines
+        WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = ANY($3::text[]) LIMIT 1`,
+      [purchase.business_id, id, ['purchase', 'supplier_credit_note']]
+    );
+    if (already.rows.length === 0) {
+      const invRes = await client.query(
+        `SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
+           FROM purchase_items pi
+           JOIN items i ON i.id = pi.item_id AND i.business_id = $2
+          WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+            AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'
+            AND pi.itc_type IS DISTINCT FROM 'capital_goods'`,
+        [id, purchase.business_id]
+      );
+      const grandTotal = Number(purchase.grand_total) || 0;
+      const paid = Number(purchase.paid_amount) || 0;
+      const balance = Number(purchase.balance_amount ?? grandTotal - paid) || 0;
+      const isSupplierCredit = purchase.document_type === 'supplier_credit_note';
+      const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
+      if (isSupplierCredit) {
+        await createPurchaseReturnLedgerEntries({
+          businessId: purchase.business_id,
+          purchaseReturnId: id,
+          returnNumber: purchase.bill_number || String(id).substring(0, 8),
+          returnDate: billDay,
+          grandTotal,
+          supplierId: purchase.supplier_id || null,
+          inventoryAmount: 0,
+          branchId: stockBranchId,
+          poolClient: client,
+          taxableValue: Number(purchase.subtotal) || 0,
+          cgstTotal: Number(purchase.cgst_total) || 0,
+          sgstTotal: Number(purchase.sgst_total) || 0,
+          igstTotal: Number(purchase.igst_total) || 0,
+          cessTotal: Number(purchase.cess_total) || 0,
+          itcEligible: purchase.itc_eligible !== false,
+          isReverseCharge: purchase.is_reverse_charge === true,
+          voucherType: 'supplier_credit_note',
+        });
+      } else {
+        const posted = await createPurchaseLedgerEntries({
+          businessId: purchase.business_id,
+          purchaseId: id,
+          purchaseNumber: purchase.bill_number || String(id).substring(0, 8),
+          purchaseDate: billDay,
+          grandTotal,
+          supplierId: purchase.supplier_id || null,
+          isCashPurchase: !purchase.supplier_id || (paid > 0 && balance <= 0.005),
+          inventoryAmount: Number(invRes.rows[0]?.total) || 0,
+          branchId: stockBranchId,
+          poolClient: client,
+          taxableValue: Number(purchase.subtotal) || 0,
+          cgstTotal: Number(purchase.cgst_total) || 0,
+          sgstTotal: Number(purchase.sgst_total) || 0,
+          igstTotal: Number(purchase.igst_total) || 0,
+          cessTotal: Number(purchase.cess_total) || 0,
+          itcEligible: purchase.itc_eligible !== false,
+          isReverseCharge: purchase.is_reverse_charge === true,
+        });
+        itcWarning = posted.itcBlockedReason;
+      }
+      if (purchase.supplier_id && balance !== 0) {
+        await client.query(
+          `UPDATE suppliers SET current_balance = COALESCE(current_balance, 0) + $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND business_id = $3`,
+          [isSupplierCredit ? -balance : balance, purchase.supplier_id, purchase.business_id]
+        );
+      }
+    }
+
+    const upd = await client.query(
+      `UPDATE purchases
+       SET status = 'final', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+       RETURNING *`,
+      [id, businessScope]
+    );
+    updated = upd.rows[0] ?? null;
+
     await client.query('COMMIT');
   } catch (error: any) {
     await client.query('ROLLBACK');
@@ -324,14 +463,6 @@ export async function PATCH(
   } finally {
     client.release();
   }
-
-  const updated = await queryOne(
-    `UPDATE purchases
-     SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-     RETURNING *`,
-    [id, businessScope]
-  );
 
   if (updated) {
     const pool = getPool();
@@ -346,6 +477,9 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ purchase: updated });
+  return NextResponse.json({
+    purchase: updated,
+    ...(itcWarning ? { warnings: [`Input GST not claimed: ${itcWarning}. Tax booked to cost.`] } : {}),
+  });
 }
 

@@ -130,6 +130,7 @@ export function useFeatureRegistry() {
       'invoice_creation': 'sales_invoices',
       'estimates_quotations': 'sales_estimates',
       'credit_notes': 'sales_credit_notes',
+      'debit_notes': 'sales_debit_notes',
       'recurring_invoices': 'sales_recurring_invoices',
       'sales_orders': 'sales_sales_orders',
       'supplier_management': 'purchase_suppliers',
@@ -139,6 +140,7 @@ export function useFeatureRegistry() {
       'multi_user': 'settings_multi_user',
       'multi_branch': 'settings_multi_branch',
       'multi_warehouse': 'settings_multi_warehouse',
+      'multi_business': 'settings_multi_business',
       'backup_restore': 'settings_backup',
       'settings_pos_mode': 'settings_pos_mode',
       'email_invoicing': 'integration_email',
@@ -157,10 +159,16 @@ export function useFeatureRegistry() {
     // Handle legacy aliases (for backward compatibility)
     const aliasMap: Record<string, string> = {
       'multi_warehouse': 'settings_multi_warehouse',
+      'multi_business': 'settings_multi_business',
       'multi_branch': 'settings_multi_branch',
       'multi_user': 'settings_multi_user',
       'backup_restore': 'settings_backup',
       'pos_mode': 'settings_pos_mode',
+      'online_store': 'advanced_online_store',
+      'multi_currency': 'advanced_multi_currency',
+      'barcode_scanning': 'advanced_barcode',
+      'custom_branding': 'advanced_custom_branding',
+      'ledger_accounting': 'advanced_ledger',
     };
     
     const mappedId = aliasMap[featureId];

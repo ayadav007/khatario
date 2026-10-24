@@ -64,6 +64,9 @@ function withOrderKey(data: WhatsAppMessageJob): WhatsAppMessageJob {
   return { ...data, orderKey };
 }
 
+/** Jobs that answer a sender (webhooks, assistant replies): run in the background when inline. */
+const BACKGROUND_INLINE = new Set<WhatsAppMessageJob['type']>(['webhook', 'owner-command', 'cloud-incoming', 'platform-incoming']);
+
 /**
  * Enqueue or run inline: if Redis/queue disabled or add fails, runs processor in-process.
  */
@@ -73,7 +76,7 @@ export async function addWhatsAppMessageJob(data: WhatsAppMessageJob): Promise<v
   const q = getWhatsAppQueue();
 
   if (!q) {
-    if (enriched.type === 'webhook') {
+    if (BACKGROUND_INLINE.has(enriched.type)) {
       void processWhatsAppMessageJob(enriched).catch((e) => {
         console.error('[WA] webhook job (inline) failed', e);
       });
@@ -97,7 +100,7 @@ export async function addWhatsAppMessageJob(data: WhatsAppMessageJob): Promise<v
     });
   } catch (e) {
     console.error('[BullMQ] queue.add failed, processing directly', e);
-    if (enriched.type === 'webhook') {
+    if (BACKGROUND_INLINE.has(enriched.type)) {
       void processWhatsAppMessageJob(enriched).catch((err) => {
         console.error('[WA] webhook direct process failed', err);
       });

@@ -46,7 +46,10 @@ export async function GET(
         bs.plan_id,
         COUNT(v.id) as view_count
       FROM promotion_views v
-      JOIN business_subscriptions bs ON v.business_id = bs.business_id
+      JOIN businesses b ON b.id = v.business_id
+      JOIN business_module_subscriptions bs
+        ON bs.business_id = v.business_id
+       AND bs.module_key = COALESCE(b.primary_module, 'billing')
       WHERE v.promotion_id = $1 AND bs.status IN ('active', 'trial')
       GROUP BY bs.plan_id
     `, [id]);

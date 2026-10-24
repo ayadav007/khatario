@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -16,6 +17,8 @@ import {
   tierBadgeClass,
 } from '@/lib/bank/reconciliation-ui-helpers';
 import { AlertTriangle, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { BrsStatementPanel } from '@/components/bank/BrsStatementPanel';
+import { BankAccountsCard } from '@/components/settings/business-profile/BankAccountsCard';
 
 const REC_NOTE_STORAGE_PREFIX = 'bank-reconciliation-note:';
 
@@ -543,16 +546,17 @@ function BankReconciliationPageContent() {
     <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Bank reconciliation</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            Match statement lines to ledger entries. Use filters and bulk actions for large statements. Notes are stored
-            in this browser only.
-          </p>
+          <PageHeader
+  title="Bank reconciliation"
+  subtitle="Match statement lines to ledger entries. Use filters and bulk actions for large statements. Notes are stored in this browser only."
+/>
         </div>
         <Link href="/bank/import" className="text-sm text-primary-600 hover:underline">
           ← Import statement
         </Link>
       </header>
+
+      <BankAccountsCard businessId={business.id} userId={user?.id} onChanged={() => void loadAccounts()} />
 
       <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
         <label className="text-sm">
@@ -600,6 +604,10 @@ function BankReconciliationPageContent() {
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
+
+      {business?.id && bankAccountId ? (
+        <BrsStatementPanel businessId={business.id} bankAccountId={bankAccountId} />
+      ) : null}
 
       {statementId && loading && !data ? (
         <div className="rounded-xl border border-border bg-white p-6 shadow-sm">

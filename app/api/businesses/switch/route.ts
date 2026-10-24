@@ -81,7 +81,18 @@ export async function POST(request: NextRequest) {
     const sessionVersion = Number(svRow.auth_session_version);
 
     await query(
-      `UPDATE users SET business_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      `UPDATE users u
+       SET business_id = $1,
+           role_id = CASE
+             WHEN ub.role = 'owner' THEN COALESCE(
+               (SELECT id FROM user_roles WHERE business_id = $1 AND role_key = 'primary_admin' LIMIT 1),
+               u.role_id
+             )
+             ELSE u.role_id
+           END,
+           updated_at = CURRENT_TIMESTAMP
+       FROM user_businesses ub
+       WHERE u.id = $2 AND ub.user_id = u.id AND ub.business_id = $1`,
       [businessId, userId]
     );
 

@@ -3,7 +3,11 @@
  * Signup / migrations assign trial plan ids; billing UI hides Trial unless user is already on it.
  */
 
-import { HR_FREE_PLAN_ID, HR_TRIAL_PLAN_ID, isProductLineTrialPlanId } from '@/lib/product-lines';
+import {
+  CONNECT_FREE_PLAN_ID,
+  HR_FREE_PLAN_ID,
+  isProductLineTrialPlanId,
+} from '@/lib/product-lines';
 
 export const TRIAL_PLAN_ID = 'trial' as const;
 
@@ -18,7 +22,7 @@ export function isPurchasableUpgradePlan(planId: string): boolean {
   return (
     planId !== 'free' &&
     planId !== HR_FREE_PLAN_ID &&
-    planId !== 'connect' &&
+    planId !== CONNECT_FREE_PLAN_ID &&
     !isTrialPlanId(planId)
   );
 }

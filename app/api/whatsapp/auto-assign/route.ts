@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ businessId }) => {
   try {
     const row = await queryOne<{
       whatsapp_auto_assign_enabled: boolean;
@@ -31,7 +31,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
 });
 
 export const PATCH = withWhatsAppPremiumApi(
-  { parseJsonBody: true },
+  { module: 'settings', action: 'update', parseJsonBody: true },
   async ({ businessId, body }) => {
     try {
       const { enabled, agent_ids } = (body ?? {}) as {

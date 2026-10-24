@@ -1,4 +1,5 @@
 import { query, queryOne, queryRows } from '@/lib/db';
+import { computePlanAmount } from '@/lib/subscription/apply-plan-change';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export async function validateCoupon(
   code: string,
   businessId: string,
   planId: string,
-  billingCycle: 'monthly' | 'yearly' = 'monthly',
+  billingCycle: 'monthly' | 'yearly' | 'three_year' = 'monthly',
 ): Promise<CouponValidationResult> {
   const coupon = await queryOne<Coupon>(
     `SELECT id, code, description, type, value, currency,
@@ -138,16 +139,12 @@ export async function validateCoupon(
     }
   }
 
-  const plan = await queryOne<{ price_monthly: string; price_yearly: string }>(
-    `SELECT price_monthly, price_yearly FROM subscription_plans WHERE id = $1`,
+  const plan = await queryOne<{ price_monthly: string; price_yearly: string; price_3year: string | null }>(
+    `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
     [planId],
   );
 
-  const planPrice = plan
-    ? billingCycle === 'yearly'
-      ? parseFloat(plan.price_yearly) || 0
-      : parseFloat(plan.price_monthly) || 0
-    : 0;
+  const planPrice = plan ? computePlanAmount(plan, billingCycle) : 0;
   const discount = calculateDiscount(coupon, planPrice);
 
   return {

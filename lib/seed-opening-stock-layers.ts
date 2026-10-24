@@ -25,10 +25,17 @@ const stockClient: BranchStockClient = {
 
 export async function seedOpeningStockLayers(
   businessId: string,
-  options: { itemId: string; quantity: number; variantId?: string | null }
+  options: {
+    itemId: string;
+    quantity: number;
+    variantId?: string | null;
+    /** Write inside the caller's transaction, e.g. when the item row is not committed yet. */
+    client?: BranchStockClient;
+  }
 ): Promise<void> {
   const { itemId, quantity, variantId } = options;
   if (quantity <= 0) return;
+  const writer = options.client ?? stockClient;
 
   const defaultBranchId = await getDefaultBranchId(businessId);
   if (!defaultBranchId) {
@@ -48,13 +55,13 @@ export async function seedOpeningStockLayers(
       return;
     }
     await adjustBranchVariantStock(
-      stockClient,
+      writer,
       businessId,
       defaultBranchId,
       variantId,
       quantity
     );
-    await refreshVariantGlobalStockFromBranches(stockClient, businessId, variantId);
+    await refreshVariantGlobalStockFromBranches(writer, businessId, variantId);
     return;
   }
 
@@ -68,7 +75,7 @@ export async function seedOpeningStockLayers(
       });
       return;
     }
-    await query(
+    await writer.query(
       `INSERT INTO location_stock (location_id, item_id, current_stock_qty, last_updated)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
        ON CONFLICT (location_id, item_id) DO UPDATE SET
@@ -79,6 +86,6 @@ export async function seedOpeningStockLayers(
     return;
   }
 
-  await adjustBranchItemStock(stockClient, businessId, defaultBranchId, itemId, quantity);
-  await refreshItemGlobalStockFromBranches(stockClient, businessId, itemId);
+  await adjustBranchItemStock(writer, businessId, defaultBranchId, itemId, quantity);
+  await refreshItemGlobalStockFromBranches(writer, businessId, itemId);
 }

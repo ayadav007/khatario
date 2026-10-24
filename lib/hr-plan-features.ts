@@ -7,7 +7,14 @@ export type HrRegistryFeatureId =
   | 'hr_employees'
   | 'hr_attendance'
   | 'hr_payroll'
-  | 'hr_leaves';
+  | 'hr_leaves'
+  | 'hr_employee_portal'
+  | 'hr_staff_app'
+  | 'hr_shifts'
+  | 'hr_payroll_setup'
+  | 'hr_commissions'
+  | 'hr_recruitment'
+  | 'hr_advanced';
 
 const HR_AUTH_MODULE_TO_FEATURE: Record<string, HrRegistryFeatureId> = {
   employees: 'hr_employees',
@@ -15,8 +22,8 @@ const HR_AUTH_MODULE_TO_FEATURE: Record<string, HrRegistryFeatureId> = {
   attendance: 'hr_attendance',
   leaves: 'hr_leaves',
   leave_requests: 'hr_leaves',
-  commissions: 'hr_employees',
-  recruitment: 'hr_employees',
+  commissions: 'hr_commissions',
+  recruitment: 'hr_recruitment',
 };
 
 /** Registry IDs for HR (also valid capability / sidebar keys). */
@@ -25,6 +32,13 @@ const HR_REGISTRY_IDS = new Set<string>([
   'hr_attendance',
   'hr_payroll',
   'hr_leaves',
+  'hr_employee_portal',
+  'hr_staff_app',
+  'hr_shifts',
+  'hr_payroll_setup',
+  'hr_commissions',
+  'hr_recruitment',
+  'hr_advanced',
 ]);
 
 /**

@@ -58,7 +58,7 @@ Pass criteria require Critical = 0, High = 0, no confirmed tenant isolation vuln
 | Status `expired` | `SUBSCRIPTION_EXPIRED` (403) |
 | Status `cancelled` | `SUBSCRIPTION_CANCELLED` (403) |
 | Other non-operational status | `SUBSCRIPTION_INACTIVE` (403) |
-| Expired trial (no grace) | `TRIAL_EXPIRED` (403) via `checkTrialExpiry()` |
+| Expired trial | Passes the gate; Free-plan features and limits apply (changed 2026-09-27, previously `TRIAL_EXPIRED`) |
 | Past `end_date` | `SUBSCRIPTION_EXPIRED` (403) |
 
 Allows:

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import { applyIndustryCoa } from '@/lib/accounting/apply-industry-coa';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * This is useful for businesses created before the auto-creation feature was added
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_chart', parseJsonBody: true },
   async (ctx) => {
     const pool = getPool();
     const client = await pool.connect();
@@ -54,6 +55,15 @@ export const POST = withPremiumSubscriptionApi(
       // Check if the function exists
       try {
         await client.query('SELECT create_default_chart_of_accounts($1)', [business_id]);
+        const headsFn = await client.query(`SELECT to_regproc('ensure_standard_account_heads') IS NOT NULL AS ok`);
+        if (headsFn.rows[0]?.ok) {
+          await client.query(`SELECT ensure_standard_account_heads($1)`, [business_id]);
+        }
+        const eclFn = await client.query(`SELECT to_regproc('ensure_gst_electronic_cash_ledger') IS NOT NULL AS ok`);
+        if (eclFn.rows[0]?.ok) {
+          await client.query(`SELECT ensure_gst_electronic_cash_ledger($1)`, [business_id]);
+        }
+        await applyIndustryCoa(client, business_id);
       } catch (error: any) {
         await client.query('ROLLBACK');
 

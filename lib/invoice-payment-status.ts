@@ -20,6 +20,9 @@ export function deriveInvoicePaymentStatus(
       : grand - paid;
   const due = Number.isFinite(balanceDue) ? balanceDue : grand - paid;
 
+  // A cleared bill is paid even when the cash column is zero. Advances, credit
+  // notes and TDS reduce balance_amount without increasing paid_amount.
+  if (due <= INR_EPS && grand > INR_EPS) return 'paid';
   if (paid <= INR_EPS) return 'unpaid';
   if (due <= INR_EPS) return 'paid';
   return 'partially_paid';

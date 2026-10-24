@@ -1,6 +1,7 @@
 import { processIncomingMessage, storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { sendWhatsAppMessage, extractMessageContent, crmFieldsFromExtracted, type ExtractedMessage } from '@/lib/whatsapp';
 import { queryOne } from '@/lib/db';
+import { queueIfUnanswered } from '@/lib/whatsapp/inbox-ownership';
 
 /**
  * Same behavior as `app/api/whatsapp/webhook/route.ts` POST (CRM + send + store outgoing).
@@ -17,7 +18,12 @@ export async function processWhatsAppWebhookBody(body: Record<string, unknown>):
     throw new Error('Missing required fields');
   }
 
-  const result = await processIncomingMessage(business_id, from, to, message, message_id);
+  const out: { conversationUuid?: string } = {};
+  const result = await processIncomingMessage(
+    business_id, from, to, message, message_id,
+    'text', undefined, false, undefined, undefined, undefined, undefined, undefined, out
+  );
+  await queueIfUnanswered(business_id, out.conversationUuid, { replied: !!result.response, handled: result.handled });
 
   if (result.response) {
     const sendReturn = await sendWhatsAppMessage(business_id, from, result.response);

@@ -9,8 +9,16 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/cron/recurring-invoices",
+      "schedule": "30 19 * * *"
+    },
+    {
       "path": "/api/cron/send-daily-invoice-summary",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/gst-compliance-alerts",
+      "schedule": "40 3 * * *"
     },
     {
       "path": "/api/cron/send-todo-reminders",
@@ -19,6 +27,18 @@
     {
       "path": "/api/todos/check-reminders",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-draft",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/marketing-publish",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-insights",
+      "schedule": "0 * * * *"
     }
   ]
 }

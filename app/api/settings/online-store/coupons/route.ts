@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
@@ -8,6 +9,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
 
   const rows = await queryRows<Record<string, unknown>>(
     `SELECT id, code, discount_type, discount_value::text, min_order_amount::text,
@@ -28,6 +31,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
 
   const code = String(body.code ?? '').trim().toUpperCase();
   if (code.length < 3) {
@@ -64,6 +69,8 @@ export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const id = searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   await query(`DELETE FROM store_coupons WHERE id = $1 AND business_id = $2`, [

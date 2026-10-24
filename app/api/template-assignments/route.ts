@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+async function requireTemplateCustomization(
+  request: NextRequest,
+  businessId: string,
+  action: 'update' | 'create',
+) {
+  const userId = getUserIdFromRequest(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+  try {
+    await authorize(userId, 'settings', action, { businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
+  return denyIfFeatureMissing(businessId, 'settings_template_customization');
+}
 
 /**
  * GET /api/template-assignments?business_id=X
@@ -48,6 +67,8 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const gate = await requireTemplateCustomization(request, business_id, 'create');
+    if (gate) return gate;
     const { template_id, document_type, settings = {} } = body;
     // Only overwrite saved customizations when the caller explicitly sends settings.
     // A plain "activate" (no settings in body) must NOT wipe prior customizations.
@@ -105,6 +126,8 @@ export async function PUT(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const gate = await requireTemplateCustomization(request, business_id, 'update');
+    if (gate) return gate;
     const { document_type, template_id, settings } = body;
 
     if (!business_id || !document_type || !settings) {

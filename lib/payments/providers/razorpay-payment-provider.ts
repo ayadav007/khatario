@@ -222,6 +222,66 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       };
     }
   }
+
+  /**
+   * Full refund of one captured payment. Retries must send the same
+   * `X-Refund-Idempotency` key and the same amount. The key is not a user id.
+   */
+  async refundCapturedPayment(params: {
+    providerPaymentId: string;
+    amountPaise: number;
+    idempotencyKey: string;
+  }): Promise<{ providerRefundId: string; status: 'processed' | 'pending' }> {
+    this.ensureCredentials();
+    const key = params.idempotencyKey.trim();
+    if (!/^[A-Za-z0-9_-]{10,}$/.test(key)) {
+      throw new Error('Razorpay refund idempotency key must be at least 10 characters');
+    }
+    const res = await fetch(`${this.baseUrl}/v1/payments/${encodeURIComponent(params.providerPaymentId)}/refund`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.authHeader(),
+        'X-Refund-Idempotency': key,
+      },
+      body: JSON.stringify({ amount: params.amountPaise }),
+    });
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new Error(`Razorpay refund failed: ${res.status}`);
+    }
+    const providerRefundId = typeof json.id === 'string' ? json.id : '';
+    if (!providerRefundId) throw new Error('Razorpay refund response did not include a refund id');
+    const status = json.status === 'processed' ? 'processed' : 'pending';
+    return { providerRefundId, status };
+  }
+}
+
+export function readRazorpayRefundNotice(body: Record<string, unknown>): {
+  event: string;
+  providerRefundId: string | null;
+  providerPaymentId: string | null;
+  amountInr: number | null;
+  status: 'processed' | 'pending' | null;
+} {
+  const event = typeof body.event === 'string' ? body.event : '';
+  const payload = body.payload as Record<string, unknown> | undefined;
+  const refundEntity = (payload?.refund as Record<string, unknown> | undefined)?.entity as
+    | Record<string, unknown>
+    | undefined;
+  const paymentEntity = (payload?.payment as Record<string, unknown> | undefined)?.entity as
+    | Record<string, unknown>
+    | undefined;
+  const providerRefundId = typeof refundEntity?.id === 'string' ? refundEntity.id : null;
+  const providerPaymentId =
+    (typeof refundEntity?.payment_id === 'string' && refundEntity.payment_id) ||
+    (typeof paymentEntity?.id === 'string' && paymentEntity.id) ||
+    null;
+  const paise = refundEntity?.amount;
+  const amountInr =
+    typeof paise === 'number' && Number.isFinite(paise) ? Math.round(paise) / 100 : null;
+  const status = event === 'refund.processed' ? 'processed' : event.startsWith('refund.') ? 'pending' : null;
+  return { event, providerRefundId, providerPaymentId, amountInr, status };
 }
 
 /** Razorpay event envelope: `{ event, payload: { payment_link?: { entity }, payment?: { entity } } }` */

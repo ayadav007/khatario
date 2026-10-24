@@ -61,6 +61,60 @@ const ISSC_UART_WRITE = 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f';
  * auto-match pass prefers them before falling through to the generic bucket.
  */
 export const PRINTER_PROFILES: PrinterProfile[] = [
+  // Label printers first: their model names would otherwise match the receipt profiles below
+  // (e.g. "XP-365B" vs Xprinter receipt models, "TVS LP46" vs TVS RP receipts).
+  {
+    id: 'tsc-label-tspl',
+    label: 'TSC label printer',
+    description: 'TSC TTP-244 Pro, TE200/TE244, DA210, Alpha series (TSPL)',
+    language: 'TSPL',
+    paperWidthMm: 50,
+    dpi: 203,
+    gattServiceUUIDs: [TELINK_SERVICE, BK3432_SERVICE, MICROCHIP_UART_SERVICE, ISSC_UART_SERVICE],
+    writeCharacteristicUUIDs: [TELINK_WRITE, BK3432_WRITE, MICROCHIP_UART_WRITE, ISSC_UART_WRITE],
+    deviceNamePrefixes: ['TSC', 'TTP', 'TE2', 'TE3', 'TA2', 'DA2', 'DA3', 'TX2', 'Alpha'],
+    chunkSize: 100,
+    chunkDelayMs: 20,
+  },
+  {
+    id: 'xprinter-label-tspl',
+    label: 'Xprinter label printer',
+    description: 'Xprinter XP-365B, XP-420B, XP-460B, XP-470B, XP-P323B (TSPL)',
+    language: 'TSPL',
+    paperWidthMm: 50,
+    dpi: 203,
+    gattServiceUUIDs: [XPRINTER_SERVICE, TELINK_SERVICE, BK3432_SERVICE, MICROCHIP_UART_SERVICE],
+    writeCharacteristicUUIDs: [XPRINTER_WRITE, TELINK_WRITE, BK3432_WRITE, MICROCHIP_UART_WRITE],
+    deviceNamePrefixes: ['XP-36', 'XP-42', 'XP-46', 'XP-47', 'XP-TT', 'XP-DT', 'XP-P32', 'XP-P42', 'XP-23', 'XP-24'],
+    chunkSize: 100,
+    chunkDelayMs: 20,
+  },
+  {
+    id: 'tvs-label-tspl',
+    label: 'TVS label printer',
+    description: 'TVS LP 46 Neo / Lite / Dlite label printers (TSPL)',
+    language: 'TSPL',
+    paperWidthMm: 50,
+    dpi: 203,
+    gattServiceUUIDs: [TELINK_SERVICE, BK3432_SERVICE, MICROCHIP_UART_SERVICE, ISSC_UART_SERVICE],
+    writeCharacteristicUUIDs: [TELINK_WRITE, BK3432_WRITE, MICROCHIP_UART_WRITE, ISSC_UART_WRITE],
+    deviceNamePrefixes: ['TVS LP', 'LP 4', 'LP4', 'TVS-LP'],
+    chunkSize: 100,
+    chunkDelayMs: 20,
+  },
+  {
+    id: 'generic-tspl-label',
+    label: 'Other TSPL label printer',
+    description: 'Most Chinese and Indian barcode label printers (Godex, Gainscha, Honeywell in TSPL mode)',
+    language: 'TSPL',
+    paperWidthMm: 50,
+    dpi: 203,
+    gattServiceUUIDs: [TELINK_SERVICE, BK3432_SERVICE, XPRINTER_SERVICE, MICROCHIP_UART_SERVICE, ISSC_UART_SERVICE],
+    writeCharacteristicUUIDs: [TELINK_WRITE, BK3432_WRITE, XPRINTER_WRITE, MICROCHIP_UART_WRITE, ISSC_UART_WRITE],
+    deviceNamePrefixes: ['Gainscha', 'GP-', 'Godex', 'G500', 'G530', 'HPRT', 'HT300', 'iDPRT', 'SP410', 'Label'],
+    chunkSize: 100,
+    chunkDelayMs: 20,
+  },
   {
     id: 'rongta-rpp-series',
     label: 'Rongta RPP (58mm BLE)',
@@ -166,10 +220,10 @@ export const PRINTER_PROFILES: PrinterProfile[] = [
   },
   {
     id: 'generic-zpl-label',
-    label: 'Generic ZPL label printer (BLE)',
-    description:
-      'Zebra-compatible BLE label printer (50x25mm rolls) accepting raw ZPL',
+    label: 'Zebra / ZPL label printer',
+    description: 'Zebra ZD220, ZD230, GK420, GC420 and ZPL-compatible label printers',
     language: 'ZPL',
+    deviceNamePrefixes: ['Zebra', 'ZD', 'ZQ', 'GK4', 'GC4', 'GX4', 'ZT'],
     paperWidthMm: 50,
     dpi: 203,
     gattServiceUUIDs: [

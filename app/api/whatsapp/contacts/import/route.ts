@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/whatsapp/contacts/import
  * Import contacts from CSV or Group Extractor
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { contacts, source, imported_from_group, create_group, group_name, group_color } = (body ?? {}) as Record<string, any>;
 

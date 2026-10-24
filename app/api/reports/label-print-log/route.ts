@@ -7,6 +7,7 @@ import {
   getBusinessIdFromRequest,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 /**
  * GET /api/reports/label-print-log
@@ -33,6 +34,8 @@ export async function GET(request: NextRequest) {
         { error: 'business_id is required' },
         { status: 400 }
       );
+    const planDenied = await denyIfFeatureMissing(businessId, 'barcode_label_printing');
+    if (planDenied) return planDenied;
 
     try {
       // Audit log is management-grade data; gate on reports module.

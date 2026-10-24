@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Loader2 } from 'lucide-react';
 import { useEmployeePortal } from '@/components/employee-portal/EmployeePortalContext';
+import { getPortalCheckInLocation } from '@/lib/employee-portal/geolocation';
 
 /** Shared-device check-in by employee code (no full portal login). */
 export default function EmployeePortalKioskPage() {
@@ -39,11 +40,17 @@ export default function EmployeePortalKioskPage() {
       }
       setEmployeeName(loginData.employee?.name ?? code.trim());
 
+      // The kiosk device's location must be at the office, like any self-service check-in.
+      const location = await getPortalCheckInLocation();
       const attRes = await fetch('/api/employees/attendance/check-in', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method: 'kiosk' }),
+        body: JSON.stringify({
+          method: 'kiosk',
+          location_lat: location?.lat,
+          location_lng: location?.lng,
+        }),
       });
       if (attRes.ok) {
         setMessage('Checked in successfully');

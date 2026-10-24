@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 interface TemplateSettings {
   primary_color?: string;
@@ -936,14 +937,8 @@ function CustomizeTemplateContent() {
               </div>
             </div>
             
-            <div className="bg-surface dark:bg-slate-900/70 shadow-2xl rounded-lg overflow-hidden">
-              <iframe
-                key={previewKey}
-                src={getPreviewUrl()}
-                className="w-full border-0"
-                style={{ height: '1123px', aspectRatio: '794/1123' }}
-                title="Live Preview"
-              />
+            <div className="overflow-hidden rounded-lg bg-slate-100 p-3 shadow-2xl dark:bg-slate-900/70">
+              <ScaledA4Preview key={previewKey} src={getPreviewUrl()} title="Live Preview" />
             </div>
           </div>
         </main>

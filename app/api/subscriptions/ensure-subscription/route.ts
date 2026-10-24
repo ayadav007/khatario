@@ -3,13 +3,18 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { queryOne, query } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
+import {
+  getModuleSubscriptions,
+  upsertModuleSubscription,
+} from '@/lib/subscription/module-subscriptions';
+import { getFreePlanIdForModule } from '@/lib/subscription/module-operational-check';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/subscriptions/ensure-subscription
- * Ensure a business has a subscription (auto-assign free plan if missing)
- * This is a helper endpoint to ensure all businesses have subscriptions
+ * Ensure the business's primary product has a subscription row (free plan if missing).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,32 +26,30 @@ export async function POST(request: NextRequest) {
     const guard = await applySubscriptionMutationGuard(request, business_id);
     if (guard) return guard;
 
-    // Check if subscription already exists
-    const existing = await queryOne(`
-      SELECT id FROM business_subscriptions WHERE business_id = $1
-    `, [business_id]);
+    const ctx = await getBusinessPlatformContext(business_id);
+    const moduleKey = ctx.primaryModule;
 
-    if (existing) {
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Subscription already exists' 
+    const rows = await getModuleSubscriptions(business_id, true);
+    if (rows.some((r) => r.module_key === moduleKey)) {
+      return NextResponse.json({
+        success: true,
+        message: 'Subscription already exists',
       });
     }
 
-    // Check if free plan exists
-    const freePlan = await queryOne(`SELECT id FROM subscription_plans WHERE id = 'free'`);
+    const freePlanId = getFreePlanIdForModule(moduleKey);
+    const freePlan = await queryOne(`SELECT id FROM subscription_plans WHERE id = $1`, [freePlanId]);
 
     if (!freePlan) {
       return NextResponse.json(
-        { 
+        {
           error: 'Free plan not found. Please run the seed script first.',
-          requires_seed: true
+          requires_seed: true,
         },
         { status: 500 }
       );
     }
 
-    // Check if business exists
     const business = await queryOne(`SELECT id FROM businesses WHERE id = $1`, [business_id]);
 
     if (!business) {
@@ -56,31 +59,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Assign free plan
-    const subscription = await queryOne(`
-      INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-      VALUES ($1, 'free', 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days')
-      RETURNING id, business_id, plan_id, status
-    `, [business_id]);
-
-    // Clear subscription cache so new subscription is immediately available
+    await upsertModuleSubscription({ query }, business_id, moduleKey, freePlanId, 'active', null);
     clearSubscriptionCache(business_id);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      subscription,
-      message: 'Free plan assigned successfully' 
+      subscription: { business_id, module_key: moduleKey, plan_id: freePlanId, status: 'active' },
+      message: 'Free plan assigned successfully',
     });
   } catch (error: any) {
     console.error('Error ensuring subscription:', error);
-    
-    // Handle unique constraint violation (subscription already exists)
-    if (error.code === '23505') {
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Subscription already exists' 
-      });
-    }
 
     return NextResponse.json(
       { error: 'Failed to ensure subscription', details: error.message },
@@ -88,4 +76,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

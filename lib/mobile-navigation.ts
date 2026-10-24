@@ -6,10 +6,15 @@ import { getMoreMenuBackHref } from '@/lib/navigation/more-menu-back';
 
 export const MOBILE_TAB_ROOTS = [
   '/dashboard',
+  '/hr/dashboard',
   '/invoices',
   '/items',
   '/customers',
   '/more',
+  '/whatsapp/conversations',
+  '/whatsapp/contacts',
+  '/employees',
+  '/employees/attendance',
 ] as const;
 
 /** Used by PullToRefresh to ignore bottom-tab taps. */
@@ -91,7 +96,7 @@ const LIST_CREATE_BY_PATH: Record<string, MobileListCreateAction> = {
     href: '/inventory-adjustments/new',
     ariaLabel: 'New adjustment',
   },
-  '/employees': { href: '/employees/new', ariaLabel: 'New employee' },
+  '/whatsapp/flows': { href: '/whatsapp/flows?new=1', ariaLabel: 'New flow' },
 };
 
 const COMPOSER_PREFIXES = [
@@ -112,15 +117,22 @@ const COMPOSER_PREFIXES = [
 export const MOBILE_COMPOSER_ROUTES = COMPOSER_PREFIXES;
 
 /** Primary create action for module list roots — rendered as TopBar + on mobile. */
-export function getMobileListCreateAction(pathname: string | null): MobileListCreateAction | null {
+export function getMobileListCreateAction(
+  pathname: string | null,
+  searchParams?: { get(name: string): string | null } | null
+): MobileListCreateAction | null {
   const p = normalizePath(pathname);
+  if (p === '/customers' && searchParams?.get('tab') === 'suppliers') {
+    return { href: '/suppliers/new', ariaLabel: 'New supplier' };
+  }
   return LIST_CREATE_BY_PATH[p] ?? null;
 }
 
 /** Routes where global trial/subscription strips are hidden (max form space). */
 export function shouldHideGlobalBanners(pathname: string | null): boolean {
   const p = normalizePath(pathname);
-  if (p.includes('/whatsapp/conversations')) return true;
+  // Connect inbox / contacts are agent-primary surfaces — keep chrome thin on mobile.
+  if (p === '/whatsapp' || p.startsWith('/whatsapp/')) return true;
   return COMPOSER_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
 }
 

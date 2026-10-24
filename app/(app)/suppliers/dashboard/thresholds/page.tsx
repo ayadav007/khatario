@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -161,21 +162,22 @@ export default function ThresholdsManagementPage() {
     
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Low Stock Thresholds</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Set stock thresholds for your customers to receive alerts when their inventory is running low
-            </p>
-          </div>
-          <Button
+        <PageHeader
+  title="Low Stock Thresholds"
+  subtitle="Set stock thresholds for your customers to receive alerts when their inventory is running low"
+
+  actions={
+    <>
+<Button
             variant="primary"
             onClick={() => setShowAddForm(!showAddForm)}
           >
             <Plus className="w-4 h-4 mr-2" />
             Add Threshold
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Add Form */}
         {showAddForm && (

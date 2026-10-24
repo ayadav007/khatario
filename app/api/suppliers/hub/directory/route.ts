@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/suppliers/hub/directory?q=&page=
- * Lists businesses opted into directory search (excludes current business).
+ * Lists businesses opted into directory search (excludes current business), each with
+ * whether the signed-in business is already connected to it or has asked to be.
  */
 export async function GET(request: NextRequest) {
   try {
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!businessId || !userId) {
-      return NextResponse.json({ error: 'business_id and user context required' }, { status: 400 });
-    }
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId } = auth;
     try {
       await authorize(userId, 'purchases', 'read', { businessId });
     } catch (error) {
@@ -40,10 +39,22 @@ export async function GET(request: NextRequest) {
       gstin: string | null;
       profile_summary: string | null;
       featured_categories: string[] | null;
+      connection: 'connected' | 'requested' | null;
     }>(
       `
       SELECT b.id, b.name, b.city, b.state, b.gstin,
-             d.profile_summary, d.featured_categories
+             d.profile_summary, d.featured_categories,
+             CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM suppliers s
+                 WHERE s.business_id = $1 AND s.linked_business_id = b.id
+                   AND s.approval_status = 'approved' AND s.deleted_at IS NULL
+               ) THEN 'connected'
+               WHEN EXISTS (
+                 SELECT 1 FROM supplier_connection_requests r
+                 WHERE r.buyer_business_id = $1 AND r.supplier_business_id = b.id AND r.status = 'pending'
+               ) THEN 'requested'
+             END AS connection
       FROM businesses b
       INNER JOIN business_discovery d ON d.business_id = b.id
       WHERE d.visibility = 'directory'

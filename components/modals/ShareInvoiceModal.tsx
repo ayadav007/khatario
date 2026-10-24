@@ -21,6 +21,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { fetchBusinessEmailReady } from '@/lib/business-email-client';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
 
 interface ShareInvoiceModalProps {
   invoiceId: string;
@@ -52,6 +54,9 @@ export function ShareInvoiceModal({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [nativeFormatLoading, setNativeFormatLoading] = useState<InvoiceShareFormat | null>(null);
   const [waConnected, setWaConnected] = useState<boolean | null>(null);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [emailConfigureOpen, setEmailConfigureOpen] = useState(false);
+  const [emailConfigureForbidden, setEmailConfigureForbidden] = useState(false);
   const showNativeShare = canUseNativeInvoiceShare();
 
   const resolvePublicUrl = useCallback(async (): Promise<string | null> => {
@@ -99,6 +104,7 @@ export function ShareInvoiceModal({
         const data = await res.json();
         if (!cancelled) {
           setWaConnected(data.status === 'connected');
+          setCloudReady(data.cloudReady === true);
         }
       } catch {
         if (!cancelled) setWaConnected(false);
@@ -109,7 +115,7 @@ export function ShareInvoiceModal({
     };
   }, [business?.id]);
 
-  async function handleEmailSend() {
+  async function sendInvoiceEmailNow() {
     if (!customerEmail) {
       toast.warning('Customer email not available');
       return;
@@ -132,15 +138,55 @@ export function ShareInvoiceModal({
         }, 3000);
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to send email');
+        if (error.code === 'EMAIL_NOT_CONFIGURED') {
+          setEmailConfigureForbidden(false);
+          setEmailConfigureOpen(true);
+        } else {
+          toast.error(error.error || 'Failed to send email');
+        }
       }
     } catch (error) {
       console.error('Error sending email:', error);
-        toast.error(
-          'Failed to send email. Configure SMTP under Settings → Email for your business.'
-        );
+      toast.error(
+        'Failed to send email. Configure SMTP under Settings → Email for your business.'
+      );
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleEmailSend() {
+    if (!customerEmail) {
+      toast.warning('Customer email not available');
+      return;
+    }
+    if (!business?.id) {
+      toast.error('Business not loaded');
+      return;
+    }
+
+    setSending(true);
+    setEmailConfigureForbidden(false);
+    try {
+      const result = await fetchBusinessEmailReady(business.id);
+      if (result.ready) {
+        await sendInvoiceEmailNow();
+        return;
+      }
+      setSending(false);
+      if (result.forbidden) {
+        setEmailConfigureForbidden(true);
+        setEmailConfigureOpen(true);
+        return;
+      }
+      if (result.error && !result.config) {
+        toast.error(result.error);
+        return;
+      }
+      setEmailConfigureOpen(true);
+    } catch {
+      setSending(false);
+      toast.error('Failed to check email settings');
     }
   }
 
@@ -332,13 +378,13 @@ export function ShareInvoiceModal({
 
           {/* WhatsApp */}
           <div className="space-y-2">
-            {sendViaApi && waConnected === false ? (
+            {sendViaApi && waConnected === false && !cloudReady ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 WhatsApp is not connected.{' '}
-                <Link href="/connect/whatsapp" className="font-medium underline hover:text-amber-950">
+                <Link href="/settings/whatsapp" className="font-medium underline hover:text-amber-950">
                   Connect now
                 </Link>{' '}
-                to send from your business number, or turn off &quot;Use Connected Account&quot; below to open WhatsApp Web.
+                to send from your business number, or turn off &quot;Send from my connected WhatsApp number&quot; below to open WhatsApp Web.
               </div>
             ) : null}
             <button
@@ -376,7 +422,7 @@ export function ShareInvoiceModal({
                         onChange={(e) => setSendViaApi(e.target.checked)}
                         className="rounded border-gray-300 text-green-600 focus:ring-green-500"
                     />
-                    <span>Use Connected Account (Baileys)</span>
+                    <span>Send from my connected WhatsApp number</span>
                 </label>
             </div>
           </div>
@@ -430,6 +476,23 @@ export function ShareInvoiceModal({
           </div>
         )}
       </div>
+
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={() => {
+            setEmailConfigureOpen(false);
+            setEmailConfigureForbidden(false);
+          }}
+          onConfigured={() => {
+            setEmailConfigureOpen(false);
+            setEmailConfigureForbidden(false);
+            void sendInvoiceEmailNow();
+          }}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
     </div>
   );
 }

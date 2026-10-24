@@ -1,0 +1,414 @@
+import { query, queryOne, queryRows } from '@/lib/db';
+import {
+  buildGraphComponents,
+  createMessageTemplate,
+  deleteMessageTemplate,
+  isMetaWaConfigured,
+  listMessageTemplates,
+  mapMetaStatus,
+  MetaWhatsAppError,
+  sanitizeTemplateName,
+} from '@/lib/meta-whatsapp';
+
+export const PLATFORM_WA_EVENT_KEYS = [
+  'signup_otp',
+  'demo_booking_otp',
+  'trial_ending',
+  'subscription_payment_failed',
+  'subscription_ended',
+  'promo',
+  'funnel_reengage',
+  'funnel_demo_no_trial',
+  'funnel_first_invoice',
+  'funnel_trial_inactive',
+  'funnel_trial_feature',
+  'funnel_handover',
+] as const;
+
+export const PLATFORM_WA_HEADER_FORMATS = ['none', 'text', 'image', 'video'] as const;
+export type PlatformWaHeaderFormat = (typeof PLATFORM_WA_HEADER_FORMATS)[number];
+
+export type PlatformWaEventKey = (typeof PLATFORM_WA_EVENT_KEYS)[number];
+
+export const PLATFORM_WA_LANGUAGES = ['en_US', 'en', 'hi'] as const;
+export const PLATFORM_WA_CATEGORIES = ['AUTHENTICATION', 'UTILITY', 'MARKETING'] as const;
+
+export type PlatformWhatsAppTemplate = {
+  id: string;
+  name: string;
+  language: string;
+  category: string;
+  body_text: string;
+  header_text: string | null;
+  footer_text: string | null;
+  example_vars: string[];
+  buttons: unknown;
+  meta_template_id: string | null;
+  status: string;
+  rejected_reason: string | null;
+  event_key: string | null;
+  header_format: PlatformWaHeaderFormat;
+  header_media_key: string | null;
+  header_handle: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function parseVars(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((v) => String(v));
+  return [];
+}
+
+/** Quick-reply button labels stored in `buttons` as [{ type: 'QUICK_REPLY', text }]. */
+export function quickReplyLabels(buttons: unknown): string[] {
+  if (!Array.isArray(buttons)) return [];
+  return buttons
+    .map((b) => (b && typeof b === 'object' && 'text' in b ? String((b as { text: unknown }).text || '') : ''))
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function normalizeHeaderFormat(raw: unknown, headerText: string | null): PlatformWaHeaderFormat {
+  const v = String(raw || '');
+  if ((PLATFORM_WA_HEADER_FORMATS as readonly string[]).includes(v)) return v as PlatformWaHeaderFormat;
+  return headerText ? 'text' : 'none';
+}
+
+function mapRow(row: Record<string, unknown>): PlatformWhatsAppTemplate {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    language: String(row.language),
+    category: String(row.category),
+    body_text: String(row.body_text || ''),
+    header_text: row.header_text ? String(row.header_text) : null,
+    footer_text: row.footer_text ? String(row.footer_text) : null,
+    example_vars: parseVars(row.example_vars),
+    buttons: row.buttons,
+    meta_template_id: row.meta_template_id ? String(row.meta_template_id) : null,
+    status: String(row.status),
+    rejected_reason: row.rejected_reason ? String(row.rejected_reason) : null,
+    event_key: row.event_key ? String(row.event_key) : null,
+    header_format: normalizeHeaderFormat(row.header_format, row.header_text ? String(row.header_text) : null),
+    header_media_key: row.header_media_key ? String(row.header_media_key) : null,
+    header_handle: row.header_handle ? String(row.header_handle) : null,
+    created_by: row.created_by ? String(row.created_by) : null,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+export { sanitizeTemplateName } from '@/lib/meta-whatsapp';
+
+function toQuickReplyButtons(labels: string[] | undefined): Array<{ type: 'QUICK_REPLY'; text: string }> {
+  return (labels || [])
+    .map((t) => String(t || '').trim().slice(0, 25))
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((text) => ({ type: 'QUICK_REPLY', text }));
+}
+
+export async function listPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppTemplate[]> {
+  const rows = await queryRows<Record<string, unknown>>(
+    `SELECT * FROM platform_whatsapp_templates ORDER BY updated_at DESC`,
+  );
+  return rows.map(mapRow);
+}
+
+export async function getPlatformWhatsAppTemplate(id: string): Promise<PlatformWhatsAppTemplate | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT * FROM platform_whatsapp_templates WHERE id = $1`,
+    [id],
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function createPlatformWhatsAppDraft(input: {
+  name: string;
+  language: string;
+  category: string;
+  body_text: string;
+  header_text?: string | null;
+  footer_text?: string | null;
+  example_vars?: string[];
+  event_key?: string | null;
+  header_format?: string | null;
+  header_media_key?: string | null;
+  quick_replies?: string[];
+  created_by: string | null;
+}): Promise<PlatformWhatsAppTemplate> {
+  const name = sanitizeTemplateName(input.name);
+  const language = PLATFORM_WA_LANGUAGES.includes(input.language as (typeof PLATFORM_WA_LANGUAGES)[number])
+    ? input.language
+    : 'en_US';
+  const category = PLATFORM_WA_CATEGORIES.includes(input.category as (typeof PLATFORM_WA_CATEGORIES)[number])
+    ? input.category
+    : 'UTILITY';
+  const eventKey =
+    input.event_key && PLATFORM_WA_EVENT_KEYS.includes(input.event_key as PlatformWaEventKey)
+      ? input.event_key
+      : null;
+  const body = category === 'AUTHENTICATION' ? input.body_text || '' : String(input.body_text || '').trim();
+  if (category !== 'AUTHENTICATION' && !body) {
+    throw new Error('Body text is required');
+  }
+
+  const headerText = input.header_text?.trim() || null;
+  const headerFormat = category === 'AUTHENTICATION' ? 'none' : normalizeHeaderFormat(input.header_format, headerText);
+  const row = await queryOne<Record<string, unknown>>(
+    `INSERT INTO platform_whatsapp_templates
+      (name, language, category, body_text, header_text, footer_text, example_vars, event_key, created_by, status,
+       header_format, header_media_key, buttons)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, 'draft', $10, $11, $12::jsonb)
+     RETURNING *`,
+    [
+      name,
+      language,
+      category,
+      body,
+      headerFormat === 'text' ? headerText : null,
+      input.footer_text?.trim() || null,
+      JSON.stringify(input.example_vars || []),
+      eventKey,
+      input.created_by,
+      headerFormat,
+      headerFormat === 'image' || headerFormat === 'video' ? input.header_media_key || null : null,
+      JSON.stringify(toQuickReplyButtons(input.quick_replies)),
+    ],
+  );
+  if (!row) throw new Error('Failed to create draft');
+  return mapRow(row);
+}
+
+export async function updatePlatformWhatsAppDraft(
+  id: string,
+  input: Partial<{
+    name: string;
+    language: string;
+    category: string;
+    body_text: string;
+    header_text: string | null;
+    footer_text: string | null;
+    example_vars: string[];
+    event_key: string | null;
+    header_format: string | null;
+    header_media_key: string | null;
+    quick_replies: string[];
+  }>,
+): Promise<PlatformWhatsAppTemplate> {
+  const existing = await getPlatformWhatsAppTemplate(id);
+  if (!existing) throw new Error('Template not found');
+  if (existing.status !== 'draft' && existing.status !== 'rejected') {
+    const event_key =
+      input.event_key !== undefined
+        ? input.event_key && PLATFORM_WA_EVENT_KEYS.includes(input.event_key as PlatformWaEventKey)
+          ? input.event_key
+          : null
+        : existing.event_key;
+    const example_vars = input.example_vars ?? existing.example_vars;
+    const row = await queryOne<Record<string, unknown>>(
+      `UPDATE platform_whatsapp_templates SET
+         event_key = $2, example_vars = $3::jsonb, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [existing.id, event_key, JSON.stringify(example_vars)],
+    );
+    if (!row) throw new Error('Update failed');
+    return mapRow(row);
+  }
+
+  const name = input.name != null ? sanitizeTemplateName(input.name) : existing.name;
+  const language = input.language ?? existing.language;
+  const category = input.category ?? existing.category;
+  const body_text = input.body_text != null ? input.body_text : existing.body_text;
+  const header_text = input.header_text !== undefined ? input.header_text : existing.header_text;
+  const footer_text = input.footer_text !== undefined ? input.footer_text : existing.footer_text;
+  const example_vars = input.example_vars ?? existing.example_vars;
+  const event_key =
+    input.event_key !== undefined
+      ? input.event_key && PLATFORM_WA_EVENT_KEYS.includes(input.event_key as PlatformWaEventKey)
+        ? input.event_key
+        : null
+      : existing.event_key;
+  const header_format =
+    category === 'AUTHENTICATION'
+      ? 'none'
+      : input.header_format !== undefined
+        ? normalizeHeaderFormat(input.header_format, header_text)
+        : existing.header_format;
+  const isMedia = header_format === 'image' || header_format === 'video';
+  const header_media_key = isMedia
+    ? input.header_media_key !== undefined
+      ? input.header_media_key
+      : existing.header_media_key
+    : null;
+  const buttons =
+    input.quick_replies !== undefined ? toQuickReplyButtons(input.quick_replies) : existing.buttons ?? [];
+  const mediaChanged = header_media_key !== existing.header_media_key || header_format !== existing.header_format;
+
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE platform_whatsapp_templates SET
+       name = $2, language = $3, category = $4, body_text = $5,
+       header_text = $6, footer_text = $7, example_vars = $8::jsonb, event_key = $9,
+       header_format = $10, header_media_key = $11, buttons = $12::jsonb,
+       header_handle = CASE WHEN $13 THEN NULL ELSE header_handle END,
+       status = 'draft', rejected_reason = NULL, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1
+     RETURNING *`,
+    [
+      id,
+      name,
+      language,
+      category,
+      body_text,
+      header_format === 'text' ? header_text : null,
+      footer_text,
+      JSON.stringify(example_vars),
+      event_key,
+      header_format,
+      header_media_key,
+      JSON.stringify(buttons),
+      mediaChanged,
+    ],
+  );
+  if (!row) throw new Error('Update failed');
+  return mapRow(row);
+}
+
+export async function submitPlatformWhatsAppTemplate(id: string): Promise<PlatformWhatsAppTemplate> {
+  if (!(await isMetaWaConfigured())) {
+    throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  }
+  const existing = await getPlatformWhatsAppTemplate(id);
+  if (!existing) throw new Error('Template not found');
+  if (existing.status !== 'draft' && existing.status !== 'rejected') {
+    throw new Error('Template is already submitted');
+  }
+
+  let headerHandle = existing.header_handle;
+  if ((existing.header_format === 'image' || existing.header_format === 'video') && !headerHandle) {
+    if (!existing.header_media_key) throw new Error('Choose an image or video for the template header first');
+    const { ensureHeaderHandle } = await import('@/lib/sales-funnel/media');
+    headerHandle = await ensureHeaderHandle(existing.header_media_key);
+  }
+
+  const created = await createMessageTemplate({
+    name: existing.name,
+    language: existing.language,
+    category: existing.category,
+    components: buildGraphComponents({
+      category: existing.category,
+      bodyText: existing.body_text,
+      headerText: existing.header_text,
+      footerText: existing.footer_text,
+      exampleVars: existing.example_vars,
+      headerFormat: existing.header_format,
+      headerHandle,
+      quickReplies: quickReplyLabels(existing.buttons),
+    }),
+  });
+
+  const status = mapMetaStatus(created.status);
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE platform_whatsapp_templates SET
+       meta_template_id = $2, status = $3, rejected_reason = NULL, header_handle = $4, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1
+     RETURNING *`,
+    [id, created.id, status === 'approved' ? 'approved' : 'pending', headerHandle],
+  );
+  if (!row) throw new Error('Submit update failed');
+  return mapRow(row);
+}
+
+export async function syncPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppTemplate[]> {
+  if (!(await isMetaWaConfigured())) {
+    throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  }
+  const remote = await listMessageTemplates();
+  const local = await listPlatformWhatsAppTemplates();
+
+  const langOf = (r: { language?: string }) => {
+    if (!r.language) return 'en_US';
+    return typeof r.language === 'string' ? r.language : String(r.language);
+  };
+
+  for (const row of local) {
+    const match = remote.find((r) => {
+      if (r.name !== row.name) return false;
+      if (!r.language) return true;
+      const lang = langOf(r);
+      return lang === row.language || lang.startsWith(row.language);
+    });
+    if (!match) continue;
+    const status = mapMetaStatus(match.status);
+    await query(
+      `UPDATE platform_whatsapp_templates
+       SET meta_template_id = COALESCE($2, meta_template_id), status = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [row.id, match.id, status],
+    );
+  }
+
+  const localAfter = await listPlatformWhatsAppTemplates();
+  for (const r of remote) {
+    const lang = langOf(r);
+    const exists = localAfter.some((row) => row.name === r.name && row.language === lang);
+    if (exists) continue;
+    const category = ['AUTHENTICATION', 'UTILITY', 'MARKETING'].includes(String(r.category || ''))
+      ? String(r.category)
+      : 'UTILITY';
+    await query(
+      `INSERT INTO platform_whatsapp_templates
+         (name, language, category, body_text, meta_template_id, status)
+       VALUES ($1, $2, $3, '', $4, $5)
+       ON CONFLICT (name, language) DO UPDATE SET
+         meta_template_id = EXCLUDED.meta_template_id,
+         status = EXCLUDED.status,
+         updated_at = CURRENT_TIMESTAMP`,
+      [r.name, lang, category, r.id, mapMetaStatus(r.status)],
+    );
+  }
+
+  return listPlatformWhatsAppTemplates();
+}
+
+export async function applyWebhookTemplateStatus(update: {
+  event: string;
+  message_template_id?: string;
+  message_template_name?: string;
+  message_template_language?: string;
+  reason?: string;
+}): Promise<void> {
+  const status = mapMetaStatus(update.event);
+  const reason = update.reason || (status === 'rejected' ? update.event : null);
+  if (update.message_template_id) {
+    await query(
+      `UPDATE platform_whatsapp_templates
+       SET status = $2, rejected_reason = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE meta_template_id = $1`,
+      [update.message_template_id, status, reason],
+    );
+  }
+  if (update.message_template_name) {
+    await query(
+      `UPDATE platform_whatsapp_templates
+       SET status = $3, rejected_reason = $4, updated_at = CURRENT_TIMESTAMP
+       WHERE name = $1 AND ($2::text IS NULL OR language = $2)`,
+      [update.message_template_name, update.message_template_language || null, status, reason],
+    );
+  }
+}
+
+export async function deletePlatformWhatsAppTemplate(id: string): Promise<void> {
+  const existing = await getPlatformWhatsAppTemplate(id);
+  if (!existing) throw new Error('Template not found');
+  if (existing.status !== 'draft' && existing.meta_template_id && (await isMetaWaConfigured())) {
+    try {
+      await deleteMessageTemplate(existing.name);
+    } catch (err) {
+      console.warn('[meta-wa] Graph delete failed', err instanceof Error ? err.message : err);
+    }
+  }
+  await query(`DELETE FROM platform_whatsapp_templates WHERE id = $1`, [id]);
+}

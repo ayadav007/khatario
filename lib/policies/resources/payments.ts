@@ -40,5 +40,15 @@ export function getPaymentPolicies(): Policy[] {
         accountingPeriodIsOpen('payment_date'),
       ],
     },
+
+    // REVERSE: the payments:reverse permission is the Create flag of the payment_reversals
+    // RBAC module. Period locks are checked by the route against the reversal date.
+    {
+      resource: 'payment_reversals',
+      action: 'create',
+      requiresPermission: 'payment_reversals.create',
+      priority: 10,
+      conditions: [resourceBelongsToBusiness()],
+    },
   ];
 }

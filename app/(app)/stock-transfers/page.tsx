@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Plus, Truck, Package, CheckCircle, Clock, XCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -244,12 +245,13 @@ export default function StockTransfersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stock Transfers</h1>
-          <p className="text-gray-600 text-sm mt-1">Transfer inventory between warehouses</p>
-        </div>
-        {canAdd('warehouse_transfer') && (
+      <PageHeader
+  title="Stock Transfers"
+  subtitle="Transfer inventory between warehouses"
+
+  actions={
+    <>
+{canAdd('warehouse_transfer') && (
           <button
             onClick={() => router.push('/stock-transfers/new')}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
@@ -258,7 +260,9 @@ export default function StockTransfersPage() {
             <span>New Transfer</span>
           </button>
         )}
-      </div>
+    </>
+  }
+/>
 
       {/* Transfers Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

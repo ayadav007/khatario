@@ -100,8 +100,8 @@ export function InvoicePaymentModal({
     }
 
     const total = validPayments.reduce((sum, p) => sum + p.amount, 0);
-    if (total > grandTotal) {
-      setError(`Total payments (₹${total.toFixed(2)}) cannot exceed invoice total (₹${grandTotal.toFixed(2)})`);
+    if (total > grandTotal + 0.004) {
+      setError(`Total payments (₹${total.toFixed(2)}) cannot exceed the amount still to collect (₹${grandTotal.toFixed(2)})`);
       return;
     }
 

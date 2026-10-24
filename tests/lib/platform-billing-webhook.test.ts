@@ -34,6 +34,10 @@ jest.mock('@/lib/subscription', () => ({
   clearSubscriptionCache: jest.fn(),
 }));
 
+jest.mock('@/lib/subscription/module-subscriptions', () => ({
+  getPrimaryModuleSubscription: jest.fn(async () => ({ module_key: 'billing', plan_id: 'trial' })),
+}));
+
 import { processPlatformRazorpayWebhook } from '@/lib/platform-billing';
 
 const BIZ = '00000000-0000-4000-8000-000000000001';
@@ -101,7 +105,6 @@ describe('processPlatformRazorpayWebhook', () => {
 
     queryOne.mockImplementation(async (sql: string) => {
       if (sql.includes('INSERT INTO platform_billing_webhook_events')) return { id: 'evt1' };
-      if (sql.includes('FROM business_subscriptions')) return { id: 'sub1', plan_id: 'trial' };
       if (sql.includes('SELECT status FROM billing_transactions')) {
         return { status: 'pending' };
       }
@@ -150,7 +153,6 @@ describe('processPlatformRazorpayWebhook', () => {
 
     queryOne.mockImplementation(async (sql: string) => {
       if (sql.includes('INSERT INTO platform_billing_webhook_events')) return { id: 'evt2' };
-      if (sql.includes('FROM business_subscriptions')) return { id: 'sub1', plan_id: 'trial' };
       if (sql.includes('SELECT status FROM billing_transactions')) {
         return { status: 'pending' };
       }
@@ -210,7 +212,6 @@ describe('processPlatformRazorpayWebhook', () => {
 
     queryOne.mockImplementation(async (sql: string) => {
       if (sql.includes('INSERT INTO platform_billing_webhook_events')) return { id: 'evt-legacy' };
-      if (sql.includes('FROM business_subscriptions')) return { id: 'sub1', plan_id: 'trial' };
       return null;
     });
     query.mockResolvedValue(undefined);

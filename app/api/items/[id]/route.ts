@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isOwnSupplier } from '@/lib/supplier-hub-links';
 import { queryOne, query, queryRows, getPool } from '@/lib/db';
 import { validateBundleComponentItems } from '@/lib/bundle-items-validation';
 import { Item } from '@/types/database';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,19 +16,11 @@ export async function GET(
 ) {
   try {
     const itemId = params.id;
-    const businessId = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    // Same rule as PATCH: the item edit form loads through here, so a query business_id is ignored.
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
 
     const item = await queryOne<Item>(
       'SELECT * FROM items WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
@@ -80,7 +74,26 @@ export async function GET(
       console.log(`[Items API] Item ${itemId} does not have variants (has_variants = ${item.has_variants})`);
     }
 
-    return NextResponse.json({ item, variants, variantCount: variants.length });
+    const reservedRow = await queryOne<{ reserved_qty: string }>(
+      `SELECT COALESCE(SUM(quantity), 0)::text AS reserved_qty
+         FROM stock_reservations
+        WHERE business_id = $1 AND item_id = $2 AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`,
+      [businessId, itemId],
+    ).catch(() => null);
+    const onHand = Number(item.current_stock) || 0;
+    const reservedQty = Number(reservedRow?.reserved_qty) || 0;
+    const itemWithAvailability = {
+      ...item,
+      reserved_qty: reservedQty,
+      available_stock: onHand - reservedQty,
+    };
+
+    return NextResponse.json({
+      item: itemWithAvailability,
+      variants,
+      variantCount: variants.length,
+    });
   } catch (error: any) {
     console.error('Error fetching item', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
@@ -93,22 +106,14 @@ export async function PATCH(
 ) {
   try {
     const itemId = params.id;
+    // Business and user come only from the verified, unrevoked session. A business_id, user_id or
+    // updated_by in the body is ignored, so an edit can never reach another business's item.
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const body = await request.json();
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
     const { user_id, updated_by, ...updateData } = body;
-    const userId = getUserIdFromRequest(request, body) || updated_by;
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id or updated_by is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // Get item first to check business_id
     const existingItem = await queryOne<Item>(
@@ -148,6 +153,7 @@ export async function PATCH(
       if (!flagged.ok) {
         return NextResponse.json({ error: flagged.error, code: flagged.code }, { status: flagged.status });
       }
+      noteShopChanged(businessId, 'item store listing changed');
       return NextResponse.json({ item: flagged.item });
     }
 
@@ -188,11 +194,55 @@ export async function PATCH(
       seo_title,
       seo_description,
       seo_image_url,
+      pack_size,
+      pack_unit,
       variants = []
     } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    const existingRate = Number((existingItem as { tax_rate?: unknown }).tax_rate ?? 0);
+    if (tax_rate !== undefined && Math.abs(Number(tax_rate || 0) - existingRate) > 0.0001) {
+      const { gstRateError } = await import('@/lib/gst/rates');
+      const rateError = gstRateError(tax_rate || 0);
+      if (rateError) {
+        return NextResponse.json({ error: rateError, code: 'INVALID_GST_RATE' }, { status: 400 });
+      }
+    }
+    const hsnClean = hsn_sac ? String(hsn_sac).replace(/\s/g, '') : '';
+    if (hsnClean && hsnClean !== (existingItem as { hsn_sac?: string | null }).hsn_sac && !/^\d{4,8}$/.test(hsnClean)) {
+      return NextResponse.json(
+        { error: 'HSN/SAC must be 4 to 8 digits', code: 'INVALID_HSN' },
+        { status: 400 },
+      );
+    }
+    const { resolveItemUqc } = await import('@/lib/gst/uqc');
+    const finalUqc = resolveItemUqc({
+      uqc:
+        body.uqc !== undefined
+          ? body.uqc
+          : (unit || 'PCS') === existingItem.unit
+            ? (existingItem as { uqc?: string | null }).uqc
+            : null,
+      unit: unit || 'PCS',
+      hsn_sac: hsnClean || null,
+    });
+
+    const patchPack =
+      Object.prototype.hasOwnProperty.call(body, 'pack_size') ||
+      Object.prototype.hasOwnProperty.call(body, 'pack_unit');
+    let packSize: number | null = null;
+    let packUnit: string | null = null;
+    if (patchPack) {
+      const { normalizePack } = await import('@/lib/quantity-display');
+      const pack = normalizePack({ pack_size, pack_unit, unit: unit || existingItem.unit });
+      if (pack.error) {
+        return NextResponse.json({ error: pack.error, code: 'INVALID_PACK' }, { status: 400 });
+      }
+      packSize = pack.pack_size;
+      packUnit = pack.pack_unit;
     }
 
     const bundleFlagProvided = Object.prototype.hasOwnProperty.call(body, 'is_bundle');
@@ -255,6 +305,10 @@ export async function PATCH(
     }
 
     // Handle selling_price for services or items with variants
+    if (default_supplier_id && !(await isOwnSupplier(businessId, String(default_supplier_id)))) {
+      return NextResponse.json({ error: 'Default supplier was not found in your suppliers' }, { status: 400 });
+    }
+
     const finalSellingPrice = (item_type === 'service' || finalHasVariants)
       ? (selling_price !== undefined && selling_price !== null && selling_price !== '' ? Number(selling_price) : null)
       : (Number(selling_price) || 0);
@@ -326,6 +380,17 @@ export async function PATCH(
       const parts: string[] = [];
       const extra: unknown[] = [];
       let idx = startIndex;
+      parts.push(`, uqc = $${idx}`);
+      extra.push(finalUqc);
+      idx += 1;
+      if (patchPack) {
+        parts.push(`, pack_size = $${idx}`);
+        extra.push(packSize);
+        idx += 1;
+        parts.push(`, pack_unit = $${idx}`);
+        extra.push(packUnit);
+        idx += 1;
+      }
       if (patchCategory) {
         parts.push(`, category_id = $${idx}`);
         extra.push(resolvedCategoryForPatch ?? null);
@@ -383,7 +448,7 @@ export async function PATCH(
       updateParams = [
         itemId, businessId, name, code || null, normalizedBarcode, finalBarcodeType, unit || 'PCS',
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
-        hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
+        hsnClean || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
@@ -404,7 +469,7 @@ export async function PATCH(
       updateParams = [
         itemId, businessId, name, code || null, unit || 'PCS',
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
-        hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
+        hsnClean || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
@@ -554,11 +619,19 @@ export async function PATCH(
       }
     }
 
+    try {
+      const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+      await syncItemOpeningStockLedger(businessId, itemId);
+    } catch (ledgerError) {
+      console.error('Error syncing opening stock ledger entry for item:', ledgerError);
+    }
+
     const refreshed = await queryOne<Item>(
       'SELECT * FROM items WHERE id = $1 AND business_id = $2',
       [itemId, businessId]
     );
 
+    noteShopChanged(businessId, 'item updated');
     return NextResponse.json({ item: refreshed || item });
   } catch (error: any) {
     console.error('Error updating item', error);
@@ -626,6 +699,7 @@ export async function DELETE(
       [itemId, businessId]
     );
 
+    noteShopChanged(businessId, 'item deleted');
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error deleting item', error);

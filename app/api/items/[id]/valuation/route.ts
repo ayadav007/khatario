@@ -56,7 +56,9 @@ export async function GET(
       );
     }
 
-    const valuationMethod = (item.valuation_method || 'simple') as ValuationMethod;
+    // AS 2 / Ind AS 2 do not permit LIFO; legacy items still tagged 'lifo' value at weighted average.
+    const storedMethod = (item.valuation_method || 'simple') as ValuationMethod;
+    const valuationMethod: ValuationMethod = storedMethod === 'lifo' ? 'weighted_avg' : storedMethod;
     const currentStock = await resolveItemQuantityForValuation(
       itemId,
       businessId,
@@ -104,8 +106,6 @@ export async function GET(
       // Order by valuation method
       if (valuationMethod === 'fifo') {
         batchSql += ` ORDER BY ib.created_at ASC, ib.manufacturing_date ASC NULLS LAST`;
-      } else if (valuationMethod === 'lifo') {
-        batchSql += ` ORDER BY ib.created_at DESC, ib.manufacturing_date DESC NULLS LAST`;
       } else {
         batchSql += ` ORDER BY ib.created_at DESC`;
       }
@@ -133,7 +133,7 @@ export async function GET(
           locationId || undefined
         );
       } else if (batches.length > 0) {
-        // For FIFO/LIFO, calculate weighted average of all batches
+        // For FIFO, calculate weighted average of all batches
         const totalCost = batchBreakdown.reduce((sum, b) => sum + b.batch_value, 0);
         const totalQty = batchBreakdown.reduce((sum, b) => sum + b.quantity, 0);
         averageCost = totalQty > 0 ? totalCost / totalQty : purchasePrice;

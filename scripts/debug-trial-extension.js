@@ -9,7 +9,8 @@ async function main() {
 
   if (backdate) {
     const biz = await pool.query(
-      `SELECT b.id FROM businesses b WHERE b.name ILIKE $1 LIMIT 1`,
+      `SELECT b.id, COALESCE(b.primary_module, 'billing') AS module_key
+       FROM businesses b WHERE b.name ILIKE $1 LIMIT 1`,
       [`%${name}%`],
     );
     if (!biz.rows[0]) {
@@ -18,35 +19,27 @@ async function main() {
     }
     const explicitDate = process.argv.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
     await pool.query(
-      explicitDate
-        ? `UPDATE business_subscriptions
-           SET trial_end_date = $2::date,
-               trial_extension_granted = false,
-               trial_extension_declined_at = NULL,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE business_id = $1`
-        : `UPDATE business_subscriptions
-       SET trial_end_date = (CURRENT_DATE - INTERVAL '1 day')::date,
+      `UPDATE business_module_subscriptions
+       SET trial_end_date = ${explicitDate ? '$3::date' : `(CURRENT_DATE - INTERVAL '1 day')::date`},
            trial_extension_granted = false,
            trial_extension_declined_at = NULL,
            updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $1`,
-      explicitDate ? [biz.rows[0].id, explicitDate] : [biz.rows[0].id],
+       WHERE business_id = $1 AND module_key = $2`,
+      explicitDate
+        ? [biz.rows[0].id, biz.rows[0].module_key, explicitDate]
+        : [biz.rows[0].id, biz.rows[0].module_key],
     );
-    console.log(
-      'Set trial_end_date for',
-      biz.rows[0].id,
-      explicitDate || 'yesterday',
-    );
+    console.log('Set trial_end_date for', biz.rows[0].id, explicitDate || 'yesterday');
   }
 
   const r = await pool.query(
-    `SELECT b.id, b.name,
-            bs.plan_id, bs.status, bs.trial_end_date::text,
-            bs.trial_extension_granted, bs.trial_extension_declined_at::text,
-            bs.grace_period_end::text, bs.downgraded_from, bs.created_at
+    `SELECT b.id, b.name, m.module_key,
+            m.plan_id, m.status, m.trial_end_date::text,
+            m.trial_extension_granted, m.trial_extension_declined_at::text,
+            m.grace_period_end::text, m.downgraded_from, m.created_at
      FROM businesses b
-     LEFT JOIN business_subscriptions bs ON bs.business_id = b.id
+     LEFT JOIN business_module_subscriptions m
+       ON m.business_id = b.id AND m.module_key = COALESCE(b.primary_module, 'billing')
      WHERE b.name ILIKE $1
      ORDER BY b.name`,
     [`%${name}%`],

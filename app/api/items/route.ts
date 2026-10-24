@@ -5,19 +5,33 @@ import { Item } from '@/types/database';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
+import { isOwnSupplier } from '@/lib/supplier-hub-links';
+import { readPaymentIdempotencyKey } from '@/lib/accounting/payment-idempotency';
+import {
+  ITEM_CREATE_IDEMPOTENCY_ACTION,
+  findItemCreateOutcome,
+  itemCreateFingerprint,
+  itemIdempotencyErrorBody,
+  scopedItemCreateKey,
+  type ItemCreateIdempotencyOutcome,
+} from '@/lib/items/item-create-idempotency';
+import { insertReplayLogPending, markReplayCompleted } from '@/lib/offline-sync/replay-log-repository';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const search = searchParams.get('search') || '';
     const itemType = searchParams.get('item_type');
     const page = parseInt(searchParams.get('page') || '1');
@@ -25,20 +39,9 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const updatedAfter = searchParams.get('updated_after');
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'items', 'read');
+      await authorize(userId, 'items', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -84,7 +87,16 @@ export async function GET(request: NextRequest) {
                AND bis.branch_id = ANY($2::uuid[])),
             i.current_stock,
             0
-          ) as current_stock
+          ) as current_stock,
+          COALESCE(
+            (SELECT SUM(sr.quantity)::numeric
+             FROM stock_reservations sr
+             WHERE sr.business_id = i.business_id
+               AND sr.item_id = i.id
+               AND sr.status = 'active'
+               AND (sr.expires_at IS NULL OR sr.expires_at > CURRENT_TIMESTAMP)),
+            0
+          ) as reserved_qty
         FROM items i
         -- Soft delete: exclude records where deleted_at is set
         WHERE i.business_id = $1
@@ -95,7 +107,18 @@ export async function GET(request: NextRequest) {
     } else {
       // No branch filtering - use business-level stock
       sql = `
-        SELECT * FROM items 
+        SELECT
+          items.*,
+          COALESCE(
+            (SELECT SUM(sr.quantity)::numeric
+             FROM stock_reservations sr
+             WHERE sr.business_id = items.business_id
+               AND sr.item_id = items.id
+               AND sr.status = 'active'
+               AND (sr.expires_at IS NULL OR sr.expires_at > CURRENT_TIMESTAMP)),
+            0
+          ) as reserved_qty
+        FROM items
         -- Soft delete: exclude records where deleted_at is set
         WHERE business_id = $1
           AND deleted_at IS NULL
@@ -148,9 +171,18 @@ export async function GET(request: NextRequest) {
     sql += ` ORDER BY name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
-    const items = await queryRows<Item>(sql, params);
+    const items = await queryRows<Item & { reserved_qty?: number | string }>(sql, params);
+    const withAvailable = items.map((item) => {
+      const onHand = Number(item.current_stock) || 0;
+      const reserved = Number(item.reserved_qty) || 0;
+      return {
+        ...item,
+        reserved_qty: reserved,
+        available_stock: onHand - reserved,
+      };
+    });
     return NextResponse.json({ 
-      items,
+      items: withAvailable,
       pagination: {
         page,
         limit,
@@ -165,14 +197,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
     const {
       name,
       code,
       barcode,
       barcode_type,
       unit = 'PCS',
+      pack_size,
+      pack_unit,
       selling_price,
       purchase_price = 0,
       tax_rate = 0,
@@ -200,23 +237,25 @@ export async function POST(request: NextRequest) {
       /** null = inherit business default; boolean = override */
       allow_sale_when_out_of_stock,
       custom_fields,
-      created_by, // User ID who created the item
       show_in_store,
       featured_in_store,
       seo_title,
       seo_description,
       seo_image_url,
+      /** Scan & Add: provider whose suggestion the shopkeeper accepted. Its source is read from our own cache. */
+      lookup_source,
+      /** Scan & Add: batch code and dates printed on the stock being entered as opening stock. */
+      opening_batch,
     } = body;
 
-    if (!business_id || !name) {
-      return NextResponse.json({ error: 'Name and Business ID are required' }, { status: 400 });
+    if (!name) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+    const { normalizeOpeningBatch } = await import('@/lib/items/opening-batch');
+    const openingBatch = normalizeOpeningBatch(opening_batch);
+    if (openingBatch && 'error' in openingBatch) {
+      return NextResponse.json({ error: openingBatch.error, code: 'INVALID_BATCH' }, { status: 400 });
     }
 
     // CRITICAL: Enforce access boundary - reject attendance-only employees
@@ -231,12 +270,42 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission
     try {
-      await authorize(created_by, 'items', 'create');
+      await authorize(created_by, 'items', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    // Optional retry key (X-Idempotency-Key). A retry of a save that already went through gets the
+    // same item back instead of a duplicate item or a second opening-stock posting.
+    const idemKey = readPaymentIdempotencyKey(request);
+    if (!idemKey.ok) return NextResponse.json(idemKey.body, { status: 400 });
+    const idem = idemKey.key
+      ? { scopedKey: scopedItemCreateKey(idemKey.key), ...itemCreateFingerprint(body) }
+      : null;
+    const idemResponse = async (outcome: ItemCreateIdempotencyOutcome) => {
+      if (outcome.kind !== 'replay') {
+        return NextResponse.json(itemIdempotencyErrorBody(outcome.kind), { status: 409 });
+      }
+      const replayed = outcome.item as unknown as Item;
+      if (replayed.item_type === 'goods') {
+        // Re-running is safe: the opening voucher is replaced, not added.
+        const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+        await syncItemOpeningStockLedger(business_id, replayed.id).catch((e) =>
+          console.error('Error re-syncing opening stock ledger on replay:', e)
+        );
+      }
+      return NextResponse.json({ item: replayed, idempotent: true }, { status: 200 });
+    };
+    if (idem) {
+      const prior = await findItemCreateOutcome(getPool(), {
+        businessId: business_id,
+        scopedKey: idem.scopedKey,
+        hash: idem.hash,
+      });
+      if (prior) return idemResponse(prior);
     }
 
     if (featured_in_store) {
@@ -283,12 +352,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (default_supplier_id && !(await isOwnSupplier(business_id, String(default_supplier_id)))) {
+      return NextResponse.json({ error: 'Default supplier was not found in your suppliers' }, { status: 400 });
+    }
+
     // Validation: Services cannot have stock or variants
     if (item_type === 'service' && (opening_stock > 0 || min_stock > 0 || has_variants)) {
       return NextResponse.json(
         { error: 'Services cannot have stock or variants.' }, 
         { status: 400 }
       );
+    }
+
+    const { gstRateError } = await import('@/lib/gst/rates');
+    const rateError = gstRateError(tax_rate);
+    if (rateError) {
+      return NextResponse.json({ error: rateError, code: 'INVALID_GST_RATE' }, { status: 400 });
+    }
+    const hsnClean = hsn_sac ? String(hsn_sac).replace(/\s/g, '') : '';
+    if (hsnClean && !/^\d{4,8}$/.test(hsnClean)) {
+      return NextResponse.json(
+        { error: 'HSN/SAC must be 4 to 8 digits', code: 'INVALID_HSN' },
+        { status: 400 },
+      );
+    }
+    const { resolveItemUqc } = await import('@/lib/gst/uqc');
+    const finalUqc = resolveItemUqc({ uqc: body.uqc, unit, hsn_sac: hsnClean || null });
+    const { normalizePack } = await import('@/lib/quantity-display');
+    const pack = normalizePack({ pack_size, pack_unit, unit });
+    if (pack.error) {
+      return NextResponse.json({ error: pack.error, code: 'INVALID_PACK' }, { status: 400 });
     }
 
     // Force values for services or items with variants
@@ -338,6 +431,27 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const idemRow = idem
+        ? await insertReplayLogPending(client, {
+            businessId: business_id,
+            idempotencyKey: idem.scopedKey,
+            actionType: ITEM_CREATE_IDEMPOTENCY_ACTION,
+            requestHash: idem.hash,
+            requestPayload: idem.storedPayload,
+            userId: created_by,
+          })
+        : null;
+      if (idem && !idemRow) {
+        // Another request with this key committed first; answer as its replay.
+        await client.query('ROLLBACK');
+        const winner = await findItemCreateOutcome(getPool(), {
+          businessId: business_id,
+          scopedKey: idem.scopedKey,
+          hash: idem.hash,
+        });
+        return idemResponse(winner ?? { kind: 'in_progress' });
+      }
+
       const insertResult = await client.query<Item>(`
       INSERT INTO items (
         business_id, category_id, name, code, barcode, barcode_type, unit, selling_price, purchase_price, 
@@ -345,10 +459,10 @@ export async function POST(request: NextRequest) {
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
         is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock,
-        show_in_store, featured_in_store
+        show_in_store, featured_in_store, uqc, pack_size, pack_unit
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
       RETURNING *
     `, [
       business_id,
@@ -361,7 +475,7 @@ export async function POST(request: NextRequest) {
       finalSellingPrice,
       purchase_price,
       tax_rate,
-      hsn_sac || null,
+      hsnClean || null,
       item_type,
       finalOpeningStock,
       finalOpeningStock,
@@ -381,6 +495,9 @@ export async function POST(request: NextRequest) {
       oversellOverride,
       !!show_in_store || !!featured_in_store,
       !!featured_in_store,
+      finalUqc,
+      pack.pack_size,
+      pack.pack_unit,
     ]);
 
       item = insertResult.rows[0] ?? null;
@@ -398,6 +515,65 @@ export async function POST(request: NextRequest) {
           [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
         );
         item = { ...item, ...seo };
+      }
+
+      if (lookup_source && normalizedBarcode) {
+        const { externalSourceFromCache } = await import('@/lib/product-lookup/service');
+        const source = await externalSourceFromCache(client, business_id, normalizedBarcode, String(lookup_source));
+        if (source) {
+          await client.query(
+            `UPDATE items SET external_source = $1::jsonb WHERE id = $2 AND business_id = $3`,
+            [JSON.stringify(source), item.id, business_id]
+          );
+          item = { ...item, external_source: source } as Item;
+        }
+      }
+
+      // Opening stock of a plain item posts in the same transaction as the item, so a failed save
+      // leaves neither and a retried save cannot post it twice.
+      if (finalOpeningStock > 0 && item_type === 'goods') {
+        // Batch and expiry from the pack: the stock goes into that batch, and the item draws
+        // batches down oldest first (FIFO). Without stock there is nothing to put in a batch.
+        let batchId: string | null = null;
+        if (openingBatch && !('error' in openingBatch)) {
+          const batchRow = await client.query<{ id: string }>(
+            `INSERT INTO item_batches (
+               business_id, item_id, batch_number, manufacturing_date, expiry_date, purchase_price, quantity, notes
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Opening stock')
+             RETURNING id`,
+            [
+              business_id,
+              item.id,
+              openingBatch.batchNumber,
+              openingBatch.manufacturingDate,
+              openingBatch.expiryDate,
+              Number(purchase_price) || 0,
+              finalOpeningStock,
+            ]
+          );
+          batchId = batchRow.rows[0]?.id ?? null;
+          await client.query(
+            `UPDATE items SET track_batch = true, valuation_method = 'fifo' WHERE id = $1 AND business_id = $2`,
+            [item.id, business_id]
+          );
+          item = { ...item, track_batch: true, valuation_method: 'fifo' } as Item;
+        }
+        await client.query(
+          `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes, batch_id, unit_cost)
+           VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock', $4, $5)`,
+          // Cost and batch only when a batch was saved, so the New Item form posts exactly as before.
+          [business_id, item.id, finalOpeningStock, batchId, batchId ? Number(purchase_price) || 0 : null]
+        );
+        await seedOpeningStockLayers(business_id, {
+          itemId: item.id,
+          quantity: finalOpeningStock,
+          client,
+        });
+      }
+
+      if (idemRow) {
+        await markReplayCompleted(client, idemRow.id, { item_id: item.id }, { type: 'item', id: item.id });
       }
 
       await client.query('COMMIT');
@@ -548,18 +724,18 @@ export async function POST(request: NextRequest) {
       } catch (verifyError) {
         console.error('[Items API] Error verifying variants:', verifyError);
       }
-    } else if (finalOpeningStock > 0 && item_type === 'goods') {
-      // Create initial stock movement for base item
-      await query(`
-        INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes)
-        VALUES ($1, $2, 'in', $3, 'adjustment', 'Opening Stock')
-      `, [business_id, item.id, finalOpeningStock]);
-      await seedOpeningStockLayers(business_id, {
-        itemId: item.id,
-        quantity: finalOpeningStock,
-      });
     }
 
+    if (item_type === 'goods') {
+      try {
+        const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+        await syncItemOpeningStockLedger(business_id, item.id);
+      } catch (ledgerError) {
+        console.error('Error posting opening stock ledger entry for item:', ledgerError);
+      }
+    }
+
+    noteShopChanged(business_id, 'item created');
     return NextResponse.json({ item }, { status: 201 });
   } catch (error: any) {
     console.error(error);

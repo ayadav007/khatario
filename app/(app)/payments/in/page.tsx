@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +16,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useBadges } from '@/contexts/BadgeContext';
+import {
+  createPaymentSubmissionKeys,
+  submitPaymentIn,
+  type PaymentInRequestBody,
+  type PaymentSubmissionKeys,
+} from '@/lib/payments/payment-in-submission';
+import {
+  LinkPaymentDialog,
+  type LinkableInvoice,
+  type PaymentLink,
+} from '@/components/payments/LinkPaymentDialog';
+import { SettlementAccountField } from '@/components/accounting/SettlementAccountField';
 
 interface Payment {
   id: string;
@@ -28,17 +40,7 @@ interface Payment {
   payment_date: string;
   notes: string | null;
   created_at: string;
-}
-
-interface Invoice {
-  id: string;
-  invoice_number: string;
-  customer_id: string | null;
-  customer_name: string | null;
-  grand_total: number;
-  paid_amount: number;
-  balance_amount: number;
-  invoice_date: string;
+  status?: 'active' | 'reversed';
 }
 
 interface Customer {
@@ -57,15 +59,21 @@ export default function PaymentInPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submissionKeysRef = useRef<PaymentSubmissionKeys | null>(null);
   
   const [formData, setFormData] = useState({
     customer_id: '',
     invoice_id: '',
+    links: [] as PaymentLink[],
     amount: '',
+    tds_amount: '',
+    tds_section: '194C',
     payment_mode: 'cash',
+    settlement_account_id: '',
     payment_date: new Date().toISOString().split('T')[0],
     notes: ''
   });
@@ -78,13 +86,30 @@ export default function PaymentInPage() {
     }
   }, [business, currentBranchId, branchLoading]);
 
-  useEffect(() => {
-    if (formData.customer_id && business?.id) {
-      fetchCustomerInvoices(formData.customer_id);
-    } else {
-      setInvoices([]);
-    }
-  }, [formData.customer_id, business?.id]);
+  const loadOpenInvoices = useCallback(
+    async (search: string): Promise<LinkableInvoice[]> => {
+      if (!business?.id || !formData.customer_id) return [];
+      const params = new URLSearchParams({
+        business_id: business.id,
+        user_id: user?.id || '',
+        customer_id: formData.customer_id,
+        status: 'unpaid',
+        limit: '200',
+      });
+      if (search) params.set('search', search);
+      const response = await fetch(`/api/invoices?${params}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to load invoices');
+      return (data.invoices || []).map((inv: LinkableInvoice) => ({
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        invoice_date: inv.invoice_date,
+        grand_total: Number(inv.grand_total) || 0,
+        balance_amount: Number(inv.balance_amount ?? inv.grand_total) || 0,
+      }));
+    },
+    [business?.id, formData.customer_id, user?.id]
+  );
 
   async function fetchPayments() {
     if (!business?.id) return;
@@ -110,82 +135,114 @@ export default function PaymentInPage() {
     }
   }
 
-  async function fetchCustomerInvoices(customerId: string) {
-    if (!business?.id) return;
-    try {
-      const response = await fetch(`/api/invoices?business_id=${business.id}&status=all&user_id=${user?.id}`);
-      const data = await response.json();
-      // Filter invoices for this customer with balance
-      const filteredInvoices = (data.invoices || []).filter((inv: Invoice) => 
-        inv.customer_id === customerId && 
-        (Number(inv.balance_amount || inv.grand_total) - Number(inv.paid_amount || 0)) > 0
-      );
-      setInvoices(filteredInvoices);
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!business?.id) return;
 
-    const paymentAmount = parseFloat(formData.amount);
-    if (!paymentAmount || paymentAmount <= 0) {
+    const paymentAmount = parseFloat(formData.amount || '0') || 0;
+    const tdsAmount = parseFloat(formData.tds_amount || '0') || 0;
+    const links = formData.links.filter((link) => link.amount > 0);
+    const linkedSum = Math.round(links.reduce((sum, link) => sum + link.amount, 0) * 100) / 100;
+    if (paymentAmount < 0 || tdsAmount < 0 || paymentAmount + tdsAmount <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
+    if (linkedSum - paymentAmount > 0.01) {
+      toast.error('Linked amounts cannot exceed the amount received');
+      return;
+    }
+    if (links.length > 1 && tdsAmount > 0) {
+      toast.error('TDS can be recorded when the receipt is linked to one invoice');
+      return;
+    }
+    if (links.length === 1 && links[0].amount + tdsAmount > links[0].balance + 0.01) {
+      toast.error(`Amount received plus TDS cannot exceed balance of ₹${links[0].balance.toLocaleString('en-IN')}`);
+      return;
+    }
 
-    if (formData.invoice_id) {
-      const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
-      if (selectedInvoice) {
-        const balance = Number(selectedInvoice.balance_amount || selectedInvoice.grand_total) - Number(selectedInvoice.paid_amount || 0);
-        if (paymentAmount > balance) {
-          toast.error(`Payment amount cannot exceed balance of ₹${balance.toLocaleString()}`);
-          return;
-        }
+    const unused = Math.round((paymentAmount - linkedSum) * 100) / 100;
+    const base = {
+      business_id: business.id,
+      type: 'receivable' as const,
+      customer_id: formData.customer_id || null,
+      created_by: user?.id,
+      payment_mode: formData.payment_mode,
+      settlement_account_id: formData.settlement_account_id || null,
+      payment_date: formData.payment_date,
+      notes: formData.notes || null,
+    };
+    const jobs: PaymentInRequestBody[] = [];
+    if (links.length === 0) {
+      jobs.push({
+        ...base,
+        reference_type: null,
+        reference_id: null,
+        amount: paymentAmount,
+        tds_amount: tdsAmount,
+        tds_section: tdsAmount > 0 ? formData.tds_section : null,
+      });
+    } else {
+      links.forEach((link, index) => {
+        const withTds = links.length === 1 && index === 0;
+        jobs.push({
+          ...base,
+          reference_type: 'invoice',
+          reference_id: link.id,
+          amount: link.amount,
+          tds_amount: withTds ? tdsAmount : 0,
+          tds_section: withTds && tdsAmount > 0 ? formData.tds_section : null,
+        });
+      });
+      if (unused > 0.009) {
+        jobs.push({
+          ...base,
+          reference_type: null,
+          reference_id: null,
+          amount: unused,
+          tds_amount: 0,
+          tds_section: null,
+        });
       }
     }
 
+    const keys = (submissionKeysRef.current ??= createPaymentSubmissionKeys());
+    if (keys.inFlight) return;
+    setSubmitting(true);
     try {
-      const response = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          type: 'receivable',
-          customer_id: formData.customer_id || null,
-          reference_type: formData.invoice_id ? 'invoice' : null,
-          created_by: user?.id, // Required for authorization
-          reference_id: formData.invoice_id || null,
-          amount: paymentAmount,
-          payment_mode: formData.payment_mode,
-          payment_date: formData.payment_date,
-          notes: formData.notes || null
-        })
-      });
-
-      if (response.ok) {
-        toast.success('Payment recorded successfully');
-        setShowForm(false);
-        setFormData({
-          customer_id: '',
-          invoice_id: '',
-          amount: '',
-          payment_mode: 'cash',
-          payment_date: new Date().toISOString().split('T')[0],
-          notes: ''
-        });
+      for (let index = 0; index < jobs.length; index += 1) {
+        const attempt = await submitPaymentIn(keys, jobs[index], (init) => fetch('/api/payments', init));
+        if (attempt.kind === 'success') continue;
+        const saved = index > 0 ? ' Part of this receipt was already saved.' : '';
+        if (attempt.kind === 'failed') toast.error((attempt.body?.error || 'Failed to record payment') + saved);
+        else if (attempt.kind === 'network-error') toast.error('Failed to record payment.' + saved);
         await refreshBadgeCounts();
         fetchPayments();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to record payment');
+        return;
       }
-    } catch (error) {
-      console.error('Error recording payment:', error);
-      toast.error('Failed to record payment');
+      toast.success(jobs.length > 1 ? `Recorded ${jobs.length} payments` : 'Payment recorded successfully');
+      setShowForm(false);
+      setFormData({
+        customer_id: '',
+        invoice_id: '',
+        links: [],
+        amount: '',
+        tds_amount: '',
+        tds_section: '194C',
+        payment_mode: 'cash',
+        settlement_account_id: '',
+        payment_date: new Date().toISOString().split('T')[0],
+        notes: ''
+      });
+      await refreshBadgeCounts();
+      fetchPayments();
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const openPaymentForm = (open: boolean) => {
+    submissionKeysRef.current?.reset();
+    setShowForm(open);
   };
 
   const [printingReceipt, setPrintingReceipt] = useState<string | null>(null);
@@ -245,10 +302,13 @@ export default function PaymentInPage() {
     );
   });
 
-  const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
-  const invoiceBalance = selectedInvoice 
-    ? Number(selectedInvoice.balance_amount || selectedInvoice.grand_total) - Number(selectedInvoice.paid_amount || 0)
-    : null;
+  const linkedBalance = formData.links.length === 1 ? formData.links[0].balance : null;
+  const linkSummary =
+    formData.links.length === 0
+      ? 'No invoice linked'
+      : formData.links.length === 1
+        ? `${formData.links[0].number} · ₹${formData.links[0].amount.toLocaleString('en-IN')}`
+        : `${formData.links.length} invoices · ₹${formData.links.reduce((sum, link) => sum + link.amount, 0).toLocaleString('en-IN')}`;
 
   const referenceLabel = (p: Payment) => {
     if (p.reference_type === 'invoice') return 'Invoice';
@@ -333,7 +393,7 @@ export default function PaymentInPage() {
           description="Money received from customers — with or without a specific invoice."
           actions={
             !showForm ? (
-              <Button className="w-full sm:w-auto shrink-0" onClick={() => setShowForm(true)}>
+              <Button className="w-full sm:w-auto shrink-0" onClick={() => openPaymentForm(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Record payment
               </Button>
@@ -346,7 +406,7 @@ export default function PaymentInPage() {
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Record Payment</h2>
-              <Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => openPaymentForm(false)}>Cancel</Button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -358,7 +418,7 @@ export default function PaymentInPage() {
                   <select
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                     value={formData.customer_id}
-                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value, invoice_id: '' })}
+                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value, invoice_id: '', links: [] })}
                     required
                   >
                     <option value="">Select Customer</option>
@@ -372,31 +432,17 @@ export default function PaymentInPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Invoice (Optional)
+                    Link to invoices
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.invoice_id}
-                    onChange={(e) => {
-                      setFormData({ ...formData, invoice_id: e.target.value });
-                      const inv = invoices.find(i => i.id === e.target.value);
-                      if (inv) {
-                        const balance = Number(inv.balance_amount || inv.grand_total) - Number(inv.paid_amount || 0);
-                        setFormData(prev => ({ ...prev, amount: balance.toString() }));
-                      }
-                    }}
+                  <button
+                    type="button"
                     disabled={!formData.customer_id}
+                    onClick={() => setLinkOpen(true)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm disabled:bg-gray-50 disabled:text-gray-400"
                   >
-                    <option value="">No specific invoice</option>
-                    {invoices.map(invoice => {
-                      const balance = Number(invoice.balance_amount || invoice.grand_total) - Number(invoice.paid_amount || 0);
-                      return (
-                        <option key={invoice.id} value={invoice.id}>
-                          {invoice.invoice_number} - Balance: ₹{balance.toLocaleString()}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    {linkSummary}
+                  </button>
+                  <p className="mt-1 text-xs text-gray-500">Search and split this receipt across open sales invoices.</p>
                 </div>
 
                 <div>
@@ -412,11 +458,42 @@ export default function PaymentInPage() {
                     required
                     placeholder="0.00"
                   />
-                  {invoiceBalance !== null && (
+                  {linkedBalance !== null && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Invoice Balance: ₹{invoiceBalance.toLocaleString()}
+                      Invoice Balance: ₹{linkedBalance.toLocaleString('en-IN')}
                     </p>
                   )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      TDS deducted by customer
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.tds_amount}
+                      onChange={(e) => setFormData({ ...formData, tds_amount: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      value={formData.tds_section}
+                      onChange={(e) => setFormData({ ...formData, tds_section: e.target.value })}
+                    >
+                      {['194C', '194J', '194H', '194I', '194Q', '194O', 'other'].map((s) => (
+                        <option key={s} value={s}>{s === 'other' ? 'Other' : s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="col-span-3 text-xs text-gray-500">
+                    Enter the cash/bank amount received above; TDS also settles the invoice and goes to TDS Receivable (match with Form 26AS).
+                  </p>
                 </div>
 
                 <div>
@@ -426,18 +503,30 @@ export default function PaymentInPage() {
                   <select
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                     value={formData.payment_mode}
-                    onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payment_mode: e.target.value, settlement_account_id: '' })
+                    }
                     required
                   >
                     <option value="cash">Cash</option>
                     <option value="bank">Bank Transfer</option>
                     <option value="upi">UPI</option>
+                    <option value="neft">NEFT</option>
+                    <option value="rtgs">RTGS</option>
                     <option value="cheque">Cheque</option>
-                    <option value="card">Card</option>
-                    <option value="credit">Credit</option>
+                    <option value="debit_card">Debit card</option>
+                    <option value="credit_card">Credit card</option>
+                    <option value="credit">Credit (on account)</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
+
+                <SettlementAccountField
+                  mode={formData.payment_mode}
+                  value={formData.settlement_account_id}
+                  onChange={(settlement_account_id) => setFormData({ ...formData, settlement_account_id })}
+                  disabled={submitting}
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -466,10 +555,10 @@ export default function PaymentInPage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
+                <Button type="button" variant="ghost" onClick={() => openPaymentForm(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Record Payment</Button>
+                <Button type="submit" disabled={submitting}>Record Payment</Button>
               </div>
             </form>
           </Card>
@@ -525,6 +614,11 @@ export default function PaymentInPage() {
                             <p className="text-xs text-text-muted capitalize mt-0.5">
                               {payment.payment_mode}
                             </p>
+                            {payment.status === 'reversed' && (
+                              <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                Reversed
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
@@ -609,6 +703,11 @@ export default function PaymentInPage() {
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-600 capitalize">
                               {payment.payment_mode}
+                              {payment.status === 'reversed' && (
+                                <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold normal-case bg-red-100 text-red-700">
+                                  Reversed
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-500">
                               {payment.notes || '-'}
@@ -664,6 +763,23 @@ export default function PaymentInPage() {
             }
           />
         )}
+        <LinkPaymentDialog
+          open={linkOpen}
+          customerName={customers.find((customer) => customer.id === formData.customer_id)?.name || 'Customer'}
+          received={parseFloat(formData.amount || '0') || 0}
+          initialLinks={formData.links}
+          loadInvoices={loadOpenInvoices}
+          onClose={() => setLinkOpen(false)}
+          onDone={(received, links) => {
+            setFormData((prev) => ({
+              ...prev,
+              amount: received > 0 ? String(received) : prev.amount,
+              links,
+              invoice_id: links.length === 1 ? links[0].id : '',
+            }));
+            setLinkOpen(false);
+          }}
+        />
       </div>
     
   );

@@ -1,14 +1,16 @@
 /**
- * Admin-facing trial timeline derived from business_subscriptions + subscription_events.
+ * Admin-facing trial timeline derived from the primary product subscription + subscription_events.
  */
 
 import { queryOne, queryRows } from '@/lib/db';
 import { parseLocalDateOnly, startOfLocalToday } from '@/lib/subscription/date-only';
-import { TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import {
+  isProductLineTrialPlanId,
+  SIGNUP_TRIAL_DAYS,
+  TRIAL_EXTENSION_DAYS,
+} from '@/lib/product-lines';
 
-/** Must match {@link TRIAL_DAYS} in lifecycle.ts */
-export const TRIAL_SIGNUP_DAYS = 30;
+export const TRIAL_SIGNUP_DAYS = SIGNUP_TRIAL_DAYS;
 
 export interface SubscriptionEventRow {
   id: string;
@@ -71,13 +73,13 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
     trial_extension_granted: boolean;
     trial_extension_declined_at: string | null;
   }>(
-    `SELECT plan_id, status, start_date::text, trial_end_date::text,
-            trial_extension_granted, trial_extension_declined_at::text
-     FROM business_subscriptions
-     WHERE business_id = $1
-     ORDER BY
-       CASE WHEN status IN ('active', 'trial') THEN 0 ELSE 1 END,
-       created_at DESC
+    `SELECT m.plan_id, m.status, m.start_date::text, m.trial_end_date::text,
+            COALESCE(m.trial_extension_granted, false) AS trial_extension_granted,
+            m.trial_extension_declined_at::text
+     FROM business_module_subscriptions m
+     JOIN businesses b ON b.id = m.business_id
+     WHERE m.business_id = $1
+     ORDER BY (m.module_key = COALESCE(b.primary_module, 'billing')) DESC, m.module_key
      LIMIT 1`,
     [businessId],
   );
@@ -103,14 +105,15 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
   const startDate = sub.start_date;
   const estimatedOriginalEnd = startDate ? addDaysToDateOnly(startDate, TRIAL_SIGNUP_DAYS) : null;
 
+  const onTrialPlan = isProductLineTrialPlanId(sub.plan_id);
   const trialEnd = parseLocalDateOnly(sub.trial_end_date);
   const isTrialCalendarExpired =
-    sub.plan_id === TRIAL_PLAN_ID &&
+    onTrialPlan &&
     trialEnd != null &&
     trialEnd.getTime() < startOfLocalToday().getTime();
 
   const extensionOfferActive =
-    sub.plan_id === TRIAL_PLAN_ID &&
+    onTrialPlan &&
     !sub.trial_extension_granted &&
     !sub.trial_extension_declined_at &&
     isTrialCalendarExpired;
@@ -121,7 +124,7 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
     extensionOfferNote = `Extension accepted on ${new Date(extensionEvent.created_at).toLocaleString('en-IN')}. Original trial likely ended on or before that date.`;
   } else if (sub.trial_extension_declined_at) {
     extensionOfferNote = `Tenant chose Free on ${new Date(sub.trial_extension_declined_at).toLocaleString('en-IN')}.`;
-  } else if (!isTrialCalendarExpired && sub.plan_id === TRIAL_PLAN_ID) {
+  } else if (!isTrialCalendarExpired && onTrialPlan) {
     extensionOfferNote = 'Trial is still active — extend popup will appear after the trial end date.';
   }
 

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getBusinessIdFromRequest, getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { loadInvoiceSettlements } from '@/lib/invoices/invoice-settlements';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
@@ -172,6 +173,12 @@ export async function GET(
       : null;
 
     invoice.items = itemsResult.rows.map(({ resolved_unit_cost: _r, ...line }) => line);
+    const chargeRows = await pool.query(
+      `SELECT purpose, amount, classification, hsn_sac, tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount
+         FROM invoice_charges WHERE invoice_id = $1 AND business_id = $2 ORDER BY sort_order`,
+      [invoiceId, businessScope]
+    );
+    invoice.charges = chargeRows.rows;
 
     // Fetch payments for this invoice
     const paymentsResult = await pool.query(
@@ -185,12 +192,17 @@ export async function GET(
     );
 
     invoice.payments = paymentsResult.rows;
+    const settlement = await loadInvoiceSettlements(pool, invoice, paymentsResult.rows);
+    invoice.settlements = settlement.settlements;
+    invoice.settled_amount = settlement.settled_amount;
+    invoice.credit_applied = settlement.credit_applied;
 
-    // Align payment_status with balance when DB is stale (e.g. credit note adjusted balance only)
+    // Align payment_status with balance when DB is stale (e.g. credit note adjusted balance only).
+    // Use the settled total so an advance-only bill is not reported as unpaid.
     if (invoice.status !== 'cancelled') {
       const normalized = deriveInvoicePaymentStatus(
         invoice.grand_total,
-        invoice.paid_amount,
+        settlement.settled_amount,
         invoice.balance_amount
       );
       if (normalized !== invoice.payment_status) {
@@ -271,20 +283,13 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const userId = getUserIdFromRequest(request, body);
+    const userId = getAuthenticatedUserId(request);
 
-    const businessScope = getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
+    const businessScope = getSessionScopedBusinessId(request);
+    if (!businessScope || !userId) {
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
@@ -341,8 +346,18 @@ export async function PATCH(
       throw error;
     }
 
+    if (estimate_status === 'converted') {
+      return NextResponse.json(
+        {
+          error: 'Convert this estimate to a tax invoice. A converted flag cannot be set on its own.',
+          code: 'ESTIMATE_CONVERSION_REQUIRED',
+        },
+        { status: 409 }
+      );
+    }
+
     // Validate estimate_status
-    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'converted'];
+    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
     if (estimate_status && !validStatuses.includes(estimate_status)) {
       return NextResponse.json(
         { error: `Invalid estimate_status. Must be one of: ${validStatuses.join(', ')}` },

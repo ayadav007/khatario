@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ businessId }) => {
   try {
     const rules = await queryRows(
       `SELECT id, name, category, trigger_type, trigger_value, trigger_conditions,
@@ -32,7 +32,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
 });
 
 export const POST = withWhatsAppPremiumApi(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ businessId, body }) => {
   try {
     const {

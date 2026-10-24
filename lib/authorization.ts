@@ -28,7 +28,9 @@ import { queryOne } from './db';
 import { evaluatePolicy } from './policies/engine';
 import { PolicyUser, PolicyContext } from './policies/types';
 import { getPolicyRegistry } from './policies/registry';
-import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError } from './subscription/feature-access';
+import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError, SupplierHubHiddenError } from './subscription/feature-access';
+import { featureIdForPath, SUPPLIER_HUB_FEATURE_ID } from './subscription/plan-path-gate';
+import { isSupplierHubVisible } from './supplier-hub-visibility';
 import { getHrRegistryFeatureForAuthModule } from './hr-plan-features';
 import { resolvePlatformModuleForAuthModule } from './rbac-permission-catalog';
 import { clearSessionCookie } from './jwt';
@@ -181,6 +183,45 @@ export async function authorize(
     }
   }
 
+  // The request path owns a plan feature. Checked for every user, including the primary admin.
+  // Middleware stamps x-khatario-pathname. Missing header (tests, jobs) skips this.
+  let requestPath: string | null = null;
+  try {
+    const { headers } = await import('next/headers');
+    const headerList = await headers();
+    requestPath = headerList.get('x-khatario-pathname');
+  } catch {
+    requestPath = null;
+  }
+  const pathFeature = featureIdForPath(requestPath);
+  if (pathFeature === SUPPLIER_HUB_FEATURE_ID && !(await isSupplierHubVisible())) {
+    throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
+  }
+  if (pathFeature) {
+    const businessIdForPath = context?.businessId || callingUser?.business_id;
+    if (!businessIdForPath) {
+      throw new AuthorizationError(
+        'businessId is required for plan feature access',
+        'BUSINESS_REQUIRED',
+      );
+    }
+    try {
+      await assertFeatureAccess(businessIdForPath, pathFeature);
+    } catch (e) {
+      if (e instanceof SupplierHubHiddenError) {
+        throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
+      }
+      if (e instanceof FeatureAccessDeniedError) {
+        throw new AuthorizationError(
+          'This feature is not included in your subscription plan.',
+          'FEATURE_NOT_IN_PLAN',
+          e.toResponse(),
+        );
+      }
+      throw e;
+    }
+  }
+
   // Subscription plan must include HR features (applies to all users, including primary admin)
   const hrRegistryFeature = getHrRegistryFeatureForAuthModule(moduleKey);
   if (hrRegistryFeature) {
@@ -202,6 +243,24 @@ export async function authorize(
         );
       }
       throw e;
+    }
+  }
+
+  // Tenant boundary — applies to everyone, including the primary admin, whose
+  // short-circuit below would otherwise skip resourceBelongsToBusiness.
+  const targetBusinessId = context?.businessId;
+  if (targetBusinessId && callingUser && targetBusinessId !== callingUser.business_id) {
+    const membership = await queryOne<{ one: number }>(
+      'SELECT 1 AS one FROM user_businesses WHERE user_id = $1 AND business_id = $2 LIMIT 1',
+      [userId, targetBusinessId]
+    );
+    if (!membership) {
+      throw new AuthorizationError(
+        'You do not have access to this business',
+        'CROSS_TENANT_DENIED',
+        { businessId: targetBusinessId },
+        403
+      );
     }
   }
 

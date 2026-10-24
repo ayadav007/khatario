@@ -19,9 +19,20 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  initialDirection?: 'INCREASE' | 'DECREASE';
+  initialReason?: string;
+  title?: string;
 };
 
-export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) {
+export function AdjustItemStockSheet({
+  item,
+  open,
+  onClose,
+  onSuccess,
+  initialDirection = 'INCREASE',
+  initialReason = 'STOCK_TAKE',
+  title = 'Adjust stock',
+}: Props) {
   const { business, user } = useAuth();
   const { currentBranchId } = useBranch();
   const toast = useToastContext();
@@ -47,13 +58,15 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
 
   useEffect(() => {
     if (!open) {
-      setDirection('INCREASE');
+      setDirection(initialDirection);
       setQuantity('');
-      setReasonCode('STOCK_TAKE');
+      setReasonCode(initialReason);
       setNotes('');
       setLocationId('');
       return;
     }
+    setDirection(initialDirection);
+    setReasonCode(initialReason);
     if (!business?.id) return;
 
     (async () => {
@@ -76,7 +89,7 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
         /* optional */
       }
     })();
-  }, [open, business?.id]);
+  }, [open, business?.id, initialDirection, initialReason]);
 
   if (!open || !item) return null;
 
@@ -89,6 +102,10 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
     }
     if (quantityAfter !== null && quantityAfter < 0) {
       toast.error('Stock cannot go below zero');
+      return;
+    }
+    if (reasonCode === 'DAMAGE' && !notes.trim()) {
+      toast.error('Say what was damaged');
       return;
     }
     if (warehousesEnabled && !locationId) {
@@ -107,7 +124,6 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
         quantity: q,
         reason_code: reasonCode,
         reason_notes: notes.trim() || undefined,
-        created_by: user.id,
       };
 
       if (warehousesEnabled && locationId) {
@@ -143,7 +159,7 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
   const body = (
     <>
       <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0">
-        <h2 className="text-base font-semibold text-text-primary">Adjust stock</h2>
+        <h2 className="text-base font-semibold text-text-primary">{title}</h2>
         <button
           type="button"
           onClick={onClose}
@@ -253,16 +269,16 @@ export function AdjustItemStockSheet({ item, open, onClose, onSuccess }: Props) 
         </div>
 
         <Input
-          label="Notes (optional)"
+          label={reasonCode === 'DAMAGE' ? 'What was damaged' : 'Notes (optional)'}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Optional note"
+          placeholder={reasonCode === 'DAMAGE' ? 'Crushed packets, broken seal' : 'Optional note'}
         />
       </div>
 
       <div className="shrink-0 border-t border-border p-4">
         <Button className="w-full h-11 rounded-xl" onClick={handleSubmit} isLoading={loading}>
-          Save adjustment
+          {reasonCode === 'DAMAGE' ? 'Save damage' : 'Save adjustment'}
         </Button>
       </div>
     </>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import type { StoreProductShelf } from '@/lib/store/store-theme';
 import { StoreProductCard, type StoreProduct } from './StoreProductCard';
+import { StudioProductsSection } from './studio-theme/StudioSections';
 
 function shelfParams(shelf: StoreProductShelf): URLSearchParams {
   const params = new URLSearchParams();
@@ -16,9 +17,13 @@ function shelfParams(shelf: StoreProductShelf): URLSearchParams {
 function ShelfRow({
   shelf,
   onViewDetail,
+  studio,
+  mobileColumns,
 }: {
   shelf: StoreProductShelf;
   onViewDetail?: (item: StoreProduct) => void;
+  studio?: boolean;
+  mobileColumns?: 2 | 3;
 }) {
   const { store, selectedBranchId } = useStore();
   const [items, setItems] = useState<StoreProduct[]>([]);
@@ -46,6 +51,16 @@ function ShelfRow({
 
   if (items.length === 0) return null;
 
+  if (studio) {
+    return (
+      <StudioProductsSection s={{ eyebrow: '', columns: 5 }} title={shelf.title} action={null} mobileColumns={mobileColumns}>
+        {items.map((item) => (
+          <StoreProductCard key={`${shelf.id}-${item.id}`} product={item} onViewDetail={onViewDetail} />
+        ))}
+      </StudioProductsSection>
+    );
+  }
+
   return (
     <section className="mb-6">
       <h2 className="mb-3 text-sm font-semibold text-gray-900">{shelf.title}</h2>
@@ -61,16 +76,21 @@ function ShelfRow({
 export function StoreProductShelves({
   shelves,
   onViewDetail,
+  studio,
+  mobileColumns,
 }: {
   shelves: StoreProductShelf[];
   onViewDetail?: (item: StoreProduct) => void;
+  /** Render rows as Studio sections instead of the plain grid. */
+  studio?: boolean;
+  mobileColumns?: 2 | 3;
 }) {
   const enabled = shelves.filter((s) => s.enabled);
   if (enabled.length === 0) return null;
   return (
     <>
       {enabled.map((shelf) => (
-        <ShelfRow key={shelf.id} shelf={shelf} onViewDetail={onViewDetail} />
+        <ShelfRow key={shelf.id} shelf={shelf} onViewDetail={onViewDetail} studio={studio} mobileColumns={mobileColumns} />
       ))}
     </>
   );

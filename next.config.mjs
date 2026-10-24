@@ -13,6 +13,7 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === 'development',
   // We register the SW ourselves via ServiceWorkerRegistration.tsx
   register: false,
+  customWorkerSrc: 'worker',
   // Fallback page when navigation fails offline and page hasn't been cached yet
   fallbacks: {
     document: '/offline',
@@ -70,7 +71,8 @@ const withPWA = withPWAInit({
       //   4. Dashboard reads IDB entity cache → shows last synced data
       //   5. Other pages render with empty state + offline banner
       {
-        urlPattern: ({ request }) => request.mode === 'navigate',
+        urlPattern: ({ request, url }) =>
+          request.mode === 'navigate' && !(url?.pathname || '').startsWith('/admin'),
         handler: 'NetworkFirst',
         options: {
           cacheName: 'pages-cache',
@@ -98,11 +100,22 @@ const nextConfig = {
     NEXT_PUBLIC_APP_BUILD_ID: APP_BUILD_ID,
   },
   reactStrictMode: true,
-  serverExternalPackages: ["pdf-parse", "tesseract.js", "@techstark/opencv-js", "sharp"],
+  serverExternalPackages: ["pdf-parse", "tesseract.js", "@techstark/opencv-js", "sharp", "web-push", "onnxruntime-node"],
   images: {
     domains: [],
   },
   swcMinify: true,
+  async headers() {
+    return [
+      {
+        source: '/admin/sw.js',
+        headers: [
+          { key: 'Service-Worker-Allowed', value: '/admin' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+    ];
+  },
   compiler: {
     // Keep console.error in production so the render-loop probe (and real errors)
     // remain visible on staging. log/warn/info are still stripped.
@@ -117,7 +130,8 @@ const nextConfig = {
     };
 
     if (isServer) {
-      config.externals = [...(config.externals || []), "baileys-pro"];
+      // Next 14 ignores `serverExternalPackages`; native addons must be externals or webpack tries to parse the .node binaries.
+      config.externals = [...(config.externals || []), "baileys-pro", "onnxruntime-node"];
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,

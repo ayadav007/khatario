@@ -1,10 +1,16 @@
 import type { PoolClient } from 'pg';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { gstRateError } from '@/lib/gst/rates';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
+import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
+import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
+import { purchaseLineItcType } from '@/lib/purchases/itc-type';
+import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -14,6 +20,14 @@ import {
   computePurchaseDocument,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
+import {
+  AcquisitionCostError,
+  planAcquisitionCosts,
+  type PurchaseChargeInput,
+} from '@/lib/purchases/acquisition-cost';
+import { savePurchaseAcquisition } from '@/lib/purchases/save-purchase-acquisition';
 
 export class PurchaseCreateServiceError extends Error {
   constructor(
@@ -41,6 +55,8 @@ export interface CreatePurchaseInput {
   round_off?: number;
   grand_total?: number;
   paid_amount?: number;
+  payment_mode?: string | null;
+  settlement_account_id?: string | null;
   notes?: string | null;
   place_of_supply_state_code?: string | null;
   is_reverse_charge?: boolean;
@@ -51,7 +67,15 @@ export interface CreatePurchaseInput {
   supplier_state_code?: string | null;
   invoice_number?: string | null;
   supplier_gstin?: string | null;
+  original_bill_number?: string | null;
+  original_bill_date?: string | null;
   extraction_job_id?: string | null;
+  charges?: PurchaseChargeInput[];
+}
+
+function optionalNumber(v: unknown): number | undefined {
+  const n = typeof v === 'string' && v.trim() ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
 export interface CreatePurchaseResult {
@@ -201,6 +225,23 @@ export async function createPurchaseInTransaction(
         'SUPPLIER_INVALID'
       );
     }
+
+    if ((body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill !== true) {
+      const duplicate = await findDuplicateSupplierBill(client, {
+        businessId: business_id,
+        supplierId: normalizedSupplierId,
+        billNumber: body.invoice_number || body.bill_number,
+        billDate: body.bill_date,
+      });
+      if (duplicate) {
+        throw new PurchaseCreateServiceError(
+          `Bill ${duplicate.bill_number} from this supplier is already recorded. Recording it again would claim ITC twice.`,
+          409,
+          'DUPLICATE_SUPPLIER_BILL',
+          { existing_purchase_id: duplicate.id }
+        );
+      }
+    }
   }
 
   try {
@@ -260,8 +301,16 @@ export async function createPurchaseInTransaction(
     stateCodeFromGstin(effectiveSupplierGstin || supplierGstin || undefined);
 
   const headerPriceMode = body.price_mode === 'inclusive' ? 'inclusive' : 'exclusive';
-  const businessStateCode = business.state_code || getStateCode(business.state || '');
+  const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const businessStateCode =
+    registration.stateCode || business.state_code || getStateCode(business.state || '');
   const finalPlaceOfSupply = body.place_of_supply_state_code || businessStateCode;
+  for (const item of items) {
+    const rateError = gstRateError(Number(item.tax_rate) || 0, body.bill_date ? String(body.bill_date).slice(0, 10) : null);
+    if (rateError) {
+      throw new PurchaseCreateServiceError(`${String(item.item_name || 'Line')}: ${rateError}`, 400, 'INVALID_GST_RATE');
+    }
+  }
   const supplierStateForGst =
     supplierStateResolved && String(supplierStateResolved).trim().length >= 2
       ? String(supplierStateResolved).trim().slice(0, 2)
@@ -281,6 +330,7 @@ export async function createPurchaseInTransaction(
       manual_cgst: item.manual_cgst as number | undefined,
       manual_sgst: item.manual_sgst as number | undefined,
       manual_igst: item.manual_igst as number | undefined,
+      invoice_inclusive_line_total: optionalNumber(item.invoice_inclusive_line_total),
     })),
     {
       supplierStateCode: supplierStateForGst || '',
@@ -289,14 +339,76 @@ export async function createPurchaseInTransaction(
     }
   );
 
-  const finalSubtotal = body.subtotal !== undefined ? body.subtotal : gstDoc.subtotal;
-  const finalTaxTotal = body.tax_total !== undefined ? body.tax_total : gstDoc.taxTotal;
+  const billItcEligible = body.itc_eligible !== false;
+  const supplierCredit = body.document_type === 'supplier_credit_note';
+  const perpetual = (await getInventoryModel(client, business_id)) === 'perpetual';
+  let acquisitionPlan;
+  try {
+    acquisitionPlan = planAcquisitionCosts({
+      lines: items.map((item, index) => {
+        const computed = gstDoc.lineComputeds[index];
+        const lineIntent =
+          item.item_type === 'service' ||
+          item.line_item_type === 'service' ||
+          /^99/.test(String(item.hsn_sac ?? '').trim())
+            ? 'service'
+            : 'goods';
+        const capital = purchaseLineItcType(item, lineIntent) === 'capital_goods';
+        return {
+          taxable: computed.taxableValue,
+          tax: computed.taxAmount,
+          cess: purchaseLineCess(item),
+          quantity: Number(item.quantity) || 0,
+          stock: lineIntent === 'goods' && !capital,
+          capital,
+        };
+      }),
+      charges: body.charges || [],
+      itcEligible: billItcEligible,
+      capitalize: status === 'final' && perpetual && !supplierCredit,
+      intraState: gstDoc.intraState,
+      billDate: body.bill_date ? String(body.bill_date).slice(0, 10) : null,
+    });
+  } catch (error) {
+    if (error instanceof AcquisitionCostError) {
+      throw new PurchaseCreateServiceError(error.message, 400, error.code);
+    }
+    throw error;
+  }
+  if (supplierCredit && acquisitionPlan.charges.length > 0) {
+    throw new PurchaseCreateServiceError(
+      'A supplier credit note cannot carry an incidental or independent charge. Use a service line, or a purchase return when goods go back.',
+      400,
+      'SUPPLIER_CREDIT_NO_CHARGE'
+    );
+  }
+
+  // Header totals always come from the stored lines; a client figure that disagrees would leave
+  // the bill header, its lines and the ledger (posted from the header) out of step.
+  const finalSubtotal = Math.round((gstDoc.subtotal + acquisitionPlan.subtotal) * 100) / 100;
+  const finalTaxTotal = Math.round((gstDoc.taxTotal + acquisitionPlan.tax) * 100) / 100;
   const finalRoundOff =
     typeof body.round_off === 'number' && isFinite(body.round_off) ? body.round_off : 0;
-  const computedGrand = gstDoc.subtotal + gstDoc.taxTotal + finalRoundOff;
-  const finalGrandTotal = body.grand_total !== undefined ? body.grand_total : computedGrand;
+  const cessTotal = purchaseCessTotal(items);
+  const finalCgstTotal = Math.round((gstDoc.cgstTotal + acquisitionPlan.cgst) * 100) / 100;
+  const finalSgstTotal = Math.round((gstDoc.sgstTotal + acquisitionPlan.sgst) * 100) / 100;
+  const finalIgstTotal = Math.round((gstDoc.igstTotal + acquisitionPlan.igst) * 100) / 100;
+  const finalGrandTotal = Math.round((finalSubtotal + finalTaxTotal + cessTotal + finalRoundOff) * 100) / 100;
+  if (body.grand_total !== undefined && Math.abs(Number(body.grand_total) - finalGrandTotal) > 0.05) {
+    console.warn('[purchase-create] client grand_total differs from server lines', {
+      business_id,
+      bill_number: body.bill_number,
+      client: body.grand_total,
+      server: finalGrandTotal,
+    });
+  }
   const paid_amount = body.paid_amount ?? 0;
-  const balanceAmount = finalGrandTotal - paid_amount;
+  if (status !== 'final' && paid_amount > 0) {
+    const rejected = draftDocumentPaymentError('purchase');
+    throw new PurchaseCreateServiceError(rejected.error, 409, rejected.code);
+  }
+  const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, body.is_reverse_charge);
+  const balanceAmount = supplierPayable - paid_amount;
 
   let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
   if (paid_amount <= 0) paymentStatus = 'unpaid';
@@ -316,9 +428,10 @@ export async function createPurchaseInTransaction(
       round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
       place_of_supply_state_code, is_reverse_charge, supplier_gstin,
       document_type, port_code, itc_eligible,
-      price_mode, supplier_state_code, invoice_number
+      price_mode, supplier_state_code, invoice_number, cess_total,
+      original_bill_number, original_bill_date
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
     RETURNING *
     `,
     [
@@ -330,9 +443,9 @@ export async function createPurchaseInTransaction(
       status,
       finalSubtotal,
       finalTaxTotal,
-      gstDoc.cgstTotal,
-      gstDoc.sgstTotal,
-      gstDoc.igstTotal,
+      finalCgstTotal,
+      finalSgstTotal,
+      finalIgstTotal,
       finalRoundOff,
       finalGrandTotal,
       paid_amount,
@@ -348,10 +461,14 @@ export async function createPurchaseInTransaction(
       headerPriceMode,
       supplierStateForGst || null,
       invoiceNumberStored,
+      cessTotal,
+      body.original_bill_number?.trim() || null,
+      body.original_bill_date || null,
     ]
   );
 
   const purchase = purchaseResult.rows[0];
+  const purchaseItemIds: string[] = [];
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -359,7 +476,13 @@ export async function createPurchaseInTransaction(
     const item = items[i];
     const computed = gstDoc.lineComputeds[i];
     const qty = Number(item.quantity) || 0;
-    const lineIntent = item.item_type === 'service' ? 'service' : 'goods';
+    // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
+    const lineIntent =
+      item.item_type === 'service' ||
+      item.line_item_type === 'service' ||
+      /^99/.test(String(item.hsn_sac ?? '').trim())
+        ? 'service'
+        : 'goods';
     const lineTaxMode =
       item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive'
         ? item.tax_mode
@@ -368,17 +491,21 @@ export async function createPurchaseInTransaction(
       typeof item.variant_id === 'string' && uuidRe.test(item.variant_id.trim())
         ? item.variant_id.trim()
         : null;
-    const unitCostForStock = qty > 0 ? computed.taxableValue / qty : Number(item.unit_price) || 0;
+    const plannedCost = acquisitionPlan.lineCosts[i];
+    const unitCostForStock =
+      qty > 0 ? (plannedCost != null ? plannedCost : computed.taxableValue) / qty : Number(item.unit_price) || 0;
+    const lineItcType = purchaseLineItcType(item, lineIntent);
 
-    await client.query(
+    const insertedItem = await client.query<{ id: string }>(
       `
       INSERT INTO purchase_items (
         purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
         unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
         tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-        location_id, line_item_type
+        location_id, line_item_type, itc_type, cess_amount
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      RETURNING id
       `,
       [
         purchase.id,
@@ -399,15 +526,21 @@ export async function createPurchaseInTransaction(
         computed.cgstAmount,
         computed.sgstAmount,
         computed.igstAmount,
-        computed.lineTotal,
+        computed.lineTotal + purchaseLineCess(item),
         item.location_id || null,
         lineIntent,
+        lineItcType,
+        purchaseLineCess(item),
       ]
     );
+    purchaseItemIds.push(insertedItem.rows[0].id);
 
+    // Capital goods go to the fixed-asset register, not stock.
+    const lineIsService = lineIntent === 'service' || lineItcType === 'capital_goods';
+    // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
     let effectiveItemId =
       item.item_id && String(item.item_id).trim() !== '' ? String(item.item_id).trim() : null;
-    if (!effectiveItemId && item.item_name) {
+    if (!effectiveItemId && item.item_name && !lineIsService) {
       effectiveItemId = await resolveCatalogItemIdForPurchase(client, business_id, {
         name: String(item.item_name),
         hsn_sac: (item.hsn_sac as string) ?? null,
@@ -422,7 +555,7 @@ export async function createPurchaseInTransaction(
 
     if (
       status === 'final' &&
-      lineIntent === 'goods' &&
+      !lineIsService &&
       !effectiveItemId &&
       String(item.item_name || '').trim().length > 0
     ) {
@@ -450,7 +583,7 @@ export async function createPurchaseInTransaction(
       }
     }
 
-    if (status === 'final' && lineIntent !== 'service' && !effectiveItemId) {
+    if (status === 'final' && !lineIsService && !effectiveItemId) {
       throw new PurchaseCreateServiceError(
         `Goods line "${item.item_name || 'Item'}" is not linked to a catalogue item.`,
         400,
@@ -458,7 +591,15 @@ export async function createPurchaseInTransaction(
       );
     }
 
-    if (status === 'final' && effectiveItemId) {
+    if (status === 'final' && body.document_type === 'supplier_credit_note' && !lineIsService) {
+      throw new PurchaseCreateServiceError(
+        'A supplier credit note reduces the bill. It does not receive stock. Enter a service line, or use a purchase return when goods go back to the supplier.',
+        400,
+        'SUPPLIER_CREDIT_NOTE_NO_STOCK'
+      );
+    }
+
+    if (status === 'final' && effectiveItemId && !lineIsService) {
       const itemTypeRes = await client.query(
         'SELECT item_type, track_batch, track_serial FROM items WHERE id = $1 AND business_id = $2',
         [effectiveItemId, business_id]
@@ -502,57 +643,95 @@ export async function createPurchaseInTransaction(
     }
   }
 
+  await savePurchaseAcquisition(client, {
+    purchaseId: String(purchase.id),
+    businessId: business_id,
+    lineIds: purchaseItemIds,
+    plan: acquisitionPlan,
+    applyCosts: status === 'final' && perpetual && !supplierCredit,
+  });
+
   if (status === 'final') {
     let totalInventoryAmount = 0;
+    // Capitalise at this bill's acquisition cost (taxable value on historical rows).
     const invRes = await client.query(
       `
-      SELECT COALESCE(SUM(
-        (COALESCE(i.purchase_price::numeric, pi.unit_price::numeric)) * pi.quantity::numeric
-      ), 0) AS total
+      SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
       FROM purchase_items pi
       JOIN items i ON i.id = pi.item_id AND i.business_id = $2
       WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+        AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+        AND pi.itc_type IS DISTINCT FROM 'capital_goods'
       `,
       [purchase.id, business_id]
     );
     totalInventoryAmount = Number(invRes.rows[0]?.total) || 0;
 
-    const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
+    const isSupplierCredit = body.document_type === 'supplier_credit_note';
+    if (isSupplierCredit) totalInventoryAmount = 0;
+
+    const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
     const isCashPurchase =
-      !normalizedSupplierId || (paid_amount > 0 && paid_amount >= finalGrandTotal);
-    await createPurchaseLedgerEntries({
-      businessId: business_id,
-      purchaseId: purchase.id,
-      purchaseNumber: body.bill_number || String(purchase.id).substring(0, 8),
-      purchaseDate: body.bill_date,
-      grandTotal: finalGrandTotal,
-      supplierId: normalizedSupplierId,
-      isCashPurchase,
-      inventoryAmount: totalInventoryAmount,
-      branchId: finalBranchId,
-      poolClient: client,
-      taxableValue: finalSubtotal,
-      cgstTotal: gstDoc.cgstTotal,
-      sgstTotal: gstDoc.sgstTotal,
-      igstTotal: gstDoc.igstTotal,
-      itcEligible: body.itc_eligible !== false,
-      isReverseCharge: !!body.is_reverse_charge,
-    });
+      !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
+    if (isSupplierCredit) {
+      await createPurchaseReturnLedgerEntries({
+        businessId: business_id,
+        purchaseReturnId: purchase.id,
+        returnNumber: body.bill_number || String(purchase.id).substring(0, 8),
+        returnDate: body.bill_date,
+        grandTotal: finalGrandTotal,
+        supplierId: normalizedSupplierId,
+        inventoryAmount: 0,
+        branchId: finalBranchId,
+        poolClient: client,
+        taxableValue: finalSubtotal,
+        cgstTotal: finalCgstTotal,
+        sgstTotal: finalSgstTotal,
+        igstTotal: finalIgstTotal,
+        cessTotal,
+        itcEligible: body.itc_eligible !== false,
+        isReverseCharge: !!body.is_reverse_charge,
+        voucherType: 'supplier_credit_note',
+      });
+    } else {
+      await createPurchaseLedgerEntries({
+        businessId: business_id,
+        purchaseId: purchase.id,
+        purchaseNumber: body.bill_number || String(purchase.id).substring(0, 8),
+        purchaseDate: body.bill_date,
+        grandTotal: finalGrandTotal,
+        supplierId: normalizedSupplierId,
+        isCashPurchase,
+        inventoryAmount: totalInventoryAmount,
+        branchId: finalBranchId,
+        poolClient: client,
+        taxableValue: finalSubtotal,
+        cgstTotal: finalCgstTotal,
+        sgstTotal: finalSgstTotal,
+        igstTotal: finalIgstTotal,
+        cessTotal,
+        itcEligible: body.itc_eligible !== false,
+        isReverseCharge: !!body.is_reverse_charge,
+        paymentMode: body.payment_mode || 'cash',
+        settlementAccountId: body.settlement_account_id || null,
+      });
+    }
 
     if (normalizedSupplierId) {
       await client.query(
         `UPDATE suppliers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [balanceAmount, normalizedSupplierId]
+        [isSupplierCredit ? -balanceAmount : balanceAmount, normalizedSupplierId]
       );
     }
 
     if (paid_amount > 0) {
-      await client.query(
+      const payIns = await client.query<{ id: string }>(
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        RETURNING id
         `,
         [
           business_id,
@@ -562,20 +741,37 @@ export async function createPurchaseInTransaction(
           'purchase',
           purchase.id,
           paid_amount,
-          'cash',
+          body.payment_mode || 'cash',
           body.bill_date,
           `Payment for purchase ${body.bill_number || String(purchase.id).substring(0, 8)}`,
+          body.settlement_account_id || null,
           created_by,
         ]
       );
+      if (normalizedSupplierId && paid_amount + 0.005 < supplierPayable) {
+        const { createPaymentLedgerEntries } = await import('@/lib/ledger-utils');
+        await createPaymentLedgerEntries({
+          businessId: business_id,
+          paymentId: payIns.rows[0].id,
+          paymentDate: body.bill_date,
+          amount: paid_amount,
+          type: 'payable',
+          supplierId: normalizedSupplierId,
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
+          referenceNumber: body.bill_number || String(purchase.id).substring(0, 8),
+          description: `Payment for purchase ${body.bill_number || String(purchase.id).substring(0, 8)}`,
+          branchId: finalBranchId,
+          poolClient: client,
+        });
+      }
     }
 
     await client.query(
-      `UPDATE purchases SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      `UPDATE purchases SET status = 'final', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [purchase.id]
     );
     purchase.status = 'final';
-    purchase.is_editable = false;
   }
 
   const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
@@ -591,9 +787,9 @@ export async function createPurchaseInTransaction(
     grandTotal: finalGrandTotal,
     subtotal: finalSubtotal,
     taxTotal: finalTaxTotal,
-    cgstTotal: gstDoc.cgstTotal,
-    sgstTotal: gstDoc.sgstTotal,
-    igstTotal: gstDoc.igstTotal,
+    cgstTotal: finalCgstTotal,
+    sgstTotal: finalSgstTotal,
+    igstTotal: finalIgstTotal,
   };
 }
 
@@ -614,8 +810,13 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
       unit_price: Number(item.unit_price) || 0,
       discount_percent: Number(item.discount_percent) || 0,
       discount_amount: Number(item.discount_amount) || 0,
+      discount_on_tax_inclusive: item.discount_on_tax_inclusive === true,
       tax_rate: Number(item.tax_rate) || 0,
       tax_mode: item.tax_mode as string | undefined,
+      manual_cgst: item.manual_cgst as number | undefined,
+      manual_sgst: item.manual_sgst as number | undefined,
+      manual_igst: item.manual_igst as number | undefined,
+      invoice_inclusive_line_total: optionalNumber(item.invoice_inclusive_line_total),
     })),
     {
       supplierStateCode: String(body.supplier_state_code || '').slice(0, 2),
@@ -624,8 +825,48 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
     }
   );
 
+  let chargeSubtotal = 0;
+  let chargeTax = 0;
+  let chargeCgst = 0;
+  let chargeSgst = 0;
+  let chargeIgst = 0;
+  try {
+    const chargePlan = planAcquisitionCosts({
+      lines: items.map((item, index) => ({
+        taxable: gstDoc.lineComputeds[index].taxableValue,
+        tax: gstDoc.lineComputeds[index].taxAmount,
+        cess: purchaseLineCess(item),
+        quantity: Number(item.quantity) || 0,
+        stock: false,
+        capital: false,
+      })),
+      charges: body.charges || [],
+      itcEligible: body.itc_eligible !== false,
+      capitalize: false,
+      intraState: gstDoc.intraState,
+      billDate: body.bill_date ? String(body.bill_date).slice(0, 10) : null,
+    });
+    chargeSubtotal = chargePlan.subtotal;
+    chargeTax = chargePlan.tax;
+    chargeCgst = chargePlan.cgst;
+    chargeSgst = chargePlan.sgst;
+    chargeIgst = chargePlan.igst;
+  } catch (error) {
+    if (error instanceof AcquisitionCostError) {
+      return {
+        ok: false,
+        reason: error.message,
+        serverTotals: { subtotal: gstDoc.subtotal, taxTotal: gstDoc.taxTotal, grandTotal: gstDoc.subtotal + gstDoc.taxTotal },
+        clientTotals: { subtotal: body.subtotal, taxTotal: body.tax_total, grandTotal: body.grand_total },
+      };
+    }
+    throw error;
+  }
+
   const roundOff = typeof body.round_off === 'number' ? body.round_off : 0;
-  const serverGrand = gstDoc.subtotal + gstDoc.taxTotal + roundOff;
+  const serverSubtotal = gstDoc.subtotal + chargeSubtotal;
+  const serverTax = gstDoc.taxTotal + chargeTax;
+  const serverGrand = serverSubtotal + serverTax + purchaseCessTotal(items) + roundOff;
   const tolerance = 0.05;
 
   const clientSub = body.subtotal;
@@ -633,8 +874,8 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
   const clientGrand = body.grand_total;
 
   const mismatch =
-    (clientSub !== undefined && Math.abs(clientSub - gstDoc.subtotal) > tolerance) ||
-    (clientTax !== undefined && Math.abs(clientTax - gstDoc.taxTotal) > tolerance) ||
+    (clientSub !== undefined && Math.abs(clientSub - serverSubtotal) > tolerance) ||
+    (clientTax !== undefined && Math.abs(clientTax - serverTax) > tolerance) ||
     (clientGrand !== undefined && Math.abs(clientGrand - serverGrand) > tolerance);
 
   if (mismatch) {
@@ -642,8 +883,8 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
       ok: false,
       reason: 'Client GST totals do not match server recomputation',
       serverTotals: {
-        subtotal: gstDoc.subtotal,
-        taxTotal: gstDoc.taxTotal,
+        subtotal: serverSubtotal,
+        taxTotal: serverTax,
         grandTotal: serverGrand,
       },
       clientTotals: {
@@ -659,11 +900,11 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
     serverTotals: {
       purchase: {},
       grandTotal: serverGrand,
-      subtotal: gstDoc.subtotal,
-      taxTotal: gstDoc.taxTotal,
-      cgstTotal: gstDoc.cgstTotal,
-      sgstTotal: gstDoc.sgstTotal,
-      igstTotal: gstDoc.igstTotal,
+      subtotal: serverSubtotal,
+      taxTotal: serverTax,
+      cgstTotal: gstDoc.cgstTotal + chargeCgst,
+      sgstTotal: gstDoc.sgstTotal + chargeSgst,
+      igstTotal: gstDoc.igstTotal + chargeIgst,
     },
   };
 }

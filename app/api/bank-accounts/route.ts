@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
-import { queryRows, queryOne } from '@/lib/db';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
+import { queryRows, queryOne, getPool } from '@/lib/db';
+import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
+import {
+  applyBankLedgerOpeningBalance,
+  assertBankLedgerAvailable,
+  BankRegisterError,
+  createBankLedger,
+} from '@/lib/accounting/bank-register';
+import { ledgerHasOpeningBalance } from '@/lib/accounting/settlement-accounts-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +60,30 @@ export async function GET(request: NextRequest) {
       ORDER BY ba.created_at DESC
     `, [businessId]);
 
-    return NextResponse.json({ accounts });
+    const linkableLedgers = await queryRows(`
+      SELECT a.id, a.account_code, a.account_name
+        FROM accounts a
+        LEFT JOIN account_groups ag ON ag.id = a.account_group_id
+       WHERE a.business_id = $1
+         AND COALESCE(a.is_active, true)
+         AND (
+           a.account_code IN ('1102', '2112')
+           OR (
+             a.account_type = 'asset'
+             AND a.account_code LIKE '11%'
+             AND a.account_code <> '1101'
+             AND (a.account_name ILIKE '%bank%' OR COALESCE(ag.group_name, '') ILIKE '%bank%')
+             AND a.account_name NOT ILIKE '%cash%'
+           )
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM bank_accounts ba
+            WHERE ba.business_id = a.business_id AND ba.ledger_account_id = a.id
+         )
+       ORDER BY a.account_code
+    `, [businessId]);
+
+    return NextResponse.json({ accounts, linkable_ledgers: linkableLedgers });
   } catch (error: any) {
     console.error('Error fetching bank accounts:', error);
     return NextResponse.json(
@@ -80,6 +112,7 @@ export async function POST(request: NextRequest) {
       account_type,
       is_active = true,
       ledger_account_id,
+      create_ledger = false,
       opening_balance = 0,
       opening_balance_date,
       notes,
@@ -100,6 +133,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     // AUTHORIZATION: Check create permission (bank accounts are part of settings/accounting)
     try {
@@ -124,42 +161,91 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[Bank Accounts API] Inserting bank account with values:', {
-      business_id,
-      account_name,
-      account_number,
-      bank_name,
-      ifsc_code: ifsc_code || null,
-      branch_name: branch_name || null,
-      account_type: account_type || null,
-      is_active: is_active !== undefined ? is_active : true,
-    });
+    const wantsNewLedger = create_ledger === true || create_ledger === 'true';
+    if (!wantsNewLedger && !ledger_account_id) {
+      return NextResponse.json(
+        { error: 'Link this bank to a chart account, or create a bank ledger for it.' },
+        { status: 400 }
+      );
+    }
 
-    const account = await queryOne(
-      `INSERT INTO bank_accounts (
-        business_id, account_name, account_number, bank_name, ifsc_code,
-        branch_name, account_type, is_active, ledger_account_id, opening_balance,
-        opening_balance_date, notes
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *`,
-      [
-        business_id,
-        account_name,
-        account_number,
-        bank_name,
-        ifsc_code || null,
-        branch_name || null,
-        account_type || null,
-        is_active !== undefined ? is_active : true,
-        ledger_account_id || null,
-        opening_balance,
-        opening_balance_date || null,
-        notes || null,
-      ]
-    );
+    const openingAmount = Number(opening_balance) || 0;
+    const pool = getPool();
+    const client = await pool.connect();
+    let createdLedgerId: string | null = null;
+    let account: any = null;
+    try {
+      await client.query('BEGIN');
+      const ledgerId = wantsNewLedger
+        ? await createBankLedger(client, business_id, `${bank_name} ${account_name}`.trim())
+        : ledger_account_id;
+      if (wantsNewLedger) createdLedgerId = ledgerId;
+      else await assertBankLedgerAvailable(client, business_id, ledgerId);
+      if (!wantsNewLedger && openingAmount !== 0 && (await ledgerHasOpeningBalance(business_id, ledgerId))) {
+        throw new BankRegisterError(
+          'This ledger already has an opening balance. Change it on the chart account. A second opening is not posted.',
+          'OPENING_ALREADY_POSTED',
+          409,
+        );
+      }
+      const inserted = await client.query(
+        `INSERT INTO bank_accounts (
+          business_id, account_name, account_number, bank_name, ifsc_code,
+          branch_name, account_type, is_active, ledger_account_id, opening_balance,
+          opening_balance_date, notes
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING *`,
+        [
+          business_id,
+          account_name,
+          account_number,
+          bank_name,
+          ifsc_code || null,
+          branch_name || null,
+          account_type || null,
+          is_active !== undefined ? is_active : true,
+          ledgerId,
+          openingAmount,
+          opening_balance_date || null,
+          notes || null,
+        ]
+      );
+      account = inserted.rows[0];
+      await client.query('COMMIT');
+    } catch (e: any) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (e instanceof BankRegisterError) {
+        return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+      }
+      if (e?.code === '23505') {
+        return NextResponse.json(
+          { error: 'That ledger or account number is already linked to a bank account.' },
+          { status: 409 }
+        );
+      }
+      console.error('Error adding bank account:', e);
+      return NextResponse.json({ error: e.message || 'Internal server error' }, { status: 500 });
+    } finally {
+      client.release();
+    }
 
-    console.log('[Bank Accounts API] Bank account created successfully:', account?.id);
+    if (account && openingAmount !== 0) {
+      try {
+        await applyBankLedgerOpeningBalance(business_id, account.ledger_account_id, openingAmount, false);
+      } catch (e: any) {
+        await queryOne('DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2', [account.id, business_id]);
+        if (createdLedgerId) {
+          await queryOne('DELETE FROM accounts WHERE id = $1 AND business_id = $2', [createdLedgerId, business_id]);
+        }
+        const status = e instanceof BankRegisterError ? e.status : 400;
+        return NextResponse.json(
+          { error: e.message || 'Opening balance could not be posted to the ledger.' },
+          { status }
+        );
+      }
+    }
+
     return NextResponse.json({ account }, { status: 201 });
   } catch (error: any) {
     console.error('Error adding bank account:', error);
@@ -188,6 +274,7 @@ export async function PUT(request: NextRequest) {
       account_type,
       is_active,
       notes,
+      ledger_account_id,
       updated_by_user_id, // REQUIRED for authorization
     } = body;
 
@@ -204,6 +291,10 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     // Verify the account belongs to the business
     const existing = await queryOne(
@@ -280,6 +371,38 @@ export async function PUT(request: NextRequest) {
       updates.push(`notes = $${paramIndex++}`);
       values.push(notes || null);
     }
+    if (ledger_account_id) {
+      const statements = await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM bank_statements WHERE bank_account_id = $1 AND business_id = $2`,
+        [id, business_id],
+      );
+      if (Number(statements?.n || 0) > 0) {
+        const current = await queryOne<{ ledger_account_id: string | null }>(
+          `SELECT ledger_account_id FROM bank_accounts WHERE id = $1 AND business_id = $2`,
+          [id, business_id],
+        );
+        if (current?.ledger_account_id && current.ledger_account_id !== ledger_account_id) {
+          return NextResponse.json(
+            { error: 'This bank already has a statement. Its ledger link cannot be changed.' },
+            { status: 409 },
+          );
+        }
+      }
+      const pool = getPool();
+      const linkClient = await pool.connect();
+      try {
+        await assertBankLedgerAvailable(linkClient, business_id, ledger_account_id, id);
+      } catch (e: any) {
+        if (e instanceof BankRegisterError) {
+          return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        }
+        throw e;
+      } finally {
+        linkClient.release();
+      }
+      updates.push(`ledger_account_id = $${paramIndex++}`);
+      values.push(ledger_account_id);
+    }
 
     if (updates.length === 0) {
       return NextResponse.json(
@@ -326,6 +449,8 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
+    const planDenied = await denyIfFeatureMissing(businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     if (!userId) {
       return NextResponse.json(
@@ -357,10 +482,18 @@ export async function DELETE(request: NextRequest) {
       throw error;
     }
 
-    await queryOne(
-      'DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2',
-      [id, businessId]
-    );
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await deleteVoucher(client, businessId, id, 'opening_balance', 'regenerate:opening_balance', userId);
+      await client.query('DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2', [id, businessId]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ message: 'Bank account deleted successfully' });
   } catch (error: any) {

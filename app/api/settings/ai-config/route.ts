@@ -1,147 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { queryRows, queryOne } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { loadProviderSummary, saveProvider, validateProviderPatch, type ProviderPatch } from '@/lib/ai-agent/settings';
+import { khatarioAvailable } from '@/lib/ai-agent/billing';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
-
-// Helper function to check WhatsApp Bot addon
-async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
+/** Legacy shape kept for one release; the AI Agent page uses /api/ai-agent. Never returns the key. */
+export const GET = withWhatsAppPremiumApi({ module: 'whatsapp', action: 'read' }, async ({ businessId }) => {
   try {
-    const addon = await queryOne(
-      `SELECT id FROM whatsapp_addons 
-       WHERE business_id = $1 
-       AND addon_type IN ('whatsapp_bot', 'whatsapp', 'whatsapp_send_message')
-       AND status = 'active' 
-       AND (end_date IS NULL OR end_date >= CURRENT_DATE)`,
-      [businessId]
-    );
-    return !!addon;
+    const p = await loadProviderSummary(businessId, khatarioAvailable);
+    return NextResponse.json({
+      config: {
+        provider: p.provider,
+        key_source: p.keySource,
+        has_api_key: p.hasKey,
+        api_key_last4: p.keyLast4,
+        api_base_url: p.apiBaseUrl || null,
+        model: p.model || null,
+        chatbot_enabled: p.chatbotEnabled,
+        lead_analyzer_enabled: p.leadAnalyzerEnabled,
+        temperature: p.temperature,
+        max_tokens: p.maxTokens,
+        mode: p.mode,
+        dev_allowed_phones: p.devAllowedPhones,
+      },
+    });
   } catch (error) {
-    console.error('Error checking WhatsApp Bot addon:', error);
-    return false;
+    console.error('Error loading AI config:', error);
+    return NextResponse.json({ error: 'Failed to load AI config' }, { status: 500 });
   }
-}
+});
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
-    if (!tenant.ok) return tenant.response;
-    const businessId = tenant.businessId;
-
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json({ error: 'WhatsApp Bot addon required' }, { status: 403 });
+export const POST = withWhatsAppPremiumApi(
+  { module: 'whatsapp', action: 'update', parseJsonBody: true },
+  async ({ businessId, body }) => {
+    try {
+      const b = (body ?? {}) as Record<string, any>;
+      const patch: ProviderPatch = {
+        provider: typeof b.provider === 'string' ? b.provider : undefined,
+        apiKey: typeof b.apiKey === 'string' ? b.apiKey : undefined,
+        apiBaseUrl: typeof b.apiBaseUrl === 'string' ? b.apiBaseUrl : undefined,
+        model: typeof b.model === 'string' ? b.model : undefined,
+        chatbotEnabled: typeof b.chatbotEnabled === 'boolean' ? b.chatbotEnabled : undefined,
+        leadAnalyzerEnabled: typeof b.leadAnalyzerEnabled === 'boolean' ? b.leadAnalyzerEnabled : undefined,
+        temperature: b.temperature != null ? Number(b.temperature) : undefined,
+        maxTokens: b.maxTokens != null ? Number(b.maxTokens) : undefined,
+        mode: b.mode === 'dev' || b.mode === 'prod' ? b.mode : undefined,
+        devAllowedPhones: Array.isArray(b.devAllowedPhones) ? b.devAllowedPhones.map(String) : undefined,
+      };
+      const invalid = validateProviderPatch(patch);
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+      await saveProvider(businessId, patch);
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error('Error saving AI config:', error);
+      return NextResponse.json({ error: 'Failed to save AI config' }, { status: 500 });
     }
-
-    const config = await queryOne(
-      `SELECT * FROM ai_provider_config WHERE business_id = $1`,
-      [businessId]
-    );
-
-    return NextResponse.json({ config });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
-    if (!tenant.ok) return tenant.response;
-    const business_id = tenant.businessId;
-    const { 
-      provider, 
-      apiKey, 
-      apiBaseUrl, 
-      model, 
-      chatbotEnabled, 
-      leadAnalyzerEnabled, 
-      temperature, 
-      maxTokens,
-      mode,
-      devAllowedPhones
-    } = body;
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API key is required' }, { status: 400 });
-    }
-
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json({ error: 'WhatsApp Bot addon required' }, { status: 403 });
-    }
-
-    // Check if config exists
-    const existing = await queryOne(
-      `SELECT id FROM ai_provider_config WHERE business_id = $1`,
-      [business_id]
-    );
-
-    // Normalize phone numbers (remove spaces, dashes, keep only digits)
-    const normalizedPhones = Array.isArray(devAllowedPhones) 
-      ? devAllowedPhones
-          .filter(p => p && p.trim())
-          .map(p => p.replace(/[^0-9]/g, ''))
-      : [];
-    
-    const devMode = mode === 'dev' ? 'dev' : 'prod';
-
-    if (existing) {
-      // Update
-      await queryRows(
-        `UPDATE ai_provider_config SET
-          provider = $2, api_key = $3, api_base_url = $4, model = $5,
-          chatbot_enabled = $6, lead_analyzer_enabled = $7,
-          temperature = $8, max_tokens = $9, mode = $10, dev_allowed_phones = $11,
-          updated_at = CURRENT_TIMESTAMP
-         WHERE business_id = $1`,
-        [
-          business_id, 
-          provider, 
-          apiKey, 
-          apiBaseUrl || null, 
-          model || null, 
-          chatbotEnabled !== false, 
-          leadAnalyzerEnabled !== false, 
-          temperature || 0.7, 
-          maxTokens || 500,
-          devMode,
-          JSON.stringify(normalizedPhones)
-        ]
-      );
-    } else {
-      // Insert
-      await queryRows(
-        `INSERT INTO ai_provider_config (
-          business_id, provider, api_key, api_base_url, model,
-          chatbot_enabled, lead_analyzer_enabled, temperature, max_tokens, mode, dev_allowed_phones
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          business_id, 
-          provider, 
-          apiKey, 
-          apiBaseUrl || null, 
-          model || null, 
-          chatbotEnabled !== false, 
-          leadAnalyzerEnabled !== false, 
-          temperature || 0.7, 
-          maxTokens || 500,
-          devMode,
-          JSON.stringify(normalizedPhones)
-        ]
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Error saving AI config:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+  },
+);

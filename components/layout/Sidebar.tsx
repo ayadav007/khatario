@@ -13,8 +13,8 @@ import {
   Receipt,
   BarChart3,
   Settings,
-  Menu,
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Truck,
   ArrowDownToLine,
@@ -51,11 +51,16 @@ import {
   Mail,
   ClipboardList,
   HelpCircle,
+  SlidersHorizontal,
+  Bell,
+  Bot,
+  Inbox,
+  ShoppingBag,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
+import { useLayoutData, useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { PromotionSidebar } from '@/components/promotions/PromotionSidebar';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
@@ -64,8 +69,16 @@ import { PRODUCT_TOUR_START_EVENT } from '@/components/onboarding/productTourSha
 import {
   isNavSectionVisible,
 } from '@/lib/platform-modules';
-import { buildSettingsSidebarBlocks } from '@/lib/settings-module-registry';
-import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+import { buildFlatSettingsGroups } from '@/lib/settings-module-registry';
+import {
+  getHrNavSectionTitle,
+  getVisibleHrAdminNavItems,
+  HR_LITE_NAV_SECTION_TITLE,
+  HR_NAV_SECTION_TITLE,
+} from '@/lib/hr/hr-admin-nav';
+import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
+import { featureIdForPath, isSupplierHubHref } from '@/lib/subscription/plan-path-gate';
+import { collectNavHrefs, pickActiveNavHref } from '@/lib/navigation/nav-active';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -91,11 +104,26 @@ export const Sidebar = React.memo(function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+  const [locationHash, setLocationHash] = useState('');
+
+  useEffect(() => {
+    const read = () => setLocationHash(window.location.hash.replace(/^#/, ''));
+    read();
+    window.addEventListener('hashchange', read);
+    return () => window.removeEventListener('hashchange', read);
+  }, [pathname]);
   const { business, user, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
-  const { hasCapability } = useCapabilityCheck();
+  const { supplierHubVisible } = useLayoutData();
+  const { hasCapability, checkCapability } = useCapabilityCheck();
+
+  // Role grants the action; a plan-only denial still counts so the item can render as locked.
+  const roleAllowsModule = (module: string, action: string): boolean => {
+    const result = checkCapability(module, action);
+    return result.allowed || result.denialReason === 'FEATURE_NOT_IN_PLAN';
+  };
 
   const [showAddonModal, setShowAddonModal] = useState(false);
   const [selectedAddonType, setSelectedAddonType] = useState<'whatsapp_bot' | 'all'>('all');
@@ -112,9 +140,10 @@ export const Sidebar = React.memo(function Sidebar() {
   // Settings hub (`/settings`) uses main app nav; drill-in pages use this settings tree.
   const isSettingsPage = pathname !== '/settings' && Boolean(pathname?.startsWith('/settings/'));
 
-  // Map sidebar items to their "create new" routes
-  const getCreateRoute = (href: string, label: string): string | null => {
-    if (!href) return null;
+  // Map sidebar items to their "create new" routes; hidden unless the role may create in that module.
+  const getCreateRoute = (item: { href?: string; module?: string }): string | null => {
+    const href = item.href;
+    if (!href || !item.module || !hasCapability(item.module, 'create')) return null;
     
     // Map list pages to their create routes
     const routeMap: Record<string, string> = {
@@ -154,8 +183,15 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/aging/receivables': 'reports_advanced',
     '/reports/aging/payables': 'reports_advanced',
     '/reports/inter-branch-reconciliation': 'reports_advanced',
-    '/bank/import': 'settings',
-    '/bank/reconciliation': 'settings',
+    '/bank/import': 'accounting_bank',
+    '/bank/reconciliation': 'accounting_bank',
+    '/accounts': 'accounting_chart',
+    '/provisions': 'accounting_provisions',
+    '/tds': 'accounting_tds',
+    '/delivery-challans': 'sales_delivery_challans',
+    '/work-orders': 'sales_work_orders',
+    '/settings/online-store': 'advanced_online_store',
+    '/settings/automation': 'workflow_automation',
 
     // Reports - GST
     '/reports/gst/gstr1': 'reports_gst',
@@ -165,7 +201,9 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/gst/gstr2b-reconciliation': 'reports_gst',
     '/reports/gst/reconciliation': 'reports_gst',
     '/reports/gst/gstr3b': 'reports_gst',
+    '/reports/gst/cash-ledger': 'reports_gst',
     '/reports/gst/gstr9': 'reports_gst',
+    '/reports/gst/compliance': 'reports_gst',
     '/reports/sales/b2b-b2c': 'reports_gst',
     
     // Reports - Sales (Basic)
@@ -185,6 +223,7 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/purchase/summary': 'reports_basic',
     '/reports/purchase/invoice-wise': 'reports_basic',
     '/reports/purchase/supplier-wise': 'reports_basic',
+    '/reports/purchase/item-wise': 'reports_basic',
     '/reports/purchase/returns': 'reports_basic',
     '/reports/purchase/credit': 'reports_basic',
     '/reports/purchase/tax-wise': 'reports_basic',
@@ -200,6 +239,7 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/stock/closing-stock': 'reports_advanced',
     '/reports/stock/closing-stock/finalize': 'reports_advanced',
     '/reports/stock/valuation': 'reports_advanced',
+    '/reports/stock/fifo-lots': 'reports_advanced',
     '/reports/stock/profit-margin': 'reports_advanced',
     '/reports/stock/purchase-vs-sales': 'reports_advanced',
     '/reports/stock-summary': 'reports_basic',
@@ -288,6 +328,10 @@ export const Sidebar = React.memo(function Sidebar() {
     }
 
     const basePath = href.split('?')[0];
+    const pathFeature = featureIdForPath(basePath);
+    if (pathFeature) {
+      return { locked: !hasCapability(pathFeature, 'view'), featureKey: pathFeature };
+    }
 
     // Check database-defined report routes first
     const dbFeatureKey = reportRouteMap[basePath];
@@ -326,6 +370,7 @@ export const Sidebar = React.memo(function Sidebar() {
       'purchase_management': 'Purchase Management',
       'expense_tracking': 'Expense Tracking',
       'supplier_management': 'Supplier Management',
+      'purchase_supplier_hub': 'Supplier Hub',
       'reports_basic': 'Basic Reports',
       'reports_gst': 'GST Reports',
       'reports_advanced': 'Advanced Reports',
@@ -438,20 +483,10 @@ export const Sidebar = React.memo(function Sidebar() {
     };
   }, [business?.id]);
 
-  // RBAC Visibility Check: A sidebar item is visible if and only if hasCapability(module) is true
-  // Items without module are always visible (Dashboard, etc.)
-  // Locked items are always visible (to show upgrade/enable prompt)
-  const isItemVisible = (item: any): boolean => {
-    if (!item.module) return true;
-
-    if (item.module === 'warehouses' && warehousesEnabled) return true;
-
-    if (item.isLocked || (item.featureKey && !hasFeature(item.featureKey))) {
-      return true;
-    }
-    
-    return hasCapability(item.module, 'view');
-  };
+  // Items without a module are always visible (Dashboard, etc.). Otherwise the role must allow view;
+  // a plan-locked item is then still shown so the user sees the upgrade prompt.
+  const isItemVisible = (item: any): boolean =>
+    !item.module || roleAllowsModule(item.module, 'view');
 
   // Recursive filtering: Parent appears only if it has at least one visible child
   const filterNavItems = (items: any[]): any[] => {
@@ -464,12 +499,17 @@ export const Sidebar = React.memo(function Sidebar() {
           return null;
         }
         if (
-          (item.label === HR_NAV_SECTION_TITLE || item.label === 'HR & Payroll') &&
+          (item.label === HR_NAV_SECTION_TITLE ||
+            item.label === HR_LITE_NAV_SECTION_TITLE ||
+            item.label === 'HR & Payroll') &&
           !hasPlatformModule('hr')
         ) {
           return null;
         }
         if (item.label === 'Connect' && !hasPlatformModule('connect')) {
+          return null;
+        }
+        if (supplierHubVisible !== true && item.href && isSupplierHubHref(item.href)) {
           return null;
         }
 
@@ -499,7 +539,9 @@ export const Sidebar = React.memo(function Sidebar() {
         icon: Store,
         collapsible: true,
         subItems: [
+          { href: '/suppliers/hub', label: 'Supplier Hub' },
           { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
+          { href: '/suppliers/catalog', label: 'My Catalog' },
           { href: '/suppliers/requests', label: 'Requests to Fulfill' },
         ],
       }
@@ -512,14 +554,13 @@ export const Sidebar = React.memo(function Sidebar() {
       collapsible: true,
       tourId: 'nav-sales',
       subItems: [
-        { href: '/customers', label: 'Customers', module: 'customers', tourId: 'nav-customers' },
-        { href: '/invoices', label: 'All Invoices', module: 'invoices', tourId: 'nav-invoices' },
-        { href: '/estimates', label: 'Quotations', module: 'invoices' },
-        { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
-        { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices' },
-        { href: '/work-orders', label: 'Work Orders', module: 'work_orders' },
-        { href: '/credit-notes', label: 'Credit Notes', module: 'credit_notes' },
-        { href: '/debit-notes', label: 'Debit Notes', module: 'debit_notes' },
+        ...SALES_NAV_ITEMS.map((item) =>
+          item.href === '/customers'
+            ? { ...item, tourId: 'nav-customers' }
+            : item.href === '/invoices'
+              ? { ...item, tourId: 'nav-invoices' }
+              : item
+        ),
       ],
     },
     
@@ -530,7 +571,7 @@ export const Sidebar = React.memo(function Sidebar() {
       collapsible: true,
       subItems: [
         { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
-        { href: '/suppliers/hub', label: 'Suppliers Hub', module: 'purchases' },
+        { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
         { href: '/purchases', label: 'All Purchases', module: 'purchases' },
         { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
         { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
@@ -548,14 +589,14 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/items', label: 'Items', module: 'items', tourId: 'nav-items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
-        // Bulk barcode label printing — gated on the Phase-1 feature.
-        ...(hasFeature('barcode_label_printing') ? [{
+        {
           href: '/items/barcodes',
           label: 'Print Labels',
           module: 'items',
           icon: Printer,
           featureKey: 'barcode_label_printing',
-        }] : []),
+          isLocked: !hasFeature('barcode_label_printing'),
+        },
         // Show Warehouses if enabled in settings
         // Lock it if feature is not in plan (user needs to upgrade)
         // Hide completely if disabled in settings
@@ -589,16 +630,20 @@ export const Sidebar = React.memo(function Sidebar() {
       icon: DollarSign,
       collapsible: true,
       subItems: [
-        { href: '/accounts', label: 'Chart of Accounts', module: 'settings' },
+        { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart' },
         { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
-        { href: '/bank/import', label: 'Bank import', module: 'settings' },
-        { href: '/bank/reconciliation', label: 'Bank reconciliation', module: 'settings' },
+        { href: '/contra', label: 'Contra (cash / bank)', module: 'journal' },
+        { href: '/advances', label: 'Advances', module: 'journal' },
+        { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
+        { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },
+        { href: '/bank/import', label: 'Bank import', module: 'settings', featureKey: 'accounting_bank' },
+        { href: '/bank/reconciliation', label: 'Bank reconciliation', module: 'settings', featureKey: 'accounting_bank' },
         { href: '/ledger', label: 'Ledger', module: 'invoices' },
         { href: '/payments/in', label: 'Payments In', module: 'payments' },
         { href: '/payments/out', label: 'Payments Out', module: 'payments' },
         { href: '/payments/reconciliation', label: 'Reconciliation', module: 'payments', icon: RefreshCw },
-        { href: '/provisions', label: 'Provisions', module: 'settings' },
-        { href: '/tds', label: 'TDS/TCS', module: 'settings' },
+        { href: '/provisions', label: 'Provisions', module: 'settings', featureKey: 'accounting_provisions' },
+        { href: '/tds', label: 'TDS/TCS', module: 'settings', featureKey: 'accounting_tds' },
       ],
     },
     
@@ -642,6 +687,7 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/purchase/summary', label: 'Summary', module: 'reports' },
             { href: '/reports/purchase/invoice-wise', label: 'Invoice-wise', module: 'reports' },
             { href: '/reports/purchase/supplier-wise', label: 'Supplier-wise', module: 'reports' },
+            { href: '/reports/purchase/item-wise', label: 'Item-wise', module: 'reports' },
             { href: '/reports/purchase/returns', label: 'Purchase Returns', module: 'reports' },
             { href: '/reports/purchase/credit', label: 'Credit Purchases', module: 'reports' },
             { href: '/reports/purchase/tax-wise', label: 'Tax-wise', module: 'reports' },
@@ -651,29 +697,32 @@ export const Sidebar = React.memo(function Sidebar() {
           label: 'GST Reports',
           collapsible: true,
           subItems: [
+            { href: '/reports/gst/compliance', label: 'GST Alerts', module: 'reports' },
             { href: '/reports/gst/gstr1', label: 'GSTR-1', module: 'reports' },
             { href: '/reports/gst/gstr2b', label: 'GSTR-2B', module: 'reports' },
             { href: '/reports/gst/gstr2b-reconciliation', label: 'GSTR-2B Reconciliation', module: 'reports' },
             { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
             { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
+            { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
           ],
         },
-        ...(hasFeature('barcode_label_printing') ? [{
+        {
           href: '/reports/label-print-log',
           label: 'Label Printing Activity',
           module: 'reports',
           featureKey: 'barcode_label_printing',
-        }] : []),
+          isLocked: !hasFeature('barcode_label_printing'),
+        },
       ],
     },
     
-    // 7. HR & EMPLOYEES — single source: lib/hr/hr-admin-nav.ts
+    // 7. Staff / HR — single source: lib/hr/hr-admin-nav.ts (Lite vs Full)
     {
-      label: HR_NAV_SECTION_TITLE,
+      label: getHrNavSectionTitle(hasFeature),
       icon: UserCheck,
       collapsible: true,
-      subItems: HR_ADMIN_NAV_ITEMS.map((item) => ({
+      subItems: getVisibleHrAdminNavItems(hasFeature).map((item) => ({
         href: item.href,
         label: item.label,
         module: item.module,
@@ -681,8 +730,110 @@ export const Sidebar = React.memo(function Sidebar() {
         isLocked: item.featureKey ? !hasFeature(item.featureKey) : false,
       })),
     },
-    
-    // 8. MORE (Tools, WhatsApp, Settings - less frequently used)
+
+    // Connect is a product, same rank as Sales and HR — not a tool under More.
+    ...(hasPlatformModule('connect')
+      ? [
+          {
+            label: 'Connect',
+            icon: MessageSquare,
+            collapsible: true,
+            subItems: [
+              {
+                href: '/whatsapp/dashboard',
+                label: 'Dashboard',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/conversations',
+                label: 'Conversations',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/reminders',
+                label: 'Payment Reminders',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/orders',
+                label: 'Order Verification',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/flows',
+                label: 'Flows',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/send-message',
+                label: 'Send Message',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/who-to-message',
+                label: 'Who to message',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/campaigns',
+                label: 'Campaigns',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/contacts',
+                label: 'Contacts',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/contacts/groups',
+                label: 'Contact Groups',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/group-extractor',
+                label: 'Group Extractor',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/unsubscribes',
+                label: 'Unsubscribes',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/settings/whatsapp',
+                label: 'WhatsApp Settings',
+                module: 'whatsapp',
+              },
+            ],
+          },
+        ]
+      : []),
+
+    // Tools, billing-only WhatsApp settings, and Settings.
     {
       label: 'More',
       icon: Settings,
@@ -714,86 +865,12 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/tools/image-background-remover', label: 'BG Remover' },
           ],
         },
-        ...(hasPlatformModule('billing')
+        ...(hasPlatformModule('billing') && !hasPlatformModule('connect')
           ? [
               {
-                href: '/connect/whatsapp',
-                label: 'Send invoices on WhatsApp',
+                href: '/settings/whatsapp',
+                label: 'WhatsApp',
                 icon: MessageSquare,
-              },
-            ]
-          : []),
-        ...(hasPlatformModule('connect')
-          ? [
-              {
-                label: 'Connect',
-                collapsible: true,
-                subItems: [
-                  {
-                    href: '/connect/whatsapp',
-                    label: 'WhatsApp number',
-                  },
-                  {
-                    href: '/whatsapp/dashboard',
-                    label: 'Dashboard',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/conversations',
-                    label: 'Conversations',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/orders',
-                    label: 'Order Verification',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/bot-rules',
-                    label: 'Bot Rules',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/send-message',
-                    label: 'Send Message',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/campaigns',
-                    label: 'Campaigns',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/contacts',
-                    label: 'Contacts',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/contacts/groups',
-                    label: 'Contact Groups',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/group-extractor',
-                    label: 'Group Extractor',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/unsubscribes',
-                    label: 'Unsubscribes',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                ],
               },
             ]
           : []),
@@ -805,25 +882,32 @@ export const Sidebar = React.memo(function Sidebar() {
     [isSupplier, warehousesEnabled, snapshotLoaded, hasCapability, reportRouteMap, homeHref, hasPlatformModule]
   );
 
-  // Settings navigation (module-scoped: Billing | HR | Connect | CRM)
-  const settingsNavItems = useMemo(() => {
+  const sectionKeyOf = (item: { sectionKey?: string; label?: string }) =>
+    item.sectionKey || item.label || '';
+
+  // Settings navigation: one collapsible level (shared groups once, then product groups).
+  const settingsNavModel = useMemo(() => {
     if (!isSettingsPage) return null;
 
     const groupIcons: Record<string, typeof Settings> = {
-      organization: Building,
-      users: Users,
-      subscription: CreditCard,
+      account: Building,
+      team: Users,
+      plan: CreditCard,
+      'billing-setup': Building,
       accounting: DollarSign,
       'sales-billing': FileText,
+      'online-store': ShoppingBag,
       'inventory-items': Package,
-      general: Settings,
+      'billing-general': Settings,
+      'hr-organization': Building,
       'hr-time-attendance': Clock,
       'hr-leave': Calendar,
       'hr-payroll': DollarSign,
       'hr-hiring': UserCheck,
       'hr-employee-portal': Users,
-      connect: MessageSquare,
+      whatsapp: MessageSquare,
       integrations: LayoutGrid,
+      system: Palette,
       help: HelpCircle,
     };
 
@@ -847,10 +931,9 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/bluetooth-printer': Bluetooth,
       '/settings/custom-fields': FileText,
       '/settings/number-series': Hash,
-      '/connect/whatsapp': MessageSquare,
       '/settings/business#bp-features': Package,
       '/settings/label-templates': Printer,
-      '/settings/features': Settings,
+      '/settings/features': Palette,
       '/settings/backup': Database,
       '/settings/offline-sync': RefreshCw,
       '/settings/automation': Settings,
@@ -858,8 +941,6 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/email': Mail,
       '/settings/payments': Wallet,
       '/settings/integrations?category=sms': Smartphone,
-      '/settings/ai-config': Sparkles,
-      '/settings/ai-assistant': Sparkles,
       '/settings/help': HelpCircle,
       '/settings/help/how-to': HelpCircle,
       '/settings/departments': Building,
@@ -874,61 +955,70 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/hr-approval': CheckSquare,
       '/settings/onboarding-templates': ClipboardList,
       '/settings/offer-letter': FileText,
-      '/settings/whatsapp': MessageSquare,
+      '/settings/whatsapp': Smartphone,
+      '/settings/whatsapp/templates': FileText,
+      '/settings/whatsapp/notifications': Bell,
+      '/settings/whatsapp/inbox': Inbox,
+      '/settings/whatsapp/team': Users,
+      '/settings/whatsapp/ai-agent': Bot,
+      '/settings/whatsapp/shop': ShoppingBag,
+      '/settings/online-store': ShoppingBag,
+      '/settings/online-store/orders': ShoppingBag,
+      '/settings/online-store/enquiries': MessageSquare,
+      '/settings/holiday-lists': Calendar,
       '/settings/integrations?category=crm': Briefcase,
       '/items/categories': Package,
       '/settings/business#pos-mode': FileText,
     };
 
-    const blocks = buildSettingsSidebarBlocks(enabledModules, {
+    const groups = buildFlatSettingsGroups(enabledModules, {
       hasFeature,
+      supplierHubVisible: supplierHubVisible === true,
     });
 
-    const moduleSections = blocks.map((block) => ({
-      label: block.label,
+    const items = groups.map((group) => ({
+      label: group.title,
+      sectionKey: `settings:${group.groupId}`,
       collapsible: true,
-      subItems: block.groups.map((group) => ({
-        label: group.title,
-        collapsible: true,
-        subItems: group.links.map((link) => {
-          const path = link.href.split('#')[0];
-          return {
-            href: link.href,
-            label: link.label,
-            icon:
-              linkIcons[link.href] ??
-              linkIcons[path] ??
-              groupIcons[group.groupId] ??
-              Settings,
-            module: link.module,
-            featureKey: link.featureKey,
-          };
-        }),
-      })),
+      icon: groupIcons[group.groupId] ?? Settings,
+      subItems: group.links.map((link) => {
+        const path = link.href.split('#')[0].split('?')[0];
+        return {
+          href: link.href,
+          label: link.label,
+          icon:
+            linkIcons[link.href] ??
+            linkIcons[path] ??
+            groupIcons[group.groupId] ??
+            Settings,
+          module: link.module,
+          featureKey: link.featureKey,
+        };
+      }),
     }));
 
     return [
-      ...moduleSections,
+      ...items,
+      {
+        href: '/settings',
+        label: 'All settings',
+        icon: SlidersHorizontal,
+      },
       {
         href: homeHref,
         label: 'Back to Dashboard',
         icon: ArrowLeft,
       },
     ];
-  }, [isSettingsPage, enabledModules, hasFeature, homeHref]);
+  }, [isSettingsPage, enabledModules, hasFeature, homeHref, supplierHubVisible]);
 
+  const settingsNavItems = settingsNavModel;
+
+  // Capability snapshot and warehouse setting decide which rows exist.
+  // Supplier status and report definitions fill in after the menu is visible.
   const sidebarReady = useMemo(
-    () =>
-      snapshotLoaded &&
-      warehousesSettingLoaded &&
-      supplierStatusResolved &&
-      reportsDefinitionsResolved,
-    [
-      snapshotLoaded,
-      warehousesSettingLoaded,
-      supplierStatusResolved,
-      reportsDefinitionsResolved,
-    ]
+    () => snapshotLoaded && warehousesSettingLoaded,
+    [snapshotLoaded, warehousesSettingLoaded]
   );
 
   // Filter navItems based on capability (only show items user can view)
@@ -945,7 +1035,7 @@ export const Sidebar = React.memo(function Sidebar() {
     sidebarReady,
     navItems,
     isSettingsPage,
-    settingsNavItems,
+    settingsNavModel,
     hasCapability,
     snapshotLoaded,
     warehousesEnabled,
@@ -957,6 +1047,7 @@ export const Sidebar = React.memo(function Sidebar() {
     enabledModules,
     hasPlatformModule,
     homeHref,
+    supplierHubVisible,
   ]);
 
   const visibleNavItemsRef = useRef(visibleNavItems);
@@ -981,51 +1072,23 @@ export const Sidebar = React.memo(function Sidebar() {
     return () => window.removeEventListener('khatario-tour:expand', onExpand);
   }, []);
 
-  // Helper function to check if a navigation item is active
-  const isItemActive = (href: string): boolean => {
-    if (!href) return false;
-    
-    // Parse href to separate path and query
-    const [path, queryString] = href.split('?');
-    const pathMatch = pathname === path || pathname?.startsWith(path + '/');
-    
-    if (!pathMatch) return false;
-    
-    // If href has query parameters, check if they all match
-    if (queryString) {
-      const hrefParams = new URLSearchParams(queryString);
-      // Check that all query params in href match current searchParams
-      for (const [key, value] of hrefParams.entries()) {
-        if (searchParams.get(key) !== value) {
-          return false;
-        }
-      }
-      // All query params match
-      return true;
-    } else {
-      // If href has no query params, current URL should also have no query params
-      // (e.g., /invoices/new should not match /invoices/new?type=proforma_invoice)
-      return searchParams.toString() === '';
-    }
-  };
+  const activeNavHref = useMemo(() => {
+    if (!visibleNavItems?.length || !pathname) return null;
+    return pickActiveNavHref(
+      collectNavHrefs(visibleNavItems),
+      pathname,
+      searchParamsKey,
+      locationHash,
+    );
+  }, [visibleNavItems, pathname, searchParamsKey, locationHash]);
 
-  // Helper function to check if any sub-item is active
+  const isItemActive = (href: string): boolean => href !== '' && href === activeNavHref;
+
   const isAnySubItemActive = (item: any): boolean => {
     if (!item.subItems) return false;
-    
-    // Check direct sub-items
     for (const subItem of item.subItems) {
-      if (subItem.href && isItemActive(subItem.href)) {
-        return true;
-      }
-      // Check nested sub-items
-      if (subItem.subItems) {
-        for (const nestedItem of subItem.subItems) {
-          if (nestedItem.href && isItemActive(nestedItem.href)) {
-            return true;
-          }
-        }
-      }
+      if (subItem.href && isItemActive(subItem.href)) return true;
+      if (subItem.subItems && isAnySubItemActive(subItem)) return true;
     }
     return false;
   };
@@ -1045,8 +1108,9 @@ export const Sidebar = React.memo(function Sidebar() {
 
       for (const item of items) {
         if (item.collapsible && item.subItems && isAnySubItemActive(item)) {
-          if (!newOpenSections[item.label]) {
-            newOpenSections[item.label] = true;
+          const key = sectionKeyOf(item);
+          if (!newOpenSections[key]) {
+            newOpenSections[key] = true;
             hasChanges = true;
           }
         }
@@ -1054,8 +1118,8 @@ export const Sidebar = React.memo(function Sidebar() {
 
       return hasChanges ? newOpenSections : prevOpenSections;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads pathname/searchParamsKey
-  }, [pathname, searchParamsKey, sidebarReady]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads the active href
+  }, [pathname, searchParamsKey, sidebarReady, locationHash, activeNavHref]);
 
   // Restore scroll position after render
   useEffect(() => {
@@ -1099,15 +1163,16 @@ export const Sidebar = React.memo(function Sidebar() {
         {items.map((item, index) => {
           const Icon = item.icon;
           const isActive = item.href ? isItemActive(item.href) : false;
-          const isSectionOpen = item.collapsible ? openSections[item.label] : true;
+          const sectionKey = sectionKeyOf(item);
+          const isSectionOpen = item.collapsible ? openSections[sectionKey] : true;
           const hasActiveSubItem = item.subItems ? isAnySubItemActive(item) : false;
           // If section is explicitly closed (false), respect that even with active sub-item
           // Otherwise, expand if section is open OR has active sub-item
-          const isExpanded = openSections[item.label] === false 
-            ? false 
+          const isExpanded = openSections[sectionKey] === false
+            ? false
             : (isSectionOpen || hasActiveSubItem);
           // Determine the top-level parent for nested items
-          const currentTopLevelParent = isSubItem ? topLevelParentLabel : item.label;
+          const currentTopLevelParent = isSubItem ? topLevelParentLabel : sectionKey;
           // Check if we're within an expanded section (check top-level parent)
           const isWithinExpanded = isSubItem && topLevelParentLabel && openSections[topLevelParentLabel];
 
@@ -1130,6 +1195,9 @@ export const Sidebar = React.memo(function Sidebar() {
                       href={item.href || '#'}
                       prefetch={false}
                       data-tour={item.tourId}
+                      aria-expanded={item.collapsible ? isExpanded : undefined}
+                      aria-current={isActive ? 'page' : undefined}
+                      title={item.label}
                       onClick={(e) => {
                         // If sidebar is collapsed and item is collapsible, expand sidebar first
                         if (sidebarCollapsed && item.collapsible) {
@@ -1139,7 +1207,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           // Then toggle section to show sub-items
                           // Use setTimeout to ensure sidebar expansion completes first
                           setTimeout(() => {
-                            toggleSection(item.label, e);
+                            toggleSection(sectionKeyOf(item), e);
                           }, 100);
                           return;
                         }
@@ -1152,7 +1220,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           if (!hasValidHref) {
                             // No valid href: prevent default and toggle section only
                             e.preventDefault();
-                            toggleSection(item.label, e);
+                            toggleSection(sectionKeyOf(item), e);
                             return;
                           }
                           // Has valid href: allow navigation (don't prevent default)
@@ -1173,12 +1241,12 @@ export const Sidebar = React.memo(function Sidebar() {
                         isActive
                           ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
                           : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                        sidebarCollapsed && 'justify-center'
+                        sidebarCollapsed && 'justify-center',
+                        'min-w-0'
                       )}
-                      title={sidebarCollapsed ? item.label : undefined}
                     >
                       {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
-                      {!sidebarCollapsed && <span>{item.label}</span>}
+                      {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                       {sidebarCollapsed && (
                         <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
                           {item.label}
@@ -1227,18 +1295,23 @@ export const Sidebar = React.memo(function Sidebar() {
                               'text-text-secondary hover:text-text-primary',
                               'cursor-pointer opacity-75'
                             )}
-                            title={sidebarCollapsed ? item.label : 'Upgrade to unlock'}
+                            title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
                           >
-                            {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0')} />}
+                            <span className="relative flex-shrink-0">
+                              {Icon && <Icon className="w-5 h-5" />}
+                              {sidebarCollapsed && (
+                                <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
+                              )}
+                            </span>
                             {!sidebarCollapsed && (
                               <>
-                                <span>{item.label}</span>
-                                <Lock className="w-4 h-4 ml-auto text-amber-500" />
+                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
                               </>
                             )}
                             {sidebarCollapsed && (
                               <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label}
+                                {item.label} — upgrade to unlock
                               </div>
                             )}
                           </button>
@@ -1255,18 +1328,23 @@ export const Sidebar = React.memo(function Sidebar() {
                             'text-text-secondary hover:text-text-primary',
                             'cursor-pointer opacity-75'
                           )}
-                          title={sidebarCollapsed ? item.label : 'Upgrade to unlock'}
+                          title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
                         >
-                          {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0')} />}
+                          <span className="relative flex-shrink-0">
+                            {Icon && <Icon className="w-5 h-5" />}
+                            {sidebarCollapsed && (
+                              <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
+                            )}
+                          </span>
                           {!sidebarCollapsed && (
                             <>
-                              <span>{item.label}</span>
-                              <Lock className="w-4 h-4 ml-auto text-amber-500" />
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
                             </>
                           )}
                           {sidebarCollapsed && (
                               <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label}
+                                {item.label} — upgrade to unlock
                               </div>
                             )}
                           </button>
@@ -1274,7 +1352,7 @@ export const Sidebar = React.memo(function Sidebar() {
                       }
                       
                       // Normal unlocked item
-                      const createRoute = getCreateRoute(item.href!, item.label);
+                      const createRoute = getCreateRoute(item);
                       return (
                         <div 
                       className={clsx(
@@ -1287,18 +1365,27 @@ export const Sidebar = React.memo(function Sidebar() {
                         href={item.href!}
                         prefetch={false}
                         data-tour={item.tourId}
+                        aria-current={isActive ? 'page' : undefined}
                         className={clsx(
-                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative',
+                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative min-w-0',
                           'hover:bg-slate-100 dark:hover:bg-slate-700/90',
                           isActive
                             ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
                             : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                          sidebarCollapsed && 'justify-center'
+                          sidebarCollapsed && 'justify-center',
+                          !sidebarCollapsed && createRoute && 'pr-16'
                         )}
-                        title={sidebarCollapsed ? item.label : undefined}
+                        title={item.label}
                       >
                         {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
-                            {!sidebarCollapsed && <span className="flex-1">{item.label}</span>}
+                        {!sidebarCollapsed && (
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        )}
+                        {!sidebarCollapsed && item.badge && (
+                          <span className="shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                            {item.badge}
+                          </span>
+                        )}
                         {sidebarCollapsed && (
                           <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
                             {item.label}
@@ -1340,13 +1427,16 @@ export const Sidebar = React.memo(function Sidebar() {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed top-0 left-0 h-screen bg-surface border-r border-border z-50 flex flex-col text-base',
+          'khatario-sidebar fixed top-0 left-0 h-screen z-50 flex flex-col text-base',
           'transition-all duration-300 ease-in-out hidden lg:flex',
           sidebarCollapsed ? 'w-16' : 'w-64'
         )}
       >
         {/* Header */}
-        <div className={clsx("flex items-center p-4 border-b border-border flex-shrink-0", sidebarCollapsed ? "justify-center" : "justify-between")}>
+        <div className={clsx(
+          "flex border-b border-border flex-shrink-0",
+          sidebarCollapsed ? "flex-col items-center gap-2 p-3" : "flex-row items-center justify-between p-4"
+        )}>
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {business?.logo_url ? (
@@ -1375,20 +1465,23 @@ export const Sidebar = React.memo(function Sidebar() {
               <img 
                 src={business.logo_url} 
                 alt={businessName}
-                className="w-8 h-8 rounded-lg object-contain mb-1"
+                className="w-8 h-8 rounded-lg object-contain"
               />
             ) : (
-              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center mb-1">
+              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">{businessInitials.substring(0, 1)}</span>
               </div>
             )
           )}
           
           <button
+            type="button"
             onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!sidebarCollapsed}
             className={clsx("p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/90 rounded-lg transition-colors text-text-secondary", !sidebarCollapsed && "ml-2")}
           >
-             {sidebarCollapsed ? null : <ChevronLeft className="w-5 h-5" />}
+             {sidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
         </div>
 

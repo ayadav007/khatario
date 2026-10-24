@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -10,10 +10,10 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
 
 interface TransferItem {
   id: string;
@@ -31,6 +31,22 @@ interface Transfer {
   from_warehouse_name: string;
   to_warehouse_name: string;
   status: string;
+}
+
+function ReceiveSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
 }
 
 export default function ReceiveTransferPage() {
@@ -200,25 +216,24 @@ export default function ReceiveTransferPage() {
   }
 
   return (
-    <FormPageContainer className="space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
       <MobileDuplicatePageChrome
         title="Receive transfer"
         description={`${transfer.transfer_number}: ${transfer.from_warehouse_name} → ${transfer.to_warehouse_name}`}
       />
 
-      <FormCard>
       <form onSubmit={handleSubmit}>
-      <div className="form-page-shell">
-        <FormSection title="How receipt works" description="Confirm what actually arrived; shortages are recorded as discrepancies.">
+      <div className="space-y-6">
+        <ReceiveSection title="How receipt works" description="Confirm what actually arrived; shortages are recorded as discrepancies.">
           <div className="rounded-lg border border-border bg-surface p-4">
             <p className="text-sm text-text-secondary">
               <strong className="text-text-primary">Note:</strong> Enter the actual quantities received. You can receive less than dispatched if there are discrepancies.
               Stock will be added to the destination warehouse upon confirmation.
             </p>
           </div>
-        </FormSection>
+        </ReceiveSection>
 
-        <FormSection title="Received quantities" description="Per line, enter received amount; it cannot exceed dispatched.">
+        <ReceiveSection title="Received quantities" description="Per line, enter received amount; it cannot exceed dispatched.">
           {items.length === 0 ? (
             <p className="text-text-secondary">No items in this transfer</p>
           ) : (
@@ -287,9 +302,9 @@ export default function ReceiveTransferPage() {
               })}
             </div>
           )}
-        </FormSection>
+        </ReceiveSection>
 
-        <FormSection title="Receipt notes" description="Optional context for damages, shortages, or other receipt details.">
+        <ReceiveSection title="Receipt notes" description="Optional context for damages, shortages, or other receipt details.">
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Notes
           </label>
@@ -300,14 +315,14 @@ export default function ReceiveTransferPage() {
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Optional notes about the receipt (e.g., damages, shortages, etc.)"
           />
-        </FormSection>
+        </ReceiveSection>
       </div>
 
-        <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
           <Button
             type="button"
             onClick={() => router.push(`/stock-transfers/${transferId}`)}
-            variant="outline"
+            variant="secondary"
           >
             Cancel
           </Button>
@@ -326,7 +341,6 @@ export default function ReceiveTransferPage() {
           </Button>
         </div>
       </form>
-      </FormCard>
-    </FormPageContainer>
+    </div>
   );
 }

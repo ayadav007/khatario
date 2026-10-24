@@ -1,183 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { assertFeatureAccess } from '@/lib/subscription/feature-access';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
 const ENTITY_CONFIG = {
-  invoices: {
-    table: 'invoices',
-    idColumn: 'id',
-    businessColumn: 'business_id',
-  },
-  customers: {
-    table: 'customers',
-    idColumn: 'id',
-    businessColumn: 'business_id',
-  },
-  items: {
-    table: 'items',
-    idColumn: 'id',
-    businessColumn: 'business_id',
-  },
-  purchases: {
-    table: 'purchases',
-    idColumn: 'id',
-    businessColumn: 'business_id',
-  },
-};
+  invoices: { table: 'invoices', module: 'invoices' },
+  customers: { table: 'customers', module: 'customers' },
+  items: { table: 'items', module: 'items' },
+  purchases: { table: 'purchases', module: 'purchases' },
+} as const;
 
-// POST - Bulk operations
+/**
+ * Only non-financial flags may be changed in bulk. Deleting, re-statusing or
+ * editing financial documents must go through their own routes so ledger,
+ * stock, period-lock and GST-filed checks run.
+ */
+const ACTIONS = {
+  archive: true,
+  unarchive: false,
+} as const;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { entity: string } }
 ) {
   try {
-    const { entity } = params;
     const body = await request.json();
-    const { business_id, action, ids, data } = body;
+    const { action, ids } = body ?? {};
 
-    if (!business_id || !action || !ids || !Array.isArray(ids)) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    const tenant = requireTenantBusinessId(request, body?.business_id);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
+    const userId = getUserIdFromRequest(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (!action || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Check feature access
-    await assertFeatureAccess(business_id, 'bulk_actions');
-
-    // Get entity config
-    const config = ENTITY_CONFIG[entity as keyof typeof ENTITY_CONFIG];
+    const config = ENTITY_CONFIG[params.entity as keyof typeof ENTITY_CONFIG];
     if (!config) {
+      return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
+    }
+    if (!Object.prototype.hasOwnProperty.call(ACTIONS, action)) {
       return NextResponse.json(
-        { error: 'Invalid entity type' },
+        {
+          error: 'This bulk action is not supported. Delete, cancel or change financial documents individually.',
+          code: 'BULK_ACTION_NOT_ALLOWED',
+        },
         { status: 400 }
       );
     }
 
-    const { table, idColumn, businessColumn } = config;
-
-    // Verify all IDs belong to the business
-    const verifyQuery = `
-      SELECT COUNT(*) as count
-      FROM ${table}
-      WHERE ${idColumn} = ANY($1)
-        AND ${businessColumn} = $2
-    `;
-    const verifyResult = await db.queryRows(verifyQuery, [ids, business_id]);
-    
-    if (verifyResult[0].count !== ids.length) {
-      return NextResponse.json(
-        { error: 'Some IDs do not belong to this business' },
-        { status: 403 }
-      );
+    try {
+      await assertFeatureAccess(businessId, 'bulk_actions');
+      await authorize(userId, config.module, 'update', { businessId });
+    } catch (error) {
+      if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
     }
 
-    let result;
-
-    switch (action) {
-      case 'delete':
-        result = await bulkDelete(table, idColumn, ids, business_id);
-        break;
-
-      case 'update':
-        result = await bulkUpdate(table, idColumn, ids, business_id, data);
-        break;
-
-      case 'mark_paid':
-        result = await bulkUpdate(table, idColumn, ids, business_id, { status: 'paid' });
-        break;
-
-      case 'mark_unpaid':
-        result = await bulkUpdate(table, idColumn, ids, business_id, { status: 'unpaid' });
-        break;
-
-      case 'archive':
-        result = await bulkUpdate(table, idColumn, ids, business_id, { is_archived: true });
-        break;
-
-      case 'unarchive':
-        result = await bulkUpdate(table, idColumn, ids, business_id, { is_archived: false });
-        break;
-
-      default:
-        return NextResponse.json(
-          { error: 'Invalid action' },
-          { status: 400 }
-        );
+    const uniqueIds = Array.from(new Set(ids.map(String)));
+    const owned = await db.queryRows<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM ${config.table} WHERE id = ANY($1::uuid[]) AND business_id = $2`,
+      [uniqueIds, businessId]
+    );
+    if (Number(owned[0]?.count ?? 0) !== uniqueIds.length) {
+      return NextResponse.json({ error: 'Some IDs do not belong to this business' }, { status: 403 });
     }
+
+    const archived = ACTIONS[action as keyof typeof ACTIONS];
+    const result = await db.query(
+      `UPDATE ${config.table}
+          SET is_archived = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ANY($1::uuid[]) AND business_id = $2`,
+      [uniqueIds, businessId, archived]
+    );
 
     return NextResponse.json({
       success: true,
-      affected: result.affected,
-      message: `Successfully ${action}ed ${result.affected} ${entity}`,
+      affected: result.rowCount || 0,
+      message: `Successfully ${action}d ${result.rowCount || 0} ${params.entity}`,
     });
   } catch (error: any) {
     console.error('Bulk operation failed:', error);
-    return NextResponse.json(
-      { error: error.message || 'Bulk operation failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Bulk operation failed' }, { status: 500 });
   }
 }
-
-async function bulkDelete(
-  table: string,
-  idColumn: string,
-  ids: string[],
-  businessId: string
-): Promise<{ affected: number }> {
-  const query = `
-    DELETE FROM ${table}
-    WHERE ${idColumn} = ANY($1)
-      AND business_id = $2
-  `;
-  
-  const result = await db.query(query, [ids, businessId]);
-  return { affected: result.rowCount || 0 };
-}
-
-async function bulkUpdate(
-  table: string,
-  idColumn: string,
-  ids: string[],
-  businessId: string,
-  data: Record<string, any>
-): Promise<{ affected: number }> {
-  // Build SET clause
-  const setClause = Object.keys(data)
-    .map((key, index) => `${key} = $${index + 3}`)
-    .join(', ');
-
-  const values = Object.values(data);
-
-  const query = `
-    UPDATE ${table}
-    SET ${setClause}, updated_at = CURRENT_TIMESTAMP
-    WHERE ${idColumn} = ANY($1)
-      AND business_id = $2
-  `;
-
-  const result = await db.query(query, [ids, businessId, ...values]);
-  return { affected: result.rowCount || 0 };
-}
-
-// Add feature to platform registry
-// (This would typically be in a migration, but including here for reference)
-/*
-INSERT INTO platform_features (feature_key, feature_name, description, category, is_enabled)
-VALUES (
-  'bulk_actions',
-  'Bulk Actions',
-  'Perform actions on multiple items at once',
-  'ui_features',
-  TRUE
-)
-ON CONFLICT (feature_key) DO NOTHING;
-
-INSERT INTO subscription_plan_features (plan_id, feature_key, limit_value)
-SELECT id, 'bulk_actions', NULL
-FROM subscription_plans
-ON CONFLICT (plan_id, feature_key) DO NOTHING;
-*/

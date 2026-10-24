@@ -118,10 +118,10 @@ export const BUSINESS_PROFILE_TOUR_STEPS: DriveStep[] = [
   {
     element: '[data-tour="bp-save"]',
     popover: {
-      title: 'Save changes',
+      title: 'Edit one card at a time',
       description:
-        'Nothing here applies until you save. After major updates, reload or reopen a screen if values look stale.',
-      side: 'top',
+        'Each card shows what is saved. Press Edit to change it, then Save; only that card is updated and nothing else on the page reloads. Logo and signature uploads save straight away.',
+      side: 'bottom',
       align: 'end',
     },
   },

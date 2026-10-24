@@ -1,0 +1,10 @@
+{
+  "name": "Job Card",
+  "description": "Job card style work order: work to be done, site, schedule, materials, labour and sign-off",
+  "category": "work_order",
+  "for_document_types": ["work_order"],
+  "version": "1.0",
+  "settings": {
+    "show_signature": true
+  }
+}

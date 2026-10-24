@@ -2,7 +2,7 @@
  * Client-side helper: free / 100% coupon → instant; paid → Razorpay checkout redirect.
  */
 
-export type BillingCycle = 'monthly' | 'yearly';
+export type BillingCycle = 'monthly' | 'yearly' | 'three_year';
 
 export interface StartPlanUpgradeParams {
   businessId: string;

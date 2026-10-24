@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get('business_id');
+    const filingPeriod = searchParams.get('filing_period') || undefined;
     const fromDate = searchParams.get('from_date') || undefined;
     const toDate = searchParams.get('to_date') || undefined;
     const status = searchParams.get('status') || undefined;
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
 
     const buffer = await generateReconciliationExcel({
       business_id: access.businessId,
+      filing_period: filingPeriod,
       from_date: fromDate,
       to_date: toDate,
       status: status

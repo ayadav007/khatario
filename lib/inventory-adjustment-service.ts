@@ -10,8 +10,13 @@ import {
   getBranchVariantQuantityDb,
   refreshVariantGlobalStockFromBranches,
 } from '@/lib/branch-variant-stock';
-import { createLedgerEntryLine } from './ledger-utils';
-import { getDefaultAccounts } from './ledger-utils';
+import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
+import { fifoCostForDocument, getValuationMethod } from '@/lib/inventory/fifo-costing';
+import { recostAfterStockChange } from '@/lib/inventory/fifo-recost';
+import { postInventoryAdjustment } from '@/lib/inventory/adjustment-posting';
+import type { PoolClient } from 'pg';
+import type { OpeningBatch } from '@/lib/items/opening-batch';
+import { findReplayLog, insertReplayLogPending, markReplayCompleted } from '@/lib/offline-sync/replay-log-repository';
 
 export type AdjustmentType = 'QUANTITY' | 'VALUE';
 export type AdjustmentDirection = 'INCREASE' | 'DECREASE';
@@ -40,6 +45,22 @@ export interface QuantityAdjustmentParams {
   notes?: string;
   adjustmentDate: string; // ISO date string
   createdBy?: string;
+  /**
+   * Batch and dates of the stock being added (Scan & Add Items). On an INCREASE the quantity goes
+   * into that batch and the item is switched to batch tracking with FIFO, as for opening stock.
+   */
+  batch?: OpeningBatch | null;
+  /** Retry key, recorded in this transaction so a retried request returns the first adjustment. */
+  idempotency?: { scopedKey: string; hash: string; storedPayload: Record<string, unknown> } | null;
+}
+
+export const ADJUSTMENT_IDEMPOTENCY_ACTION = 'inventory_adjustments.create';
+
+/** A retry key reused for a different adjustment, or one whose first request is still running. */
+export class AdjustmentIdempotencyError extends Error {
+  constructor(public readonly code: 'IDEMPOTENCY_KEY_REUSED' | 'IDEMPOTENCY_IN_PROGRESS', message: string) {
+    super(message);
+  }
 }
 
 export interface ValueAdjustmentParams {
@@ -68,6 +89,43 @@ export interface AdjustmentResult {
   totalValueBefore: number;
   totalValueAfter: number;
   journalEntryId?: string;
+  /** True when this is the stored answer to a retried request. */
+  replayed?: boolean;
+}
+
+/** The adjustment a completed retry key points at, for this business only. */
+async function replayedAdjustment(
+  client: PoolClient,
+  businessId: string,
+  idem: NonNullable<QuantityAdjustmentParams['idempotency']>
+): Promise<AdjustmentResult> {
+  const row = await findReplayLog(businessId, idem.scopedKey, client);
+  if (!row || row.request_hash !== idem.hash || row.action_type !== ADJUSTMENT_IDEMPOTENCY_ACTION) {
+    throw new AdjustmentIdempotencyError('IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for a different stock change.');
+  }
+  if (row.status !== 'completed' || !row.entity_id) {
+    throw new AdjustmentIdempotencyError('IDEMPOTENCY_IN_PROGRESS', 'This stock change is still being saved. Try again in a moment.');
+  }
+  const a = (
+    await client.query(
+      `SELECT id, adjustment_number, quantity_before, quantity_after, unit_cost_before, unit_cost_after,
+              total_value_before, total_value_after
+         FROM inventory_adjustments WHERE id = $1 AND business_id = $2`,
+      [row.entity_id, businessId]
+    )
+  ).rows[0];
+  if (!a) throw new AdjustmentIdempotencyError('IDEMPOTENCY_KEY_REUSED', 'This idempotency key cannot be replayed.');
+  return {
+    adjustmentId: a.id,
+    adjustmentNumber: a.adjustment_number,
+    quantityBefore: Number(a.quantity_before),
+    quantityAfter: Number(a.quantity_after),
+    unitCostBefore: Number(a.unit_cost_before),
+    unitCostAfter: Number(a.unit_cost_after),
+    totalValueBefore: Number(a.total_value_before),
+    totalValueAfter: Number(a.total_value_after),
+    replayed: true,
+  };
 }
 
 /**
@@ -81,6 +139,25 @@ export async function createQuantityAdjustment(
 
   try {
     await client.query('BEGIN');
+
+    let idemRowId: string | null = null;
+    if (params.idempotency) {
+      const inserted = await insertReplayLogPending(client, {
+        businessId: params.businessId,
+        idempotencyKey: params.idempotency.scopedKey,
+        actionType: ADJUSTMENT_IDEMPOTENCY_ACTION,
+        requestHash: params.idempotency.hash,
+        requestPayload: params.idempotency.storedPayload,
+        // Nullable column; a system adjustment has no user.
+        userId: params.createdBy as string,
+      });
+      if (!inserted) {
+        // The key is already recorded (an earlier or concurrent request committed it).
+        await client.query('ROLLBACK');
+        return await replayedAdjustment(client, params.businessId, params.idempotency);
+      }
+      idemRowId = inserted.id;
+    }
 
     // Check if warehouse mode is enabled
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
@@ -116,18 +193,25 @@ export async function createQuantityAdjustment(
 
     // Lock the item/variant row for update
     const itemLockQuery = params.variantId
-      ? `SELECT * FROM item_variants WHERE id = $1 FOR UPDATE`
-      : `SELECT * FROM items WHERE id = $1 FOR UPDATE`;
+      ? `SELECT v.* FROM item_variants v JOIN items i ON i.id = v.item_id
+          WHERE v.id = $1 AND i.business_id = $2 FOR UPDATE OF v`
+      : `SELECT * FROM items WHERE id = $1 AND business_id = $2 FOR UPDATE`;
     
     const itemIdToLock = params.variantId || params.itemId;
-    const itemResult = await client.query(itemLockQuery, [itemIdToLock]);
+    const itemResult = await client.query(itemLockQuery, [itemIdToLock, params.businessId]);
     
     if (itemResult.rows.length === 0) {
       throw new Error(params.variantId ? 'Variant not found' : 'Item not found');
     }
 
     const item = itemResult.rows[0];
-    const currentPurchasePrice = parseFloat(item.purchase_price || '0');
+    let currentPurchasePrice = parseFloat(item.purchase_price || '0');
+    const fifo = (await getValuationMethod(client, params.businessId)) === 'fifo';
+    if (!params.variantId || fifo) {
+      const unit = await currentUnitCosts(client, params.businessId, [params.itemId], params.adjustmentDate);
+      const rate = unit.get(params.itemId);
+      if (rate !== undefined && rate > 0) currentPurchasePrice = Math.round(rate * 100) / 100;
+    }
     
     // Get current stock - conditional based on warehouse mode and variant
     let currentStock: number;
@@ -180,8 +264,8 @@ export async function createQuantityAdjustment(
       throw new Error('Quantity cannot go below zero');
     }
 
-    // Calculate value change (quantity_change * unit_cost)
-    const valueChange = quantityChange * currentPurchasePrice;
+    // Calculate value change (quantity_change * unit_cost); FIFO decreases are re-costed from lots below.
+    let valueChange = quantityChange * currentPurchasePrice;
     const currentTotalValue = currentStock * currentPurchasePrice;
     const newTotalValue = newQuantity * currentPurchasePrice;
 
@@ -305,13 +389,62 @@ export async function createQuantityAdjustment(
 
     const adjustmentId = adjustmentResult.rows[0].id;
 
+    // Added stock with a batch from the pack: same batch number tops up that batch, a new one is created.
+    let batchId: string | null = null;
+    if (params.batch && quantityChange > 0) {
+      const existingBatch = await client.query<{ id: string }>(
+        `SELECT id FROM item_batches
+          WHERE business_id = $1 AND item_id = $2 AND variant_id IS NOT DISTINCT FROM $3
+            AND batch_number = $4 AND location_id IS NULL
+          FOR UPDATE`,
+        [params.businessId, params.itemId, params.variantId || null, params.batch.batchNumber]
+      );
+      if (existingBatch.rows[0]) {
+        batchId = existingBatch.rows[0].id;
+        await client.query(
+          `UPDATE item_batches
+              SET quantity = quantity + $1,
+                  expiry_date = COALESCE(expiry_date, $2),
+                  manufacturing_date = COALESCE(manufacturing_date, $3),
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $4`,
+          [quantityChange, params.batch.expiryDate, params.batch.manufacturingDate, batchId]
+        );
+      } else {
+        batchId = (
+          await client.query<{ id: string }>(
+            `INSERT INTO item_batches (
+               business_id, item_id, variant_id, batch_number, manufacturing_date, expiry_date,
+               purchase_price, quantity, notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id`,
+            [
+              params.businessId,
+              params.itemId,
+              params.variantId || null,
+              params.batch.batchNumber,
+              params.batch.manufacturingDate,
+              params.batch.expiryDate,
+              currentPurchasePrice,
+              quantityChange,
+              `Stock added (${adjustmentNumber})`,
+            ]
+          )
+        ).rows[0].id;
+      }
+      await client.query(
+        `UPDATE items SET track_batch = true, valuation_method = 'fifo' WHERE id = $1 AND business_id = $2`,
+        [params.itemId, params.businessId]
+      );
+    }
+
     // Create stock movement record with adjustment reference
     // Always include location_id when provided
     await client.query(
       `INSERT INTO stock_movements (
-        business_id, item_id, variant_id, location_id, type, quantity, 
-        reference_type, reference_id, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        business_id, item_id, variant_id, location_id, type, quantity,
+        reference_type, reference_id, notes, created_by, batch_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         params.businessId,
         params.itemId,
@@ -322,101 +455,45 @@ export async function createQuantityAdjustment(
         'adjustment',
         adjustmentId, // Use adjustment ID directly
         `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units. Reason: ${params.reasonCode}`,
-        params.createdBy || null
+        params.createdBy || null,
+        batchId,
       ]
     );
 
     const branchId = adjustmentBranchId || undefined;
 
-    // Create journal entry if accounting is enabled
-    let journalEntryId: string | undefined;
-    try {
-      const accounts = await getDefaultAccounts(params.businessId);
-      
-      if (accounts.inventory) {
-        // For quantity adjustments:
-        // - If INCREASE: Debit Inventory, Credit Adjustment Account (or Expense Reversal)
-        // - If DECREASE: Debit Adjustment Account (or Expense), Credit Inventory
-        
-        const adjustmentAccount = await getAccountForReasonCode(
-          params.businessId,
-          params.reasonCode,
-          params.direction === 'DECREASE'
-        );
+    if (fifo && quantityChange < 0) {
+      const cost = await fifoCostForDocument(
+        client,
+        params.businessId,
+        new Map([[params.itemId, Math.abs(quantityChange)]]),
+        { kind: 'adjustment_out', docId: adjustmentId }
+      );
+      valueChange = -cost;
+    }
 
-        if (adjustmentAccount) {
-          if (params.direction === 'INCREASE') {
-            // Debit Inventory, Credit Adjustment Account
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(valueChange),
-              credit: 0,
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
+    const journalEntryId: string | undefined = undefined;
+    const { itcReversed } = await postInventoryAdjustment(client, {
+      businessId: params.businessId,
+      branchId: branchId ?? null,
+      adjustmentId,
+      adjustmentNumber,
+      date: params.adjustmentDate,
+      reason: params.reasonCode,
+      isDecrease: params.direction === 'DECREASE',
+      amount: valueChange,
+      itemId: params.itemId,
+      narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
+      quantityAdjustment: true,
+    });
+    await client.query(
+      `UPDATE inventory_adjustments SET value_change = $1, gst_impact = $2 WHERE id = $3`,
+      [Math.round(valueChange * 100) / 100, itcReversed ? -itcReversed : null, adjustmentId]
+    );
+    await recostAfterStockChange(client, params.businessId, [params.itemId]);
 
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(valueChange),
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          } else {
-            // Debit Adjustment Account, Credit Inventory
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(valueChange),
-              credit: 0,
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(valueChange),
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          }
-
-          // Update adjustment with journal entry reference (only if journal entry was created)
-          if (journalEntryId) {
-            await client.query(
-              `UPDATE inventory_adjustments SET journal_entry_id = $1 WHERE id = $2`,
-              [journalEntryId, adjustmentId]
-            );
-          }
-        }
-      }
-    } catch (accountingError) {
-      console.error('Error creating journal entry for adjustment:', accountingError);
-      // Don't fail the adjustment if accounting fails
+    if (idemRowId) {
+      await markReplayCompleted(client, idemRowId, { adjustment_id: adjustmentId }, { type: 'inventory_adjustment', id: adjustmentId });
     }
 
     // Commit the transaction
@@ -553,11 +630,12 @@ export async function createValueAdjustment(
 
     // Lock the item/variant row for update
     const itemLockQuery = params.variantId
-      ? `SELECT * FROM item_variants WHERE id = $1 FOR UPDATE`
-      : `SELECT * FROM items WHERE id = $1 FOR UPDATE`;
+      ? `SELECT v.* FROM item_variants v JOIN items i ON i.id = v.item_id
+          WHERE v.id = $1 AND i.business_id = $2 FOR UPDATE OF v`
+      : `SELECT * FROM items WHERE id = $1 AND business_id = $2 FOR UPDATE`;
     
     const itemIdToLock = params.variantId || params.itemId;
-    const itemResult = await client.query(itemLockQuery, [itemIdToLock]);
+    const itemResult = await client.query(itemLockQuery, [itemIdToLock, params.businessId]);
     
     if (itemResult.rows.length === 0) {
       throw new Error(params.variantId ? 'Variant not found' : 'Item not found');
@@ -628,8 +706,8 @@ export async function createValueAdjustment(
       await client.query(
         `UPDATE items 
          SET purchase_price = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2`,
-        [newUnitCost, params.itemId]
+         WHERE id = $2 AND business_id = $3`,
+        [newUnitCost, params.itemId, params.businessId]
       );
     }
 
@@ -684,94 +762,21 @@ export async function createValueAdjustment(
 
     const branchId: string | undefined = adjustmentBranchIdForRow || undefined;
 
-    // Create journal entry if accounting is enabled
-    let journalEntryId: string | undefined;
-    try {
-      const accounts = await getDefaultAccounts(params.businessId);
-      
-      if (accounts.inventory) {
-        // For value adjustments:
-        // - If value INCREASE: Debit Inventory, Credit Adjustment Account
-        // - If value DECREASE: Debit Adjustment Account, Credit Inventory
-        
-        const adjustmentAccount = await getAccountForReasonCode(
-          params.businessId,
-          params.reasonCode,
-          params.valueChange < 0
-        );
-
-        if (adjustmentAccount) {
-          if (params.valueChange > 0) {
-            // Debit Inventory, Credit Adjustment Account
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(params.valueChange),
-              credit: 0,
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(params.valueChange),
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          } else {
-            // Debit Adjustment Account, Credit Inventory
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(params.valueChange),
-              credit: 0,
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(params.valueChange),
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          }
-
-          // Update adjustment with journal entry reference
-          await client.query(
-            `UPDATE inventory_adjustments SET journal_entry_id = $1 WHERE id = $2`,
-            [journalEntryId, adjustmentId]
-          );
-        }
-      }
-    } catch (accountingError) {
-      console.error('Error creating journal entry for adjustment:', accountingError);
-      // Don't fail the adjustment if accounting fails
-    }
+    const journalEntryId: string | undefined = undefined;
+    await postInventoryAdjustment(client, {
+      businessId: params.businessId,
+      branchId: branchId ?? null,
+      adjustmentId,
+      adjustmentNumber,
+      date: params.adjustmentDate,
+      reason: params.reasonCode,
+      isDecrease: params.valueChange < 0,
+      amount: params.valueChange,
+      itemId: params.itemId,
+      narration: `Inventory value adjustment: ${params.reasonCode}${params.reasonNotes ? ` - ${params.reasonNotes}` : ''}`,
+      quantityAdjustment: false,
+    });
+    await recostAfterStockChange(client, params.businessId, [params.itemId]);
 
     await client.query('COMMIT');
 
@@ -808,46 +813,3 @@ async function generateAdjustmentNumber(
   return result.rows[0].number;
 }
 
-/**
- * Get appropriate account for reason code
- * Maps reason codes to appropriate expense/income accounts
- */
-async function getAccountForReasonCode(
-  businessId: string,
-  reasonCode: ReasonCode,
-  isExpense: boolean
-): Promise<any> {
-  const { getAccountByCode, getAccountByName } = await import('./ledger-utils');
-  
-  // Map reason codes to account codes
-  const accountMappings: Record<ReasonCode, { expense: string; income: string }> = {
-    STOCK_TAKE: { expense: '5102', income: '4102' }, // Stock Adjustment Expense / Stock Adjustment Income
-    DAMAGE: { expense: '5103', income: '4103' }, // Damage/Loss Expense / Damage Recovery
-    THEFT: { expense: '5104', income: '4104' }, // Theft Loss / Theft Recovery
-    EXPIRED: { expense: '5105', income: '4105' }, // Expiry Loss / Expiry Recovery
-    FREE_SAMPLE: { expense: '5106', income: '4106' }, // Sample Expense / Sample Income
-    COST_CORRECTION: { expense: '5107', income: '4107' }, // Cost Correction Expense / Cost Correction Income
-    LANDED_COST: { expense: '5108', income: '4108' }, // Landed Cost / Landed Cost Recovery
-    REVALUATION: { expense: '5109', income: '4109' }, // Revaluation Loss / Revaluation Gain
-    WRITE_DOWN: { expense: '5110', income: '4110' } // Write Down Expense / Write Down Recovery
-  };
-
-  const mapping = accountMappings[reasonCode];
-  const accountCode = isExpense ? mapping.expense : mapping.income;
-  
-  // Try to get account by code first
-  let account = await getAccountByCode(businessId, accountCode);
-  
-  // If not found, try to get a generic adjustment account
-  if (!account) {
-    account = await getAccountByName(businessId, isExpense ? 'Stock Adjustment Expense' : 'Stock Adjustment Income');
-  }
-  
-  // If still not found, try to get any expense/income account
-  if (!account) {
-    const accounts = await getDefaultAccounts(businessId);
-    account = (isExpense ? accounts.expenses : accounts.sales) || null;
-  }
-  
-  return account;
-}

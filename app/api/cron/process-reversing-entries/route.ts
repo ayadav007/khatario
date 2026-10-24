@@ -3,6 +3,7 @@ import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { hasFeature } from '@/lib/subscription';
 import { assertCronAuthorized } from '@/lib/cron-auth';
+import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
       try {
         // CRITICAL: Check if business has active subscription
         // Skip processing if subscription is inactive or expired
-        const subscription = await getBusinessSubscription(entry.business_id);
+        const subscription = await getBusinessSubscription(entry.business_id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
           console.log(`Skipping reversing entry ${entry.id}: business ${entry.business_id} subscription inactive or expired`);
           continue;
@@ -106,12 +107,7 @@ export async function POST(request: NextRequest) {
         const voucherIdResult = await client.query('SELECT uuid_generate_v4() as id');
         const newVoucherId = voucherIdResult.rows[0].id;
 
-        // Generate voucher number
-        const voucherNumberResult = await client.query(
-          'SELECT generate_voucher_number($1, $2, $3) as voucher_number',
-          [entry.business_id, 'journal', today]
-        );
-        const voucherNumber = voucherNumberResult.rows[0].voucher_number;
+        const voucherNumber = await allocateJournalVoucherNumber(client, entry.business_id, today);
 
         // Create reversed lines (swap debit and credit)
         for (const line of originalLines) {
@@ -132,48 +128,6 @@ export async function POST(request: NextRequest) {
               `Reversal of ${entry.voucher_number || entry.reverses_entry_id.substring(0, 8)}`,
               voucherNumber,
               line.branch_id ?? reversalBranchId,
-            ]
-          );
-
-          // Also create entry in ledger_entries for backward compatibility
-          const account = await client.query('SELECT nature FROM accounts WHERE id = $1', [line.account_id]);
-          const accountNature = account.rows[0]?.nature || 'debit';
-          
-          const currentBalance = await client.query(
-            `SELECT get_account_balance($1, $2, $3, $4) as balance`,
-            [line.account_id, entry.business_id, today, line.branch_id ?? reversalBranchId]
-          );
-          
-          const balance = parseFloat(String(currentBalance.rows[0]?.balance ?? '0'));
-          const debit = Number(line.credit ?? 0);
-          const credit = Number(line.debit ?? 0);
-          
-          let newBalance = balance;
-          if (accountNature === 'debit') {
-            newBalance = balance + debit - credit;
-          } else {
-            newBalance = balance + credit - debit;
-          }
-
-          await client.query(
-            `INSERT INTO ledger_entries (
-              business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-              transaction_id, debit, credit, balance, description,
-              voucher_number, voucher_type, reference_number
-            )
-            VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, $8, $9, $10, 'journal', $11)`,
-            [
-              entry.business_id,
-              line.branch_id ?? reversalBranchId,
-              today,
-              line.account_id,
-              newVoucherId,
-              debit,
-              credit,
-              newBalance,
-              `Reversal of ${entry.voucher_number}`,
-              voucherNumber,
-              voucherNumber,
             ]
           );
         }

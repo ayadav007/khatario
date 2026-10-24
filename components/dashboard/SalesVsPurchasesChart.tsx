@@ -138,8 +138,10 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
     const width = 800;
     const height = plotHeight;
     const padding = plotHeight < 200 ? 40 : 48;
+    const paddingTop = 4;
+    const paddingBottom = 22;
     const chartWidth = width - padding * 2;
-    const chartHeight = height - padding * 2;
+    const chartHeight = height - paddingTop - paddingBottom;
     const barWidth = Math.max(30, Math.min(60, (chartWidth / chartData.length) * 0.6));
     const barSpacing = chartWidth / chartData.length;
     const gapBetweenBars = 4;
@@ -155,7 +157,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           onClick={handleChartClick}
         >
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = padding + chartHeight * (1 - ratio);
+            const y = paddingTop + chartHeight * (1 - ratio);
             return (
               <line
                 key={ratio}
@@ -170,7 +172,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           })}
 
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = padding + chartHeight * (1 - ratio);
+            const y = paddingTop + chartHeight * (1 - ratio);
             const value = Math.round(maxValue * ratio);
             return (
               <text
@@ -198,8 +200,8 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
               salesValue > 0 && salesHeight < minBarHeight ? minBarHeight : salesHeight;
             const finalPurchasesHeight =
               purchasesValue > 0 && purchasesHeight < minBarHeight ? minBarHeight : purchasesHeight;
-            const finalSalesY = padding + chartHeight - finalSalesHeight;
-            const finalPurchasesY = padding + chartHeight - finalPurchasesHeight;
+            const finalSalesY = paddingTop + chartHeight - finalSalesHeight;
+            const finalPurchasesY = paddingTop + chartHeight - finalPurchasesHeight;
             const dateLabel = format(new Date(d.date), 'MMM dd, yyyy');
 
             return (
@@ -210,7 +212,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     y={finalSalesY}
                     width={barHalfWidth}
                     height={finalSalesHeight}
-                    fill="#10b981"
+                    fill="#032B23"
                     data-bar="sales"
                     data-date={d.date}
                     rx="2"
@@ -224,7 +226,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     y={finalPurchasesY}
                     width={barHalfWidth}
                     height={finalPurchasesHeight}
-                    fill="#ef4444"
+                    fill="#F58220"
                     data-bar="purchases"
                     data-date={d.date}
                     rx="2"
@@ -253,7 +255,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
 
   if (loading) {
     return (
-      <Card padding="sm" className="h-full md:!p-5">
+      <Card padding="none" className="h-full overflow-hidden border border-border !shadow-none">
         <div className="flex h-36 items-center justify-center md:h-48">
           <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
         </div>
@@ -262,8 +264,8 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
   }
 
   return (
-    <Card padding="sm" className="h-full border border-border md:!p-5">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 md:mb-3">
+    <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3 pt-3 md:mb-3 md:px-5 md:pt-4">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <div className="flex items-center gap-1.5">
             <BarChart3 className="h-3.5 w-3.5 shrink-0 text-text-muted md:h-4 md:w-4" />
@@ -273,11 +275,11 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           </div>
           <div className="flex items-center gap-2.5 text-2xs text-text-secondary md:text-xs">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm bg-green-500" />
+              <span className="inline-block h-2 w-2 rounded-sm bg-[#032B23]" />
               Sales
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm bg-red-500" />
+              <span className="inline-block h-2 w-2 rounded-sm bg-[#F58220]" />
               Purchases
             </span>
           </div>
@@ -294,7 +296,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
         </select>
       </div>
 
-      <div className="border-t border-border pt-2 md:pt-3">
+      <div className="mt-auto">
         {barChart}
       </div>
     </Card>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
@@ -28,6 +29,8 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+    const planDenied = await denyIfFeatureMissing(businessId, 'accounting_credit_approvals');
+    if (planDenied) return planDenied;
 
     // AUTHORIZATION: Check read permission for invoices (to view approvals)
     try {

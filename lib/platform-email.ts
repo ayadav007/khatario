@@ -1,10 +1,16 @@
 /**
  * Platform-level email (Khatario → tenant or platform admin).
  * Uses global SMTP from .env via lib/email.ts and logs every attempt.
+ * These are system emails (welcome, OTP, billing, admin alerts), so the tenant's plan and
+ * email quota never block them.
  */
 
 import { query, queryOne, queryRows } from '@/lib/db';
-import { sendEmail } from '@/lib/email';
+import { sendEmailWithResult } from '@/lib/email';
+import {
+  getPlatformEmailTemplates,
+  resolveTemplate,
+} from '@/lib/platform-email-templates';
 
 export type PlatformEmailTemplateKey =
   | 'welcome'
@@ -14,12 +20,16 @@ export type PlatformEmailTemplateKey =
   | 'admin_new_signup'
   | 'admin_subscription_change'
   | 'admin_payment_failure'
-  | 'subscription_lifecycle';
+  | 'subscription_lifecycle'
+  | 'gst_compliance';
 
 export interface PlatformNotificationSettings {
   notify_new_signup: boolean;
   notify_subscription_changes: boolean;
   notify_payment_failures: boolean;
+  notify_incidents: boolean;
+  notify_push_signup: boolean;
+  notify_push_incident: boolean;
   platform_notify_email: string | null;
 }
 
@@ -27,6 +37,9 @@ const DEFAULT_SETTINGS: PlatformNotificationSettings = {
   notify_new_signup: true,
   notify_subscription_changes: true,
   notify_payment_failures: true,
+  notify_incidents: true,
+  notify_push_signup: true,
+  notify_push_incident: true,
   platform_notify_email: null,
 };
 
@@ -83,9 +96,13 @@ export async function getPlatformNotificationSettings(): Promise<PlatformNotific
       notify_new_signup: boolean;
       notify_subscription_changes: boolean;
       notify_payment_failures: boolean;
+      notify_incidents: boolean | null;
+      notify_push_signup: boolean | null;
+      notify_push_incident: boolean | null;
       platform_notify_email: string | null;
     }>(
-      `SELECT notify_new_signup, notify_subscription_changes, notify_payment_failures, platform_notify_email
+      `SELECT notify_new_signup, notify_subscription_changes, notify_payment_failures,
+              notify_incidents, notify_push_signup, notify_push_incident, platform_notify_email
        FROM platform_settings WHERE id = 'default'`,
     );
     if (!row) return { ...DEFAULT_SETTINGS };
@@ -93,6 +110,9 @@ export async function getPlatformNotificationSettings(): Promise<PlatformNotific
       notify_new_signup: row.notify_new_signup ?? true,
       notify_subscription_changes: row.notify_subscription_changes ?? true,
       notify_payment_failures: row.notify_payment_failures ?? true,
+      notify_incidents: row.notify_incidents ?? true,
+      notify_push_signup: row.notify_push_signup ?? true,
+      notify_push_incident: row.notify_push_incident ?? true,
       platform_notify_email: row.platform_notify_email,
     };
   } catch {
@@ -107,18 +127,25 @@ export async function updatePlatformNotificationSettings(
   const next = { ...current, ...patch };
   await query(
     `INSERT INTO platform_settings (
-       id, notify_new_signup, notify_subscription_changes, notify_payment_failures, platform_notify_email, updated_at
-     ) VALUES ('default', $1, $2, $3, $4, NOW())
+       id, notify_new_signup, notify_subscription_changes, notify_payment_failures,
+       notify_incidents, notify_push_signup, notify_push_incident, platform_notify_email, updated_at
+     ) VALUES ('default', $1, $2, $3, $4, $5, $6, $7, NOW())
      ON CONFLICT (id) DO UPDATE SET
        notify_new_signup = EXCLUDED.notify_new_signup,
        notify_subscription_changes = EXCLUDED.notify_subscription_changes,
        notify_payment_failures = EXCLUDED.notify_payment_failures,
+       notify_incidents = EXCLUDED.notify_incidents,
+       notify_push_signup = EXCLUDED.notify_push_signup,
+       notify_push_incident = EXCLUDED.notify_push_incident,
        platform_notify_email = EXCLUDED.platform_notify_email,
        updated_at = NOW()`,
     [
       next.notify_new_signup,
       next.notify_subscription_changes,
       next.notify_payment_failures,
+      next.notify_incidents,
+      next.notify_push_signup,
+      next.notify_push_incident,
       next.platform_notify_email,
     ],
   );
@@ -160,37 +187,20 @@ export async function sendPlatformEmail(params: {
     return false;
   }
 
-  if (params.businessId) {
-    const { checkLimit } = await import('@/lib/subscription');
-    const emailLimit = await checkLimit(params.businessId, 'email');
-    if (!emailLimit.allowed) {
-      await logPlatformEmail({
-        recipientEmail: to,
-        subject: params.subject,
-        templateKey: params.templateKey,
-        businessId: params.businessId,
-        status: 'skipped',
-        errorMessage: emailLimit.message ?? 'Daily email limit reached',
-        metadata: params.metadata,
-      });
-      return false;
-    }
-  }
-
   let status: 'sent' | 'failed' = 'failed';
   let errorMessage: string | null = null;
 
   try {
-    const ok = await sendEmail({
+    const result = await sendEmailWithResult({
       to,
       subject: params.subject,
       html: params.html,
       text: params.text,
     });
-    if (ok) {
+    if (result.ok) {
       status = 'sent';
     } else {
-      errorMessage = 'SMTP not configured or send returned false';
+      errorMessage = result.error || 'SMTP send failed';
     }
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err);
@@ -219,25 +229,21 @@ export async function sendWelcomeEmail(params: {
   const { businessId, businessName, recipientEmail, userName, trialDays } = params;
   const trialLine =
     trialDays != null && trialDays > 0
-      ? `<p>You have a <strong>${trialDays}-day trial</strong> with full access.</p>`
-      : `<p>Your workspace is active and ready to use.</p>`;
-  const subject = `Welcome to Khatario, ${businessName}!`;
-  const html = platformEmailLayout('Welcome to Khatario', `
-    <p>Hi ${userName},</p>
-    <p>Your account for <strong>${businessName}</strong> is ready.</p>
-    ${trialLine}
-    <p>Sign in anytime to start billing, inventory, and GST workflows.</p>
-    <p><a href="${APP_URL()}/login" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Sign in to Khatario</a></p>
-    <p>Need help? Reply to this email or visit our support page from the app.</p>
-  `);
+      ? `You have a ${trialDays}-day trial with full access.`
+      : 'Your workspace is active and ready to use.';
+  const stored = await getPlatformEmailTemplates();
+  const { subject, html: bodyHtml } = resolveTemplate('welcome', stored, {
+    businessName,
+    userName,
+    trialLine,
+  });
+  const html = platformEmailLayout('Welcome to Khatario', bodyHtml);
   const text = [
     `Hi ${userName},`,
     `Your account for ${businessName} is ready.`,
-    trialDays != null && trialDays > 0 ? `Trial: ${trialDays} days.` : '',
+    trialLine,
     `Sign in: ${APP_URL()}/login`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  ].join('\n\n');
 
   return sendPlatformEmail({
     to: recipientEmail,
@@ -258,33 +264,84 @@ export async function notifyAdminsNewSignup(params: {
   planLabel: string;
 }): Promise<number> {
   const settings = await getPlatformNotificationSettings();
-  if (!settings.notify_new_signup) return 0;
+  let sent = 0;
 
+  if (settings.notify_new_signup) {
+    const recipients = await getPlatformAdminRecipientEmails();
+    if (recipients.length === 0) {
+    await logPlatformEmail({
+      recipientEmail: '(none)',
+      subject: 'New business signup',
+      templateKey: 'admin_new_signup',
+      businessId: params.businessId,
+      status: 'skipped',
+      errorMessage:
+        'No platform admin inbox. Add an active admin email or set Notification inbox override. SMTP_USER/SMTP_PASSWORD must also be set.',
+    });
+  } else {
+    const stored = await getPlatformEmailTemplates();
+    const { subject, html: bodyHtml } = resolveTemplate('admin_new_signup', stored, {
+      businessName: params.businessName,
+      userName: params.userName,
+      userPhone: params.userPhone,
+      businessEmail: params.businessEmail || '—',
+      planLabel: params.planLabel,
+    });
+    const html = platformEmailLayout('New business signup', bodyHtml);
+    const text = `New signup: ${params.businessName} — ${params.userName} — plan ${params.planLabel}`;
+
+    for (const to of recipients) {
+      const ok = await sendPlatformEmail({
+        to,
+        subject,
+        html,
+        text,
+        templateKey: 'admin_new_signup',
+        businessId: params.businessId,
+      });
+      if (ok) sent++;
+    }
+  }
+  }
+
+  try {
+    const { sendPlatformAdminPush } = await import('@/lib/platform-push');
+    await sendPlatformAdminPush({
+      event: 'signup',
+      title: 'New business signup',
+      body: `${params.businessName} · ${params.userName} · ${params.userPhone}`,
+      url: `/admin/businesses/${params.businessId}`,
+    });
+  } catch (err) {
+    console.warn('[signup] admin push failed', err instanceof Error ? err.message : err);
+  }
+
+  return sent;
+}
+
+export async function notifyAdminsIncidentEmail(input: {
+  kind: string;
+  title: string;
+  body: string;
+  url: string;
+}): Promise<number> {
+  const settings = await getPlatformNotificationSettings();
+  if (!settings.notify_incidents) return 0;
   const recipients = await getPlatformAdminRecipientEmails();
   if (recipients.length === 0) return 0;
-
-  const subject = `[Khatario Admin] New signup: ${params.businessName}`;
-  const html = platformEmailLayout('New business signup', `
-    <p>A new business registered on Khatario.</p>
-    <ul>
-      <li><strong>Business:</strong> ${params.businessName}</li>
-      <li><strong>Contact:</strong> ${params.userName} (${params.userPhone})</li>
-      <li><strong>Email:</strong> ${params.businessEmail || '—'}</li>
-      <li><strong>Plan:</strong> ${params.planLabel}</li>
-    </ul>
-    <p><a href="${APP_URL()}/admin/businesses">View in admin panel</a></p>
+  const subject = `[Khatario Admin] ${input.title}`;
+  const html = platformEmailLayout(input.title, `
+    <p>${input.body}</p>
+    <p><a href="${APP_URL()}${input.url.startsWith('/') ? input.url : `/${input.url}`}">Open admin</a></p>
   `);
-  const text = `New signup: ${params.businessName} — ${params.userName} — plan ${params.planLabel}`;
-
   let sent = 0;
   for (const to of recipients) {
     const ok = await sendPlatformEmail({
       to,
       subject,
       html,
-      text,
-      templateKey: 'admin_new_signup',
-      businessId: params.businessId,
+      text: input.body,
+      metadata: { incidentKind: input.kind },
     });
     if (ok) sent++;
   }

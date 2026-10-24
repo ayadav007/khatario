@@ -23,29 +23,39 @@ import {
   Users,
   LayoutGrid,
   Palette,
-  FileSpreadsheet,
+  FileText,
   BookMarked,
   CalendarRange,
   Plug,
   CreditCard,
   HelpCircle,
   MessageSquare,
+  ShoppingBag,
+  Clock,
+  UserCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { MobileListRow, MobileListSection } from '@/components/layout/MobileList';
 
 const COLUMN_ICONS: Record<string, LucideIcon> = {
-  'org-core': Building2,
-  users: Users,
-  general: LayoutGrid,
-  customization: Palette,
-  'sales-billing': Palette,
-  'inventory-items': LayoutGrid,
-  tax: FileSpreadsheet,
+  account: Building2,
+  team: Users,
+  plan: CreditCard,
+  'billing-setup': Building2,
   accounting: BookMarked,
-  hr: CalendarRange,
-  connect: MessageSquare,
-  extensions: Plug,
-  subscription: CreditCard,
+  'sales-billing': FileText,
+  'online-store': ShoppingBag,
+  'inventory-items': LayoutGrid,
+  'billing-general': SlidersHorizontal,
+  'hr-organization': Building2,
+  'hr-time-attendance': Clock,
+  'hr-leave': CalendarRange,
+  'hr-payroll': CreditCard,
+  'hr-hiring': UserCheck,
+  'hr-employee-portal': Users,
+  whatsapp: MessageSquare,
+  integrations: Plug,
+  system: Palette,
   help: HelpCircle,
 };
 
@@ -121,7 +131,7 @@ function filterSection(
 export function SettingsHub() {
   const router = useRouter();
   const { business, platformSession } = useAuth();
-  const { warehousesEnabled } = useLayoutData();
+  const { warehousesEnabled, supplierHubVisible } = useLayoutData();
   const { hasCapability } = useCapabilityCheck();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -132,8 +142,9 @@ export function SettingsHub() {
     () =>
       buildSettingsHubSections(enabledModules, {
         hasFeature: (featureKey) => hasCapability(featureKey, 'view'),
+        supplierHubVisible: supplierHubVisible === true,
       }),
-    [enabledModules, hasCapability],
+    [enabledModules, hasCapability, supplierHubVisible],
   );
 
   const filtered = useMemo(() => {
@@ -264,14 +275,36 @@ export function SettingsHub() {
 
           {filtered.map((section) => (
             <section key={section.id} className="space-y-5" aria-labelledby={`hub-${section.id}`}>
-              <div className="px-0.5">
+              <div className="hidden px-0.5 lg:block">
                 <h2 id={`hub-${section.id}`} className="settings-section-title mb-0">
                   {section.title}
                 </h2>
                 <p className="type-body-secondary mt-0.5">{section.description}</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              <div className="-mx-4 lg:hidden">
+                {section.columns.map((col) => {
+                  const Icon = COLUMN_ICONS[col.id] ?? SlidersHorizontal;
+                  return (
+                    <MobileListSection key={col.id} title={col.title}>
+                      {col.links.map((link) => {
+                        const locked = link.featureKey != null && !hasCapability(link.featureKey, 'view');
+                        return (
+                          <MobileListRow
+                            key={`${link.href}-${link.label}`}
+                            href={link.href}
+                            label={link.label}
+                            icon={Icon}
+                            locked={locked}
+                          />
+                        );
+                      })}
+                    </MobileListSection>
+                  );
+                })}
+              </div>
+
+              <div className="hidden grid-cols-1 gap-5 sm:grid-cols-2 lg:grid lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {section.columns.map((col) => {
                   const Icon = COLUMN_ICONS[col.id] ?? SlidersHorizontal;
                   return (

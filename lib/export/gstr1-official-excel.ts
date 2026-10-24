@@ -63,6 +63,27 @@ interface GSTR1Report {
     cess_amount: number;
     rate?: number;
   }>;
+  hsn_b2b?: GSTR1Report['hsn'];
+  hsn_b2c?: GSTR1Report['hsn'];
+  at?: Array<{
+    place_of_supply: string;
+    rate: number;
+    taxable_value: number;
+    igst: number;
+    cgst: number;
+    sgst: number;
+    cess: number;
+  }>;
+  atadj?: GSTR1Report['at'];
+  doc_issues?: Array<{
+    doc_num: number;
+    nature: string;
+    from: string;
+    to: string;
+    totnum: number;
+    cancel: number;
+    net_issue: number;
+  }>;
   nil: Array<{
     description: string;
     nil_supply: number;
@@ -115,11 +136,70 @@ interface GSTR1Report {
   }>;
 }
 
+/** Invoice-value threshold label for the period. August 2024 onwards the limit is ₹1,00,000. */
+export function b2clThresholdLabel(month?: number, year?: number): string {
+  const period = year && month ? `${year}-${String(month).padStart(2, '0')}-01` : '';
+  const above = !period || period >= '2024-08-01' ? '1,00,000' : '2,50,000';
+  return `B2C Large Invoices (invoice value above ${above}, inter-state)`;
+}
+
+/** Indian financial year for a return month. April–March, written as 2026-27. */
+export function gstFinancialYear(month?: number, year?: number): string {
+  if (!year || !month) return '';
+  const start = month >= 4 ? year : year - 1;
+  return `${start}-${String(start + 1).slice(-2)}`;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+type HsnRow = GSTR1Report['hsn'][number];
+
+function writeHsnSheet(workbook: ExcelJS.Workbook, name: string, rows: HsnRow[]) {
+  const sheet = workbook.addWorksheet(name);
+  sheet.columns = [
+    { header: 'HSN', key: 'hsn', width: 12 },
+    { header: 'Description', key: 'description', width: 40 },
+    { header: 'UQC', key: 'uqc', width: 10 },
+    { header: 'Total Quantity', key: 'total_quantity', width: 15 },
+    { header: 'Total Value', key: 'total_value', width: 15 },
+    { header: 'Taxable Value', key: 'taxable_value', width: 15 },
+    { header: 'Integrated Tax Amount', key: 'igst', width: 18 },
+    { header: 'Central Tax Amount', key: 'cgst', width: 18 },
+    { header: 'State/UT Tax Amount', key: 'sgst', width: 18 },
+    { header: 'Cess Amount', key: 'cess', width: 15 },
+    { header: 'Rate', key: 'rate', width: 8 },
+  ];
+  for (const item of rows) {
+    sheet.addRow({
+      hsn: item.hsn_sac || 'NA',
+      description: item.description || '',
+      uqc: item.uqc || 'NOS',
+      total_quantity: round2(item.total_quantity),
+      total_value: round2(item.total_value),
+      taxable_value: round2(item.taxable_value),
+      igst: round2(item.integrated_tax),
+      cgst: round2(item.central_tax),
+      sgst: round2(item.state_ut_tax),
+      cess: round2(item.cess_amount || 0),
+      rate: item.rate ?? 0,
+    });
+  }
+  const headerRow = sheet.getRow(1);
+  headerRow.font = { bold: true };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+}
+
 /**
  * Format date to DD/MM/YYYY string format (required by GSTN)
  */
 function formatDateForGSTN(dateStr: string | Date): string {
   if (!dateStr) return '';
+  if (typeof dateStr === 'string') {
+    const dmy = dateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (dmy) return `${dmy[1].padStart(2, '0')}/${dmy[2].padStart(2, '0')}/${dmy[3]}`;
+  }
   const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
   if (isNaN(date.getTime())) return '';
   
@@ -228,7 +308,7 @@ export async function generateOfficialGSTR1Excel(
   };
   
   // ============================================
-  // SHEET 3: B2CL (B2C Large - Inter-state > 2.5L)
+  // SHEET 3: B2CL (inter-state, invoice value above the period threshold)
   // ============================================
   const b2clSheet = workbook.addWorksheet('B2CL');
   b2clSheet.columns = [
@@ -250,7 +330,8 @@ export async function generateOfficialGSTR1Excel(
       invoice_date: formatDateForGSTN(item.invoice_date),
       invoice_value: Math.round(item.invoice_value * 100) / 100,
       place_of_supply: item.place_of_supply?.substring(0, 2) || '',
-      rate: item.rate,
+      rate: '',
+      rate_val: item.rate,
       taxable_value: Math.round(item.taxable_value * 100) / 100,
       igst: Math.round((item.igst_amount || 0) * 100) / 100,
       cess: Math.round((item.cess_amount || 0) * 100) / 100,
@@ -320,7 +401,7 @@ export async function generateOfficialGSTR1Excel(
     { header: 'Place Of Supply', key: 'place_of_supply', width: 15 },
     { header: 'Note Supply Type', key: 'note_supply_type', width: 18 },
     { header: 'Note Value', key: 'note_value', width: 15 },
-    { header: 'Applicable % of Tax Rate', key: 'rate', width: 20 },
+    { header: 'Rate', key: 'rate', width: 8 },
     { header: 'Taxable Value', key: 'taxable_value', width: 15 },
     { header: 'Integrated Tax', key: 'igst', width: 15 },
     { header: 'Central Tax', key: 'cgst', width: 15 },
@@ -378,7 +459,7 @@ export async function generateOfficialGSTR1Excel(
     { header: 'Place Of Supply', key: 'place_of_supply', width: 15 },
     { header: 'Note Supply Type', key: 'note_supply_type', width: 18 },
     { header: 'Note Value', key: 'note_value', width: 15 },
-    { header: 'Applicable % of Tax Rate', key: 'rate', width: 20 },
+    { header: 'Rate', key: 'rate', width: 8 },
     { header: 'Taxable Value', key: 'taxable_value', width: 15 },
     { header: 'Integrated Tax', key: 'igst', width: 15 },
     { header: 'Central Tax', key: 'cgst', width: 15 },
@@ -429,8 +510,10 @@ export async function generateOfficialGSTR1Excel(
     { header: 'Port Code', key: 'port_code', width: 12 },
     { header: 'Shipping Bill Number', key: 'shipping_bill_number', width: 20 },
     { header: 'Shipping Bill Date', key: 'shipping_bill_date', width: 15 },
-    { header: 'Applicable % of Tax Rate', key: 'rate', width: 20 },
+    { header: 'Applicable % of Tax Rate', key: 'applicable_rate', width: 20 },
+    { header: 'Rate', key: 'rate', width: 8 },
     { header: 'Taxable Value', key: 'taxable_value', width: 15 },
+    { header: 'Integrated Tax', key: 'igst', width: 15 },
   ];
   
   report.exports.forEach((item) => {
@@ -442,8 +525,10 @@ export async function generateOfficialGSTR1Excel(
       port_code: item.port_code || '',
       shipping_bill_number: item.shipping_bill_number || '',
       shipping_bill_date: item.shipping_bill_date ? formatDateForGSTN(item.shipping_bill_date) : '',
+      applicable_rate: '',
       rate: item.rate,
       taxable_value: Math.round(item.taxable_value * 100) / 100,
+      igst: Math.round((item.igst_amount || 0) * 100) / 100,
     });
   });
   
@@ -499,49 +584,9 @@ export async function generateOfficialGSTR1Excel(
     };
   }
   
-  // ============================================
-  // SHEET 9: HSN (HSN Summary)
-  // ============================================
-  const hsnSheet = workbook.addWorksheet('HSN');
-  hsnSheet.columns = [
-    { header: 'HSN', key: 'hsn', width: 12 },
-    { header: 'Description', key: 'description', width: 40 },
-    { header: 'UQC', key: 'uqc', width: 10 },
-    { header: 'Total Quantity', key: 'total_quantity', width: 15 },
-    { header: 'Total Value', key: 'total_value', width: 15 },
-    { header: 'Taxable Value', key: 'taxable_value', width: 15 },
-    { header: 'Integrated Tax Amount', key: 'igst', width: 18 },
-    { header: 'Central Tax Amount', key: 'cgst', width: 18 },
-    { header: 'State/UT Tax Amount', key: 'sgst', width: 18 },
-    { header: 'Cess Amount', key: 'cess', width: 15 },
-    { header: 'Rate', key: 'rate', width: 8 },
-  ];
-  
-  report.hsn.forEach((item) => {
-    hsnSheet.addRow({
-      hsn: item.hsn_sac || 'NA',
-      description: item.description || '',
-      uqc: item.uqc || 'NOS',
-      total_quantity: Math.round(item.total_quantity * 100) / 100,
-      total_value: Math.round(item.total_value * 100) / 100,
-      taxable_value: Math.round(item.taxable_value * 100) / 100,
-      igst: Math.round(item.integrated_tax * 100) / 100,
-      cgst: Math.round(item.central_tax * 100) / 100,
-      sgst: Math.round(item.state_ut_tax * 100) / 100,
-      cess: Math.round((item.cess_amount || 0) * 100) / 100,
-      rate: item.rate ?? 0,
-    });
-  });
-  
-  if (hsnSheet.rowCount > 0) {
-    const headerRow = hsnSheet.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' }
-    };
-  }
+  // HSN stays split. The combined `hsn` array merges B2B and B2C that share SAC, rate and UQC.
+  writeHsnSheet(workbook, 'HSN(B2B)', report.hsn_b2b ?? []);
+  writeHsnSheet(workbook, 'HSN(B2C)', report.hsn_b2c ?? report.hsn);
   
   // ============================================
   // SHEET 9: NIL (Nil Rated, Exempt, Non-GST)
@@ -573,67 +618,36 @@ export async function generateOfficialGSTR1Excel(
     };
   }
   
-  // ============================================
-  // SHEET 10: AT (Amendments - Tax Period)
-  // ============================================
-  const atSheet = workbook.addWorksheet('AT');
-  atSheet.columns = [
-    { header: 'Original Month', key: 'original_month', width: 15 },
-    { header: 'Original Financial Year', key: 'original_fy', width: 20 },
-    { header: 'GSTIN/UIN of Recipient', key: 'gstin', width: 18 },
-    { header: 'Invoice Number', key: 'invoice_number', width: 20 },
-    { header: 'Invoice date', key: 'invoice_date', width: 12 },
-    { header: 'Invoice Value', key: 'invoice_value', width: 15 },
-    { header: 'Place Of Supply', key: 'place_of_supply', width: 15 },
-    { header: 'Supply Attract Reverse Charge', key: 'reverse_charge', width: 25 },
-    { header: 'Invoice Type', key: 'invoice_type', width: 15 },
-    { header: 'E-Commerce GSTIN', key: 'ecommerce_gstin', width: 18 },
+  // Table 11A advances received, and Table 11B adjustments of earlier-period advances.
+  const advanceColumns: ExcelJS.Column[] = [
+    { header: 'Place Of Supply', key: 'place_of_supply', width: 18 },
     { header: 'Rate', key: 'rate', width: 8 },
-    { header: 'Taxable Value', key: 'taxable_value', width: 15 },
+    { header: 'Gross Advance', key: 'taxable_value', width: 16 },
     { header: 'Integrated Tax', key: 'igst', width: 15 },
     { header: 'Central Tax', key: 'cgst', width: 15 },
     { header: 'State/UT Tax', key: 'sgst', width: 15 },
     { header: 'Cess Amount', key: 'cess', width: 15 },
-  ];
-  // Empty sheet - header only (required by GSTN)
-  const atHeaderRow = atSheet.getRow(1);
-  atHeaderRow.font = { bold: true };
-  atHeaderRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFE0E0E0' }
+  ] as ExcelJS.Column[];
+  const writeAdvances = (name: string, rows: NonNullable<GSTR1Report['at']>) => {
+    const sheet = workbook.addWorksheet(name);
+    sheet.columns = advanceColumns;
+    for (const item of rows) {
+      sheet.addRow({
+        place_of_supply: item.place_of_supply?.substring(0, 2) || '',
+        rate: item.rate,
+        taxable_value: round2(item.taxable_value),
+        igst: round2(item.igst || 0),
+        cgst: round2(item.cgst || 0),
+        sgst: round2(item.sgst || 0),
+        cess: round2(item.cess || 0),
+      });
+    }
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
   };
-  
-  // ============================================
-  // SHEET 11: TXP (Tax Period)
-  // ============================================
-  const txpSheet = workbook.addWorksheet('TXP');
-  txpSheet.columns = [
-    { header: 'Original Month', key: 'original_month', width: 15 },
-    { header: 'Original Financial Year', key: 'original_fy', width: 20 },
-    { header: 'GSTIN/UIN of Recipient', key: 'gstin', width: 18 },
-    { header: 'Invoice Number', key: 'invoice_number', width: 20 },
-    { header: 'Invoice date', key: 'invoice_date', width: 12 },
-    { header: 'Invoice Value', key: 'invoice_value', width: 15 },
-    { header: 'Place Of Supply', key: 'place_of_supply', width: 15 },
-    { header: 'Supply Attract Reverse Charge', key: 'reverse_charge', width: 25 },
-    { header: 'Invoice Type', key: 'invoice_type', width: 15 },
-    { header: 'E-Commerce GSTIN', key: 'ecommerce_gstin', width: 18 },
-    { header: 'Rate', key: 'rate', width: 8 },
-    { header: 'Taxable Value', key: 'taxable_value', width: 15 },
-    { header: 'Integrated Tax', key: 'igst', width: 15 },
-    { header: 'Central Tax', key: 'cgst', width: 15 },
-    { header: 'State/UT Tax', key: 'sgst', width: 15 },
-    { header: 'Cess Amount', key: 'cess', width: 15 },
-  ];
-  // Empty sheet - header only (required by GSTN)
-  const txpHeaderRow = txpSheet.getRow(1);
-  txpHeaderRow.font = { bold: true };
-  txpHeaderRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFE0E0E0' }
-  };
+  writeAdvances('AT', report.at ?? []);
+  writeAdvances('TXP', report.atadj ?? []);
   
   // ============================================
   // SHEET 12: Docs (Document Summary)
@@ -645,8 +659,18 @@ export async function generateOfficialGSTR1Excel(
     { header: 'Sr No To', key: 'sr_no_to', width: 12 },
     { header: 'Total Number', key: 'total_number', width: 12 },
     { header: 'Cancelled', key: 'cancelled', width: 12 },
+    { header: 'Net Issued', key: 'net_issue', width: 12 },
   ];
-  // Empty sheet - header only (required by GSTN)
+  for (const doc of report.doc_issues ?? []) {
+    docsSheet.addRow({
+      nature: doc.nature,
+      sr_no_from: doc.from,
+      sr_no_to: doc.to,
+      total_number: doc.totnum,
+      cancelled: doc.cancel ?? 0,
+      net_issue: doc.net_issue,
+    });
+  }
   const docsHeaderRow = docsSheet.getRow(1);
   docsHeaderRow.font = { bold: true };
   docsHeaderRow.fill = {
@@ -697,6 +721,7 @@ export async function generateOfficialGSTR1Excel(
   }, { igst: 0, cgst: 0, sgst: 0, cess: 0 });
   
   const expTotalTaxable = report.exports.reduce((sum, item) => sum + item.taxable_value, 0);
+  const expTotalIgst = report.exports.reduce((sum, item) => sum + (item.igst_amount || 0), 0);
   
   const cdnrTotalTaxable = report.cdn.filter(c => c.gstin_uin_recipient).reduce((sum, item) => sum + item.taxable_value, 0);
   const cdnrTaxes = report.cdn.filter(c => c.gstin_uin_recipient).reduce((acc, item) => {
@@ -716,8 +741,9 @@ export async function generateOfficialGSTR1Excel(
     return acc;
   }, { igst: 0, cgst: 0, sgst: 0, cess: 0 });
   
-  const hsnTotalTaxable = report.hsn.reduce((sum, item) => sum + item.taxable_value, 0);
-  const hsnTaxes = report.hsn.reduce((acc, item) => {
+  const hsnRows = [...(report.hsn_b2b ?? []), ...(report.hsn_b2c ?? report.hsn)];
+  const hsnTotalTaxable = hsnRows.reduce((sum, item) => sum + item.taxable_value, 0);
+  const hsnTaxes = hsnRows.reduce((acc, item) => {
     acc.igst += item.integrated_tax;
     acc.cgst += item.central_tax;
     acc.sgst += item.state_ut_tax;
@@ -746,7 +772,7 @@ export async function generateOfficialGSTR1Excel(
   
   summarySheet.addRow({
     section: 'B2CL',
-    description: 'B2C Large Invoices (>2.5L, Inter-state)',
+    description: b2clThresholdLabel(filters.month, filters.year),
     taxable_value: Math.round(b2clTotalTaxable * 100) / 100,
     igst: Math.round(b2clTaxes.igst * 100) / 100,
     cgst: 0,
@@ -770,7 +796,7 @@ export async function generateOfficialGSTR1Excel(
     section: 'EXPORT',
     description: 'Export Invoices',
     taxable_value: Math.round(expTotalTaxable * 100) / 100,
-    igst: 0,
+    igst: Math.round(expTotalIgst * 100) / 100,
     cgst: 0,
     sgst: 0,
     cess: 0,
@@ -785,7 +811,7 @@ export async function generateOfficialGSTR1Excel(
     cgst: Math.round(cdnrTaxes.cgst * 100) / 100,
     sgst: Math.round(cdnrTaxes.sgst * 100) / 100,
     cess: Math.round(cdnrTaxes.cess * 100) / 100,
-    count: report.cdn.filter(c => c.gstin_uin_recipient).length,
+    count: new Set(report.cdn.filter(c => c.gstin_uin_recipient).map(c => `${c.note_type}|${c.note_number}`)).size,
   });
   
   summarySheet.addRow({
@@ -796,18 +822,18 @@ export async function generateOfficialGSTR1Excel(
     cgst: Math.round(cdnurTaxes.cgst * 100) / 100,
     sgst: Math.round(cdnurTaxes.sgst * 100) / 100,
     cess: Math.round(cdnurTaxes.cess * 100) / 100,
-    count: report.cdn.filter(c => !c.gstin_uin_recipient).length,
+    count: new Set(report.cdn.filter(c => !c.gstin_uin_recipient).map(c => `${c.note_type}|${c.note_number}`)).size,
   });
   
   summarySheet.addRow({
     section: 'HSN',
-    description: 'HSN Summary',
+    description: 'HSN summary (already included in the sections above; not added again to the grand total)',
     taxable_value: Math.round(hsnTotalTaxable * 100) / 100,
     igst: Math.round(hsnTaxes.igst * 100) / 100,
     cgst: Math.round(hsnTaxes.cgst * 100) / 100,
     sgst: Math.round(hsnTaxes.sgst * 100) / 100,
     cess: Math.round(hsnTaxes.cess * 100) / 100,
-    count: report.hsn.length,
+    count: hsnRows.length,
   });
   
   summarySheet.addRow({
@@ -822,23 +848,23 @@ export async function generateOfficialGSTR1Excel(
   });
   
   // Add totals row
-  const grandTotalTaxable = b2bTotalTaxable + b2clTotalTaxable + b2csTotalTaxable + expTotalTaxable + cdnrTotalTaxable + cdnurTotalTaxable + hsnTotalTaxable + nilTotal.nil + nilTotal.exempt + nilTotal.nongst;
-  const grandTotalIGST = b2bTaxes.igst + b2clTaxes.igst + b2csTaxes.igst + cdnrTaxes.igst + cdnurTaxes.igst + hsnTaxes.igst;
-  const grandTotalCGST = b2bTaxes.cgst + b2csTaxes.cgst + cdnrTaxes.cgst + cdnurTaxes.cgst + hsnTaxes.cgst;
-  const grandTotalSGST = b2bTaxes.sgst + b2csTaxes.sgst + cdnrTaxes.sgst + cdnurTaxes.sgst + hsnTaxes.sgst;
-  const grandTotalCess = b2bTaxes.cess + b2clTaxes.cess + b2csTaxes.cess + cdnrTaxes.cess + cdnurTaxes.cess + hsnTaxes.cess;
+  const grandTotalTaxable = b2bTotalTaxable + b2clTotalTaxable + b2csTotalTaxable + expTotalTaxable + cdnrTotalTaxable + cdnurTotalTaxable + nilTotal.nil + nilTotal.exempt + nilTotal.nongst;
+  const grandTotalIGST = b2bTaxes.igst + b2clTaxes.igst + b2csTaxes.igst + expTotalIgst + cdnrTaxes.igst + cdnurTaxes.igst;
+  const grandTotalCGST = b2bTaxes.cgst + b2csTaxes.cgst + cdnrTaxes.cgst + cdnurTaxes.cgst;
+  const grandTotalSGST = b2bTaxes.sgst + b2csTaxes.sgst + cdnrTaxes.sgst + cdnurTaxes.sgst;
+  const grandTotalCess = b2bTaxes.cess + b2clTaxes.cess + b2csTaxes.cess + cdnrTaxes.cess + cdnurTaxes.cess;
   
   summarySheet.addRow({}); // Empty row for spacing
   
   const totalRow = summarySheet.addRow({
     section: 'GRAND TOTAL',
-    description: 'Total of All Sections',
+    description: 'Outward supplies and notes (HSN is not added again)',
     taxable_value: Math.round(grandTotalTaxable * 100) / 100,
     igst: Math.round(grandTotalIGST * 100) / 100,
     cgst: Math.round(grandTotalCGST * 100) / 100,
     sgst: Math.round(grandTotalSGST * 100) / 100,
     cess: Math.round(grandTotalCess * 100) / 100,
-    count: report.b2b.length + report.b2cl.length + report.b2cs.length + report.exports.length + report.cdn.length + report.hsn.length + report.nil.length,
+    count: report.b2b.length + report.b2cl.length + report.b2cs.length + report.exports.length + report.cdn.length + report.nil.length,
   });
   
   // Style header row
@@ -868,7 +894,7 @@ export async function generateOfficialGSTR1Excel(
   ];
   
   // Populate master data
-  const financialYear = filters.year ? `${filters.year - 1}-${filters.year.toString().slice(2)}` : '';
+  const financialYear = gstFinancialYear(filters.month, filters.year);
   const taxPeriod = filters.month && filters.year 
     ? `${filters.year.toString().slice(2)}${filters.month.toString().padStart(2, '0')}`
     : '';

@@ -13,37 +13,40 @@ export interface PortalTheme {
   font_preset: PortalFontPreset;
 }
 
-/** Product defaults: primary teal + accent teal (matches pre-theme Tailwind). */
+/** Previous product default. Stored themes still on this hex follow the logo green. */
+const LEGACY_DEFAULT_PRIMARY = '#063f35';
+
+/** Product defaults: logo green and orange. */
 export const DEFAULT_PORTAL_THEME: PortalTheme = {
-  primary_hex: '#0d9488',
-  accent_hex: '#00796b',
+  primary_hex: '#032B23',
+  accent_hex: '#F58220',
   font_preset: 'inter',
 };
 
 export const DEFAULT_PRIMARY_VARS: Record<string, string> = {
-  '--color-primary-50': '#ecfdf5',
-  '--color-primary-100': '#ccfbf1',
-  '--color-primary-200': '#99f6e4',
-  '--color-primary-300': '#5eead4',
-  '--color-primary-400': '#2dd4bf',
-  '--color-primary-500': '#0d9488',
-  '--color-primary-600': '#115e59',
-  '--color-primary-700': '#0f4f4a',
-  '--color-primary-800': '#0f3d39',
-  '--color-primary-900': '#052e2b',
+  '--color-primary-50': '#edf0f0',
+  '--color-primary-100': '#d9dfde',
+  '--color-primary-200': '#aebbb9',
+  '--color-primary-300': '#7c918d',
+  '--color-primary-400': '#45625c',
+  '--color-primary-500': '#032b23',
+  '--color-primary-600': '#032b23',
+  '--color-primary-700': '#021f19',
+  '--color-primary-800': '#021914',
+  '--color-primary-900': '#011310',
 };
 
 export const DEFAULT_ACCENT_VARS: Record<string, string> = {
-  '--color-accent-50': '#E0F2F1',
-  '--color-accent-100': '#B2DFDB',
-  '--color-accent-200': '#80CBC4',
-  '--color-accent-300': '#4DB6AC',
-  '--color-accent-400': '#26A69A',
-  '--color-accent-500': '#00897B',
-  '--color-accent-600': '#00796B',
-  '--color-accent-700': '#00695C',
-  '--color-accent-800': '#004D40',
-  '--color-accent-900': '#003D32',
+  '--color-accent-50': '#fef6ef',
+  '--color-accent-100': '#feecde',
+  '--color-accent-200': '#fcd7b8',
+  '--color-accent-300': '#fabe8b',
+  '--color-accent-400': '#f8a35a',
+  '--color-accent-500': '#F58220',
+  '--color-accent-600': '#d3701c',
+  '--color-accent-700': '#b05e17',
+  '--color-accent-800': '#8e4b13',
+  '--color-accent-900': '#6e3b0e',
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -103,15 +106,17 @@ function brandHexToCssVars(
   const out: Record<string, string> = {};
   for (const [shade, t] of pairs) {
     const key = `${prefix}-${shade}`;
-    if (t === 0) {
+    // Buttons use shade 600. Keep that equal to the chosen green so it matches the logo.
+    const mixT = role === 'primary' && shade === 600 ? 0 : t;
+    if (mixT === 0) {
       out[key] = rgbToHex(base.r, base.g, base.b);
-    } else if (t < 0) {
-      const m = mixRgb(base, K, Math.abs(t));
+    } else if (mixT < 0) {
+      const m = mixRgb(base, K, Math.abs(mixT));
       out[key] = rgbToHex(m.r, m.g, m.b);
-    } else if (t >= 1) {
+    } else if (mixT >= 1) {
       out[key] = rgbToHex(W.r, W.g, W.b);
     } else {
-      const m = mixRgb(W, base, t);
+      const m = mixRgb(base, W, mixT);
       out[key] = rgbToHex(m.r, m.g, m.b);
     }
   }
@@ -161,8 +166,9 @@ export function normalizePortalThemeJson(raw: unknown): PortalTheme | null {
   if (raw == null) return null;
   if (typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
-  const primary = typeof o.primary_hex === 'string' ? parseHexColorInput(o.primary_hex) : null;
-  if (!primary) return null;
+  const parsedPrimary = typeof o.primary_hex === 'string' ? parseHexColorInput(o.primary_hex) : null;
+  if (!parsedPrimary) return null;
+  const primary = parsedPrimary === LEGACY_DEFAULT_PRIMARY ? '#032b23' : parsedPrimary;
   const presetRaw = typeof o.font_preset === 'string' ? o.font_preset.trim() : '';
   const preset = PORTAL_FONT_PRESETS.includes(presetRaw as PortalFontPreset)
     ? (presetRaw as PortalFontPreset)

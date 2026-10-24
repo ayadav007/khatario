@@ -20,6 +20,7 @@ interface PurchaseReturn {
   purchase_bill_number?: string;
   grand_total: number;
   refund_status: string;
+  status?: string | null;
   reason?: string;
   itc_reversed: boolean;
 }
@@ -123,13 +124,16 @@ export default function PurchaseReturnsPage() {
             <Card padding="md">
               <div className="text-sm text-text-secondary">Total Amount</div>
               <div className="text-2xl font-bold text-gray-900 mt-1">
-                ₹{purchaseReturns.reduce((sum, pr) => sum + Number(pr.grand_total), 0).toLocaleString('en-IN')}
+                ₹{purchaseReturns
+                  .filter((pr) => pr.status !== 'cancelled')
+                  .reduce((sum, pr) => sum + Number(pr.grand_total), 0)
+                  .toLocaleString('en-IN')}
               </div>
             </Card>
             <Card padding="md">
               <div className="text-sm text-text-secondary">Pending Refunds</div>
               <div className="text-2xl font-bold text-amber-600 mt-1">
-                {purchaseReturns.filter((pr) => pr.refund_status === 'pending').length}
+                {purchaseReturns.filter((pr) => pr.status !== 'cancelled' && pr.refund_status === 'pending').length}
               </div>
             </Card>
           </div>
@@ -214,9 +218,15 @@ export default function PurchaseReturnsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(purchaseReturn.refund_status)}`}>
-                          {purchaseReturn.refund_status}
-                        </span>
+                        {purchaseReturn.status === 'cancelled' ? (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                            cancelled
+                          </span>
+                        ) : (
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(purchaseReturn.refund_status)}`}>
+                            {purchaseReturn.refund_status}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {purchaseReturn.itc_reversed ? (

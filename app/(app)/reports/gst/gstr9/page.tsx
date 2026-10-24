@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw, TrendingUp, TrendingDown, MinusCircle, AlertCircle } from 'lucide-react';
@@ -123,6 +124,13 @@ export default function GSTR9Page() {
       overrides: JSON.stringify(overrides)
     });
     
+    const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+    const fyKey = `${financialYear}-${String(financialYear + 1).slice(2)}`;
+    const gate = await confirmReturnDownload('gstr9', fyKey);
+    if (!gate.ok) {
+      if (gate.message) toast.error(gate.message);
+      return;
+    }
     window.open(`/api/reports/gst/gstr9?${query}`, '_blank');
   };
 
@@ -130,12 +138,13 @@ export default function GSTR9Page() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">GSTR-9 Annual Return</h1>
-            <p className="text-sm text-gray-500">Annual consolidated return for the financial year (CA-Grade Rebuild)</p>
-          </div>
-          <div className="flex gap-3">
+        <PageHeader
+  title="GSTR-9 Annual Return"
+  subtitle="Annual consolidated return for the financial year (CA-Grade Rebuild)"
+
+  actions={
+    <>
+<div className="flex gap-3">
             <button 
               onClick={() => handleExport('json')}
               className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-primary-700 rounded-lg hover:bg-primary-200"
@@ -151,7 +160,9 @@ export default function GSTR9Page() {
               Export CSV ZIP
             </button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Validation Warnings */}
         {data?.validation?.warnings?.length > 0 && (
@@ -311,12 +322,21 @@ export default function GSTR9Page() {
           {data?.table_8 && (
             <Section title="Table 8: Other ITC related information">
               <div className="mb-4 p-3 bg-slate-50 text-primary-800 text-xs rounded border border-primary-200 font-medium uppercase tracking-wider">
-                GSTR-2A/2B values are read-only reference from returns. No auto-reconciliation applied.
+                {(data.validation?.warnings ?? []).some((w: string) => w.includes('internal books estimate'))
+                  ? 'Months with an imported GSTR-2B use that portal value. Months without one show an internal books estimate, not the portal Table 8A.'
+                  : 'GSTR-2A/2B values are read-only reference from returns. No auto-reconciliation applied.'}
               </div>
               <TaxTable 
                 onOverride={handleOverride}
                 rows={[
-                  { id: '8A', label: 'ITC as per GSTR-2B', data: data.table_8.A, path: 'table_8.A' },
+                  {
+                    id: '8A',
+                    label: (data.validation?.warnings ?? []).some((w: string) => w.includes('internal books estimate'))
+                      ? 'ITC as per GSTR-2B where imported; other months are an internal books estimate'
+                      : 'ITC as per GSTR-2B',
+                    data: data.table_8.A,
+                    path: 'table_8.A',
+                  },
                   { id: '8B', label: 'ITC as per sum total of 6(B) and 6(H) above', data: data.table_8.B, path: 'table_8.B' },
                   { id: '8C', label: 'ITC on inward supplies received during FY but availed in next FY', data: data.table_8.C, path: 'table_8.C' },
                   { id: '8D', label: 'Difference [A - (B + C)]', data: data.table_8.D, path: 'table_8.D', isBold: true },

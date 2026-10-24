@@ -59,13 +59,10 @@ export async function POST(request: NextRequest) {
       return tenant.response;
     }
     const business_id = tenant.businessId;
-    const {
-      template_name,
-      vendor_pattern,
-      template_yaml,
-      is_global = false,
-      created_by
-    } = body;
+    const { template_name, vendor_pattern, template_yaml } = body;
+    // Global templates are platform-managed; tenants can only create their own.
+    const is_global = false;
+    const created_by = userId;
 
     if (!template_name || !template_yaml) {
       return NextResponse.json(
@@ -123,7 +120,16 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
     const templateId = searchParams.get('id');
 
     if (!templateId) {
@@ -169,12 +175,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(templateId);
+    values.push(templateId, tenant.businessId);
 
     const template = await queryOne(
       `UPDATE invoice_templates 
        SET ${updates.join(', ')}
-       WHERE id = $${paramCount}
+       WHERE id = $${paramCount} AND business_id = $${paramCount + 1}
        RETURNING *`,
       values
     );
@@ -203,7 +209,16 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
     const templateId = searchParams.get('id');
 
     if (!templateId) {
@@ -213,10 +228,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await dbQuery(
-      `DELETE FROM invoice_templates WHERE id = $1`,
-      [templateId]
+    const deleted = await queryOne(
+      `DELETE FROM invoice_templates WHERE id = $1 AND business_id = $2 RETURNING id`,
+      [templateId, tenant.businessId]
     );
+
+    if (!deleted) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
 

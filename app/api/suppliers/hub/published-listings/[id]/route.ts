@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
+import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * PATCH / DELETE — own listing only
+ * PATCH / DELETE — own listing only. Business and user come from the session only.
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId: updatedByUserId } = auth;
     const body = await request.json();
-    const businessId = getBusinessIdFromRequest(request, body);
     const {
       audience,
       display_name: displayName,
@@ -28,19 +30,8 @@ export async function PATCH(
       from_amount: fromAmount,
       sort_order: sortOrder,
       is_active: isActive,
-      updated_by_user_id: updatedByUserId,
     } = body;
     const id = params.id;
-
-    if (!businessId || !id) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-    }
-    if (!updatedByUserId) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     const existing = await db.queryOne<SupplierPublishedListing>(
       `SELECT * FROM supplier_published_listings WHERE id = $1 AND supplier_business_id = $2`,
@@ -60,7 +51,7 @@ export async function PATCH(
     }
 
     try {
-      await assertFeatureAccess(businessId, FeatureKeys.SUPPLIER_MANAGEMENT);
+      await assertFeatureAccess(businessId, 'purchase_supplier_hub');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
@@ -108,6 +99,17 @@ export async function PATCH(
           : null;
     if (pd !== 'from_amount') fa = null;
 
+    let extras: ReturnType<typeof parseListingExtras>;
+    try {
+      extras = parseListingExtras(body, businessId);
+      if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
+    } catch (e) {
+      if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const keep = <K extends keyof typeof extras>(k: K) =>
+      extras[k] !== undefined ? extras[k] : ((existing as any)[k] ?? null);
+
     const nextDisplayName =
       displayName !== undefined ? displayName : existing.display_name;
     const nextMoq =
@@ -130,6 +132,11 @@ export async function PATCH(
         from_amount = $8,
         sort_order = $9,
         is_active = $10,
+        image_url = $11,
+        price = $12,
+        pack_label = $13,
+        order_multiple = $14,
+        collection_id = $15,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND supplier_business_id = $2
       RETURNING *
@@ -145,6 +152,11 @@ export async function PATCH(
         fa,
         nextSort,
         nextActive,
+        keep('image_url'),
+        keep('price'),
+        keep('pack_label'),
+        keep('order_multiple'),
+        keep('collection_id'),
       ]
     );
 
@@ -160,14 +172,10 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const updatedByUserId = searchParams.get('updated_by_user_id');
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId: updatedByUserId } = auth;
     const id = params.id;
-
-    if (!businessId || !id || !updatedByUserId) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-    }
 
     const existing = await db.queryOne(
       `SELECT id FROM supplier_published_listings WHERE id = $1 AND supplier_business_id = $2`,
@@ -187,7 +195,7 @@ export async function DELETE(
     }
 
     try {
-      await assertFeatureAccess(businessId, FeatureKeys.SUPPLIER_MANAGEMENT);
+      await assertFeatureAccess(businessId, 'purchase_supplier_hub');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();

@@ -14,6 +14,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { ConnectBuyerDialog } from '@/components/suppliers/hub/ConnectBuyerDialog';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { clsx } from 'clsx';
 
@@ -38,7 +39,7 @@ interface ListingRow {
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: 'hidden', label: 'Hidden — not discoverable' },
   { value: 'link_only', label: 'Link only — profile by URL, not listed in search' },
-  { value: 'directory', label: 'Directory — searchable in Suppliers Hub' },
+  { value: 'directory', label: 'Directory — searchable in the Supplier Hub' },
 ];
 
 export default function SuppliersDirectorySettingsPage() {
@@ -59,6 +60,7 @@ export default function SuppliersDirectorySettingsPage() {
     []
   );
   const [adding, setAdding] = useState(false);
+  const [connectRequestId, setConnectRequestId] = useState<string | null>(null);
 
   const { status: authStatus } = useAuthorizationGuard({
     resource: 'settings',
@@ -242,7 +244,7 @@ export default function SuppliersDirectorySettingsPage() {
   return (
     <SettingsPageShell
       title="Suppliers directory"
-      description="Let other businesses find you in the Suppliers Hub and request a connection."
+      description="Let other businesses find you in the Supplier Hub and ask to connect."
       icon={Store}
     >
       {loading ? (
@@ -331,7 +333,7 @@ export default function SuppliersDirectorySettingsPage() {
                         ) : null}
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="primary" onClick={() => resolveRequest(r.id, 'accept')}>
+                        <Button size="sm" variant="primary" onClick={() => setConnectRequestId(r.id)}>
                           Accept
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => resolveRequest(r.id, 'decline')}>
@@ -347,8 +349,12 @@ export default function SuppliersDirectorySettingsPage() {
             <section>
               <h3 className="settings-section-title">Published listings (public preview)</h3>
               <p className="type-body-secondary mb-4 max-w-2xl">
-                Add up to 20 items shown to buyers browsing the hub. Link-only customers see the same preview;
-                after connection, buyers may also see “linked only” lines if you add them (via API for now).
+                Add up to 20 items shown to buyers browsing the hub. Connected buyers also see your full catalog,
+                prices and collections, which you manage in{' '}
+                <a href="/suppliers/catalog" className="font-medium text-primary-600 hover:underline">
+                  My catalog
+                </a>
+                .
               </p>
 
               <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>
@@ -403,8 +409,8 @@ export default function SuppliersDirectorySettingsPage() {
 
             <p className="type-body-secondary">
               Browse the directory as a buyer:{' '}
-              <Link href="/suppliers/hub" className="link-primary">
-                Suppliers Hub
+              <Link href="/suppliers/hub/find" className="link-primary">
+                Find suppliers
               </Link>
             </p>
           </div>
@@ -422,6 +428,17 @@ export default function SuppliersDirectorySettingsPage() {
             </Button>
           </SettingsFloatingSaveBar>
         </>
+      )}
+      {connectRequestId && (
+        <ConnectBuyerDialog
+          requestId={connectRequestId}
+          onClose={() => setConnectRequestId(null)}
+          onConnected={(name) => {
+            toast.success(`Connected with ${name}.`);
+            setConnectRequestId(null);
+            load();
+          }}
+        />
       )}
     </SettingsPageShell>
   );

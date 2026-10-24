@@ -22,6 +22,8 @@ export interface WhatsAppBotUIConfig {
     tone: 'friendly_casual' | 'professional_formal' | 'helpful_expert' | 'efficient_direct';
     responseLength: 'brief' | 'moderate' | 'detailed';
     useCustomerName: boolean;
+    /** Ask a new customer's name in the first reply (while still answering). Missing means on. */
+    askNameEarly?: boolean;
   };
 
   // Business Type
@@ -431,6 +433,7 @@ export const DefaultUIConfig: WhatsAppBotUIConfig = {
     tone: 'friendly_casual',
     responseLength: 'moderate',
     useCustomerName: true,
+    askNameEarly: true,
   },
   businessType: {
     customerType: 'individual',

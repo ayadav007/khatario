@@ -1,0 +1,7 @@
+# HyperFrames working files: caches, previews, snapshots and rendered videos.
+.hyperframes/
+.thumbnails/
+.waveform-cache/
+.media/
+renders/
+node_modules/

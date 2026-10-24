@@ -15,3 +15,12 @@ export function isCapacitorNative(): boolean {
   }
   return false;
 }
+
+/** Marker the Flutter phone app adds to its in-app web view's user agent (`phoneUserAgentMark`). */
+export const PHONE_APP_USER_AGENT_MARK = 'KhatarioPhone';
+
+/** True when the page is open inside the Flutter phone app, which draws its own title bar and tabs. */
+export function isInsidePhoneApp(userAgent?: string): boolean {
+  const ua = userAgent ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent);
+  return ua.includes(PHONE_APP_USER_AGENT_MARK);
+}

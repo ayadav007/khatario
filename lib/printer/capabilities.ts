@@ -10,7 +10,8 @@ export type PrinterTransport =
   | 'android-ble'
   | 'android-spp'
   | 'tcp'
-  | 'usb';
+  | 'usb'
+  | 'desktop';
 
 export type PrinterCapability = {
   transport: PrinterTransport;
@@ -65,6 +66,16 @@ export const PRINTER_TRANSPORT_CATALOG: Record<PrinterTransport, PrinterCapabili
     supportsAutoReconnect: true,
     supportsBackgroundPrinting: false,
   },
+  desktop: {
+    transport: 'desktop',
+    label: 'Khatario for Windows',
+    description:
+      'Printers on this Windows computer: USB printers installed in Windows, network printers (port 9100) and COM ports (USB-serial or Bluetooth paired in Windows).',
+    implemented: true,
+    requiresNativeApp: true,
+    supportsAutoReconnect: true,
+    supportsBackgroundPrinting: false,
+  },
   usb: {
     transport: 'usb',
     label: 'USB',
@@ -105,6 +116,8 @@ export function driverKindToTransport(
       return 'tcp';
     case 'usb':
       return 'usb';
+    case 'desktop':
+      return 'desktop';
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;
@@ -120,6 +133,8 @@ export function transportToDriverKind(
       return 'web-ble';
     case 'android-ble':
       return 'capacitor-ble';
+    case 'desktop':
+      return 'desktop';
     default:
       return null;
   }

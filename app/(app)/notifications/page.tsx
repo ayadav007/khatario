@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,7 +20,8 @@ import {
   ClipboardList,
   AlertCircle,
   Check,
-  Filter
+  Filter,
+  MessageSquare
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 
@@ -92,6 +94,12 @@ export default function NotificationsPage() {
       }
     } else if (notification.type === 'todo_reminder') {
       router.push('/tools/todo');
+    } else if (notification.type === 'store_enquiry') {
+      router.push('/settings/online-store/enquiries');
+    } else if (notification.type === 'gst_compliance') {
+      router.push('/reports/gst/compliance');
+    } else if (notification.reference_type === 'whatsapp_conversation' && notification.reference_id) {
+      router.push(`/whatsapp/conversations?c=${encodeURIComponent(notification.reference_id)}`);
     }
   };
 
@@ -111,6 +119,10 @@ export default function NotificationsPage() {
         return <AlertTriangle className="w-5 h-5 text-red-500" />;
       case 'todo_reminder':
         return <ClipboardList className="w-5 h-5 text-primary-500" />;
+      case 'store_enquiry':
+        return <MessageSquare className="w-5 h-5 text-primary-500" />;
+      case 'gst_compliance':
+        return <AlertTriangle className="w-5 h-5 text-amber-500" />;
       default:
         return <Bell className="w-5 h-5 text-gray-500" />;
     }
@@ -126,16 +138,15 @@ export default function NotificationsPage() {
     
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Notifications</h1>
-            <p className="text-text-secondary text-sm mt-1">
-              {unreadNotificationCount > 0 
+        <PageHeader
+  title="Notifications"
+  subtitle={<>{unreadNotificationCount > 0 
                 ? `${unreadNotificationCount} unread notification${unreadNotificationCount !== 1 ? 's' : ''}`
-                : 'All caught up!'}
-            </p>
-          </div>
-          {unreadNotificationCount > 0 && (
+                : 'All caught up!'}</>}
+
+  actions={
+    <>
+{unreadNotificationCount > 0 && (
             <Button
               onClick={handleMarkAllAsRead}
               variant="secondary"
@@ -145,7 +156,9 @@ export default function NotificationsPage() {
               Mark all as read
             </Button>
           )}
-        </div>
+    </>
+  }
+/>
 
         {/* Filter Tabs */}
         <div className="flex gap-2 border-b border-gray-200">

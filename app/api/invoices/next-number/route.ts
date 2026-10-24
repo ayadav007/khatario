@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne } from '@/lib/db';
+import { queryOne, getPool } from '@/lib/db';
+import { peekNextDocumentNumber } from '@/lib/invoices/document-counter';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,20 +74,22 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Get configuration for this document type
-    const config = DOCUMENT_TYPE_CONFIG[documentType] || DOCUMENT_TYPE_CONFIG['tax_invoice'];
+    const config = DOCUMENT_TYPE_CONFIG[documentType];
+    if (!config) {
+      return NextResponse.json(
+        { error: `Unsupported document_type for invoice numbering: ${documentType}` },
+        { status: 400 }
+      );
+    }
     
-    // Only READ the current counter value from branch (don't increment yet)
-    // Increment will happen only when invoice is actually saved
-    const result = await queryOne<{ next_invoice_number: number }>(`
-      SELECT next_invoice_number
-      FROM branches 
-      WHERE id = $1 AND business_id = $2
-    `, [finalBranchId, businessId]);
-
-    if (!result) {
+    const branchRow = await queryOne<{ id: string }>(
+      `SELECT id FROM branches WHERE id = $1 AND business_id = $2`,
+      [finalBranchId, businessId]
+    );
+    if (!branchRow) {
       return NextResponse.json({ error: 'Branch not found' }, { status: 404 });
     }
+    const nextNumber = await peekNextDocumentNumber(getPool(), finalBranchId, documentType);
     
     // Check for branch-specific prefix for this document type
     let invoicePrefix = config.prefix;
@@ -109,8 +112,6 @@ export async function GET(request: NextRequest) {
       // Otherwise, continue with document type default prefix
     }
     
-    // Return the current next number (without incrementing)
-    const nextNumber = result.next_invoice_number || 1;
     // Use minimum 3 digits padding, but allow growth beyond 999
     const formattedNumber = String(nextNumber).padStart(3, '0');
     

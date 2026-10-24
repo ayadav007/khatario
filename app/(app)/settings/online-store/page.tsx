@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Store, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
+import Link from 'next/link';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -34,12 +35,14 @@ interface StoreSettings {
   store_hero_image_url: string | null;
   store_min_order_amount: number;
   store_allow_cod?: boolean;
+  store_return_window_days?: number;
   store_delivery_provider?: string;
   store_about_md?: string | null;
   store_contact_md?: string | null;
   store_theme?: unknown;
   store_hide_khatario_badge?: boolean;
   store_shiprocket_email?: string | null;
+  shiprocket_webhook_configured?: boolean;
   store_promo_sheet?: StorePromoSheetConfig | null;
   logo_url?: string | null;
   categories?: Array<{ id: string; name: string }>;
@@ -51,6 +54,14 @@ const TABS: Array<{ id: EditorTab; label: string }> = [
   { id: 'setup', label: 'Store setup' },
   { id: 'pages', label: 'Pages' },
 ];
+
+const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function generateWebhookToken(length = 40): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join('');
+}
 
 function Toggle({
   on,
@@ -100,10 +111,13 @@ export default function OnlineStoreSettingsPage() {
   const [refundMd, setRefundMd] = useState('');
   const [termsMd, setTermsMd] = useState('');
   const [allowCod, setAllowCod] = useState(true);
+  const [returnDays, setReturnDays] = useState('7');
   const [deliveryProvider, setDeliveryProvider] = useState('self');
   const [hideBadge, setHideBadge] = useState(false);
   const [shipEmail, setShipEmail] = useState('');
   const [shipPassword, setShipPassword] = useState('');
+  const [shipWebhookToken, setShipWebhookToken] = useState('');
+  const [shipWebhookConfigured, setShipWebhookConfigured] = useState(false);
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME);
@@ -133,6 +147,7 @@ export default function OnlineStoreSettingsPage() {
         setRefundMd((data as { store_refund_md?: string }).store_refund_md ?? '');
         setTermsMd((data as { store_terms_md?: string }).store_terms_md ?? '');
         setAllowCod(data.store_allow_cod !== false);
+        setReturnDays(String(data.store_return_window_days ?? 7));
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
         const nextTheme = sanitizeStoreTheme(data.store_theme);
         if (nextTheme.hero_slides.length === 0 && data.store_hero_image_url) {
@@ -149,6 +164,8 @@ export default function OnlineStoreSettingsPage() {
         setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
         setShipEmail(data.store_shiprocket_email ?? '');
+        setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
+        setShipWebhookToken('');
         const nextPromo = sanitizeStorePromoSheet(data.store_promo_sheet);
         setPromo(nextPromo);
         setSavedPromo(nextPromo);
@@ -196,11 +213,13 @@ export default function OnlineStoreSettingsPage() {
           store_refund_md: refundMd || null,
           store_terms_md: termsMd || null,
           store_allow_cod: allowCod,
+          store_return_window_days: Number(returnDays) || 0,
           store_delivery_provider: deliveryProvider,
           store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
           store_shiprocket_email: shipEmail || null,
           store_shiprocket_password: shipPassword || undefined,
+          store_shiprocket_webhook_token: shipWebhookToken || undefined,
           store_promo_sheet: {
             ...sanitizeStorePromoSheet(promo),
             version: nextPromoSheetVersion(savedPromo, sanitizeStorePromoSheet(promo)),
@@ -235,11 +254,13 @@ export default function OnlineStoreSettingsPage() {
     refundMd,
     termsMd,
     allowCod,
+    returnDays,
     deliveryProvider,
     theme,
     hideBadge,
     shipEmail,
     shipPassword,
+    shipWebhookToken,
     promo,
     savedPromo,
     fetchSettings,
@@ -343,10 +364,24 @@ export default function OnlineStoreSettingsPage() {
   return (
     <SettingsPageShell
       title="Store editor"
-      description="Customize the store, then Update preview. Save publishes the live storefront."
+      description="Pick and customise your theme in Studio. The settings here (logo, banners, collections, fonts) are saved with Save."
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
+          <Link
+            href="/settings/online-store/studio"
+            className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Themes &amp; Studio
+          </Link>
+          <Link
+            href="/settings/online-store/enquiries"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Inbox className="h-3.5 w-3.5" />
+            Enquiries
+          </Link>
           <button
             type="button"
             className="text-xs text-gray-500"
@@ -701,6 +736,18 @@ export default function OnlineStoreSettingsPage() {
                   Allow pay on delivery
                 </label>
                 <label className="block text-xs text-gray-500">
+                  Returns accepted for (days after delivery)
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    className="mt-1 w-32 rounded-lg border px-3 py-2 text-sm"
+                    value={returnDays}
+                    onChange={(e) => setReturnDays(e.target.value)}
+                  />
+                  <span className="mt-1 block">Buyers can ask for a return from their account. 0 turns online returns off.</span>
+                </label>
+                <label className="block text-xs text-gray-500">
                   Delivery partner
                   <select
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -726,6 +773,35 @@ export default function OnlineStoreSettingsPage() {
                       value={shipPassword}
                       onChange={(e) => setShipPassword(e.target.value)}
                     />
+                    <div className="rounded-lg border border-gray-200 p-3 text-xs text-gray-600">
+                      <p className="font-medium text-gray-800">Tracking webhook token</p>
+                      <p className="mt-1">
+                        {shipWebhookConfigured
+                          ? 'A token is saved. Generate a new one only if you are replacing it in Shiprocket.'
+                          : 'Tracking updates are refused until a token is saved here and in Shiprocket (Settings → API → Webhooks).'}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          readOnly
+                          data-testid="shiprocket-webhook-token"
+                          className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
+                          placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
+                          value={shipWebhookToken}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShipWebhookToken(generateWebhookToken())}
+                        >
+                          Generate
+                        </Button>
+                      </div>
+                      {shipWebhookToken ? (
+                        <p className="mt-2 text-amber-700">
+                          Copy this token into Shiprocket, then save. It is not shown again.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </Card>

@@ -55,6 +55,8 @@ export interface NumericBlurFieldProps {
   value: number;
   mode: NumericBlurMode;
   onCommit: (n: number) => void;
+  /** Update the parent on each keystroke. Line amounts stay blur-only so totals do not jump mid-number. */
+  commitWhileTyping?: boolean;
   emptyFallback?: number;
   variant?: 'underline' | 'boxed';
   /** Tighter label + input (e.g. mobile purchase line cards). Ignored when variant is boxed. */
@@ -81,6 +83,7 @@ export function NumericBlurField({
   value,
   mode,
   onCommit,
+  commitWhileTyping = false,
   emptyFallback,
   variant = 'underline',
   compact = false,
@@ -132,7 +135,14 @@ export function NumericBlurField({
           setFocused(false);
           commit();
         }}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value;
+          setText(next);
+          if (!commitWhileTyping) return;
+          let n = parseNumericBlur(next, mode, fb);
+          if (mode === 'qty') n = Math.max(1, n);
+          onCommit(n);
+        }}
         className={clsx(
           variant === 'boxed' ? 'input' : clsx(underlineInput, underlineInputPadding),
           nativeInputClassName,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { format, eachMonthOfInterval, subDays } from 'date-fns';
 
@@ -12,29 +12,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    const fiscalYear = searchParams.get('fiscal_year'); // e.g., "2024" means FY 2024-25
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
+    const fiscalYear = searchParams.get('fiscal_year');
 
     try {
-      await authorize(userId, 'dashboard', 'read');
+      await authorize(userId, 'dashboard', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
       throw error;
-    }
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
     }
 
     // Determine fiscal year
@@ -98,6 +89,7 @@ export async function GET(request: NextRequest) {
        FROM payments
        WHERE business_id = $1
          AND deleted_at IS NULL
+         AND status = 'active'
          AND type = 'receivable'
          AND payment_date >= $2
          AND payment_date <= $3
@@ -117,6 +109,7 @@ export async function GET(request: NextRequest) {
        FROM payments
        WHERE business_id = $1
          AND deleted_at IS NULL
+         AND status = 'active'
          AND type = 'payable'
          AND payment_date >= $2
          AND payment_date <= $3
@@ -135,7 +128,7 @@ export async function GET(request: NextRequest) {
         TO_CHAR(expense_date, 'YYYY-MM') as month,
         COALESCE(SUM(amount), 0) as total
        FROM expenses
-       WHERE business_id = $1
+       WHERE business_id = $1 AND deleted_at IS NULL
          AND expense_date >= $2
          AND expense_date <= $3
          AND LOWER(COALESCE(payment_mode, '')) NOT IN ('on_account', 'pay_later', 'unpaid', 'credit')

@@ -1,0 +1,22 @@
+<div style="display: flex; gap: 20px; margin: 20px 0; font-size: 12px; line-height: 1.5;">
+  {{#ifSetting 'show_bank_details'}}{{#if @root.business.bank_name}}
+  <div style="flex: 1; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px;">
+    <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--primary-color); margin-bottom: 6px;">Bank Details</div>
+    {{#ifSetting 'show_bank_name'}}<div>Bank: {{@root.business.bank_name}}</div>{{/ifSetting}}
+    {{#ifSetting 'show_account_number'}}{{#if @root.business.account_number}}<div>A/c No: {{@root.business.account_number}}</div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_ifsc_code'}}{{#if @root.business.ifsc_code}}<div>IFSC: {{@root.business.ifsc_code}}</div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_branch_name'}}{{#if @root.business.branch_name}}<div>Branch: {{@root.business.branch_name}}</div>{{/if}}{{/ifSetting}}
+  </div>
+  {{/if}}{{/ifSetting}}
+  <div style="flex: 1;">
+    {{#ifSetting 'show_payment_terms'}}{{#if @root.settings.payment_terms}}
+    <div style="margin-bottom: 8px;"><strong>Payment Terms:</strong><div style="white-space: pre-line;">{{@root.settings.payment_terms}}</div></div>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_terms'}}{{#if @root.settings.terms}}
+    <div style="margin-bottom: 8px;"><strong>Terms &amp; Conditions:</strong><div style="white-space: pre-line;">{{@root.settings.terms}}</div></div>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_notes'}}{{#if @root.settings.notes}}
+    <div><strong>Notes:</strong><div style="white-space: pre-line;">{{@root.settings.notes}}</div></div>
+    {{/if}}{{/ifSetting}}
+  </div>
+</div>

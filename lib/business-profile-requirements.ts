@@ -138,7 +138,7 @@ export function getInvoiceProfileContext(
   documentType: string,
   gstRegistrationType: string | null | undefined,
 ): ProfileRequirementContext {
-  if (documentType === 'tax_invoice') {
+  if (documentType === 'tax_invoice' && gstRegistrationType !== 'unregistered') {
     return 'finalize_gst_invoice';
   }
   if (gstRegistrationType === 'regular') {

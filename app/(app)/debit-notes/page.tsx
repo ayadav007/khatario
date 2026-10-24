@@ -7,6 +7,8 @@ import { Plus, FileText, Calendar, User, CheckCircle, Clock, Eye } from 'lucide-
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { Button } from '@/components/ui/Button';
+import { useToastContext } from '@/contexts/ToastContext';
 
 interface DebitNote {
   id: string;
@@ -19,13 +21,17 @@ interface DebitNote {
   reason: string;
   grand_total: number;
   adjustment_status: string;
+  status?: 'active' | 'cancelled';
+  cancellation_reason?: string | null;
 }
 
 export default function DebitNotesPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const toast = useToastContext();
   const [debitNotes, setDebitNotes] = useState<DebitNote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDebitNotes() {
@@ -43,11 +49,42 @@ export default function DebitNotesPage() {
     fetchDebitNotes();
   }, [business, user]);
 
+  const cancelDebitNote = async (debitNote: DebitNote) => {
+    const reason = prompt(
+      `Cancel debit note ${debitNote.debit_note_number}? The books and the amount the customer owes will be reversed. Stock is put back only if this note took it out.\n\nReason for cancellation:`
+    );
+    if (!reason?.trim()) return;
+    setCancellingId(debitNote.id);
+    try {
+      const res = await fetch(`/api/debit-notes/${debitNote.id}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Could not cancel the debit note');
+        return;
+      }
+      toast.success(`Debit note ${debitNote.debit_note_number} cancelled`);
+      setDebitNotes((current) =>
+        current.map((row) =>
+          row.id === debitNote.id
+            ? { ...row, status: 'cancelled', cancellation_reason: reason.trim() }
+            : row
+        )
+      );
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const badges: Record<string, { color: string; icon: any; label: string }> = {
       pending: { color: 'bg-yellow-100 text-yellow-800', icon: Clock, label: 'Pending' },
       adjusted: { color: 'bg-slate-100 text-primary-800', icon: CheckCircle, label: 'Adjusted' },
       refunded: { color: 'bg-green-100 text-green-800', icon: CheckCircle, label: 'Refunded' },
+      cancelled: { color: 'bg-red-100 text-red-800', icon: Clock, label: 'Cancelled' },
     };
     const badge = badges[status] || badges.pending;
     const Icon = badge.icon;
@@ -162,14 +199,30 @@ export default function DebitNotesPage() {
                       <td className="py-4 px-4">
                         <span className="text-sm text-gray-600">{debitNote.reason || '-'}</span>
                       </td>
-                      <td className="py-4 px-4">{getStatusBadge(debitNote.adjustment_status)}</td>
                       <td className="py-4 px-4">
-                        <button
-                          onClick={() => router.push(`/debit-notes/${debitNote.id}`)}
-                          className="text-primary-600 hover:text-primary-700"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        {debitNote.status === 'cancelled'
+                          ? getStatusBadge('cancelled')
+                          : getStatusBadge(debitNote.adjustment_status)}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => router.push(`/debit-notes/${debitNote.id}`)}
+                            className="text-primary-600 hover:text-primary-700"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {debitNote.status !== 'cancelled' && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={cancellingId === debitNote.id}
+                              onClick={() => cancelDebitNote(debitNote)}
+                            >
+                              {cancellingId === debitNote.id ? 'Cancelling…' : 'Cancel'}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

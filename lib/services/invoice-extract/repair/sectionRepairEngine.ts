@@ -2,7 +2,7 @@
  * Deterministic targeted repairs — no second LLM pass. Conservative: only fills obvious gaps.
  */
 
-import type { IndianGstInvoiceExtract } from '@/lib/indian-gst-invoice-extract';
+import { capturePrintedEvidence, type IndianGstInvoiceExtract } from '@/lib/indian-gst-invoice-extract';
 import {
   expectedInclusiveLineTotal,
   defaultLineTotalTolerance,
@@ -19,6 +19,7 @@ import {
   extractHasPrintedTax,
   lineHasPrintedTax,
   matchesExclusivePosPattern,
+  omitGstBandHeadingLines,
   reconcilePriceModeFromEvidence,
 } from '@/lib/services/invoice-extract/priceModeReconciliationEngine';
 
@@ -97,6 +98,10 @@ export function repairLineItems(extract: IndianGstInvoiceExtract): {
 
   /** Printed tax + POS exclusive pattern: do not rewrite line totals toward qty×rate. */
   if (matchesExclusivePosPattern(out) || extractHasPrintedTax(out)) {
+    return { patched: out, notes };
+  }
+
+  if (out.price_mode == null) {
     return { patched: out, notes };
   }
 
@@ -231,8 +236,15 @@ export function repairExtractSectionsDeterministic(extract: IndianGstInvoiceExtr
   patched: IndianGstInvoiceExtract;
   notes: string[];
 } {
-  let cur = extract;
+  let cur = cloneExtract(extract);
+  capturePrintedEvidence(cur);
   const notes: string[] = [];
+  const beforeHeadings = cur.items?.length ?? 0;
+  cur.items = omitGstBandHeadingLines(cur.items ?? []);
+  const droppedHeadings = beforeHeadings - (cur.items?.length ?? 0);
+  if (droppedHeadings > 0) {
+    notes.push(`items: removed ${droppedHeadings} GST band heading${droppedHeadings === 1 ? '' : 's'}`);
+  }
 
   const recon = reconcilePriceModeFromEvidence(cur);
   cur = {

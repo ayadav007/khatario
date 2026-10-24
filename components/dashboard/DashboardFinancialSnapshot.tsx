@@ -32,7 +32,7 @@ export const DashboardFinancialSnapshot = memo(function DashboardFinancialSnapsh
 }: DashboardFinancialSnapshotProps) {
   probeDashboardRefresh('kpi-strip-rerender');
   return (
-    <div className="grid grid-cols-2 gap-2 md:gap-3">
+    <div className="grid grid-cols-2 gap-2 md:gap-3 lg:grid-cols-4">
       {items.map((kpi) => {
         const Icon = kpi.icon;
         const clickable = kpi.clickType && onItemClick;

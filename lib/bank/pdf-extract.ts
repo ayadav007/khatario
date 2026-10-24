@@ -5,19 +5,12 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pdfBufferToText } from '@/lib/documents/pdf-text';
 
 const execFileAsync = promisify(execFile);
 
 /** Minimum extracted text chars to treat PDF as digital (text layer present). */
 export const PDF_DIGITAL_TEXT_THRESHOLD = 400;
-
-async function pdfBufferToText(buffer: Buffer): Promise<{ text: string; numpages: number }> {
-  // pdf-parse is CommonJS
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require('pdf-parse') as (b: Buffer) => Promise<{ text: string; numpages: number }>;
-  const res = await pdfParse(buffer);
-  return { text: res.text || '', numpages: res.numpages || 0 };
-}
 
 async function tryOcrFirstPageWithPoppler(pdfBuffer: Buffer): Promise<string | null> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bkstmt-'));

@@ -419,7 +419,7 @@ export function PromotionsManager() {
                   value={formData.title}
                   onChange={(e) => setFormData({...formData, title: e.target.value})}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
-                  placeholder="Upgrade to Professional Plan"
+                  placeholder="Upgrade to the Growth plan"
                 />
               </div>
 
@@ -692,9 +692,8 @@ export function PromotionsManager() {
                 >
                   <option value="all">All Businesses</option>
                   <option value="free">Free Plan Users</option>
-                  <option value="professional">Professional Plan Users</option>
+                  <option value="growth">Growth Plan Users</option>
                   <option value="business">Business Plan Users</option>
-                  <option value="enterprise">Enterprise Plan Users</option>
                 </select>
               </div>
 

@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
+import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
+import { activeLedgerLineSql } from '@/lib/ledger-reversal';
+import { journalDisplayLineSql } from '@/lib/accounting/journal-corrections';
 
 export const dynamic = 'force-dynamic';
+
+// A soft-deleted journal is listed only when fully reversed (older reversals soft-deleted the header).
+const journalListLineFilter = `${journalDisplayLineSql('lel')}
+        AND (je.id IS NULL OR je.deleted_at IS NULL OR NOT (${activeLedgerLineSql('lel')}))`;
 
 interface JournalEntryLine {
   account_id: string;
@@ -66,10 +74,12 @@ export async function GET(request: NextRequest) {
         je.tags,
         COUNT(DISTINCT lel.id) as line_count,
         SUM(lel.debit) as total_debit,
-        SUM(lel.credit) as total_credit
+        SUM(lel.credit) as total_credit,
+        BOOL_AND(NOT (${activeLedgerLineSql('lel')})) as is_reversed
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
+        AND ${journalListLineFilter}
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -94,8 +104,9 @@ export async function GET(request: NextRequest) {
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
-      ${fromDate ? `AND lel.entry_date >= $${params.length}` : ''}
-      ${toDate ? `AND lel.entry_date <= $${params.length + (fromDate ? 1 : 0)}` : ''}
+        AND ${journalListLineFilter}
+      ${fromDate ? `AND lel.entry_date >= $2` : ''}
+      ${toDate ? `AND lel.entry_date <= $${fromDate ? 3 : 2}` : ''}
     `;
     const countParams = [businessId];
     if (fromDate) countParams.push(fromDate);
@@ -123,7 +134,8 @@ export async function GET(request: NextRequest) {
             a.account_name
           FROM ledger_entry_lines lel
           LEFT JOIN accounts a ON lel.account_id = a.id
-          WHERE lel.voucher_id = $1 AND lel.business_id = $2
+          WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
+            AND ${journalDisplayLineSql('lel')}
           ORDER BY lel.created_at
         `, [entry.voucher_id, businessId]);
 
@@ -157,13 +169,19 @@ export async function GET(request: NextRequest) {
  * Create a new journal entry
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+
   const pool = getPool();
   const client = await pool.connect();
 
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const created_by = session.userId;
     const {
-      business_id,
       branch_id, // CRITICAL: Branch ID for branch-wise accounting
       entry_date,
       reference_number,
@@ -175,7 +193,6 @@ export async function POST(request: NextRequest) {
       template_id,
       tags,
       backdate_reason, // Reason for backdating (if applicable)
-      created_by, // User ID who created the journal entry
     } = body;
 
     if (!business_id || !entry_date || !lines || !Array.isArray(lines) || lines.length < 2) {
@@ -185,10 +202,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!created_by) {
+    const lineAccountIds = Array.from(new Set(
+      (lines as Array<{ account_id?: string }>).map((l) => l.account_id).filter((x): x is string => !!x)
+    ));
+    if ((lines as Array<{ account_id?: string }>).some((l) => !l.account_id)) {
+      return NextResponse.json({ error: 'Every journal line needs an account' }, { status: 400 });
+    }
+    const ownedAccounts = await client.query(
+      `SELECT COUNT(*)::int AS n FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+      [business_id, lineAccountIds]
+    );
+    if (Number(ownedAccounts.rows[0]?.n || 0) !== lineAccountIds.length) {
       return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
+        { error: 'One or more accounts do not belong to this business', code: 'ACCOUNT_NOT_IN_BUSINESS' },
+        { status: 403 }
       );
     }
 
@@ -243,6 +270,18 @@ export async function POST(request: NextRequest) {
       if (res) return res;
       throw e;
     }
+
+    const lockRes = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [entry_date],
+      action: 'post a journal entry',
+      checkGstFiled: await touchesGstAccounts(
+        business_id,
+        (lines as Array<{ account_id?: string }>).map((l) => l.account_id).filter((x): x is string => !!x)
+      ),
+    });
+    if (lockRes) return lockRes;
 
     // CRITICAL: Validate backdated entry
     const { validateBackdate, hasBackdateApprovalPermission } = await import('@/lib/backdate-controls');
@@ -328,12 +367,7 @@ export async function POST(request: NextRequest) {
 
     await client.query('BEGIN');
 
-    // Generate voucher number
-    const voucherNumberResult = await client.query(
-      'SELECT generate_voucher_number($1, $2, $3) as voucher_number',
-      [business_id, 'journal', entry_date]
-    );
-    const voucherNumber = voucherNumberResult.rows[0].voucher_number;
+    const voucherNumber = await allocateJournalVoucherNumber(client, business_id, entry_date);
 
     // Generate voucher_id (UUID)
     const voucherIdResult = await client.query('SELECT uuid_generate_v4() as id');
@@ -343,10 +377,11 @@ export async function POST(request: NextRequest) {
     let finalLines = lines;
     if (is_reversing && reverses_entry_id) {
       const originalLinesResult = await client.query(
-        `SELECT account_id, debit, credit, narration, branch_id
-         FROM ledger_entry_lines 
-         WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
-         ORDER BY created_at`,
+        `SELECT l.account_id, l.debit, l.credit, l.narration, l.branch_id
+         FROM ledger_entry_lines l
+         WHERE l.voucher_id = $1 AND l.business_id = $2 AND l.voucher_type = 'journal'
+           AND ${activeLedgerLineSql('l')}
+         ORDER BY l.created_at`,
         [reverses_entry_id, business_id]
       );
 
@@ -393,55 +428,13 @@ export async function POST(request: NextRequest) {
         reference_number || null,
         lineBranchId,
       ]);
-
-      // Also create entry in ledger_entries for backward compatibility
-      const account = await client.query('SELECT nature FROM accounts WHERE id = $1', [line.account_id]);
-      const accountNature = account.rows[0]?.nature || 'debit';
-      
-      // Calculate balance (simplified - would need to fetch current balance)
-      const currentBalance = await client.query(`
-        SELECT get_account_balance($1, $2, $3, $4) as balance
-      `, [line.account_id, business_id, entry_date, finalBranchId]);
-      
-      const balance = parseFloat(currentBalance.rows[0]?.balance || '0');
-      const debit = parseFloat(line.debit?.toString() || '0');
-      const credit = parseFloat(line.credit?.toString() || '0');
-      
-      let newBalance = balance;
-      if (accountNature === 'debit') {
-        newBalance = balance + debit - credit;
-      } else {
-        newBalance = balance + credit - debit;
-      }
-
-      await client.query(`
-        INSERT INTO ledger_entries (
-          business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-          transaction_id, debit, credit, balance, description,
-          voucher_number, voucher_type, reference_number
-        )
-        VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, $8, $9, $10, $11, $12)
-      `, [
-        business_id,
-        lineBranchId,
-        entry_date,
-        line.account_id,
-        voucherId,
-        debit,
-        credit,
-        newBalance,
-        line.narration || narration || 'Journal Entry',
-        voucherNumber,
-        'journal',
-        reference_number || null,
-      ]);
     }
 
     const journalMetaBranchId =
       (finalLines[0] as { _branch_id?: string })?._branch_id ?? finalBranchId;
 
     // Create journal entry metadata record
-    await query(
+    await client.query(
       `INSERT INTO journal_entries (
         business_id, branch_id, voucher_id, voucher_number, entry_date, 
         reference_number, narration, is_locked, created_by,

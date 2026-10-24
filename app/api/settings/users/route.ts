@@ -1,42 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows, getPool } from '@/lib/db';
-import { checkLimitInTransaction } from '@/lib/subscription';
+import { checkLimitInTransaction, hasWhatsAppBotAddon } from '@/lib/subscription';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import {
+  checkRoleForConnectSeat,
+  connectSeatRoleMessage,
+  ensureWhatsAppAgentRole,
+  isSeatType,
+  seatLimitMessage,
+  seatLimitType,
+  type SeatType,
+} from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/settings/users
- * List all users for a business
+ * List users of the session business. Actor and business come from the session;
+ * `user_id` / `business_id` query params are ignored.
  */
 export async function GET(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId, businessId } = session;
+
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // AUTHORIZATION: Check read permission (users are part of settings)
     // BUT: Users can always see their own user information
     let hasSettingsRead = false;
     try {
-      await authorize(userId, 'settings', 'read');
+      await authorize(userId, 'settings', 'read', { businessId });
       hasSettingsRead = true;
     } catch (error) {
       if (error instanceof AuthorizationError) {
@@ -76,6 +74,7 @@ export async function GET(request: NextRequest) {
         u.allow_multidevice_sync,
         u.last_active_at,
         u.created_at,
+        COALESCE(u.seat_type, 'billing') AS seat_type,
         ur.id as role_id,
         ur.role_name,
         ur.role_key,
@@ -109,13 +108,17 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/settings/users
- * Create a new user
+ * Create a user in the session business (settings:create). Body `business_id`,
+ * `created_by_user_id` and `created_by` are ignored; actor and business come from the session.
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId: createdByUserId, businessId: business_id } = session;
+
   try {
     const body = await request.json();
     const {
-      business_id,
       name,
       email,
       phone,
@@ -123,20 +126,18 @@ export async function POST(request: NextRequest) {
       role_id,
       branch_id, // Optional: branch to assign user to
       allow_multidevice_sync,
+      seat_type: rawSeatType,
     } = body;
-    const createdByUserId = resolveCreatedByUserId(request, body);
 
-    // Validation
-    if (!business_id || !name || !phone || !password || !role_id) {
-      return NextResponse.json(
-        { error: 'business_id, name, phone, password, and role_id are required' },
-        { status: 400 }
-      );
+    if (rawSeatType !== undefined && !isSeatType(rawSeatType)) {
+      return NextResponse.json({ error: "seat_type must be 'billing' or 'connect'" }, { status: 400 });
     }
+    const seatType: SeatType = rawSeatType ?? 'billing';
 
-    if (!createdByUserId) {
+    // Connect agents default to the WhatsApp Agent role.
+    if (!name || !phone || !password || (!role_id && seatType !== 'connect')) {
       return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
+        { error: 'name, phone, password, and role_id are required' },
         { status: 400 }
       );
     }
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission (users are part of settings)
     try {
-      await authorize(createdByUserId, 'settings', 'create');
+      await authorize(createdByUserId, 'settings', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -160,41 +161,76 @@ export async function POST(request: NextRequest) {
     }
 
     const existingUser = await queryOne(
-      'SELECT id FROM users WHERE phone = $1',
-      [phoneNorm]
+      'SELECT id FROM users WHERE phone = $1 AND business_id = $2',
+      [phoneNorm, business_id]
     );
 
     if (existingUser) {
       return NextResponse.json(
-        { error: 'A user with this phone number already exists' },
+        { error: 'A user with this phone number already exists in this business' },
         { status: 409 }
       );
     }
 
     if (email) {
       const existingEmail = await queryOne(
-        'SELECT id FROM users WHERE email = $1',
-        [email]
+        'SELECT id FROM users WHERE lower(email) = lower($1) AND business_id = $2',
+        [email, business_id]
       );
 
       if (existingEmail) {
         return NextResponse.json(
-          { error: 'A user with this email already exists' },
+          { error: 'A user with this email already exists in this business' },
           { status: 409 }
         );
       }
     }
 
-    const role = await queryOne(
-      'SELECT id, role_key FROM user_roles WHERE id = $1 AND business_id = $2',
-      [role_id, business_id]
-    );
+    if (seatType === 'connect' && !(await hasWhatsAppBotAddon(business_id))) {
+      return NextResponse.json(
+        {
+          error: 'WhatsApp agents need an active Connect plan. Buy or renew Connect from Settings → Products.',
+          code: 'WHATSAPP_BOT_ADDON_REQUIRED',
+        },
+        { status: 403 }
+      );
+    }
 
-    if (!role) {
+    const role = role_id
+      ? await queryOne<{ id: string; role_key: string }>(
+          'SELECT id, role_key FROM user_roles WHERE id = $1 AND business_id = $2',
+          [role_id, business_id]
+        )
+      : null;
+
+    if (role_id && !role) {
       return NextResponse.json(
         { error: 'Invalid role_id for this business' },
         { status: 400 }
       );
+    }
+
+    if (role && seatType === 'connect') {
+      const check = await checkRoleForConnectSeat(getPool(), role.id, business_id);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: connectSeatRoleMessage(check), code: 'ROLE_EXCEEDS_CONNECT_SEAT', permissions: check.violations },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (role?.role_key === 'primary_admin') {
+      const actor = await queryOne<{ is_primary_admin: boolean }>(
+        'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2',
+        [createdByUserId, business_id]
+      );
+      if (!actor?.is_primary_admin) {
+        return NextResponse.json(
+          { error: 'Only the primary admin can assign the Primary Admin role', code: 'PRIMARY_ADMIN_ROLE_PROTECTED' },
+          { status: 403 }
+        );
+      }
     }
 
     const settings = await queryOne(
@@ -202,7 +238,7 @@ export async function POST(request: NextRequest) {
       [business_id]
     );
 
-    if (!settings?.user_management_enabled && role.role_key !== 'primary_admin') {
+    if (seatType === 'billing' && !settings?.user_management_enabled && role?.role_key !== 'primary_admin') {
       return NextResponse.json(
         { error: 'User management is not enabled for this business' },
         { status: 403 }
@@ -221,44 +257,49 @@ export async function POST(request: NextRequest) {
       is_primary_admin: boolean;
       allow_multidevice_sync: boolean;
       is_active: boolean;
+      seat_type: SeatType;
       created_at: string;
     } | null = null;
 
     try {
       await client.query('BEGIN');
 
-      const limitCheck = await checkLimitInTransaction(client, business_id, 'users');
+      const limitCheck = await checkLimitInTransaction(client, business_id, seatLimitType(seatType));
       if (!limitCheck.allowed) {
         await client.query('ROLLBACK');
         return NextResponse.json(
           {
-            error: limitCheck.message || 'User limit reached',
+            error: seatLimitMessage(seatType, limitCheck),
             limit: limitCheck.limit,
             current: limitCheck.current,
+            seat_type: seatType,
             code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
           },
           { status: 403 },
         );
       }
 
+      const roleIdToSave = role?.id ?? (await ensureWhatsAppAgentRole(client, business_id));
+
       const passwordHash = password ? await bcrypt.hash(password, 10) : null;
       const insertResult = await client.query(`
         INSERT INTO users (
           business_id, name, email, phone, password_hash, role_id,
-          is_primary_admin, allow_multidevice_sync, is_active
+          is_primary_admin, allow_multidevice_sync, is_active, seat_type
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9)
         RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
-                  allow_multidevice_sync, is_active, created_at
+                  allow_multidevice_sync, is_active, seat_type, created_at
       `, [
         business_id,
         name,
         email || null,
         phoneNorm,
         passwordHash,
-        role_id,
-        role.role_key === 'primary_admin',
+        roleIdToSave,
+        role?.role_key === 'primary_admin',
         allow_multidevice_sync || false,
+        seatType,
       ]);
 
       newUser = insertResult.rows[0] ?? null;
@@ -330,7 +371,7 @@ export async function POST(request: NextRequest) {
         'settings',
         'user',
         newUser.id,
-        JSON.stringify({ user_name: name, user_phone: phoneNorm })
+        JSON.stringify({ user_name: name, user_phone: phoneNorm, seat_type: seatType })
       ]);
     }
 

@@ -264,6 +264,17 @@ export async function findPaymentTransactionForWebhook(args: {
   return null;
 }
 
+/**
+ * Invoice + WhatsApp bill for a fully paid bot order, after the webhook has answered: the PDF
+ * render takes seconds and the gateway must not time out. Orders that are not WhatsApp bot
+ * orders, or not fully paid, are ignored inside.
+ */
+function queuePaidWhatsAppOrder(businessId: string, orderId: string): void {
+  void import('@/lib/whatsapp/paid-order')
+    .then(({ completePaidWhatsAppOrder }) => completePaidWhatsAppOrder(businessId, orderId))
+    .catch((err) => console.error('[payment-webhook] paid WhatsApp order follow-up failed:', err));
+}
+
 export type ApplyWebhookResult = {
   ok: boolean;
   /** HTTP status code hint for the route handler */
@@ -352,6 +363,7 @@ export async function applyVerifiedPaymentWebhook(args: {
   }
 
   if (tx.status === 'success' && mapped === 'success') {
+    queuePaidWhatsAppOrder(businessId, tx.order_id);
     return {
       ok: true,
       httpStatus: 200,
@@ -519,6 +531,7 @@ export async function applyVerifiedPaymentWebhook(args: {
       providerPaymentId: verified.providerPaymentId ?? null,
       methodLabel: tx.method === 'upi_collect' ? 'upi_collect' : provider,
     });
+    queuePaidWhatsAppOrder(businessId, tx.order_id);
   }
 
   return {

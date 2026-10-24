@@ -18,7 +18,7 @@ Khatario separates **what to print** (ESC/POS encoders) from **how to reach the 
 | --- | --- | --- |
 | `web-ble` | `lib/bluetooth/drivers/web-ble/` | Implemented |
 | `android-ble` | `lib/bluetooth/drivers/capacitor-ble/` | Implemented (Capacitor APK) |
-| `android-spp` | `lib/bluetooth/drivers/capacitor-spp/` | Placeholder only |
+| `android-spp` | `lib/bluetooth/drivers/capacitor-spp/` | Implemented (Capacitor APK, preferred) |
 | `tcp` | `lib/bluetooth/drivers/tcp/` | Placeholder only |
 | `usb` | `lib/bluetooth/drivers/usb/` | Placeholder only |
 

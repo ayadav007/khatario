@@ -30,6 +30,9 @@ export async function PATCH(request: NextRequest) {
       notify_new_signup: body.notify_new_signup,
       notify_subscription_changes: body.notify_subscription_changes,
       notify_payment_failures: body.notify_payment_failures,
+      notify_incidents: body.notify_incidents,
+      notify_push_signup: body.notify_push_signup,
+      notify_push_incident: body.notify_push_incident,
       platform_notify_email: body.platform_notify_email ?? null,
     });
     return NextResponse.json({ settings });

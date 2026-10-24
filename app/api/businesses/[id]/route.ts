@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,9 @@ export async function GET(
 
     const business = await db.queryOne(`
       SELECT 
-        id, name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin
+        id, name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin,
+        pan, logo_url, signature_url, gst_registration_type, aggregate_turnover_above_5cr,
+        iec_code, swift_code, business_type, industry, business_model, company_introduction
       FROM businesses
       WHERE id = $1
     `, [tenant.businessId]);
@@ -87,12 +91,30 @@ export async function PATCH(
       email,
       address_line1,
       city,
-      state,
-      state_code,
-      pincode,
-      gstin,
       company_introduction,
     } = body;
+    let { state, state_code, gstin } = body;
+    const { pincode } = body;
+
+    // GST returns derive intra/inter-state supply from this registration, so a GSTIN must be
+    // valid and agree with the stored or submitted state.
+    if (typeof gstin === 'string' && gstin.trim()) {
+      const current = await db.queryOne<{ state: string | null; state_code: string | null }>(
+        'SELECT state, state_code FROM businesses WHERE id = $1',
+        [tenant.businessId]
+      );
+      const check = resolveGstinAndState({
+        gstin,
+        state: state ?? current?.state ?? null,
+        state_code: state_code ?? current?.state_code ?? null,
+      });
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
+      }
+      gstin = check.gstin;
+      state = check.state;
+      state_code = check.state_code;
+    }
 
     // Update business
     const updateQuery = `
@@ -134,6 +156,7 @@ export async function PATCH(
       );
     }
 
+    noteShopChanged(tenant.businessId, 'business profile saved');
     return NextResponse.json({ business });
   } catch (error: any) {
     console.error('Error updating business:', error);

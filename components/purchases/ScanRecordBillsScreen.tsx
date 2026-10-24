@@ -7,6 +7,7 @@ import {
   Camera,
   Clock,
   FileText,
+  Image as ImageIcon,
   Loader2,
   Sparkles,
 } from 'lucide-react';
@@ -144,11 +145,11 @@ export function ScanRecordBillsScreen() {
     minutesSaved: 0,
   });
   const [filter, setFilter] = useState<Filter>('all');
-  const [pdfBusy, setPdfBusy] = useState(false);
   const [scanPhase, setScanPhase] = useState<ScanPhase>({ type: 'idle' });
   const [galleryPicks, setGalleryPicks] = useState<GalleryPick[]>([]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const billFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadJobs = useCallback(async () => {
     if (!business?.id || !user?.id) return;
@@ -260,25 +261,32 @@ export function ScanRecordBillsScreen() {
     [loadJobs, returnTo, router, toast]
   );
 
-  const handlePdfPick = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/pdf';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file || !business?.id) return;
-      setPdfBusy(true);
-      try {
-        const result = await postInvoiceExtract(file, business.id);
-        await onExtractSuccess(result);
-        toast.success('Bill extracted — opening purchase form');
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Extraction failed');
-      } finally {
-        setPdfBusy(false);
-      }
-    };
-    input.click();
+  const openBillFilePicker = () => {
+    billFileInputRef.current?.click();
+  };
+
+  // Open gallery: a bill photo takes the camera's crop → preview path; a PDF is read as is.
+  const handleBillFileChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !business?.id) return;
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf && !ALLOWED_IMAGE_TYPES.has(file.type)) {
+      toast.error('Pick a PDF or a JPG, PNG, or other image of the bill');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`${file.name} is too large (max 10MB)`);
+      return;
+    }
+    if (!isPdf) {
+      setScanPhase({ type: 'cropping', rawFile: file });
+      return;
+    }
+    // The preview shows pages as images, so a PDF goes straight to reading.
+    const pdf = file.type === 'application/pdf' ? file : new File([file], file.name, { type: 'application/pdf' });
+    void readBill([pdf]);
   };
 
   const openDeviceCamera = () => {
@@ -328,9 +336,13 @@ export function ScanRecordBillsScreen() {
   };
 
   // Proceed from preview → start extraction
-  const handleProceed = useCallback(async () => {
-    if (scanPhase.type !== 'preview' || !business?.id) return;
-    const pages = scanPhase.pages;
+  const handleProceed = async () => {
+    if (scanPhase.type !== 'preview') return;
+    await readBill(scanPhase.pages);
+  };
+
+  async function readBill(pages: File[]) {
+    if (!business?.id) return;
     const startedAt = Date.now();
     setScanPhase({ type: 'processing', pages, startedAt });
 
@@ -347,7 +359,7 @@ export function ScanRecordBillsScreen() {
       setScanPhase({ type: 'idle' });
       toast.error(err instanceof Error ? err.message : 'Extraction failed');
     }
-  }, [scanPhase, business?.id, toast]);
+  }
 
   // Dismiss success → navigate
   const handleSuccessDismiss = useCallback(async () => {
@@ -402,6 +414,17 @@ export function ScanRecordBillsScreen() {
         aria-hidden
         tabIndex={-1}
         onChange={handleGalleryFileChange}
+      />
+
+      {/* Hidden bill picker for Open gallery: a photo or a PDF from the phone */}
+      <input
+        ref={billFileInputRef}
+        type="file"
+        accept="image/*,application/pdf,.pdf"
+        className="sr-only"
+        aria-hidden
+        tabIndex={-1}
+        onChange={handleBillFileChange}
       />
 
       {/* Hidden capture input: opens system camera on mobile */}
@@ -588,17 +611,17 @@ export function ScanRecordBillsScreen() {
             type="button"
             variant="secondary"
             className="min-h-12 flex-1 gap-2 border border-border bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-800"
-            disabled={pdfBusy || scanPhase.type !== 'idle'}
-            onClick={handlePdfPick}
+            disabled={scanPhase.type !== 'idle'}
+            onClick={openBillFilePicker}
           >
-            {pdfBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileText className="h-5 w-5" />}
-            Upload PDF
+            <ImageIcon className="h-5 w-5" />
+            Open gallery
           </Button>
           <Button
             type="button"
             variant="primary"
             className="min-h-12 flex-1 gap-2 shadow-md"
-            disabled={pdfBusy || scanPhase.type !== 'idle'}
+            disabled={scanPhase.type !== 'idle'}
             onClick={openDeviceCamera}
           >
             <Camera className="h-5 w-5" />

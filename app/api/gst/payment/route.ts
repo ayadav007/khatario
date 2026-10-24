@@ -2,14 +2,16 @@ import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
+import { GST_TAX_HEADS, GstCashLedgerError, recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
 import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/gst/payment
- * Record GST challan payment: Dr output (or RCM) / Cr bank. Voucher type gst_payment.
+ * One-shot challan: electronic cash ledger deposit, then utilisation, in one transaction.
+ * Net books match a historical gst_payment (Dr liability / Cr bank). voucherId is the utilisation.
+ * Pooled RCM (tax_head RCM, liability 2155) uses cash_head IGST/CGST/SGST; omitted cash_head is IGST 1130.
  */
 export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({ body, businessId, userId }) => {
   try {
@@ -21,6 +23,7 @@ export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({
       bank_account_id?: string;
       challan_number?: string;
       payment_mode?: string;
+      cash_head?: string;
       narration_prefix?: string;
     };
     const amount = Number(parsed.amount);
@@ -30,10 +33,11 @@ export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({
     const bankAccountId = parsed.bank_account_id;
     const challanNumber = parsed.challan_number;
     const paymentMode = parsed.payment_mode;
+    const cashHead = parsed.cash_head;
     const narrationPrefix = parsed.narration_prefix;
 
-    if (!['IGST', 'CGST', 'SGST', 'RCM'].includes(taxHead)) {
-      return NextResponse.json({ error: 'tax_head must be IGST, CGST, SGST, or RCM' }, { status: 400 });
+    if (!GST_TAX_HEADS.includes(taxHead)) {
+      return NextResponse.json({ error: `tax_head must be one of ${GST_TAX_HEADS.join(', ')}` }, { status: 400 });
     }
     if (!paymentDate) {
       return NextResponse.json({ error: 'payment_date is required (YYYY-MM-DD)' }, { status: 400 });
@@ -91,12 +95,16 @@ export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({
       bankAccountId,
       challanNumber,
       paymentMode,
+      cashHead,
       narrationPrefix,
     });
 
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('GST payment error:', error);
+    if (error instanceof GstCashLedgerError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json({ error: error?.message || 'GST payment failed' }, { status: 500 });
   }
 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { parseFaceEncoding, matchFace, serializeFaceEncoding } from '@/lib/face-recognition';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,9 +11,23 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Business comes from the signed-in kiosk operator, never the request body. The face code is
+    // computed in the browser, so a copied one can be replayed; the Khatario Staff app is the
+    // fraud-resistant path.
+    const business_id = request.headers.get('x-authenticated-business-id');
+    const operatorId = request.headers.get('x-authenticated-user-id');
+    if (!business_id || !operatorId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    try {
+      await authorize(operatorId, 'attendance', 'create', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
     const body = await request.json();
     const {
-      business_id,
       face_encoding, // JSON string of 128-dim Float32Array
       action, // 'check_in' or 'check_out'
       location_lat,

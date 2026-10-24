@@ -13,6 +13,7 @@ export interface ProductInfo {
   unit: string;
   currentStock: number;
   itemType: 'product' | 'service';
+  category?: string;
   imageUrl?: string;
   variants?: Array<{
     id: string;
@@ -60,6 +61,7 @@ export class ProductDataService {
           i.item_type,
           i.image_url,
           i.has_variants,
+          (SELECT c.name FROM categories c WHERE c.id = i.category_id) AS category,
           COALESCE(
             json_agg(
               json_build_object(
@@ -81,6 +83,7 @@ export class ProductDataService {
            i.description ILIKE $2
          )
          AND (i.is_active IS NULL OR i.is_active = true)
+         AND i.deleted_at IS NULL
          GROUP BY i.id
          ORDER BY 
            CASE WHEN i.name ILIKE $3 THEN 1 ELSE 2 END,
@@ -99,6 +102,7 @@ export class ProductDataService {
         unit: item.unit || 'PCS',
         currentStock: parseFloat(item.current_stock) || 0,
         itemType: item.item_type || 'product',
+        category: item.category || undefined,
         imageUrl: item.image_url,
         variants: item.variants && Array.isArray(item.variants) ? item.variants : [],
       }));
@@ -199,10 +203,12 @@ export class ProductDataService {
           i.unit,
           ${stockExpr} as current_stock,
           i.item_type,
-          i.image_url
+          i.image_url,
+          (SELECT c.name FROM categories c WHERE c.id = i.category_id) AS category
          FROM items i
          WHERE i.business_id = $1 
          AND (i.is_active IS NULL OR i.is_active = true)
+         AND i.deleted_at IS NULL
          ORDER BY i.name ASC
          LIMIT $2`,
         params
@@ -218,6 +224,7 @@ export class ProductDataService {
         unit: item.unit || 'PCS',
         currentStock: parseFloat(item.current_stock) || 0,
         itemType: item.item_type || 'product',
+        category: item.category || undefined,
         imageUrl: item.image_url,
         variants: [],
       }));
@@ -236,6 +243,7 @@ export class ProductDataService {
     return products.map((p, idx) => {
       let info = `${idx + 1}. ${p.name}`;
       if (p.code) info += ` (Code: ${p.code})`;
+      if (p.category) info += `\n   Category: ${p.category}`;
       info += `\n   Price: ₹${p.sellingPrice.toLocaleString('en-IN')}`;
       if (p.mrp && p.mrp > p.sellingPrice) {
         info += ` (MRP: ₹${p.mrp.toLocaleString('en-IN')})`;

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/orders
  * Fetch sales orders placed via WhatsApp that need verification
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: 'read' }, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'draft';

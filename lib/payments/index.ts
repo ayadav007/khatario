@@ -46,3 +46,4 @@ export { RazorpayPaymentProvider } from './providers/razorpay-payment-provider';
 export { PayuPaymentProvider } from './providers/payu-payment-provider';
 export { PhonePePaymentProvider } from './providers/phonepe-payment-provider';
 export { InstamojoPaymentProvider } from './providers/instamojo-payment-provider';
+export { EasebuzzPaymentProvider } from './providers/easebuzz-payment-provider';

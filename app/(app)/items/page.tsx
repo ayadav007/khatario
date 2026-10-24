@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Package, Loader2, Pencil, Filter, X, Tag, Printer, Tags, ChevronDown } from 'lucide-react';
+import { Search, Plus, Package, Loader2, Pencil, Filter, X, Tag, Printer, Tags, ChevronDown, ScanLine } from 'lucide-react';
 import { ItemMobileCard } from '@/components/items/ItemMobileCard';
 import { AdjustItemStockSheet } from '@/components/items/AdjustItemStockSheet';
 
@@ -19,12 +19,14 @@ import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
 import { getModuleSettingsMenu } from '@/lib/module-settings';
 import { useAuth } from '@/contexts/AuthContext';
 import { Item } from '@/types/database';
-import { useRouter, usePathname } from 'next/navigation';
+import { formatStockQuantity } from '@/lib/quantity-display';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { useEntityList } from '@/hooks/useEntityList';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useToastContext } from '@/contexts/ToastContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import { clsx } from 'clsx';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
@@ -51,8 +53,10 @@ function ItemsPage() {
   const { business, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const toast = useToastContext();
   const { canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   const canDeleteItems = !permissionsLoading && (canDelete('items') || isPrimaryAdmin);
   const moduleSettingsMenu = getModuleSettingsMenu(pathname);
   const [search, setSearch] = useState('');
@@ -104,10 +108,21 @@ function ItemsPage() {
       if (stockFilter === 'all') return true;
       if (item.item_type === 'service') return false;
       if (stockFilter === 'out') return Number(item.current_stock) <= 0;
-      if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock) && Number(item.current_stock) > 0;
+      if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock ?? 0);
       return true;
     });
   }, [allItems, search, typeFilter, stockFilter, categoryFilter, storeFilter, featuredFilter]);
+
+  useEffect(() => {
+    const stock = searchParams.get('stock');
+    const filter = searchParams.get('filter');
+    if (stock === 'low' || filter === 'low_stock') {
+      setStockFilter('low');
+      setTypeFilter((prev) => (prev === 'service' ? 'goods' : prev));
+    } else if (stock === 'out') {
+      setStockFilter('out');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setPage(1);
@@ -410,14 +425,14 @@ function ItemsPage() {
                   </div>
                   <div className="text-xs text-text-secondary truncate">
                     {item.code && <span>{item.code}</span>}
-                    {item.code && item.barcode && <span> â€¢ </span>}
+                    {item.code && item.barcode && <span> • </span>}
                     {item.barcode && <span className="font-mono">{item.barcode}</span>}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-semibold text-text-primary">
                     {item.selling_price != null
-                      ? `â‚¹${Number(item.selling_price).toLocaleString('en-IN')}`
+                      ? `₹${Number(item.selling_price).toLocaleString('en-IN')}`
                       : '-'}
                   </div>
                 </div>
@@ -433,7 +448,7 @@ function ItemsPage() {
             disabled={page === 1}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            â€¹ Prev
+            ‹ Prev
           </button>
           <span className="text-text-secondary">
             {page} / {totalPages}
@@ -443,16 +458,16 @@ function ItemsPage() {
             disabled={page === totalPages}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            Next â€º
+            Next ›
           </button>
         </div>
       )}
     </Card>
   );
 
-  // Full list (table + mobile cards) â€” original experience when no detail panel is open
+  // Full list (table + mobile cards) — original experience when no detail panel is open
   const fullList = (
-    <Card padding="none" className="overflow-hidden">
+    <Card padding="none" className="overflow-hidden max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:shadow-none">
       {loading ? (
         <div className="p-12 flex justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
@@ -480,10 +495,15 @@ function ItemsPage() {
                 {paginatedItems.length > 0 ? (
                   paginatedItems.map((item) => {
                     const stock = Number(item.current_stock);
+                    const reserved = Number((item as { reserved_qty?: number }).reserved_qty || 0);
+                    const available =
+                      (item as { available_stock?: number }).available_stock != null
+                        ? Number((item as { available_stock?: number }).available_stock)
+                        : stock - reserved;
                     const minStock = Number(item.min_stock);
                     let stockStatus = 'success';
-                    if (stock <= 0) stockStatus = 'error';
-                    else if (stock <= minStock) stockStatus = 'warning';
+                    if (available <= 0) stockStatus = 'error';
+                    else if (available <= minStock) stockStatus = 'warning';
 
                     return (
                       <tr
@@ -544,9 +564,16 @@ function ItemsPage() {
                           {item.item_type === 'service' ? (
                             <span className="text-text-muted text-xs italic">N/A</span>
                           ) : (
-                            <Chip variant={stockStatus as any}>
-                              {stock} {item.unit}
-                            </Chip>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Chip variant={stockStatus as any}>
+                                {formatStockQuantity(available, item.unit, (item as { pack_size?: number | null }).pack_size, (item as { pack_unit?: string | null }).pack_unit)}
+                              </Chip>
+                              {reserved > 0 ? (
+                                <span className="text-2xs text-text-muted">
+                                  On hand {stock} · Reserved {reserved}
+                                </span>
+                              ) : null}
+                            </div>
                           )}
                         </td>
                         ) : null}
@@ -641,7 +668,7 @@ function ItemsPage() {
           </div>
 
           {/* Mobile Card View */}
-          <div className="space-y-2 bg-gray-50/80 p-2 md:hidden dark:bg-slate-950/40">
+          <div className="-mx-page-x divide-y divide-border border-y border-border bg-surface md:hidden">
             {paginatedItems.length > 0 ? (
               paginatedItems.map((item) => (
                 <ItemMobileCard
@@ -655,7 +682,7 @@ function ItemsPage() {
                 />
               ))
             ) : (
-              <div className="rounded-xl border border-border bg-white py-12 text-center text-text-secondary dark:bg-surface">
+              <div className="px-4 py-12 text-center text-sm text-text-secondary">
                 No items found.
               </div>
             )}
@@ -722,6 +749,14 @@ function ItemsPage() {
                 <span className="hidden md:inline">Manage Categories</span>
               </Button>
             </Link>
+            {snapshotLoaded && hasCapability('items_scan_onboarding', 'view') ? (
+              <Link href="/items/scan-add">
+                <Button variant="secondary" className="h-10 px-4">
+                  <ScanLine className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Scan &amp; Add Items</span>
+                </Button>
+              </Link>
+            ) : null}
             <Link href="/items/new" className="hidden md:inline-flex">
               <Button className="h-10 px-4">
                 <Plus className="w-4 h-4 mr-2" />

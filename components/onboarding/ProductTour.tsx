@@ -11,6 +11,7 @@ import { useLayout } from '@/contexts/LayoutContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { getPosMode } from '@/lib/pos-settings';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import {
   expandProductTourSidebarSections,
   PRODUCT_TOUR_START_EVENT,
@@ -132,6 +133,9 @@ function useBuildTourSteps(hasCapability: (m: string, a?: string) => boolean): D
   }, [hasCapability]);
 }
 
+/** Full page loads reset refs; without this the welcome reopens on every reload until dismissed. */
+const WELCOME_SHOWN_SESSION_KEY = 'khatario:product-tour-welcome-shown';
+
 async function patchProductTourComplete(): Promise<void> {
   await fetch('/api/user/product-tour', {
     method: 'PATCH',
@@ -165,7 +169,8 @@ function ProductTourInner() {
   /** After sidebar tour, open Business Profile guided tour (sidebar footer button) */
   const chainBusinessProfileAfterSidebarRef = useRef(false);
 
-  const posBlocking = pathname === '/invoices/new' && getPosMode();
+  const posAllowed = usePlanFeature('settings_pos_mode');
+  const posBlocking = pathname === '/invoices/new' && posAllowed && getPosMode();
 
   const tourHandlerCtxRef = useRef({
     authLoading,
@@ -343,10 +348,21 @@ function ProductTourInner() {
     if (searchParams.get('product_tour') === 'start') return;
 
     if (welcomeScheduledRef.current) return;
+    const shownKey = `${WELCOME_SHOWN_SESSION_KEY}:${user.id}`;
+    try {
+      if (sessionStorage.getItem(shownKey) === '1') return;
+    } catch {
+      /* storage unavailable */
+    }
     welcomeScheduledRef.current = true;
 
     const t = window.setTimeout(() => {
       if (suppressWelcomeRef.current) return;
+      try {
+        sessionStorage.setItem(shownKey, '1');
+      } catch {
+        /* storage unavailable */
+      }
       setWelcomeOpen(true);
     }, 1200);
     return () => {

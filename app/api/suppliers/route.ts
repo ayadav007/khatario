@@ -4,8 +4,10 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { Supplier } from '@/types/database';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { normalizePan, panFromGstin } from '@/lib/tax/pan';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         id, business_id, name, phone, email, address,
         city, state, state_code, pincode, gstin,
-        opening_balance, opening_balance_type,
+        opening_balance, opening_balance_type, COALESCE(current_balance, 0) AS current_balance,
         is_active, created_at, updated_at,
         linked_business_id, approval_status, allow_low_stock_access
       FROM suppliers
@@ -77,9 +79,17 @@ export async function GET(request: NextRequest) {
     `;
     const params: any[] = [businessId];
 
-    // Add search filter
+    // Name, phone, or address. The payment screen searches the same way.
     if (search) {
-      sql += ` AND (name ILIKE $${params.length + 1} OR phone ILIKE $${params.length + 1} OR email ILIKE $${params.length + 1})`;
+      sql += ` AND (
+        name ILIKE $${params.length + 1}
+        OR phone ILIKE $${params.length + 1}
+        OR email ILIKE $${params.length + 1}
+        OR address ILIKE $${params.length + 1}
+        OR city ILIKE $${params.length + 1}
+        OR state ILIKE $${params.length + 1}
+        OR pincode ILIKE $${params.length + 1}
+      )`;
       params.push(`%${search}%`);
     }
 
@@ -128,8 +138,10 @@ export async function POST(request: NextRequest) {
   console.log('[SupplierAPI] POST /api/suppliers called');
   try {
     const body = await request.json();
-    console.log('[SupplierAPI] Request body:', JSON.stringify(body, null, 0).slice(0, 500));
-    const business_id = getBusinessIdFromRequest(request, body);
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const createdByUserId = session.userId;
     const {
       name,
       phone,
@@ -140,40 +152,35 @@ export async function POST(request: NextRequest) {
       state_code,
       pincode,
       gstin,
+      pan,
       opening_balance = 0,
       opening_balance_type = 'credit',
       linked_business_id,
       allow_low_stock_access = false,
     } = body;
-    const createdByUserId = resolveCreatedByUserId(request, body);
-    console.log('[SupplierAPI] business_id:', business_id, 'name:', name, 'createdByUserId:', createdByUserId);
 
-    if (!business_id || !name) {
+    if (pan && !normalizePan(pan)) {
       return NextResponse.json(
-        { error: 'business_id and name are required' },
+        { error: `Invalid PAN "${pan}". Expected format: ABCDE1234F` },
+        { status: 400 }
+      );
+    }
+    console.log('[SupplierAPI] business_id:', business_id, 'name:', name);
+
+    if (!name) {
+      return NextResponse.json(
+        { error: 'name is required' },
         { status: 400 }
       );
     }
 
-    if (gstin && typeof gstin === 'string') {
-      const trimmedGstin = gstin.trim();
-      if (trimmedGstin.length !== 15) {
-        return NextResponse.json(
-          { error: `Invalid GSTIN "${trimmedGstin}" — must be exactly 15 characters (got ${trimmedGstin.length}). Please correct and try again.` },
-          { status: 400 }
-        );
-      }
-      if (!/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z0-9]{2}$/.test(trimmedGstin.toUpperCase())) {
-        return NextResponse.json(
-          { error: `Invalid GSTIN format "${trimmedGstin}". Expected format: 22AAAAA0000A1Z5` },
-          { status: 400 }
-        );
-      }
+    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+    if (!gstinCheck.ok) {
+      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
     }
-
-    if (!createdByUserId) {
+    if (gstinCheck.pan && pan && normalizePan(pan) && normalizePan(pan) !== gstinCheck.pan) {
       return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
+        { error: `PAN ${String(pan).toUpperCase()} does not match the PAN inside GSTIN (${gstinCheck.pan}).`, code: 'PAN_GSTIN_MISMATCH' },
         { status: 400 }
       );
     }
@@ -221,21 +228,23 @@ export async function POST(request: NextRequest) {
     };
 
     // Use provided state_code or calculate from state name
-    const finalStateCode = state_code || (state ? getStateCode(state) : null);
+    const finalState = gstinCheck.state;
+    const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
 
-    // Auto-approve when linked to business (remove approval requirement)
-    const approvalStatus = linked_business_id ? 'approved' : 'none';
-    const approvedAt = linked_business_id ? new Date() : null;
+    // A link to another business stays pending until that business approves it
+    // (POST /api/suppliers/[id]/approve); every hub gate requires approval_status = 'approved'.
+    if (linked_business_id && String(linked_business_id) === String(business_id)) {
+      return NextResponse.json({ error: 'A business cannot be its own supplier' }, { status: 400 });
+    }
+    const approvalStatus = linked_business_id ? 'pending' : 'none';
+    const approvedAt = null;
 
     // Validate: allow_low_stock_access can only be true if linked to business
     const finalAllowLowStockAccess = linked_business_id ? (allow_low_stock_access === true) : false;
 
     const phoneNorm = normalizePhoneOrNull(phone);
 
-    const gstinNorm =
-      gstin && typeof gstin === 'string' && gstin.trim()
-        ? gstin.trim().toUpperCase()
-        : null;
+    const gstinNorm = gstinCheck.gstin;
 
     if (gstinNorm) {
       const existingGstin = await db.queryOne<Supplier>(
@@ -270,19 +279,20 @@ export async function POST(request: NextRequest) {
         city, state, state_code, pincode, gstin,
         opening_balance, opening_balance_type,
         linked_business_id, requested_by_business_id, approval_status,
-        approved_at, allow_low_stock_access
+        approved_at, allow_low_stock_access, pan
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `, [
       business_id, name, phoneNorm, email, address,
-      city, state, finalStateCodeResolved, pincode, gstinNorm,
+      city, finalState, finalStateCodeResolved, pincode, gstinNorm,
       opening_balance, opening_balance_type,
       linked_business_id || null,
       linked_business_id ? business_id : null, // Set requester if linking
       approvalStatus,
       approvedAt,
-      finalAllowLowStockAccess
+      finalAllowLowStockAccess,
+      normalizePan(pan) ?? panFromGstin(gstinNorm),
     ]);
 
     if (!supplier) {
@@ -311,24 +321,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If linking to a business account, send informational notification
+    // If linking to a business account, ask that business to approve the link
     if (linked_business_id) {
       const requesterBusiness = await db.queryOne(
         `SELECT name FROM businesses WHERE id = $1`,
         [business_id]
       );
-
-      const notificationType = finalAllowLowStockAccess 
-        ? 'supplier_access_granted' 
-        : 'supplier_approved';
-      
-      const notificationTitle = finalAllowLowStockAccess
-        ? '✓ Low Stock Access Granted'
-        : '🤝 Supplier Relationship Established';
-      
-      const notificationMessage = finalAllowLowStockAccess
-        ? `${requesterBusiness?.name || 'A business'} has granted you access to view their low stock alerts. You can now monitor their inventory levels.`
-        : `${requesterBusiness?.name || 'A business'} has added you as their supplier. Relationship established successfully.`;
 
       await db.query(`
         INSERT INTO notifications (
@@ -338,9 +336,9 @@ export async function POST(request: NextRequest) {
         VALUES ($1, $2, $3, $4, $5, $6, $7)
       `, [
         linked_business_id,
-        notificationType,
-        notificationTitle,
-        notificationMessage,
+        'supplier_request',
+        'New supplier request',
+        `${requesterBusiness?.name || 'A business'} wants to add you as their supplier. Approve or decline it from Supplier requests.`,
         'supplier',
         supplier.id,
         new Date()

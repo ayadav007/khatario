@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, getPool } from '@/lib/db';
-import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { assertPaidPlan, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GET /api/period-locks
@@ -90,8 +92,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
     const {
-      business_id,
       branch_id, // Optional: NULL for business-wide lock
       financial_year,
       period_start,
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userId = locked_by || getUserIdFromRequest(request, body);
+    const userId = getUserIdFromRequest(request, body) || locked_by;
     if (!userId) {
       return NextResponse.json(
         { error: 'locked_by (user_id) is required for authorization' },
@@ -125,7 +127,7 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Enforce subscription feature access
     try {
-      await assertFeatureAccess(business_id, 'advanced');
+      await assertPaidPlan(business_id, 'period_lock');
     } catch (error) {
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
@@ -173,52 +175,59 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check for overlapping locks
-    const overlappingLock = await queryOne(`
-      SELECT id FROM period_locks
-      WHERE business_id = $1
-        AND (branch_id = $2 OR branch_id IS NULL OR $2 IS NULL)
-        AND financial_year = $3
-        AND (
-          (period_start <= $4 AND period_end >= $4) OR
-          (period_start <= $5 AND period_end >= $5) OR
-          (period_start >= $4 AND period_end <= $5)
-        )
-        AND is_locked = true
-    `, [business_id, branch_id || null, financial_year, period_start, period_end]);
+    const locking = action === 'lock';
+    const keyParams = [business_id, branch_id || null, financial_year, period_start, period_end];
 
-    if (overlappingLock) {
-      return NextResponse.json(
-        { error: 'Overlapping period lock already exists for this period' },
-        { status: 400 }
-      );
+    if (locking) {
+      const overlappingLock = await queryOne(`
+        SELECT id FROM period_locks
+        WHERE business_id = $1
+          AND (branch_id = $2 OR branch_id IS NULL OR $2 IS NULL)
+          AND financial_year = $3
+          AND period_start <= $5::date AND period_end >= $4::date
+          AND is_locked = true
+      `, keyParams);
+
+      if (overlappingLock) {
+        return NextResponse.json(
+          { error: 'Overlapping period lock already exists for this period' },
+          { status: 400 }
+        );
+      }
     }
 
-    // Insert or update period lock
+    // branch_id is NULL for business-wide locks and NULLs never collide in the unique
+    // key, so match rows explicitly instead of relying on ON CONFLICT.
+    const updated = await queryOne(`
+      UPDATE period_locks
+         SET is_locked = $6,
+             locked_by = $7,
+             notes = COALESCE($8, notes),
+             locked_at = CASE WHEN $6 THEN CURRENT_TIMESTAMP ELSE locked_at END,
+             updated_at = CURRENT_TIMESTAMP
+       WHERE business_id = $1
+         AND branch_id IS NOT DISTINCT FROM $2::uuid
+         AND financial_year = $3
+         AND period_start = $4::date
+         AND period_end = $5::date
+      RETURNING *
+    `, [...keyParams, locking, userId, notes || null]);
+
+    if (updated) {
+      return NextResponse.json({ lock: updated });
+    }
+    if (!locking) {
+      return NextResponse.json({ error: 'No lock exists for this period' }, { status: 404 });
+    }
+
     const lock = await queryOne(`
       INSERT INTO period_locks (
         business_id, branch_id, financial_year, period_start, period_end,
         is_locked, locked_by, notes
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (business_id, branch_id, financial_year, period_start, period_end)
-      DO UPDATE SET
-        is_locked = EXCLUDED.is_locked,
-        locked_by = EXCLUDED.locked_by,
-        notes = EXCLUDED.notes,
-        locked_at = CASE WHEN EXCLUDED.is_locked THEN CURRENT_TIMESTAMP ELSE locked_at END,
-        updated_at = CURRENT_TIMESTAMP
+      VALUES ($1, $2, $3, $4, $5, true, $6, $7)
       RETURNING *
-    `, [
-      business_id,
-      branch_id || null,
-      financial_year,
-      period_start,
-      period_end,
-      is_locked !== undefined ? is_locked : true,
-      locked_by || null,
-      notes || null,
-    ]);
+    `, [...keyParams, userId, notes || null]);
 
     return NextResponse.json({ lock }, { status: 201 });
   } catch (error: any) {
@@ -240,9 +249,9 @@ export async function DELETE(request: NextRequest) {
     const lockId = searchParams.get('id');
     const userId = getUserIdFromRequest(request);
 
-    if (!lockId) {
+    if (!lockId || !UUID_RE.test(lockId)) {
       return NextResponse.json(
-        { error: 'id is required' },
+        { error: 'A valid lock id is required' },
         { status: 400 }
       );
     }
@@ -255,9 +264,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Fetch period lock for authorization
+    const scopedBusinessId = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
     const existingLock = await queryOne(`
-      SELECT * FROM period_locks WHERE id = $1
-    `, [lockId]);
+      SELECT * FROM period_locks WHERE id = $1 AND ($2::uuid IS NULL OR business_id = $2::uuid)
+    `, [lockId, scopedBusinessId || null]);
 
     if (!existingLock) {
       return NextResponse.json(

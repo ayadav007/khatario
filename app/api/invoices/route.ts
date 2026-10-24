@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
+import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { clientInvoiceChannel, isInvoiceChannel } from '@/lib/invoices/channel';
+import { round2 } from '@/lib/invoices/line-gst';
+import { InvoiceChargeError, persistInvoiceCharges } from '@/lib/invoices/invoice-charges';
+import { computeInvoiceTotals } from '@/lib/invoices/validate-invoice-gst-payload';
+import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
+import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -13,22 +21,28 @@ import {
   type BundleDeductionContext,
 } from '@/lib/invoice-bundle-stock';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
-import { calculateCreditMetrics, calculateProjectedCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
+import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
+import { finishCreditAlert } from '@/lib/credit-alert-finish';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
   ClosingStockPeriodLockedError,
 } from '@/lib/closing-stock-period-lock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { findTemplateAssignment } from '@/lib/template-assignment';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
+import { reverseInvoicePostingForRepost, reverseReplacedInvoicePayments } from '@/lib/invoices/invoice-edit-postings';
 import {
   applyOffers,
   type AppliedOfferLine,
@@ -46,19 +60,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     
     // AUTHORIZATION: Check read permission (PBAC will check branch access)
     try {
-      await authorize(userId, 'invoices', 'read');
+      await authorize(userId, 'invoices', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -132,7 +141,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN customers c ON c.id = i.customer_id AND c.deleted_at IS NULL
       WHERE i.business_id = $1
         AND i.deleted_at IS NULL
-        AND i.status != 'cancelled'
+        ${status === 'cancelled' ? '' : "AND i.status != 'cancelled'"}
         AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
     `;
     const params: any[] = [businessId];
@@ -154,6 +163,18 @@ export async function GET(request: NextRequest) {
       params.push(accessibleBranchIds);
     }
     // Admin users with no branchId filter: Show all branches (no additional WHERE clause)
+
+    const channelFilter = searchParams.get('channel');
+    if (isInvoiceChannel(channelFilter)) {
+      sql += ` AND i.channel = $${params.length + 1}`;
+      params.push(channelFilter);
+    }
+
+    const customerFilter = searchParams.get('customer_id');
+    if (customerFilter) {
+      sql += ` AND i.customer_id = $${params.length + 1}`;
+      params.push(customerFilter);
+    }
 
     // Add search filter
     if (search) {
@@ -224,7 +245,7 @@ export async function GET(request: NextRequest) {
 
     // Add pagination
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '25'); // Set to 25 per page for better performance
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '25') || 25, 1), 500);
     const offset = (page - 1) * limit;
 
     // Get total count for pagination
@@ -239,7 +260,11 @@ export async function GET(request: NextRequest) {
 
     const normalizedInvoices = invoices.map((inv) => {
       if (inv.status === 'cancelled') return inv;
-      const p = deriveInvoicePaymentStatus(inv.grand_total, inv.paid_amount, inv.balance_amount);
+      const settled =
+        (Number(inv.paid_amount) || 0) +
+        (Number((inv as { advance_adjusted?: unknown }).advance_adjusted) || 0) +
+        (Number((inv as { tds_received?: unknown }).tds_received) || 0);
+      const p = deriveInvoicePaymentStatus(inv.grand_total, settled, inv.balance_amount);
       return p !== inv.payment_status ? { ...inv, payment_status: p } : inv;
     });
 
@@ -335,6 +360,7 @@ export async function POST(request: NextRequest) {
       status = 'draft',
       payment, // Optional single payment object (deprecated, use payments array)
       payments, // Optional array of payment objects
+      customer_credit_amount,
       billing_address,
       shipping_address,
       place_of_supply_state_code,
@@ -377,6 +403,8 @@ export async function POST(request: NextRequest) {
       attachments,
       round_off,
       request_id,
+      work_order_id,
+      supply_order_id,
       // Estimates/Quotations fields for proforma invoices
       expiry_date,
       estimate_status,
@@ -401,6 +429,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const paymentRequested =
+      (Array.isArray(payments) && payments.some((p: { amount?: unknown }) => Number(p?.amount) > 0)) ||
+      (payment && Number((payment as { amount?: unknown }).amount) > 0);
+    if (status !== 'final' && document_type !== 'proforma_invoice' && paymentRequested) {
+      return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+    }
+
     if (!business_id || !items || items.length === 0) {
       return NextResponse.json(
         { error: 'Active business scope and items are required' },
@@ -420,6 +455,45 @@ export async function POST(request: NextRequest) {
           );
         }
         throw e;
+      }
+    }
+
+    // Session business only. A missing row and a row owned by another business
+    // return the same code so the response does not reveal the other tenant.
+    if (customer_id) {
+      const cust = await client.query(
+        `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+        [customer_id, business_id]
+      );
+      if (cust.rows.length === 0) {
+        return NextResponse.json(
+          { error: 'Customer not found', code: 'CUSTOMER_NOT_FOUND' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const requestedItemIds = (items as Array<{ item_id?: string | null; item_name?: string }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length > 0) {
+      const activeItems = await client.query<{ id: string }>(
+        `SELECT id FROM items
+          WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, requestedItemIds]
+      );
+      const activeIds = new Set(activeItems.rows.map((row) => row.id));
+      const missing = (items as Array<{ item_id?: string | null; item_name?: string }>).find(
+        (item) => item.item_id && !activeIds.has(item.item_id)
+      );
+      if (missing) {
+        return NextResponse.json(
+          {
+            error: `Product "${missing.item_name || 'Item'}" no longer exists`,
+            code: 'PRODUCT_DELETED',
+          },
+          { status: 409 }
+        );
       }
     }
 
@@ -849,14 +923,12 @@ export async function POST(request: NextRequest) {
     } else if (!finalTemplateId) {
       // For non-export invoices, fetch from default settings
       try {
-        const settingsRes = await client.query(
-          `SELECT template_id FROM business_template_assignments 
-           WHERE business_id = $1 AND document_type = 'tax_invoice'
-           LIMIT 1`,
-          [business_id]
+        const assignment = await findTemplateAssignment(
+          business_id,
+          document_type === 'regular' ? 'tax_invoice' : document_type
         );
-        if (settingsRes.rows.length > 0) {
-          finalTemplateId = settingsRes.rows[0].template_id;
+        if (assignment) {
+          finalTemplateId = assignment.template_id;
         }
       } catch (err) {
         console.error('Error fetching template assignment:', err);
@@ -866,10 +938,42 @@ export async function POST(request: NextRequest) {
     // Check if this is an update (has id) and if invoice is locked
     if (invoiceId) {
       const existingInvoice = await client.query(
-        'SELECT is_editable FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT is_editable, status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [invoiceId, business_id]
       );
+
+      // A posted tax invoice is corrected by cancelling it (reversal) and issuing a new one,
+      // or by a credit/debit note; it is never re-saved over its own postings.
+      const prev = existingInvoice.rows[0];
+      if (prev && (prev.status === 'cancelled' || (prev.status === 'final' && prev.document_type !== 'proforma_invoice'))) {
+        return NextResponse.json(
+          {
+            error:
+              prev.status === 'cancelled'
+                ? 'A cancelled invoice cannot be edited.'
+                : 'A final invoice cannot be edited. Cancel it and issue a new invoice, or raise a credit/debit note.',
+            code: 'INVOICE_POSTED_IMMUTABLE',
+          },
+          { status: 409 }
+        );
+      }
       
+      if (
+        prev &&
+        status === 'final' &&
+        prev.status !== 'final' &&
+        prev.status !== 'cancelled'
+      ) {
+        const historicalPayment = await historicalDraftPaymentBlock(client, {
+          businessId: business_id,
+          referenceType: 'invoice',
+          documentId: invoiceId,
+        });
+        if (historicalPayment) {
+          return NextResponse.json(historicalPayment, { status: 409 });
+        }
+      }
+
       if (existingInvoice.rows.length > 0 && existingInvoice.rows[0].is_editable === false) {
         // Get GSTR-1 filing info for better error message (scoped to this business)
         const filingInfo = await client.query(
@@ -956,6 +1060,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A tax invoice dated into an earlier return month, or before the latest invoice
+    // already issued, breaks GSTR-1 period/serial order — allowed, but only with a reason.
+    if (status === 'final' && document_type !== 'proforma_invoice') {
+      const prior = invoiceId
+        ? await queryOne<{ d: string; status: string }>(
+            `SELECT invoice_date::text AS d, status FROM invoices WHERE id = $1 AND business_id = $2`,
+            [invoiceId, business_id]
+          )
+        : null;
+      const newDate = String(invoice_date).slice(0, 10);
+      if (!prior || prior.status !== 'final' || prior.d.slice(0, 10) !== newDate) {
+        const todayIst = new Date(Date.now() + 330 * 60 * 1000).toISOString().slice(0, 10);
+        const earlierMonth = newDate.slice(0, 7) < todayIst.slice(0, 7);
+        const later = await queryOne<{ invoice_number: string; d: string }>(
+          `SELECT invoice_number, invoice_date::text AS d FROM invoices
+            WHERE business_id = $1 AND status = 'final' AND invoice_date > $2::date
+              AND COALESCE(document_type, '') <> 'proforma_invoice'
+              AND ($3::uuid IS NULL OR id <> $3::uuid)
+            ORDER BY invoice_date DESC LIMIT 1`,
+          [business_id, newDate, invoiceId || null]
+        );
+        const reason = typeof (body as any).backdate_reason === 'string' ? (body as any).backdate_reason.trim() : '';
+        if ((earlierMonth || later) && reason.length < 5) {
+          const why = earlierMonth
+            ? `The invoice date ${newDate} falls in an earlier GST return month (${newDate.slice(0, 7)}).`
+            : `Invoice ${later!.invoice_number} is already dated ${later!.d}, after ${newDate}.`;
+          return NextResponse.json(
+            {
+              error: `${why} Enter a reason for the back-dated invoice (it is recorded in the audit log), and include it in GSTR-1 for its own month or amend it there.`,
+              code: 'BACKDATE_REASON_REQUIRED',
+              days_backdated: backdateValidation.daysBackdated,
+            },
+            { status: 422 }
+          );
+        }
+      }
+    }
+
     const useSoftDeleteInvoicePayments = await shouldUseSoftDelete(business_id);
 
     // Start transaction FIRST, then check limit inside transaction with locking
@@ -977,6 +1119,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
       }
       existingInvoiceRow = row;
+      const lockedStatus = (row as { status?: string }).status;
+      if (status === 'final' && lockedStatus && lockedStatus !== 'final' && lockedStatus !== 'cancelled') {
+        const historicalPayment = await historicalDraftPaymentBlock(client, {
+          businessId: business_id,
+          referenceType: 'invoice',
+          documentId: invoiceId,
+        });
+        if (historicalPayment) {
+          await client.query('ROLLBACK').catch(() => {});
+          return NextResponse.json(historicalPayment, { status: 409 });
+        }
+      }
       if (row.is_editable === false) {
         await client.query('ROLLBACK').catch(() => {});
         return NextResponse.json(
@@ -1003,7 +1157,7 @@ export async function POST(request: NextRequest) {
           userId: actorUserId,
           branchId: finalBranchId,
           feature: FeatureKeys.INVOICE_CREATION,
-          limitType: 'invoices',
+          limitType: document_type === 'proforma_invoice' ? 'estimates' : 'invoices',
           poolClient: client,
         });
       } catch (e) {
@@ -1016,6 +1170,40 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (String(eway_bill_number || '').trim()) {
+      try {
+        await assertFeatureAccess(business_id, 'eway_bill');
+      } catch (e) {
+        if (e instanceof FeatureAccessDeniedError) {
+          await client.query('ROLLBACK').catch(() => {});
+          return e.toNextResponse();
+        }
+        throw e;
+      }
+    }
+    const invoiceCurrencyCode = String(invoice_currency || 'INR').trim().toUpperCase();
+    if (invoiceCurrencyCode && invoiceCurrencyCode !== 'INR') {
+      try {
+        await assertFeatureAccess(business_id, FeatureKeys.MULTI_CURRENCY);
+      } catch (e) {
+        if (e instanceof FeatureAccessDeniedError) {
+          await client.query('ROLLBACK').catch(() => {});
+          return e.toNextResponse();
+        }
+        throw e;
+      }
+    }
+
+    const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    const schemeRes = await client.query<{ gst_registration_type: string | null }>(
+      'SELECT gst_registration_type FROM businesses WHERE id = $1',
+      [business_id]
+    );
+    const taxPolicy = outwardTaxPolicy({
+      scheme: effectiveGstScheme(schemeRes.rows[0]?.gst_registration_type, registration.gstin),
+      documentType: document_type,
+    });
+
     // Mapping of document types to prefixes and counter columns
     const DOCUMENT_TYPE_CONFIG: Record<string, { prefix: string; counterColumn: string }> = {
         'tax_invoice': { prefix: 'INV', counterColumn: 'next_tax_invoice_number' },
@@ -1024,7 +1212,7 @@ export async function POST(request: NextRequest) {
         'bill_of_supply': { prefix: 'BOS', counterColumn: 'next_tax_invoice_number' },
       };
       
-      const finalDocumentType = document_type || 'tax_invoice';
+      const finalDocumentType = taxPolicy.documentType;
       const config = DOCUMENT_TYPE_CONFIG[finalDocumentType] || DOCUMENT_TYPE_CONFIG['tax_invoice'];
     
     let invoiceNumber = '';
@@ -1036,8 +1224,7 @@ export async function POST(request: NextRequest) {
     // Fetch branch info for invoice numbering (branch-wise numbering)
     
     const branchRes = await client.query(
-      `SELECT invoice_prefix, next_invoice_number, state_code 
-       FROM branches WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      `SELECT id FROM branches WHERE id = $1 AND business_id = $2`,
       [finalBranchId, business_id]
     );
     
@@ -1046,8 +1233,6 @@ export async function POST(request: NextRequest) {
       await client.query('ROLLBACK');
       throw new Error('Branch not found');
     }
-    
-    const branch = branchRes.rows[0];
     
     // Determine the invoice number and increment counter atomically
     
@@ -1074,26 +1259,11 @@ export async function POST(request: NextRequest) {
       // Otherwise, continue with document type default prefix
     }
     
-    // Get current counter value from branch (will be used for this invoice)
-    const currentCounter = branch.next_invoice_number || 1;
-    
-    
-    
-    if (providedInvoiceNumber) {
-      // Use provided number (from next-number API preview)
-      // providedInvoiceNumber is just the numeric part (e.g., "001" or "1")
-      let numStr = String(providedInvoiceNumber);
-      // Remove leading zeros to get actual number, or parse as-is
-      const numValue = parseInt(numStr, 10);
-      // Format with branch prefix and minimum 3 digits padding
-      invoiceNumber = `${invoicePrefix}-${String(numValue || currentCounter).padStart(3, '0')}`;
-    } else {
-      // Fallback: Use current counter value
-      // Format with branch prefix and minimum 3 digits padding (but allows growth beyond 999)
-      invoiceNumber = `${invoicePrefix}-${String(currentCounter).padStart(3, '0')}`;
-    }
-    
-    
+    // providedInvoiceNumber is the number the user saw in the form, e.g. "INV-004", "004" or "4"
+    const providedMatch = providedInvoiceNumber ? String(providedInvoiceNumber).match(/(\d+)\s*$/) : null;
+    const requestedNumber = providedMatch ? parseInt(providedMatch[1], 10) : null;
+    const issuedNumber = await reserveDocumentNumber(client, finalBranchId, finalDocumentType, requestedNumber);
+    invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
     
     // Check if invoice number already exists for this branch (matches database constraint)
     const existingInvoiceCheck = await client.query(
@@ -1112,14 +1282,6 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
-    
-    // NOW increment the branch counter atomically (only when actually saving the invoice)
-    await client.query(`
-      UPDATE branches 
-      SET next_invoice_number = next_invoice_number + 1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND business_id = $2
-    `, [finalBranchId, business_id]);
     } else {
       invoiceNumber = (existingInvoiceRow?.invoice_number as string) || '';
     }
@@ -1157,7 +1319,63 @@ export async function POST(request: NextRequest) {
       return map[name] || '';
     };
 
-    const businessStateCode = business.state_code || getStateCode(business.state || '');
+    const businessStateCode =
+      registration.stateCode || business.state_code || getStateCode(business.state || '');
+
+    const pricesIncludeGst = (body as { prices_include_gst?: unknown }).prices_include_gst === true;
+    const complianceCustomer = customer_id
+      ? (
+          await client.query<{ gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null }>(
+            'SELECT gstin, state_code, state, shipping_state FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+            [customer_id, business_id],
+          )
+        ).rows[0]
+      : undefined;
+    const customerStateCode = complianceCustomer
+      ? stateCodeFromName(complianceCustomer.shipping_state) ??
+        (complianceCustomer.state_code?.trim() || stateCodeFromName(complianceCustomer.state))
+      : null;
+    const turnoverRes = await client.query<{ above: boolean | null }>(
+      'SELECT aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1',
+      [business_id],
+    );
+    const masterItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((it) => it.item_id)
+      .filter((id): id is string => !!id);
+    const masterHsn = new Map<string, string | null>();
+    if (masterItemIds.length > 0) {
+      const hsnRows = await client.query<{ id: string; hsn_sac: string | null }>(
+        'SELECT id, hsn_sac FROM items WHERE id = ANY($1::uuid[]) AND business_id = $2',
+        [masterItemIds, business_id],
+      );
+      for (const r of hsnRows.rows) masterHsn.set(r.id, r.hsn_sac);
+    }
+    const compliance = checkInvoiceCompliance({
+      lines: (items as Array<{ item_id?: string | null; item_name?: string; hsn_sac?: string; tax_rate?: unknown }>).map(
+        (it) => ({
+          item_name: it.item_name,
+          hsn_sac: it.hsn_sac,
+          tax_rate: it.tax_rate,
+          master_hsn_sac: it.item_id ? masterHsn.get(it.item_id) ?? null : null,
+        }),
+      ),
+      invoiceDate: invoice_date,
+      status,
+      documentType: finalDocumentType,
+      customerGstin: complianceCustomer?.gstin ?? null,
+      customerStateCode,
+      supplierStateCode: businessStateCode || null,
+      placeOfSupply: place_of_supply_state_code,
+      isExport: !!is_export,
+      turnoverAbove5Cr: turnoverRes.rows[0]?.above === true,
+      allowPosDifferentFromGstin: (body as { pos_differs_from_gstin?: unknown }).pos_differs_from_gstin === true,
+    });
+    if (!compliance.ok) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: compliance.error, code: compliance.code }, { status: 400 });
+    }
+    const posStateCode: string | null = compliance.placeOfSupply ?? place_of_supply_state_code ?? null;
+    const complianceWarnings = taxPolicy.warning ? [...compliance.warnings, taxPolicy.warning] : compliance.warnings;
 
     let invoiceItems: any[] = items;
     let appliedOffersPayload: AppliedOfferLine[] = [];
@@ -1215,54 +1433,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate totals
-    let subtotal = 0;
-    let taxTotal = 0;
-    let discountTotal = 0;
-    let cgstTotal = 0;
-    let sgstTotal = 0;
-    let igstTotal = 0;
-
-    invoiceItems.forEach((item: any) => {
-      const itemSubtotal = item.quantity * item.unit_price;
-      const itemDiscount = (itemSubtotal * (item.discount_percent || 0)) / 100;
-      const taxable = itemSubtotal - itemDiscount;
-
-      let taxAmount = 0;
-      let cgst = 0;
-      let sgst = 0;
-      let igst = 0;
-
-      // Robust comparison
-      if (place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode) {
-        const half = (item.tax_rate || 0) / 2;
-        cgst = taxable * half / 100;
-        sgst = taxable * half / 100;
-        taxAmount = cgst + sgst;
-      } else {
-        igst = (taxable * (item.tax_rate || 0)) / 100;
-        taxAmount = igst;
+    let invoiceTotals;
+    try {
+      invoiceTotals = computeInvoiceTotals(
+        {
+          ...(body as object),
+          items: invoiceItems,
+          document_type: finalDocumentType,
+          additional_charges: Object.prototype.hasOwnProperty.call(body, 'additional_charges')
+            ? additional_charges
+            : undefined,
+          place_of_supply_state_code: posStateCode,
+          prices_include_gst: pricesIncludeGst,
+          is_export,
+          supply_type,
+          export_type,
+          lut_declaration,
+          round_off,
+          enable_round_off,
+          invoice_date,
+        } as never,
+        businessStateCode
+      );
+    } catch (error) {
+      if (error instanceof InvoiceChargeError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
       }
-
-      subtotal += taxable;
-      discountTotal += itemDiscount;
-      taxTotal += taxAmount;
-      cgstTotal += cgst;
-      sgstTotal += sgst;
-      igstTotal += igst;
-    });
-
-    const grandTotalRaw = subtotal + taxTotal + additional_charges;
-    // Use provided round_off if available, otherwise calculate if enable_round_off is true
-    let roundOff = round_off || 0;
-    if (enable_round_off && !round_off) {
-      roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
+      throw error;
     }
-    const grandTotal = grandTotalRaw + roundOff;
+    const subtotal = invoiceTotals.subtotal;
+    const taxTotal = invoiceTotals.taxTotal;
+    const discountTotal = invoiceTotals.discountTotal;
+    const cgstTotal = invoiceTotals.cgstTotal;
+    const sgstTotal = invoiceTotals.sgstTotal;
+    const igstTotal = invoiceTotals.igstTotal;
+    const roundOff = invoiceTotals.roundOff;
+    const grandTotal = invoiceTotals.grandTotal;
+    const chargeBase = invoiceTotals.additionalCharges;
 
     // Calculate payment status from payments array or single payment (for backward compatibility)
     let paidAmount = 0;
-    let paymentEntries: Array<{ amount: number; mode?: string; date?: string; reference?: string }> = [];
+    let paymentEntries: Array<{
+      amount: number;
+      mode?: string;
+      date?: string;
+      reference?: string;
+      settlement_account_id?: string | null;
+    }> = [];
     
     // Support both payments array (new) and single payment (legacy)
     if (payments && Array.isArray(payments) && payments.length > 0) {
@@ -1273,11 +1491,30 @@ export async function POST(request: NextRequest) {
     }
 
     if (status === 'cancelled' && paymentEntries.length > 0) {
+      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Cannot add payment to cancelled invoice' }, { status: 400 });
     }
+    if (status !== 'final' && document_type !== 'proforma_invoice' && paymentEntries.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+    }
+    const requestedCustomerCredit = round2(Number(customer_credit_amount) || 0);
+    if (requestedCustomerCredit > 0.004 && (status !== 'final' || document_type === 'proforma_invoice')) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Customer credit can only be used on a final tax invoice', code: 'CREDIT_NOT_ON_DRAFT' },
+        { status: 409 }
+      );
+    }
+    if (requestedCustomerCredit > 0.004 && invoiceId) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Customer credit can only be applied when the invoice is first saved', code: 'CREDIT_ON_UPDATE' },
+        { status: 409 }
+      );
+    }
 
-    // Allow payments on draft or final (changed from only final)
-    // Calculate total paid amount (existing draft saves may omit payments[] to avoid duplicate rows)
+    // Existing draft saves may omit payments[] so a previously stored amount is kept as-is.
     if (paymentEntries.length > 0) {
       paidAmount = paymentEntries.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     } else if (invoiceId && (body as any).paid_amount != null) {
@@ -1292,12 +1529,19 @@ export async function POST(request: NextRequest) {
 
     // Auto-classify supply_type if not provided
     let finalSupplyType = supply_type;
+    // GSTR-1 B2CL: inter-state supply to an unregistered person above ₹1 lakh (₹2.5 lakh before
+    // 1 Aug 2024, Notification 12/2024-CT). Intra-state B2C is always B2CS.
+    const b2cSize = () => {
+      const day = String(invoice_date || '').slice(0, 10);
+      const limit = day && day < '2024-08-01' ? 250000 : 100000;
+      const interState = !!posStateCode && !!businessStateCode && posStateCode !== businessStateCode;
+      return interState && grandTotal > limit ? 'b2c_large' : 'b2c_small';
+    };
     if (!finalSupplyType) {
-      // Export/SEZ: Check place_of_supply_state_code or is_export flag (overrides other classifications)
-      if (is_export || place_of_supply_state_code === '96') {
+      // Export: place of supply 96 or the is_export flag. SEZ is chosen explicitly (supply_type);
+      // 97 "Other Territory" is an ordinary inter-state supply.
+      if (is_export || posStateCode === '96') {
         finalSupplyType = 'export';
-      } else if (place_of_supply_state_code === '97') {
-        finalSupplyType = 'sez';
       }
       // For other types, check if customer has GSTIN (B2B)
       else if (customer_id) {
@@ -1305,24 +1549,9 @@ export async function POST(request: NextRequest) {
           'SELECT gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
           [customer_id, business_id]
         );
-        if (custRes.rows.length > 0 && custRes.rows[0].gstin) {
-          finalSupplyType = 'b2b';
-        } else {
-          // B2C Large: Invoice value > ₹2.5 lakh
-          if (grandTotal > 250000) {
-            finalSupplyType = 'b2c_large';
-          } else {
-            // B2C Small: Invoice value <= ₹2.5 lakh
-            finalSupplyType = 'b2c_small';
-          }
-        }
+        finalSupplyType = custRes.rows.length > 0 && custRes.rows[0].gstin ? 'b2b' : b2cSize();
       } else {
-        // No customer (cash sale) - default to B2C Small
-        if (grandTotal > 250000) {
-          finalSupplyType = 'b2c_large';
-        } else {
-          finalSupplyType = 'b2c_small';
-        }
+        finalSupplyType = b2cSize(); // cash sale
       }
     }
 
@@ -1404,7 +1633,7 @@ export async function POST(request: NextRequest) {
         paymentStatus,
         subtotal,
         discountTotal,
-        additional_charges,
+        chargeBase,
         taxTotal,
         roundOff,
         grandTotal,
@@ -1416,7 +1645,7 @@ export async function POST(request: NextRequest) {
         template_settings ? JSON.stringify(template_settings) : null,
         billing_address || null,
         shipping_address || null,
-        place_of_supply_state_code || null,
+        posStateCode,
         cgstTotal,
         sgstTotal,
         igstTotal,
@@ -1511,7 +1740,7 @@ export async function POST(request: NextRequest) {
         paymentStatus,
         subtotal,
         discountTotal,
-        additional_charges,
+        chargeBase,
         taxTotal,
         roundOff,
         grandTotal,
@@ -1523,7 +1752,7 @@ export async function POST(request: NextRequest) {
         template_settings ? JSON.stringify(template_settings) : null,
         billing_address || null,
         shipping_address || null,
-        place_of_supply_state_code || null,
+        posStateCode,
         cgstTotal,
         sgstTotal,
         igstTotal,
@@ -1562,6 +1791,7 @@ export async function POST(request: NextRequest) {
     try {
       if (invoiceId) {
         await client.query('DELETE FROM invoice_items WHERE invoice_id = $1', [invoiceId]);
+        await client.query('DELETE FROM invoice_charges WHERE invoice_id = $1', [invoiceId]);
         const updateSql = buildInvoiceUpdateSql(invoiceSql);
         invoiceRes = await client.query(updateSql, [...invoiceParams, invoiceId, business_id]);
       } else {
@@ -1584,8 +1814,22 @@ export async function POST(request: NextRequest) {
     
     
     const invoice = invoiceRes.rows[0];
-    
-    // Invoice created successfully
+
+    if (pricesIncludeGst || invoice.prices_include_gst) {
+      await client.query('UPDATE invoices SET prices_include_gst = $1 WHERE id = $2', [
+        pricesIncludeGst,
+        invoice.id,
+      ]);
+      invoice.prices_include_gst = pricesIncludeGst;
+    }
+
+    if (clientInvoiceChannel((body as { channel?: unknown }).channel) === 'counter') {
+      await client.query(`UPDATE invoices SET channel = 'counter' WHERE id = $1 AND business_id = $2`, [
+        invoice.id,
+        business_id,
+      ]);
+      invoice.channel = 'counter';
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
       const { saveInvoiceCustomFields } = await import('@/lib/custom-fields-persist');
@@ -1609,29 +1853,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < invoiceItems.length; i++) {
       
       const item = invoiceItems[i];
-      const itemSubtotal = item.quantity * item.unit_price;
-      const itemDiscount = (itemSubtotal * (item.discount_percent || 0)) / 100;
-      const taxable = itemSubtotal - itemDiscount;
-
-      let taxAmount = 0;
-      let cgst = 0;
-      let sgst = 0;
-      let igst = 0;
-
-      // Calculate GST breakdown at line level
-      if (place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode) {
-        const half = (item.tax_rate || 0) / 2;
-        cgst = taxable * half / 100;
-        sgst = taxable * half / 100;
-        taxAmount = cgst + sgst;
-      } else {
-        igst = (taxable * (item.tax_rate || 0)) / 100;
-        taxAmount = igst;
-      }
-
-      const lineTotal = taxable + taxAmount;
+      const priced = invoiceTotals.lines[i];
+      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = priced;
 
       
+      // HSN/SAC is mandatory on a tax invoice (Rule 46); fall back to the catalogue item's code.
       await client.query(`
         INSERT INTO invoice_items (
           invoice_id, item_id, variant_id, item_name, description, hsn_sac,
@@ -1639,7 +1865,9 @@ export async function POST(request: NextRequest) {
           tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
           line_total, sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5,
+                COALESCE(NULLIF(TRIM($6::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)),
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       `, [
         invoice.id,
         item.item_id || null,
@@ -1652,7 +1880,7 @@ export async function POST(request: NextRequest) {
         item.unit_price,
         item.discount_percent || 0,
         itemDiscount,
-        item.tax_rate || 0,
+        priced.taxRate,
         taxAmount,
         taxable,
         cgst,
@@ -2070,7 +2298,13 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
+    await persistInvoiceCharges(client, {
+      invoiceId: invoice.id,
+      businessId: business_id,
+      totals: invoiceTotals,
+      goodsLineCount: invoiceItems.length,
+    });
 
     // Calculate COGS (Cost of Goods Sold) for inventory items
     let totalCogsAmount = 0;
@@ -2107,32 +2341,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // NOTE: Ledger entries are now created AFTER transaction commit to avoid connection pool issues
-    // See code after COMMIT statement below
-
     // Handle Payments (multiple payment entries)
     // Proforma invoices don't accept payments - they are estimates/quotes
     // Payments should only be recorded after converting to tax invoice
     //
-    // PHASE-2: when an invoice is edited (invoiceId present), we also need to
-    // delete any payment-voucher ledger lines that were posted against the
-    // OLD payment rows we're about to delete — otherwise they orphan and
-    // double-count Cash + AR forever.
-    if (invoiceId && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
-      const oldPayments = await client.query<{ id: string }>(
-        `SELECT id FROM payments WHERE reference_type = 'invoice' AND reference_id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    // When an edit supplies payment entries, the old payment rows are replaced: their
+    // receipt vouchers are reversed (not deleted) so Cash and AR are not double-counted.
+    // Without payment entries the existing payments and their vouchers stay as they are.
+    if (status === 'final' && invoiceId && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
+      await reverseReplacedInvoicePayments(client, { businessId: business_id, invoiceId, userId: actorUserId });
+      await client.query(
+        `UPDATE invoices SET tds_received = 0 WHERE id = $1 AND business_id = $2`,
         [invoiceId, business_id]
       );
-      const oldPaymentIds = oldPayments.rows.map(r => r.id);
-      if (oldPaymentIds.length > 0) {
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'payment'
-              AND voucher_id = ANY($2::uuid[])`,
-          [business_id, oldPaymentIds]
-        );
-      }
       if (useSoftDeleteInvoicePayments) {
         await client.query(
           `UPDATE payments
@@ -2140,7 +2361,8 @@ export async function POST(request: NextRequest) {
            WHERE reference_type = 'invoice'
              AND reference_id = $1
              AND business_id = $2
-             AND deleted_at IS NULL`,
+             AND deleted_at IS NULL
+             AND status = 'active'`,
           [invoiceId, business_id]
         );
       } else {
@@ -2148,7 +2370,8 @@ export async function POST(request: NextRequest) {
           `DELETE FROM payments
            WHERE reference_type = 'invoice'
              AND reference_id = $1
-             AND business_id = $2`,
+             AND business_id = $2
+             AND status = 'active'`,
           [invoiceId, business_id]
         );
       }
@@ -2162,8 +2385,9 @@ export async function POST(request: NextRequest) {
       mode: string;
       date: string | Date;
       reference?: string;
+      settlementAccountId?: string | null;
     }> = [];
-    if (paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
+    if (status === 'final' && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
       try {
         for (const p of paymentEntries) {
           const pAmount = Number(p.amount) || 0;
@@ -2171,9 +2395,9 @@ export async function POST(request: NextRequest) {
             const ins = await client.query<{ id: string }>(`
               INSERT INTO payments (
                 business_id, branch_id, type, customer_id, reference_type, reference_id,
-                amount, payment_mode, payment_date, notes
+                amount, payment_mode, payment_date, notes, settlement_account_id
               )
-              VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8)
+              VALUES ($1, $2, 'receivable', $3, 'invoice', $4, $5, $6, $7, $8, $9)
               RETURNING id
             `, [
               business_id,
@@ -2183,7 +2407,8 @@ export async function POST(request: NextRequest) {
               pAmount,
               p.mode || 'cash',
               p.date || new Date(),
-              p.reference ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}` : `Payment for Invoice ${invoiceNumber}`
+              p.reference ? `Payment for Invoice ${invoiceNumber} - Ref: ${p.reference}` : `Payment for Invoice ${invoiceNumber}`,
+              p.settlement_account_id || null,
             ]);
             insertedPayments.push({
               id: ins.rows[0].id,
@@ -2191,6 +2416,7 @@ export async function POST(request: NextRequest) {
               mode: p.mode || 'cash',
               date: p.date || new Date(),
               reference: p.reference,
+              settlementAccountId: p.settlement_account_id || null,
             });
           }
         }
@@ -2202,14 +2428,52 @@ export async function POST(request: NextRequest) {
     // Update customer current_balance (only if status is final and customer exists)
     // For invoices: balance increases customer's receivable
     // Proforma invoices don't affect customer balance - they are estimates/quotes
+    // Credit already reduced the balance when the credit note was issued, so the new
+    // invoice must add back the amount settled by that credit as well as the amount still due.
+    let creditApplied = 0;
+    if (
+      !invoiceId &&
+      status === 'final' &&
+      customer_id &&
+      document_type !== 'proforma_invoice' &&
+      requestedCustomerCredit > 0.004
+    ) {
+      const { applyCustomerCredit, CustomerCreditError } = await import('@/lib/credit-notes/customer-credit');
+      try {
+        const applied = await applyCustomerCredit(client, {
+          businessId: business_id,
+          customerId: customer_id,
+          invoiceId: invoice.id,
+          amount: requestedCustomerCredit,
+          userId: actorUserId,
+        });
+        creditApplied = applied.amount;
+      } catch (error) {
+        if (error instanceof CustomerCreditError) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
+        throw error;
+      }
+    }
+
+    let balanceToAdd = Number(invoice.balance_amount);
+    if (creditApplied > 0.004) {
+      const { recomputeInvoiceBalance } = await import('@/lib/invoices/invoice-balance');
+      const recomputed = await recomputeInvoiceBalance(client, invoice.id, business_id);
+      if (recomputed) {
+        invoice.balance_amount = recomputed.balance_amount;
+        invoice.payment_status = recomputed.payment_status;
+        balanceToAdd = recomputed.balance_amount + creditApplied;
+      }
+    }
     if (status === 'final' && customer_id && document_type !== 'proforma_invoice') {
-      const balanceToAdd = invoice.balance_amount || (invoice.grand_total - (invoice.paid_amount || 0));
       await client.query(`
         UPDATE customers
         SET current_balance = current_balance + $1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-      `, [balanceToAdd, customer_id]);
+        WHERE id = $2 AND business_id = $3
+      `, [balanceToAdd, customer_id, business_id]);
     }
 
       // Note: If we used providedInvoiceNumber, it was already reserved via next-number API which incremented the counter.
@@ -2228,24 +2492,15 @@ export async function POST(request: NextRequest) {
     // with HTTP 500 — no more orphan invoice rows without ledger entries.
     // ------------------------------------------------------------------
     if (status === 'final' && document_type !== 'proforma_invoice') {
-      // Edit path: wipe stale ledger lines for this invoice so we don't double-post.
+      // Edit path (draft -> final): any posting still active on this invoice voucher is
+      // reversed before the new one, so the voucher nets to the new posting only.
       if (invoiceId) {
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'invoice'
-              AND voucher_id = $2`,
-          [business_id, invoice.id]
-        );
-        // Also wipe payment-voucher ledger lines for this invoice's payments
-        // (the payments themselves were re-inserted above with new ids).
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'payment'
-              AND voucher_id IN (SELECT id FROM payments WHERE reference_type = 'invoice' AND reference_id = $2 AND business_id = $1 AND deleted_at IS NULL)`,
-          [business_id, invoice.id]
-        );
+        await reverseInvoicePostingForRepost(client, {
+          businessId: business_id,
+          invoiceId: invoice.id,
+          invoiceNumber,
+          userId: actorUserId,
+        });
       }
 
       // PHASE-2: a true cash sale has NO customer (walk-in). Any invoice with
@@ -2262,6 +2517,7 @@ export async function POST(request: NextRequest) {
         grandTotal: grandTotal,
         customerId: customer_id || null,
         paymentMode: paymentMode,
+        cashSalePayments: isCashSale ? insertedPayments : undefined,
         isCashSale: isCashSale,
         cogsAmount: totalCogsAmount,
         branchId: finalBranchId,
@@ -2287,6 +2543,7 @@ export async function POST(request: NextRequest) {
             type: 'receivable',
             customerId: customer_id,
             paymentMode: p.mode,
+            settlementAccountId: p.settlementAccountId,
             referenceNumber: invoiceNumber,
             description: `Receipt against Invoice ${invoiceNumber}${p.reference ? ` (Ref: ${p.reference})` : ''}`,
             branchId: finalBranchId,
@@ -2296,43 +2553,66 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Link invoice to quantity request if provided (new invoices only)
+    // Link invoice to quantity request if this invoice is the vendor's sale to the buyer.
+    if (!invoiceId && work_order_id && document_type !== 'proforma_invoice') {
+      const { claimWorkOrderForInvoice } = await import('@/lib/work-orders/work-order');
+      await claimWorkOrderForInvoice(client, business_id, String(work_order_id), invoice.id);
+    }
+
+    // Supplier Hub: this sale bills a confirmed order from a connected buyer.
+    if (!invoiceId && supply_order_id && document_type !== 'proforma_invoice') {
+      const { claimSupplyOrderForInvoice } = await import('@/lib/supply-orders');
+      await claimSupplyOrderForInvoice(client, business_id, String(supply_order_id), {
+        id: invoice.id,
+        customer_id: invoice.customer_id ?? customer_id ?? null,
+        invoice_number: invoice.invoice_number,
+      });
+    }
+
     if (!invoiceId && request_id) {
       try {
-        await client.query(`
-          UPDATE quantity_requests
-          SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [invoice.id, request_id]);
-        
-        // Get request details to send notification to customer
         const requestRes = await client.query(`
-          SELECT requester_business_id, responder_business_id, item_id
-          FROM quantity_requests
-          WHERE id = $1
+          SELECT qr.requester_business_id, qr.responder_business_id, qr.item_id,
+                 i.business_id AS item_business_id
+          FROM quantity_requests qr
+          JOIN items i ON i.id = qr.item_id
+          WHERE qr.id = $1
         `, [request_id]);
-        
+
         if (requestRes.rows.length > 0) {
           const req = requestRes.rows[0];
-          // Send notification to customer (requester) that invoice has been created
-          try {
-            const supplierBiz = await client.query('SELECT name FROM businesses WHERE id = $1', [req.responder_business_id]);
-            const supplierName = supplierBiz.rows[0]?.name || 'Supplier';
-            
+          const { partiesFromItemOwner } = await import('@/lib/quantity-request-parties');
+          const parties = partiesFromItemOwner(
+            req.requester_business_id,
+            req.responder_business_id,
+            req.item_business_id,
+            req.item_id
+          );
+          if (parties && String(parties.vendorBusinessId) === String(business_id)) {
             await client.query(`
-              INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
-              VALUES ($1, 'quantity_response', 'Invoice Created', 
-                $2 || ' has created an invoice for your request. Invoice Number: ' || $3 || '. You can convert it to a purchase from the Requests page.',
-                'invoice', $4, CURRENT_TIMESTAMP)
-            `, [
-              req.requester_business_id,
-              supplierName,
-              invoice.invoice_number,
-              invoice.id
-            ]);
-          } catch (notifError) {
-            console.error('Error creating notification:', notifError);
-            // Don't fail invoice creation if notification fails
+              UPDATE quantity_requests
+              SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2
+            `, [invoice.id, request_id]);
+
+            try {
+              const supplierBiz = await client.query('SELECT name FROM businesses WHERE id = $1', [parties.vendorBusinessId]);
+              const supplierName = supplierBiz.rows[0]?.name || 'Supplier';
+
+              await client.query(`
+                INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
+                VALUES ($1, 'quantity_response', 'Invoice Created',
+                  $2 || ' has created an invoice for your request. Invoice Number: ' || $3 || '. You can convert it to a purchase from the Requests page.',
+                  'invoice', $4, CURRENT_TIMESTAMP)
+              `, [
+                parties.buyerBusinessId,
+                supplierName,
+                invoice.invoice_number,
+                invoice.id
+              ]);
+            } catch (notifError) {
+              console.error('Error creating notification:', notifError);
+            }
           }
         }
       } catch (linkError) {
@@ -2341,6 +2621,22 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    if (status === 'final') {
+      const { markGstReadinessStale } = await import('@/lib/gst/period-freshness');
+      const { invoiceReadinessSpan } = await import('@/lib/gst/document-dates');
+      const locked = existingInvoiceRow as { status?: string; invoice_date?: string | Date } | null;
+      const span = invoiceReadinessSpan({
+        priorStatus: locked?.status ?? null,
+        priorDate: locked?.invoice_date ? String(locked.invoice_date).slice(0, 10) : null,
+        nextStatus: status,
+        nextDate: invoice_date ? String(invoice_date).slice(0, 10) : null,
+      });
+      await markGstReadinessStale(client, business_id, {
+        from: span?.from,
+        to: span?.to,
+        monthly: ['gstr1', 'gstr3b'],
+      });
+    }
     await client.query('COMMIT');
     
     // Transaction committed successfully — ledger entries were posted INSIDE the
@@ -2497,6 +2793,11 @@ export async function POST(request: NextRequest) {
     // Commit transaction before returning
     await client.query('COMMIT');
 
+    if (status === 'final' && invoice?.id) {
+      const { autoTrackDeliveryBill } = await import('@/lib/fulfilment/auto-track');
+      await autoTrackDeliveryBill(business_id, String(invoice.id));
+    }
+
     // PHASE 4.2: Calculate credit metrics for customer (if applicable)
     let creditMetrics = null;
     let creditWarning = null;
@@ -2515,12 +2816,8 @@ export async function POST(request: NextRequest) {
           // Calculate current credit metrics
           const currentMetrics = calculateCreditMetrics(creditLimit, currentBalance);
           
-          // Calculate projected metrics if invoice is final (affects balance)
-          let projectedMetrics = null;
-          if (status === 'final') {
-            const invoiceBalance = invoice.balance_amount ?? (parseFloat(invoice.grand_total ?? '0') - parseFloat(invoice.paid_amount ?? '0'));
-            projectedMetrics = calculateProjectedCreditMetrics(creditLimit, currentBalance, invoiceBalance);
-          }
+          // A final invoice has already been added to customers.current_balance above.
+          const projectedMetrics = status === 'final' ? currentMetrics : null;
           
           creditMetrics = {
             current: currentMetrics,
@@ -2536,16 +2833,22 @@ export async function POST(request: NextRequest) {
 
           // PHASE 5.4: Check and send credit alerts (async, non-blocking)
           if (projectedMetrics) {
-            checkAndSendCreditAlerts(
-              business_id,
-              'customer',
-              invoice.customer_id,
-              creditLimit,
-              currentBalance,
-              projectedMetrics,
-              'invoice',
-              invoice.id
-            ).catch(err => console.error('Error sending credit alert:', err));
+            try {
+              await finishCreditAlert(
+                checkAndSendCreditAlerts(
+                  business_id,
+                  'customer',
+                  invoice.customer_id,
+                  creditLimit,
+                  currentBalance,
+                  projectedMetrics,
+                  'invoice',
+                  invoice.id
+                )
+              );
+            } catch (alertError) {
+              console.error('Error sending credit alert:', alertError);
+            }
           }
         }
       } catch (creditError) {
@@ -2568,6 +2871,7 @@ export async function POST(request: NextRequest) {
       credit_metrics: creditMetrics,
       credit_warning: creditWarning,
       stock_warnings: stockWarnings.length > 0 ? stockWarnings : undefined,
+      compliance_warnings: complianceWarnings.length > 0 ? complianceWarnings : undefined,
     };
     const responseObj = NextResponse.json(response, { status: 201 });
     
@@ -2579,6 +2883,15 @@ export async function POST(request: NextRequest) {
     });
     
     console.error('[InvoiceAPI] Error creating invoice:', error.message, error.code);
+    if (error?.name === 'WorkOrderInputError' && error.status) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error?.name === 'SupplyOrderInputError' && error.status) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    if (error?.name === 'CustomerCreditError' && error.status) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
 
     const errorResponse = { 
       error: error.message || 'Failed to create invoice',

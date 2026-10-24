@@ -1,5 +1,6 @@
 import { getStateCode } from './getStateCode';
 import { determineTaxType, type TaxTypeContext } from './determineTaxType';
+import { round2 } from '@/lib/invoices/line-gst';
 
 export interface InvoiceItemRow {
   itemId: string;
@@ -33,6 +34,8 @@ export interface CalculateRowContext {
   isExport: boolean;
   exportType?: 'wop' | 'with_payment';
   documentType: 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply' | 'credit_note' | 'debit_note' | 'delivery_challan' | 'sales_order' | 'purchase_order';
+  /** Invoice-level switch: row prices are GST-inclusive (mirrors computeLineGst on the server). */
+  pricesIncludeGst?: boolean;
 }
 
 /**
@@ -75,7 +78,8 @@ export function calculateRow(
     discPercent = 100;
   }
   
-  const taxableAmount = subtotal - discAmt;
+  discAmt = round2(discAmt);
+  let taxableAmount = round2(subtotal - discAmt);
   
   // Determine tax type
   const taxType = determineTaxType({
@@ -88,6 +92,32 @@ export function calculateRow(
   });
   
   let cgst = 0, sgst = 0, igst = 0, taxAmt = 0;
+
+  if (context.pricesIncludeGst) {
+    const zeroTax = taxType.isNonTaxable || (context.isExport && context.exportType === 'wop');
+    const rate = zeroTax ? 0 : row.taxPercent;
+    const gross = taxableAmount;
+    taxableAmount = round2((gross * 100) / (100 + rate));
+    taxAmt = round2(gross - taxableAmount);
+    if (!context.isExport && taxType.useCGSTSGST) {
+      cgst = round2(taxAmt / 2);
+      sgst = round2(taxAmt - cgst);
+    } else {
+      igst = taxAmt;
+    }
+    return {
+      ...row,
+      taxPercent: taxType.isNonTaxable ? 0 : row.taxPercent,
+      discountPercent: discPercent,
+      discountAmount: discAmt,
+      taxableValue: taxableAmount,
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      taxAmount: taxAmt,
+      total: gross,
+    };
+  }
   
   if (taxType.isNonTaxable) {
     // Bill of Supply: Force 0% tax
@@ -117,6 +147,11 @@ export function calculateRow(
     taxAmt = igst;
   }
   
+  cgst = round2(cgst);
+  sgst = round2(sgst);
+  igst = round2(igst);
+  taxAmt = round2(cgst + sgst + igst);
+
   return {
     ...row,
     taxPercent: taxType.isNonTaxable ? 0 : row.taxPercent,
@@ -127,7 +162,7 @@ export function calculateRow(
     sgstAmount: sgst,
     igstAmount: igst,
     taxAmount: taxAmt,
-    total: taxableAmount + taxAmt
+    total: round2(taxableAmount + taxAmt)
   };
 }
 

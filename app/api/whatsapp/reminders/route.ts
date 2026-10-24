@@ -9,13 +9,13 @@ import {
   reminderTimeToHhMm,
 } from '@/lib/reminder-schedule';
 import { FEATURE_PLAN_DENIED_RESPONSE_CODE } from '@/lib/subscription/feature-access';
-import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 
 /**
  * GET /api/whatsapp/reminders?business_id=xxx
  * Fetch reminder settings for a business (both payment_due and overdue)
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
+export const GET = withWhatsAppBaseApi({}, async ({ businessId }) => {
   try {
     const settings = await db.queryRows(
       `SELECT id, reminder_type, enabled, days_before, interval_days, message_template, include_pdf, created_at, updated_at
@@ -64,7 +64,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
  * POST /api/whatsapp/reminders
  * Create or update reminder settings for both types
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ body, businessId }) => {
+export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ body, businessId }) => {
   try {
     const { payment_due, overdue, schedule } = (body ?? {}) as {
       payment_due?: Record<string, unknown>;

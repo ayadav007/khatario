@@ -16,6 +16,7 @@ import {
   type SubscriptionAvailablePlan,
 } from '@/components/subscription/SubscriptionChangePlanModal';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { productLineForModule } from '@/lib/platform-modules';
 import type { PlatformModule } from '@/lib/platform-modules';
 
@@ -26,7 +27,7 @@ export type ModuleSubscriptionDetail = {
   end_date: string | null;
   trial_end_date: string | null;
   scheduled_plan_id: string | null;
-  billing_cycle: 'monthly' | 'yearly';
+  billing_cycle: 'monthly' | 'yearly' | 'three_year';
   plan_display_name: string;
   plan_description: string;
   price_monthly: number;
@@ -51,6 +52,7 @@ const LIMIT_LABELS: Record<string, string> = {
   items: 'Items',
   employees: 'Employees',
   whatsapp: 'WhatsApp/day',
+  connect_agents: 'WhatsApp agents',
 };
 
 function formatDate(dateStr: string | null): string {
@@ -99,7 +101,11 @@ export function ModuleSubscriptionCard({
       if (p.id === TRIAL_PLAN_ID || p.id === 'hr_trial') {
         return subscription?.plan_id === p.id;
       }
-      if (p.id === 'connect') return subscription?.plan_id === 'connect';
+      // Complimentary with Billing — not a purchasable SKU (only show if current).
+      if (p.id === HR_STAFF_LITE_PLAN_ID) {
+        return subscription?.plan_id === HR_STAFF_LITE_PLAN_ID;
+      }
+      if (p.id === 'connect_free') return subscription?.plan_id === 'connect_free';
       return true;
     });
   }, [availablePlans, productLine, subscription?.plan_id]);
@@ -121,9 +127,11 @@ export function ModuleSubscriptionCard({
     );
   }
 
+  const isStaffLite = subscription.plan_id === HR_STAFF_LITE_PLAN_ID;
   const isFree =
     subscription.plan_id === 'free' ||
     subscription.plan_id === 'hr_free' ||
+    isStaffLite ||
     (moduleKey === 'connect' && Number(subscription.price_monthly) === 0);
 
   const isCancelled = Boolean(subscription.cancel_at_period_end);
@@ -156,7 +164,12 @@ export function ModuleSubscriptionCard({
         </div>
 
         <div className="mb-4">
-          {isFree ? (
+          {isStaffLite ? (
+            <div className="flex items-baseline gap-2">
+              <span className="type-kpi-value">Included</span>
+              <span className="text-text-secondary">with Billing · up to 30 staff</span>
+            </div>
+          ) : isFree ? (
             <div className="flex items-baseline gap-2">
               <span className="type-kpi-value">Free</span>
               <span className="text-text-secondary">for this product</span>
@@ -208,7 +221,13 @@ export function ModuleSubscriptionCard({
           <div className="rounded-lg bg-gray-50 p-3 dark:bg-slate-800/50">
             <p className="text-xs text-text-muted">Cycle</p>
             <p className="font-semibold text-text-primary">
-              {isFree ? 'Free' : subscription.billing_cycle === 'yearly' ? 'Yearly' : 'Monthly'}
+              {isFree
+                ? 'Free'
+                : subscription.billing_cycle === 'three_year'
+                  ? '3 years'
+                  : subscription.billing_cycle === 'yearly'
+                    ? 'Yearly'
+                    : 'Monthly'}
             </p>
           </div>
         </div>

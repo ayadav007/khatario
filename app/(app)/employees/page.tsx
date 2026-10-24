@@ -19,6 +19,8 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { usePermissions } from '@/hooks/usePermissions';
 import { EmployeePortalResetActions } from '@/components/hr/EmployeePortalResetActions';
+import { useHrPlan } from '@/hooks/useFullHr';
+import { Switch } from '@/components/ui/Switch';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -31,12 +33,14 @@ interface EmployeeWithUser extends Employee {
 
 export default function EmployeesPage() {
   const { business, user } = useAuth();
+  const { portal: fullHr } = useHrPlan();
   const router = useRouter();
   const [employees, setEmployees] = useState<EmployeeWithUser[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [hideDeactivated, setHideDeactivated] = useState(true);
   const [accessTypeFilter, setAccessTypeFilter] = useState<'all' | 'full' | 'attendance_only'>('all');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -61,7 +65,9 @@ export default function EmployeesPage() {
         business_id: business.id,
         user_id: user.id, // REQUIRED for authorization
         ...(search && { search }),
-        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...((hideDeactivated ? 'active' : statusFilter) !== 'all' && {
+          status: hideDeactivated ? 'active' : statusFilter,
+        }),
         ...(accessTypeFilter !== 'all' && { access_type: accessTypeFilter }),
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -91,7 +97,7 @@ export default function EmployeesPage() {
       fetchEmployees();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, search, statusFilter, accessTypeFilter, pagination.page]);
+  }, [business?.id, search, statusFilter, hideDeactivated, accessTypeFilter, pagination.page]);
 
   useEffect(() => {
     if (business?.id) {
@@ -99,7 +105,7 @@ export default function EmployeesPage() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, search, statusFilter, accessTypeFilter]);
+  }, [business?.id, search, statusFilter, hideDeactivated, accessTypeFilter]);
 
   const getStatusColor = (employee: EmployeeWithUser) => {
     if (!employee.is_active || !employee.user_is_active) return 'bg-red-100 text-red-800';
@@ -183,16 +189,28 @@ export default function EmployeesPage() {
                 className="input pl-10"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                onChange={(e) => {
+                  const next = e.target.value as typeof statusFilter;
+                  setStatusFilter(next);
+                  if (next === 'inactive') setHideDeactivated(false);
+                }}
                 className="input"
               >
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+              <HideDeactivatedToggle
+                checked={hideDeactivated}
+                onChange={(checked) => {
+                  setHideDeactivated(checked);
+                  if (checked && statusFilter === 'inactive') setStatusFilter('all');
+                }}
+              />
+              {fullHr ? (
               <select
                 value={accessTypeFilter}
                 onChange={(e) => setAccessTypeFilter(e.target.value as typeof accessTypeFilter)}
@@ -202,6 +220,7 @@ export default function EmployeesPage() {
                 <option value="full">Full Access</option>
                 <option value="attendance_only">Attendance Only</option>
               </select>
+              ) : null}
             </div>
           </div>
         </Card>
@@ -238,7 +257,11 @@ export default function EmployeesPage() {
                   <label className="type-label mb-1.5 block">Status</label>
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                    onChange={(e) => {
+                      const next = e.target.value as typeof statusFilter;
+                      setStatusFilter(next);
+                      if (next === 'inactive') setHideDeactivated(false);
+                    }}
                     className="input w-full"
                   >
                     <option value="all">All Status</option>
@@ -246,6 +269,14 @@ export default function EmployeesPage() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+                <HideDeactivatedToggle
+                  checked={hideDeactivated}
+                  onChange={(checked) => {
+                    setHideDeactivated(checked);
+                    if (checked && statusFilter === 'inactive') setStatusFilter('all');
+                  }}
+                />
+                {fullHr ? (
                 <div>
                   <label className="type-label mb-1.5 block">Access type</label>
                   <select
@@ -258,6 +289,7 @@ export default function EmployeesPage() {
                     <option value="attendance_only">Attendance Only</option>
                   </select>
                 </div>
+                ) : null}
                 <Button className="w-full" onClick={() => setShowMobileFilters(false)}>
                   Apply
                 </Button>
@@ -297,7 +329,9 @@ export default function EmployeesPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Code</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Designation</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Department</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Access</th>
+                    {fullHr ? (
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Access</th>
+                    ) : null}
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Status</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Actions</th>
                   </tr>
@@ -361,6 +395,7 @@ export default function EmployeesPage() {
                           <span className="text-text-secondary">—</span>
                         )}
                       </td>
+                      {fullHr ? (
                       <td className="py-4 px-4">
                         <Chip
                           className={getAccessTypeColor(employee.access_type)}
@@ -368,6 +403,7 @@ export default function EmployeesPage() {
                           {employee.access_type === 'full' ? 'Full Access' : 'Attendance Only'}
                         </Chip>
                       </td>
+                      ) : null}
                       <td className="py-4 px-4">
                         <Chip className={getStatusColor(employee)}>
                           {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
@@ -385,7 +421,7 @@ export default function EmployeesPage() {
                               <Edit className="w-4 h-4" />
                             </Button>
                           </Link>
-                          {canUpdateEmployees && business?.id ? (
+                          {fullHr && canUpdateEmployees && business?.id ? (
                             <EmployeePortalResetActions
                               variant="compact"
                               employeeId={employee.id}
@@ -499,9 +535,11 @@ export default function EmployeesPage() {
                     {employee.department ? (
                       <span className="text-xs text-text-muted">{employee.department}</span>
                     ) : null}
+                    {fullHr ? (
                     <span className="chip text-2xs">
                       {employee.access_type === 'full' ? 'Full access' : 'Attendance only'}
                     </span>
+                    ) : null}
                   </div>
 
                   <div
@@ -547,7 +585,7 @@ export default function EmployeesPage() {
                       />
                     </div>
                     </div>
-                    {canUpdateEmployees && business?.id ? (
+                    {fullHr && canUpdateEmployees && business?.id ? (
                       <EmployeePortalResetActions
                         employeeId={employee.id}
                         businessId={business.id}
@@ -596,6 +634,21 @@ export default function EmployeesPage() {
             onClose={() => setToast(null)}
           />
         )}
+    </div>
+  );
+}
+
+function HideDeactivatedToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
+      <span className="text-sm text-text-secondary">Hide deactivated account</span>
+      <Switch checked={checked} onChange={onChange} size="sm" aria-label="Hide deactivated account" />
     </div>
   );
 }

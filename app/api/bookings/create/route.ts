@@ -8,6 +8,9 @@ export const dynamic = 'force-dynamic';
  * POST /api/bookings/create
  * Create a new demo booking
  */
+/** Must stay within demo_bookings_lead_source_check (migration 303). */
+const PUBLIC_LEAD_SOURCES = new Set(['organic', 'google_ads', 'referral', 'social_media', 'direct', 'other', 'assistant']);
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -32,6 +35,17 @@ export async function POST(request: NextRequest) {
     const cleanPhone = phone.replace(/\s+/g, '');
     if (!phoneRegex.test(cleanPhone)) {
       return NextResponse.json({ error: 'Invalid phone format' }, { status: 400 });
+    }
+
+    const { nationalPhone10, requestHasVerifiedPlatformOtp } = await import('@/lib/platform-public-otp');
+    const phone10 = nationalPhone10(cleanPhone);
+    const skipOtp =
+      process.env.E2E_DISABLE_RATE_LIMIT === 'true' || process.env.PLATFORM_SKIP_OTP === '1';
+    if (!skipOtp && (!phone10 || !(await requestHasVerifiedPlatformOtp(request, 'demo_booking', phone10)))) {
+      return NextResponse.json(
+        { error: 'Verify your mobile number with the WhatsApp code first' },
+        { status: 403 },
+      );
     }
 
     // Get IP address and user agent
@@ -65,7 +79,7 @@ export async function POST(request: NextRequest) {
         scheduled_date,
         scheduled_time,
         time_slot_id || null,
-        lead_source || 'organic',
+        PUBLIC_LEAD_SOURCES.has(lead_source) ? lead_source : 'organic',
         ipAddress,
         userAgent
       ]
@@ -90,6 +104,18 @@ export async function POST(request: NextRequest) {
     }).catch(err => {
       console.error('[Demo Booking] Notification error (non-blocking):', err);
     });
+
+    void import('@/lib/platform-push')
+      .then(({ raisePlatformIncident }) =>
+        raisePlatformIncident({
+          kind: 'demo_booking',
+          title: `Demo booking ${bookingNumber}`,
+          body: `${name} · ${cleanPhone} · ${scheduled_date} ${scheduled_time}`,
+          url: '/admin/bookings',
+          metadata: { booking_number: bookingNumber },
+        }),
+      )
+      .catch((err) => console.error('[Demo Booking] incident notify failed', err));
 
     return NextResponse.json({ 
       booking,

@@ -40,6 +40,7 @@ import type { PrinterTransport } from '@/lib/printer/capabilities';
 import {
   listSavedPrinters,
   savePrinter,
+  updateSavedPrinter,
   removePrinter,
   setPreferredFor,
   touchPrinter,
@@ -62,7 +63,18 @@ import {
   type BuildReceiptOptions,
 } from '@/lib/bluetooth/invoice-to-escpos';
 import { EscPosBuilder } from '@/lib/bluetooth/escpos';
+import { DEFAULT_ROLL_TEMPLATE } from '@/lib/label-document-builder';
+import { buildLabelTspl } from '@/lib/print/tspl';
+import { buildLabelDocumentZpl } from '@/lib/zpl-generator';
+import { browserTextRasterizer } from '@/lib/print/text-raster-browser';
 import { shouldShowKhatarioFooterFromSubscription } from '@/lib/print-branding-rules';
+import { mapBluetoothUserMessage } from '@/lib/bluetooth/user-errors';
+import { recordPrintJob } from '@/lib/printer/job-log';
+import {
+  desktopPrinterId,
+  isDesktopPrintingAvailable,
+  type DesktopPrinterTarget,
+} from '@/lib/desktop/printing';
 
 export interface UseBluetoothPrinterResult {
   /** True when the current runtime can use Bluetooth at all. */
@@ -90,10 +102,20 @@ export interface UseBluetoothPrinterResult {
   ): Promise<SavedBluetoothPrinter | null>;
   /** Open Android system Bluetooth settings. */
   openBluetoothSettings(): Promise<void>;
+  /** True inside Khatario for Windows: Windows, network and COM port printers are available. */
+  isDesktop: boolean;
+  /** Save and connect a printer on this Windows computer (Khatario for Windows only). */
+  addDesktopPrinter(
+    target: DesktopPrinterTarget,
+    name: string,
+    profileId?: PrinterProfileId
+  ): Promise<SavedBluetoothPrinter | null>;
   /** Trigger the OS picker to pair a new printer. */
   pair(profileId?: PrinterProfileId): Promise<SavedBluetoothPrinter | null>;
   /** Forget a printer (removes from localStorage + disconnects if active). */
   forget(printerId: string): void;
+  /** Save edited printer settings (name, model, paper, copies, cutter, drawer, label darkness…). */
+  updatePrinter(printer: SavedBluetoothPrinter): void;
   /** Connect to a saved printer without opening the picker. */
   connect(printer: SavedBluetoothPrinter): Promise<void>;
   /** Disconnect the currently-connected printer. */
@@ -105,8 +127,10 @@ export interface UseBluetoothPrinterResult {
   ): void;
   /** Returns the preferred printer for an intended usage, if any. */
   getPreferred(usage: 'labels' | 'receipts'): SavedBluetoothPrinter | undefined;
-  /** Send a small "printer OK" test print. */
+  /** Send a test page in the printer's own language (receipt test, or a test label for TSPL/ZPL). */
   printTest(printer?: SavedBluetoothPrinter): Promise<void>;
+  /** Open the cash drawer connected to a receipt printer. */
+  openCashDrawer(printer?: SavedBluetoothPrinter): Promise<void>;
   /** Send a label batch. */
   printLabels(
     args: BuildLabelEscPosArgs,
@@ -142,6 +166,7 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
 
   const [supported] = useState<boolean>(() => isBluetoothSupported());
   const [isNative] = useState<boolean>(() => isCapacitorNative());
+  const [isDesktop] = useState<boolean>(() => isDesktopPrintingAvailable());
   const [activeTransport] = useState<PrinterTransport | null>(() =>
     getActiveTransport()
   );
@@ -212,19 +237,42 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       language: PrinterLanguage
     ): Promise<void> => {
       const driver = await getDriverForPrinter(printer);
-      setStatus('connecting');
-      await driver.connect(printer);
-      setActivePrinter(printer);
-      setStatus('printing');
-      try {
+      const started = Date.now();
+      const log = (ok: boolean, error?: string) =>
+        recordPrintJob({
+          at: new Date(started).toISOString(),
+          printer: printer.name,
+          driver: printer.driver,
+          language,
+          bytes: bytes.length,
+          ok,
+          ms: Date.now() - started,
+          error,
+        });
+      const attempt = async () => {
+        setStatus('connecting');
+        await driver.connect(printer);
+        setActivePrinter(printer);
+        setStatus('printing');
         await driver.print({ bytes, language, label: printer.name });
+      };
+      try {
+        try {
+          await attempt();
+        } catch {
+          await driver.disconnect().catch(() => undefined);
+          await attempt();
+        }
         touchPrinter(businessId, printer.id);
         refreshList();
         setStatus('connected');
-      } catch (err: any) {
+        log(true);
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
+        log(false, msg);
         setStatus('error');
-        setError(err?.message || 'Print failed');
-        throw err;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [businessId, refreshList]
@@ -252,20 +300,22 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     async (device, profileId) => {
       if (!businessId) {
         setError('No active business');
-        return null;
+        throw new Error('No active business');
       }
       if (!supportsClassicBluetooth) {
-        setError('Classic Bluetooth is only available in the Android app');
-        return null;
+        const msg = 'Classic Bluetooth is only available in the Android app';
+        setError(msg);
+        throw new Error(msg);
       }
       try {
         setStatus('connecting');
         setError(null);
         const ok = await ensureSppPermissions();
         if (!ok) {
-          setError('Bluetooth permissions not granted');
+          const msg = mapBluetoothUserMessage('Bluetooth permissions not granted');
+          setError(msg);
           setStatus('error');
-          return null;
+          throw new Error(msg);
         }
         const spp = createCapacitorSppDriver();
         const resolvedProfile =
@@ -284,13 +334,42 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         setStatus('connected');
         refreshList();
         return printer;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Connection failed');
-        return null;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [businessId, supportsClassicBluetooth, refreshList]
+  );
+
+  const addDesktopPrinter = useCallback<UseBluetoothPrinterResult['addDesktopPrinter']>(
+    async (target, name, profileId) => {
+      if (!businessId) {
+        setError('No active business');
+        throw new Error('No active business');
+      }
+      const resolvedProfile = profileId || guessProfileFromName(name);
+      const printer: SavedBluetoothPrinter = {
+        id: desktopPrinterId(target),
+        name,
+        driver: 'desktop',
+        profileId: resolvedProfile,
+        paperWidthMm: getProfile(resolvedProfile).paperWidthMm,
+        lastUsedAt: Date.now(),
+      };
+      await connectInternal(printer).catch((err: unknown) => {
+        const msg = mapBluetoothUserMessage(err);
+        setStatus('error');
+        setError(msg);
+        throw err;
+      });
+      savePrinter(businessId, printer);
+      refreshList();
+      return printer;
+    },
+    [businessId, connectInternal, refreshList]
   );
 
   const pair = useCallback<UseBluetoothPrinterResult['pair']>(
@@ -317,9 +396,10 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         setStatus('connected');
         refreshList();
         return printer;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Pairing cancelled');
+        setError(msg);
         return null;
       }
     },
@@ -348,10 +428,11 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     async (printer) => {
       try {
         await connectInternal(printer);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Connection failed');
-        throw err;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [connectInternal]
@@ -392,6 +473,16 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     [businessId]
   );
 
+  const updatePrinter = useCallback<UseBluetoothPrinterResult['updatePrinter']>(
+    (printer) => {
+      if (!businessId) return;
+      updateSavedPrinter(businessId, printer);
+      if (activePrinter?.id === printer.id) setActivePrinter({ ...activePrinter, ...printer });
+      refreshList();
+    },
+    [businessId, activePrinter, refreshList]
+  );
+
   const printTest = useCallback<UseBluetoothPrinterResult['printTest']>(
     async (explicit) => {
       const target = pickPrinter(explicit, 'receipts') || pickPrinter(explicit, 'labels');
@@ -400,8 +491,27 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         return;
       }
       const profile = getProfile(target.profileId);
-      const paper = profile.paperWidthMm === 80 ? 80 : 58;
-      const b = new EscPosBuilder({ paperWidthMm: paper });
+      if (profile.language === 'TSPL' || profile.language === 'ZPL') {
+        const args = testLabelArgs(target.name);
+        const dpi = target.dpi ?? profile.dpi;
+        if (profile.language === 'TSPL') {
+          const bytes = buildLabelTspl({
+            ...args,
+            dpi,
+            density: target.labelDensity,
+            speed: target.labelSpeed,
+            gapMm: target.labelGapMm,
+            rasterize: browserTextRasterizer(),
+          });
+          await printViaDriver(target, bytes, 'TSPL');
+        } else {
+          const zpl = buildLabelDocumentZpl({ ...args, dpi, rasterize: browserTextRasterizer() });
+          await printViaDriver(target, new TextEncoder().encode(zplJobSettings(target) + zpl), 'ZPL');
+        }
+        return;
+      }
+      const paper = receiptPaper(target);
+      const b = new EscPosBuilder({ paperWidthMm: paper, rasterize: browserTextRasterizer() });
       b.init()
         .align('center')
         .bold(true)
@@ -410,20 +520,38 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         .sizeNormal()
         .bold(false)
         .line(target.name)
-        .line(new Date().toLocaleString())
+        .line(new Date().toLocaleString('en-IN'))
         .feed(1)
         .separator()
         .align('left')
         .line(`Paper width: ${paper}mm`)
-        .line(`Profile: ${profile.label}`)
+        .line(`Model: ${profile.label}`)
         .line(`Language: ${profile.language}`)
+        .separator('.')
+        .line('हिंदी / ગુજરાતી / ₹ 1,234.50')
+        .separator('.')
+        .line('1234567890'.repeat(5).slice(0, b.colsFontA))
         .feed(1)
         .align('center')
-        .qrcode('https://khatario.app', { size: 5 })
+        .qrcode('https://khatario.com', { size: 5 })
         .feed(1)
-        .line('Khatario Bluetooth test page')
-        .feed(3);
+        .line('Khatario test page');
+      if (target.autoCut === false) b.feed(4);
+      else b.cut();
       await printViaDriver(target, b.build(), 'ESCPOS');
+    },
+    [pickPrinter, printViaDriver]
+  );
+
+  const openCashDrawer = useCallback<UseBluetoothPrinterResult['openCashDrawer']>(
+    async (explicit) => {
+      const target = pickPrinter(explicit, 'receipts');
+      if (!target) {
+        setError('No printer paired for receipts');
+        throw new Error('No printer paired for receipts');
+      }
+      const bytes = new EscPosBuilder({ paperWidthMm: receiptPaper(target) }).init().openDrawer().build();
+      await printViaDriver(target, bytes, 'ESCPOS');
     },
     [pickPrinter, printViaDriver]
   );
@@ -438,11 +566,29 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         throw new Error('No printer paired for labels');
       }
       const profile = getProfile(target.profileId);
-      // For now, labels always go out as ESC/POS. ZPL-language printers
-      // would get ZPL bytes from buildLabelDocumentZpl — wire that when a
-      // real ZPL Bluetooth printer is available for testing.
+      const rasterize = browserTextRasterizer();
+      // Label printers get their own language (TSC/Xprinter/TVS → TSPL, Zebra → ZPL);
+      // receipt printers print labels as ESC/POS strips.
+      const dpi = target.dpi ?? profile.dpi;
+      if (profile.language === 'TSPL') {
+        const bytes = buildLabelTspl({
+          ...args,
+          dpi,
+          density: target.labelDensity,
+          speed: target.labelSpeed,
+          gapMm: target.labelGapMm,
+          rasterize,
+        });
+        await printViaDriver(target, bytes, 'TSPL');
+        return;
+      }
+      if (profile.language === 'ZPL') {
+        const zpl = buildLabelDocumentZpl({ ...args, dpi, rasterize });
+        await printViaDriver(target, new TextEncoder().encode(zplJobSettings(target) + zpl), 'ZPL');
+        return;
+      }
       const paper: 58 | 80 = profile.paperWidthMm === 80 ? 80 : 58;
-      const bytes = buildLabelEscPos({ ...args, paperWidthMm: paper });
+      const bytes = buildLabelEscPos({ ...args, paperWidthMm: paper, rasterize });
       await printViaDriver(target, bytes, 'ESCPOS');
     },
     [pickPrinter, printViaDriver]
@@ -457,8 +603,9 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         setError('No printer paired for receipts');
         throw new Error('No printer paired for receipts');
       }
-      const profile = getProfile(target.profileId);
-      const paper: 58 | 80 = profile.paperWidthMm === 80 ? 80 : 58;
+      const paper = receiptPaper(target);
+      const drawer = target.cashDrawer ?? 'never';
+      const paidInCash = /cash/i.test(data.paymentMode || '');
       const showKhatarioFooter =
         options?.showKhatarioFooter !== undefined
           ? options.showKhatarioFooter
@@ -467,6 +614,10 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
             });
       const bytes = buildInvoiceReceiptEscPos(data, {
         paperWidthMm: paper,
+        rasterize: browserTextRasterizer(),
+        copies: target.copies ?? 1,
+        skipCut: target.autoCut === false,
+        openDrawer: drawer === 'always' || (drawer === 'cash' && paidInCash),
         ...options,
         showKhatarioFooter,
       });
@@ -500,8 +651,12 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       listBondedDevices,
       connectBondedDevice,
       openBluetoothSettings,
+      isDesktop,
+      addDesktopPrinter,
       pair,
       forget,
+      updatePrinter,
+      openCashDrawer,
       connect,
       disconnect,
       setPreferred,
@@ -523,8 +678,12 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       listBondedDevices,
       connectBondedDevice,
       openBluetoothSettings,
+      isDesktop,
+      addDesktopPrinter,
       pair,
       forget,
+      updatePrinter,
+      openCashDrawer,
       connect,
       disconnect,
       setPreferred,
@@ -535,4 +694,27 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       printBytes,
     ]
   );
+}
+
+/** Receipt paper width: the printer's own setting when it is a receipt width, else the model's. */
+function receiptPaper(printer: SavedBluetoothPrinter): 58 | 80 {
+  if (printer.paperWidthMm === 80 || printer.paperWidthMm === 58) return printer.paperWidthMm;
+  return getProfile(printer.profileId).paperWidthMm === 80 ? 80 : 58;
+}
+
+/** ZPL darkness / speed for the whole job (~SD 0–30, ^PR 2–6 ips) from the printer settings. */
+function zplJobSettings(printer: SavedBluetoothPrinter): string {
+  const parts: string[] = [];
+  if (printer.labelDensity != null) parts.push(`~SD${String(Math.round(Math.max(0, Math.min(15, printer.labelDensity)) * 2)).padStart(2, '0')}`);
+  if (printer.labelSpeed != null) parts.push(`^XA^PR${Math.max(2, Math.min(6, Math.round(printer.labelSpeed)))}^XZ`);
+  return parts.length ? parts.join('') + '\n' : '';
+}
+
+/** A 50×25 mm test label: printer name, a Hindi line, a price and a barcode. */
+function testLabelArgs(printerName: string): BuildLabelEscPosArgs {
+  return {
+    template: { ...DEFAULT_ROLL_TEMPLATE, widthMm: 50, heightMm: 25 },
+    lines: [{ productName: `Test ${printerName}`.slice(0, 40), barcode: '8901234567890', copies: 1, price: 99, mrp: 120 }],
+    businessName: 'Khatario test label',
+  };
 }

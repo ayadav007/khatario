@@ -2,16 +2,19 @@
 
 import { useState } from 'react';
 import { useAdmin } from '@/context/AdminContext';
-import { Settings, Bell, Shield, Database, Megaphone, Mail } from 'lucide-react';
+import { Settings, Bell, Shield, Database, Megaphone, Mail, MessageCircle, CreditCard } from 'lucide-react';
+import { AdminPlatformPaymentSettings } from '@/components/admin/AdminPlatformPaymentSettings';
 import { AdminEmailTemplatesEditor } from '@/components/admin/AdminEmailTemplatesEditor';
+import { AdminWhatsAppTemplatesEditor } from '@/components/admin/AdminWhatsAppTemplatesEditor';
 import { PromotionsManager } from '@/components/admin/PromotionsManager';
 import { AdminNotificationSettings } from '@/components/admin/AdminNotificationSettings';
 import { AdminEmailLogsPanel } from '@/components/admin/AdminEmailLogsPanel';
 
 export default function AdminSettingsPage() {
-  useAdmin();
+  const { isMinimumRole } = useAdmin();
+  const canManagePayments = isMinimumRole('super_admin');
   const [activeTab, setActiveTab] = useState<
-    'general' | 'notifications' | 'templates' | 'security' | 'system' | 'promotions'
+    'general' | 'notifications' | 'templates' | 'whatsapp' | 'payments' | 'security' | 'system' | 'promotions'
   >('general');
 
   return (
@@ -26,6 +29,8 @@ export default function AdminSettingsPage() {
           { id: 'general', label: 'General', icon: Settings },
           { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'templates', label: 'Email templates', icon: Mail },
+          { id: 'whatsapp', label: 'WhatsApp templates', icon: MessageCircle },
+          ...(canManagePayments ? [{ id: 'payments', label: 'Payments', icon: CreditCard }] : []),
           { id: 'security', label: 'Security', icon: Shield },
           { id: 'system', label: 'System', icon: Database },
           { id: 'promotions', label: 'Promotions', icon: Megaphone },
@@ -48,7 +53,7 @@ export default function AdminSettingsPage() {
         })}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="admin-light-surface bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-gray-900">
         {activeTab === 'general' && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-gray-900">General Settings</h2>
@@ -64,9 +69,14 @@ export default function AdminSettingsPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Support Email</label>
+              <p className="text-xs text-gray-500 mb-2">
+                Customer-facing address is <code>help@khatario.com</code> (set{' '}
+                <code>NEXT_PUBLIC_SUPPORT_EMAIL</code> in staging <code>.env.production</code>, then rebuild).
+                This box is not saved yet.
+              </p>
               <input
                 type="email"
-                defaultValue="support@khatario.com"
+                defaultValue="help@khatario.com"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -108,6 +118,10 @@ export default function AdminSettingsPage() {
         )}
 
         {activeTab === 'templates' && <AdminEmailTemplatesEditor />}
+
+        {activeTab === 'whatsapp' && <AdminWhatsAppTemplatesEditor />}
+
+        {activeTab === 'payments' && canManagePayments && <AdminPlatformPaymentSettings />}
 
         {activeTab === 'security' && (
           <div className="space-y-6">

@@ -2,6 +2,12 @@ import * as db from '@/lib/db';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { format } from 'date-fns';
+import { toE164Digits } from '@/lib/platform-whatsapp-send';
+import { eventTemplateFailureMessage, sendEventTemplate } from '@/lib/whatsapp/tenant-send';
+import { invoiceEventValues, reminderEventKey } from '@/lib/whatsapp/invoice-event-values';
+import { businessTransport } from '@/lib/whatsapp/business-transport';
+import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
+import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 
 /**
  * Process message template by replacing placeholders
@@ -83,6 +89,14 @@ export async function sendReminderMessage(
       return { success: false, error: 'Customer phone number not available' };
     }
 
+    const outbound = await whatsAppOutboundReady(businessId);
+    if (!outbound.ready) {
+      return {
+        success: false,
+        error: 'WhatsApp is not connected. Scan a QR code or connect the WhatsApp Business API before sending reminders.',
+      };
+    }
+
     // Process template
     const customer = {
       name: invoice.customer_name || 'Cash Sale',
@@ -100,33 +114,65 @@ export async function sendReminderMessage(
     processedMessage = message;
     logToNumber = invoice.customer_phone;
 
-    // Generate PDF when the channel should attach the invoice
+    const eventKey = reminderEventKey(reminderSource, invoice.due_date);
+    const transport = await businessTransport(businessId);
+    const values = await invoiceEventValues(invoice);
+    const filename = `${invoice.invoice_number || 'invoice'}.pdf`;
+
     let pdfBuffer: Buffer | undefined;
-    if (includePdf) {
+    const loadPdf = async () => {
+      if (pdfBuffer) return pdfBuffer;
       try {
         pdfBuffer = await generateInvoicePdf(invoiceId);
       } catch (error: any) {
         console.error('Failed to generate PDF for reminder:', error);
-        return {
-          success: false,
-          error: error?.message
+        throw new Error(
+          error?.message
             ? `Could not generate invoice PDF: ${error.message}`
             : 'Could not generate invoice PDF for this reminder',
-        };
+        );
       }
       if (!pdfBuffer || pdfBuffer.length === 0) {
-        return { success: false, error: 'Invoice PDF is empty' };
+        throw new Error('Invoice PDF is empty');
       }
-    }
+      return pdfBuffer;
+    };
 
-    // Send WhatsApp message (string return = Baileys message id for delivery/read updates)
-    const sendResult = await sendWhatsAppMessage(
-      businessId,
-      invoice.customer_phone,
-      message,
-      pdfBuffer
-    );
-    const baileysMessageId = typeof sendResult === 'string' ? sendResult : null;
+    let providerMessageId: string | null = null;
+    let loggedText = message;
+
+    if (transport === 'cloud') {
+      const resolved = await resolveEventTemplate(businessId, eventKey);
+      if (!resolved) {
+        return {
+          success: false,
+          error: eventTemplateFailureMessage({ sent: false, reason: 'no_template' }, 'this reminder'),
+        };
+      }
+      const needsPdf = resolved.template.header_format === 'document';
+      if (needsPdf) await loadPdf();
+      const viaTemplate = await sendEventTemplate({
+        businessId,
+        eventKey,
+        to: invoice.customer_phone,
+        values,
+        document: pdfBuffer ? { buffer: pdfBuffer, filename } : undefined,
+      });
+      if (!viaTemplate.sent) {
+        return { success: false, error: eventTemplateFailureMessage(viaTemplate, 'this reminder') };
+      }
+      providerMessageId = viaTemplate.messageId;
+      loggedText = `[Meta template ${viaTemplate.template}] ${message}`;
+    } else {
+      if (includePdf) await loadPdf();
+      const sendResult = await sendWhatsAppMessage(
+        businessId,
+        toE164Digits(invoice.customer_phone) ?? invoice.customer_phone,
+        message,
+        pdfBuffer,
+      );
+      providerMessageId = typeof sendResult === 'string' ? sendResult : null;
+    }
 
     // Log to whatsapp_messages table
     await db.query(
@@ -148,10 +194,10 @@ export async function sendReminderMessage(
         'reminder',
         'invoice',
         invoiceId,
-        message,
-        includePdf ? 'blob:pdf' : null,
+        loggedText,
+        pdfBuffer ? 'blob:pdf' : null,
         'sent',
-        baileysMessageId,
+        providerMessageId,
         reminderSource
       ]
     );

@@ -5,27 +5,21 @@ export const dynamic = 'force-dynamic';
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { EmployeeLoginRoleFields } from '@/components/hr/EmployeeLoginRoleFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import {
-  Loader2,
-  User,
-  Briefcase,
-  Phone,
-  CreditCard,
-  FileText,
-  AlertCircle,
-} from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
+import { useHrPlan } from '@/hooks/useFullHr';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 function dateInputValue(value: unknown): string {
@@ -38,6 +32,8 @@ export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
+  const hrPlan = useHrPlan();
+  const fullHr = hrPlan.payrollSetup;
   const employeeId = params.id as string;
 
   const { status: authStatus, reason } = useAuthorizationGuard({
@@ -71,6 +67,9 @@ export default function EditEmployeePage() {
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
     access_type: 'attendance_only' as 'attendance_only',
+    role_id: '',
+    login_password: '',
+    pay_basis: 'monthly' as 'daily' | 'monthly',
     salary: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
@@ -151,6 +150,9 @@ export default function EditEmployeePage() {
           reporting_manager_id: emp.reporting_manager_id || '',
           employment_type: emp.employment_type || 'full_time',
           access_type: emp.access_type || 'attendance_only',
+          role_id: emp.role_id || '',
+          login_password: '',
+          pay_basis: emp.pay_basis === 'daily' ? 'daily' : 'monthly',
           salary: emp.salary != null ? String(emp.salary) : '',
           emergency_contact_name: emp.emergency_contact_name || '',
           emergency_contact_phone: emp.emergency_contact_phone || '',
@@ -214,24 +216,27 @@ export default function EditEmployeePage() {
         weekly_off_override: formData.useWeeklyOffOverride
           ? { fixed_days: formData.weekly_off_fixed_days, nth_rules: [] }
           : null,
-        default_shift_id: formData.default_shift_id || null,
+        default_shift_id: hrPlan.shifts ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: formData.reporting_manager_id || null,
+        reporting_manager_id: hrPlan.leaves ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
-        access_type: formData.access_type,
+        access_type: formData.role_id ? 'full' : 'attendance_only',
+        role_id: formData.role_id || null,
+        password: formData.login_password || undefined,
         salary: formData.salary ? Number(formData.salary) : null,
+        pay_basis: formData.pay_basis,
         emergency_contact_name: formData.emergency_contact_name.trim() || null,
         emergency_contact_phone: formData.emergency_contact_phone.replace(/\D/g, '') || null,
         bank_account_number: formData.bank_account_number.trim() || null,
         bank_ifsc: formData.bank_ifsc.trim() || null,
         bank_name: formData.bank_name.trim() || null,
-        pan_number: formData.pan_number.trim() || null,
-        aadhaar_number: formData.aadhaar_number.trim() || null,
-        uan: formData.uan.trim() || null,
-        esi_ip_number: formData.esi_ip_number.trim() || null,
-        pf_account_no: formData.pf_account_no.trim() || null,
-        pf_applicable: formData.pf_applicable,
-        esi_applicable: formData.esi_applicable,
+        pan_number: fullHr ? formData.pan_number.trim() || null : null,
+        aadhaar_number: fullHr ? formData.aadhaar_number.trim() || null : null,
+        uan: fullHr ? formData.uan.trim() || null : null,
+        esi_ip_number: fullHr ? formData.esi_ip_number.trim() || null : null,
+        pf_account_no: fullHr ? formData.pf_account_no.trim() || null : null,
+        pf_applicable: fullHr ? formData.pf_applicable : false,
+        esi_applicable: fullHr ? formData.esi_applicable : false,
       };
 
       const res = await fetch(
@@ -293,27 +298,24 @@ export default function EditEmployeePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
       <MobileDuplicatePageChrome
         title="Edit employee"
-        description={employeeName || undefined}
-        trailing={
-          <Link href={`/employees/${employeeId}`}>
-            <Button variant="ghost" size="sm">
-              Cancel
-            </Button>
-          </Link>
+        description={
+          employeeName
+            ? fullHr
+              ? `${employeeName} — updates apply immediately. Salary structure is managed on the profile.`
+              : employeeName
+            : 'Updates apply immediately.'
         }
       />
 
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <User className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Basic Information</h2>
-              </div>
+        <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Basic information"
+              description="Name and contact details on attendance and HR records."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <Input
@@ -345,14 +347,26 @@ export default function EditEmployeePage() {
                   onChange={handleChange}
                   required
                 />
+                <EmployeeLoginRoleFields
+                  roleId={formData.role_id}
+                  password={formData.login_password}
+                  allowWhenSeatsFull={Boolean(formData.role_id)}
+                  onRoleId={(role_id) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      role_id,
+                      login_password: role_id ? prev.login_password : '',
+                    }))
+                  }
+                  onPassword={(login_password) => setFormData((prev) => ({ ...prev, login_password }))}
+                />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Employment Details</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Employment"
+              description="Role, branch, schedule, and compensation."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <HrOrgCatalogField
                   businessId={business?.id}
@@ -370,11 +384,13 @@ export default function EditEmployeePage() {
                   value={formData.department}
                   onChange={(v) => setFormData({ ...formData, department: v })}
                 />
-                <EmployeeShiftSelect
-                  businessId={business?.id}
-                  value={formData.default_shift_id}
-                  onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
-                />
+                {hrPlan.shifts ? (
+                  <EmployeeShiftSelect
+                    businessId={business?.id}
+                    value={formData.default_shift_id}
+                    onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
+                  />
+                ) : null}
                 <div>
                   <label className="mb-1 block text-sm font-medium text-text-secondary">Branch</label>
                   <select
@@ -391,7 +407,9 @@ export default function EditEmployeePage() {
                     ))}
                   </select>
                   <p className="mt-1 text-xs text-text-muted">
-                    Branch determines which holiday list applies to this employee.
+                    {hrPlan.shifts
+                      ? 'Branch determines which holiday list applies to this employee.'
+                      : 'Optional — used if you have more than one location.'}
                   </p>
                 </div>
                 <div className="md:col-span-2 space-y-2">
@@ -447,7 +465,7 @@ export default function EditEmployeePage() {
                   value={formData.joining_date}
                   onChange={handleChange}
                 />
-                {business?.id && user?.id ? (
+                {hrPlan.leaves && business?.id && user?.id ? (
                   <ReportingManagerSelect
                     businessId={business.id}
                     userId={user.id}
@@ -458,8 +476,21 @@ export default function EditEmployeePage() {
                     }
                   />
                 ) : null}
+                <div>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="pay_basis">Pay type</label>
+                  <select
+                    id="pay_basis"
+                    name="pay_basis"
+                    className="input"
+                    value={formData.pay_basis}
+                    onChange={handleChange}
+                  >
+                    <option value="daily">Daily wages</option>
+                    <option value="monthly">Monthly salary</option>
+                  </select>
+                </div>
                 <Input
-                  label="Salary"
+                  label={formData.pay_basis === 'daily' ? 'Daily wage' : 'Monthly salary'}
                   name="salary"
                   type="number"
                   inputMode="decimal"
@@ -467,13 +498,12 @@ export default function EditEmployeePage() {
                   onChange={handleChange}
                 />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <Phone className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Emergency Contact</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Emergency contact"
+              description="Person to reach if the employee cannot be contacted."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="Contact Name"
@@ -490,13 +520,12 @@ export default function EditEmployeePage() {
                   nationalPlaceholder="Emergency mobile"
                 />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Bank Details</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Bank details"
+              description="Used for salary payouts. Fields may be hidden if your role lacks permission."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="Account Number"
@@ -519,17 +548,13 @@ export default function EditEmployeePage() {
                   />
                 </div>
               </div>
-              <p className="mt-3 flex items-center gap-1 text-xs text-text-secondary">
-                <AlertCircle className="h-3 w-3" />
-                Salary and bank fields may be hidden if your role lacks permission.
-              </p>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Documents</h2>
-              </div>
+            {fullHr ? (
+            <AnnotatedFormSection
+              title="Documents"
+              description="Identity, tax, and statutory identifiers."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="PAN Number"
@@ -589,31 +614,25 @@ export default function EditEmployeePage() {
                   ESI applicable
                 </label>
               </div>
-            </Card>
-          </div>
+            </AnnotatedFormSection>
+            ) : null}
 
-          <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <h3 className="mb-4 font-semibold text-text-primary">Save changes</h3>
-              <p className="mb-4 text-sm text-text-secondary">
-                Updates apply immediately. Salary structure is managed on the employee profile.
-              </p>
-              <Button type="submit" className="w-full" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  'Save Employee'
-                )}
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Link href={`/employees/${employeeId}`}>
+              <Button type="button" variant="secondary">
+                Cancel
               </Button>
-              <Link href={`/employees/${employeeId}`} className="mt-2 block">
-                <Button type="button" variant="ghost" className="w-full">
-                  Back to profile
-                </Button>
-              </Link>
-            </Card>
+            </Link>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save employee'
+              )}
+            </Button>
           </div>
         </div>
       </form>

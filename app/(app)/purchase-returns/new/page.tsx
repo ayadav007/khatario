@@ -2,17 +2,25 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { Plus, Trash2 } from 'lucide-react';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import {
+  applyIncidentalFreightRefund,
+  formLinesFromPurchase,
+  incidentalAllocationsFromCharges,
+  scaleLinkedReturnLine,
+  type IncidentalAllocationRefund,
+  type PurchaseReturnFormLine,
+} from '@/lib/purchases/purchase-return-lines';
 
 interface Supplier {
   id: string;
@@ -27,6 +35,7 @@ interface Purchase {
   bill_number: string;
   bill_date: string;
   grand_total: number;
+  supplier_id?: string;
 }
 
 interface Item {
@@ -39,24 +48,7 @@ interface Item {
   current_stock: number;
 }
 
-interface ReturnItem {
-  item_id: string;
-  item_name: string;
-  description: string;
-  hsn_sac: string;
-  qty: number;
-  unit: string;
-  unit_price: number;
-  discount_percent: number;
-  discount_amount: number;
-  taxable_value: number;
-  tax_rate: number;
-  tax_amount: number;
-  cgst_amount: number;
-  sgst_amount: number;
-  igst_amount: number;
-  line_total: number;
-}
+type ReturnItem = PurchaseReturnFormLine;
 
 export default function NewPurchaseReturnPage() {
   const router = useRouter();
@@ -76,6 +68,9 @@ export default function NewPurchaseReturnPage() {
 
   // Get purchase_id and supplier_id from URL params if provided
   const [urlParams, setUrlParams] = useState<{ purchase_id?: string; supplier_id?: string }>({});
+  // Quantities to pre-fill per bill item (?return_qty=itemId:qty,itemId:qty), e.g. from a
+  // supplier bill received short or damaged.
+  const prefillQtyRef = useRef<Map<string, number> | null>(null);
 
   const [formData, setFormData] = useState({
     supplier_id: '',
@@ -87,6 +82,13 @@ export default function NewPurchaseReturnPage() {
 
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [refundIncidental, setRefundIncidental] = useState(false);
+  const [incidentalAvailable, setIncidentalAvailable] = useState(false);
+  const [incidentalAllocations, setIncidentalAllocations] = useState<IncidentalAllocationRefund[]>([]);
+  const [priorReturnQuantities, setPriorReturnQuantities] = useState<Record<string, number[]>>({});
+  const [linesLoading, setLinesLoading] = useState(false);
+  const linkedPurchaseRef = useRef<Purchase | null>(null);
+  const appliedPurchaseIdRef = useRef('');
 
   // Parse URL params on mount
   useEffect(() => {
@@ -94,6 +96,17 @@ export default function NewPurchaseReturnPage() {
       const params = new URLSearchParams(window.location.search);
       const purchaseId = params.get('purchase_id');
       const supplierId = params.get('supplier_id');
+      const returnQty = params.get('return_qty');
+      if (returnQty) {
+        const map = new Map<string, number>();
+        for (const pair of returnQty.split(',')) {
+          const [itemId, qty] = pair.split(':');
+          if (itemId && Number(qty) > 0) map.set(itemId, Number(qty));
+        }
+        prefillQtyRef.current = map.size ? map : null;
+      }
+      const prefillReason = params.get('reason');
+      if (prefillReason) setFormData((prev) => ({ ...prev, reason: prev.reason || prefillReason.slice(0, 200) }));
       if (purchaseId || supplierId) {
         setUrlParams({ purchase_id: purchaseId || undefined, supplier_id: supplierId || undefined });
       }
@@ -109,19 +122,22 @@ export default function NewPurchaseReturnPage() {
 
   // Pre-select supplier from URL params
   useEffect(() => {
-    if (urlParams.supplier_id && suppliers.length > 0) {
-      setFormData(prev => ({ ...prev, supplier_id: urlParams.supplier_id || '' }));
-      const supplier = suppliers.find(s => s.id === urlParams.supplier_id);
-      setSelectedSupplier(supplier || null);
+    const supplierId = formData.supplier_id || urlParams.supplier_id;
+    if (!supplierId || suppliers.length === 0) return;
+    if (!formData.supplier_id) {
+      setFormData((prev) => ({ ...prev, supplier_id: supplierId }));
     }
-  }, [urlParams.supplier_id, suppliers]);
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    if (supplier) setSelectedSupplier(supplier);
+  }, [urlParams.supplier_id, formData.supplier_id, suppliers]);
 
-  // Pre-select purchase from URL params
+  // Open the bill from the Return button without waiting for the latest-50 purchase list.
   useEffect(() => {
-    if (urlParams.purchase_id && purchases.length > 0) {
-      setFormData(prev => ({ ...prev, purchase_id: urlParams.purchase_id || '' }));
-    }
-  }, [urlParams.purchase_id, purchases]);
+    if (!urlParams.purchase_id) return;
+    setFormData((prev) =>
+      prev.purchase_id === urlParams.purchase_id ? prev : { ...prev, purchase_id: urlParams.purchase_id || '' }
+    );
+  }, [urlParams.purchase_id]);
 
   useEffect(() => {
     if (formData.supplier_id) {
@@ -131,7 +147,18 @@ export default function NewPurchaseReturnPage() {
 
   useEffect(() => {
     if (formData.purchase_id) {
+      appliedPurchaseIdRef.current = formData.purchase_id;
       loadPurchaseItems(formData.purchase_id);
+      return;
+    }
+    if (appliedPurchaseIdRef.current) {
+      appliedPurchaseIdRef.current = '';
+      linkedPurchaseRef.current = null;
+      setReturnItems([]);
+      setIncidentalAvailable(false);
+      setRefundIncidental(false);
+      setIncidentalAllocations([]);
+      setPriorReturnQuantities({});
     }
   }, [formData.purchase_id]);
 
@@ -152,9 +179,17 @@ export default function NewPurchaseReturnPage() {
       const response = await fetch(`/api/purchases?business_id=${business?.id}&user_id=${user?.id}`);
       if (response.ok) {
         const data = await response.json();
-        const supplierPurchases = data.purchases.filter(
-          (p: Purchase) => (p as any).supplier_id === supplierId
+        const supplierPurchases = (data.purchases || []).filter(
+          (p: Purchase) => p.supplier_id === supplierId && (p as any).status !== 'cancelled'
         );
+        const linked = linkedPurchaseRef.current;
+        if (
+          linked &&
+          linked.supplier_id === supplierId &&
+          !supplierPurchases.some((p: Purchase) => p.id === linked.id)
+        ) {
+          supplierPurchases.unshift(linked);
+        }
         setPurchases(supplierPurchases);
       }
     } catch (error) {
@@ -175,6 +210,7 @@ export default function NewPurchaseReturnPage() {
   };
 
   const handleSupplierChange = (supplierId: string) => {
+    linkedPurchaseRef.current = null;
     setFormData({ ...formData, supplier_id: supplierId, purchase_id: '' });
     const supplier = suppliers.find(s => s.id === supplierId);
     setSelectedSupplier(supplier || null);
@@ -183,52 +219,71 @@ export default function NewPurchaseReturnPage() {
   };
 
   const loadPurchaseItems = async (purchaseId: string) => {
+    setLinesLoading(true);
     try {
-      const response = await fetch(`/api/purchases/${purchaseId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const purchase = data.purchase;
-        
-        // Auto-populate items from the purchase
-        const loadedItems = purchase.items.map((item: any) => {
-          const subtotal = Number(item.quantity) * Number(item.unit_price);
-          const discountAmount = (subtotal * Number(item.discount_percent || 0)) / 100;
-          const taxableValue = subtotal - discountAmount;
-          
-          // Use the same GST breakdown as the original purchase item
-          const cgstAmount = Number(item.cgst_amount || 0);
-          const sgstAmount = Number(item.sgst_amount || 0);
-          const igstAmount = Number(item.igst_amount || 0);
-          const taxAmount = cgstAmount + sgstAmount + igstAmount;
-          const lineTotal = taxableValue + taxAmount;
+      const response = await fetch(`/api/purchases/${purchaseId}`, { credentials: 'include' });
+      if (!response.ok) {
+        const error = await safeJsonParse(response);
+        toast.error(getApiErrorMessage(error, 'Could not load items from this purchase'));
+        setReturnItems([]);
+        setIncidentalAvailable(false);
+        setIncidentalAllocations([]);
+        setPriorReturnQuantities({});
+        return;
+      }
+      const data = await response.json();
+      const purchase = data.purchase;
+      const prefill = prefillQtyRef.current;
+      prefillQtyRef.current = null;
+      const loadedItems = prefill
+        ? formLinesFromPurchase(purchase.items || []).map((line) =>
+            scaleLinkedReturnLine(line, (line.item_id && prefill.get(line.item_id)) || 0)
+          )
+        : formLinesFromPurchase(purchase.items || []);
+      const linkedPurchase: Purchase = {
+        id: purchase.id,
+        bill_number: purchase.bill_number,
+        bill_date: purchase.bill_date,
+        grand_total: purchase.grand_total,
+        supplier_id: purchase.supplier_id,
+      };
+      linkedPurchaseRef.current = linkedPurchase;
 
-          return {
-            item_id: item.item_id || '',
-            item_name: item.item_name,
-            description: item.item_name,
-            hsn_sac: item.hsn_sac || '',
-            qty: Number(item.quantity), // User can adjust this
-            unit: item.unit || 'PCS',
-            unit_price: Number(item.unit_price),
-            discount_percent: Number(item.discount_percent || 0),
-            discount_amount: discountAmount,
-            taxable_value: taxableValue,
-            tax_rate: Number(item.tax_rate || 0),
-            tax_amount: taxAmount,
-            cgst_amount: cgstAmount,
-            sgst_amount: sgstAmount,
-            igst_amount: igstAmount,
-            line_total: lineTotal,
-          };
-        });
+      setPurchases((prev) => {
+        if (prev.some((p) => p.id === linkedPurchase.id)) return prev;
+        return [linkedPurchase, ...prev];
+      });
+      if (purchase.supplier_id) {
+        setFormData((prev) =>
+          prev.supplier_id ? prev : { ...prev, supplier_id: purchase.supplier_id }
+        );
+        setSelectedSupplier((prev) => prev || suppliers.find((s) => s.id === purchase.supplier_id) || null);
+      }
 
-        setReturnItems(loadedItems);
-        toast.info(`Loaded ${loadedItems.length} items from purchase. You can adjust quantities as needed.`);
+      const allocations = incidentalAllocationsFromCharges(purchase.charges || []);
+      setIncidentalAvailable(allocations.length > 0);
+      setIncidentalAllocations(allocations);
+      setPriorReturnQuantities(purchase.prior_return_quantities || {});
+      setRefundIncidental(false);
+      setReturnItems(loadedItems);
+      if (loadedItems.length === 0) {
+        toast.error('This purchase has no items to return.');
+      } else if (loadedItems.every((line) => line.max_qty <= 0)) {
+        toast.info('Every item on this purchase has already been returned.');
       } else {
-        console.error('Failed to fetch purchase details');
+        toast.info(
+          `Loaded ${loadedItems.length} item${loadedItems.length === 1 ? '' : 's'} from this purchase. Adjust the quantity to return.`
+        );
       }
     } catch (error) {
       console.error('Error loading purchase items:', error);
+      toast.error('Could not load items from this purchase');
+      setReturnItems([]);
+      setIncidentalAvailable(false);
+      setIncidentalAllocations([]);
+      setPriorReturnQuantities({});
+    } finally {
+      setLinesLoading(false);
     }
   };
 
@@ -236,7 +291,7 @@ export default function NewPurchaseReturnPage() {
     setReturnItems([
       ...returnItems,
       {
-        item_id: '',
+        item_id: null,
         item_name: '',
         description: '',
         hsn_sac: '',
@@ -252,6 +307,10 @@ export default function NewPurchaseReturnPage() {
         sgst_amount: 0,
         igst_amount: 0,
         line_total: 0,
+        purchased_qty: 0,
+        already_returned: 0,
+        max_qty: 0,
+        inter_state: false,
       },
     ]);
   };
@@ -261,6 +320,14 @@ export default function NewPurchaseReturnPage() {
   };
 
   const updateReturnItem = (index: number, field: string, value: any) => {
+    if (formData.purchase_id) {
+      if (field !== 'qty') return;
+      setReturnItems((prev) =>
+        prev.map((line, i) => (i === index ? scaleLinkedReturnLine(line, Number(value)) : line))
+      );
+      return;
+    }
+
     const updatedItems = [...returnItems];
     updatedItems[index] = { ...updatedItems[index], [field]: value };
 
@@ -315,21 +382,47 @@ export default function NewPurchaseReturnPage() {
   };
 
   const calculateTotals = () => {
-    const subtotal = returnItems.reduce((sum, item) => sum + item.taxable_value, 0);
-    const taxTotal = returnItems.reduce((sum, item) => sum + item.tax_amount, 0);
-    const cgstTotal = returnItems.reduce((sum, item) => sum + item.cgst_amount, 0);
-    const sgstTotal = returnItems.reduce((sum, item) => sum + item.sgst_amount, 0);
-    const igstTotal = returnItems.reduce((sum, item) => sum + item.igst_amount, 0);
-    const grandTotal = returnItems.reduce((sum, item) => sum + item.line_total, 0);
-
-    return { subtotal, taxTotal, cgstTotal, sgstTotal, igstTotal, grandTotal };
+    const goodsSubtotal = returnItems.reduce((sum, item) => sum + item.taxable_value, 0);
+    const goodsTax = returnItems.reduce((sum, item) => sum + item.tax_amount, 0);
+    const goods = {
+      subtotal: goodsSubtotal,
+      cgst_total: returnItems.reduce((sum, item) => sum + item.cgst_amount, 0),
+      sgst_total: returnItems.reduce((sum, item) => sum + item.sgst_amount, 0),
+      igst_total: returnItems.reduce((sum, item) => sum + item.igst_amount, 0),
+      tax_total: goodsTax,
+      grand_total: returnItems.reduce((sum, item) => sum + item.line_total, 0),
+    };
+    const priced = refundIncidental
+      ? applyIncidentalFreightRefund(goods, {
+          allocations: incidentalAllocations,
+          lines: returnItems.map((item) => ({ item_id: item.item_id, qty: Number(item.qty) || 0 })),
+          priorQuantities: new Map(Object.entries(priorReturnQuantities)),
+        })
+      : goods;
+    return {
+      subtotal: priced.subtotal,
+      taxTotal: priced.tax_total,
+      cgstTotal: priced.cgst_total,
+      sgstTotal: priced.sgst_total,
+      igstTotal: priced.igst_total,
+      grandTotal: priced.grand_total,
+      freightTaxable: Math.round((priced.subtotal - goodsSubtotal) * 100) / 100,
+    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.supplier_id || !formData.return_number || returnItems.length === 0) {
-      toast.error('Please fill all required fields and add at least one item');
+    const linesToSave = formData.purchase_id
+      ? returnItems.filter((item) => Number(item.qty) > 0)
+      : returnItems;
+
+    if (!formData.supplier_id || !formData.return_number || linesToSave.length === 0) {
+      toast.error(
+        formData.purchase_id && returnItems.length > 0
+          ? 'Enter a quantity on at least one item from this purchase'
+          : 'Please fill all required fields and add at least one item'
+      );
       return;
     }
 
@@ -343,8 +436,9 @@ export default function NewPurchaseReturnPage() {
       return_date: formData.return_date,
       reason: formData.reason,
       place_of_supply_state_code: selectedSupplier?.state_code,
-      items: returnItems.map(item => ({
+      items: linesToSave.map(item => ({
         item_id: item.item_id || null,
+        item_name: item.item_name,
         description: item.description,
         hsn_sac: item.hsn_sac,
         qty: item.qty,
@@ -366,6 +460,7 @@ export default function NewPurchaseReturnPage() {
       sgst_total: totals.sgstTotal,
       igst_total: totals.igstTotal,
       grand_total: totals.grandTotal,
+      refund_incidental_charges: incidentalAvailable && refundIncidental,
       created_by: user?.id,
     };
 
@@ -417,29 +512,19 @@ export default function NewPurchaseReturnPage() {
   }
 
   return (
-    
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/purchase-returns">
-              <Button type="button" variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">New Purchase Return</h1>
-              <p className="text-sm text-text-secondary mt-1">Return goods to supplier</p>
-            </div>
-          </div>
-          <Button type="submit" disabled={loading}>
-            {loading ? 'Creating...' : 'Create Purchase Return'}
-          </Button>
-        </div>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="New purchase return"
+          description="Return goods to supplier."
+          onBack={() => router.push('/purchase-returns')}
+        />
 
-        {/* Basic Details */}
-        <Card padding="md">
-          <h2 className="text-lg font-semibold mb-4">Return Details</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Return details"
+              description="Document reference, supplier, and optional link to the original purchase."
+            >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -506,6 +591,21 @@ export default function NewPurchaseReturnPage() {
               </select>
             </div>
 
+            {incidentalAvailable && (
+              <label className="md:col-span-2 flex items-start gap-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={refundIncidental}
+                  onChange={(e) => setRefundIncidental(e.target.checked)}
+                />
+                <span>
+                  Supplier refunded the incidental freight. Leave this off when the freight stays with you.
+                  Goods taxable values are unchanged either way.
+                </span>
+              </label>
+            )}
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Reason for Return
@@ -519,84 +619,128 @@ export default function NewPurchaseReturnPage() {
               />
             </div>
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Return Items */}
-        <Card padding="md">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Return Items</h2>
+            <AnnotatedFormSection
+              title="Return items"
+              description={
+                formData.purchase_id
+                  ? 'Items from this purchase. Change the quantity to return. Price and tax stay as on the bill.'
+                  : 'Lines sent back to the supplier.'
+              }
+            >
+          {!formData.purchase_id && (
+          <div className="flex justify-end mb-4">
             <Button type="button" onClick={addReturnItem} size="sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Item
             </Button>
           </div>
+          )}
 
           <div className="space-y-4">
             {returnItems.map((item, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="grid grid-cols-12 gap-4">
-                  <div className="col-span-3">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
+              <div key={index} className="space-y-3 rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between md:hidden">
+                  <span className="text-sm font-medium text-gray-900">Item {index + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeReturnItem(index)}
+                    aria-label={`Remove item ${index + 1}`}
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-12 md:gap-4">
+                  <div className="col-span-2 md:col-span-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Item</label>
+                    {formData.purchase_id ? (
+                      <div className="py-2 text-sm font-medium text-gray-900 md:py-1">
+                        {item.item_name || item.description || 'Item'}
+                        {item.hsn_sac ? (
+                          <span className="mt-0.5 block text-xs font-normal text-gray-500">HSN {item.hsn_sac}</span>
+                        ) : null}
+                      </div>
+                    ) : (
                     <select
-                      value={item.item_id}
+                      value={item.item_id || ''}
                       onChange={(e) => updateReturnItem(index, 'item_id', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     >
                       <option value="">Select Item</option>
+                      {item.item_id && !items.some((i) => i.id === item.item_id) ? (
+                        <option value={item.item_id}>{item.item_name || 'Item'}</option>
+                      ) : null}
                       {items.map((i) => (
                         <option key={i.id} value={i.id}>
                           {i.name}
                         </option>
                       ))}
                     </select>
+                    )}
                   </div>
 
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Qty</label>
+                  <div className="min-w-0 md:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Qty</label>
                     <input
                       type="number"
                       step="0.01"
+                      min="0"
+                      max={formData.purchase_id ? item.max_qty : undefined}
                       value={item.qty}
+                      disabled={!!formData.purchase_id && item.max_qty <= 0}
                       onChange={(e) => updateReturnItem(index, 'qty', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm disabled:bg-gray-50 md:py-1"
                     />
+                    {formData.purchase_id ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.max_qty <= 0
+                          ? 'Already fully returned'
+                          : `Purchased ${item.purchased_qty}${item.already_returned > 0 ? `, already returned ${item.already_returned}` : ''}. Up to ${item.max_qty}.`}
+                      </p>
+                    ) : null}
                   </div>
 
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Price</label>
+                  <div className="min-w-0 md:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Price</label>
                     <input
                       type="number"
                       step="0.01"
                       value={item.unit_price}
+                      readOnly={!!formData.purchase_id}
                       onChange={(e) => updateReturnItem(index, 'unit_price', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm read-only:bg-gray-50 md:py-1"
                     />
                   </div>
 
-                  <div className="col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Tax %</label>
+                  <div className="min-w-0 md:col-span-1">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Tax %</label>
                     <input
                       type="number"
                       step="0.01"
                       value={item.tax_rate}
+                      readOnly={!!formData.purchase_id}
                       onChange={(e) => updateReturnItem(index, 'tax_rate', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm read-only:bg-gray-50 md:py-1"
                     />
                   </div>
 
-                  <div className="col-span-3">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Total</label>
-                    <div className="text-sm font-medium py-1">
+                  <div className="min-w-0 md:col-span-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Total</label>
+                    <div className="py-2 text-sm font-medium md:py-1">
                       ₹{item.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </div>
 
-                  <div className="col-span-1 flex items-end">
+                  <div className="hidden items-end md:col-span-1 md:flex">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => removeReturnItem(index)}
+                      aria-label={`Remove item ${index + 1}`}
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </Button>
@@ -607,20 +751,32 @@ export default function NewPurchaseReturnPage() {
 
             {returnItems.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                No items added. Click "Add Item" to begin.
+                {linesLoading
+                  ? 'Loading items from this purchase…'
+                  : formData.purchase_id
+                    ? 'No items found on this purchase.'
+                    : 'No items added. Click "Add Item" to begin.'}
               </div>
             )}
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Totals */}
         {returnItems.length > 0 && (
-          <Card padding="md">
+            <AnnotatedFormSection
+              title="Totals"
+              description="GST breakdown for this return."
+            >
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-medium">₹{totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
+              {totals.freightTaxable > 0.004 && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Includes incidental freight</span>
+                  <span>₹{totals.freightTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               {totals.cgstTotal > 0 && (
                 <>
                   <div className="flex justify-between">
@@ -644,10 +800,20 @@ export default function NewPurchaseReturnPage() {
                 <span>₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
-          </Card>
+            </AnnotatedFormSection>
         )}
-      </form>
-    
+          </div>
+
+          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end dark:border-border-dark">
+            <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => router.push('/purchase-returns')}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+              {loading ? 'Creating...' : 'Create purchase return'}
+            </Button>
+          </div>
+        </form>
+      </div>
   );
 }
 

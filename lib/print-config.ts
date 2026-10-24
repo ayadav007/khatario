@@ -57,7 +57,9 @@ export interface ResolvedPrintConfig {
   puppeteer: ResolvedPuppeteerPdfOptions;
   /**
    * Chromium @page size descriptor (e.g. "A4 portrait", "Letter landscape").
-   * When set, injected CSS uses this for @page { size: ... } with margin: 0 (Puppeteer supplies printable margins).
+   * When set, injected CSS uses this for @page { size: ... }.
+   * Margins are written on that same @page rule. With preferCSSPageSize, Chromium
+   * uses the CSS margin and ignores Puppeteer's margin option.
    */
   cssPageDescriptor?: string;
 }
@@ -278,8 +280,15 @@ export function getGlobalPrintCSS(): string {
 `.trim();
 }
 
+/** CSS @page margin. Must match Puppeteer margins; preferCSSPageSize makes this the one Chromium prints. */
+function pageMarginDeclaration(config: ResolvedPrintConfig): string {
+  const m = config.marginsMm;
+  return `${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm`;
+}
+
 /**
- * Page size/orientation hints for @page (works with preferCSSPageSize + Puppeteer margins).
+ * Page size and margins for @page.
+ * preferCSSPageSize is on for sheet paper, so this margin is what the PDF uses.
  */
 export function getPageCSS(config: ResolvedPrintConfig): string {
   if (config.format === 'THERMAL_80MM') {
@@ -306,10 +315,11 @@ body.format-thermal-58mm {
   }
 
   const desc = config.cssPageDescriptor || 'A4 portrait';
+  const margin = pageMarginDeclaration(config);
   return `
 @page {
   size: ${desc};
-  margin: 0;
+  margin: ${margin};
 }
 `.trim();
 }

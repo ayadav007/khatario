@@ -2,15 +2,25 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Plus, Search, Loader2, FileText, Eye, Edit, Trash2, Lock, RotateCcw } from 'lucide-react';
+import { Plus, Search, Loader2, FileText, Eye, Edit, Lock, RotateCcw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ReasonConfirmModal } from '@/components/modals/ReasonConfirmModal';
+import {
+  canManagePeriodLocks,
+  describeAccountingError,
+  type AccountingErrorView,
+} from '@/lib/accounting-ui/errors';
+import { REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
+
+const JOURNAL_LOCKED_MESSAGE = describeAccountingError(403, { code: 'JOURNAL_LOCKED' }, { context: 'journal', verb: 'reversed' }).message;
 
 interface JournalEntry {
   voucher_id: string;
@@ -22,6 +32,7 @@ interface JournalEntry {
   line_count: number;
   is_locked?: boolean;
   is_reversing?: boolean;
+  is_reversed?: boolean;
   template_id?: string;
   tags?: string[];
   lines?: Array<{
@@ -34,9 +45,10 @@ interface JournalEntry {
 }
 
 export default function JournalEntriesPage() {
-  const { business, user } = useAuth();
+  const { business, user, permissions, isPrimaryAdmin } = useAuth();
   const toast = useToastContext();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [reversing, setReversing] = useState<JournalEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState(format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'));
@@ -86,24 +98,32 @@ export default function JournalEntriesPage() {
     }
   };
 
-  const handleDelete = async (voucherId: string) => {
-    if (!business?.id || !confirm('Are you sure you want to delete this journal entry?')) return;
-
+  const reverseEntry = async (reason: string): Promise<AccountingErrorView | null> => {
+    if (!reversing || !business?.id) return null;
+    let res: Response;
     try {
-      const res = await fetch(`/api/journal-entries/${voucherId}?business_id=${business.id}`, {
-        method: 'DELETE',
+      res = await fetch(`/api/journal-entries/${reversing.voucher_id}/reverse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim() }),
       });
-
-      if (res.ok) {
-        await fetchEntries();
-      } else {
-        const errorData = await res.json();
-        toast.error(errorData.error || 'Failed to delete journal entry');
-      }
-    } catch (error) {
-      console.error('Error deleting journal entry:', error);
-      toast.error('An unexpected error occurred');
+    } catch {
+      return { message: 'Could not reach the server. Check your connection and try again.' };
     }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return describeAccountingError(res.status, data, {
+        context: 'journal',
+        verb: 'reversed',
+        canManagePeriods: canManagePeriodLocks(isPrimaryAdmin, permissions),
+        currentPath: '/journal-entries',
+        fallback: 'Could not reverse the journal entry. Please try again.',
+      });
+    }
+    setReversing(null);
+    toast.success(REVERSAL_COPY.success);
+    await fetchEntries();
+    return null;
   };
 
   const filteredEntries = entries.filter(entry => {
@@ -118,18 +138,21 @@ export default function JournalEntriesPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Journal Entries</h1>
-            <p className="text-sm text-text-secondary mt-1">Manual accounting entries</p>
-          </div>
-          <Link href="/journal-entries/new">
+        <PageHeader
+  title="Journal Entries"
+  subtitle="Manual accounting entries"
+
+  actions={
+    <>
+<Link href="/journal-entries/new">
             <Button>
               <Plus className="w-4 h-4 mr-2" />
               New Journal Entry
             </Button>
           </Link>
-        </div>
+    </>
+  }
+/>
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -185,7 +208,17 @@ export default function JournalEntriesPage() {
                       <td className="py-4 px-4">
                         {format(new Date(entry.entry_date), 'dd MMM yyyy')}
                       </td>
-                      <td className="py-4 px-4 font-mono text-sm">{entry.voucher_number}</td>
+                      <td className="py-4 px-4 font-mono text-sm">
+                        {entry.voucher_number}
+                        {entry.is_reversed && (
+                          <span
+                            className="ml-2 px-2 py-0.5 rounded-md text-xs font-sans bg-gray-100 text-gray-700"
+                            data-testid={`journal-reversed-${entry.voucher_id}`}
+                          >
+                            {REVERSAL_COPY.journal.reversedBadge}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-4 px-4 text-sm text-text-secondary">
                         {entry.reference_number || '-'}
                       </td>
@@ -207,18 +240,30 @@ export default function JournalEntriesPage() {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </Link>
-                          <Link href={`/journal-entries/${entry.voucher_id}/edit`}>
-                            <Button size="sm" variant="ghost">
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </Link>
+                          {!entry.is_reversed && (
+                            <Link href={`/journal-entries/${entry.voucher_id}/edit`}>
+                              <Button size="sm" variant="ghost">
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleDelete(entry.voucher_id)}
-                            className="text-red-600 hover:text-red-700"
+                            onClick={() => setReversing(entry)}
+                            disabled={entry.is_locked || entry.is_reversed}
+                            title={
+                              entry.is_reversed
+                                ? REVERSAL_COPY.journal.alreadyReversed
+                                : entry.is_locked
+                                  ? JOURNAL_LOCKED_MESSAGE
+                                  : REVERSAL_COPY.journal.title
+                            }
+                            aria-label={REVERSAL_COPY.journal.title}
+                            data-testid={`journal-reverse-${entry.voucher_id}`}
+                            className="text-red-600 hover:text-red-700 disabled:text-gray-400"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {entry.is_locked ? <Lock className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
                           </Button>
                         </div>
                       </td>
@@ -256,6 +301,21 @@ export default function JournalEntriesPage() {
             </div>
           )}
         </Card>
+
+        {reversing && (
+          <ReasonConfirmModal
+            key={reversing.voucher_id}
+            title={REVERSAL_COPY.journal.title}
+            subject={`Voucher: ${reversing.voucher_number}`}
+            description={REVERSAL_COPY.journal.description}
+            confirmLabel={REVERSAL_COPY.confirm}
+            requireReason
+            reasonLabel={REVERSAL_COPY.reasonLabel}
+            reasonPlaceholder={REVERSAL_COPY.reasonPlaceholder}
+            onConfirm={reverseEntry}
+            onClose={() => setReversing(null)}
+          />
+        )}
       </div>
     
   );

@@ -5,13 +5,26 @@ import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/templat
 import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 import { finalizePrintHtml } from '@/lib/pdf-generator';
 import { injectThermalScreenPreviewCss } from '@/lib/thermal-preview';
+import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { findTemplateAssignment } from '@/lib/template-assignment';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const sessionBusinessId = getSessionScopedBusinessId(request);
+    if (!sessionBusinessId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const body = await request.json();
     let { templateId, data } = body;
+    if (data?.business?.id && data.business.id !== sessionBusinessId) {
+      return NextResponse.json({ error: 'Business ID does not match your session' }, { status: 403 });
+    }
+    if (data) {
+      data.business = { ...(data.business || {}), id: sessionBusinessId };
+    }
 
     console.log('='.repeat(80));
     console.log('[Preview API] ========== TEMPLATE SELECTION DEBUG ==========');
@@ -59,20 +72,11 @@ export async function POST(request: NextRequest) {
       try {
         // First, try to get assignment by document_type only (this gives us the assigned template)
         console.log('[Preview API] Step 2: Querying business_template_assignments for document_type:', documentType);
-        let assignment = await db.queryOne(
-          `SELECT template_id, settings 
-           FROM business_template_assignments 
-           WHERE business_id = $1 AND document_type = $2
-           LIMIT 1`,
-          [data.business.id, documentType]
-        );
+        const assignment = await findTemplateAssignment(data.business.id, documentType);
         
         if (assignment) {
           assignedTemplateId = assignment.template_id;
-          const settings = assignment.settings;
-          if (settings) {
-            savedSettings = typeof settings === 'string' ? JSON.parse(settings) : settings;
-          }
+          savedSettings = assignment.settings;
           console.log('[Preview API] ✅ Step 2 Result: Assignment FOUND');
           console.log('[Preview API]   - Assigned Template ID:', assignedTemplateId);
           console.log('[Preview API]   - Has Settings:', !!savedSettings);
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest) {
                FROM business_template_assignments 
                WHERE business_id = $1 AND document_type = $2 AND template_id = $3
                LIMIT 1`,
-              [data.business.id, documentType, providedTemplateId]
+              [data.business.id, assignment.document_type, providedTemplateId]
             );
             
             if (specificAssignment && specificAssignment.settings) {

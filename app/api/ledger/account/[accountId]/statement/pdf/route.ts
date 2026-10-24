@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
+import { listLedgerRegister, signedLedgerBalance, sumLedgerRegister } from '@/lib/accounting/ledger-register';
 import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import puppeteer from 'puppeteer';
 import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
@@ -33,41 +34,30 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
         [businessId]
       );
 
-      // 3. Fetch Ledger Entries
-      const entriesRes = await db.queryRows(
-        `SELECT 
-        l.entry_date,
-        l.description as particulars,
-        l.voucher_number as voucher,
-        l.debit,
-        l.credit,
-        SUM(l.debit - l.credit) OVER (ORDER BY l.entry_date, l.created_at) as running_balance
-       FROM ledger_entries l
-       WHERE l.account_id = $1 AND l.business_id = $2
-       AND l.entry_date >= $3 AND l.entry_date <= $4
-       ORDER BY l.entry_date, l.created_at`,
-        [accountId, businessId, fromDate, toDate]
-      );
-
-      // Calculate Opening Balance
-      const obRes = await db.queryOne(
-        `SELECT COALESCE(SUM(debit - credit), 0) as ob
-       FROM ledger_entries
-       WHERE account_id = $1 AND business_id = $2
-       AND entry_date < $3`,
-        [accountId, businessId, fromDate]
-      );
-      const openingBalance = Number(obRes.ob);
+      const { entries: entriesRes } = await listLedgerRegister({
+        businessId,
+        accountId,
+        fromDate,
+        toDate,
+        order: 'asc',
+        limit: null,
+      });
+      const prior = fromDate
+        ? await sumLedgerRegister({ businessId, accountId, beforeDate: fromDate })
+        : { debit: 0, credit: 0 };
+      const openingBalance = signedLedgerBalance(account.nature, prior.debit, prior.credit);
 
       let currentBalance = openingBalance;
       const formattedEntries = entriesRes.map(e => {
-        currentBalance += (Number(e.debit) - Number(e.credit));
+        const debit = Number(e.debit);
+        const credit = Number(e.credit);
+        currentBalance += signedLedgerBalance(account.nature, debit, credit);
         return {
           date: new Date(e.entry_date).toLocaleDateString('en-IN'),
-          particulars: e.particulars,
-          voucher: e.voucher,
-          debit: Number(e.debit) > 0 ? Number(e.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-          credit: Number(e.credit) > 0 ? Number(e.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
+          particulars: e.narration,
+          voucher: e.voucher_number || e.reference_number,
+          debit: debit > 0 ? debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
+          credit: credit > 0 ? credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
           balance: currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })
         };
       });
@@ -76,6 +66,7 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
       const totalCredit = entriesRes.reduce((sum, e) => sum + Number(e.credit), 0);
 
       const templateData = {
+        business_id: businessId,
         account,
         business,
         period: { from: fromDate, to: toDate },

@@ -3,17 +3,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, Loader2 } from 'lucide-react';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
   onClose: () => void;
   formats?: string[];
+  /**
+   * Plan feature that unlocks this scanner; it closes itself when the plan lacks it. Billing uses
+   * advanced_barcode. null skips the check, for a page whose route is already plan-gated
+   * (Scan & Add): right after login the cached snapshot can list no features yet, and the scanner
+   * would otherwise close the moment it opens.
+   */
+  feature?: string | null;
 }
 
 export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   onScan,
   onClose,
-  formats = ['EAN_13', 'CODE_128', 'QR_CODE', 'UPC_A', 'EAN_8', 'CODE_39', 'CODE_93', 'ITF']
+  formats = ['EAN_13', 'CODE_128', 'QR_CODE', 'UPC_A', 'EAN_8', 'CODE_39', 'CODE_93', 'ITF'],
+  feature = 'advanced_barcode',
 }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +34,10 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const scannerIdRef = useRef<string>(`barcode-scanner-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const isInitializingRef = useRef(false);
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
+  useEffect(() => {
+    if (feature !== null && snapshotLoaded && !hasCapability(feature, 'view')) onClose();
+  }, [snapshotLoaded, hasCapability, onClose, feature]);
   const initScannerRef = useRef<(() => Promise<void>) | null>(null);
 
   // Function to play beep sound on successful scan

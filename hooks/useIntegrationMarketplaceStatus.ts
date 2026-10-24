@@ -117,7 +117,6 @@ export function useIntegrationMarketplaceStatus() {
           active = emailReady;
           break;
         case 'ai-sales-agent':
-        case 'ai-assistant':
         case 'sms':
         default:
           active = false;

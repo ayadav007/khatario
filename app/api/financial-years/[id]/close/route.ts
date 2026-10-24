@@ -4,7 +4,9 @@ import { queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 /**
  * POST /api/financial-years/[id]/close
@@ -19,13 +21,25 @@ export async function POST(
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
-    const { tax_rate, user_id } = body;
+    const { tax_rate } = body;
+    const userId = getUserIdFromRequest(request);
 
     if (!business_id) {
       return NextResponse.json(
         { error: 'business_id is required' },
         { status: 400 }
       );
+    }
+    if (!userId) {
+      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
+    }
+    const planDenied = await denyIfFeatureMissing(business_id, 'accounting_chart');
+    if (planDenied) return planDenied;
+    try {
+      await authorize(userId, 'settings', 'update', { businessId: business_id, resourceId: params.id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
     }
 
     // Get financial year details
@@ -69,8 +83,8 @@ export async function POST(
       financialYear.year_code,
       financialYear.start_date,
       financialYear.end_date,
-      user_id || null,
-      tax_rate || 30
+      userId,
+      Number(tax_rate) > 0 ? Number(tax_rate) : 0
     );
 
     return NextResponse.json({

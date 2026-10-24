@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getUserIdFromRequest,
-  getBusinessIdFromRequest,
+  requireTenantBusinessId,
   resolveCreatedByUserId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getPool, queryOne } from '@/lib/db';
 import { roundMoney } from '@/lib/bank/normalize';
 import type { BankStatementFileType, BankStatementSourceType } from '@/lib/bank/types';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,11 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     const body = await request.json();
-    const businessId = (body.business_id as string) || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
+    const businessId = tenant.businessId;
     const userId = getUserIdFromRequest(request);
     const createdBy = resolveCreatedByUserId(request, body);
 
@@ -63,12 +68,18 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
-    const ba = await queryOne<{ id: string }>(
-      'SELECT id FROM bank_accounts WHERE id = $1 AND business_id = $2',
+    const ba = await queryOne<{ id: string; ledger_account_id: string | null }>(
+      'SELECT id, ledger_account_id FROM bank_accounts WHERE id = $1 AND business_id = $2',
       [bankAccountId, businessId]
     );
     if (!ba) {
       return NextResponse.json({ error: 'Bank account not found' }, { status: 404 });
+    }
+    if (!ba.ledger_account_id) {
+      return NextResponse.json(
+        { error: 'Link this bank to a chart ledger before importing a statement.' },
+        { status: 400 }
+      );
     }
 
     const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));

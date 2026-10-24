@@ -45,7 +45,7 @@ export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
 
   return (
     <div
-      className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 border min-w-[300px] max-w-[500px] animate-in slide-in-from-right-5 ${styleClass}`}
+      className={`fixed z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 border min-w-0 max-w-[calc(100vw-1.5rem)] sm:min-w-[300px] sm:max-w-[500px] animate-in slide-in-from-right-5 top-[4.5rem] right-3 left-3 sm:left-auto sm:right-4 lg:top-4 ${styleClass}`}
     >
       <Icon className="w-5 h-5 flex-shrink-0" />
       <span className="flex-1 text-sm font-medium">{message}</span>
@@ -69,7 +69,7 @@ interface ToastContainerProps {
 
 export function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="fixed z-50 space-y-2 top-[4.5rem] right-3 left-3 sm:left-auto sm:right-4 lg:top-4 max-w-md sm:max-w-sm ml-auto">
       {toasts.map((toast) => (
         <Toast
           key={toast.id}

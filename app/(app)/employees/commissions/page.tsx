@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -170,8 +171,10 @@ export default function CommissionsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">Commission Management</h1>
-            <p className="text-sm text-text-secondary mt-1">View and manage employee commissions</p>
+            <PageHeader
+  title="Commission Management"
+  subtitle="View and manage employee commissions"
+/>
           </div>
         </div>
 

@@ -8,7 +8,7 @@ import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 export const dynamic = 'force-dynamic';
 
 export const GET = withPremiumSubscriptionApi<{ id: string }>(
-  {},
+  { feature: 'accounting_tds' },
   async ({ businessId, params }) => {
     try {
       const { id } = params;
@@ -30,6 +30,7 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
       }
 
       const templateData = {
+        business_id: businessId,
         certificate: {
           ...certificate,
           payment_date: new Date(certificate.payment_date).toLocaleDateString('en-IN'),

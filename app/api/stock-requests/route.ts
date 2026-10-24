@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { requireAuthenticatedTenant, assertLinkedSupplier } from '@/lib/stock-request-security';
+import {
+  requireAuthenticatedTenant,
+  assertLinkedSupplier,
+  assertVendorLowStockAccess,
+  assertVendorSuppliesBuyerItem,
+} from '@/lib/stock-request-security';
+import { partiesFromItemOwner } from '@/lib/quantity-request-parties';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +47,7 @@ export async function GET(request: NextRequest) {
         res.name as responder_name,
         i.name as item_name,
         i.code as item_code,
+        i.business_id as item_business_id,
         ri.name as responder_item_name,
         ri.code as responder_item_code,
         po.order_number as purchase_order_number,
@@ -109,9 +116,10 @@ export async function POST(request: NextRequest) {
         parent_request_id,
       } = req;
 
-      if (!requester_business_id || !responder_business_id || !item_id || requested_qty === undefined) {
+      const qtyNum = Number(requested_qty);
+      if (!requester_business_id || !responder_business_id || !item_id || !Number.isFinite(qtyNum) || qtyNum <= 0) {
         return NextResponse.json(
-          { error: 'requester_business_id, responder_business_id, item_id, requested_qty are required' },
+          { error: 'requester_business_id, responder_business_id, item_id, and a requested_qty greater than 0 are required' },
           { status: 400 }
         );
       }
@@ -123,23 +131,75 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const itemOwner = await db.queryOne(
-        `SELECT business_id FROM items WHERE id = $1`,
+      const itemOwner = await db.queryOne<{ business_id: string; name: string }>(
+        `SELECT business_id, name FROM items WHERE id = $1 AND deleted_at IS NULL`,
         [item_id]
       );
-      if (!itemOwner || String(itemOwner.business_id) !== String(requester_business_id)) {
+      if (!itemOwner) {
+        return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
+      }
+
+      const parties = partiesFromItemOwner(
+        requester_business_id,
+        responder_business_id,
+        String(itemOwner.business_id),
+        item_id
+      );
+      if (!parties) {
         return NextResponse.json(
-          { error: 'item_id must belong to the requester business catalog', code: 'ITEM_NOT_REQUESTER' },
+          {
+            error: 'item_id must be the buyer catalog item for this supplier relationship',
+            code: 'ITEM_NOT_BUYER',
+          },
           { status: 400 }
         );
       }
 
       try {
-        await assertLinkedSupplier(requester_business_id, responder_business_id);
+        if (parties.direction === 'buyer_to_vendor') {
+          await assertLinkedSupplier(parties.buyerBusinessId, parties.vendorBusinessId);
+        } else {
+          await assertVendorLowStockAccess(parties.buyerBusinessId, parties.vendorBusinessId);
+          await assertVendorSuppliesBuyerItem(parties.buyerBusinessId, parties.vendorBusinessId, item_id);
+        }
       } catch (e: any) {
         const status = e.statusCode || 400;
         return NextResponse.json({ error: e.message, code: e.code || 'SUPPLIER_NOT_LINKED' }, { status });
       }
+
+      const openRequest = await db.queryOne(
+        `
+        SELECT qr.id
+        FROM quantity_requests qr
+        JOIN items i ON i.id = qr.item_id
+        WHERE qr.item_id = $1
+          AND qr.status = 'pending'
+          AND (
+            (qr.requester_business_id = $2 AND qr.responder_business_id = $3)
+            OR (qr.requester_business_id = $3 AND qr.responder_business_id = $2)
+          )
+        LIMIT 1
+        `,
+        [item_id, parties.buyerBusinessId, parties.vendorBusinessId]
+      );
+      if (openRequest) {
+        return NextResponse.json(
+          {
+            error: 'A pending quantity request already exists for this item and supplier.',
+            code: 'REQUEST_ALREADY_OPEN',
+          },
+          { status: 409 }
+        );
+      }
+
+      // Pre-fill the supplier's item from the saved item map (most recently used match).
+      const knownMatch = await db.queryOne<{ vendor_item_id: string }>(
+        `SELECT vendor_item_id FROM supplier_item_links
+          WHERE buyer_business_id = $1 AND vendor_business_id = $2 AND buyer_item_id = $3
+          ORDER BY (source = 'manual') DESC, last_used_at DESC NULLS LAST
+          LIMIT 1`,
+        [parties.buyerBusinessId, parties.vendorBusinessId, item_id]
+      );
 
       const row = await db.queryOne(
         `
@@ -152,19 +212,21 @@ export async function POST(request: NextRequest) {
           notes,
           low_stock_alert_id,
           parent_request_id,
+          responder_item_id,
           status
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
         RETURNING *
         `,
         [
           requester_business_id,
           responder_business_id,
           item_id,
-          requested_qty,
+          qtyNum,
           need_by_date || null,
           notes || null,
           low_stock_alert_id || null,
           parent_request_id || null,
+          knownMatch?.vendor_item_id ?? null,
         ]
       );
 
@@ -184,7 +246,7 @@ export async function POST(request: NextRequest) {
           [
             responder_business_id,
             'New Quantity Request',
-            `${requesterName} requested quantity for item ${item_id}.`,
+            `${requesterName} requested ${qtyNum} of ${itemOwner.name}.`,
             row.id,
             new Date(),
           ]

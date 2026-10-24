@@ -4,7 +4,16 @@ Slugs (match lib/help/how-to-articles.ts):
 
   getting-started.png
   key-settings-walkthrough.png
-  create-tax-invoice-step-by-step.png
+  create-invoice-01-open-sales.png
+  create-invoice-02-all-invoices.png
+  create-invoice-03-new-invoice.png
+  create-invoice-04-customer.png
+  create-invoice-05-pick-customer.png
+  create-invoice-06-place-of-supply.png
+  create-invoice-07-add-line.png
+  create-invoice-08-item-search.png
+  create-invoice-09-pick-item.png
+  create-invoice-10-save.png
   sales-from-quote-to-invoice.png
   purchase-and-supplier-cycle.png
   items-warehouses-and-inventory.png

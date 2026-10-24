@@ -1,0 +1,480 @@
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { estimateWords, highlightTimeline, normalizeHighlights, speechSegments, stillNeeds, timeHighlights, tokens } from './highlights.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const publicDir = path.join(root, 'tools/video-studio/public');
+const port = Number(process.env.VIDEO_STUDIO_PORT || 4317);
+// The Windows defaults are the dev box; elsewhere ffmpeg, python and chrome come from PATH or env.
+const isWindows = process.platform === 'win32';
+const ffmpegBin = process.env.FFMPEG_BIN
+  || (isWindows ? 'C:\\Users\\Abhishek\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.2-full_build\\bin' : '');
+const python = process.env.HYPERFRAMES_PYTHON
+  || (isWindows ? path.join(process.env.LOCALAPPDATA || '', 'Programs/Python/Python312/python.exe') : undefined);
+const chrome = process.env.HYPERFRAMES_BROWSER_PATH
+  || (isWindows ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : undefined);
+
+const invoiceShots = path.join(root, 'brag-output/invoice-how-to/shots');
+
+export const preset = {
+  title: 'How to create an invoice',
+  subtitle: 'New tax invoice on staging',
+  intro: "Here's how to create a tax invoice in Khatario.",
+  voice: true,
+  scenes: [
+    { image: '01-new-invoice.png', caption: 'Open New Tax Invoice. Recent customers are listed.', voice: 'Open New Tax Invoice. Your recent customers are already listed.', transition: 'crossfade', transitionSeconds: 1 },
+    { image: '02-customer-search.png', caption: 'Search the customer by name or phone.', voice: 'Search by name or phone, then pick the customer.', transition: 'slide', transitionSeconds: 1 },
+    { image: '03-customer-selected.png', caption: 'They sit on Bill to. Ship to follows.', voice: 'They land on Bill to, and the ship-to address follows.', transition: 'cut', transitionSeconds: 1 },
+    { image: '04-item-picker.png', caption: 'Add items. Pick from the catalog.', voice: 'Add items from the catalog. Each row shows stock, price, and GST.', transition: 'crossfade', transitionSeconds: 1 },
+    { image: '06-line-on-bill.png', caption: 'HSN, GST, and the line amount fill in.', voice: 'The line picks up the HSN, the GST rate, and the amount.', transition: 'slide', transitionSeconds: 1 },
+    { image: '07-totals-and-save.png', caption: 'Save draft, or save the invoice.', voice: 'Save a draft if you are not finished, or save the invoice.', transition: 'crossfade', transitionSeconds: 1 },
+  ],
+};
+
+function send(res, status, body, type = 'application/json') {
+  const payload = type === 'application/json' ? JSON.stringify(body) : body;
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+  res.end(payload);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+// npm ships beside node.exe on Windows but under lib/ on Linux/macOS (nvm, system installs).
+export function findNpxCli(execPath = process.execPath, override = process.env.NPX_CLI) {
+  const nodeDir = path.dirname(execPath);
+  const candidates = [
+    override,
+    path.join(nodeDir, 'node_modules/npm/bin/npx-cli.js'),
+    path.join(nodeDir, '../lib/node_modules/npm/bin/npx-cli.js'),
+  ].filter(Boolean);
+  return candidates.find((file) => fs.existsSync(file)) || null;
+}
+
+function run(command, args, cwd, env, onLine) {
+  // Run npx through this node so it works without a shell; fall back to npx on PATH.
+  const npxCli = command === 'npx' ? findNpxCli() : null;
+  const bin = npxCli ? process.execPath : command;
+  const argv = npxCli ? [npxCli, ...args] : args;
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, argv, { cwd, env, shell: false, windowsHide: true });
+    let text = '';
+    const take = (buf) => {
+      text += buf.toString();
+      for (const line of buf.toString().split(/\r?\n/)) {
+        if (line.trim()) onLine(line);
+      }
+    };
+    child.stdout.on('data', take);
+    child.stderr.on('data', take);
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(text) : reject(new Error(text.slice(-1200) || `exit ${code}`))));
+  });
+}
+
+function ffmpeg(args) {
+  return new Promise((resolve, reject) => {
+    const bin = path.join(ffmpegBin, isWindows ? 'ffmpeg.exe' : 'ffmpeg');
+    const child = spawn(bin, args, { windowsHide: true });
+    let text = '';
+    child.stderr.on('data', (d) => { text += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(text) : reject(new Error(text.slice(-500) || `ffmpeg exit ${code}`))));
+  });
+}
+
+async function boostVoice(file) {
+  const report = await ffmpeg(['-hide_banner', '-i', file, '-af', 'volumedetect', '-f', 'null', '-']);
+  const match = report.match(/max_volume:\s*(-?[\d.]+)\s*dB/);
+  if (!match) return;
+  const gain = Math.min(18, -1 - Number(match[1]));
+  if (gain < 1) return;
+  const louder = file.replace(/\.wav$/i, '.loud.wav');
+  await ffmpeg(['-y', '-i', file, '-af', `volume=${gain.toFixed(1)}dB`, louder]);
+  fs.renameSync(louder, file);
+}
+
+function ffprobe(file) {
+  return new Promise((resolve, reject) => {
+    const bin = path.join(ffmpegBin, isWindows ? 'ffprobe.exe' : 'ffprobe');
+    const child = spawn(bin, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], { windowsHide: true });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(Number(out.trim())) : reject(new Error(out))));
+  });
+}
+
+function compositionHtml({ title, subtitle, scenes }) {
+  const clips = [];
+  const tweens = [
+    'tl.fromTo("#title-inner", { y: 28, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, 0.2);',
+  ];
+  const titleDur = scenes.titleDuration;
+  clips.push(`
+      <section id="title" class="clip" data-start="0" data-duration="${titleDur.toFixed(2)}" data-track-index="0">
+        <div class="title-stage" id="title-inner">
+          <p class="eyebrow">Khatario</p>
+          <h1>${escapeHtml(title)}</h1>
+          <p class="sub">${escapeHtml(subtitle || '')}</p>
+        </div>
+      </section>`);
+  scenes.items.forEach((scene, index) => {
+    const id = `s${index + 1}`;
+    const start = scene.start.toFixed(2);
+    const duration = scene.duration.toFixed(2);
+    const frameId = `f${index + 1}`;
+    const highlight = highlightTimeline(scene.timed, { frameId, prefix: `m${index + 1}` });
+    const marks = highlight.marks.join('');
+    const caption = scene.caption
+      ? (scene.media === 'video'
+        ? `<p class="cap clip" data-start="${start}" data-duration="${duration}" data-track-index="${40 + index}">${escapeHtml(scene.caption)}</p>`
+        : `<p class="cap">${escapeHtml(scene.caption)}</p>`)
+      : '';
+    const picture = scene.media === 'video'
+      ? `<div class="frame" id="${frameId}"><video id="v${index + 1}" class="clip" src="assets/shots/${scene.file}" muted playsinline data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}"></video>${marks}</div>`
+      : `<div class="frame" id="${frameId}"><img src="assets/shots/${scene.file}" alt="" />${marks}</div>`;
+    const shot = `<div class="shot" id="${id}">${picture}${caption}</div>`;
+    if (scene.media === 'video') {
+      clips.push(shot);
+    } else {
+      clips.push(`
+      <section id="scene-${index + 1}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}">
+        ${shot}
+      </section>`);
+    }
+    const at = scene.start.toFixed(2);
+    if (scene.transition === 'crossfade' && scene.transitionSeconds > 0) {
+      tweens.push(`tl.fromTo("#${id}", { opacity: 0 }, { opacity: 1, duration: ${scene.transitionSeconds}, ease: "power1.inOut" }, ${at});`);
+      const previous = index === 0 ? '#title-inner' : `#s${index}`;
+      tweens.push(`tl.to("${previous}", { opacity: 0, duration: ${scene.transitionSeconds}, ease: "power1.inOut" }, ${at});`);
+    } else if (scene.transition === 'slide' && scene.transitionSeconds > 0) {
+      tweens.push(`tl.fromTo("#${id}", { x: 1920 }, { x: 0, duration: ${scene.transitionSeconds}, ease: "power2.inOut" }, ${at});`);
+    }
+    if (scene.timed.length) tweens.push(...highlight.tweens);
+  });
+  const last = scenes.items[scenes.items.length - 1];
+  const total = last ? last.start + last.duration : titleDur;
+  const bed = scenes.voices.length ? 0.35 : 0.7;
+  const voices = scenes.voices.map((voice) => `
+      <audio id="${voice.id}" src="assets/voice/${voice.file}" data-start="${voice.start}" data-track-index="${voice.track}" data-volume="1"></audio>`).join('');
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${escapeHtml(title)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      body { margin: 0; background: #f8f3e9; color: #063f35; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #063f35; }
+      .clip { position: absolute; inset: 0; overflow: hidden; }
+      .shot { position: absolute; inset: 0; overflow: hidden; }
+      .frame { position: absolute; inset: 0; }
+      .shot img, .shot video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+      .mark { position: absolute; box-sizing: border-box; border: 6px solid #f58220; box-shadow: 0 0 0 3px rgba(6, 63, 53, 0.35), 0 0 24px rgba(245, 130, 32, 0.45); opacity: 0; pointer-events: none; }
+      .mark.circle { height: auto; aspect-ratio: 1; border-radius: 999px; }
+      .mark.rect { border-radius: 18px; }
+      .cap { position: absolute; left: 40px; top: 28px; max-width: 1400px; margin: 0; padding: 18px 28px; border-radius: 16px; background: #063f35; color: #f8f3e9; font-size: 36px; font-weight: 700; line-height: 1.2; }
+      .cap.clip { inset: auto; width: auto; height: auto; overflow: visible; }
+      .title-stage { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 120px; background: #f8f3e9; }
+      .eyebrow { margin: 0 0 20px; color: #d7721c; font-size: 28px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
+      h1 { margin: 0; max-width: 1500px; color: #063f35; font-size: 84px; line-height: 1.05; letter-spacing: -0.03em; }
+      .sub { margin: 28px 0 0; color: #3d5c56; font-size: 36px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="${total.toFixed(2)}">
+      ${clips.join('')}
+      <audio id="music" src="assets/music/bed.mp3" data-start="0" data-duration="${total.toFixed(2)}" data-track-index="20" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":0.6,"v":${bed}},{"t":${Math.max(0, total - 1.5).toFixed(2)},"v":${bed}},{"t":${total.toFixed(2)},"v":0}]}]}'></audio>
+      ${voices}
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      ${tweens.join('\n      ')}
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>`;
+}
+
+function writeDataFile(dest, dataUrl) {
+  const b64 = String(dataUrl).split(',')[1] || '';
+  const bytes = Buffer.from(b64, 'base64');
+  if (!bytes.length) throw new Error('That file was empty.');
+  if (bytes.length > 80 * 1024 * 1024) throw new Error('That file is over 80 MB. Use a shorter clip.');
+  fs.writeFileSync(dest, bytes);
+}
+
+function clockSeconds(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  const parts = String(value || '').trim().split(':').map((part) => Number(part));
+  if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+export function shotFile(name) {
+  if (!/^[\w.-]+\.png$/.test(String(name || ''))) return null;
+  const file = path.join(invoiceShots, name);
+  return fs.existsSync(file) ? file : null;
+}
+
+export function videoFile(stamp) {
+  if (!/^[\dT-]+$/.test(String(stamp || ''))) return null;
+  const file = path.join(root, 'brag-output/studio', stamp, 'video.mp4');
+  return fs.existsSync(file) ? file : null;
+}
+
+export function listVideos() {
+  const dir = path.join(root, 'brag-output/studio');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((stamp) => /^[\dT-]+$/.test(stamp) && fs.existsSync(path.join(dir, stamp, 'video.mp4')))
+    .map((stamp) => {
+      const stat = fs.statSync(path.join(dir, stamp, 'video.mp4'));
+      return { stamp, bytes: stat.size, created: stat.mtime.toISOString() };
+    })
+    .sort((a, b) => b.created.localeCompare(a.created));
+}
+
+export function deleteVideo(stamp) {
+  if (!/^[\dT-]+$/.test(String(stamp || ''))) return false;
+  const studioDir = path.resolve(root, 'brag-output/studio');
+  const dir = path.resolve(studioDir, stamp);
+  if (dir !== path.join(studioDir, stamp)) return false;
+  if (!fs.existsSync(path.join(dir, 'video.mp4'))) return false;
+  fs.rmSync(dir, { recursive: true, force: true });
+  return true;
+}
+
+export async function renderJob(body, log) {
+  const title = String(body.title || 'Khatario').slice(0, 80);
+  const subtitle = String(body.subtitle || '').slice(0, 120);
+  const voiceOn = body.voice !== false;
+  const intro = String(body.intro || `Here is ${title}.`).slice(0, 240);
+  const scenes = Array.isArray(body.scenes) ? body.scenes.slice(0, 12) : [];
+  if (!scenes.length) throw new Error('Add at least one scene.');
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const job = path.join(root, 'brag-output/studio', stamp);
+  const composition = path.join(job, 'composition');
+  fs.mkdirSync(path.join(composition, 'assets/shots'), { recursive: true });
+  fs.mkdirSync(path.join(composition, 'assets/voice'), { recursive: true });
+  fs.mkdirSync(path.join(composition, 'assets/music'), { recursive: true });
+  const musicSrc = path.join(root, 'tools/video-studio/assets/bed.mp3');
+  fs.copyFileSync(musicSrc, path.join(composition, 'assets/music/bed.mp3'));
+
+  const items = [];
+  for (let i = 0; i < scenes.length; i += 1) {
+    const scene = scenes[i];
+    const videoData = String(scene.videoData || '');
+    const imageData = String(scene.imageData || '');
+    const isVideo = videoData.startsWith('data:video/mp4');
+    const isJpeg = imageData.startsWith('data:image/jpeg');
+    const file = `scene-${String(i + 1).padStart(2, '0')}.${isVideo ? 'mp4' : isJpeg ? 'jpg' : 'png'}`;
+    const dest = path.join(composition, 'assets/shots', file);
+    if (isVideo) {
+      writeDataFile(dest, videoData);
+    } else if (imageData.startsWith('data:image/')) {
+      writeDataFile(dest, imageData);
+    } else if (scene.image && /^[\w.-]+\.png$/.test(scene.image)) {
+      const src = path.join(invoiceShots, scene.image);
+      if (!fs.existsSync(src)) throw new Error(`Missing screenshot ${scene.image}`);
+      fs.copyFileSync(src, dest);
+    } else {
+      throw new Error(`Scene ${i + 1} needs a screenshot or an MP4.`);
+    }
+    const kind = ['cut', 'crossfade', 'slide'].includes(scene.transition) ? scene.transition : 'crossfade';
+    const seconds = Math.min(3, Math.max(0.2, Number(scene.transitionSeconds) || 1));
+    const mediaDuration = isVideo ? await ffprobe(dest) : 0;
+    const highlights = normalizeHighlights({ ...scene, zoomAt: clockSeconds(scene.zoomAt) });
+    items.push({
+      file,
+      media: isVideo ? 'video' : 'image',
+      mediaDuration,
+      caption: String(scene.caption || '').slice(0, 140),
+      voice: String(scene.voice || scene.caption || '').slice(0, 240),
+      transition: kind,
+      transitionSeconds: kind === 'cut' ? 0 : seconds,
+      highlights,
+      timed: [],
+      duration: 6,
+      start: 0,
+    });
+  }
+
+  const env = { ...process.env };
+  if (ffmpegBin) env.PATH = [ffmpegBin, process.env.PATH || ''].join(path.delimiter);
+  if (python) env.HYPERFRAMES_PYTHON = python;
+  if (chrome) env.HYPERFRAMES_BROWSER_PATH = chrome;
+  const voices = [];
+
+  async function speak(text, file) {
+    log(`Voice: ${text.slice(0, 80)}`);
+    await run('npx', ['--yes', 'hyperframes', 'tts', text, '--voice', 'af_nova', '--output', `assets/voice/${file}`], composition, env, (line) => {
+      if (/Generated|failed|Error/i.test(line)) log(line.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 180));
+    });
+    const voiceFile = path.join(composition, 'assets/voice', file);
+    await boostVoice(voiceFile);
+    return ffprobe(voiceFile);
+  }
+
+  // Exact word times when a local speech model is installed, else a guess from the clip's pauses.
+  let transcriber = true;
+  async function wordTimes(text, file, duration) {
+    const voiceFile = path.join(composition, 'assets/voice', file);
+    if (transcriber) {
+      try {
+        const dir = path.join(job, 'transcribe', file.replace(/\.wav$/i, ''));
+        fs.mkdirSync(dir, { recursive: true });
+        const out = await run('npx', ['--yes', 'hyperframes', 'transcribe', voiceFile, '--json', '--no-runtime-install', '--optional', '-d', dir], composition, env, () => {});
+        const line = out.split(/\r?\n/).reverse().find((row) => row.trim().startsWith('{')) || '{}';
+        const result = JSON.parse(line);
+        if (result.ok === false || result.skipped) {
+          transcriber = false;
+          log('Word timing: estimated from pauses (install a speech model for exact timing).');
+        } else {
+          const listFile = path.join(dir, 'transcript.json');
+          const list = Array.isArray(result.words) ? result.words
+            : Array.isArray(result.transcript) ? result.transcript
+              : fs.existsSync(listFile) ? JSON.parse(fs.readFileSync(listFile, 'utf8')) : null;
+          const words = Array.isArray(list) ? list.filter((w) => w && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end)) : [];
+          const said = new Set(words.flatMap((w) => tokens(w.text)));
+          const script = tokens(text);
+          if (script.length && script.filter((w) => said.has(w)).length / script.length >= 0.6) return words;
+        }
+      } catch {
+        transcriber = false;
+      }
+    }
+    const report = await ffmpeg(['-hide_banner', '-i', voiceFile, '-af', 'silencedetect=noise=-35dB:d=0.12', '-f', 'null', '-']);
+    return estimateWords(text, speechSegments(report, duration), duration);
+  }
+
+  const firstEnter = items[0] ? items[0].transitionSeconds : 0;
+  let titleDuration = 5;
+  if (voiceOn) {
+    const dur = await speak(intro, '00.wav');
+    titleDuration = Math.max(5, 0.4 + dur + 0.8 + firstEnter);
+    voices.push({ id: 'vo-00', file: '00.wav', start: 0.4, track: 30 });
+  } else {
+    titleDuration = Math.max(5, 4 + firstEnter);
+  }
+  let handoff = titleDuration;
+  for (let i = 0; i < items.length; i += 1) {
+    const enter = items[i].transitionSeconds;
+    const nextEnter = items[i + 1] ? items[i + 1].transitionSeconds : 0;
+    let spoken = 0;
+    let words = null;
+    const voiceStart = Number(handoff.toFixed(2));
+    if (voiceOn) {
+      const file = `${String(i + 1).padStart(2, '0')}.wav`;
+      spoken = await speak(items[i].voice, file);
+      voices.push({ id: `vo-${i + 1}`, file, start: voiceStart, track: 31 + i });
+      if (items[i].highlights.some((item) => item.phrase)) words = await wordTimes(items[i].voice, file, spoken);
+    }
+    const spokenHold = voiceOn ? spoken + 1.2 : 5;
+    // Highlights never stretch a video; a still stays up long enough for its timed ones.
+    const stillNeed = items[i].media === 'image' ? stillNeeds(items[i].highlights, words) : 0;
+    const settled = Math.max(spokenHold, items[i].mediaDuration || 0, stillNeed) + nextEnter;
+    items[i].start = handoff - enter;
+    items[i].duration = enter + settled + (i === items.length - 1 ? 0.4 : 0);
+    items[i].timed = timeHighlights(items[i].highlights, {
+      media: items[i].media,
+      clipStart: items[i].start,
+      visible: voiceStart,
+      until: voiceStart + settled - nextEnter,
+      words,
+    });
+    items[i].timed.forEach((item, n) => {
+      log(`Scene ${i + 1} highlight ${n + 1}: ${item.pinned ? `"${item.phrase}"` : 'set time'} at ${item.start.toFixed(1)}s`);
+    });
+    handoff += settled;
+  }
+
+  fs.writeFileSync(path.join(composition, 'index.html'), compositionHtml({
+    title,
+    subtitle,
+    scenes: { titleDuration, items, voices },
+  }));
+  log('Rendering the video');
+  await run('npx', ['--yes', 'hyperframes', 'render', '--quality', 'high', '--output', '../video.mp4', '--workers', '2'], composition, env, (line) => {
+    if (/Render complete|%|error|Error|Chrome cannot/i.test(line)) log(line.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 180));
+  });
+  return { job: stamp, video: `/videos/${stamp}/video.mp4` };
+}
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
+  try {
+    if (req.method === 'GET' && url.pathname === '/') {
+      return send(res, 200, fs.readFileSync(path.join(publicDir, 'index.html')), 'text/html; charset=utf-8');
+    }
+    if (req.method === 'GET' && url.pathname === '/api/preset') {
+      return send(res, 200, preset);
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/shots/')) {
+      const name = path.basename(url.pathname);
+      const file = path.join(invoiceShots, name);
+      if (!file.startsWith(invoiceShots) || !fs.existsSync(file)) return send(res, 404, { error: 'Not found' });
+      return send(res, 200, fs.readFileSync(file), 'image/png');
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/videos/')) {
+      const parts = url.pathname.split('/').filter(Boolean);
+      const stamp = parts[1] || '';
+      if (!/^[\dT-]+$/.test(stamp)) return send(res, 400, { error: 'Bad video id' });
+      const file = path.join(root, 'brag-output/studio', stamp, 'video.mp4');
+      if (!fs.existsSync(file)) return send(res, 404, { error: 'Not ready' });
+      const headers = { 'Content-Type': 'video/mp4' };
+      if (url.searchParams.get('download') === '1') headers['Content-Disposition'] = `attachment; filename="khatario-${stamp}.mp4"`;
+      res.writeHead(200, headers);
+      fs.createReadStream(file).pipe(res);
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/videos') {
+      return send(res, 200, { videos: listVideos() });
+    }
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/videos/')) {
+      const stamp = path.basename(url.pathname);
+      if (!deleteVideo(stamp)) return send(res, 404, { error: 'Not found' });
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/render') {
+      const body = await readBody(req);
+      const logs = [];
+      const result = await renderJob(body, (line) => logs.push(line));
+      return send(res, 200, { ...result, logs });
+    }
+    return send(res, 404, { error: 'Not found' });
+  } catch (error) {
+    return send(res, 500, { error: error instanceof Error ? error.message : 'Render failed' });
+  }
+});
+
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Video studio http://127.0.0.1:${port}`);
+  });
+}

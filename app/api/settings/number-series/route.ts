@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
-import { query, queryOne, queryRows } from '@/lib/db';
+import { getPool, query, queryOne, queryRows } from '@/lib/db';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import {
+  COUNTER_SERIES,
+  peekNextDocumentNumber,
+  setNextDocumentNumber,
+} from '@/lib/invoices/document-counter';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
 
@@ -59,6 +65,18 @@ export async function GET(request: NextRequest) {
       WHERE business_id = $1 AND is_active = true
       ORDER BY is_default DESC, name ASC`,
       [businessId]
+    );
+
+    const pool = getPool();
+    const branchesWithCounters = await Promise.all(
+      branches.map(async (branch) => {
+        const next_numbers: Record<string, number> = {};
+        for (const series of COUNTER_SERIES) {
+          next_numbers[series] = await peekNextDocumentNumber(pool, branch.id, series);
+        }
+        next_numbers.regular = next_numbers.tax_invoice;
+        return { ...branch, next_numbers };
+      })
     );
 
     // Fetch branch-specific document prefixes (if branches exist and table exists)
@@ -206,7 +224,7 @@ export async function GET(request: NextRequest) {
         next_retail_invoice_number: business?.next_retail_invoice_number || 1,
         next_export_invoice_number: business?.next_export_invoice_number || 1,
       },
-      branches: branches || [],
+      branches: branchesWithCounters,
       currentStats: statsMap,
       branchStats: branchStats, // Branch-specific current numbers
       branchPrefixes: branchPrefixMap, // Branch-specific prefixes per document type
@@ -224,12 +242,14 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      business_id,
       document_type,
       prefix,
       starting_number,
       branch_ids, // Array of branch IDs to apply settings to
     } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const user_id = getUserIdFromRequest(request, body);
 
     if (!business_id || !user_id || !document_type) {
@@ -276,25 +296,35 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update branch-specific settings if branch_ids are provided
-    if (branch_ids && Array.isArray(branch_ids) && branch_ids.length > 0) {
-      // Update starting number for selected branches (for invoice types that use branch counters)
+    // Single-branch businesses send no branch_ids: apply to their active branches,
+    // since invoice numbers and prefixes are resolved per branch.
+    const requestedBranchIds: string[] | null =
+      Array.isArray(branch_ids) && branch_ids.length > 0 ? branch_ids.map(String) : null;
+    const targetBranchIds = (
+      await queryRows<{ id: string }>(
+        requestedBranchIds
+          ? `SELECT id FROM branches WHERE business_id = $1 AND id = ANY($2::uuid[])`
+          : `SELECT id FROM branches WHERE business_id = $1 AND is_active = true`,
+        requestedBranchIds ? [business_id, requestedBranchIds] : [business_id]
+      )
+    ).map((b) => b.id);
+
+    if (requestedBranchIds && targetBranchIds.length !== requestedBranchIds.length) {
+      return NextResponse.json({ error: 'One or more branches not found' }, { status: 404 });
+    }
+
+    if (targetBranchIds.length > 0) {
       if (starting_number !== undefined && ['tax_invoice', 'regular', 'proforma_invoice', 'bill_of_supply'].includes(document_type)) {
-        const startingNum = Math.max(1, parseInt(starting_number));
-        for (const branchId of branch_ids) {
-          await query(
-            `UPDATE branches 
-            SET next_invoice_number = $1
-            WHERE id = $2 AND business_id = $3`,
-            [startingNum, branchId, business_id]
-          );
+        const startingNum = Math.max(1, parseInt(starting_number) || 1);
+        const pool = getPool();
+        for (const branchId of targetBranchIds) {
+          await setNextDocumentNumber(pool, branchId, document_type, startingNum);
         }
       }
 
-      // Update branch document-specific prefix if prefix is provided
       if (prefix) {
         try {
-          for (const branchId of branch_ids) {
+          for (const branchId of targetBranchIds) {
             // Use UPSERT to insert or update the prefix for this document type and branch
             await query(
               `INSERT INTO branch_document_prefixes (branch_id, document_type, prefix, updated_at)
@@ -315,9 +345,9 @@ export async function PUT(request: NextRequest) {
           throw error;
         }
       }
-    } else {
-      // Only update business-level counter if NO branch_ids are provided (single branch or business-wide default)
-      // This ensures branch-specific updates don't affect business-level counters
+    }
+
+    if (!requestedBranchIds) {
       if (starting_number !== undefined && ['tax_invoice', 'regular', 'proforma_invoice', 'retail_invoice', 'export_invoice', 'bill_of_supply'].includes(document_type)) {
         await query(
           `UPDATE businesses 

@@ -140,10 +140,8 @@ export async function setPrimaryBusinessModule(
     moduleKey,
   ]);
 
-  const { syncLegacySubscriptionFromPrimaryModule } = await import(
-    '@/lib/subscription/sync-legacy-subscription'
-  );
-  await syncLegacySubscriptionFromPrimaryModule(businessId);
+  const { clearSubscriptionCache } = await import('@/lib/subscription');
+  clearSubscriptionCache(businessId);
 
   return getBusinessPlatformContext(businessId);
 }

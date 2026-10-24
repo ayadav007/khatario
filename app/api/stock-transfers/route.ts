@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { isInterBranchTransfer, createInterBranchInvoice, isEwayBillRequired } from '@/lib/inter-branch-utils';
+import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,8 +129,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = session.businessId;
+    const created_by = session.userId;
     const {
       transfer_number,
       transfer_date,
@@ -139,11 +143,9 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    const created_by = body.created_by || getUserIdFromRequest(request, body);
-
-    if (!business_id || !transfer_number || !from_location_id || !to_location_id || !items) {
+    if (!transfer_number || !from_location_id || !to_location_id || !items) {
       return NextResponse.json(
-        { error: 'business_id, transfer_number, from_location_id, to_location_id, and items are required' },
+        { error: 'transfer_number, from_location_id, to_location_id, and items are required' },
         { status: 400 }
       );
     }
@@ -151,13 +153,6 @@ export async function POST(request: NextRequest) {
     if (from_location_id === to_location_id) {
       return NextResponse.json(
         { error: 'Source and destination locations cannot be the same' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
         { status: 400 }
       );
     }
@@ -185,6 +180,31 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    const locationIds = [from_location_id, to_location_id];
+    const ownedWarehouses = await db.queryRows<{ id: string }>(
+      `SELECT id FROM warehouses WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+      [business_id, locationIds]
+    );
+    if (ownedWarehouses.length !== new Set(locationIds).size) {
+      return NextResponse.json(
+        { error: 'Warehouse not found', code: 'WAREHOUSE_NOT_FOUND' },
+        { status: 400 }
+      );
+    }
+    const requestedItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((item) => item.item_id)
+      .filter((id): id is string => !!id);
+    if (requestedItemIds.length !== (items as unknown[]).length) {
+      return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
+    }
+    const ownedItems = await db.queryRows<{ id: string }>(
+      `SELECT id FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+      [business_id, requestedItemIds]
+    );
+    if (ownedItems.length !== new Set(requestedItemIds).size) {
+      return NextResponse.json({ error: 'Item not found', code: 'ITEM_NOT_FOUND' }, { status: 400 });
     }
 
     const pool = getPool();
@@ -239,66 +259,26 @@ export async function POST(request: NextRequest) {
 
       const transfer = transferResult.rows[0];
 
-      // If inter-branch transfer, create invoice (only for approved transfers)
-      let interBranchInvoiceId: string | undefined;
-      if (isInterBranch && transferInfo.fromWarehouse.branch && transferInfo.toWarehouse.branch && initialStatus === 'pending') {
-        try {
-          // Get item details for invoice
-          const invoiceItems = await Promise.all(items.map(async (item: any) => {
-            const itemData = await client.query(`
-              SELECT name, hsn_sac, tax_rate, purchase_price
-              FROM items
-              WHERE id = $1
-            `, [item.item_id]);
-            
-            return {
-              item_id: item.item_id,
-              description: item.description || itemData.rows[0]?.name || 'Item',
-              qty: item.qty,
-              unit: item.unit || 'PCS',
-              unit_price: item.unit_price || 0,
-              tax_rate: item.tax_rate || itemData.rows[0]?.tax_rate || 0,
-              discount: item.discount || 0,
-              hsn_sac: item.hsn_sac || itemData.rows[0]?.hsn_sac || null,
-            };
-          }));
-
-          const invoice = await createInterBranchInvoice({
-            businessId: business_id,
-            fromBranchId: transferInfo.fromWarehouse.branch.id,
-            toBranchId: transferInfo.toWarehouse.branch.id,
-            transferId: transfer.id,
-            transferNumber: transfer_number,
-            transferDate: transfer_date,
-            items: invoiceItems,
-            notes: notes,
-            ewayBillNumber: body.eway_bill_number,
-            ewayBillDate: body.eway_bill_date,
-          });
-
-          interBranchInvoiceId = invoice.invoiceId;
-
-          // Update transfer with invoice ID
-          await client.query(`
-            UPDATE stock_transfers
-            SET inter_branch_invoice_id = $1
-            WHERE id = $2
-          `, [invoice.invoiceId, transfer.id]);
-        } catch (invoiceError: any) {
-          console.error('Error creating inter-branch invoice:', invoiceError);
-          // Don't fail transfer if invoice creation fails, but log it
-        }
-      }
+      // Snapshot the cost COGS and the transfer invoice will use (FIFO next-out cost, or the sending
+      // branch's weighted average); the item master price is only a fallback.
+      const fromBranch = await client.query(`SELECT branch_id FROM warehouses WHERE id = $1`, [from_location_id]);
+      const wac = await currentUnitCosts(
+        client,
+        business_id,
+        items.map((it: { item_id: string }) => it.item_id),
+        transfer_date,
+        fromBranch.rows[0]?.branch_id ?? null
+      );
 
       // Create transfer items (NO stock movement - stock will be deducted on DISPATCH)
       for (const item of items) {
         const requestedQty = parseFloat(item.qty || '0');
         
-        // Get item cost for snapshot
         const itemData = await client.query(`
           SELECT purchase_price FROM items WHERE id = $1
         `, [item.item_id]);
-        const costSnapshot = parseFloat(itemData.rows[0]?.purchase_price || '0');
+        const costSnapshot =
+          Math.round((wac.get(item.item_id) || parseFloat(itemData.rows[0]?.purchase_price || '0')) * 100) / 100;
 
         await client.query(`
           INSERT INTO stock_transfer_items (
@@ -315,6 +295,15 @@ export async function POST(request: NextRequest) {
           requestedQty,
           costSnapshot
         ]);
+      }
+
+      if (isInterBranch && initialStatus === 'pending') {
+        const invoiceId = await ensureInterBranchInvoiceForTransfer(client, transfer.id, {
+          ewayBillNumber: body.eway_bill_number,
+          ewayBillDate: body.eway_bill_date,
+          createdBy: created_by,
+        });
+        if (invoiceId) transfer.inter_branch_invoice_id = invoiceId;
       }
 
       await client.query('COMMIT');

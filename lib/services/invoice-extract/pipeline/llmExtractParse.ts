@@ -5,7 +5,8 @@ import {
 } from '@/lib/indian-gst-invoice-extract';
 
 export function parseLlmJson(text: string): unknown {
-  let cleaned = text.trim();
+  // Reasoning models (e.g. Qwen on Groq) may prepend <think>…</think>; braces in it would break the slice below.
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   const fenceMatch = cleaned.match(/\u0060\u0060\u0060(?:json)?\s*([\s\S]*?)\u0060\u0060\u0060/i);
   if (fenceMatch?.[1]) {
     cleaned = fenceMatch[1].trim();

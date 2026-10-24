@@ -1,114 +1,52 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { Check } from 'lucide-react';
-import { LANDING_INTRO_SUBTEXT, LANDING_MAX_WIDE, LANDING_PAGE_GUTTER, LANDING_SECTION_INTRO } from '@/lib/marketing-layout';
-import { FALLBACK_LANDING_PLANS } from '@/lib/landing-pricing-fallback';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Check, Minus, Plus, Smartphone, UserCheck } from 'lucide-react';
+import { clsx } from 'clsx';
+import { LANDING_INTRO_SUBTEXT, LANDING_PAGE_GUTTER, LANDING_SECTION_INTRO } from '@/lib/marketing-layout';
+import { FALLBACK_PRICING_CATALOG } from '@/lib/landing-pricing-fallback';
 import { useLandingProduct } from '@/components/marketing/landing/LandingProductContext';
-import { PRODUCT_LINE_LABELS, type ProductLine } from '@/lib/product-lines';
+import { type ProductLine } from '@/lib/product-lines';
+import { LandingProductToggle } from '@/components/marketing/landing/LandingProductToggle';
+import { useLandingPlans, type BillingCycle } from '@/components/marketing/landing/LandingPlansContext';
+import { LandingReveal } from '@/components/marketing/landing/LandingReveal';
+import { LandingSegmented, useAnimatedNumber } from '@/components/marketing/landing/LandingMotion';
+import { withDefaults } from '@/lib/marketing-builder/merge';
+import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-catalog';
+import {
+  bundledHrNote,
+  comparisonRows,
+  isPhoneOnlyPlan,
+  cycleOptions,
+  planCardFeatures,
+  planCardLimits,
+  plansForLine,
+  priceForCycle,
+} from '@/lib/subscription/pricing-view';
 
-export interface LandingPricingPlan {
-  id: string;
-  name: string;
-  display_name: string;
-  description: string;
-  price_monthly: number;
-  price_yearly: number;
-  product_line?: ProductLine | string;
-  features: {
-    limits: {
-      max_invoices_per_month: number;
-      max_customers: number;
-      max_users: number;
-      max_whatsapp_per_day: number;
-    };
-    features: Record<string, boolean>;
-  };
-  sort_order: number;
+/** Features listed on a card before the rest move to the comparison table. */
+const CARD_FEATURE_COUNT = 7;
+
+function formatRupees(value: number): string {
+  return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
-const HIDDEN_PLAN_IDS = new Set(['trial', 'hr_trial', 'hr_free', 'connect']);
+/** Editable headings for the Billing plans; HR and Connect keep their built-in copy. Plans always come live from the plan matrix. */
+export type LandingPricingContent = {
+  billingTitle: string;
+  billingSubtitle: string;
+  showProductToggle: boolean;
+};
 
-const CONNECT_ADDONS = [
-  {
-    id: 'whatsapp_bot',
-    name: 'WhatsApp Bot',
-    price: 499,
-    description: 'Conversations, bot rules, automation, and CRM integration.',
-    highlights: [
-      'Conversations inbox',
-      'Bot rules & auto-replies',
-      'Order verification',
-      'Message labeling',
-    ],
-  },
-  {
-    id: 'whatsapp_send_message',
-    name: 'Send Message',
-    price: 299,
-    description: 'Send text, buttons, and media to customers on demand.',
-    highlights: [
-      'Custom text messages',
-      'Button messages',
-      'Images & documents',
-      'Message scheduling',
-    ],
-  },
-];
+export const LANDING_PRICING_DEFAULTS: LandingPricingContent = {
+  billingTitle: 'Start free. Pay when the shop grows.',
+  billingSubtitle:
+    'Every plan below comes from the same plan settings that unlock features inside the app, so what you see here is exactly what you get.',
+  showProductToggle: true,
+};
 
-function getPlanHighlights(planId: string): string[] {
-  const highlights: Record<string, string[]> = {
-    free: [
-      'Up to 20 invoices/month',
-      '10 customers & 10 items',
-      'Basic invoice templates',
-      'PDF generation',
-      'Payment tracking',
-    ],
-    professional: [
-      'Up to 500 invoices/month',
-      'Unlimited customers & items',
-      'All 7 invoice templates',
-      'WhatsApp integration (10/day)',
-      'Purchase & expense tracking',
-      'Up to 3 users',
-    ],
-    business: [
-      'Unlimited invoices',
-      'WhatsApp automation (100/day)',
-      'GST reports (GSTR-1, GSTR-2)',
-      'Multi-branch support',
-      'Advanced reports & analytics',
-      'Up to 10 users',
-      'Auto-backup & restore',
-    ],
-    enterprise: [
-      'Everything unlimited',
-      'Payment gateway integration',
-      'REST API access',
-      'Online store',
-      'Custom branding',
-      'Priority support',
-      'Dedicated account manager',
-    ],
-    hr_starter: [
-      'Employee records & profiles',
-      'Daily attendance tracking',
-      'Up to 50 employees',
-      'Up to 5 team users',
-    ],
-    hr_pro: [
-      'Everything in Starter',
-      'Payroll & payslips',
-      'Leave management',
-      'Employee self-service portal',
-      'Up to 200 employees',
-    ],
-  };
-  return highlights[planId] || [];
-}
-
-function getPricingCopy(productLine: ProductLine) {
+function getPricingCopy(productLine: ProductLine, content: LandingPricingContent) {
   switch (productLine) {
     case 'hr':
       return {
@@ -117,186 +55,295 @@ function getPricingCopy(productLine: ProductLine) {
       };
     case 'connect':
       return {
-        title: 'Connect pricing — no platform fee',
-        subtitle: 'Sign up free, then add only the WhatsApp capabilities you need.',
+        title: 'Connect: the official WhatsApp Business API',
+        subtitle: 'One add-on for your own WhatsApp Business number, AI replies, templates, the shared inbox and automation.',
       };
     default:
-      return {
-        title: 'Simple pricing, built for small businesses',
-        subtitle: 'Affordable plans that do not punish you for growing one counter at a time.',
-      };
+      return { title: content.billingTitle, subtitle: content.billingSubtitle };
   }
 }
 
-type Props = {
-  plans: LandingPricingPlan[];
-  loading: boolean;
-  billingCycle: 'monthly' | 'yearly';
-  onBillingCycle: (c: 'monthly' | 'yearly') => void;
-};
+function PriceFigure({ value }: { value: number }) {
+  const shown = useAnimatedNumber(value, 450);
+  return <span className="text-5xl font-extrabold tracking-tight text-slate-900 tabular-nums">{formatRupees(shown)}</span>;
+}
 
-export function LandingPricing({ plans, loading, billingCycle, onBillingCycle }: Props) {
-  const router = useRouter();
-  const { productLine, signupHref } = useLandingProduct();
-  const pricingCopy = getPricingCopy(productLine);
-
-  const displayPlans = (!loading && plans.length === 0 ? FALLBACK_LANDING_PLANS : plans)
-    .filter((plan) => {
-      if (HIDDEN_PLAN_IDS.has(plan.id)) return false;
-      const line = (plan.product_line as ProductLine | undefined) ?? 'billing';
-      return line === productLine;
-    });
-
-  const isPopular = (planId: string) =>
-    productLine === 'hr' ? planId === 'hr_pro' : planId === 'professional';
+function PlanCard({
+  catalog,
+  plans,
+  index,
+  cycle,
+  signupHref,
+  productLine,
+  onShowAll,
+}: {
+  catalog: PricingCatalog;
+  plans: PricingPlan[];
+  index: number;
+  cycle: BillingCycle;
+  signupHref: string;
+  productLine: ProductLine;
+  onShowAll: () => void;
+}) {
+  const plan = plans[index];
+  const { previous, features } = planCardFeatures(catalog, plans, index);
+  const limits = planCardLimits(catalog, plan, previous);
+  const hrNote = productLine === 'billing' ? bundledHrNote(catalog, plan) : null;
+  const phoneOnly = productLine === 'billing' && isPhoneOnlyPlan(catalog, plan);
+  const { perMonth, billed } = priceForCycle(plan, cycle);
+  const featured = !!plan.badge;
+  const top = features.slice(0, CARD_FEATURE_COUNT);
+  const rest = features.length - top.length;
+  const cta =
+    plan.priceMonthly === 0
+      ? productLine === 'hr'
+        ? 'Included with Billing'
+        : 'Start free'
+      : productLine === 'connect'
+        ? 'Get started'
+        : 'Start free trial';
 
   return (
-    <section id="pricing" className="scroll-mt-24 border-t border-slate-200/80 bg-slate-50/90 py-20 2xl:py-24">
-      <div className={LANDING_PAGE_GUTTER}>
-        <div className={`mb-12 ${LANDING_SECTION_INTRO}`}>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl 2xl:text-5xl">
-            {pricingCopy.title}
-          </h2>
-          <p className={LANDING_INTRO_SUBTEXT}>{pricingCopy.subtitle}</p>
-          {productLine !== 'connect' && (
-            <div className="mt-8 flex max-md:justify-center md:justify-start">
-              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => onBillingCycle('monthly')}
-                  className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
-                    billingCycle === 'monthly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onBillingCycle('yearly')}
-                  className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
-                    billingCycle === 'yearly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
-                  }`}
-                >
-                  Yearly <span className="text-xs font-bold text-green-600">(Save 20%)</span>
-                </button>
-              </div>
-            </div>
+    <article
+      className={clsx(
+        'relative flex min-w-0 flex-col gap-5 rounded-3xl border bg-white p-7 transition duration-300 hover:-translate-y-1.5 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0 2xl:p-8',
+        featured ? 'landing-popular-ring border-2 border-primary-600 shadow-xl shadow-primary-900/10' : 'border-slate-200 shadow-sm',
+      )}
+    >
+      {plan.badge && (
+        <span className="absolute -top-3.5 right-6 rounded-full bg-accent-500 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-md shadow-accent-500/40">
+          {plan.badge}
+        </span>
+      )}
+      <div>
+        <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">{plan.name}</h3>
+        <p className="mt-1.5 min-h-[3rem] text-sm leading-relaxed text-slate-500">{plan.description}</p>
+      </div>
+      <div>
+        <div className="flex items-baseline gap-1.5">
+          <PriceFigure value={perMonth} />
+          <span className="text-slate-500">/ month</span>
+        </div>
+        <p className="mt-1 min-h-[1.25rem] text-sm font-medium text-primary-600">
+          {billed !== null ? `Billed ${formatRupees(billed)} ${cycle === 'yearly' ? 'a year' : 'for 3 years'}` : ''}
+        </p>
+      </div>
+      <Link
+        href={signupHref}
+        className={clsx(
+          'inline-flex w-full items-center justify-center rounded-xl px-5 py-3 text-base font-semibold transition',
+          featured
+            ? 'bg-primary-600 text-white shadow-md hover:-translate-y-0.5 hover:bg-primary-700'
+            : 'border-2 border-primary-600 text-primary-600 hover:bg-primary-50',
+        )}
+      >
+        {cta}
+      </Link>
+      {plan.id === 'connect' && (
+        <p className="-mt-2 text-center text-xs text-slate-500">
+          Add it to any Khatario plan. Sending invoices from a QR-linked number stays free.
+        </p>
+      )}
+      {limits.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {limits.map((l) => (
+            <span key={l} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
+      {phoneOnly && (
+        <p className="flex items-center gap-2 rounded-xl bg-accent-50 px-3 py-2 text-sm font-semibold text-accent-700">
+          <Smartphone className="h-4 w-4 shrink-0" aria-hidden />
+          Khatario phone app only
+        </p>
+      )}
+      {hrNote && (
+        <p className="flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-600">
+          <UserCheck className="h-4 w-4 shrink-0" aria-hidden />
+          {hrNote}
+        </p>
+      )}
+      {top.length > 0 && (
+        <div className="border-t border-slate-100 pt-5">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+            {previous ? `Everything in ${previous.name}, plus` : 'Includes'}
+          </p>
+          <ul className="space-y-2.5" key={plan.features.join(',')}>
+            {top.map((f, i) => (
+              <li
+                key={f.id}
+                className="landing-feature-in grid grid-cols-[1.25rem_1fr] gap-2.5 text-[15px] text-slate-700"
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
+                <Check className="mt-0.5 h-5 w-5 text-primary-600" strokeWidth={2.4} aria-hidden />
+                <span>{f.label}</span>
+              </li>
+            ))}
+          </ul>
+          {rest > 0 && (
+            <button
+              type="button"
+              onClick={onShowAll}
+              className="mt-3 text-sm font-semibold text-primary-600 underline-offset-4 hover:underline"
+            >
+              + {rest} more in the comparison
+            </button>
           )}
         </div>
+      )}
+    </article>
+  );
+}
 
-        {loading ? (
-          <div className="py-12 text-center 2xl:py-16">
-            <div
-              className="inline-block h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-primary-600 2xl:h-14 2xl:w-14"
-              role="status"
-              aria-label="Loading pricing"
-            />
-          </div>
-        ) : productLine === 'connect' ? (
-          <div className={`mx-auto grid max-w-4xl grid-cols-1 gap-6 sm:grid-cols-2 ${LANDING_MAX_WIDE}`}>
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:col-span-2">
-              <h3 className="text-xl font-bold text-slate-900">Khatario Connect platform</h3>
-              <p className="mt-2 text-slate-600">Free to sign up — no monthly platform charge.</p>
-              <button
-                type="button"
-                onClick={() => router.push(signupHref)}
-                className="mt-4 rounded-lg bg-primary-600 px-6 py-3 text-sm font-semibold text-white hover:bg-primary-700"
-              >
-                Create free Connect account
-              </button>
-            </div>
-            {CONNECT_ADDONS.map((addon) => (
-              <div key={addon.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md">
-                <h3 className="text-2xl font-bold text-slate-900">{addon.name}</h3>
-                <p className="mt-1 text-sm text-slate-600">{addon.description}</p>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-bold text-slate-900">₹{addon.price}</span>
-                  <span className="ml-2 text-slate-600">/month add-on</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => router.push(signupHref)}
-                  className="mt-6 w-full rounded-lg bg-slate-100 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-200"
-                >
-                  Get started
-                </button>
-                <ul className="mt-6 space-y-3">
-                  {addon.highlights.map((feature) => (
-                    <li key={feature} className="flex items-start text-sm">
-                      <Check className="mt-0.5 mr-2 h-5 w-5 shrink-0 text-green-600" strokeWidth={2} />
-                      <span className="text-slate-700">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+function ComparisonTable({ catalog, plans }: { catalog: PricingCatalog; plans: PricingPlan[] }) {
+  const rows = useMemo(() => comparisonRows(catalog, plans), [catalog, plans]);
+  if (rows.length === 0) return null;
+  return (
+    <div className="overflow-x-auto border-t border-slate-200">
+      <table className="w-full min-w-[560px] border-collapse text-[15px]">
+        <thead>
+          <tr>
+            <th scope="col" className="px-5 py-3 text-left font-semibold text-slate-500">
+              Feature
+            </th>
+            {plans.map((p) => (
+              <th key={p.id} scope="col" className="px-5 py-3 text-center text-base font-bold text-slate-900">
+                {p.name}
+              </th>
             ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) =>
+            row.kind === 'group' ? (
+              <tr key={`g-${row.label}`}>
+                <td colSpan={plans.length + 1} className="bg-slate-50 px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  {row.label}
+                </td>
+              </tr>
+            ) : (
+              <tr key={`${row.kind}-${row.label}-${i}`} className="border-b border-slate-100 hover:bg-slate-50/70">
+                <td className="px-5 py-2.5 text-slate-700">{row.label}</td>
+                {row.kind === 'limit'
+                  ? row.values.map((v, k) => (
+                      <td key={k} className="px-5 py-2.5 text-center font-semibold tabular-nums text-slate-800">
+                        {v === null ? <Minus className="mx-auto h-4 w-4 text-slate-300" aria-label="Not included" /> : v === -1 ? 'Unlimited' : v.toLocaleString('en-IN')}
+                      </td>
+                    ))
+                  : row.included.map((yes, k) => (
+                      <td key={k} className="px-5 py-2.5 text-center">
+                        {yes ? (
+                          <Check className="mx-auto h-5 w-5 text-primary-600" strokeWidth={2.4} aria-label="Included" />
+                        ) : (
+                          <Minus className="mx-auto h-4 w-4 text-slate-300" aria-label="Not included" />
+                        )}
+                      </td>
+                    ))}
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function LandingPricing(props: Partial<LandingPricingContent> = {}) {
+  const content = withDefaults(LANDING_PRICING_DEFAULTS, props);
+  const { catalog: liveCatalog, loading, billingCycle, setBillingCycle } = useLandingPlans();
+  const { productLine, signupHref } = useLandingProduct();
+  const [compareOpen, setCompareOpen] = useState(false);
+  const pricingCopy = getPricingCopy(productLine, content);
+
+  const catalog = !loading && (!liveCatalog || liveCatalog.plans.length === 0) ? FALLBACK_PRICING_CATALOG : liveCatalog;
+  const plans = catalog ? plansForLine(catalog, productLine) : [];
+  const cycles = cycleOptions(plans);
+  const cycle = cycles.some((c) => c.id === billingCycle) ? billingCycle : 'monthly';
+
+  const showAll = () => {
+    setCompareOpen(true);
+    requestAnimationFrame(() => document.getElementById('pricing-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  return (
+    <section id="pricing" className="scroll-mt-24 border-t border-slate-200/80 bg-gradient-to-b from-slate-50 to-white py-20 2xl:py-28">
+      <div className={LANDING_PAGE_GUTTER}>
+        <LandingReveal className={`mb-10 ${LANDING_SECTION_INTRO}`}>
+          <p className="landing-kicker">Pricing</p>
+          <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl 2xl:text-5xl">{pricingCopy.title}</h2>
+          <p className={LANDING_INTRO_SUBTEXT}>{pricingCopy.subtitle}</p>
+          <div className="mt-8 flex flex-wrap items-center gap-3 max-md:justify-center md:justify-start">
+            {content.showProductToggle && <LandingProductToggle label="Show pricing for" />}
+            {cycles.length > 1 && (
+              <LandingSegmented<BillingCycle>
+                ariaLabel="Billing cycle"
+                value={cycle}
+                onChange={setBillingCycle}
+                options={cycles.map((c) => ({
+                  id: c.id,
+                  label: (
+                    <>
+                      {c.label}
+                      {c.savePercent > 0 && (
+                        <span className={clsx('ml-1.5 text-xs font-bold', cycle === c.id ? 'text-accent-200' : 'text-accent-600')}>
+                          −{c.savePercent}%
+                        </span>
+                      )}
+                    </>
+                  ),
+                }))}
+              />
+            )}
+          </div>
+        </LandingReveal>
+
+        {loading || !catalog ? (
+          <div className="py-12 text-center">
+            <div className="inline-block h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-primary-600" role="status" aria-label="Loading pricing" />
           </div>
         ) : (
-          <div
-            className={`grid w-full grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-6 lg:grid-cols-2 lg:gap-7 xl:grid-cols-4 xl:gap-8 2xl:gap-10 ${LANDING_MAX_WIDE}`}
-          >
-            {displayPlans.map((plan) => {
-              const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly / 12;
-              const popular = isPopular(plan.id);
+          <>
+            <div
+              className={clsx(
+                'mx-auto grid w-full grid-cols-1 items-start gap-6 xl:gap-8',
+                plans.length === 1 && 'max-w-md',
+                plans.length === 2 && 'max-w-4xl sm:grid-cols-2',
+                plans.length === 3 && 'md:grid-cols-2 xl:grid-cols-3',
+                plans.length >= 4 && 'sm:grid-cols-2 xl:grid-cols-4',
+              )}
+            >
+              {plans.map((plan, i) => (
+                <LandingReveal key={plan.id} delay={i * 80}>
+                  <PlanCard
+                    catalog={catalog}
+                    plans={plans}
+                    index={i}
+                    cycle={cycle}
+                    signupHref={signupHref}
+                    productLine={productLine}
+                    onShowAll={showAll}
+                  />
+                </LandingReveal>
+              ))}
+            </div>
 
-              return (
-                <div
-                  key={plan.id}
-                  className={`relative overflow-hidden rounded-2xl border bg-white shadow-md transition hover:shadow-lg ${
-                    popular ? 'border-2 border-primary-600' : 'border border-slate-200'
-                  }`}
-                >
-                  {popular && (
-                    <div className="absolute right-0 top-0 rounded-bl-lg bg-primary-600 px-3 py-1 text-xs font-semibold text-white">
-                      MOST POPULAR
-                    </div>
-                  )}
-
-                  <div className="p-6 2xl:p-8">
-                    <h3 className="text-2xl font-bold text-slate-900 2xl:text-3xl">{plan.display_name}</h3>
-                    <p className="mb-6 mt-1 h-12 text-sm text-slate-600">{plan.description}</p>
-
-                    <div className="mb-6">
-                      <div className="flex items-baseline">
-                        <span className="text-4xl font-bold text-slate-900">₹{Math.round(price)}</span>
-                        <span className="ml-2 text-slate-600">/month</span>
-                      </div>
-                      {billingCycle === 'yearly' && plan.price_yearly > 0 && (
-                        <p className="mt-1 text-sm text-green-700">Billed ₹{plan.price_yearly}/year</p>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => router.push(signupHref)}
-                      className={`w-full rounded-lg py-3 text-sm font-semibold transition ${
-                        popular
-                          ? 'bg-primary-600 text-white hover:bg-primary-700'
-                          : 'bg-slate-100 text-slate-900 hover:bg-slate-200'
-                      }`}
-                    >
-                      {plan.price_monthly === 0 ? 'Start free' : 'Start trial'}
-                    </button>
-
-                    <ul className="mt-6 space-y-3">
-                      {getPlanHighlights(plan.id).map((feature) => (
-                        <li key={feature} className="flex items-start text-sm">
-                          <Check className="mt-0.5 mr-2 h-5 w-5 shrink-0 text-green-600" strokeWidth={2} />
-                          <span className="text-slate-700">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {productLine !== 'billing' && (
-          <p className="mt-10 text-center text-sm text-slate-500">
-            Viewing {PRODUCT_LINE_LABELS[productLine]} plans — switch product above to compare Billing or Connect.
-          </p>
+            {catalog.features.length > 0 && (
+              <details
+                id="pricing-compare"
+                open={compareOpen}
+                onToggle={(e) => setCompareOpen((e.currentTarget as HTMLDetailsElement).open)}
+                className="group mt-10 scroll-mt-28 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between px-6 py-5 text-lg font-bold text-slate-900 [&::-webkit-details-marker]:hidden">
+                  Compare every feature
+                  <Plus className="h-5 w-5 text-primary-600 transition-transform duration-300 group-open:rotate-45" aria-hidden />
+                </summary>
+                <ComparisonTable catalog={catalog} plans={plans} />
+              </details>
+            )}
+          </>
         )}
       </div>
     </section>

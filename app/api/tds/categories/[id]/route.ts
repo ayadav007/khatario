@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * Get a single TDS category
  */
 export const GET = withPremiumSubscriptionApi<{ id: string }>(
-  {},
+  { feature: 'accounting_tds' },
   async ({ businessId, params }) => {
     try {
       const categoryId = params.id;
@@ -43,7 +43,7 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
  * Update a TDS category
  */
 export const PUT = withPremiumSubscriptionApi<{ id: string }>(
-  { parseJsonBody: true },
+  { feature: 'accounting_tds', parseJsonBody: true },
   async ({ body, businessId, params }) => {
     try {
       const categoryId = params.id;
@@ -120,7 +120,7 @@ export const PUT = withPremiumSubscriptionApi<{ id: string }>(
  * Delete a TDS category
  */
 export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
-  {},
+  { feature: 'accounting_tds' },
   async ({ businessId, params }) => {
     try {
       const categoryId = params.id;

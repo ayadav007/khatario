@@ -17,10 +17,13 @@ export function resolvePublicRequestOrigin(request: {
     host.startsWith('[::1]:');
 
   const protoHeader = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  // Without X-Forwarded-Proto, Next reports the internal http hop; public hosts in production are TLS-only.
   const proto =
     protoHeader === 'http' || protoHeader === 'https'
       ? protoHeader
-      : request.nextUrl.protocol.replace(':', '') || 'https';
+      : !loopback && process.env.NODE_ENV === 'production'
+        ? 'https'
+        : request.nextUrl.protocol.replace(':', '') || 'https';
 
   if (!loopback && host) {
     return `${proto}://${host}`;

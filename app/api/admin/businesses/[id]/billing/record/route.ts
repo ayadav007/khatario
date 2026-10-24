@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { recordBillingTransaction } from '@/lib/platform-billing';
 import { queryOne } from '@/lib/db';
+import { normalizePlatformModule } from '@/lib/platform-modules';
+import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,16 +31,31 @@ export async function POST(
       return NextResponse.json({ error: 'plan_id is required' }, { status: 400 });
     }
 
+    const amount = Number(body.amount) || 0;
     const result = await recordBillingTransaction({
       businessId: params.id,
       planId,
-      amount: Number(body.amount) || 0,
-      billingCycle: body.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+      moduleKey: normalizePlatformModule(body.module_key),
+      amount,
+      billingCycle: normalizeBillingCycle(body.billing_cycle),
       paymentMethod: body.payment_method || 'manual',
       paymentReference: body.payment_reference,
       status,
       description: body.description || `Manual record by admin`,
     });
+
+    if (status === 'completed' && amount > 0) {
+      try {
+        const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
+        await maybeCreatePartnerCommissionOnPayment({
+          businessId: params.id,
+          billingTransactionId: result.id,
+          saleAmount: amount,
+        });
+      } catch (partnerErr) {
+        console.error('Partner commission on admin billing record failed:', partnerErr);
+      }
+    }
 
     return NextResponse.json({ success: true, transaction: result });
   } catch (error: unknown) {

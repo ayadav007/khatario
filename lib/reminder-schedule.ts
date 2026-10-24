@@ -72,4 +72,35 @@ export function isInReminderSendWindow(
   return nowUtc.getTime() >= localStart.getTime() && nowUtc.getTime() < end.getTime();
 }
 
+/** Calendar date (yyyy-MM-dd) in the business time zone. */
+export function calendarDateInTimeZone(timeZone: string, nowUtc: Date = new Date()): string {
+  const tz = (timeZone || DEFAULT_TZ).trim() || DEFAULT_TZ;
+  const zone = isValidIanaTimeZone(tz) ? tz : DEFAULT_TZ;
+  return formatInTimeZone(nowUtc, zone, 'yyyy-MM-dd');
+}
+
+/** Add whole days to a yyyy-MM-dd date, without shifting across a UTC offset. */
+export function addCalendarDays(ymd: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return ymd;
+  const dt = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Due-reminder window in the business calendar: from today through today + daysBefore.
+ * Invoices inside the window that were never successfully reminded are still eligible,
+ * so a missed send is retried until the due date passes.
+ */
+export function paymentDueWindow(
+  timeZone: string,
+  daysBefore: number,
+  nowUtc: Date = new Date(),
+): { from: string; to: string } {
+  const from = calendarDateInTimeZone(timeZone, nowUtc);
+  const days = Number.isFinite(daysBefore) && daysBefore >= 1 ? Math.floor(daysBefore) : 1;
+  return { from, to: addCalendarDays(from, days) };
+}
+
 export { DEFAULT_TZ, DEFAULT_TIME };

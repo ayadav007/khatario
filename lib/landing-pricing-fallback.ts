@@ -1,83 +1,67 @@
-import type { LandingPricingPlan } from '@/components/marketing/landing/LandingPricing';
+import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-catalog';
 
 /**
- * Shown on the marketing homepage when `/api/admin/subscriptions/plans` is empty, errors, or DB is
- * not seeded — keeps pricing visible in local dev and during outages. Values align with
- * `database/seed_subscriptions.sql` (adjust there + API if you change live pricing).
+ * Shown on the marketing homepage when `/api/public/pricing` errors or the DB is not seeded, so prices
+ * stay visible in local dev and during outages. Prices only: feature lists always come from the live
+ * plan matrix, so none are listed here. Values align with `database/migrations/387_billing_plan_ladder.sql`.
  */
-const emptyFeatureMatrix: Record<string, boolean> = {};
+const plan = (p: Omit<PricingPlan, 'features' | 'limits' | 'badge' | 'bundledHrPlanId'> & Partial<PricingPlan>): PricingPlan => ({
+  badge: null,
+  bundledHrPlanId: null,
+  features: [],
+  limits: {},
+  ...p,
+});
 
-export const FALLBACK_LANDING_PLANS: LandingPricingPlan[] = [
-  {
-    id: 'free',
-    name: 'free',
-    display_name: 'Free / Starter',
-    description: 'Perfect for solo freelancers and trying out the platform',
-    price_monthly: 0,
-    price_yearly: 0,
-    sort_order: 1,
-    features: {
-      limits: {
-        max_invoices_per_month: 20,
-        max_customers: 10,
-        max_users: 1,
-        max_whatsapp_per_day: 0,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
-  },
-  {
-    id: 'professional',
-    name: 'professional',
-    display_name: 'Professional',
-    description: 'Growing businesses and retail shops',
-    price_monthly: 299,
-    price_yearly: 2999,
-    sort_order: 2,
-    features: {
-      limits: {
-        max_invoices_per_month: 500,
-        max_customers: -1,
-        max_users: 3,
-        max_whatsapp_per_day: 10,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
-  },
-  {
-    id: 'business',
-    name: 'business',
-    display_name: 'Business',
-    description: 'Established businesses with advanced needs',
-    price_monthly: 999,
-    price_yearly: 9999,
-    sort_order: 3,
-    features: {
-      limits: {
-        max_invoices_per_month: -1,
-        max_customers: -1,
-        max_users: 10,
-        max_whatsapp_per_day: 100,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
-  },
-  {
-    id: 'enterprise',
-    name: 'enterprise',
-    display_name: 'Enterprise',
-    description: 'Large businesses with custom requirements',
-    price_monthly: 2999,
-    price_yearly: 29999,
-    sort_order: 4,
-    features: {
-      limits: {
-        max_invoices_per_month: -1,
-        max_customers: -1,
-        max_users: -1,
-        max_whatsapp_per_day: -1,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
-  },
-];
+export const FALLBACK_PRICING_CATALOG: PricingCatalog = {
+  features: [],
+  limits: [],
+  plans: [
+    plan({
+      id: 'free',
+      name: 'Free',
+      description: 'Free forever in the Khatario phone app: GST bills, quotations, purchases and GST reports for one user.',
+      productLine: 'billing',
+      priceMonthly: 0,
+      priceYearly: 0,
+      price3Year: 0,
+    }),
+    plan({
+      id: 'billing_starter',
+      name: 'Starter',
+      description: 'Billing on computer and phone with POS, barcodes, reminders and 3 users. HR Lite included.',
+      productLine: 'billing',
+      priceMonthly: 299,
+      priceYearly: 2699,
+      price3Year: 5999,
+    }),
+    plan({
+      id: 'billing_growth',
+      name: 'Growth',
+      description: 'Everything in Starter plus full accounting and 5 users. HR Starter included.',
+      productLine: 'billing',
+      priceMonthly: 499,
+      priceYearly: 4499,
+      price3Year: 9999,
+      badge: 'Most popular',
+    }),
+    plan({
+      id: 'billing_business',
+      name: 'Business',
+      description: 'Everything in Growth plus branches, warehouses, online store, e-Invoice and 10 users. HR Pro included.',
+      productLine: 'billing',
+      priceMonthly: 799,
+      priceYearly: 7199,
+      price3Year: 15999,
+    }),
+    plan({
+      id: 'connect',
+      name: 'Connect',
+      description: 'Official WhatsApp Business API, shared inbox, AI agent, templates, campaigns and WhatsApp shop.',
+      productLine: 'connect',
+      priceMonthly: 1499,
+      priceYearly: 14388,
+      price3Year: 34999,
+    }),
+  ],
+};

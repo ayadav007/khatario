@@ -28,9 +28,10 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
     'Free';
 
   const showTrialBadge =
-    subscription?.show_trial_badge === true ||
-    (subscription?.status === 'trial' &&
-      subscription?.show_trial_badge !== false);
+    (subscription?.show_trial_badge === true ||
+      (subscription?.status === 'trial' &&
+        subscription?.show_trial_badge !== false)) &&
+    !/\btrial\b/i.test(planDisplayName);
 
   const planConfig: Record<
     string,
@@ -47,15 +48,11 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
       icon: <Sparkles className="w-3.5 h-3.5" />,
       colorClass: 'bg-slate-100 text-slate-800 border-slate-300',
     },
-    professional: {
-      icon: <Sparkles className="w-3.5 h-3.5" />,
+    growth: {
+      icon: <Zap className="w-3.5 h-3.5" />,
       colorClass: 'bg-primary-600 text-white border-primary-600',
     },
     business: {
-      icon: <Zap className="w-3.5 h-3.5" />,
-      colorClass: 'bg-purple-600 text-white border-purple-600',
-    },
-    enterprise: {
       icon: <Crown className="w-3.5 h-3.5" />,
       colorClass: 'bg-gradient-to-r from-purple-600 to-primary-600 text-white border-purple-600',
     },
@@ -74,7 +71,7 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
       {showTrialBadge && planCode !== 'free' && (
         <span className="ml-1 opacity-90">(Trial)</span>
       )}
-      {planCode !== 'enterprise' && planCode !== 'free' && (
+      {planCode !== 'business' && planCode !== 'billing_business' && planCode !== 'free' && (
         <TrendingUp className="w-3.5 h-3.5 ml-1 opacity-80" />
       )}
     </button>

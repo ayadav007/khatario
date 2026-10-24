@@ -6,6 +6,8 @@ import {
   Search,
   User,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   LogOut,
   Settings,
   Building2,
@@ -17,6 +19,7 @@ import {
   MessageSquare,
   ArrowLeft,
   Plus,
+  Menu,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -34,6 +37,7 @@ import {
   type MobileQuickSettingsKind,
 } from '@/lib/mobile-quick-settings';
 import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
+import { SettingsMobileNav } from '@/components/settings/SettingsMobileNav';
 import { useMobileHeaderTitleContext } from '@/contexts/MobileHeaderTitleContext';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
@@ -41,8 +45,23 @@ import { NotificationCenter } from '@/components/notifications/NotificationCente
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { clsx } from 'clsx';
 import { Moon, Sun } from 'lucide-react';
+import { DesktopScreenSize } from '@/components/desktop/DesktopScreenSize';
 
-import { format, startOfWeek, startOfMonth } from 'date-fns';
+import {
+  addDays,
+  addMonths,
+  differenceInCalendarDays,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isAfter,
+  isSameDay,
+  isSameMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+} from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import type { DateRange } from 'react-day-picker';
@@ -90,6 +109,7 @@ function DateRangeControls({
   datePickerRef,
   numberOfMonths,
   className,
+  variant = 'select',
 }: {
   dateRange: string;
   setDateRange: (v: string) => void;
@@ -100,7 +120,170 @@ function DateRangeControls({
   datePickerRef: React.RefObject<HTMLDivElement | null>;
   numberOfMonths: number;
   className?: string;
+  variant?: 'select' | 'stepper';
 }) {
+  const [showPresetMenu, setShowPresetMenu] = useState(false);
+  const today = startOfDay(new Date());
+
+  useEffect(() => {
+    if (variant !== 'stepper') return;
+    const onDown = (event: MouseEvent) => {
+      if (!datePickerRef.current?.contains(event.target as Node)) {
+        setShowPresetMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [variant, datePickerRef]);
+
+  const bounds = (): { start: Date; end: Date } | null => {
+    if (dateRange === 'today') return { start: today, end: today };
+    if (dateRange === 'this_week') return { start: startOfWeek(today, { weekStartsOn: 1 }), end: today };
+    if (dateRange === 'this_month') return { start: startOfMonth(today), end: today };
+    if (dateRange === 'custom' && selectedRange?.from && selectedRange?.to) {
+      return { start: startOfDay(selectedRange.from), end: startOfDay(selectedRange.to) };
+    }
+    return null;
+  };
+
+  const barLabel = () => {
+    const current = bounds();
+    if (!current) return 'Select dates';
+    if (isSameDay(current.start, current.end)) return format(current.start, 'd MMM');
+    if (isSameMonth(current.start, current.end)) {
+      return `${format(current.start, 'd')}–${format(current.end, 'd MMM')}`;
+    }
+    return `${format(current.start, 'd MMM')} – ${format(current.end, 'd MMM')}`;
+  };
+
+  const canStepForward = () => {
+    const current = bounds();
+    if (!current) return false;
+    return isAfter(today, startOfDay(current.end));
+  };
+
+  const applyPreset = (id: 'yesterday' | 'today' | 'this_week' | 'this_month' | 'custom') => {
+    setShowPresetMenu(false);
+    if (id === 'custom') {
+      setDateRange('custom');
+      setShowDatePicker(true);
+      return;
+    }
+    if (id === 'yesterday') {
+      const day = subDays(today, 1);
+      setDateRange('custom');
+      setSelectedRange({ from: day, to: day });
+      setShowDatePicker(false);
+      return;
+    }
+    setSelectedRange(undefined);
+    setShowDatePicker(false);
+    setDateRange(id);
+  };
+
+  const stepRange = (direction: -1 | 1) => {
+    const current = bounds() ?? { start: today, end: today };
+    let start = current.start;
+    let end = current.end;
+    if (dateRange === 'this_week') {
+      const weekStart = addDays(startOfWeek(start, { weekStartsOn: 1 }), direction * 7);
+      start = weekStart;
+      end = endOfWeek(weekStart, { weekStartsOn: 1 });
+    } else if (dateRange === 'this_month') {
+      const month = addMonths(startOfMonth(start), direction);
+      start = startOfMonth(month);
+      end = endOfMonth(month);
+    } else if (isSameDay(start, end)) {
+      start = addDays(start, direction);
+      end = start;
+    } else {
+      const span = differenceInCalendarDays(end, start) + 1;
+      start = addDays(start, direction * span);
+      end = addDays(end, direction * span);
+    }
+    if (direction === 1 && isAfter(start, today)) return;
+    if (isAfter(end, today)) end = today;
+    setShowPresetMenu(false);
+    setShowDatePicker(false);
+    setDateRange('custom');
+    setSelectedRange({ from: start, to: end });
+  };
+
+  if (variant === 'stepper') {
+    return (
+      <div className="relative" ref={datePickerRef as React.Ref<HTMLDivElement>}>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => stepRange(-1)}
+            className="flex h-9 w-9 items-center justify-center text-text-secondary"
+            aria-label="Previous dates"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowDatePicker(false);
+              setShowPresetMenu((open) => !open);
+            }}
+            className="min-w-0 flex-1 text-center text-sm font-semibold uppercase tracking-wide text-text-primary"
+            aria-expanded={showPresetMenu}
+            aria-haspopup="listbox"
+          >
+            {barLabel()}
+          </button>
+          <button
+            type="button"
+            onClick={() => stepRange(1)}
+            disabled={!canStepForward()}
+            className="flex h-9 w-9 items-center justify-center text-text-secondary disabled:opacity-40"
+            aria-label="Next dates"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+        {showPresetMenu && (
+          <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+            {(
+              [
+                ['yesterday', 'Yesterday'],
+                ['today', 'Today'],
+                ['this_week', 'This week'],
+                ['this_month', 'This month'],
+                ['custom', 'Custom'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => applyPreset(id)}
+                className="block w-full px-4 py-3 text-left text-sm text-text-primary active:bg-slate-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {showDatePicker && dateRange === 'custom' && (
+          <div className="absolute left-0 right-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+            <DayPicker
+              mode="range"
+              selected={selectedRange}
+              onSelect={(range) => {
+                setSelectedRange(range);
+                if (range?.from && range?.to) setShowDatePicker(false);
+              }}
+              numberOfMonths={1}
+              disabled={{ after: today }}
+              className="p-4"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={className ?? 'flex items-center gap-2 relative'} ref={datePickerRef as React.Ref<HTMLDivElement>}>
       <select
@@ -301,7 +484,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onDateRangeChange,
 }) => {
   const { setDateRange: setDateRangeFromContext } = useDateRange();
-  const { business, user, logout, isPrimaryAdmin } = useAuth();
+  const { business, user, logout, isPrimaryAdmin, platformSession } = useAuth();
+  const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const {
     currentBranchId,
     accessibleBranches,
@@ -323,6 +507,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(undefined);
   const [userRole, setUserRole] = useState<string>('');
   const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
+  const [settingsNavOpen, setSettingsNavOpen] = useState(false);
+  const isSettingsDrillIn = Boolean(pathname?.startsWith('/settings/'));
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const branchSelectorRefMobile = useRef<HTMLDivElement>(null);
   const branchSelectorRefDesktop = useRef<HTMLDivElement>(null);
@@ -353,7 +539,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const mobileQuickSettings = getMobileQuickSettings(pathname);
   const showMobileBack = isMobileNestedRoute(pathname);
   const mobileBackHref = getMobileBackHref(pathname);
-  const mobileListCreate = getMobileListCreateAction(pathname);
+  const mobileListCreate = getMobileListCreateAction(pathname, searchParams);
 
   useEffect(() => {
     if (!showDateRange) return;
@@ -451,46 +637,48 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      {/* Mobile: canonical chrome — brand | business name | notifications + settings */}
-      <div className="sticky top-0 z-40 bg-surface pt-[env(safe-area-inset-top,0px)] lg:hidden">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
+      {/* Mobile app bar — native density, brand home, quiet actions */}
+      <div className="mobile-app-bar">
+        <div className="mobile-app-bar-inner">
           {showMobileBack ? (
             <button
               type="button"
               onClick={() => router.push(mobileBackHref)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              className="mobile-icon-btn"
               aria-label="Go back"
             >
-              <ArrowLeft className="h-6 w-6" />
+              <ArrowLeft className="h-5 w-5" />
             </button>
           ) : (
             <Link
-              href="/dashboard"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
+              href={homeHref}
+              className="mobile-icon-btn hover:text-primary-600"
               aria-label="Home"
             >
               {business?.logo_url ? (
-                <img src={business.logo_url} alt="" className="h-8 w-8 object-contain" />
+                <img src={business.logo_url} alt="" className="h-8 w-8 rounded-full object-cover" />
               ) : (
-                <FileText className="h-6 w-6" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">
+                  {(business?.name || 'K').charAt(0).toUpperCase()}
+                </span>
               )}
             </Link>
           )}
           <p
             className={clsx(
-              'min-w-0 flex-1 truncate text-center font-semibold text-text-primary',
-              isSettingsRoute ? 'text-caption' : 'text-sm'
+              'min-w-0 flex-1 truncate text-center font-semibold tracking-tight text-text-primary',
+              isSettingsRoute ? 'text-caption' : 'text-[15px]'
             )}
             title={mobileCenterLabel}
           >
             {mobileCenterLabel}
           </p>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             {mobileHeaderCtx?.rightAccessory}
             {mobileListCreate ? (
               <Link
                 href={mobileListCreate.href}
-                className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white shadow-small transition-transform active:scale-95"
                 aria-label={mobileListCreate.ariaLabel}
                 title={mobileListCreate.ariaLabel}
               >
@@ -500,17 +688,27 @@ export const TopBar: React.FC<TopBarProps> = ({
             {business?.id && <NotificationCenter businessId={business.id} />}
             <Link
               href="/more#account"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-900"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 text-sm font-bold text-primary-800 ring-1 ring-primary-100"
               aria-label="Your account"
               title={user?.name || 'Account'}
             >
               {user?.name?.charAt(0)?.toUpperCase() || <User className="h-5 w-5 text-text-muted" />}
             </Link>
-            {mobileQuickSettings.moduleMenu ? (
+            {isSettingsDrillIn ? (
+              <button
+                type="button"
+                onClick={() => setSettingsNavOpen(true)}
+                className="mobile-icon-btn"
+                aria-label="Settings menu"
+                title="Settings menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            ) : mobileQuickSettings.moduleMenu ? (
               <button
                 type="button"
                 onClick={() => setModuleSettingsOpen(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="mobile-icon-btn"
                 aria-label={mobileQuickSettings.ariaLabel}
                 title={mobileQuickSettings.ariaLabel}
               >
@@ -519,7 +717,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             ) : (
               <Link
                 href={mobileQuickSettings.href}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="mobile-icon-btn"
                 aria-label={mobileQuickSettings.ariaLabel}
                 title={mobileQuickSettings.ariaLabel}
               >
@@ -558,6 +756,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               setShowDatePicker={setShowDatePicker}
               datePickerRef={datePickerRefMobile}
               numberOfMonths={1}
+              variant="stepper"
             />
           </div>
         )}
@@ -685,6 +884,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     )}
                   </div>
                 )}
+                <DesktopScreenSize />
                 <div className="p-2">
                   <button
                     type="button"
@@ -721,6 +921,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClose={() => setModuleSettingsOpen(false)}
           menu={mobileQuickSettings.moduleMenu}
         />
+      ) : null}
+      {isSettingsDrillIn ? (
+        <SettingsMobileNav open={settingsNavOpen} onClose={() => setSettingsNavOpen(false)} />
       ) : null}
     </>
   );

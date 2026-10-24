@@ -3,17 +3,33 @@ import * as db from '@/lib/db';
 import { getPool, queryOne } from '@/lib/db';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { calculateCreditMetrics, calculateProjectedCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
+import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
+import { finishCreditAlert } from '@/lib/credit-alert-finish';
 import { FeatureKeys } from '@/lib/featureKeys';
 import {
+  getAuthenticatedUserId,
   getUserIdFromRequest,
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
+  requireStrictSession,
 } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
+import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
+import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
+import { checkGstin } from '@/lib/tax/gstin';
+import { parseRegistrationStatus } from '@/lib/gst/rule47a';
+import { matchRcmRules } from '@/lib/gst/rcm-rules';
+import { loadApprovedRcmRules } from '@/lib/gst/rcm-catalogue';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { resolvePurchaseItemName } from '@/lib/purchases/purchase-line-name';
+import { purchaseLineItcType } from '@/lib/purchases/itc-type';
+import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { gstRateError } from '@/lib/gst/rates';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -23,6 +39,9 @@ import {
   computePurchaseDocument,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
+import { AcquisitionCostError, planAcquisitionCosts } from '@/lib/purchases/acquisition-cost';
+import { savePurchaseAcquisition } from '@/lib/purchases/save-purchase-acquisition';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -37,8 +56,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const businessId = session.businessId;
+    const userId = session.userId;
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || 'all';
     const agingDaysMin = searchParams.get('aging_days_min');
@@ -46,23 +67,9 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
     // AUTHORIZATION: Check read permission
     try {
-      await authorize(userId, 'purchases', 'read');
+      await authorize(userId, 'purchases', 'read', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -126,7 +133,7 @@ export async function GET(request: NextRequest) {
     let sql = `
       SELECT 
         p.id, p.business_id, p.supplier_id, p.bill_number,
-        p.bill_date, p.status, p.subtotal, p.tax_total,
+        p.bill_date, p.due_date, p.status, p.subtotal, p.tax_total,
         p.cgst_total, p.sgst_total, p.igst_total,
         p.grand_total, p.paid_amount, p.balance_amount, p.payment_status, 
         p.notes, p.created_at,
@@ -134,15 +141,14 @@ export async function GET(request: NextRequest) {
         p.document_type, p.itc_eligible, p.itc_availed,
         s.name as supplier_name,
         CASE 
-          WHEN p.bill_date < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
-            THEN CURRENT_DATE - p.bill_date
+          WHEN p.status <> 'cancelled' AND COALESCE(p.due_date, p.bill_date) < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
+            THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
           ELSE 0
         END as days_overdue
       FROM purchases p
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       WHERE p.business_id = $1
         AND p.deleted_at IS NULL
-        AND p.status != 'cancelled'
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -179,12 +185,13 @@ export async function GET(request: NextRequest) {
       paramIndex++;
     }
 
-    // Add status filter
+    // Cancelled bills keep their last payment_status but carry no payable, so payment and
+    // aging filters must never match them.
     if (status !== 'all') {
       if (status === 'unpaid') {
-        sql += ` AND p.payment_status IN ('unpaid', 'partially_paid')`;
+        sql += ` AND p.status <> 'cancelled' AND p.payment_status IN ('unpaid', 'partially_paid')`;
       } else if (status === 'paid') {
-        sql += ` AND p.payment_status = 'paid'`;
+        sql += ` AND p.status <> 'cancelled' AND p.payment_status = 'paid'`;
       } else {
         sql += ` AND p.status = $${paramIndex}`;
         params.push(status);
@@ -209,16 +216,16 @@ export async function GET(request: NextRequest) {
       const minDays = parseInt(agingDaysMin);
       const maxDays = parseInt(agingDaysMax);
       if (!isNaN(minDays) && !isNaN(maxDays)) {
-        sql += ` AND (
+        sql += ` AND p.status <> 'cancelled' AND (
           CASE 
-            WHEN p.bill_date < CURRENT_DATE 
-              THEN CURRENT_DATE - p.bill_date
+            WHEN COALESCE(p.due_date, p.bill_date) < CURRENT_DATE 
+              THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
             ELSE 0
           END
         ) >= $${paramIndex} AND (
           CASE 
-            WHEN p.bill_date < CURRENT_DATE 
-              THEN CURRENT_DATE - p.bill_date
+            WHEN COALESCE(p.due_date, p.bill_date) < CURRENT_DATE 
+              THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
             ELSE 0
           END
         ) <= $${paramIndex + 1}`;
@@ -278,6 +285,7 @@ export async function POST(request: NextRequest) {
       supplier_id,
       bill_number,
       bill_date,
+      due_date: due_date_input,
       status = 'draft',
       items,
       subtotal,
@@ -291,22 +299,79 @@ export async function POST(request: NextRequest) {
       document_type = 'tax_invoice',
       port_code,
       itc_eligible = true,
-      created_by, // User ID who created the purchase
       price_mode,
       supplier_state_code: supplier_state_code_input,
       invoice_number: invoice_number_input,
       supplier_gstin: supplier_gstin_input,
       extraction_job_id,
+      supply_received_on: supply_received_on_input,
+      supplier_registration_status: registration_input,
+      duplicate_reason: duplicate_reason_input,
     } = body;
+    const originalBillNumber =
+      typeof body.original_bill_number === 'string' && body.original_bill_number.trim()
+        ? body.original_bill_number.trim()
+        : null;
+    const originalBillDate =
+      typeof body.original_bill_date === 'string' && body.original_bill_date.trim()
+        ? body.original_bill_date.trim()
+        : null;
+    const draftId = typeof (body as { id?: unknown }).id === 'string' ? (body as { id: string }).id : null;
+    const allowDuplicate = (body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill === true;
+    const registrationStatus = parseRegistrationStatus(registration_input);
+    const supplyReceivedOn =
+      typeof supply_received_on_input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(supply_received_on_input)
+        ? supply_received_on_input
+        : null;
+    if (typeof supplier_gstin_input === 'string' && supplier_gstin_input.trim()) {
+      const gstinCheck = checkGstin(supplier_gstin_input);
+      if (!gstinCheck.valid) {
+        return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
+      }
+    }
+    const approvedRules = await loadApprovedRcmRules(client);
+    const rcm = matchRcmRules(
+      {
+        billDate: String(bill_date).slice(0, 10),
+        registrationStatus,
+        reverseCharge: Boolean(is_reverse_charge),
+        sac: null,
+        hsn: null,
+        expenseCategory: null,
+      },
+      approvedRules
+    );
+    const rcmReview = (body as { rcm_review?: string }).rcm_review;
+    if (rcm.result === 'suspected' && rcmReview !== 'on' && rcmReview !== 'not_reverse_charge') {
+      return NextResponse.json(
+        { error: rcm.message, code: 'RCM_REVIEW_REQUIRED', citation: rcm.citation },
+        { status: 409 }
+      );
+    }
 
     const normalizedSupplierId =
       supplier_id != null && String(supplier_id).trim() !== ''
         ? String(supplier_id).trim()
         : null;
 
-    if (!business_id || !bill_date || !items || items.length === 0) {
+    const sessionUser = getAuthenticatedUserId(request);
+    if (!business_id || !sessionUser) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    const created_by: string = sessionUser;
+    if (!bill_date || !items || items.length === 0) {
       return NextResponse.json(
-        { error: 'Active business scope, bill_date, and items are required' },
+        { error: 'bill_date and items are required' },
+        { status: 400 }
+      );
+    }
+    const dueDate =
+      due_date_input === undefined || due_date_input === null || due_date_input === ''
+        ? null
+        : String(due_date_input).slice(0, 10);
+    if (dueDate !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < String(bill_date).slice(0, 10))) {
+      return NextResponse.json(
+        { error: 'due_date must be a YYYY-MM-DD date on or after the bill date', code: 'INVALID_DUE_DATE' },
         { status: 400 }
       );
     }
@@ -324,11 +389,8 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+    if (status !== 'final' && Number(paid_amount) > 0) {
+      return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
     }
 
     // CRITICAL: Enforce access boundary - reject attendance-only employees
@@ -461,16 +523,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let overrideExistingId: string | null = null;
+    let overrideReason: string | null = null;
+    let overrideSupplierName: string | null = null;
     if (normalizedSupplierId) {
-      const supOk = await queryOne<{ id: string }>(
-        `SELECT id FROM suppliers WHERE id = $1 AND business_id = $2 AND (is_active IS NULL OR is_active = true)`,
+      const supOk = await queryOne<{ id: string; name: string }>(
+        `SELECT id, name FROM suppliers WHERE id = $1 AND business_id = $2 AND (is_active IS NULL OR is_active = true)`,
         [normalizedSupplierId, business_id]
       );
+      overrideSupplierName = supOk?.name ?? null;
       if (!supOk) {
         return NextResponse.json(
           { error: 'Supplier not found for this business', code: 'SUPPLIER_INVALID' },
           { status: 400 }
         );
+      }
+
+      const duplicate = await findDuplicateSupplierBill(client, {
+        businessId: business_id,
+        supplierId: normalizedSupplierId,
+        billNumber: invoice_number_input || bill_number,
+        billDate: bill_date,
+        excludePurchaseId: draftId,
+      });
+      const duplicateReason = typeof duplicate_reason_input === 'string' ? duplicate_reason_input.trim() : '';
+      if (duplicate && !allowDuplicate) {
+        return NextResponse.json(
+          {
+            error: `Bill ${duplicate.bill_number} from this supplier is already recorded (${String(duplicate.bill_date).slice(0, 10)}, ${duplicate.status}). Recording it again would claim ITC twice.`,
+            code: 'DUPLICATE_SUPPLIER_BILL',
+            existing_purchase_id: duplicate.id,
+          },
+          { status: 409 }
+        );
+      }
+      if (duplicate && allowDuplicate && !duplicateReason) {
+        return NextResponse.json(
+          {
+            error: 'A duplicate bill needs a reason before it can be saved.',
+            code: 'DUPLICATE_REASON_REQUIRED',
+            existing_purchase_id: duplicate.id,
+          },
+          { status: 409 }
+        );
+      }
+      if (duplicate && allowDuplicate) {
+        overrideExistingId = duplicate.id;
+        overrideReason = duplicateReason;
       }
     }
 
@@ -558,8 +657,20 @@ export async function POST(request: NextRequest) {
       return map[name] || '';
     };
 
-    const businessStateCode = business.state_code || getStateCode(business.state || '');
+    const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    const businessStateCode =
+      registration.stateCode || business.state_code || getStateCode(business.state || '');
     const finalPlaceOfSupply = place_of_supply_state_code || businessStateCode;
+    for (const item of items as Array<{ item_name?: string; tax_rate?: unknown }>) {
+      const rateError = gstRateError(Number(item.tax_rate) || 0, String(bill_date).slice(0, 10));
+      if (rateError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `${item.item_name || 'Line'}: ${rateError}`, code: 'INVALID_GST_RATE' },
+          { status: 400 }
+        );
+      }
+    }
 
     const supplierStateForGst =
       supplierStateResolved && String(supplierStateResolved).trim().length >= 2
@@ -588,25 +699,74 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const calculatedSubtotal = gstDoc.subtotal;
-    const calculatedTaxTotal = gstDoc.taxTotal;
-    const calculatedCgstTotal = gstDoc.cgstTotal;
-    const calculatedSgstTotal = gstDoc.sgstTotal;
-    const calculatedIgstTotal = gstDoc.igstTotal;
+    const supplierCreditNote = document_type === 'supplier_credit_note';
+    const perpetual = (await getInventoryModel(client, business_id)) === 'perpetual';
+    let acquisitionPlan;
+    try {
+      acquisitionPlan = planAcquisitionCosts({
+        lines: (items as Array<Record<string, unknown>>).map((item, index) => {
+          const computed = gstDoc.lineComputeds[index];
+          const lineIntent =
+            item.item_type === 'service' ||
+            item.line_item_type === 'service' ||
+            /^99/.test(String(item.hsn_sac ?? '').trim())
+              ? 'service'
+              : 'goods';
+          const capital = purchaseLineItcType(item, lineIntent) === 'capital_goods';
+          return {
+            taxable: computed.taxableValue,
+            tax: computed.taxAmount,
+            cess: purchaseLineCess(item),
+            quantity: Number(item.quantity) || 0,
+            stock: lineIntent === 'goods' && !capital,
+            capital,
+          };
+        }),
+        charges: Array.isArray(body.charges) ? body.charges : [],
+        itcEligible: itc_eligible !== false,
+        capitalize: status === 'final' && perpetual && !supplierCreditNote,
+        intraState: gstDoc.intraState,
+        billDate: bill_date ? String(bill_date).slice(0, 10) : null,
+      });
+    } catch (error) {
+      if (error instanceof AcquisitionCostError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+      }
+      throw error;
+    }
+    if (supplierCreditNote && acquisitionPlan.charges.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'A supplier credit note cannot carry an incidental or independent charge.',
+          code: 'SUPPLIER_CREDIT_NO_CHARGE',
+        },
+        { status: 400 }
+      );
+    }
+
+    const calculatedSubtotal = Math.round((gstDoc.subtotal + acquisitionPlan.subtotal) * 100) / 100;
+    const calculatedTaxTotal = Math.round((gstDoc.taxTotal + acquisitionPlan.tax) * 100) / 100;
+    const calculatedCgstTotal = Math.round((gstDoc.cgstTotal + acquisitionPlan.cgst) * 100) / 100;
+    const calculatedSgstTotal = Math.round((gstDoc.sgstTotal + acquisitionPlan.sgst) * 100) / 100;
+    const calculatedIgstTotal = Math.round((gstDoc.igstTotal + acquisitionPlan.igst) * 100) / 100;
 
     // Use provided totals or calculated ones
-    const finalSubtotal = subtotal !== undefined ? subtotal : calculatedSubtotal;
-    const finalTaxTotal = tax_total !== undefined ? tax_total : calculatedTaxTotal;
+    const chargesPresent = acquisitionPlan.charges.length > 0;
+    const finalSubtotal = !chargesPresent && subtotal !== undefined ? subtotal : calculatedSubtotal;
+    const finalTaxTotal = !chargesPresent && tax_total !== undefined ? tax_total : calculatedTaxTotal;
     const finalCgstTotal = calculatedCgstTotal;
     const finalSgstTotal = calculatedSgstTotal;
     const finalIgstTotal = calculatedIgstTotal;
     const finalRoundOff = typeof round_off === 'number' && isFinite(round_off) ? round_off : 0;
-    const computedGrand = calculatedSubtotal + calculatedTaxTotal + finalRoundOff;
-    const finalGrandTotal =
-      grand_total !== undefined ? grand_total : computedGrand;
+    const cessTotal = purchaseCessTotal(items);
+    const computedGrand = calculatedSubtotal + calculatedTaxTotal + cessTotal + finalRoundOff;
+    const finalGrandTotal = !chargesPresent && grand_total !== undefined ? grand_total : computedGrand;
 
     // Calculate balance_amount and payment_status
-    const balanceAmount = finalGrandTotal - (paid_amount || 0);
+    const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, is_reverse_charge);
+    const balanceAmount = supplierPayable - (paid_amount || 0);
     let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
     if (paid_amount <= 0) {
       paymentStatus = 'unpaid';
@@ -616,8 +776,79 @@ export async function POST(request: NextRequest) {
       paymentStatus = 'partially_paid';
     }
 
-    // Insert purchase
-    const purchaseResult = await client.query(
+    // Insert a new bill, or replace a draft the purchase form opened with ?edit=
+    let purchaseResult;
+    if (draftId) {
+      const existing = await client.query(
+        `SELECT id, status FROM purchases
+          WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [draftId, business_id]
+      );
+      if (!existing.rows[0]) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
+      }
+      if (existing.rows[0].status !== 'draft') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'Only a draft purchase can be edited. Cancel a final bill and record a new one.',
+            code: 'PURCHASE_NOT_EDITABLE',
+          },
+          { status: 409 }
+        );
+      }
+      purchaseResult = await client.query(
+        `UPDATE purchases SET
+           branch_id = $1, supplier_id = $2, bill_number = $3, bill_date = $4,
+           status = $5, subtotal = $6, tax_total = $7, cgst_total = $8, sgst_total = $9, igst_total = $10,
+           round_off = $11, grand_total = $12, paid_amount = $13, balance_amount = $14, payment_status = $15, notes = $16,
+           place_of_supply_state_code = $17, is_reverse_charge = $18, supplier_gstin = $19,
+           document_type = $20, port_code = $21, itc_eligible = $22,
+           price_mode = $23, supplier_state_code = $24, invoice_number = $25, cess_total = $26, due_date = $27,
+           supply_received_on = $28, supplier_registration_status = $29, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $30 AND business_id = $31
+         RETURNING *`,
+        [
+          finalBranchId,
+          normalizedSupplierId,
+          bill_number || null,
+          bill_date,
+          status,
+          finalSubtotal,
+          finalTaxTotal,
+          finalCgstTotal,
+          finalSgstTotal,
+          finalIgstTotal,
+          finalRoundOff,
+          finalGrandTotal,
+          paid_amount,
+          balanceAmount,
+          paymentStatus,
+          notes || null,
+          finalPlaceOfSupply || null,
+          is_reverse_charge,
+          effectiveSupplierGstin,
+          document_type,
+          port_code || null,
+          itc_eligible,
+          headerPriceMode,
+          (supplierStateResolved && String(supplierStateResolved).trim().length >= 2
+            ? String(supplierStateResolved).trim().slice(0, 2)
+            : supplierStateForGst) || null,
+          invoiceNumberStored,
+          cessTotal,
+          dueDate,
+          supplyReceivedOn,
+          registrationStatus,
+          draftId,
+          business_id,
+        ]
+      );
+      await client.query(`DELETE FROM purchase_items WHERE purchase_id = $1`, [draftId]);
+    } else {
+      purchaseResult = await client.query(
       `
       INSERT INTO purchases (
         business_id, branch_id, supplier_id, bill_number, bill_date,
@@ -625,9 +856,10 @@ export async function POST(request: NextRequest) {
         round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
         place_of_supply_state_code, is_reverse_charge, supplier_gstin,
         document_type, port_code, itc_eligible,
-        price_mode, supplier_state_code, invoice_number
+        price_mode, supplier_state_code, invoice_number, cess_total, due_date,
+        supply_received_on, supplier_registration_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
       RETURNING *
     `,
       [
@@ -659,13 +891,38 @@ export async function POST(request: NextRequest) {
           ? String(supplierStateResolved).trim().slice(0, 2)
           : supplierStateForGst) || null,
         invoiceNumberStored,
+        cessTotal,
+        dueDate,
+        supplyReceivedOn,
+        registrationStatus,
       ]
     );
+    }
 
     const purchase = purchaseResult.rows[0];
+    await client.query(
+      `UPDATE purchases SET original_bill_number = $1, original_bill_date = $2
+        WHERE id = $3 AND business_id = $4`,
+      [originalBillNumber, originalBillDate, purchase.id, business_id]
+    );
+    purchase.original_bill_number = originalBillNumber;
+    purchase.original_bill_date = originalBillDate;
     const uuidRe =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+    for (const item of items as Array<{ item_id?: string | null; item_name?: string | null }>) {
+      const name = await resolvePurchaseItemName(client, business_id, item);
+      if (!name) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Each purchase line needs an item name or a catalogue product.', code: 'ITEM_NAME_REQUIRED' },
+          { status: 400 }
+        );
+      }
+      item.item_name = name;
+    }
+
+    const purchaseItemIds: string[] = [];
     // Insert purchase items with GST breakdown
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -676,7 +933,8 @@ export async function POST(request: NextRequest) {
       const cgst = computed.cgstAmount;
       const sgst = computed.sgstAmount;
       const igst = computed.igstAmount;
-      const lineTotal = computed.lineTotal;
+      const lineCess = purchaseLineCess(item);
+      const lineTotal = computed.lineTotal + lineCess;
       const lineTaxMode =
         item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive' ? item.tax_mode : headerPriceMode;
 
@@ -685,20 +943,28 @@ export async function POST(request: NextRequest) {
           ? item.variant_id.trim()
           : null;
 
-      const unitCostForStock = qty > 0 ? taxable / qty : Number(item.unit_price) || 0;
+      const plannedCost = acquisitionPlan.lineCosts[i];
+      const unitCostForStock = qty > 0 ? (plannedCost != null ? plannedCost : taxable) / qty : Number(item.unit_price) || 0;
 
-      const lineIntent = item.item_type === 'service' ? 'service' : 'goods';
+      // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
+      const lineIntent =
+        item.item_type === 'service' ||
+        item.line_item_type === 'service' ||
+        /^99/.test(String(item.hsn_sac ?? '').trim())
+          ? 'service'
+          : 'goods';
 
       // Insert purchase item with GST breakdown
-      await client.query(
+      const insertedItem = await client.query(
         `
         INSERT INTO purchase_items (
           purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
           unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
           tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-          location_id, line_item_type
+          location_id, line_item_type, itc_type, cess_amount
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        RETURNING id
       `,
         [
           purchase.id,
@@ -722,13 +988,21 @@ export async function POST(request: NextRequest) {
           lineTotal,
           item.location_id || null,
           lineIntent,
+          purchaseLineItcType(item, lineIntent),
+          lineCess,
         ],
       );
+      purchaseItemIds.push(insertedItem.rows[0].id);
 
-      // If item_id is missing, resolve against catalogue (exact → HSN → fuzzy name)
+      // Capital goods go to the fixed-asset register, not stock.
+      const lineIsService =
+        lineIntent === 'service' || purchaseLineItcType(item, lineIntent) === 'capital_goods';
+
+      // If item_id is missing, resolve against catalogue (exact → HSN → fuzzy name).
+      // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
       let effectiveItemId =
         item.item_id && String(item.item_id).trim() !== '' ? String(item.item_id).trim() : null;
-      if (!effectiveItemId && item.item_name) {
+      if (!effectiveItemId && item.item_name && !lineIsService) {
         effectiveItemId = await resolveCatalogItemIdForPurchase(client, business_id, {
           name: String(item.item_name),
           hsn_sac: item.hsn_sac ?? null,
@@ -743,7 +1017,7 @@ export async function POST(request: NextRequest) {
 
       if (
         status === 'final' &&
-        lineIntent === 'goods' &&
+        !lineIsService &&
         !effectiveItemId &&
         String(item.item_name || '').trim().length > 0
       ) {
@@ -779,7 +1053,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const lineIsService = lineIntent === 'service';
+      if (status === 'final' && document_type === 'supplier_credit_note' && !lineIsService) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'A supplier credit note reduces the bill. It does not receive stock. Enter a service line, or use a purchase return when goods go back to the supplier.',
+            code: 'SUPPLIER_CREDIT_NOTE_NO_STOCK',
+          },
+          { status: 400 }
+        );
+      }
+
       if (status === 'final' && !lineIsService && !effectiveItemId) {
         await client.query('ROLLBACK');
         return NextResponse.json(
@@ -791,7 +1075,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (status === 'final' && effectiveItemId) {
+      if (status === 'final' && effectiveItemId && !lineIsService) {
         const itemTypeRes = await client.query(
           'SELECT item_type, track_batch, track_serial FROM items WHERE id = $1 AND business_id = $2',
           [effectiveItemId, business_id]
@@ -850,53 +1134,91 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate inventory amount (total of goods lines persisted on purchase_items)
+    // Inventory is capitalised at this bill's cost (net of discount, excl. GST), matching the
+    // unit_cost written to stock_movements — not the item master's purchase_price.
+    await savePurchaseAcquisition(client, {
+      purchaseId: purchase.id,
+      businessId: business_id,
+      lineIds: purchaseItemIds,
+      plan: acquisitionPlan,
+      applyCosts: status === 'final' && perpetual && !supplierCreditNote,
+    });
+
     let totalInventoryAmount = 0;
     if (status === 'final') {
       const invRes = await client.query(
         `
-        SELECT COALESCE(SUM(
-          (COALESCE(i.purchase_price::numeric, pi.unit_price::numeric)) * pi.quantity::numeric
-        ), 0) AS total
+        SELECT COALESCE(SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric), 0) AS total
         FROM purchase_items pi
         JOIN items i ON i.id = pi.item_id AND i.business_id = $2
         WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+          AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+          AND pi.itc_type IS DISTINCT FROM 'capital_goods'
       `,
         [purchase.id, business_id]
       );
       totalInventoryAmount = Number(invRes.rows[0]?.total) || 0;
     }
 
-    // Create ledger entries for purchase (only if status is final)
-    if (status === 'final') {
-      const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
-      const isCashPurchase =
-        !normalizedSupplierId || (paid_amount > 0 && paid_amount >= finalGrandTotal);
+    const isSupplierCredit = document_type === 'supplier_credit_note';
+    if (isSupplierCredit) totalInventoryAmount = 0;
 
-      await createPurchaseLedgerEntries({
-        businessId: business_id,
-        purchaseId: purchase.id,
-        purchaseNumber: bill_number || purchase.id.substring(0, 8),
-        purchaseDate: bill_date,
-        grandTotal: finalGrandTotal,
-        supplierId: normalizedSupplierId,
-        isCashPurchase: isCashPurchase,
-        inventoryAmount: totalInventoryAmount,
-        branchId: finalBranchId,
-        poolClient: client,
-        // PHASE-3: GST split. Tax debits Input CGST/SGST/IGST when ITC is eligible;
-        // for blocked credits (s.17(5), itc_eligible=false) tax stays inside Purchases.
-        // For RCM purchases the dual-entry (Dr Input + Cr RCM Output) is also created.
-        taxableValue: finalSubtotal,
-        cgstTotal: finalCgstTotal,
-        sgstTotal: finalSgstTotal,
-        igstTotal: finalIgstTotal,
-        itcEligible: itc_eligible !== false,
-        isReverseCharge: !!is_reverse_charge,
-      });
+    // Create ledger entries for purchase (only if status is final)
+    let itcWarning: string | null = null;
+    if (status === 'final') {
+      const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
+      const isCashPurchase =
+        !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
+
+      if (isSupplierCredit) {
+        await createPurchaseReturnLedgerEntries({
+          businessId: business_id,
+          purchaseReturnId: purchase.id,
+          returnNumber: bill_number || purchase.id.substring(0, 8),
+          returnDate: bill_date,
+          grandTotal: finalGrandTotal,
+          supplierId: normalizedSupplierId,
+          inventoryAmount: 0,
+          branchId: finalBranchId,
+          poolClient: client,
+          taxableValue: finalSubtotal,
+          cgstTotal: finalCgstTotal,
+          sgstTotal: finalSgstTotal,
+          igstTotal: finalIgstTotal,
+          cessTotal,
+          itcEligible: itc_eligible !== false,
+          isReverseCharge: !!is_reverse_charge,
+          voucherType: 'supplier_credit_note',
+        });
+      } else {
+        const posted = await createPurchaseLedgerEntries({
+          businessId: business_id,
+          purchaseId: purchase.id,
+          purchaseNumber: bill_number || purchase.id.substring(0, 8),
+          purchaseDate: bill_date,
+          grandTotal: finalGrandTotal,
+          supplierId: normalizedSupplierId,
+          isCashPurchase: isCashPurchase,
+          inventoryAmount: totalInventoryAmount,
+          branchId: finalBranchId,
+          poolClient: client,
+          taxableValue: finalSubtotal,
+          cgstTotal: finalCgstTotal,
+          sgstTotal: finalSgstTotal,
+          igstTotal: finalIgstTotal,
+          cessTotal,
+          itcEligible: itc_eligible !== false,
+          isReverseCharge: !!is_reverse_charge,
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
+        });
+        if (posted.itcBlockedReason) {
+          purchase.itc_eligible = false;
+          itcWarning = `Input GST not claimed: ${posted.itcBlockedReason}. Tax booked to cost.`;
+        }
+      }
     }
 
-    // Update supplier current_balance (only if status is final and supplier exists)
     if (status === 'final' && normalizedSupplierId) {
       await client.query(
         `
@@ -905,18 +1227,20 @@ export async function POST(request: NextRequest) {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
       `,
-        [balanceAmount, normalizedSupplierId]
+        [isSupplierCredit ? -balanceAmount : balanceAmount, normalizedSupplierId]
       );
     }
 
-    // Create payment record if paid_amount > 0 (for cash flow tracking)
+    // A partly paid final bill posts the paid portion as its own payment voucher.
+    // A fully settled cash bill is already credited to cash inside the purchase voucher.
     if (status === 'final' && paid_amount > 0) {
-      await client.query(
+      const payIns = await client.query<{ id: string }>(
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          amount, payment_mode, payment_date, notes, settlement_account_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id
       `,
         [
           business_id,
@@ -926,12 +1250,30 @@ export async function POST(request: NextRequest) {
           'purchase',
           purchase.id,
           paid_amount,
-          'cash',
+          body.payment_mode || 'cash',
           bill_date,
           `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
-          created_by || null,
+          body.settlement_account_id || null,
+          getAuthenticatedUserId(request),
         ]
       );
+      if (normalizedSupplierId && paid_amount + 0.005 < supplierPayable) {
+        const { createPaymentLedgerEntries } = await import('@/lib/ledger-utils');
+        await createPaymentLedgerEntries({
+          businessId: business_id,
+          paymentId: payIns.rows[0].id,
+          paymentDate: bill_date,
+          amount: paid_amount,
+          type: 'payable',
+          supplierId: normalizedSupplierId,
+          paymentMode: body.payment_mode || 'cash',
+          settlementAccountId: body.settlement_account_id || null,
+          referenceNumber: bill_number || purchase.id.substring(0, 8),
+          description: `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
+          branchId: finalBranchId,
+          poolClient: client,
+        });
+      }
     }
 
     const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
@@ -941,6 +1283,45 @@ export async function POST(request: NextRequest) {
       businessId: business_id,
       purchaseStatus: status === 'final' ? 'final' : 'draft',
     });
+
+    if (overrideExistingId && overrideReason) {
+      const existingBill = await client.query<{ bill_number: string | null; bill_date: string }>(
+        `SELECT bill_number, to_char(bill_date, 'YYYY-MM-DD') AS bill_date
+           FROM purchases WHERE id = $1 AND business_id = $2`,
+        [overrideExistingId, business_id]
+      );
+      const actor = await client.query<{ name: string | null; phone: string | null }>(
+        `SELECT name, phone FROM users WHERE id = $1`,
+        [created_by]
+      );
+      await client.query(
+        `INSERT INTO purchase_duplicate_overrides
+           (business_id, purchase_id, existing_purchase_id, reason, created_by,
+            purchase_bill_number, purchase_bill_date, existing_bill_number, existing_bill_date, supplier_name,
+            created_by_name, created_by_phone)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9::date, $10, $11, $12)`,
+        [
+          business_id,
+          purchase.id,
+          overrideExistingId,
+          overrideReason,
+          created_by,
+          bill_number || null,
+          String(bill_date).slice(0, 10),
+          existingBill.rows[0]?.bill_number ?? null,
+          existingBill.rows[0]?.bill_date ?? null,
+          overrideSupplierName,
+          actor.rows[0]?.name ?? null,
+          actor.rows[0]?.phone ?? null,
+        ]
+      );
+    }
+    if (status !== 'draft') {
+      await markGstReadinessStale(client, business_id, {
+        dates: [String(bill_date).slice(0, 10)],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
+    }
 
     await client.query('COMMIT');
 
@@ -952,7 +1333,7 @@ export async function POST(request: NextRequest) {
 
       await logActivity({
         business_id,
-        user_id: created_by || null,
+        user_id: created_by,
         action_type: 'create',
         module: 'purchases',
         entity_id: purchase.id,
@@ -990,17 +1371,8 @@ export async function POST(request: NextRequest) {
 
           const currentMetrics = calculateCreditMetrics(creditLimit, currentBalance);
 
-          let projectedMetrics = null;
-          if (status === 'final') {
-            const purchaseBalance =
-              purchase.balance_amount ??
-              (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'));
-            projectedMetrics = calculateProjectedCreditMetrics(
-              creditLimit,
-              currentBalance,
-              purchaseBalance
-            );
-          }
+          // A final bill has already been added to suppliers.current_balance above.
+          const projectedMetrics = status === 'final' ? currentMetrics : null;
 
           creditMetrics = {
             current: currentMetrics,
@@ -1014,16 +1386,22 @@ export async function POST(request: NextRequest) {
           );
 
           if (projectedMetrics) {
-            checkAndSendCreditAlerts(
-              business_id,
-              'supplier',
-              purchase.supplier_id,
-              creditLimit,
-              currentBalance,
-              projectedMetrics,
-              'purchase',
-              purchase.id
-            ).catch((err) => console.error('Error sending credit alert:', err));
+            try {
+              await finishCreditAlert(
+                checkAndSendCreditAlerts(
+                  business_id,
+                  'supplier',
+                  purchase.supplier_id,
+                  creditLimit,
+                  currentBalance,
+                  projectedMetrics,
+                  'purchase',
+                  purchase.id
+                )
+              );
+            } catch (alertError) {
+              console.error('Error sending credit alert:', alertError);
+            }
           }
         }
       } catch (creditError) {
@@ -1036,6 +1414,7 @@ export async function POST(request: NextRequest) {
         purchase,
         credit_metrics: creditMetrics,
         credit_warning: creditWarning,
+        ...(itcWarning ? { warnings: [itcWarning] } : {}),
       },
       { status: 201 }
     );

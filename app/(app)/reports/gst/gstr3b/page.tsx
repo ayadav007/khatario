@@ -2,13 +2,16 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw, TrendingUp, TrendingDown, MinusCircle } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { ProfileRequiredPanel } from '@/components/profile/ProfileRequiredPanel';
 import { getProfileGaps, isProfileReady } from '@/lib/business-profile-requirements';
 import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
+import { Gstr3bFilingStatusBar } from '@/components/gst/MarkGstr3bFiled';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -21,9 +24,18 @@ export default function GSTR3BPage() {
   const { ensureProfile } = useProfileRequiredGate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [cashBalances, setCashBalances] = useState<{ igst: number; cgst: number; sgst: number; cess: number } | null>(null);
   
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+
+  useEffect(() => {
+    const m = /^(\d{4})-(\d{2})$/.exec(new URLSearchParams(window.location.search).get('period') ?? '');
+    if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
+      setYear(Number(m[1]));
+      setMonth(Number(m[2]));
+    }
+  }, []);
 
   const profileContext = 'gst_compliance' as const;
   const profileGaps = getProfileGaps(business, profileContext);
@@ -40,13 +52,33 @@ export default function GSTR3BPage() {
         year: year.toString()
       });
       
-      const res = await fetch(`/api/reports/gst/gstr3b?${query}`);
+      const end = new Date(year, month, 0);
+      const asOn = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+      const cashQuery = new URLSearchParams({
+        business_id: business.id,
+        as_on_date: asOn,
+      });
+      const [res, cashRes] = await Promise.all([
+        fetch(`/api/reports/gst/gstr3b?${query}`),
+        fetch(`/api/gst/cash-ledger?${cashQuery}`),
+      ]);
       const json = await res.json();
       if (res.ok) {
         setData(json);
       } else {
         console.error(json.error);
         toast.error('Failed to fetch GSTR-3B data');
+      }
+      if (cashRes.ok) {
+        const cash = await cashRes.json();
+        setCashBalances({
+          igst: Number(cash.igst?.cash_balance || 0),
+          cgst: Number(cash.cgst?.cash_balance || 0),
+          sgst: Number(cash.sgst?.cash_balance || 0),
+          cess: Number(cash.cess?.cash_balance || 0),
+        });
+      } else {
+        setCashBalances(null);
       }
     } catch (error) {
       console.error(error);
@@ -89,6 +121,12 @@ export default function GSTR3BPage() {
       export: format
     });
     
+    const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+    const gate = await confirmReturnDownload('gstr3b', `${year}-${month.toString().padStart(2, '0')}`);
+    if (!gate.ok) {
+      if (gate.message) toast.error(gate.message);
+      return;
+    }
     window.open(`/api/reports/gst/gstr3b?${query}`, '_blank');
   };
 
@@ -99,7 +137,9 @@ export default function GSTR3BPage() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">GSTR-3B Return</h1>
+              <PageHeader
+  title="GSTR-3B Return"
+/>
               {data?.reconciliation?.status === 'mismatch' && (
                 <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900 border border-amber-200">
                   Mismatch detected
@@ -161,6 +201,8 @@ export default function GSTR3BPage() {
           </button>
         </div>
 
+        <Gstr3bFilingStatusBar businessId={business.id} month={`${year}-${String(month).padStart(2, '0')}`} />
+
         {/* Summary Cards */}
         {data?.summary && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -189,6 +231,21 @@ export default function GSTR3BPage() {
               </div>
               <p className="text-3xl font-bold text-gray-900">₹{data.summary.net_tax_payable.toLocaleString('en-IN')}</p>
               <p className="text-xs text-gray-600 mt-1">After ITC set-off (IGST→IGST/CGST/SGST, then CGST/SGST rules)</p>
+            </div>
+          </div>
+        )}
+
+        {cashBalances && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-900">Electronic cash ledger</p>
+              <Link href="/reports/gst/cash-ledger" className="text-xs text-primary-700 hover:underline">Open ledger</Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><p className="text-gray-500">IGST</p><p className="font-semibold">₹{cashBalances.igst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">CGST</p><p className="font-semibold">₹{cashBalances.cgst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">SGST</p><p className="font-semibold">₹{cashBalances.sgst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">Cess</p><p className="font-semibold">₹{cashBalances.cess.toLocaleString('en-IN')}</p></div>
             </div>
           </div>
         )}
@@ -259,9 +316,9 @@ export default function GSTR3BPage() {
           {data && (
             <Section title="3.1 - Details of Outward Supplies and inward supplies liable to reverse charge">
               <p className="text-xs text-gray-600 mb-3">
-                Row (a) is split by nature of supply: inter-state shows IGST only (from ledger 2152); intra-state shows
-                CGST + SGST only (from ledger 2150/2151). Tax amounts are ledger-based; taxable values follow GSTR-1
-                domestic lines (POS vs your GSTIN state, or IGST indicator when POS is missing).
+                Values and tax heads come from the invoices, credit/debit notes and reverse-charge bills of the
+                period (same documents as GSTR-1). Row (a) is split by place of supply against your GSTIN state.
+                The ledger comparison is shown above under reconciliation.
               </p>
               <TaxTable
                 rows={[
@@ -287,19 +344,40 @@ export default function GSTR3BPage() {
                       ]),
                   { label: '(b) Outward taxable supplies (zero rated)', data: data.outward_zero_rated },
                   { label: '(c) Other outward supplies (Nil rated, exempted)', data: data.other_outward_supplies },
-                  ...(data.rcm_mode === 'pooled' && (data.rcm?.total || 0) > 0
-                    ? [
-                        {
-                          label: '(d) Inward supplies (liable to reverse charge)',
-                          pooledRcm: {
-                            total: data.rcm.total,
-                            note: 'RCM not split by tax head. See ledger basis (2155) and configure 2156/2157/2158 for IGST/CGST/SGST.',
-                          },
-                        },
-                      ]
-                    : [{ label: '(d) Inward supplies (liable to reverse charge)', data: data.inward_reverse_charge }]),
+                  { label: '(d) Inward supplies (liable to reverse charge)', data: data.inward_reverse_charge },
+                  ...(data.non_gst_outward_supplies
+                    ? [{ label: '(e) Non-GST outward supplies', data: data.non_gst_outward_supplies }]
+                    : []),
                 ]}
               />
+            </Section>
+          )}
+
+          {/* Table 3.2 - Inter-state supplies to unregistered persons */}
+          {data?.inter_state_supplies_unregistered && (
+            <Section title="3.2 - Inter-state supplies to unregistered persons (out of 3.1(a))">
+              {data.inter_state_supplies_unregistered.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-gray-500">No inter-state supplies to unregistered persons in this period.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-6 py-2 text-left font-medium">Place of supply</th>
+                      <th className="px-6 py-2 text-right font-medium">Taxable value</th>
+                      <th className="px-6 py-2 text-right font-medium">IGST</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.inter_state_supplies_unregistered.map((r: { place_of_supply: string; taxable_value: number; igst: number }) => (
+                      <tr key={r.place_of_supply} className="border-t border-gray-100">
+                        <td className="px-6 py-2">{r.place_of_supply}</td>
+                        <td className="px-6 py-2 text-right">₹{Number(r.taxable_value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-2 text-right">₹{Number(r.igst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </Section>
           )}
 
@@ -308,10 +386,13 @@ export default function GSTR3BPage() {
             <Section title="4 - Eligible ITC">
               <TaxTable 
                 rows={[
-                  { label: '(A) ITC Available - Imports', data: data.itc_details.imports },
-                  { label: '(A) ITC Available - Inward supplies liable to reverse charge', data: data.itc_details.inward_reverse_charge },
-                  { label: '(A) ITC Available - Other ITC', data: data.itc_details.other_itc },
-                  { label: '(B) ITC Reversed', data: data.itc_details.itc_reversed },
+                  { label: '(A)(1) Import of goods', data: data.itc_details.imports },
+                  ...(data.itc_details.import_services
+                    ? [{ label: '(A)(2) Import of services', data: data.itc_details.import_services }]
+                    : []),
+                  { label: '(A)(3) Inward supplies liable to reverse charge (other than 1 & 2)', data: data.itc_details.inward_reverse_charge },
+                  { label: '(A)(5) All other ITC', data: data.itc_details.other_itc },
+                  { label: '(B)(1) ITC reversed — Rule 38/42/43 & s.17(5) blocked credit', data: data.itc_details.itc_reversed },
                   { label: '(C) Net ITC Available (A) - (B)', data: data.itc_details.net_itc }
                 ]}
               />

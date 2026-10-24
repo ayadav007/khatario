@@ -9,6 +9,9 @@ interface ExtraCharge {
   id: string;
   purpose: string;
   amount: number;
+  classification?: '' | 'follows_goods' | 'separate_supply';
+  hsnSac?: string;
+  taxPercent?: number;
 }
 
 interface TotalsPanelProps {
@@ -40,12 +43,17 @@ interface TotalsPanelProps {
   
   // Payment
   onPaymentClick: () => void;
+  /** Unused credit from paid credit notes. */
+  creditAvailable?: number;
+  creditApplied?: number;
+  onCreditAppliedChange?: (amount: number) => void;
   
   // Display flags
   isFinal: boolean;
   documentType: string;
   isExport: boolean;
   isIntraState: boolean;
+  chargesNotice?: string;
 }
 
 const TotalsPanel = React.memo(function TotalsPanel({
@@ -69,10 +77,14 @@ const TotalsPanel = React.memo(function TotalsPanel({
   onExtraChargesChange,
   onAddExtraCharge,
   onPaymentClick,
+  creditAvailable = 0,
+  creditApplied = 0,
+  onCreditAppliedChange,
   isFinal,
   documentType,
   isExport,
   isIntraState,
+  chargesNotice,
 }: TotalsPanelProps) {
   return (
     <div className={`lg:col-span-1 flex flex-col gap-3 ${className}`}>
@@ -108,19 +120,37 @@ const TotalsPanel = React.memo(function TotalsPanel({
         {extraCharges.length > 0 && (
           <div className="border-t border-dashed my-2 pt-2 space-y-2">
             {extraCharges.map((charge, idx) => (
-              <div key={charge.id} className="flex gap-2 items-center">
+              <div key={charge.id} className="space-y-2">
+              <div className="flex gap-2 items-center">
                 <Input
                   type="text"
                   placeholder="Purpose (e.g., Packaging, Delivery)"
                   value={charge.purpose}
                   onChange={(e) => {
                     const updated = [...extraCharges];
-                    updated[idx].purpose = e.target.value;
+                    updated[idx] = { ...updated[idx], purpose: e.target.value };
                     onExtraChargesChange(updated);
                   }}
                   className="text-sm flex-1"
                   disabled={isFinal}
                 />
+                <select
+                  value={charge.classification || ''}
+                  disabled={isFinal}
+                  onChange={(e) => {
+                    const updated = [...extraCharges];
+                    updated[idx] = {
+                      ...updated[idx],
+                      classification: e.target.value as ExtraCharge['classification'],
+                    };
+                    onExtraChargesChange(updated);
+                  }}
+                  className="text-sm h-10 rounded-md border border-border bg-surface px-2"
+                >
+                  <option value="">Classify</option>
+                  <option value="follows_goods">Part of the goods</option>
+                  <option value="separate_supply">Separate supply</option>
+                </select>
                 <Input
                   type="number"
                   step="0.01"
@@ -129,7 +159,7 @@ const TotalsPanel = React.memo(function TotalsPanel({
                   value={charge.amount || ''}
                   onChange={(e) => {
                     const updated = [...extraCharges];
-                    updated[idx].amount = Number(e.target.value) || 0;
+                    updated[idx] = { ...updated[idx], amount: Number(e.target.value) || 0 };
                     onExtraChargesChange(updated);
                   }}
                   className="text-sm w-24"
@@ -145,6 +175,35 @@ const TotalsPanel = React.memo(function TotalsPanel({
                   </button>
                 )}
               </div>
+              {charge.classification === 'separate_supply' && !isFinal && (
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="HSN / SAC"
+                    value={charge.hsnSac || ''}
+                    onChange={(e) => {
+                      const updated = [...extraCharges];
+                      updated[idx] = { ...updated[idx], hsnSac: e.target.value };
+                      onExtraChargesChange(updated);
+                    }}
+                    className="text-sm flex-1"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="GST %"
+                    value={charge.taxPercent ?? ''}
+                    onChange={(e) => {
+                      const updated = [...extraCharges];
+                      updated[idx] = { ...updated[idx], taxPercent: Number(e.target.value) };
+                      onExtraChargesChange(updated);
+                    }}
+                    className="text-sm w-24"
+                  />
+                </div>
+              )}
+              </div>
             ))}
           </div>
         )}
@@ -156,6 +215,9 @@ const TotalsPanel = React.memo(function TotalsPanel({
           </div>
         )}
         
+        {chargesNotice && (
+          <p className="text-xs text-amber-700 dark:text-amber-300">{chargesNotice}</p>
+        )}
         <div className="flex justify-between font-semibold text-text-primary"><span>Taxable Amount</span><span>₹ {taxableAmount.toFixed(2)}</span></div>
         {/* Hide GST breakdown for Bill of Supply */}
         {documentType !== 'bill_of_supply' && (
@@ -195,11 +257,37 @@ const TotalsPanel = React.memo(function TotalsPanel({
           </div>
         )}
         <div className="flex justify-between font-bold text-lg pt-2 border-t border-border text-text-primary"><span>Total</span><span>₹ {grandTotal.toFixed(2)}</span></div>
+        {creditAvailable > 0.004 && onCreditAppliedChange && !isFinal && documentType !== 'proforma_invoice' && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-900 dark:bg-sky-950/40">
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-sky-800 dark:text-sky-200">
+              <span>Customer credit</span>
+              <span>₹ {creditAvailable.toFixed(2)} available</span>
+            </div>
+            <label className="mt-2 flex items-center justify-between gap-2 text-xs text-text-secondary">
+              <span>Use on this bill</span>
+              <input
+                type="number"
+                min={0}
+                max={creditAvailable}
+                step="0.01"
+                value={creditApplied}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  onCreditAppliedChange(Number.isFinite(next) ? Math.max(0, next) : 0);
+                }}
+                className="w-28 rounded border border-border bg-surface px-2 py-1 text-right text-sm text-text-primary"
+              />
+            </label>
+          </div>
+        )}
+        {creditApplied > 0.004 && (
+          <div className="flex justify-between text-sky-700 dark:text-sky-300 pt-1 text-xs"><span>Credit applied</span><span>₹ {creditApplied.toFixed(2)}</span></div>
+        )}
         {recordPayment && (
-          <>
-            <div className="flex justify-between text-green-600 dark:text-green-400 pt-2 text-xs"><span>Paid</span><span>₹ {totalPaid.toFixed(2)}</span></div>
-            <div className="flex justify-between text-red-600 dark:text-red-400 font-medium pt-1 border-t border-dashed border-border text-xs"><span>Balance</span><span>₹ {balance.toFixed(2)}</span></div>
-          </>
+          <div className="flex justify-between text-green-600 dark:text-green-400 pt-2 text-xs"><span>Paid</span><span>₹ {totalPaid.toFixed(2)}</span></div>
+        )}
+        {(recordPayment || creditApplied > 0.004) && (
+          <div className="flex justify-between text-red-600 dark:text-red-400 font-medium pt-1 border-t border-dashed border-border text-xs"><span>To collect</span><span>₹ {balance.toFixed(2)}</span></div>
         )}
       </div>
       {/* Record Payment button - Hidden for proforma invoices */}

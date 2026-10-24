@@ -17,6 +17,13 @@ function walkRoutes(dir, base = '') {
   return routes;
 }
 
+// Middleware must derive identity only from the verified JWT. If it ever reads
+// user/business ids from the query again (the removed offline catalog passthrough),
+// every non-public route inherits that exposure.
+const middlewareSource = fs.readFileSync(path.join(process.cwd(), 'middleware.ts'), 'utf8');
+const middlewareReadsQueryIdentity =
+  /searchParams\.get\s*\(\s*['"](user_id|userId|business_id|businessId)['"]\s*\)/.test(middlewareSource);
+
 const PUBLIC_PREFIXES = [
   '/api/auth/login', '/api/auth/logout', '/api/auth/refresh', '/api/signup',
   '/api/admin/auth/login', '/api/admin/auth/logout', '/api/cron/', '/api/webhooks/',
@@ -94,7 +101,7 @@ function analyze(content, route, filePath) {
   } else if (usesHelperWithoutTenantGuard) {
     // When middleware sets header, getBusinessIdFromRequest ignores client override — safe for normal portal
     crossTenantRisk = 'LOW-MEDIUM';
-    crossTenantNote = 'getBusinessIdFromRequest prefers session header; client param ignored when middleware JWT present. Risk: offline passthrough / missing header paths';
+    crossTenantNote = 'getBusinessIdFromRequest prefers session header; client param ignored when middleware JWT present. Risk: paths where middleware sets no session header (public / portal passthrough)';
     severity = 3;
     if (!hasAuthCheck) {
       crossTenantRisk = 'MEDIUM';
@@ -131,11 +138,10 @@ function analyze(content, route, filePath) {
     severity = 10;
   }
 
-  // Offline catalog passthrough
-  if (route.includes('/offline-sync/catalog/')) {
-    crossTenantRisk = 'HIGH';
-    crossTenantNote = 'Middleware can inject headers from query user_id/business_id when JWT expired (LOCAL_SESSION_COOKIE)';
-    severity = 8;
+  if (middlewareReadsQueryIdentity && !isPublic(route) && !route.startsWith('/api/admin/')) {
+    crossTenantRisk = 'CRITICAL';
+    crossTenantNote = 'middleware.ts reads user/business id from the query string — identity headers may not come from the verified JWT';
+    severity = 10;
   }
 
   // Hub profile by businessId in path

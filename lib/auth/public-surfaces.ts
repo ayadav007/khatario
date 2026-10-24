@@ -1,3 +1,4 @@
+import { isPublicBusinessEmployeePath } from '@/lib/employee-portal/reserved-slugs';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
 
 /**
@@ -20,11 +21,17 @@ export function isPublicMarketingSurface(
   if (p.startsWith('/terms')) return true;
   if (p.startsWith('/privacy')) return true;
   if (p.startsWith('/guides')) return true;
+  if (p === '/blog' || p.startsWith('/blog/')) return true;
+  if (p.startsWith('/solution/')) return true;
   if (p.startsWith('/login')) return true;
   // Entire platform-admin tree: business AuthContext must not 401 → /login.
   if (p.startsWith('/admin')) return true;
+  // Partner portal: separate session from business app.
+  if (p.startsWith('/partners')) return true;
   if (p.startsWith('/attendance/login')) return true;
   if (p.startsWith('/attendance/kiosk')) return true;
+  // Employee portal sign-in lives at /{business}/employees and has its own session.
+  if (isPublicBusinessEmployeePath(p)) return true;
   if (p === '/offline') return true;
   return false;
 }

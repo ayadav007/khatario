@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, query } from '@/lib/db';
+import { queryOne, query, queryRows } from '@/lib/db';
+import { chooseMainLoginUser } from '@/lib/auth/login-account';
 import { User, Business } from '@/types/database';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import bcrypt from 'bcryptjs';
@@ -7,6 +8,8 @@ import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,45 +67,44 @@ export async function POST(request: NextRequest) {
     };
 
     const phoneFormats = normalizePhone(phone);
-    
-    let user: User | null = null;
-    for (const phoneFormat of phoneFormats) {
-      user = await queryOne<User>(
-        'SELECT * FROM users WHERE phone = $1',
-        [phoneFormat]
-      );
-      if (user) break;
+
+    const candidates = await queryRows<User>(
+      `SELECT * FROM users
+       WHERE phone = ANY($1::text[])
+         AND COALESCE(is_active, true) = true`,
+      [phoneFormats]
+    );
+
+    const passwordMatches: User[] = [];
+    for (const candidate of candidates) {
+      const hash = candidate.password_hash;
+      if (!hash || (!hash.startsWith('$2a$') && !hash.startsWith('$2b$') && !hash.startsWith('$2y$'))) {
+        continue;
+      }
+      if (await bcrypt.compare(password, hash)) {
+        passwordMatches.push(candidate);
+      }
     }
 
-    if (!user) {
+    const chosen = chooseMainLoginUser(passwordMatches);
+    if (!chosen) {
       return NextResponse.json(
         { error: 'Invalid phone number or password' },
         { status: 401 }
       );
     }
-
-    if (!user.password_hash) {
+    if ('ambiguous' in chosen) {
       return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
-    
-    // Only accept bcrypt-hashed passwords
-    if (!user.password_hash.startsWith('$2a$') && !user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2y$')) {
-      return NextResponse.json(
-        { error: 'Password needs to be reset. Please contact your administrator.' },
-        { status: 401 }
+        {
+          error:
+            'This mobile number is used by more than one business. Open that business’s employee link, or sign in as the owner of the business you registered.',
+          code: 'MULTIPLE_ACCOUNTS',
+        },
+        { status: 409 }
       );
     }
 
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) {
-      return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
+    const user = chosen.user;
 
     const employee = await queryOne<{ access_type: 'full' | 'attendance_only' }>(
       `SELECT access_type FROM employees WHERE id = $1 AND is_active = true`,
@@ -115,6 +117,14 @@ export async function POST(request: NextRequest) {
           error: 'This account is for attendance only. Please use the attendance login page.',
           code: 'ATTENDANCE_ONLY_ACCOUNT'
         },
+        { status: 403 }
+      );
+    }
+
+    const isConnectAgent = (user as { seat_type?: string | null }).seat_type === 'connect';
+    if (isConnectAgent && user.business_id && !(await hasWhatsAppBotAddon(user.business_id))) {
+      return NextResponse.json(
+        { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' },
         { status: 403 }
       );
     }
@@ -178,13 +188,17 @@ export async function POST(request: NextRequest) {
       signRefreshToken(tokenPayload),
     ]);
 
-    const platform = business?.id
+    const businessPlatform = business?.id
       ? await getBusinessPlatformContext(
           business.id,
           business.product_line,
           (business as { primary_module?: string | null }).primary_module,
         )
       : null;
+    const platform =
+      businessPlatform && isConnectAgent
+        ? { ...businessPlatform, defaultHomePath: CONNECT_AGENT_HOME_PATH }
+        : businessPlatform;
 
     const response = NextResponse.json({
       success: true,

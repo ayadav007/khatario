@@ -98,10 +98,10 @@ export function calculateCreditMetrics(
 export function calculateProjectedCreditMetrics(
   creditLimit: number | string | null,
   currentBalance: number | string | null,
-  newTransactionAmount: number
+  newTransactionAmount: number | string
 ): CreditMetrics {
-  const balance = parseFloat(currentBalance?.toString() ?? '0');
-  const projectedBalance = balance + newTransactionAmount;
+  const balance = parseFloat(currentBalance?.toString() ?? '0') || 0;
+  const projectedBalance = balance + (Number(newTransactionAmount) || 0);
   
   return calculateCreditMetrics(creditLimit, projectedBalance);
 }

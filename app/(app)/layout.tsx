@@ -22,22 +22,34 @@ import {
   APP_MAIN_PADDING_COMPACT_CLASS,
 } from '@/lib/page-layout';
 import { getPosMode } from '@/lib/pos-settings';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
+import { AccessibilityProvider } from '@/components/accessibility/AccessibilityProvider';
 import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
+import { PortalThemeBootScript } from '@/components/portal/PortalThemeBootScript';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 import { ModuleShellGuard } from '@/components/layout/ModuleShellGuard';
+import { WebAccessGate } from '@/components/layout/WebAccessGate';
+import { DesktopZoomShortcuts } from '@/components/desktop/DesktopZoomShortcuts';
+import { ReturnReviewDialogHost } from '@/components/gst/ReturnReviewDialog';
+import { isInsidePhoneApp } from '@/lib/capacitor/platform';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
     import('@/components/subscription/GlobalSubscriptionUsageStrip').then((m) => ({
       default: m.GlobalSubscriptionUsageStrip,
     })),
+  { ssr: false },
+);
+
+const AssistantWidget = dynamic(
+  () => import('@/components/assistant/AssistantWidget').then((m) => ({ default: m.AssistantWidget })),
   { ssr: false },
 );
 
@@ -53,9 +65,14 @@ function AppRouteLayoutInner({
   const { sidebarCollapsed } = useLayout();
   const pathname = usePathname();
   const [posMode, setPosMode] = useState(false);
+  const posAllowed = usePlanFeature('settings_pos_mode');
+  const accessibilityOn = usePlanFeature('accessibility');
+  // Inside the phone app's web view the app draws the title bar and tabs, so the site drops its own.
+  const [inPhoneApp, setInPhoneApp] = useState(false);
+  useEffect(() => setInPhoneApp(isInsidePhoneApp()), []);
 
   useEffect(() => {
-    const syncPosMode = () => setPosMode(getPosMode());
+    const syncPosMode = () => setPosMode(posAllowed && getPosMode());
 
     syncPosMode();
     window.addEventListener('posModeChanged', syncPosMode);
@@ -71,18 +88,22 @@ function AppRouteLayoutInner({
       window.removeEventListener('posModeChanged', syncPosMode);
       window.removeEventListener('storage', onStorage);
     };
-  }, []);
+  }, [posAllowed]);
 
-  const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
+  const isConversationsPage = pathname?.includes('/whatsapp/conversations') ?? false;
+  /** Full-bleed chat chrome (no TopBar/banners); BottomNav still shows on mobile for agents. */
+  const isFullWidthPage = isConversationsPage;
+  const showChrome = !inPhoneApp;
   const showDateRange =
     pathname === '/dashboard' || pathname === '/hr/dashboard';
   const isInvoicePage = pathname === '/invoices/new';
   const isInvoiceComposer = pathname === '/invoices/new';
+  const isSalesOrderComposer = pathname === '/sales-orders/new';
+  const isDocumentComposer = isInvoiceComposer || isSalesOrderComposer;
   const isSettingsRoute =
     pathname === '/settings' || (pathname?.startsWith('/settings/') ?? false);
 
-  if (posMode && isInvoicePage) {
-    return (
+  const shell = posMode && isInvoicePage ? (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
         <MobileBackNavigation />
@@ -92,16 +113,14 @@ function AppRouteLayoutInner({
           <SyncStatusBanner />
           <DynamicTitle />
           <main className="h-full w-full">
-            {children}
+            <DesktopZoomShortcuts />
+            <WebAccessGate><ModuleShellGuard>{children}</ModuleShellGuard></WebAccessGate>
           </main>
           <PromotionModal />
           <TrialExtensionModal />
         </div>
       </MobileHeaderTitleProvider>
-    );
-  }
-
-  return (
+  ) : (
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
@@ -112,49 +131,59 @@ function AppRouteLayoutInner({
           <NetworkStatusBanner />
           <SyncStatusBanner />
           <DynamicTitle />
-          <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
-            <Sidebar />
-          </Suspense>
+          {showChrome && (
+            <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
+              <Sidebar />
+            </Suspense>
+          )}
           <div
             className={clsx(
               'flex min-h-screen min-w-0 max-w-full flex-col overflow-x-hidden transition-all duration-300 ease-in-out',
-              sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+              showChrome && (sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64')
             )}
           >
-            {!isFullWidthPage && (
+            {showChrome && !isFullWidthPage && (
               <Suspense fallback={null}>
                 <TopBar showDateRange={showDateRange} />
               </Suspense>
             )}
-            {!isFullWidthPage && <SubscriptionBanner />}
-            {!isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
-            {!isFullWidthPage && <ShellVersionBanner />}
-            <PromotionBanner />
+            {showChrome && !isFullWidthPage && <SubscriptionBanner />}
+            {showChrome && !isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
+            {showChrome && !isFullWidthPage && <ShellVersionBanner />}
+            {showChrome && <PromotionBanner />}
             <div className="flex min-h-0 min-w-0 flex-1 items-stretch overflow-x-hidden">
               <main
                 className={clsx(
                   'min-h-0 min-w-0 flex-1',
                   isFullWidthPage
-                    ? 'h-screen'
-                    : isInvoiceComposer
+                    ? 'h-[calc(100dvh-4rem)] lg:h-screen'
+                    : isDocumentComposer
                       ? APP_MAIN_PADDING_COMPACT_CLASS
                       : APP_MAIN_PADDING_CLASS,
                   isSettingsRoute && 'settings-ui-scale'
                 )}
               >
-                <ModuleShellGuard>{children}</ModuleShellGuard>
+                <DesktopZoomShortcuts />
+                <WebAccessGate><ModuleShellGuard>{children}</ModuleShellGuard></WebAccessGate>
               </main>
-              {!isFullWidthPage && <TodoScheduleRail />}
+              {showChrome && !isFullWidthPage && <TodoScheduleRail />}
             </div>
           </div>
-          {!isFullWidthPage && <BottomNav />}
-          <PromotionModal />
-          <ProductTour />
-          <TrialExtensionModal />
+          {showChrome && <BottomNav />}
+          {showChrome && <PromotionModal />}
+          <ReturnReviewDialogHost />
+          {showChrome && <ProductTour />}
+          {showChrome && <TrialExtensionModal />}
+          {showChrome && !isFullWidthPage && !isDocumentComposer ? (
+            <AssistantWidget mode="app" channel="trial_app" bottomOffset={76} mobileBottomOffset={90} />
+          ) : null}
         </div>
       </MobileHeaderTitleProvider>
     </TodoScheduleRailProvider>
   );
+
+  // Always the same wrapper: wrapping only once the plan loaded remounted every page and lost its state.
+  return <AccessibilityProvider enabled={accessibilityOn}>{shell}</AccessibilityProvider>;
 }
 
 export default function AppRouteLayout({
@@ -164,6 +193,8 @@ export default function AppRouteLayout({
 }) {
   return (
     <FeatureUpgradeModalProvider>
+      {/* Tenant theme is scoped to the app shell; marketing and public pages keep Khatario defaults. */}
+      <PortalThemeBootScript />
       <ProfileRequiredModalProvider>
         <AppRouteLayoutInner>{children}</AppRouteLayoutInner>
       </ProfileRequiredModalProvider>
