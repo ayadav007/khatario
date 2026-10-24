@@ -14,7 +14,7 @@ import {
 const title = 'Simple Accounting Software for Small Businesses | Khatario';
 
 export const metadata: Metadata = {
-  title,
+  title: { absolute: title },
   description:
     'Easy accounting app for Indian SMEs: automatic entries from invoices, purchases & expenses, GST (GSTR-1, GSTR-3B, GSTR-2B), credit tracking, bank reconciliation, P&L & balance sheet, WhatsApp reminders. Start free.',
   keywords: [
