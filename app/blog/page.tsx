@@ -6,14 +6,14 @@ import { parsePage, publicSiteUrl } from '@/lib/blog/site';
 
 export const dynamic = 'force-dynamic';
 
-const TITLE = 'Blog';
-const DESCRIPTION = 'Guides and notes from Khatario on GST billing, stock, and running a shop.';
+const TITLE = 'Khatario Blog: GST, Billing & Shop Business Tips';
+const DESCRIPTION = 'Practical articles for Indian shop owners on GST billing, returns, stock, udhaar, WhatsApp invoices and growing a small business.';
 
 export const metadata: Metadata = {
-  title: TITLE,
+  title: { absolute: TITLE },
   description: DESCRIPTION,
   alternates: { canonical: `${publicSiteUrl()}/blog` },
-  openGraph: { title: TITLE, description: DESCRIPTION, type: 'website', url: `${publicSiteUrl()}/blog` },
+  openGraph: { title: TITLE, description: DESCRIPTION, type: 'website', url: `${publicSiteUrl()}/blog`, images: ['/opengraph-image'] },
 };
 
 export default async function BlogIndexPage({ searchParams }: { searchParams: { page?: string; q?: string; tag?: string } }) {

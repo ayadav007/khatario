@@ -3,6 +3,7 @@ import { LandingPage } from '@/components/marketing/landing/LandingPage';
 import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
 import { marketingRobots, resolveCanonical } from '@/lib/marketing-builder/seo';
 import { isSafeImageSrc } from '@/lib/marketing-builder/safe-url';
+import { publicSiteUrl } from '@/lib/blog/site';
 import { loadPricingCatalog } from '@/lib/subscription/pricing-catalog';
 
 export const revalidate = 300;
@@ -30,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { absolute: title },
     description,
-    ...(canonical ? { alternates: { canonical } } : {}),
+    alternates: { canonical: canonical ?? '/' },
     ...(hidden ? { robots: { index: false, follow: false } } : {}),
     openGraph: { title: ogTitle, description: ogDescription, type: 'website', siteName: 'Khatario', ...(images ? { images } : {}) },
     twitter: { card: 'summary_large_image', title: ogTitle, description: ogDescription, ...(images ? { images: images.map((i) => i.url) } : {}) },
@@ -45,5 +46,45 @@ export default async function Page() {
       return null;
     }),
   ]);
-  return <LandingPage document={document} pricingCatalog={pricingCatalog} />;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(homeStructuredData()) }} />
+      <LandingPage document={document} pricingCatalog={pricingCatalog} />
+    </>
+  );
+}
+
+/** Organization, WebSite and SoftwareApplication so search engines can show the brand and app details. */
+function homeStructuredData() {
+  const site = publicSiteUrl();
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${site}/#organization`,
+        name: 'Khatario',
+        url: site,
+        logo: `${site}/icon.png`,
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${site}/#website`,
+        name: 'Khatario',
+        url: site,
+        publisher: { '@id': `${site}/#organization` },
+        inLanguage: 'en-IN',
+      },
+      {
+        '@type': 'SoftwareApplication',
+        name: 'Khatario',
+        url: site,
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web, Android',
+        description: DESCRIPTION,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR' },
+        publisher: { '@id': `${site}/#organization` },
+      },
+    ],
+  };
 }
