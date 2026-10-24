@@ -501,9 +501,11 @@ export async function assertFeatureAccess(
     );
   }
 
+  const canonicalKey = normalizeFeatureKey(featureKey);
+
   if (
     featureKey === SUPPLIER_HUB_FEATURE_ID ||
-    normalizeFeatureKey(featureKey) === SUPPLIER_HUB_FEATURE_ID
+    String(canonicalKey) === SUPPLIER_HUB_FEATURE_ID
   ) {
     if (!(await isSupplierHubVisible())) {
       throw new SupplierHubHiddenError();
@@ -511,8 +513,6 @@ export async function assertFeatureAccess(
   }
 
   await assertOperationalSubscriptionExists(businessId, featureKey);
-
-  const canonicalKey = normalizeFeatureKey(featureKey);
   const platformCtx = await getBusinessPlatformContext(businessId);
 
   if (isCoreEntitlementKey(canonicalKey) || CORE_BILLING_FEATURE_KEYS.has(canonicalKey)) {

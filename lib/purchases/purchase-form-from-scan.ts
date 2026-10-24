@@ -33,7 +33,9 @@ export function scanDocumentPriceMode(mode: unknown): PurchaseFormPriceMode {
   return mode === 'inclusive' || mode === 'exclusive' ? mode : 'unknown';
 }
 
-export function purchaseFormCanFinalize(priceMode: PurchaseFormPriceMode): boolean {
+export function purchaseFormCanFinalize(
+  priceMode: PurchaseFormPriceMode,
+): priceMode is 'exclusive' | 'inclusive' {
   return priceMode === 'inclusive' || priceMode === 'exclusive';
 }
 
