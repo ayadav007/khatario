@@ -3,6 +3,7 @@
 Updated by the scheduled SEO tasks after every run. Newest entries at the top of each log.
 
 ## Current status
+- 2026-10-25: 5 of 6 key URLs indexed (`/`, `/solution/accounting`, `/solution/inventory`, `/blog`, `/book-demo`). `/guides` is "Duplicate without user-selected canonical": Google picked `www.khatario.com/guides` on a crawl before the canonical/redirect were live; both are live now, so owner should Request indexing. Still 0 impressions (GSC lag). No page optimised because there is no query data yet.
 - 2026-10-25: production at `c15e7e9a`. Agent blog API live and verified (`GET /api/seo-agent/blog` → 200 with key, 401 without). All public pages have their own title, description and absolute canonical; home has Organization/WebSite/SoftwareApplication + FAQPage JSON-LD; share image live. Audit: 0 high, 0 medium, 5 low.
 - 2026-10-24: sitemap submitted (8 URLs, read successfully); only `/` indexed so far. www → apex redirect live.
 
@@ -30,6 +31,7 @@ Updated by the scheduled SEO tasks after every run. Newest entries at the top of
 ## Changes made
 | Date | Job | Change | Files / URL |
 |---|---|---|---|
+| 2026-10-25 | job1 | GSC script records googleCanonical/userCanonical per inspected URL (landed in owner commit ce8a9e0a) | scripts/seo/gsc-report.mjs |
 | 2026-10-24 | setup | robots.ts, titles/descriptions/canonicals on all public pages, home JSON-LD, default share image, www redirect | app/*, nginx |
 
 ## Experiments to evaluate (check results ~3 weeks after the change)
