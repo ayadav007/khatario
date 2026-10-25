@@ -3,7 +3,8 @@
 Updated by the scheduled SEO tasks after every run. Newest entries at the top of each log.
 
 ## Current status
-- 2026-10-24: production on current `main`; sitemap submitted (8 URLs, read successfully); only `/` indexed so far. www → apex redirect live. Agent blog API built; needs `SEO_AGENT_API_KEY` and `SEO_AGENT_ADMIN_ID` on production before drafts can be saved.
+- 2026-10-25: production at `c15e7e9a`. Agent blog API live and verified (`GET /api/seo-agent/blog` → 200 with key, 401 without). All public pages have their own title, description and absolute canonical; home has Organization/WebSite/SoftwareApplication + FAQPage JSON-LD; share image live. Audit: 0 high, 0 medium, 5 low.
+- 2026-10-24: sitemap submitted (8 URLs, read successfully); only `/` indexed so far. www → apex redirect live.
 
 ## Content backlog (writer takes the top unchecked item)
 - [ ] GST bill kaise banaye mobile se — step by step (Hinglish) — kw: "gst bill kaise banaye"

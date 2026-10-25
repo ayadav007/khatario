@@ -158,7 +158,7 @@ while (queue.length && pages.length < MAX) {
     } catch {
       issue('high', rel, 'canonical_invalid', p.canonical);
     }
-    const bare = url.split('?')[0];
+    const bare = url.split('?')[0].replace(/\/$/, '') || BASE;
     if (!/^https?:\/\//i.test(p.canonical)) issue('low', rel, 'canonical_relative', p.canonical);
     if (c && !c.startsWith(BASE)) issue('high', rel, 'canonical_off_site', p.canonical);
     else if (c && c !== url && c !== bare) issue('medium', rel, 'canonical_points_elsewhere', p.canonical);
@@ -184,13 +184,20 @@ while (queue.length && pages.length < MAX) {
   }
 }
 
+const show = (u) => new URL(u).pathname + new URL(u).search;
+
+// Query-string variants that canonicalise to their clean URL inherit its issues; report only the clean URL.
+const consolidated = new Set(pages.filter((p) => p.consolidated && new URL(p.url).search).map((p) => show(p.url)));
+for (let i = issues.length - 1; i >= 0; i--) {
+  if (consolidated.has(issues[i].url) && !issues[i].code.startsWith('canonical')) issues.splice(i, 1);
+}
+
 // cross-page checks
 const byStatus = new Map(pages.map((p) => [p.url, p.status]));
 for (const [target, from] of inlinks) {
   const s = byStatus.get(target);
   if (s && s >= 400) issue('high', new URL(target).pathname, 'broken_internal_link', `linked from ${[...from].slice(0, 5).join(', ')}`);
 }
-const show = (u) => new URL(u).pathname + new URL(u).search;
 const indexable = pages.filter((p) => p.status === 200 && p.title !== undefined && !p.consolidated && !/noindex/i.test(p.robots || ''));
 for (const p of indexable) {
   if (!sitemapUrls.includes(p.url)) issue('low', show(p.url), 'not_in_sitemap');
