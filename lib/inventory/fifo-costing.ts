@@ -320,23 +320,35 @@ export async function replayCostItems(
  * FIFO cost of one document's goods. `qtyByItem` is the document's goods quantity per item
  * (bundles already expanded); an item the replay did not see is costed at the next-out rate.
  */
+export async function fifoCostByItem(
+  client: Queryable,
+  businessId: string,
+  qtyByItem: Map<string, number>,
+  target: CostTarget
+): Promise<Map<string, number>> {
+  const ids = [...qtyByItem.keys()];
+  const out = new Map<string, number>();
+  if (ids.length === 0) return out;
+  await lockCostItems(client, businessId, ids);
+  const { replays, fallback } = await replayCostItems(client, businessId, ids, { target });
+  for (const [id, qty] of qtyByItem) {
+    const replay = replays.get(id);
+    const result = replay?.results.get(`${target.kind}:${target.docId}`);
+    if (result) out.set(id, result.cost);
+    else if (replay) out.set(id, qty * issueUnitCost(replay, fallback.get(id) ?? 0, qty));
+  }
+  return out;
+}
+
 export async function fifoCostForDocument(
   client: Queryable,
   businessId: string,
   qtyByItem: Map<string, number>,
   target: CostTarget
 ): Promise<number> {
-  const ids = [...qtyByItem.keys()];
-  if (ids.length === 0) return 0;
-  await lockCostItems(client, businessId, ids);
-  const { replays, fallback } = await replayCostItems(client, businessId, ids, { target });
+  const byItem = await fifoCostByItem(client, businessId, qtyByItem, target);
   let total = 0;
-  for (const [id, qty] of qtyByItem) {
-    const replay = replays.get(id);
-    const result = replay?.results.get(`${target.kind}:${target.docId}`);
-    if (result) total += result.cost;
-    else if (replay) total += qty * issueUnitCost(replay, fallback.get(id) ?? 0, qty);
-  }
+  for (const cost of byItem.values()) total += cost;
   return Math.round(total * 100) / 100;
 }
 

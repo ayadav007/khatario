@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import {
+  getUserIdFromRequest,
+  getBusinessIdFromRequest,
+  getAuthenticatedUserId,
+  getSessionScopedBusinessId,
+} from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
@@ -59,7 +64,8 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
     const {
       name,
       branch_code,
@@ -80,30 +86,22 @@ export async function PATCH(
       is_active,
     } = body;
 
-    if (!business_id) {
+    if (!business_id || !userId) {
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const { updated_by_user_id } = body; // REQUIRED for authorization
-    if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
     // AUTHORIZATION: Check update permission
     // First check if user has branch-level edit permission
     const { checkUserBranchPermission } = await import('@/lib/branch-access');
-    const hasBranchEditPermission = await checkUserBranchPermission(updated_by_user_id, params.id, 'edit');
+    const hasBranchEditPermission = await checkUserBranchPermission(userId, params.id, 'edit');
     
     // If user doesn't have branch-level edit permission, check settings.update permission
     if (!hasBranchEditPermission) {
       try {
-        await authorize(updated_by_user_id, 'settings', 'update', { businessId: business_id, resourceId: params.id });
+        await authorize(userId, 'settings', 'update', { businessId: business_id, resourceId: params.id });
       } catch (error) {
         if (error instanceof AuthorizationError) {
           return error.toNextResponse();

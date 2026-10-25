@@ -1555,6 +1555,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (status === 'final' && finalSupplyType === 'sez' && !complianceCustomer?.gstin) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'SEZ supply needs the SEZ unit GSTIN on the customer.', code: 'SEZ_GSTIN_REQUIRED' },
+        { status: 400 },
+      );
+    }
+
     // Check if estimate_status and expiry_date columns exist (from migration 139)
     let hasEstimateColumns = false;
     try {

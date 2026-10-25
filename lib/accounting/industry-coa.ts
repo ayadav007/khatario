@@ -1,8 +1,10 @@
 /**
  * Industry ledger packs added on top of the core chart (create_default_chart_of_accounts +
  * ensure_standard_account_heads). Packs only add ledgers and expense categories: posting keeps
- * using the core codes (4101 sales, 5101 purchases, 1104 inventory, GST 1110-1115 / 2150-2158),
- * so nothing here may reuse a core code. Every pack code lives in a reserved range below and
+ * using the core codes (4101 sales, 5101 purchases, 1104 inventory, 1160 raw material,
+ * 1161 work in progress, 1162 finished goods, GST 1110-1115 / 2150-2158),
+ * so nothing here may reuse a core code. 1160-1162 sit inside the 1140-1169 range and stay core.
+ * Every pack code lives in a reserved range below and
  * means the same ledger in every pack.
  *
  * Tax references follow the law as of October 2026: GST rates after the 22-Sep-2025

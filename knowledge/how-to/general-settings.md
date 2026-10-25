@@ -1,8 +1,8 @@
 ---
-title: POS mode, appearance, offline sync, suppliers directory and products settings
+title: POS mode, appearance, catalog sync, suppliers directory and products settings
 audience: [tenant_user]
 locale: en
-tags: [pos mode, counter billing, retail, ui features, theme, dark mode, brand colour, offline sync, suppliers directory, suppliers hub, your products, help, guides, how to]
+tags: [pos mode, counter billing, retail, ui features, theme, dark mode, brand colour, catalog sync, suppliers directory, suppliers hub, your products, help, guides, how to]
 url: /settings
 ---
 
@@ -22,11 +22,11 @@ Settings > General > UI features:
 
 This page does not switch modules on or off; features you don't see are either locked on your plan (they show an upgrade prompt) or belong to a product you haven't added (see Your products).
 
-## How does offline billing work and how do I sync?
+## Can I save a bill without an internet connection?
 
-Khatario can bill without internet using items, customers and recent invoices saved on the device. Bills made offline get a temporary number and are sent to the server when you are back online, where they receive the final invoice number.
+No. Saving a bill needs an internet connection. Reconnect, then save the bill.
 
-Settings > General > Offline sync shows the connection state and pending bills. Tap Sync now to send pending bills, Delta sync catalog to refresh items and customers, or Full re-download if the offline data looks wrong. The Offline → final invoice numbers list shows which offline bill became which invoice. Anything under Manual review required (for example a GST conflict) should be checked by your accountant.
+Settings > Billing tools > Catalog sync shows the connection state and any queued saves. Tap Sync now to send a queued save, Delta sync catalog to refresh items and customers, or Full re-download if the saved list on this device looks wrong. The Temporary → final invoice numbers list shows which temporary number became which invoice. Anything under Manual review required (for example a GST conflict) should be checked by your accountant.
 
 ## What is the suppliers directory?
 

@@ -376,6 +376,7 @@ function NewInvoiceContent() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [isExport, setIsExport] = useState(false);
+  const [supplyKind, setSupplyKind] = useState<'taxable' | 'exempt' | 'export' | 'sez'>('taxable');
   const [exportType, setExportType] = useState<'wp' | 'wop'>('wop');
   const [portCode, setPortCode] = useState('');
   const [shippingBillNumber, setShippingBillNumber] = useState('');
@@ -856,14 +857,14 @@ function NewInvoiceContent() {
 
   // Callbacks and Memos
   const calculateRow = useCallback((row: InvoiceItemRow, skipDiscountRecalc: boolean = false): InvoiceItemRow => {
-    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst }, skipDiscountRecalc);
-  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType, pricesIncludeGst]);
+    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst, supplyKind }, skipDiscountRecalc);
+  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType, pricesIncludeGst, supplyKind]);
 
   const isFutureInvoiceDate = !!invoiceDate && invoiceDate > format(new Date(), 'yyyy-MM-dd');
 
   // Handlers that change export / place of supply call setRows with the previous calculateRow closure,
   // so re-derive row tax once the new context is in place.
-  const taxContextKey = `${isExport}|${exportType}|${placeOfSupply}|${documentType}`;
+  const taxContextKey = `${isExport}|${exportType}|${placeOfSupply}|${documentType}|${supplyKind}`;
   const taxContextKeyRef = useRef(taxContextKey);
   useEffect(() => {
     if (taxContextKeyRef.current === taxContextKey) return;
@@ -871,6 +872,31 @@ function NewInvoiceContent() {
     if (isFinal || isInvoiceLocked) return;
     setRows((prev) => (prev.length ? prev.map((r) => calculateRow(r, true)) : prev));
   }, [taxContextKey, calculateRow, isFinal, isInvoiceLocked]);
+
+  const applySupplyKind = useCallback((kind: 'taxable' | 'exempt' | 'export' | 'sez') => {
+    const gstType = (business as { gst_registration_type?: string } | null)?.gst_registration_type;
+    if ((kind === 'exempt' || kind === 'sez') && gstType !== 'regular') return;
+    if (kind === supplyKind) return;
+    setSupplyKind(kind);
+    setIsExport(kind === 'export');
+    if (kind !== 'export') {
+      setPortCode('');
+      setShippingBillNumber('');
+      setShippingBillDate('');
+    }
+    if (kind === 'exempt' && documentType === 'tax_invoice') {
+      setDocumentType('bill_of_supply');
+      if (!savedInvoiceId) void fetchDocumentSeries('bill_of_supply');
+    } else if (
+      (kind === 'taxable' || kind === 'sez') &&
+      supplyKind === 'exempt' &&
+      documentType === 'bill_of_supply' &&
+      gstType === 'regular'
+    ) {
+      setDocumentType('tax_invoice');
+      if (!savedInvoiceId) void fetchDocumentSeries('tax_invoice');
+    }
+  }, [business, supplyKind, documentType, savedInvoiceId, fetchDocumentSeries]);
 
   const pricesIncludeGstRef = useRef(pricesIncludeGst);
   useEffect(() => {
@@ -1206,7 +1232,7 @@ function NewInvoiceContent() {
     setInvoicePrefix(null);
     setInvoiceNumber(null);
     setCustomerId(''); setSelectedCustomer(null); setRows([]);
-    setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
+    setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setSupplyKind(newDocType === 'bill_of_supply' && (business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular' ? 'exempt' : 'taxable'); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
     setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setIsDirty(false); setFormKey(prev => prev + 1);
     if (business?.id) {
@@ -1221,7 +1247,7 @@ function NewInvoiceContent() {
   }, [business?.id, business?.state]);
 
   const resetFormForNewInvoice = useCallback(() => {
-    setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
+    setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setSupplyKind('taxable'); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
     setRows([]);
     setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
@@ -1414,8 +1440,8 @@ function NewInvoiceContent() {
   const totals = useMemo(() => {
     const businessStateCode = business?.state_code || engineGetStateCode(business?.state || '');
     const placeCode = engineGetStateCode(placeOfSupply || '');
-    const intraState = !!businessStateCode && !!placeCode && businessStateCode === placeCode;
-    const zeroRated = documentType === 'bill_of_supply' || (isExport && exportType === 'wop');
+    const intraState = supplyKind !== 'sez' && !!businessStateCode && !!placeCode && businessStateCode === placeCode;
+    const zeroRated = documentType === 'bill_of_supply' || supplyKind === 'exempt' || ((isExport || supplyKind === 'sez') && exportType === 'wop');
     const charges = (extraCharges as Array<{ purpose?: string; amount?: number; classification?: string; hsnSac?: string; taxPercent?: number }>).map((charge) => ({
       purpose: charge.purpose,
       amount: charge.amount,
@@ -1484,10 +1510,10 @@ function NewInvoiceContent() {
         chargesReady: false,
       };
     }
-  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst, invoiceDate]);
+  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst, invoiceDate, supplyKind]);
 
   const { itemSubtotal, totalDiscount, subtotal, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST, chargesNotice, chargesReady } = totals;
-  const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = !!bStateCode && !!pStateCode && bStateCode === pStateCode;
+  const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = supplyKind !== 'sez' && !!bStateCode && !!pStateCode && bStateCode === pStateCode;
   const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const recordPayment = payments.length > 0 && totalPaid > 0;
   const posSettlement = posMode
@@ -1719,13 +1745,14 @@ function NewInvoiceContent() {
           channel: posMode ? 'counter' : undefined,
           billing_address: billingAddress, 
           shipping_address: shippingAddress, 
-          place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+          place_of_supply_state_code: supplyKind === 'export' ? '96' : getStateCode(placeOfSupply), 
           prices_include_gst: pricesIncludeGst,
           pos_differs_from_gstin: posDiffersFromGstin,
           document_type: documentType, 
-          is_export: isExport, 
-          template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
-          export_type: isExport ? exportType : undefined, 
+          supply_type: supplyKind === 'sez' ? 'sez' : supplyKind === 'exempt' ? 'exempt' : supplyKind === 'export' ? 'export' : undefined,
+          is_export: supplyKind === 'export', 
+          template_id: supplyKind === 'export' ? 'export_invoice' : invoiceTemplate || null, 
+          export_type: supplyKind === 'export' || supplyKind === 'sez' ? exportType : undefined, 
           port_code: isExport ? portCode : undefined, 
           shipping_bill_number: isExport ? shippingBillNumber : undefined, 
           shipping_bill_date: isExport && shippingBillDate ? shippingBillDate : undefined, 
@@ -1740,7 +1767,7 @@ function NewInvoiceContent() {
           awb_number: isExport ? awbNumber : undefined, 
           bl_number: isExport ? blNumber : undefined, 
           buyer_tax_id: isExport ? buyerTaxId : undefined, 
-          lut_declaration: isExport && exportType === 'wop', 
+          lut_declaration: (supplyKind === 'export' || supplyKind === 'sez') && exportType === 'wop', 
           eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
           eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
           purchase_order_number: purchaseOrderNumber || undefined, 
@@ -1823,7 +1850,7 @@ function NewInvoiceContent() {
             }
 
             toastCtx.success(
-              `Invoice ${offlineResult.displayInvoiceNumber} saved offline — will sync automatically`
+              `Invoice ${offlineResult.displayInvoiceNumber} is saved on this device and will sync when the connection is back`
             );
 
             const useBluetooth = shouldPosPrintViaBluetooth({
@@ -1838,7 +1865,7 @@ function NewInvoiceContent() {
                 await bt.printReceipt(receipt);
               } catch (btErr: unknown) {
                 toastCtx.warning(
-                  (btErr as Error)?.message || 'Bluetooth print failed for offline bill'
+                  (btErr as Error)?.message || 'Bluetooth print failed for this bill'
                 );
               }
             } else if (isCapacitorNative()) {
@@ -1846,7 +1873,7 @@ function NewInvoiceContent() {
               await receiptPrinter
                 .print('Connect a printer to print this bill.', (printer) => bt.printReceipt(receipt, undefined, printer))
                 .catch((btErr: unknown) =>
-                  toastCtx.warning((btErr as Error)?.message || 'Bluetooth print failed for offline bill')
+                  toastCtx.warning((btErr as Error)?.message || 'Bluetooth print failed for this bill')
                 );
             }
 
@@ -2095,7 +2122,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode, supplyKind]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -2143,7 +2170,7 @@ function NewInvoiceContent() {
     // Draft saves always require a live API connection — queue only supports finals.
     if (targetStatus === 'draft' && canQueueOffline) {
       setToastMessage({
-        message: 'Draft saves require internet. Your items are safe — tap Finalize to save offline.',
+        message: 'Draft saves need an internet connection. Your items stay on this screen until you reconnect.',
         type: 'error',
       });
       return;
@@ -2151,7 +2178,7 @@ function NewInvoiceContent() {
 
     if (creditApplied > 0.004 && canFinalizeOffline) {
       setToastMessage({
-        message: 'Customer credit can only be applied while you are online. Set the credit to 0 to save this bill offline.',
+        message: 'Customer credit can only be applied with an internet connection. Set the credit to 0, or reconnect and try again.',
         type: 'error',
       });
       return;
@@ -2204,6 +2231,9 @@ function NewInvoiceContent() {
       // For regular invoices, use targetStatus ('draft' or 'final')
       const finalInvoiceStatus = documentType === 'proforma_invoice' ? 'draft' : targetStatus;
 
+      if (finalInvoiceStatus === 'final' && supplyKind === 'sez' && !selectedCustomer?.gstin) {
+        throw new Error('SEZ supply needs the SEZ unit GSTIN on the customer.');
+      }
       if (!chargesReady) {
         throw new Error(chargesNotice || 'Classify each additional charge before saving');
       }
@@ -2230,13 +2260,14 @@ function NewInvoiceContent() {
         channel: posMode ? 'counter' : undefined,
         billing_address: billingAddress, 
         shipping_address: shippingAddress, 
-        place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+        place_of_supply_state_code: supplyKind === 'export' ? '96' : getStateCode(placeOfSupply), 
         prices_include_gst: pricesIncludeGst,
         pos_differs_from_gstin: posDiffersFromGstin,
         document_type: documentType, 
-        is_export: isExport, 
-        template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
-        export_type: isExport ? exportType : undefined, 
+        supply_type: supplyKind === 'sez' ? 'sez' : supplyKind === 'exempt' ? 'exempt' : supplyKind === 'export' ? 'export' : undefined,
+        is_export: supplyKind === 'export', 
+        template_id: supplyKind === 'export' ? 'export_invoice' : invoiceTemplate || null, 
+        export_type: supplyKind === 'export' || supplyKind === 'sez' ? exportType : undefined, 
         port_code: isExport ? portCode : undefined, 
         shipping_bill_number: isExport ? shippingBillNumber : undefined, 
         shipping_bill_date: isExport && shippingBillDate ? shippingBillDate : undefined, 
@@ -2251,7 +2282,7 @@ function NewInvoiceContent() {
         awb_number: isExport ? awbNumber : undefined, 
         bl_number: isExport ? blNumber : undefined, 
         buyer_tax_id: isExport ? buyerTaxId : undefined, 
-        lut_declaration: isExport && exportType === 'wop', 
+        lut_declaration: (supplyKind === 'export' || supplyKind === 'sez') && exportType === 'wop', 
         eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
         eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
         purchase_order_number: purchaseOrderNumber || undefined, 
@@ -2315,7 +2346,7 @@ function NewInvoiceContent() {
             toastCtx.warning(offlineResult.stockWarnings[0]);
           }
           toastCtx.success(
-            `Invoice ${offlineResult.displayInvoiceNumber} saved offline — will sync automatically`
+            `Invoice ${offlineResult.displayInvoiceNumber} is saved on this device and will sync when the connection is back`
           );
           setTimeout(() => {
             resetIdempotency();
@@ -2427,7 +2458,7 @@ function NewInvoiceContent() {
       hotToast.error(errorMsg, { duration: 8000 });
       return false;
     } finally { setLoading(false); }
-  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, supplyKind, selectedCustomer, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams]);
   handleSaveRef.current = handleSave;
   handlePrintBillRef.current = handlePrintBill;
 
@@ -2440,7 +2471,7 @@ function NewInvoiceContent() {
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) { setToastMessage({ message: 'Add items', type: 'error' }); return; }
     // PHASE 1: Don't use hardcoded prefix check - use documentType directly
     const effDoc = documentType;
-    const title = effDoc === 'proforma_invoice' ? 'PROFORMA INVOICE' : isExport ? 'EXPORT INVOICE' : effDoc === 'bill_of_supply' ? 'BILL OF SUPPLY' : 'TAX INVOICE';
+    const title = effDoc === 'proforma_invoice' ? 'PROFORMA INVOICE' : supplyKind === 'sez' ? 'SEZ INVOICE' : isExport ? 'EXPORT INVOICE' : effDoc === 'bill_of_supply' ? 'BILL OF SUPPLY' : 'TAX INVOICE';
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setPreviewLoading(true);
     try {
@@ -2454,7 +2485,7 @@ function NewInvoiceContent() {
         setPreviewModalOpen(true);
       }
     } catch (e) { console.error(e); } finally { setPreviewLoading(false); }
-  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, totalPaid, balance, roundOff, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, documentType, placeOfSupply, isIntraState, invoicePrefix, invoiceCustomFieldValues]);
+  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, totalPaid, balance, roundOff, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, documentType, placeOfSupply, isIntraState, supplyKind, invoicePrefix, invoiceCustomFieldValues]);
 
   const handleConfirmReset = (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') { setShowResetConfirm(false); setPendingTypeChange(null); return; }
@@ -2586,7 +2617,20 @@ function NewInvoiceContent() {
             // PHASE 2: Fetch series from API for new document type
             fetchDocumentSeries(newDocType as DocumentType);
           }
-          setBillingAddress(inv.billing_address || ''); setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || ''); setIsExport(!!inv.is_export);
+          setBillingAddress(inv.billing_address || ''); setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || '');
+          const loadedSupply = String(inv.supply_type || '');
+          const loadedKind: 'taxable' | 'exempt' | 'export' | 'sez' =
+            (business as { gst_registration_type?: string } | null)?.gst_registration_type === 'composition'
+              ? 'taxable'
+              : loadedSupply === 'sez' || loadedSupply.startsWith('sez')
+                ? 'sez'
+                : inv.is_export || loadedSupply === 'export'
+                  ? 'export'
+                  : loadedSupply === 'exempt' || inv.document_type === 'bill_of_supply'
+                    ? 'exempt'
+                    : 'taxable';
+          setSupplyKind(loadedKind);
+          setIsExport(loadedKind === 'export');
           setInvoiceCustomFieldValues(parseItemCustomFieldsFromApi(inv));
           if (inv.is_export) { setExportType(inv.export_type); setPortCode(inv.port_code); setShippingBillNumber(inv.shipping_bill_number); setShippingBillDate(inv.shipping_bill_date?.split('T')[0] || ''); }
           if (inv.items) {
@@ -3306,9 +3350,14 @@ function NewInvoiceContent() {
             </div>
           </div>
           {!isFinal && (
-            <label className="flex h-9 lg:h-11 cursor-pointer select-none items-center gap-2">
-              <input type="checkbox" checked={isExport} onChange={e => { setIsExport(e.target.checked); setRows(prev => prev.map(r => calculateRow(r, true))); if (!e.target.checked) { setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); } }} className="h-4 w-4 rounded border-border bg-surface text-primary-600 focus:ring-primary-500 dark:border-slate-500" disabled={isFinal || isInvoiceLocked} />
-              <span className="text-caption lg:text-xs font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap">{documentType === 'bill_of_supply' ? 'Export' : 'Export invoice'}</span>
+            <label className="flex h-9 lg:h-11 items-center gap-2">
+              <span className="text-caption lg:text-xs font-semibold uppercase tracking-wide text-text-secondary">Supply</span>
+              <select className="input h-9 min-w-[8.5rem]" value={supplyKind} disabled={isInvoiceLocked} onChange={(e) => applySupplyKind(e.target.value as typeof supplyKind)}>
+                <option value="taxable">Taxable</option>
+                {(business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular' && <option value="exempt">Exempt</option>}
+                <option value="export">Export</option>
+                {(business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular' && <option value="sez">SEZ</option>}
+              </select>
             </label>
           )}
           </div>
@@ -3419,6 +3468,16 @@ function NewInvoiceContent() {
               </div>
               {exportType === 'wop' && (<div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded"><p className="text-xs text-yellow-800 dark:text-yellow-200"><strong>LUT Export:</strong> This invoice is for export under LUT without payment of IGST. IGST at 0%.</p></div>)}
           </div>
+      )}
+      {!posMode && supplyKind === 'sez' && !isFinal && (
+        <div className="rounded-lg border border-primary-200 bg-slate-50 p-4 dark:border-primary-800 dark:bg-primary-900/35">
+          <h3 className="mb-2 text-sm font-semibold text-primary-900 dark:text-primary-100">SEZ supply</h3>
+          <select className="input w-full max-w-sm" value={exportType} onChange={(e) => setExportType(e.target.value as 'wp' | 'wop')}>
+            <option value="wp">With payment of IGST</option>
+            <option value="wop">Without payment of IGST</option>
+          </select>
+          <p className="mt-2 text-xs text-text-secondary">The customer needs an SEZ GSTIN. IGST applies even when the SEZ is in your state.</p>
+        </div>
       )}
       <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
@@ -3547,7 +3606,7 @@ function NewInvoiceContent() {
           ? estimateStatus.charAt(0).toUpperCase() + estimateStatus.slice(1)
           : null
         : offlineSyncPending
-          ? 'Saved offline, sync pending'
+          ? 'Saved on this device, sync pending'
           : savedStatus === 'final'
             ? 'Final'
             : savedStatus === 'draft'
@@ -3645,14 +3704,10 @@ function NewInvoiceContent() {
         selectedWarehouseId={selectedWarehouseId}
         setSelectedWarehouseId={setSelectedWarehouseId}
         isExport={isExport}
-        setIsExport={(v) => {
-          setIsExport(v);
-          if (!v) {
-            setPortCode('');
-            setShippingBillNumber('');
-            setShippingBillDate('');
-          }
-        }}
+        supplyKind={supplyKind}
+        showSezExempt={(business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular'}
+        onSupplyKind={applySupplyKind}
+        setIsExport={(v) => applySupplyKind(v ? 'export' : 'taxable')}
         exportState={exportState}
         patchExport={patchExport}
         moreDetails={moreDetails}
@@ -4001,25 +4056,14 @@ function NewInvoiceContent() {
               </div>
             )}
             {!isFinal && (
-              <label className="flex cursor-pointer items-center gap-2 py-0.5 select-none">
-                <input
-                  type="checkbox"
-                  checked={isExport}
-                  onChange={(e) => {
-                    setIsExport(e.target.checked);
-                    setRows((prev) => prev.map((r) => calculateRow(r, true)));
-                    if (!e.target.checked) {
-                      setPortCode('');
-                      setShippingBillNumber('');
-                      setShippingBillDate('');
-                    }
-                  }}
-                  className="h-4 w-4 rounded border-border bg-surface text-primary-600 focus:ring-primary-500 dark:border-slate-500"
-                  disabled={isFinal || isInvoiceLocked}
-                />
-                <span className="text-xs font-medium text-text-primary">
-                  {documentType === 'bill_of_supply' ? 'Export' : 'Export invoice'}
-                </span>
+              <label className="block space-y-1 py-0.5">
+                <span className="text-xs font-medium text-text-primary">Supply</span>
+                <select className="input h-9 w-full" value={supplyKind} disabled={isInvoiceLocked} onChange={(e) => applySupplyKind(e.target.value as typeof supplyKind)}>
+                  <option value="taxable">Taxable</option>
+                  {(business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular' && <option value="exempt">Exempt</option>}
+                  <option value="export">Export</option>
+                  {(business as { gst_registration_type?: string } | null)?.gst_registration_type === 'regular' && <option value="sez">SEZ</option>}
+                </select>
               </label>
             )}
           </div>
@@ -4122,6 +4166,16 @@ function NewInvoiceContent() {
                 </div>
               </div>
           </div>
+        )}
+        {!isFinal && supplyKind === 'sez' && (
+          <Card padding="md" className="space-y-2 border-primary-200 bg-slate-50 dark:border-primary-800 dark:bg-primary-900/35">
+            <h3 className="text-sm font-semibold text-primary-900 dark:text-primary-100">SEZ supply</h3>
+            <select className="input w-full" value={exportType} onChange={(e) => setExportType(e.target.value as 'wp' | 'wop')}>
+              <option value="wp">With payment of IGST</option>
+              <option value="wop">Without payment of IGST</option>
+            </select>
+            <p className="text-xs text-text-secondary">The customer needs an SEZ GSTIN. IGST applies even when the SEZ is in your state.</p>
+          </Card>
         )}
         {!isFinal && isExport && (
           <Card padding="md" className="bg-slate-50 dark:bg-primary-900/35 border-primary-200 dark:border-primary-800 space-y-3">

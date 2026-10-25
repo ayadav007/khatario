@@ -168,6 +168,7 @@ export async function PATCH(
       tax_rate,
       hsn_sac,
       item_type,
+      stock_class,
       min_stock,
       description,
       default_supplier_id,
@@ -616,6 +617,25 @@ export async function PATCH(
           variant.opening_stock || 0,
           JSON.stringify(variant.attributes || {})
         ]);
+      }
+    }
+
+    const effectiveType = item_type ?? existingItem.item_type ?? 'goods';
+    if (stock_class !== undefined && effectiveType !== 'service') {
+      const { parseStockClass } = await import('@/lib/inventory/stock-class');
+      try {
+        await query(
+          `UPDATE items SET stock_class = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND business_id = $3`,
+          [parseStockClass(stock_class), itemId, businessId],
+        );
+      } catch (error: any) {
+        if (error?.code === '42703' && parseStockClass(stock_class) !== 'trading') {
+          return NextResponse.json(
+            { error: 'Stock kinds need the inventory migration before they can be saved', code: 'MIGRATION_REQUIRED' },
+            { status: 503 },
+          );
+        }
+        if (error?.code !== '42703') throw error;
       }
     }
 

@@ -55,6 +55,10 @@ export interface Business {
   primary_module?: 'billing' | 'hr' | 'connect' | 'crm';
   iec_code?: string; // Import Export Code - Mandatory for exporters
   swift_code?: string; // SWIFT/BIC code for international wire transfers
+  udyam_number?: string | null;
+  tan?: string | null;
+  /** Director identification number of the signing director. */
+  din?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -806,6 +810,8 @@ export interface Item {
   unit: string;
   hsn_sac?: string;
   item_type?: 'goods' | 'service';
+  /** trading = Inventory 1104. Manufacturing stock uses its own account. */
+  stock_class?: 'trading' | 'raw_material' | 'wip' | 'finished_goods';
   purchase_price: number;
   selling_price: number | null;
   mrp?: number;

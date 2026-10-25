@@ -5,6 +5,7 @@ import {
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
 } from '@/lib/ledger-utils';
+import { accountCodeForStockClass, accountIdForCode } from '@/lib/inventory/stock-class';
 
 /**
  * Opening stock of an item (and its variants) as a ledger voucher:
@@ -21,11 +22,11 @@ export async function syncItemOpeningStockLedger(businessId: string, itemId: str
     await client.query('BEGIN');
 
     const item = (
-      await client.query<{ name: string; item_type: string; value: string }>(
+      await client.query<{ name: string; item_type: string; value: string; stock_class: string | null }>(
         `UPDATE items
             SET opening_stock_rate = COALESCE(opening_stock_rate, purchase_price, 0)
           WHERE id = $1 AND business_id = $2
-        RETURNING name, item_type,
+        RETURNING name, item_type, to_jsonb(items) ->> 'stock_class' AS stock_class,
                   (COALESCE(opening_stock, 0) * COALESCE(opening_stock_rate, purchase_price, 0)
                    + COALESCE((SELECT SUM(COALESCE(v.opening_stock, 0) * COALESCE(v.purchase_price, items.purchase_price, 0))
                                  FROM item_variants v WHERE v.item_id = items.id), 0))::numeric(14,2) AS value`,
@@ -37,21 +38,17 @@ export async function syncItemOpeningStockLedger(businessId: string, itemId: str
       return 0;
     }
 
-    const inventory = (
-      await client.query<{ id: string }>(
-        `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '1104' AND is_active = true LIMIT 1`,
-        [businessId]
-      )
-    ).rows[0];
+    const inventoryCode = accountCodeForStockClass(item.stock_class);
+    const inventoryId = await accountIdForCode(client, businessId, inventoryCode);
 
     await deleteVoucher(client, businessId, itemId, 'opening_stock', 'regenerate:opening_stock', null);
 
     const value = item.item_type === 'goods' ? Number(item.value) || 0 : 0;
     if (value > 0) {
-      if (!inventory) throw new Error('Inventory account (1104) not found. Please set up chart of accounts.');
+      if (!inventoryId) throw new Error(`Inventory account (${inventoryCode}) not found. Please set up chart of accounts.`);
       const narration = `Opening stock - ${item.name}`.slice(0, 500);
       for (const [accountId, debit, credit] of [
-        [inventory.id, value, 0],
+        [inventoryId, value, 0],
         [openingAccount.id, 0, value],
       ] as const) {
         await client.query(

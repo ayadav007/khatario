@@ -24,6 +24,7 @@ export type LedgerRegisterRow = {
   credit: string;
   branch_id: string | null;
   source: 'line' | 'legacy';
+  created_at?: string | null;
 };
 
 export type LedgerRegisterQuery = {
@@ -188,6 +189,26 @@ export async function listLedgerRegister(
   };
 }
 
+export async function sumLedgerRegisterByAccount(
+  q: LedgerRegisterQuery
+): Promise<Array<{ account_id: string; debit: number; credit: number }>> {
+  const params: unknown[] = [];
+  const unified = unifiedSql(q, params);
+  const rows = await queryRows<{ account_id: string; debit: string; credit: string }>(
+    `SELECT account_id,
+            COALESCE(SUM(debit), 0)::text AS debit,
+            COALESCE(SUM(credit), 0)::text AS credit
+       FROM (${unified}) register
+      GROUP BY account_id`,
+    params
+  );
+  return rows.map((row) => ({
+    account_id: row.account_id,
+    debit: Number(row.debit) || 0,
+    credit: Number(row.credit) || 0,
+  }));
+}
+
 export async function sumLedgerRegister(
   q: LedgerRegisterQuery
 ): Promise<{ debit: number; credit: number }> {
@@ -210,4 +231,48 @@ export function signedLedgerBalance(
   credit: number
 ): number {
   return nature === 'credit' ? credit - debit : debit - credit;
+}
+
+export type BalanceSide = 'Dr' | 'Cr' | null;
+
+function roundMoney(amount: number): number {
+  return Math.round((Number(amount) || 0) * 100) / 100;
+}
+
+/** Plain closing amount, plus the Dr/Cr side of that same figure. Zero has no side. */
+export function balanceSide(nature: string | null | undefined, signed: number): { amount: number; side: BalanceSide } {
+  const amount = Math.abs(roundMoney(signed));
+  if (amount < 0.005) return { amount: 0, side: null };
+  const normal = nature === 'credit' ? 'Cr' : 'Dr';
+  return { amount, side: signed > 0 ? normal : normal === 'Dr' ? 'Cr' : 'Dr' };
+}
+
+/**
+ * Opening is the opening-voucher movement. Debit and credit are everything else.
+ * Closing is the plain net. Balance uses that same amount with its Dr or Cr side.
+ */
+export function ledgerBalanceFigures(
+  nature: string | null | undefined,
+  movementDebit: number,
+  movementCredit: number,
+  openingDebit = 0,
+  openingCredit = 0,
+): {
+  opening: number;
+  openingSide: BalanceSide;
+  closing: number;
+  balanceSide: BalanceSide;
+  signed: number;
+} {
+  const openingSigned = signedLedgerBalance(nature, openingDebit, openingCredit);
+  const signed = roundMoney(openingSigned + signedLedgerBalance(nature, movementDebit, movementCredit));
+  const opening = balanceSide(nature, openingSigned);
+  const closing = balanceSide(nature, signed);
+  return {
+    opening: opening.amount,
+    openingSide: opening.side,
+    closing: closing.amount,
+    balanceSide: closing.side,
+    signed,
+  };
 }

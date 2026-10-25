@@ -118,7 +118,14 @@ for (const p of KEY_URLS) {
       siteUrl: site,
     });
     const s = r.inspectionResult?.indexStatusResult ?? {};
-    inspections.push({ url: p, verdict: s.verdict, coverage: s.coverageState, lastCrawl: s.lastCrawlTime });
+    inspections.push({
+      url: p,
+      verdict: s.verdict,
+      coverage: s.coverageState,
+      lastCrawl: s.lastCrawlTime,
+      googleCanonical: s.googleCanonical,
+      userCanonical: s.userCanonical,
+    });
   } catch (error) {
     inspections.push({ url: p, error: String(error.message).slice(0, 200) });
   }

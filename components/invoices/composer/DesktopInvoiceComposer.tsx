@@ -86,6 +86,9 @@ export type DesktopInvoiceComposerProps = {
   setSelectedWarehouseId: (v: string) => void;
 
   isExport: boolean;
+  supplyKind: 'taxable' | 'exempt' | 'export' | 'sez';
+  showSezExempt: boolean;
+  onSupplyKind: (kind: 'taxable' | 'exempt' | 'export' | 'sez') => void;
   setIsExport: (v: boolean) => void;
   exportState: ComposerExportState;
   patchExport: (patch: Partial<ComposerExportState>) => void;
@@ -192,6 +195,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
   const toggleExport = useCallback(
     (enabled: boolean, quiet = false) => {
       if (p.readOnly || enabled === p.isExport) return;
+      p.onSupplyKind(enabled ? 'export' : 'taxable');
       p.setIsExport(enabled);
       if (!quiet) {
         toast.info(
@@ -346,9 +350,13 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     };
   }, [sidebarCollapsed]);
 
-  const taxLabel = nonTaxable
+  const taxLabel = p.supplyKind === 'exempt' || (nonTaxable && p.supplyKind !== 'export' && p.supplyKind !== 'sez')
     ? 'Tax'
-    : p.isExport
+    : p.supplyKind === 'sez'
+      ? p.exportState.exportType === 'wop'
+        ? 'SEZ · IGST 0%'
+        : 'SEZ · IGST'
+      : p.isExport
       ? p.exportState.exportType === 'wop'
         ? 'IGST 0% · LUT'
         : 'IGST'
@@ -447,8 +455,11 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               posStateCode={p.posStateCode}
               isIntraState={p.isIntraState}
               isExport={p.isExport}
+              supplyKind={p.supplyKind}
+              showSezExempt={p.showSezExempt}
               exportType={p.exportState.exportType}
-              onToggleExport={(v) => toggleExport(v)}
+              onSupplyKind={p.onSupplyKind}
+              onExportType={(kind) => p.patchExport({ exportType: kind })}
               warehouses={p.warehouses}
               warehousesLoading={p.warehousesLoading}
               selectedWarehouseId={p.selectedWarehouseId}
@@ -487,6 +498,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
           barcodeRef={barcodeRef}
           documentType={p.documentType}
           isExport={p.isExport}
+          supplyKind={p.supplyKind}
           exportType={p.exportState.exportType}
           isIntraState={p.isIntraState}
           pricesIncludeGst={p.pricesIncludeGst}

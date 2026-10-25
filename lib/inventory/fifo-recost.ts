@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { accountIdByCode, insertVoucherLines, round2, type VoucherLine } from '@/lib/accounting/voucher-posting';
 import { counterAccountCodes, type AdjustmentReason } from '@/lib/inventory/adjustment-posting';
+import { INVENTORY_ACCOUNT_CODES } from '@/lib/inventory/stock-class';
 import {
   getValuationMethod,
   lockCostItems,
@@ -121,7 +122,7 @@ export async function recostItems(
     voucher_type: VoucherType; voucher_id: string; net_out: string; branch_id: string | null; entry_date: string;
   }>(
     `SELECT l.voucher_type, l.voucher_id,
-            COALESCE(SUM(CASE WHEN a.account_code = '1104' THEN l.credit - l.debit ELSE 0 END), 0) AS net_out,
+            COALESCE(SUM(CASE WHEN a.account_code = ANY($4::text[]) THEN l.credit - l.debit ELSE 0 END), 0) AS net_out,
             MAX(l.branch_id::text) AS branch_id,
             to_char(MIN(l.entry_date), 'YYYY-MM-DD') AS entry_date
        FROM ledger_entry_lines l
@@ -129,7 +130,7 @@ export async function recostItems(
        JOIN unnest($2::text[], $3::uuid[]) AS v(t, id) ON v.t = l.voucher_type AND v.id = l.voucher_id
       WHERE l.business_id = $1
       GROUP BY l.voucher_type, l.voucher_id`,
-    [businessId, list.map((c) => c.voucherType), list.map((c) => c.voucherId)]
+    [businessId, list.map((c) => c.voucherType), list.map((c) => c.voucherId), INVENTORY_ACCOUNT_CODES]
   );
   const postedBy = new Map(posted.rows.map((p) => [`${p.voucher_type}:${p.voucher_id}`, p]));
 
@@ -173,6 +174,17 @@ export async function recostItems(
     report.changed.push(line);
     if (opts.dryRun) continue;
 
+    const used = await client.query<{ id: string }>(
+      `SELECT a.id
+         FROM ledger_entry_lines l
+         JOIN accounts a ON a.id = l.account_id AND a.account_code = ANY($4::text[])
+        WHERE l.business_id = $1 AND l.voucher_type = $2 AND l.voucher_id = $3
+        GROUP BY a.id, a.account_code
+        ORDER BY ABS(SUM(l.credit - l.debit)) DESC
+        LIMIT 1`,
+      [businessId, c.voucherType, c.voucherId, INVENTORY_ACCOUNT_CODES],
+    );
+    const inventoryAccountId = used.rows[0]?.id ?? inventory;
     const inventoryCredit = c.outward ? delta : -delta;
     const amount = Math.abs(delta);
     const narration = `${RECOST_NARRATION} - ${c.reference ?? c.voucherId.slice(0, 8)}`.slice(0, 500);
@@ -180,10 +192,10 @@ export async function recostItems(
       inventoryCredit > 0
         ? [
             { accountId: counter, debit: amount, credit: 0, narration },
-            { accountId: inventory, debit: 0, credit: amount, narration },
+            { accountId: inventoryAccountId, debit: 0, credit: amount, narration },
           ]
         : [
-            { accountId: inventory, debit: amount, credit: 0, narration },
+            { accountId: inventoryAccountId, debit: amount, credit: 0, narration },
             { accountId: counter, debit: 0, credit: amount, narration },
           ];
     await insertVoucherLines(client, {
@@ -211,13 +223,13 @@ async function counterAccount(
     voucherType === 'stock_adjustment'
       ? `SELECT l.account_id FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
           WHERE l.business_id = $1 AND l.voucher_type = 'stock_adjustment' AND l.voucher_id = $2
-            AND a.account_code <> '1104' AND l.debit > 0
+            AND NOT (a.account_code = ANY($3::text[])) AND l.debit > 0
           ORDER BY l.created_at LIMIT 1`
       : `SELECT l.account_id FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
           WHERE l.business_id = $1 AND l.voucher_type = 'inter_branch_receipt' AND l.voucher_id = $2
-            AND a.account_code <> '1104' AND l.credit > 0 AND l.narration LIKE 'Stock received%'
+            AND NOT (a.account_code = ANY($3::text[])) AND l.credit > 0 AND l.narration LIKE 'Stock received%'
           ORDER BY l.created_at LIMIT 1`,
-    [businessId, voucherId]
+    [businessId, voucherId, INVENTORY_ACCOUNT_CODES]
   );
   if (r.rows[0]) return r.rows[0].account_id;
   if (voucherType !== 'stock_adjustment') return null;

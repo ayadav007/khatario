@@ -16,7 +16,7 @@ export type OfflineBannerMode = 'default' | 'blocked';
 
 export const OFFLINE_BANNER_DEFAULT = 'No Internet Connection Found';
 export const OFFLINE_BANNER_BLOCKED =
-  'This feature does not work offline';
+  'This needs an internet connection';
 
 export const OFFLINE_BLOCKED_EVENT = 'khatario-offline-blocked';
 

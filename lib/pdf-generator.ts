@@ -417,7 +417,7 @@ export async function generateDocumentHtml(
       },
       customer: {
         ...doc,
-        name: doc.customer_name,
+        name: doc.billing_name || doc.customer_name,
         billing_address: doc.invoice_billing_address || doc.customer_billing_address,
         shipping_address: doc.invoice_shipping_address || doc.customer_shipping_address,
         gstin: doc.customer_gstin,

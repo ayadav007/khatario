@@ -1,12 +1,12 @@
 ---
-title: Mobile app, offline billing and printing
+title: Mobile app and printing
 audience: [prospect, tenant_user]
 locale: en
-tags: [mobile, android, offline, printer, thermal, bluetooth, pwa]
+tags: [mobile, android, printer, thermal, bluetooth, pwa, internet]
 url: /
 ---
 
-# Mobile app, offline billing and printing
+# Mobile app and printing
 
 ## Does Khatario work on my phone?
 
@@ -18,7 +18,7 @@ There is no separate iPhone app. On an iPhone or iPad, open Khatario in Safari a
 
 ## What happens if the internet goes down?
 
-You can keep billing. Bills, items, customers and new purchases made offline are saved on the device and sync automatically when the connection comes back, so the counter queue does not stop. Some actions, such as finalising certain documents, need a connection.
+Saving a bill needs an internet connection. Reconnect, then save the bill. Khatario does not keep billing while you are disconnected.
 
 ## Which printers does Khatario support?
 

@@ -14,11 +14,11 @@ import {
   type VoucherLine,
 } from '@/lib/accounting/voucher-posting';
 import {
-  computeGoodsCost,
   currentUnitCosts,
   getInventoryModel,
-  postCostOfGoods,
+  postPerpetualGoodsCost,
 } from '@/lib/inventory/cogs-posting';
+import { accountIdForCode, INVENTORY_ACCOUNT_CODES } from '@/lib/inventory/stock-class';
 
 export interface BranchInfo {
   id: string;
@@ -450,23 +450,17 @@ export async function createInterBranchInvoice(
   });
 
   if ((await getInventoryModel(client, params.businessId)) === 'perpetual') {
-    const cost = await computeGoodsCost(
-      client,
-      params.businessId,
-      params.items.map((i) => ({ itemId: i.item_id, quantity: Number(i.qty) || 0 })),
-      params.transferDate,
-      params.fromBranchId,
-      { kind: 'invoice', docId: invoice.id }
-    );
-    await postCostOfGoods(client, {
+    await postPerpetualGoodsCost(client, {
       businessId: params.businessId,
       voucherType: 'invoice',
       voucherId: invoice.id,
-      amount: cost,
       entryDate: params.transferDate,
       reference: invoice.invoice_number,
       branchId: params.fromBranchId,
       direction: 'sale',
+      lines: params.items.map((i) => ({ itemId: i.item_id, quantity: Number(i.qty) || 0 })),
+      asOfDate: params.transferDate,
+      target: { kind: 'invoice', docId: invoice.id },
     });
   }
 
@@ -592,11 +586,29 @@ export async function createInterBranchPurchaseEntries(
 
   const inventoryAmount = round2(params.inventoryAmount ?? 0);
   if (inventoryAmount > 0 && (await getInventoryModel(client, params.businessId)) === 'perpetual') {
-    const inventory = await requireAccountByCode(client, params.businessId, '1104', 'Inventory');
-    lines.push(
-      { accountId: inventory, debit: inventoryAmount, credit: 0, narration: `Stock received - ${label}` },
-      { accountId: acc.purchases, debit: 0, credit: inventoryAmount, narration: `Stock received - ${label}` }
+    const classRows = await client.query<{ account_code: string; total: string }>(
+      `SELECT a.account_code, SUM(l.credit::numeric) AS total
+         FROM ledger_entry_lines l
+         JOIN accounts a ON a.id = l.account_id AND a.account_code = ANY($2::text[])
+        WHERE l.business_id = $1 AND l.voucher_id = $3 AND l.voucher_type = 'invoice' AND l.credit > 0
+        GROUP BY a.account_code`,
+      [params.businessId, INVENTORY_ACCOUNT_CODES, params.invoiceId],
     );
+    let remaining = inventoryAmount;
+    for (const row of classRows.rows) {
+      const amount = round2(Math.min(remaining, Number(row.total) || 0));
+      if (amount <= 0) continue;
+      remaining = round2(remaining - amount);
+      const inventory = await accountIdForCode(client, params.businessId, row.account_code);
+      if (!inventory) throw new Error(`Inventory account ${row.account_code} not found`);
+      lines.push({ accountId: inventory, debit: amount, credit: 0, narration: `Stock received - ${label}` });
+    }
+    if (remaining > 0.009) {
+      const inventory = await accountIdForCode(client, params.businessId, '1104');
+      if (!inventory) throw new Error('Inventory account 1104 not found');
+      lines.push({ accountId: inventory, debit: remaining, credit: 0, narration: `Stock received - ${label}` });
+    }
+    lines.push({ accountId: acc.purchases, debit: 0, credit: inventoryAmount, narration: `Stock received - ${label}` });
   }
 
   await insertVoucherLines(client, {

@@ -1278,7 +1278,7 @@ export default function NewPurchasePage() {
   if (!business?.id || !user?.id) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-text-secondary">
-        <p>Session data is still loading. If this persists offline, open the app once while online.</p>
+        <p>Session data is still loading. If this keeps happening, open the app once while you have an internet connection.</p>
       </div>
     );
   }
@@ -1431,7 +1431,7 @@ export default function NewPurchasePage() {
 
         if (queued) {
           toast.success(
-            'Purchase saved offline. It will finalize and update stock when you reconnect.'
+            'Purchase saved on this device. It will finalize and update stock when you reconnect.'
           );
           router.push('/purchases');
           return;
@@ -2763,7 +2763,7 @@ export default function NewPurchasePage() {
               type="button"
               onClick={() => handleSubmit('final')}
               disabled={loading || !isOnline}
-              title={isOnline ? 'Finalizing updates stock and counts in your GST returns' : 'You are offline — connect to finalize'}
+              title={isOnline ? 'Finalizing updates stock and counts in your GST returns' : 'No internet connection. Connect to finalize.'}
               className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary-500 px-6 text-sm font-semibold text-white hover:bg-primary-600 disabled:opacity-60"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

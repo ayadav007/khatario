@@ -68,7 +68,7 @@ const settingsSections = <(String, List<(String, String)>)>[
     ('/items/categories', 'Item categories'),
   ]),
   ('Billing tools', [
-    ('/settings/offline-sync', 'Offline sync'),
+    ('/settings/offline-sync', 'Catalog sync'),
     ('/settings/automation', 'Workflow automation'),
   ]),
   ('People', [

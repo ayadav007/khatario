@@ -8,6 +8,7 @@ import { seedInitialBusinessModules } from '@/lib/business-modules';
 import { seedInitialModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import { ensureComplimentaryHrForBilling } from '@/lib/subscription/ensure-complimentary-hr';
 import { applyIndustryCoa } from '@/lib/accounting/apply-industry-coa';
+import { ensureInventoryClassAccounts } from '@/lib/inventory/stock-class';
 
 type PgClient = Pick<PoolClient, 'query'>;
 
@@ -194,6 +195,7 @@ export async function provisionBusiness(
         if (ecl.rows[0]?.ok) {
           await client.query(`SELECT ensure_gst_electronic_cash_ledger($1)`, [businessId]);
         }
+        await ensureInventoryClassAccounts(client, businessId);
       });
       if (!heads.ok) softFailures.push(`standard_account_heads: ${errorMessage(heads.error)}`);
       const industryCoa = await withSavepoint(client, 'sp_coa_industry', async () => {

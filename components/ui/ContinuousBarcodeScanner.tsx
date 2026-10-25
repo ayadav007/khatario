@@ -100,7 +100,7 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
         if (offlineItem) {
           return offlineItem as ItemSearchResult;
         }
-        toast.error('Item not found in offline catalog.', { duration: 2500 });
+        toast.error('Item was not found in the item list on this device.', { duration: 2500 });
         return null;
       }
 

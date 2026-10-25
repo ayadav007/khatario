@@ -6,6 +6,8 @@ import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { normalizePan } from '@/lib/tax/pan';
+import { parseRegistrationNumber } from '@/lib/business/registration-ids';
+import { registrationMigrationResponse } from '@/lib/business/registration-access';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
@@ -237,6 +239,20 @@ export async function PATCH(
       updates.push(`business_model = $${paramIndex++}`);
       values.push(business_model || null);
     }
+    const registrationFields = [
+      ['udyam_number', 'msme'],
+      ['tan', 'tan'],
+      ['din', 'din'],
+    ] as const;
+    for (const [field, kind] of registrationFields) {
+      if (body[field] === undefined) continue;
+      const parsed = parseRegistrationNumber(kind, body[field]);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error, code: parsed.code }, { status: 400 });
+      }
+      updates.push(`${field} = $${paramIndex++}`);
+      values.push(parsed.value);
+    }
 
     if (updates.length === 0) {
       return NextResponse.json(
@@ -275,6 +291,8 @@ export async function PATCH(
       message: 'Business updated successfully'
     });
   } catch (error: any) {
+    const migration = registrationMigrationResponse(error);
+    if (migration) return migration;
     console.error('Error updating business:', error);
     return NextResponse.json(
       { error: 'Failed to update business', details: error.message },

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/contexts/AuthContext';
 import { INDIAN_STATES } from '@/lib/gst-utils';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 import {
   type ProfileFieldGap,
   type ProfileRequirementContext,
@@ -58,8 +59,11 @@ function validate(values: ProfileFieldValues, fields: (keyof ProfileFieldValues)
   if (fields.includes('pincode') && !/^\d{6}$/.test(values.pincode!.trim())) {
     return 'Pincode must be 6 digits.';
   }
-  if (fields.includes('gstin') && !/^[0-9A-Z]{15}$/.test(values.gstin!.trim().toUpperCase())) {
-    return 'GSTIN must be 15 characters.';
+  if (fields.includes('gstin')) {
+    const gstin = values.gstin?.trim() ?? '';
+    if (!gstin) return 'GSTIN is required.';
+    const checked = resolveGstinAndState({ gstin, state: values.state });
+    if (!checked.ok) return checked.error;
   }
   return null;
 }
@@ -69,7 +73,7 @@ export function ProfileRequiredModalProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { business, branch, user, activeBranchCount, refresh } = useAuth();
+  const { business, branch, activeBranchCount, refresh } = useAuth();
   const visibleRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<ProfileRequiredModalPayload | null>(null);
@@ -145,7 +149,7 @@ export function ProfileRequiredModalProvider({
         await fetch(`/api/branches/${branch.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ business_id: business.id, updated_by_user_id: user?.id, ...body }),
+          body: JSON.stringify({ business_id: business.id, ...body }),
         }).catch(() => {});
       }
       await refresh();

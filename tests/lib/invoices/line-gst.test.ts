@@ -7,11 +7,13 @@ describe('isZeroRatedWithoutTax', () => {
     expect(isZeroRatedWithoutTax({ is_export: true, export_type: 'wop' })).toBe(true);
     expect(isZeroRatedWithoutTax({ place_of_supply_state_code: '96', lut_declaration: true })).toBe(true);
     expect(isZeroRatedWithoutTax({ supply_type: 'sez_wop' })).toBe(true);
+    expect(isZeroRatedWithoutTax({ supply_type: 'sez', export_type: 'wop' })).toBe(true);
   });
 
   it('charges IGST on export / SEZ with payment', () => {
     expect(isZeroRatedWithoutTax({ is_export: true, export_type: 'wp' })).toBe(false);
     expect(isZeroRatedWithoutTax({ supply_type: 'sez_wp', lut_declaration: true })).toBe(false);
+    expect(isZeroRatedWithoutTax({ supply_type: 'sez', export_type: 'wp' })).toBe(false);
   });
 
   it('ignores LUT flag on domestic supplies', () => {

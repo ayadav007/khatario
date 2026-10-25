@@ -1159,7 +1159,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               isLoading={props.loading}
               onClick={() => props.onSubmitFinal()}
             >
-              {props.isOnline ? 'Finalize' : 'Offline'}
+              {props.isOnline ? 'Finalize' : 'No connection'}
             </Button>
           </div>
           <p className="mt-2 px-4 text-center text-2xs text-text-muted">

@@ -103,6 +103,26 @@ describe('my accounts visibility', () => {
     expect(withoutSibling.accounts.find((row) => row.id === 'grand')?.balance).toBe(4);
   });
 
+  test('an opening voucher is shown as opening, and later entries stay in debit and credit', () => {
+    const result = resolveMyAccounts({
+      accounts,
+      groups,
+      activityByAccount: new Map([
+        ['cash', { debit: 590, credit: 0, lineCount: 2, openingDebit: 100, openingCredit: 0 }],
+      ]),
+      manualAccountIds: [],
+    });
+    expect(result.accounts.find((row) => row.id === 'cash')).toMatchObject({
+      opening: 100,
+      openingSide: 'Dr',
+      debit: 590,
+      credit: 0,
+      closing: 690,
+      balanceSide: 'Dr',
+      balance: 690,
+    });
+  });
+
   test('an unknown manual id and another group are ignored', () => {
     const result = visible(['missing', 'idle'], []);
     expect(result.accounts.map((row) => row.id)).toEqual(['idle']);

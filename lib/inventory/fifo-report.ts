@@ -123,7 +123,7 @@ export async function buildFifoLotReport(
   const ledger = await db.queryRows<{ bal: string }>(
     `SELECT COALESCE(SUM(l.debit - l.credit), 0) AS bal
        FROM ledger_entry_lines l
-       JOIN accounts a ON a.id = l.account_id AND a.account_code = '1104'
+       JOIN accounts a ON a.id = l.account_id AND a.account_code IN ('1104', '1160', '1161', '1162')
       WHERE l.business_id = $1 AND ($2::date IS NULL OR l.entry_date <= $2::date)`,
     [businessId, opts.asOf ?? null]
   );

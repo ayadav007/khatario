@@ -177,4 +177,4 @@ export async function searchOfflineCustomers(
 }
 
 export const OFFLINE_CATALOG_EMPTY_HINT =
-  'Offline catalog is empty. Connect once while online (open the app on Wi‑Fi) so items and customers can download.';
+  'The item and customer list on this device is empty. Open Khatario once with an internet connection so they can download.';

@@ -174,7 +174,10 @@ export function assembleBalanceSheet(
 
   const invAdj = r2(opts.inventoryAdjustment ?? 0);
   const ca = buckets.current_asset;
-  const inventoryLedger = byCode(ca, '1104');
+  const inventoryLedger = r2(
+    ca.filter((l) => l.account_code === '1104' || l.account_code === '1160' || l.account_code === '1161' || l.account_code === '1162')
+      .reduce((s, l) => s + l.balance, 0),
+  );
   const currentAssets = {
     ...section(ca),
     inventory: r2(inventoryLedger + invAdj),
@@ -227,7 +230,7 @@ export function assembleBalanceSheet(
 
   const abnormal = [
     ...[...ca, ...fa, ...buckets.investment, ...buckets.other_asset]
-      .filter((l) => l.balance < -0.005 && !isAccumulatedDepreciation(l) && l.account_code !== '1104')
+      .filter((l) => l.balance < -0.005 && !isAccumulatedDepreciation(l) && !['1104', '1160', '1161', '1162'].includes(l.account_code))
       .map((l) => ({ account_code: l.account_code, account_name: l.account_name, side: 'asset' as const, amount: l.balance })),
     ...[...cl, ...buckets.long_term_liability, ...buckets.other_liability]
       .filter((l) => l.balance < -0.005)

@@ -215,6 +215,7 @@ export async function POST(request: NextRequest) {
       tax_rate = 0,
       hsn_sac,
       item_type = 'goods',
+      stock_class,
       opening_stock = 0,
       min_stock = 0,
       default_supplier_id,
@@ -504,6 +505,28 @@ export async function POST(request: NextRequest) {
       if (!item) {
         await client.query('ROLLBACK');
         throw new Error('Failed to create item');
+      }
+      if (item_type === 'goods' && stock_class) {
+        const { parseStockClass } = await import('@/lib/inventory/stock-class');
+        const nextClass = parseStockClass(stock_class);
+        if (nextClass !== 'trading') {
+          try {
+            const updated = await client.query<Item>(
+              `UPDATE items SET stock_class = $1 WHERE id = $2 AND business_id = $3 RETURNING *`,
+              [nextClass, item.id, business_id],
+            );
+            item = updated.rows[0] ?? item;
+          } catch (error: any) {
+            if (error?.code === '42703') {
+              await client.query('ROLLBACK');
+              return NextResponse.json(
+                { error: 'Stock kinds need the inventory migration before they can be saved', code: 'MIGRATION_REQUIRED' },
+                { status: 503 },
+              );
+            }
+            throw error;
+          }
+        }
       }
 
       const { clipItemSeo } = await import('@/lib/store/item-seo');

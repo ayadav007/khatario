@@ -5,7 +5,7 @@ export type TrustBarItem = { icon: string; label: string };
 export const DEFAULT_TRUST_ITEMS: TrustBarItem[] = [
   { icon: 'shield', label: 'GST-ready billing' },
   { icon: 'message', label: 'WhatsApp share' },
-  { icon: 'offline', label: 'Works offline' },
+  { icon: 'badgeCheck', label: 'Free to start' },
   { icon: 'smartphone', label: 'Phone & desktop' },
 ];
 

@@ -80,6 +80,7 @@ export default function NewItemPage() {
     pack_unit: '',
     uqc: '',
     item_type: 'goods' as 'goods' | 'service',
+    stock_class: 'trading' as 'trading' | 'raw_material' | 'wip' | 'finished_goods',
     selling_price: '',
     purchase_price: '',
     tax_rate: '',
@@ -442,6 +443,7 @@ export default function NewItemPage() {
               pack_unit: item.pack_unit || '',
               uqc: (item as { uqc?: string | null }).uqc || '',
               item_type: item.item_type || 'goods',
+              stock_class: item.stock_class || 'trading',
               selling_price: item.selling_price?.toString() || '',
               purchase_price: item.purchase_price?.toString() || '',
               tax_rate: item.tax_rate?.toString() || '',
@@ -801,6 +803,7 @@ export default function NewItemPage() {
         pack_unit: formData.pack_unit || null,
         uqc: formData.uqc || toGstUqc(formData.unit, formData.hsn_sac),
         item_type: formData.item_type,
+        stock_class: formData.item_type === 'goods' ? formData.stock_class : 'trading',
         selling_price: formData.item_type === 'service' || formData.has_variants
           ? (formData.selling_price ? Number(formData.selling_price) : null)
           : (Number(formData.selling_price) || 0),
@@ -1026,7 +1029,7 @@ export default function NewItemPage() {
                         type="button"
                         onClick={() => {
                           if (t.value === 'service') {
-                            setFormData({ ...formData, item_type: 'service', is_bundle: false });
+                            setFormData({ ...formData, item_type: 'service', is_bundle: false, stock_class: 'trading' });
                             setBundleComponents([]);
                           } else {
                             setFormData({ ...formData, item_type: 'goods' });
@@ -1047,6 +1050,24 @@ export default function NewItemPage() {
                     );
                   })}
                 </div>
+                {formData.item_type === 'goods' && (
+                  <div>
+                    <label className="type-label mb-1.5 block">Stock kind</label>
+                    <select
+                      value={formData.stock_class}
+                      onChange={(e) => setFormData({ ...formData, stock_class: e.target.value as typeof formData.stock_class })}
+                      className="input"
+                    >
+                      <option value="trading">Stock-in-trade (resale)</option>
+                      <option value="raw_material">Raw material</option>
+                      <option value="wip">Work in progress</option>
+                      <option value="finished_goods">Finished goods</option>
+                    </select>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Purchases, opening stock and the cost of a sale post to this account. Resale stays on Inventory.
+                    </p>
+                  </div>
+                )}
               </AnnotatedFormSection>
 
               <AnnotatedFormSection
@@ -1848,14 +1869,14 @@ export default function NewItemPage() {
                     <Switch
                       className="pb-4"
                       label="Track batch numbers"
-                      description="Expiry and manufacturing dates per batch, and FIFO valuation."
+                      description="Save the item, then type each batch on the item’s Batches tab, on the purchase bill, or in Scan & Add. The number is not entered on this switch."
                       checked={formData.track_batch}
                       onChange={(checked) => setFormData({ ...formData, track_batch: checked })}
                     />
                     <Switch
                       className="py-4"
                       label="Track serial numbers"
-                      description="One serial per unit, for electronics, appliances and similar goods."
+                      description="Save the item, then type each serial on the item’s Serials tab or on the purchase bill. One serial per unit. The number is not entered on this switch."
                       checked={formData.track_serial}
                       onChange={(checked) => setFormData({ ...formData, track_serial: checked })}
                     />

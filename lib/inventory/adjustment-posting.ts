@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { accountIdByCode, insertVoucherLines, round2, type VoucherLine } from '@/lib/accounting/voucher-posting';
+import { accountCodeForStockClass, accountIdForCode } from '@/lib/inventory/stock-class';
 
 export type AdjustmentReason =
   | 'STOCK_TAKE'
@@ -76,14 +77,22 @@ export async function postInventoryAdjustment(
   const amount = round2(Math.abs(p.amount));
   if (amount === 0) return { itcReversed: 0 };
 
-  const inventory = await accountIdByCode(client, p.businessId, '1104');
+  const classRow = await client.query<{ stock_class: string | null }>(
+    `SELECT to_jsonb(items) ->> 'stock_class' AS stock_class FROM items WHERE id = $1 AND business_id = $2`,
+    [p.itemId, p.businessId],
+  );
+  const inventory = await accountIdForCode(
+    client,
+    p.businessId,
+    accountCodeForStockClass(classRow.rows[0]?.stock_class),
+  );
   const counter = await firstAccount(
     client,
     p.businessId,
     p.counterCodes && p.counterCodes.length > 0 ? p.counterCodes : counterAccountCodes(p.reason, p.isDecrease)
   );
   if (!inventory || !counter) {
-    throw new Error('Inventory (1104) or stock adjustment ledger account not found; initialise the chart of accounts');
+    throw new Error('Inventory account or stock adjustment ledger account not found; initialise the chart of accounts');
   }
 
   const lines: VoucherLine[] = p.isDecrease

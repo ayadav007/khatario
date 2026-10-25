@@ -57,7 +57,7 @@ export function connectivityLabel(state: ConnectivityState): string {
     case 'degraded':
       return 'Limited connectivity';
     case 'offline':
-      return 'Offline';
+      return 'No connection';
     case 'reconnecting':
       return 'Reconnecting…';
     case 'syncing':

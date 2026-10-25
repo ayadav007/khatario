@@ -29,7 +29,7 @@ You can start with one product and add the other later from the same account. **
 
 ## Where can I use Khatario?
 
-Khatario runs in the web browser on a computer, laptop, tablet or phone, and can be installed on the home screen like an app. There is also an Android app. Your data is the same on every device. Billing keeps working when the internet drops and syncs when the connection returns.
+Khatario runs in the web browser on a computer, laptop, tablet or phone, and can be installed on the home screen like an app. There is also an Android app. Your data is the same on every device. Saving a bill needs an internet connection.
 
 ## How do I get started?
 

@@ -44,7 +44,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/label-templates/new': 'New label template',
   '/settings/features': 'Appearance',
   '/settings/backup': 'Backup & restore',
-  '/settings/offline-sync': 'Offline sync',
+  '/settings/offline-sync': 'Catalog sync',
   '/settings/automation': 'Workflow Automation',
   '/settings/commission-rules': 'Commission Rules',
   '/settings/holidays': 'Holiday Calendar',

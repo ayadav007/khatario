@@ -560,7 +560,7 @@ export class GSTR1Generator {
             const sply: NilSupplyType = interState ? (isB2B ? 'INTRB2B' : 'INTRB2C') : (isB2B ? 'INTRAB2B' : 'INTRAB2C');
             const entry = nilRow(sply);
             const tv = parseFloat(item.item_taxable_value) || 0;
-            if (inv.document_type === 'bill_of_supply') entry.exempt_supply += tv;
+            if (inv.document_type === 'bill_of_supply' || inv.supply_type === 'exempt') entry.exempt_supply += tv;
             else entry.nil_supply += tv;
           }
         });
@@ -967,7 +967,7 @@ export class GSTR1Generator {
         const sign = entry.note_type === 'C' ? -1 : 1;
         if (entry.tax_rate === 0) {
           const target = nilRow(noteInter ? 'INTRB2C' : 'INTRAB2C');
-          if (row.orig_document_type === 'bill_of_supply') target.exempt_supply += sign * entry.taxable_value;
+          if (row.orig_document_type === 'bill_of_supply' || row.orig_supply_type === 'exempt') target.exempt_supply += sign * entry.taxable_value;
           else target.nil_supply += sign * entry.taxable_value;
           return;
         }

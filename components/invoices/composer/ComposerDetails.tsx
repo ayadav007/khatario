@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { clsx } from 'clsx';
-import { AlertTriangle, ChevronDown, Home, Loader2, MapPin, Plane, Warehouse } from 'lucide-react';
+import { AlertTriangle, Building2, ChevronDown, Home, Loader2, MapPin, Plane, Receipt, Warehouse } from 'lucide-react';
 import type { ComposerDocType, ComposerMoreDetails } from './types';
 import { addDaysIso, daysBetween, Field, fmtDate, inputCls, Kbd, PAYMENT_TERMS, SectionLabel } from './ui';
 
@@ -28,8 +28,11 @@ type Props = {
   posStateCode: string;
   isIntraState: boolean;
   isExport: boolean;
+  supplyKind: 'taxable' | 'exempt' | 'export' | 'sez';
+  showSezExempt: boolean;
   exportType: 'wp' | 'wop';
-  onToggleExport: (enabled: boolean) => void;
+  onSupplyKind: (kind: 'taxable' | 'exempt' | 'export' | 'sez') => void;
+  onExportType: (kind: 'wp' | 'wop') => void;
   warehouses: Array<{ id: string; name: string; warehouse_code?: string; is_primary?: boolean }>;
   warehousesLoading: boolean;
   selectedWarehouseId: string;
@@ -43,15 +46,32 @@ export function DetailsPanel(p: Props) {
   const docNo =
     p.offlineNumber || (p.invoicePrefix && p.invoiceNumber ? `${p.invoicePrefix}-${p.invoiceNumber}` : null);
 
-  const taxBadge = nonTaxable
+  const taxBadge = p.supplyKind === 'exempt' || nonTaxable
     ? 'No GST'
-    : p.isExport
+    : p.supplyKind === 'sez'
       ? p.exportType === 'wop'
-        ? 'IGST 0% · LUT'
-        : 'IGST paid'
-      : p.isIntraState
-        ? 'CGST + SGST'
-        : 'IGST';
+        ? 'SEZ · IGST 0%'
+        : 'SEZ · IGST'
+      : p.isExport
+        ? p.exportType === 'wop'
+          ? 'IGST 0% · LUT'
+          : 'IGST paid'
+        : p.isIntraState
+          ? 'CGST + SGST'
+          : 'IGST';
+  const supplyOptions = (
+    p.showSezExempt
+      ? [
+          { id: 'taxable' as const, label: 'Taxable', icon: Home },
+          { id: 'exempt' as const, label: 'Exempt', icon: Receipt },
+          { id: 'export' as const, label: 'Export', icon: Plane },
+          { id: 'sez' as const, label: 'SEZ', icon: Building2 },
+        ]
+      : [
+          { id: 'taxable' as const, label: 'Domestic', icon: Home },
+          { id: 'export' as const, label: 'Export', icon: Plane },
+        ]
+  );
 
   return (
     <div className="flex min-w-0 flex-col p-4">
@@ -80,27 +100,22 @@ export function DetailsPanel(p: Props) {
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
         {!p.readOnly && (
-          <div className="col-span-2 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-            {(
-              [
-                { id: false, label: 'Domestic', icon: Home },
-                { id: true, label: 'Export', icon: Plane },
-              ] as const
-            ).map((opt) => (
+          <div className={clsx('col-span-2 grid gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800', p.showSezExempt ? 'grid-cols-4' : 'grid-cols-2')}>
+            {supplyOptions.map((opt) => (
               <button
-                key={opt.label}
+                key={opt.id}
                 type="button"
-                onClick={() => p.onToggleExport(opt.id)}
+                onClick={() => p.onSupplyKind(opt.id)}
                 className={clsx(
-                  'inline-flex h-7 items-center justify-center gap-1.5 rounded-md text-xs font-semibold transition',
-                  p.isExport === opt.id
+                  'inline-flex h-7 items-center justify-center gap-1 rounded-md text-xs font-semibold transition',
+                  p.supplyKind === opt.id
                     ? 'bg-surface text-primary-700 shadow-sm dark:text-primary-300'
                     : 'text-text-secondary hover:text-text-primary'
                 )}
               >
                 <opt.icon className="h-3.5 w-3.5" />
                 {opt.label}
-                {opt.id && <Kbd className="ml-0.5 h-4 min-w-[16px] text-[9px]">Alt E</Kbd>}
+                {opt.id === 'export' && <Kbd className="ml-0.5 hidden h-4 min-w-[16px] text-[9px] xl:inline-flex">Alt E</Kbd>}
               </button>
             ))}
           </div>
@@ -219,8 +234,14 @@ export function DetailsPanel(p: Props) {
             </span>
           </div>
           <p className="mt-1 pl-5 text-[11px] leading-snug text-text-secondary">
-            {nonTaxable ? (
+            {p.supplyKind === 'exempt' ? (
+              'Exempt supply: this is a bill of supply and no GST is charged.'
+            ) : nonTaxable && p.supplyKind !== 'export' && p.supplyKind !== 'sez' ? (
               'Bill of supply: no GST is charged on this document.'
+            ) : p.supplyKind === 'sez' ? (
+              p.exportType === 'wop'
+                ? 'SEZ supply without payment of IGST. The customer needs an SEZ GSTIN.'
+                : 'SEZ supply with IGST, even when the SEZ is in your state. The customer needs an SEZ GSTIN.'
             ) : p.isExport ? (
               <>
                 Export: supply is outside India, so it is always IGST.{' '}
@@ -243,6 +264,26 @@ export function DetailsPanel(p: Props) {
               </span>
             )}
           </p>
+          {p.supplyKind === 'sez' && !p.readOnly && (
+            <div className="mt-2 grid grid-cols-2 gap-1 pl-5">
+              {([
+                ['wp', 'With IGST'],
+                ['wop', 'Without IGST'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => p.onExportType(id)}
+                  className={clsx(
+                    'h-7 rounded-md text-xs font-semibold',
+                    p.exportType === id ? 'bg-surface text-primary-700 shadow-sm dark:text-primary-300' : 'text-text-secondary'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

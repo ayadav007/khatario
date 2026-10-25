@@ -33,15 +33,18 @@ export function computeInvoiceTotals(
 ): AuthoritativeInvoiceTotals {
   const items = body.items ?? [];
   const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
-  const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
   const exportFields = body as CreateInvoiceInput & {
     is_export?: boolean | null;
     supply_type?: string | null;
     export_type?: string | null;
     lut_declaration?: boolean | null;
   };
+  const supplyType = String(exportFields.supply_type || '').toLowerCase();
+  const sez = supplyType === 'sez' || supplyType.startsWith('sez');
+  const intraState = !sez && !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
   const zeroRated =
     body.document_type === 'bill_of_supply' ||
+    supplyType === 'exempt' ||
     isZeroRatedWithoutTax({
       is_export: exportFields.is_export,
       supply_type: exportFields.supply_type,

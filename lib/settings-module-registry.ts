@@ -341,7 +341,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         links: [
           {
             href: '/settings/offline-sync',
-            label: 'Offline sync',
+            label: 'Catalog sync',
             searchKeywords: ['catalog', 'cache', 'airplane'],
           },
           { href: '/settings/automation', label: 'Workflow automation', featureKey: 'workflow_automation' },

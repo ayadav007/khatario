@@ -17,6 +17,7 @@ type Props = {
   barcodeRef: React.RefObject<HTMLInputElement>;
   documentType: string;
   isExport: boolean;
+  supplyKind?: 'taxable' | 'exempt' | 'export' | 'sez';
   exportType: 'wp' | 'wop';
   isIntraState: boolean;
   pricesIncludeGst: boolean;
@@ -41,6 +42,7 @@ export function ItemsTable({
   barcodeRef,
   documentType,
   isExport,
+  supplyKind = 'taxable',
   exportType,
   isIntraState,
   pricesIncludeGst,
@@ -49,8 +51,8 @@ export function ItemsTable({
   readOnly,
 }: Props) {
   const [amountMode, setAmountMode] = useState<Record<number, boolean>>({});
-  const showTax = documentType !== 'bill_of_supply';
-  const zeroRated = isExport && exportType === 'wop';
+  const showTax = documentType !== 'bill_of_supply' && supplyKind !== 'exempt';
+  const zeroRated = supplyKind === 'exempt' || ((isExport || supplyKind === 'sez') && exportType === 'wop');
   const visible = rows.map((row, index) => ({ row, index })).filter(({ row }) => row.itemId || row.name);
   const colCount = showTax ? 9 : 8;
 

@@ -11,6 +11,7 @@ import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { CancelInvoiceModal } from '@/components/modals/CancelInvoiceModal';
+import { AmendInvoiceModal } from '@/components/modals/AmendInvoiceModal';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -69,6 +70,7 @@ export default function InvoiceDetailPage() {
   } = useGatedDocumentEmail();
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [amendModalOpen, setAmendModalOpen] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [converting, setConverting] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -200,6 +202,11 @@ export default function InvoiceDetailPage() {
   const handleCancelSuccess = () => {
     fetchInvoice();
     router.push('/invoices');
+  };
+
+  const handleAmendSuccess = () => {
+    toast.success('Invoice amended');
+    fetchInvoice();
   };
 
   const handleConvertToTaxInvoice = () => {
@@ -399,7 +406,7 @@ export default function InvoiceDetailPage() {
           }
           description={
             <>
-              {invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
+              {invoice.billing_name || invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
               {' • '}
               {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No date'}
               {' • '}
@@ -479,10 +486,16 @@ export default function InvoiceDetailPage() {
                 </Button>
                 {a4PrintButton}
                 {bluetoothPrintButton}
-                <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
-                  <Ban className="w-4 h-4 mr-2" />
-                  Cancel Invoice
+              {isFinal && !isProforma && !isCancelled && (
+                <Button variant="secondary" onClick={() => setAmendModalOpen(true)}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Amend
                 </Button>
+              )}
+              <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
+                <Ban className="w-4 h-4 mr-2" />
+                Cancel Invoice
+              </Button>
               </>
             )}
 
@@ -545,6 +558,12 @@ export default function InvoiceDetailPage() {
               <Button variant="primary" onClick={() => setPaymentModalOpen(true)} className="flex-1">
                 <CreditCard className="w-4 h-4" />
                 <span className="ml-2">Pay</span>
+              </Button>
+            )}
+            {isFinal && !isProforma && !isCancelled && (
+              <Button variant="secondary" onClick={() => setAmendModalOpen(true)} className="flex-1">
+                <Edit className="w-4 h-4" />
+                <span className="ml-2">Amend</span>
               </Button>
             )}
             {isFinal && (
@@ -775,6 +794,18 @@ export default function InvoiceDetailPage() {
       )}
 
       {receiptPrinter.dialog}
+      {amendModalOpen && invoice && (
+        <AmendInvoiceModal
+          invoiceId={invoice.id}
+          invoiceNumber={invoice.invoice_number}
+          invoiceDate={invoice.invoice_date}
+          dueDate={invoice.due_date || ''}
+          billingAddress={invoice.billing_address || ''}
+          billingName={invoice.billing_name || invoice.customer_name || ''}
+          onSuccess={handleAmendSuccess}
+          onClose={() => setAmendModalOpen(false)}
+        />
+      )}
       {cancelModalOpen && invoice && (
         <CancelInvoiceModal
           invoiceId={invoice.id}

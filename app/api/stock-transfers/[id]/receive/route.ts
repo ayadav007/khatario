@@ -247,7 +247,7 @@ export async function POST(
         const cogs = await client.query(
           `SELECT COALESCE(SUM(credit), 0) AS amt
              FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
-            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code = '1104'`,
+            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code IN ('1104', '1160', '1161', '1162')`,
           [transfer.inter_branch_invoice_id]
         );
         await createInterBranchPurchaseEntries(client, {

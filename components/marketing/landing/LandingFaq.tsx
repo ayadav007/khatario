@@ -25,7 +25,7 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'What happens if the internet goes down at the counter?',
-      a: 'You can keep billing. Bills made offline are saved on the device and sync automatically when the connection is back, so the queue does not stop.',
+      a: 'Saving a bill needs an internet connection. Reconnect, then save the bill. Khatario does not keep billing while you are disconnected.',
     },
     {
       q: 'Does it work on my phone?',

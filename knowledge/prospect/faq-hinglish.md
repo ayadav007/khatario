@@ -38,7 +38,7 @@ Haan. Har bikri par stock kam hota hai aur har kharid (purchase) par badhta hai.
 
 ## Internet nahi hai to kya bill ban sakta hai?
 
-Haan. Bina internet ke bhi billing chalti rehti hai. Bill phone ya computer par save ho jata hai aur internet aate hi apne aap sync ho jata hai.
+Nahi. Bill save karne ke liye internet chahiye. Internet aane par bill dubara save karo. Bina internet ke billing nahi chalti.
 
 ## Mobile se chala sakte hain?
 

@@ -1,5 +1,5 @@
 import { queryOne, queryRows } from '@/lib/db';
-import { signedLedgerBalance } from '@/lib/accounting/ledger-register';
+import { ledgerBalanceFigures, type BalanceSide } from '@/lib/accounting/ledger-register';
 
 /**
  * My Accounts visibility.
@@ -27,6 +27,9 @@ export type AccountActivity = {
   debit: number;
   credit: number;
   lineCount: number;
+  /** Debits and credits posted by an opening-balance voucher. Kept out of debit and credit. */
+  openingDebit?: number;
+  openingCredit?: number;
 };
 
 export type MyAccountVisibilityReason = 'activity' | 'manual' | 'ancestor';
@@ -37,6 +40,10 @@ export type VisibleMyAccount = {
   hasActivity: boolean;
   debit: number;
   credit: number;
+  opening: number;
+  openingSide: BalanceSide;
+  closing: number;
+  balanceSide: BalanceSide;
   balance: number;
 };
 
@@ -80,13 +87,24 @@ export function resolveMyAccounts(opts: {
     const lines = opts.activityByAccount.get(account.id);
     const debit = lines?.debit ?? 0;
     const credit = lines?.credit ?? 0;
+    const figures = ledgerBalanceFigures(
+      account.nature,
+      debit,
+      credit,
+      lines?.openingDebit ?? 0,
+      lines?.openingCredit ?? 0,
+    );
     accounts.push({
       id: account.id,
       reason: why,
       hasActivity: (lines?.lineCount ?? 0) > 0,
       debit,
       credit,
-      balance: signedLedgerBalance(account.nature, debit, credit),
+      opening: figures.opening,
+      openingSide: figures.openingSide,
+      closing: figures.closing,
+      balanceSide: figures.balanceSide,
+      balance: figures.signed,
     });
   }
 
@@ -137,10 +155,19 @@ export async function loadMyAccounts(businessId: string) {
         ORDER BY group_code`,
       [businessId],
     ),
-    queryRows<{ account_id: string; debit: string; credit: string; line_count: string }>(
+    queryRows<{
+      account_id: string;
+      debit: string;
+      credit: string;
+      opening_debit: string;
+      opening_credit: string;
+      line_count: string;
+    }>(
       `SELECT account_id,
-              COALESCE(SUM(debit), 0)::text AS debit,
-              COALESCE(SUM(credit), 0)::text AS credit,
+              COALESCE(SUM(debit) FILTER (WHERE voucher_type IS DISTINCT FROM 'opening_balance' AND voucher_type IS DISTINCT FROM 'opening_stock'), 0)::text AS debit,
+              COALESCE(SUM(credit) FILTER (WHERE voucher_type IS DISTINCT FROM 'opening_balance' AND voucher_type IS DISTINCT FROM 'opening_stock'), 0)::text AS credit,
+              COALESCE(SUM(debit) FILTER (WHERE voucher_type IN ('opening_balance', 'opening_stock')), 0)::text AS opening_debit,
+              COALESCE(SUM(credit) FILTER (WHERE voucher_type IN ('opening_balance', 'opening_stock')), 0)::text AS opening_credit,
               COUNT(*)::text AS line_count
          FROM ledger_entry_lines
         WHERE business_id = $1
@@ -155,6 +182,8 @@ export async function loadMyAccounts(businessId: string) {
     activityByAccount.set(row.account_id, {
       debit: Number(row.debit),
       credit: Number(row.credit),
+      openingDebit: Number(row.opening_debit),
+      openingCredit: Number(row.opening_credit),
       lineCount: Number(row.line_count),
     });
   }
@@ -187,6 +216,10 @@ export async function loadMyAccounts(businessId: string) {
           has_activity: row.hasActivity,
           debit: row.debit,
           credit: row.credit,
+          opening: row.opening,
+          opening_side: row.openingSide,
+          closing: row.closing,
+          balance_side: row.balanceSide,
           balance: row.balance,
         };
       }),

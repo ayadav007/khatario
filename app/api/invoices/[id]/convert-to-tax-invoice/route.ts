@@ -197,7 +197,7 @@ export async function POST(
       invoice_date: invoiceDate,
       due_date: proforma.due_date || null,
       status: 'final',
-      document_type: 'tax_invoice',
+      document_type: proforma.supply_type === 'exempt' ? 'bill_of_supply' : 'tax_invoice',
       items,
       charges: chargeRows.rows.map((row) => ({
         purpose: row.purpose,

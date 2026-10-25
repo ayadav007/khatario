@@ -77,7 +77,12 @@ export function checkGstin(value: unknown): GstinCheck {
     return { valid: false, gstin, code: 'STATE', error: `Invalid GSTIN state code ${stateCode}` };
   }
   if (gstinCheckChar(gstin.slice(0, 14)) !== gstin[14]) {
-    return { valid: false, gstin, code: 'CHECKSUM', error: 'GSTIN check digit does not match — please re-check the number' };
+    return {
+      valid: false,
+      gstin,
+      code: 'CHECKSUM',
+      error: 'The last character does not match this GSTIN. Edit the field and copy all 15 characters from the GST certificate.',
+    };
   }
   return { valid: true, gstin, stateCode, stateName: GST_STATE_NAMES[stateCode], pan: panFromGstin(gstin) };
 }
@@ -125,7 +130,7 @@ export function resolveGstinAndState(input: {
     return {
       ok: false,
       code: 'GSTIN_STATE_MISMATCH',
-      error: `State does not match GSTIN: GSTIN ${parsed.gstin} is registered in ${parsed.stateName} (${parsed.stateCode}).`,
+      error: `This GSTIN is registered in ${parsed.stateName} (${parsed.stateCode}). Change the GSTIN or the state so the first two digits match the address.`,
     };
   }
   return { ok: true, gstin: parsed.gstin, state: state || parsed.stateName, state_code: parsed.stateCode, pan: parsed.pan };

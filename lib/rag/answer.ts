@@ -115,8 +115,8 @@ function followUpAction(intent: AssistantIntent, sales: boolean): AssistantActio
 function quickRepliesFor(sales: boolean, lang: Lang): string[] {
   if (!sales) return [];
   return lang === 'en'
-    ? ['How much does it cost?', 'Does it work offline?', 'Book a demo']
-    : ['Kitne ka hai?', 'Bina internet chalega?', 'Demo book karna hai'];
+    ? ['How much does it cost?', 'Can I use it on my phone?', 'Book a demo']
+    : ['Kitne ka hai?', 'Mobile se chalega?', 'Demo book karna hai'];
 }
 
 function notSureReply(lang: Lang, sales: boolean): string {

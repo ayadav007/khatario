@@ -385,7 +385,7 @@ export function POSLayout({
                 {offlineInvoiceLabel || invoiceNumber || 'New'}
               </div>
               {offlinePending && (
-                <div className="text-[10px] font-medium text-amber-700">Offline · sync pending</div>
+                <div className="text-[10px] font-medium text-amber-700">Sync pending</div>
               )}
             </div>
             <div className="hidden sm:block">

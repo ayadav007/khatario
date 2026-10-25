@@ -12,9 +12,11 @@ import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
 import { INDIAN_STATES } from '@/lib/gst-utils';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { useToastContext } from '@/contexts/ToastContext';
 import { ManualPaymentMethodsSettings } from '@/components/settings/manual-payments/ManualPaymentMethodsSettings';
 import { EditableCard, ProfileSection, SummaryList } from '@/components/settings/business-profile/ProfileSection';
+import { RegistrationDetails } from '@/components/settings/business-profile/RegistrationDetails';
 import { BankAccountsCard } from '@/components/settings/business-profile/BankAccountsCard';
 import {
   getProfileGaps,
@@ -129,7 +131,10 @@ function validate(section: SectionKey, f: ProfileForm, gstApplies: boolean): Rec
     const gstin = f.gstin.trim().toUpperCase();
     if (gstApplies && f.gst_registration_type !== 'unregistered') {
       if (!gstin) e.gstin = 'GSTIN is required for GST-registered businesses';
-      else if (!/^[0-9A-Z]{15}$/.test(gstin)) e.gstin = 'GSTIN has 15 characters, like 27ABCDE1234F1Z5';
+      else {
+        const checked = resolveGstinAndState({ gstin, state: f.state });
+        if (!checked.ok) e.gstin = checked.error;
+      }
     }
     if (f.pan.trim() && !/^[A-Z]{5}\d{4}[A-Z]$/.test(f.pan.trim().toUpperCase())) e.pan = 'PAN format is ABCDE1234F';
   }
@@ -316,7 +321,6 @@ export const BusinessProfileTab: React.FC = () => {
     if (Object.keys(branchPart).length) {
       await patchJson(`/api/branches/${branch.id}`, {
         business_id: business.id,
-        updated_by_user_id: user?.id,
         ...branchPart,
       });
     }
@@ -339,6 +343,7 @@ export const BusinessProfileTab: React.FC = () => {
     if (section === 'tax') {
       values.gstin = form.gst_registration_type === 'unregistered' ? '' : form.gstin.trim().toUpperCase();
       values.pan = form.pan.trim().toUpperCase();
+      if (form.state.trim()) values.state = form.state;
     }
     if (section === 'export') {
       values.iec_code = form.iec_code.trim().toUpperCase();
@@ -368,7 +373,9 @@ export const BusinessProfileTab: React.FC = () => {
       }
       toast.success('Saved');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save');
+      const message = error instanceof Error ? error.message : 'Could not save';
+      if (section === 'tax' && /gstin/i.test(message)) setErrors({ gstin: message });
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -557,7 +564,7 @@ export const BusinessProfileTab: React.FC = () => {
           <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-text-secondary" />
           <p className="text-sm text-text-secondary">
             <span className="font-medium text-text-primary">Editing branch: {branch?.name}.</span> Name, contact, address
-            and GSTIN apply to this branch. PAN, logo and signature apply to the whole company.
+            and GSTIN apply to this branch. PAN, MSME, TAN, DIN, logo and signature apply to the whole company.
           </p>
         </div>
       )}
@@ -573,6 +580,7 @@ export const BusinessProfileTab: React.FC = () => {
                 : hasHr
                   ? { id: 'bp-tax-hr', label: 'Tax details' }
                   : null,
+              { id: 'bp-registrations', label: 'MSME, TAN and DIN' },
               { id: 'bp-branding', label: 'Logo and signature' },
               hasBilling ? { id: 'bp-payments', label: 'Bank and UPI' } : null,
               showAbout ? { id: 'bp-about', label: 'About your business' } : null,
@@ -801,10 +809,10 @@ export const BusinessProfileTab: React.FC = () => {
                       set('gstin', v);
                       if (v.length === 15 && !form.pan) set('pan', v.slice(2, 12));
                     }}
-                    placeholder="27ABCDE1234F1Z5"
+                    placeholder="15 characters from the GST certificate"
                     maxLength={15}
                     error={errors.gstin}
-                    helperText="State and PAN are read from the GSTIN."
+                    helperText="The first two digits are the state code. The last character is a check digit. Copy both from the certificate."
                     inputRef={ref('gstin')}
                   />
                 )}
@@ -858,6 +866,16 @@ export const BusinessProfileTab: React.FC = () => {
             </EditableCard>
           </ProfileSection>
         ) : null}
+        </div>
+
+        <div className={mobilePane === 'bp-registrations' ? undefined : 'max-lg:hidden'}>
+          <ProfileSection
+            id="bp-registrations"
+            title="Registrations"
+            description="Udyam (MSME), TAN and the signing director's DIN. Upload the certificate for each one as a PDF or an image. These belong to the company, not to one branch."
+          >
+            <RegistrationDetails />
+          </ProfileSection>
         </div>
 
         <div className={mobilePane === 'bp-branding' ? undefined : 'max-lg:hidden'}>

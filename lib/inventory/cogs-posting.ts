@@ -1,12 +1,13 @@
 import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import {
-  fifoCostForDocument,
+  fifoCostByItem,
   fifoIssueUnitCosts,
   getValuationMethod,
   toDateString,
   type CostTarget,
 } from '@/lib/inventory/fifo-costing';
+import { accountCodeForStockClass, accountIdForCode } from '@/lib/inventory/stock-class';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -164,18 +165,103 @@ export async function computeGoodsCost(
   }
   if (qtyByItem.size === 0) return 0;
 
-  if ((await getValuationMethod(client, businessId)) === 'fifo') {
-    if (client && target) return fifoCostForDocument(client, businessId, qtyByItem, target);
-    const unit = await fifoIssueUnitCosts(client, businessId, [...qtyByItem.keys()], toDateString(asOfDate));
-    let fifoTotal = 0;
-    for (const [id, qty] of qtyByItem) fifoTotal += qty * (unit.get(id) ?? 0);
-    return round2(fifoTotal);
-  }
-
-  const rates = await weightedAverageCosts(client, businessId, [...qtyByItem.keys()], asOfDate, branchId);
+  const byItem = await goodsCostByItem(client, businessId, qtyByItem, asOfDate, branchId, target);
   let total = 0;
-  for (const [id, qty] of qtyByItem) total += qty * (rates.get(id) ?? 0);
+  for (const cost of byItem.values()) total += cost;
   return round2(total);
+}
+
+async function goodsCostByItem(
+  client: Queryable | undefined,
+  businessId: string,
+  qtyByItem: Map<string, number>,
+  asOfDate: Date | string,
+  branchId?: string | null,
+  target?: CostTarget,
+): Promise<Map<string, number>> {
+  if ((await getValuationMethod(client, businessId)) === 'fifo') {
+    if (client && target) return fifoCostByItem(client, businessId, qtyByItem, target);
+    const unit = await fifoIssueUnitCosts(client, businessId, [...qtyByItem.keys()], toDateString(asOfDate));
+    const fifo = new Map<string, number>();
+    for (const [id, qty] of qtyByItem) fifo.set(id, qty * (unit.get(id) ?? 0));
+    return fifo;
+  }
+  const rates = await weightedAverageCosts(client, businessId, [...qtyByItem.keys()], asOfDate, branchId);
+  const out = new Map<string, number>();
+  for (const [id, qty] of qtyByItem) out.set(id, qty * (rates.get(id) ?? 0));
+  return out;
+}
+
+/** Cost of goods grouped onto Inventory, Raw material, Work in progress, or Finished goods. */
+export async function computeGoodsCostByAccount(
+  client: Queryable | undefined,
+  businessId: string,
+  lines: Array<{ itemId: string | null | undefined; quantity: number }>,
+  asOfDate: Date | string,
+  branchId?: string | null,
+  target?: CostTarget,
+): Promise<Map<string, number>> {
+  const byItem = await goodsCostByItem(
+    client,
+    businessId,
+    await goodsQtyByItem(client, businessId, lines),
+    asOfDate,
+    branchId,
+    target,
+  );
+  const costIds = [...byItem.keys()];
+  if (costIds.length === 0) return new Map();
+  const items = await rows<{ id: string; stock_class: string | null }>(
+    client,
+    `SELECT id, COALESCE(to_jsonb(items) ->> 'stock_class', 'trading') AS stock_class
+       FROM items WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+    [businessId, costIds],
+  );
+  const stockClass = new Map(items.map((item) => [item.id, item.stock_class]));
+  const out = new Map<string, number>();
+  for (const [id, cost] of byItem) {
+    const code = accountCodeForStockClass(stockClass.get(id));
+    out.set(code, round2((out.get(code) ?? 0) + cost));
+  }
+  return out;
+}
+
+async function goodsQtyByItem(
+  client: Queryable | undefined,
+  businessId: string,
+  lines: Array<{ itemId: string | null | undefined; quantity: number }>,
+): Promise<Map<string, number>> {
+  const ids = [...new Set(lines.map((l) => l.itemId).filter((id): id is string => !!id))];
+  const qtyByItem = new Map<string, number>();
+  if (ids.length === 0) return qtyByItem;
+  const items = await rows<{ id: string; item_type: string | null; is_bundle: boolean | null }>(
+    client,
+    `SELECT id, item_type, COALESCE(is_bundle, false) AS is_bundle FROM items WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+    [businessId, ids],
+  );
+  const meta = new Map(items.map((i) => [i.id, i]));
+  const bundleIds = items.filter((i) => i.item_type === 'goods' && i.is_bundle).map((i) => i.id);
+  const components = bundleIds.length
+    ? await rows<{ bundle_id: string; item_id: string; quantity: string }>(
+        client,
+        'SELECT bundle_id, item_id, quantity FROM bundle_items WHERE bundle_id = ANY($1::uuid[])',
+        [bundleIds],
+      )
+    : [];
+  const add = (id: string, q: number) => qtyByItem.set(id, (qtyByItem.get(id) ?? 0) + q);
+  for (const line of lines) {
+    if (!line.itemId) continue;
+    const m = meta.get(line.itemId);
+    if (!m || m.item_type !== 'goods') continue;
+    if (m.is_bundle) {
+      for (const c of components.filter((c) => c.bundle_id === line.itemId)) {
+        add(c.item_id, (Number(c.quantity) || 0) * line.quantity);
+      }
+    } else {
+      add(line.itemId, line.quantity);
+    }
+  }
+  return qtyByItem;
 }
 
 /**
@@ -183,6 +269,34 @@ export async function computeGoodsCost(
  * sale/return voucher, so cancelling that voucher reverses the cost too.
  * direction 'sale' = Dr COGS / Cr Inventory; 'return' = Dr Inventory / Cr COGS.
  */
+export async function postPerpetualGoodsCost(
+  client: Queryable,
+  opts: {
+    businessId: string;
+    voucherType: string;
+    voucherId: string;
+    entryDate: Date | string;
+    reference: string;
+    branchId?: string | null;
+    direction: 'sale' | 'return';
+    lines: Array<{ itemId: string | null | undefined; quantity: number }>;
+    asOfDate: Date | string;
+    target: CostTarget;
+  },
+): Promise<void> {
+  const byAccount = await computeGoodsCostByAccount(
+    client,
+    opts.businessId,
+    opts.lines,
+    opts.asOfDate,
+    opts.branchId,
+    opts.target,
+  );
+  for (const [code, amount] of byAccount) {
+    await postCostOfGoods(client, { ...opts, amount, inventoryAccountCode: code });
+  }
+}
+
 export async function postCostOfGoods(
   client: Queryable,
   opts: {
@@ -194,21 +308,22 @@ export async function postCostOfGoods(
     reference: string;
     branchId?: string | null;
     direction: 'sale' | 'return';
+    inventoryAccountCode?: string;
   }
 ): Promise<boolean> {
   const amount = round2(opts.amount);
   if (amount <= 0) return false;
 
-  const acc = await rows<{ account_code: string; id: string }>(
+  const inventoryCode = opts.inventoryAccountCode || '1104';
+  const inventory = await accountIdForCode(client, opts.businessId, inventoryCode);
+  const cogsRow = await rows<{ id: string }>(
     client,
-    `SELECT account_code, id FROM accounts
-      WHERE business_id = $1 AND account_code IN ('1104', '5104') AND is_active = true`,
-    [opts.businessId]
+    `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '5104' AND is_active = true LIMIT 1`,
+    [opts.businessId],
   );
-  const inventory = acc.find((a) => a.account_code === '1104')?.id;
-  const cogs = acc.find((a) => a.account_code === '5104')?.id;
+  const cogs = cogsRow[0]?.id;
   if (!inventory || !cogs) {
-    throw new Error('Inventory (1104) or Cost of Goods Sold (5104) account is missing; run the chart-of-accounts seed.');
+    throw new Error(`Inventory (${inventoryCode}) or Cost of Goods Sold (5104) account is missing; run the chart-of-accounts seed.`);
   }
 
   const sale = opts.direction === 'sale';

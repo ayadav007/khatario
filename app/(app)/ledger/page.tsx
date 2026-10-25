@@ -19,10 +19,15 @@ interface LedgerEntry {
   account_name: string;
   voucher_number?: string | null;
   voucher_type?: string | null;
+  voucher_types?: string[] | null;
   reference_number?: string | null;
   narration?: string | null;
   debit: number;
   credit: number;
+  opening?: number;
+  opening_side?: 'Dr' | 'Cr' | null;
+  closing?: number;
+  balance_side?: 'Dr' | 'Cr' | null;
   source?: string;
 }
 
@@ -65,6 +70,15 @@ const VOUCHER_TYPES: { value: string; label: string }[] = [
 function voucherLabel(type?: string | null): string {
   if (!type) return '';
   return VOUCHER_TYPES.find((item) => item.value === type)?.label || type.replace(/_/g, ' ');
+}
+
+function money(amount: number): string {
+  return `₹${Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function sided(amount: number, side?: 'Dr' | 'Cr' | null): string {
+  if (!side || !amount) return money(0);
+  return `${side} ${money(amount)}`;
 }
 
 /** 1 April of the Indian financial year that contains today. */
@@ -166,6 +180,7 @@ export default function LedgerPage() {
       entry.voucher_number?.toLowerCase().includes(searchLower) ||
       entry.reference_number?.toLowerCase().includes(searchLower) ||
       entry.narration?.toLowerCase().includes(searchLower) ||
+      (entry.voucher_types || []).some((type) => voucherLabel(type).toLowerCase().includes(searchLower)) ||
       voucherLabel(entry.voucher_type).toLowerCase().includes(searchLower)
     );
   });
@@ -240,8 +255,11 @@ export default function LedgerPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Account</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Voucher</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Narration</th>
+                    <th className="text-right py-3 px-4 font-semibold text-text-primary">Opening</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Debit</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Credit</th>
+                    <th className="text-right py-3 px-4 font-semibold text-text-primary">Closing</th>
+                    <th className="text-right py-3 px-4 font-semibold text-text-primary">Balance</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -257,15 +275,20 @@ export default function LedgerPage() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <div className="text-sm">{entry.voucher_number || entry.reference_number || '—'}</div>
-                        {entry.voucher_type && (
-                          <div className="text-xs text-text-secondary">{voucherLabel(entry.voucher_type)}</div>
-                        )}
+                        <div className="text-sm">{entry.reference_number || entry.voucher_number || '—'}</div>
+                        <div className="text-xs text-text-secondary">
+                          {(entry.voucher_types?.length ? entry.voucher_types : entry.voucher_type ? [entry.voucher_type] : [])
+                            .map((type) => voucherLabel(type))
+                            .join(' · ')}
+                        </div>
                       </td>
                       <td className="py-4 px-4">
                         {entry.narration && (
                           <span className="text-sm text-text-secondary">{entry.narration}</span>
                         )}
+                      </td>
+                      <td className="py-4 px-4 text-right tabular-nums">
+                        {sided(Number(entry.opening) || 0, entry.opening_side)}
                       </td>
                       <td className="py-4 px-4 text-right">
                         {Number(entry.debit) > 0 && (
@@ -281,6 +304,8 @@ export default function LedgerPage() {
                           </span>
                         )}
                       </td>
+                      <td className="py-4 px-4 text-right tabular-nums">{money(Number(entry.closing) || 0)}</td>
+                      <td className="py-4 px-4 text-right tabular-nums">{sided(Number(entry.closing) || 0, entry.balance_side)}</td>
                     </tr>
                   ))}
                 </tbody>
