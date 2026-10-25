@@ -2,8 +2,8 @@ import { balanceSide, signedLedgerBalance, type BalanceSide } from '@/lib/accoun
 
 export type LedgerSourceLine = {
   id: string;
-  entry_date: string;
-  created_at?: string | null;
+  entry_date: string | Date;
+  created_at?: string | Date | null;
   account_id: string;
   account_code?: string | null;
   account_name?: string | null;
