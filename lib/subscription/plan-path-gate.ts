@@ -60,6 +60,8 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/suppliers', featureId: 'purchase_suppliers' },
   { prefix: '/expenses', featureId: 'purchase_expenses' },
   { prefix: '/inventory-adjustments', featureId: 'purchase_inventory_adjustments' },
+  // A count posts its differences as inventory adjustments.
+  { prefix: '/stock-counts', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/accounts', featureId: 'accounting_chart' },
   { prefix: '/journal-entries', featureId: 'advanced_ledger' },
   { prefix: '/ledger', featureId: 'advanced_ledger' },
@@ -152,6 +154,8 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/api/suppliers', featureId: 'purchase_suppliers' },
   { prefix: '/api/expenses', featureId: 'purchase_expenses' },
   { prefix: '/api/inventory-adjustments', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/stock-counts', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/eway-bills', featureId: 'eway_bill' },
   { prefix: '/api/accounts', featureId: 'accounting_chart' },
   { prefix: '/api/journal-entries', featureId: 'advanced_ledger' },
   { prefix: '/api/ledger', featureId: 'advanced_ledger' },

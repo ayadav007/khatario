@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     await client.query('BEGIN');
-    // No stock movement: a challan moves goods without selling them.
+    // No stock movement on create: a returnable challan moves its goods out only when sent.
     const deliveryChallan = await writeChallan(client, tenant.businessId, {
       ...body,
       created_by: auth.userId,

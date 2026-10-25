@@ -8,6 +8,8 @@ import {
   type Queryable,
 } from '@/lib/documents/series-number';
 
+import { parseChallanKind, parseCustodyPurpose } from '@/lib/stock-custody/custody';
+
 export * from '@/lib/delivery-challans/challan-math';
 
 /** Number the next challan would get, without reserving it. */
@@ -17,6 +19,8 @@ export async function peekChallanNumber(db: Queryable, businessId: string, branc
 
 export interface ChallanWriteInput {
   customer_id?: string | null;
+  /** Holder of the goods on a returnable challan sent to a repairer or job worker. */
+  supplier_id?: string | null;
   invoice_id?: string | null;
   sales_order_id?: string | null;
   branch_id?: string | null;
@@ -35,6 +39,13 @@ export interface ChallanWriteInput {
   place_of_supply_state_code?: string | null;
   dispatch_from_address?: string | null;
   reason_for_transportation?: string | null;
+  /** supply (paperwork only), returnable (goods go out and come back) or non_returnable. */
+  challan_kind?: string | null;
+  /** Why returnable goods went out: repair, job_work, approval, consignment, exhibition, demo, other. */
+  purpose?: string | null;
+  /** Godown the goods leave from (warehouse mode). */
+  warehouse_id?: string | null;
+  expected_return_date?: string | null;
   notes?: string | null;
   terms?: string | null;
   items?: ChallanLineInput[];
@@ -59,8 +70,27 @@ export async function writeChallan(
   existingId?: string
 ): Promise<any> {
   if (!input.challan_date) throw new ChallanInputError('Challan date is required');
-  if (!input.customer_id && !input.invoice_id && !input.sales_order_id) {
+  const kind = parseChallanKind(input.challan_kind);
+  const purpose = kind === 'returnable' ? parseCustodyPurpose(input.purpose) : null;
+  if (kind === 'returnable' && !purpose) {
+    throw new ChallanInputError('Choose why the goods are going out (repair, job work, approval...)');
+  }
+  if (kind === 'returnable' && !input.customer_id && !input.supplier_id) {
+    throw new ChallanInputError('Select the supplier or customer who will hold the goods');
+  }
+  if (!input.customer_id && !input.supplier_id && !input.invoice_id && !input.sales_order_id) {
     throw new ChallanInputError('Select a customer, or link an invoice or sales order');
+  }
+  if (input.expected_return_date && input.challan_date && input.expected_return_date < input.challan_date) {
+    throw new ChallanInputError('Expected return date cannot be before the challan date');
+  }
+  if (input.supplier_id) {
+    const s = await client.query('SELECT 1 FROM suppliers WHERE id = $1 AND business_id = $2', [input.supplier_id, businessId]);
+    if (!s.rows[0]) throw new ChallanInputError('Supplier not found', 404);
+  }
+  if (input.warehouse_id) {
+    const w = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND business_id = $2', [input.warehouse_id, businessId]);
+    if (!w.rows[0]) throw new ChallanInputError('Warehouse not found', 404);
   }
 
   const branchId = await resolveDocumentBranchId(client, businessId, input.branch_id);
@@ -119,6 +149,11 @@ export async function writeChallan(
     totals.igst_total,
     totals.tax_total,
     totals.grand_total,
+    kind,
+    purpose,
+    input.supplier_id || null,
+    input.warehouse_id || null,
+    kind === 'returnable' ? input.expected_return_date || null : null,
   ];
 
   let challan: any;
@@ -130,24 +165,26 @@ export async function writeChallan(
          transporter_gstin = $11, shipping_address = $12, billing_address = $13, place_of_delivery = $14,
          dispatch_from_address = $15, reason_for_transportation = $16, notes = $17, terms = $18,
          branch_id = $19, place_of_supply_state_code = $20, subtotal = $21, cgst_total = $22,
-         sgst_total = $23, igst_total = $24, tax_total = $25, grand_total = $26
-       WHERE id = $27 AND business_id = $1
+         sgst_total = $23, igst_total = $24, tax_total = $25, grand_total = $26,
+         challan_kind = $27, purpose = $28, supplier_id = $29, warehouse_id = $30, expected_return_date = $31
+       WHERE id = $32 AND business_id = $1 AND stock_posted_at IS NULL
        RETURNING *`,
       [...values, existingId]
     );
     challan = res.rows[0];
-    if (!challan) throw new ChallanInputError('Delivery challan not found', 404);
+    if (!challan) throw new ChallanInputError('Delivery challan not found, or its goods have already been sent out', 404);
     await client.query('DELETE FROM delivery_challan_items WHERE delivery_challan_id = $1', [existingId]);
   } else {
-    const status = input.status === 'sent' ? 'sent' : 'draft';
+    // A returnable challan stays draft until its goods are sent out (that posts the stock).
+    const status = input.status === 'sent' && kind !== 'returnable' ? 'sent' : 'draft';
     const res = await client.query(
       `INSERT INTO delivery_challans (
          business_id, customer_id, invoice_id, sales_order_id, challan_number, challan_date, delivery_date,
          e_way_bill_number, vehicle_number, transporter_name, transporter_gstin, shipping_address,
          billing_address, place_of_delivery, dispatch_from_address, reason_for_transportation, notes, terms,
          branch_id, place_of_supply_state_code, subtotal, cgst_total, sgst_total, igst_total, tax_total,
-         grand_total, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+         grand_total, challan_kind, purpose, supplier_id, warehouse_id, expected_return_date, created_by, status
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
        RETURNING *`,
       [...values, input.created_by || null, status]
     );

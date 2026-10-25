@@ -7,7 +7,6 @@ import { query, queryOne, queryRows, getPool } from '@/lib/db';
 import {
   adjustBranchVariantStock,
   getBranchVariantQuantity,
-  getBranchVariantQuantityDb,
   refreshVariantGlobalStockFromBranches,
 } from '@/lib/branch-variant-stock';
 import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
@@ -29,7 +28,11 @@ export type ReasonCode =
   | 'COST_CORRECTION'
   | 'LANDED_COST'
   | 'REVALUATION'
-  | 'WRITE_DOWN';
+  | 'WRITE_DOWN'
+  | 'PROCESS_LOSS'
+  | 'TRANSIT_LOSS'
+  | 'OWN_CONSUMPTION'
+  | 'CUSTODY_LOSS';
 
 export interface QuantityAdjustmentParams {
   businessId: string;
@@ -159,14 +162,37 @@ export async function createQuantityAdjustment(
       idemRowId = inserted.id;
     }
 
+    const result = await createQuantityAdjustmentOn(client, params);
+
+    if (idemRowId) {
+      await markReplayCompleted(client, idemRowId, { adjustment_id: result.adjustmentId }, { type: 'inventory_adjustment', id: result.adjustmentId });
+    }
+
+    await client.query('COMMIT');
+    return result;
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    console.error('[InventoryAdjustment] Transaction rolled back due to error:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Quantity adjustment on the caller's transaction (stock counts and challan write-offs post
+ * several in one transaction). Errors propagate; the caller rolls back.
+ */
+export async function createQuantityAdjustmentOn(
+  client: PoolClient,
+  params: QuantityAdjustmentParams & { stockCountId?: string | null }
+): Promise<AdjustmentResult> {
     // Check if warehouse mode is enabled
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
     const warehouseModeEnabled = await isWarehouseModeEnabled(params.businessId);
-    
+
     // CRITICAL: location_id is MANDATORY when warehouse mode is enabled
     if (warehouseModeEnabled && !params.locationId) {
-      await client.query('ROLLBACK');
-      client.release();
       throw new Error('location_id (warehouse) is required. Warehouse mode is enabled - stock operations require warehouse context.');
     }
 
@@ -177,8 +203,6 @@ export async function createQuantityAdjustment(
         branchIdForStock = (await getDefaultBranchId(params.businessId)) || null;
       }
       if (!branchIdForStock) {
-        await client.query('ROLLBACK');
-        client.release();
         throw new Error('branch_id is required for quantity adjustments when warehouse mode is disabled.');
       }
     }
@@ -232,8 +256,6 @@ export async function createQuantityAdjustment(
           params.variantId
         );
       } else {
-        await client.query('ROLLBACK');
-        client.release();
         throw new Error(
           'Variant quantity adjustments require location_id when warehouse mode is enabled, or branch_id when warehouse mode is disabled.'
         );
@@ -255,8 +277,6 @@ export async function createQuantityAdjustment(
       currentStock = parseFloat(bis.rows[0]?.quantity || '0');
       newQuantity = currentStock + quantityChange;
     } else {
-      await client.query('ROLLBACK');
-      client.release();
       throw new Error('Could not resolve stock context for quantity adjustment.');
     }
     
@@ -360,8 +380,8 @@ export async function createQuantityAdjustment(
         quantity_change, quantity_before, quantity_after,
         unit_cost_before, unit_cost_after,
         total_value_before, total_value_after,
-        reason_code, reason_notes, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        reason_code, reason_notes, notes, created_by, stock_count_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING id`,
       [
         params.businessId,
@@ -383,7 +403,8 @@ export async function createQuantityAdjustment(
         params.reasonCode,
         params.reasonNotes || null,
         params.notes || null,
-        params.createdBy || null
+        params.createdBy || null,
+        params.stockCountId || null,
       ]
     );
 
@@ -492,83 +513,6 @@ export async function createQuantityAdjustment(
     );
     await recostAfterStockChange(client, params.businessId, [params.itemId]);
 
-    if (idemRowId) {
-      await markReplayCompleted(client, idemRowId, { adjustment_id: adjustmentId }, { type: 'inventory_adjustment', id: adjustmentId });
-    }
-
-    // Commit the transaction
-    await client.query('COMMIT');
-    console.log('[InventoryAdjustment] Transaction committed successfully for adjustment:', adjustmentId);
-
-    // Verify the update persisted (using a new query to ensure we see committed data)
-    if (params.variantId) {
-      if (warehouseModeEnabled && params.locationId) {
-        const verifyResult = await client.query(
-          `SELECT current_stock_qty FROM location_stock WHERE location_id = $1 AND item_id = $2`,
-          [params.locationId, params.itemId]
-        );
-        const verifiedStock = parseFloat(verifyResult.rows[0]?.current_stock_qty || '0');
-        if (Math.abs(verifiedStock - newQuantityDecimal) >= 0.01) {
-          console.error('[InventoryAdjustment] CRITICAL: Variant location stock mismatch', {
-            expected: newQuantityDecimal,
-            actual: verifiedStock,
-            adjustmentId,
-          });
-        }
-      } else if (!warehouseModeEnabled && branchIdForStock) {
-        const verifiedStock = await getBranchVariantQuantityDb(
-          params.businessId,
-          branchIdForStock,
-          params.variantId
-        );
-        if (Math.abs(verifiedStock - newQuantityDecimal) >= 0.01) {
-          console.error('[InventoryAdjustment] CRITICAL: Branch variant stock mismatch', {
-            expected: newQuantityDecimal,
-            actual: verifiedStock,
-            adjustmentId,
-          });
-        }
-      }
-    } else if (warehouseModeEnabled && params.locationId) {
-      // Warehouse mode: verify location_stock
-      const verifyResult = await client.query(
-        `SELECT current_stock_qty FROM location_stock WHERE location_id = $1 AND item_id = $2`,
-        [params.locationId, params.itemId]
-      );
-      const verifiedStock = parseFloat(verifyResult.rows[0]?.current_stock_qty || '0');
-      const expectedLocationStock = newQuantity; // Already calculated above
-      
-      console.log('[InventoryAdjustment] Post-commit verification (warehouse):', {
-        locationId: params.locationId,
-        itemId: params.itemId,
-        expectedStock: expectedLocationStock,
-        verifiedStock: verifiedStock,
-        match: Math.abs(verifiedStock - expectedLocationStock) < 0.01
-      });
-
-      if (Math.abs(verifiedStock - expectedLocationStock) >= 0.01) {
-        console.error('[InventoryAdjustment] CRITICAL: Location stock update did not persist!', {
-          expected: expectedLocationStock,
-          actual: verifiedStock,
-          adjustmentId
-        });
-      }
-    } else if (!warehouseModeEnabled && branchIdForStock) {
-      const { getBranchItemQuantityDb } = await import('./branch-stock');
-      const verifiedStock = await getBranchItemQuantityDb(
-        params.businessId,
-        branchIdForStock,
-        params.itemId
-      );
-      if (Math.abs(verifiedStock - newQuantityDecimal) >= 0.01) {
-        console.error('[InventoryAdjustment] CRITICAL: Branch item stock mismatch', {
-          expected: newQuantityDecimal,
-          actual: verifiedStock,
-          adjustmentId,
-        });
-      }
-    }
-
     return {
       adjustmentId,
       adjustmentNumber,
@@ -580,13 +524,6 @@ export async function createQuantityAdjustment(
       totalValueAfter: newTotalValue,
       journalEntryId
     };
-  } catch (error: any) {
-    await client.query('ROLLBACK');
-    console.error('[InventoryAdjustment] Transaction rolled back due to error:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
 }
 
 /**

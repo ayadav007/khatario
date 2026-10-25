@@ -11,15 +11,26 @@ export type AdjustmentReason =
   | 'COST_CORRECTION'
   | 'LANDED_COST'
   | 'REVALUATION'
-  | 'WRITE_DOWN';
+  | 'WRITE_DOWN'
+  | 'PROCESS_LOSS'
+  | 'TRANSIT_LOSS'
+  | 'OWN_CONSUMPTION'
+  | 'CUSTODY_LOSS';
 
-/** s.17(5)(h): goods lost, stolen, destroyed, written off or given as free samples. */
+/**
+ * s.17(5)(h): goods lost, stolen, destroyed, written off or given as free samples (transit and
+ * custody losses are goods lost); s.17(5)(g): goods used for personal consumption. A normal
+ * process loss keeps its credit.
+ */
 export const ITC_REVERSAL_REASONS: ReadonlySet<AdjustmentReason> = new Set([
   'DAMAGE',
   'THEFT',
   'EXPIRED',
   'WRITE_DOWN',
   'FREE_SAMPLE',
+  'TRANSIT_LOSS',
+  'CUSTODY_LOSS',
+  'OWN_CONSUMPTION',
 ]);
 
 /** Ledger code for the non-inventory side of an adjustment, with fallbacks. */

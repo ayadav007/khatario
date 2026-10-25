@@ -12,6 +12,7 @@ import {
   ReasonCode
 } from '@/lib/inventory-adjustment-service';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { stockErrorBody } from '@/lib/inventory/godown-stock';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 
@@ -425,6 +426,8 @@ export async function POST(request: NextRequest) {
       adjustment: result
     }, { status: 201 });
   } catch (error: any) {
+    const refused = stockErrorBody(error);
+    if (refused) return NextResponse.json(refused.body, { status: refused.status });
     console.error('Error creating inventory adjustment:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

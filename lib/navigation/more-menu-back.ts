@@ -33,6 +33,8 @@ const MORE_MENU_ROUTES: { href: string; section: string }[] = [
   { href: '/settings/warehouses', section: 'Inventory' },
   { href: '/stock-transfers', section: 'Inventory' },
   { href: '/inventory-adjustments', section: 'Inventory' },
+  { href: '/stock-counts', section: 'Inventory' },
+  { href: '/reports/stock/third-party', section: 'Inventory' },
   { href: '/reports/stock/closing-stock', section: 'Inventory' },
   { href: '/reports/stock/summary', section: 'Inventory' },
   // Accounting

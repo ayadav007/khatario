@@ -97,6 +97,9 @@ export function getMobileRouteTitle(
   if (p === '/inventory-adjustments/new') return 'New adjustment';
   if (p.startsWith('/inventory-adjustments/')) return 'Adjustment';
   if (p === '/inventory-adjustments') return 'Adjustments';
+  if (p.startsWith('/stock-counts/')) return 'Stock count';
+  if (p === '/stock-counts') return 'Stock counts';
+  if (p === '/reports/stock/third-party') return 'Stock with parties';
   if (p.startsWith('/delivery-challans')) return 'Delivery challan';
 
   // —— Sales ——

@@ -39,17 +39,27 @@ function userHasAdjustmentTypePermission(adjustmentType: 'QUANTITY' | 'VALUE'): 
 }
 
 /**
- * Condition: Stock must not be frozen
- * (Placeholder - implement when stock freeze feature is added)
+ * Condition: Stock must not be frozen by an open stock count of the godown. A count's own
+ * posting passes its id as context.stockCountId.
  */
 function stockNotFrozen(): any {
   return customCondition(
     'stock_not_frozen',
     'Stock must not be frozen',
     async (user: any, resource: any, context: any) => {
-      // TODO: Implement stock freeze check when feature is added
-      // For now, always allow
-      return true;
+      const businessId = context.businessId || resource.business_id;
+      if (!businessId) return true;
+      const warehouseId = resource.location_id || resource.warehouse_id || context.warehouseId || null;
+      try {
+        const { freezingCount } = await import('../../stock-counts/counts');
+        const { getPool } = await import('../../db');
+        const open = await freezingCount(getPool(), businessId, warehouseId);
+        return !open || open.id === context.stockCountId;
+      } catch (error) {
+        // The stock_movements trigger still refuses the movement; this check only words it early.
+        console.error('Stock freeze check failed:', error);
+        return true;
+      }
     },
     'Stock is frozen and cannot be adjusted',
     'STOCK_FROZEN'

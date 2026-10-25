@@ -69,7 +69,23 @@ function rowFromSourceLine(line: any): ChallanRow {
   };
 }
 
+/** Why returnable goods go out; each keeps the goods on our books while the holder has them. */
+const RETURN_PURPOSES: Array<{ value: string; label: string }> = [
+  { value: 'repair', label: 'Repair or service' },
+  { value: 'job_work', label: 'Job work' },
+  { value: 'approval', label: 'On approval / sale or return' },
+  { value: 'consignment', label: 'Consignment (agent)' },
+  { value: 'exhibition', label: 'Exhibition or display' },
+  { value: 'demo', label: 'Demo' },
+  { value: 'other', label: 'Other' },
+];
+
 const EMPTY_FORM = {
+  challan_kind: 'supply',
+  purpose: '',
+  supplier_id: '',
+  warehouse_id: '',
+  expected_return_date: '',
   customer_id: '',
   invoice_id: '',
   sales_order_id: '',
@@ -108,6 +124,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const [chargeTax, setChargeTax] = useState(true);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [items, setItems] = useState<ChallanRow[]>([newRow()]);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
+  const returnable = formData.challan_kind === 'returnable';
 
   const { allowed: canCreate, reason } = useAuthorizationGuard({
     resource: 'invoices',
@@ -121,7 +140,22 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     fetchInvoices();
     fetchSalesOrders();
     fetchNumberingAndTax();
+    fetchHolders();
   }, [business?.id, branchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Suppliers (repairers, job workers) and godowns, for returnable challans. */
+  async function fetchHolders() {
+    try {
+      const [s, w] = await Promise.all([
+        fetch(`/api/suppliers?business_id=${business!.id}&limit=500`).then((r) => (r.ok ? r.json() : { suppliers: [] })),
+        fetch(`/api/warehouses?business_id=${business!.id}&user_id=${user?.id}`).then((r) => (r.ok ? r.json() : { warehouses: [] })),
+      ]);
+      setSuppliers((s.suppliers || []).map((x: any) => ({ id: x.id, name: x.name })));
+      setWarehouses((w.warehouses || []).filter((x: any) => x.is_active !== false).map((x: any) => ({ id: x.id, name: x.name })));
+    } catch (error) {
+      console.error('Error loading suppliers and godowns:', error);
+    }
+  }
 
   useEffect(() => {
     if (business?.id && editId) loadExisting(editId);
@@ -203,6 +237,11 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
       }
       const dateOnly = toDateInputValue;
       setFormData({
+        challan_kind: dc.challan_kind || 'supply',
+        purpose: dc.purpose || '',
+        supplier_id: dc.supplier_id || '',
+        warehouse_id: dc.warehouse_id || '',
+        expected_return_date: dateOnly(dc.expected_return_date),
         customer_id: dc.customer_id || '',
         invoice_id: dc.invoice_id || '',
         sales_order_id: dc.sales_order_id || '',
@@ -332,7 +371,20 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
       toast.error('Please fill in challan number and date');
       return;
     }
-    if (!formData.customer_id && !formData.invoice_id && !formData.sales_order_id) {
+    if (returnable) {
+      if (!formData.purpose) {
+        toast.error('Choose why the goods are going out');
+        return;
+      }
+      if (!formData.supplier_id && !formData.customer_id) {
+        toast.error('Select the supplier or customer who will hold the goods');
+        return;
+      }
+      if (warehouses.length > 0 && !formData.warehouse_id) {
+        toast.error('Choose the godown the goods leave from');
+        return;
+      }
+    } else if (!formData.customer_id && !formData.invoice_id && !formData.sales_order_id) {
       toast.error('Select a customer, or link an invoice or sales order');
       return;
     }
@@ -374,8 +426,24 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
         const label = data.deliveryChallan?.challan_number
           ? `Delivery challan ${data.deliveryChallan.challan_number}`
           : 'Delivery challan';
-        toast.success(editId ? `${label} updated` : status === 'draft' ? `${label} saved as draft` : `${label} generated`);
         const id = data.deliveryChallan?.id || editId;
+        if (returnable && status === 'sent' && id) {
+          // Sending a returnable challan takes its goods out of the godown.
+          const sent = await fetch(`/api/delivery-challans/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'sent', business_id: business.id }),
+          });
+          const sentData = await sent.json().catch(() => ({}));
+          if (!sent.ok) {
+            toast.error(`${label} saved as draft. ${sentData.error || 'The goods could not be sent out.'}`);
+          } else {
+            toast.success(`${label} generated; the goods are now with the holder`);
+          }
+          router.push(`/delivery-challans/${id}`);
+          return;
+        }
+        toast.success(editId ? `${label} updated` : status === 'draft' ? `${label} saved as draft` : `${label} generated`);
         router.push(id ? `/delivery-challans/${id}` : '/delivery-challans');
       } else {
         toast.error(data.error || 'Failed to save delivery challan');
@@ -429,6 +497,89 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Goods</label>
+              <select
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                value={formData.challan_kind}
+                onChange={(e) => setFormData({ ...formData, challan_kind: e.target.value })}
+              >
+                <option value="supply">Going for sale (no stock change)</option>
+                <option value="returnable">Going out and coming back (stays on our books)</option>
+                <option value="non_returnable">Not coming back</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {returnable
+                  ? 'When sent, the goods leave the godown and show as held by the party until they come back.'
+                  : 'Stock moves with the invoice, not with this challan.'}
+              </p>
+            </div>
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose *</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.purpose}
+                  onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                >
+                  <option value="">Select purpose</option>
+                  {RETURN_PURPOSES.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Held by supplier (repairer, job worker)</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.supplier_id}
+                  onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                >
+                  <option value="">None (a customer holds them)</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && warehouses.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Leaves from godown *</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.warehouse_id}
+                  onChange={(e) => setFormData({ ...formData, warehouse_id: e.target.value })}
+                >
+                  <option value="">Select godown</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expected back by</label>
+                <Input
+                  type="date"
+                  value={formData.expected_return_date}
+                  onChange={(e) => setFormData({ ...formData, expected_return_date: e.target.value })}
+                />
+                {formData.purpose === 'job_work' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Inputs must come back from the job worker within 1 year, capital goods within 3 (GST s.143).
+                  </p>
+                )}
+              </div>
+            )}
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Challan Number *</label>
               <Input
                 type="text"
@@ -457,7 +608,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {returnable && formData.supplier_id ? 'Customer' : 'Customer *'}
+              </label>
               <CustomerSearchSelect customers={customers} value={formData.customer_id} onSelect={applyCustomer} />
             </div>
             <div>

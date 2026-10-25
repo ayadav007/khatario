@@ -9,6 +9,9 @@ import {
   writeChallan,
 } from '@/lib/delivery-challans/challan';
 import { authorizeChallan, challanErrorResponse } from '@/lib/delivery-challans/route-helpers';
+import { dispatchReturnableChallan } from '@/lib/stock-custody/custody';
+import { stockErrorBody } from '@/lib/inventory/godown-stock';
+import { listEwayBills } from '@/lib/gst/eway-bill-records';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,9 +26,11 @@ export async function GET(request: NextRequest, { params }: Params) {
     if (!auth.ok) return auth.response;
 
     const deliveryChallan = await queryOne(
-      `SELECT dc.*, c.name AS customer_name
+      `SELECT dc.*, c.name AS customer_name, s.name AS supplier_name, w.name AS warehouse_name
          FROM delivery_challans dc
          LEFT JOIN customers c ON c.id = dc.customer_id
+         LEFT JOIN suppliers s ON s.id = dc.supplier_id
+         LEFT JOIN warehouses w ON w.id = dc.warehouse_id
         WHERE dc.id = $1 AND dc.business_id = $2`,
       [params.id, tenant.businessId]
     );
@@ -33,10 +38,15 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Delivery challan not found' }, { status: 404 });
     }
     const items = await queryRows(
-      `SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order, id`,
+      `SELECT *, (qty - qty_returned - qty_invoiced - qty_written_off) AS qty_open
+         FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order, id`,
       [params.id]
     );
-    return NextResponse.json({ deliveryChallan, items });
+    const ewayBills = await listEwayBills(getPool(), tenant.businessId, {
+      sourceType: 'delivery_challan',
+      sourceId: params.id,
+    }).catch(() => []);
+    return NextResponse.json({ deliveryChallan, items, ewayBills });
   } catch (error: any) {
     return challanErrorResponse(error, 'Failed to load delivery challan');
   }
@@ -54,12 +64,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT status FROM delivery_challans WHERE id = $1 AND business_id = $2 FOR UPDATE',
+      'SELECT status, stock_posted_at FROM delivery_challans WHERE id = $1 AND business_id = $2 FOR UPDATE',
       [params.id, tenant.businessId]
     );
     if (!current.rows[0]) throw new ChallanInputError('Delivery challan not found', 404);
     if (!isChallanEditable(current.rows[0].status)) {
       throw new ChallanInputError(`A ${current.rows[0].status} challan cannot be edited`, 409);
+    }
+    if (current.rows[0].stock_posted_at) {
+      throw new ChallanInputError('The goods on this challan have been sent out. Record returns instead of editing it.', 409);
     }
     const deliveryChallan = await writeChallan(client, tenant.businessId, body, params.id);
     await client.query('COMMIT');
@@ -85,21 +98,48 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!(CHALLAN_STATUSES as readonly string[]).includes(next)) {
       throw new ChallanInputError('Invalid status');
     }
-    const current = await queryOne<{ status: string }>(
-      'SELECT status FROM delivery_challans WHERE id = $1 AND business_id = $2',
+    const current = await queryOne<{ status: string; challan_kind: string; stock_posted_at: string | null; closed_at: string | null }>(
+      'SELECT status, challan_kind, stock_posted_at, closed_at FROM delivery_challans WHERE id = $1 AND business_id = $2',
       [params.id, tenant.businessId]
     );
     if (!current) throw new ChallanInputError('Delivery challan not found', 404);
     if (!canTransition(current.status, next)) {
       throw new ChallanInputError(`Cannot change a ${current.status} challan to ${next}`, 409);
     }
+    if (current.challan_kind === 'returnable') {
+      if (next === 'delivered') {
+        throw new ChallanInputError('Record the goods coming back to close a returnable challan.', 409);
+      }
+      if (next === 'cancelled' && current.stock_posted_at && !current.closed_at) {
+        throw new ChallanInputError('These goods are still out. Record their return before cancelling.', 409);
+      }
+      if (next === 'sent') {
+        // Sending a returnable challan moves its goods out of the godown.
+        const client = await getPool().connect();
+        try {
+          await client.query('BEGIN');
+          await dispatchReturnableChallan(client, tenant.businessId, params.id, auth.userId);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          client.release();
+        }
+        const sent = await queryOne('SELECT * FROM delivery_challans WHERE id = $1 AND business_id = $2', [
+          params.id,
+          tenant.businessId,
+        ]);
+        return NextResponse.json({ deliveryChallan: sent });
+      }
+    }
 
     const deliveryChallan = await queryOne(
       `UPDATE delivery_challans
-          SET status = $3,
-              delivered_at = CASE WHEN $3 = 'delivered' THEN NOW() ELSE delivered_at END,
-              delivery_date = CASE WHEN $3 = 'delivered' THEN COALESCE(delivery_date, CURRENT_DATE) ELSE delivery_date END,
-              cancelled_at = CASE WHEN $3 = 'cancelled' THEN NOW() ELSE cancelled_at END
+          SET status = $3::varchar,
+              delivered_at = CASE WHEN $3::varchar = 'delivered' THEN NOW() ELSE delivered_at END,
+              delivery_date = CASE WHEN $3::varchar = 'delivered' THEN COALESCE(delivery_date, CURRENT_DATE) ELSE delivery_date END,
+              cancelled_at = CASE WHEN $3::varchar = 'cancelled' THEN NOW() ELSE cancelled_at END
         WHERE id = $1 AND business_id = $2 AND status = $4
         RETURNING *`,
       [params.id, tenant.businessId, next, current.status]
@@ -107,6 +147,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!deliveryChallan) throw new ChallanInputError('The challan changed meanwhile. Reload and try again.', 409);
     return NextResponse.json({ deliveryChallan });
   } catch (error: any) {
+    const refused = stockErrorBody(error);
+    if (refused) return NextResponse.json(refused.body, { status: refused.status });
     return challanErrorResponse(error, 'Failed to update delivery challan status');
   }
 }

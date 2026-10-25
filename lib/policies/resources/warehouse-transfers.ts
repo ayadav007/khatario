@@ -179,15 +179,29 @@ function transferCanBeCancelled(): any {
 }
 
 /**
- * Condition: Stock is not frozen (placeholder)
+ * Condition: Neither godown of the transfer is frozen by an open stock count.
  */
 function stockNotFrozen(): any {
   return customCondition(
     'stock_not_frozen',
     'Stock must not be frozen',
     async (user: any, resource: any, context: any) => {
-      // TODO: Implement stock freeze check when feature is added
-      // For now, always allow
+      const businessId = context.businessId || resource.business_id;
+      if (!businessId) return true;
+      const ids = [
+        context.sourceWarehouseId || resource.from_location_id,
+        context.destinationWarehouseId || resource.to_location_id,
+      ].filter(Boolean);
+      try {
+        const { freezingCount } = await import('../../stock-counts/counts');
+        const { getPool } = await import('../../db');
+        for (const id of ids) {
+          if (await freezingCount(getPool(), businessId, id)) return false;
+        }
+      } catch (error) {
+        // The stock_movements trigger still refuses the movement; this check only words it early.
+        console.error('Stock freeze check failed:', error);
+      }
       return true;
     },
     'Stock is frozen and cannot be transferred',

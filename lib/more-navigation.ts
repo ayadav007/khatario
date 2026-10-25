@@ -201,6 +201,8 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   }
   invItems.push(
     { href: '/inventory-adjustments', label: 'Adjustments', module: 'items' },
+    { href: '/stock-counts', label: 'Stock Counts', module: 'items' },
+    { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
     { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
     { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' }
   );

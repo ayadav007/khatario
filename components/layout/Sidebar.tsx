@@ -235,6 +235,7 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/stock/low-stock': 'reports_basic',
     '/reports/stock/low-stock-warehouse': 'reports_basic',
     '/reports/stock/damaged': 'reports_basic',
+    '/reports/stock/third-party': 'reports_basic',
     '/reports/stock/expired': 'reports_basic',
     '/reports/stock/closing-stock': 'reports_advanced',
     '/reports/stock/closing-stock/finalize': 'reports_advanced',
@@ -619,6 +620,8 @@ export const Sidebar = React.memo(function Sidebar() {
           featureKey: 'settings_multi_warehouse'
         }] : []),
         { href: '/inventory-adjustments', label: 'Adjustments', module: 'items' },
+        { href: '/stock-counts', label: 'Stock Counts', module: 'items' },
+        { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
         { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
         { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' },
       ],

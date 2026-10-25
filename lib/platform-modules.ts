@@ -138,6 +138,7 @@ export const MODULE_ROUTE_PREFIXES: Record<PlatformModule, string[]> = {
     '/expenses',
     '/stock-transfers',
     '/inventory-adjustments',
+    '/stock-counts',
     '/pricing',
   ],
   hr: ['/employees', '/hr'],

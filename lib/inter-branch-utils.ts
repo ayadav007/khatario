@@ -283,15 +283,14 @@ export function calculateInterBranchGST(
   };
 }
 
+export const EWAY_BILL_LIMIT_INR = 50_000;
+
 /**
- * Check if e-way bill is required
+ * Rule 138: moving goods worth more than ₹50,000 needs an e-way bill, whether or not it is a
+ * supply and whether it stays within the state or crosses it (own godown to own godown too).
  */
-export function isEwayBillRequired(
-  transferValue: number,
-  isInterState: boolean
-): boolean {
-  // E-way bill required for inter-state movement > ₹50,000
-  return isInterState && transferValue > 50000;
+export function isEwayBillRequired(goodsValue: number): boolean {
+  return goodsValue > EWAY_BILL_LIMIT_INR;
 }
 
 type InterBranchItem = {

@@ -175,7 +175,8 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
   if (
     p.startsWith('/purchases') ||
     p.startsWith('/stock-transfers') ||
-    p.startsWith('/inventory-adjustments')
+    p.startsWith('/inventory-adjustments') ||
+    p.startsWith('/stock-counts')
   ) {
     return {
       sheetId: 'inventory',
