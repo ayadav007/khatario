@@ -53,11 +53,14 @@ import {
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import { round2, roundRetailQty, roundExclusiveUnitPrice } from '@/lib/numeric-precision';
 import {
+  billTotalGap,
   previewPurchaseFormDocument,
   purchaseFormCanFinalize,
   purchaseFormLinesFromScan,
   purchaseSaveModes,
   scanDocumentPriceMode,
+  scanLineDisagreesWithBill,
+  scanPrintedGrandTotal,
 } from '@/lib/purchases/purchase-form-from-scan';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY, PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
@@ -231,6 +234,8 @@ export default function NewPurchasePage() {
   /** Bill the desktop form was last filled from (drives the "Filled from" banner). */
   const [billSource, setBillSource] = useState<PurchaseBillSource | null>(null);
   const [fillAt, setFillAt] = useState<Date | null>(null);
+  /** Payable printed on the scanned bill; the form's total is checked against it. */
+  const [billPrintedTotal, setBillPrintedTotal] = useState<number | null>(null);
   const [fillBannerOpen, setFillBannerOpen] = useState(true);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogueBusy, setCatalogueBusy] = useState(false);
@@ -894,6 +899,8 @@ export default function NewPurchasePage() {
       }));
     }
 
+    setBillPrintedTotal(scanPrintedGrandTotal(data.totals));
+
     // Fill document-level round off (if provided by extraction)
     if (data.totals && typeof data.totals.round_off === 'number') {
       setFormData((prev) => ({
@@ -1512,6 +1519,22 @@ export default function NewPurchasePage() {
     checks.push({
       key: 'items',
       label: `${unlinkedLines.length} item${unlinkedLines.length === 1 ? '' : 's'} not in catalogue`,
+      target: 'purchase-items-card',
+    });
+  const billGap = billTotalGap(billPrintedTotal, totals.grandTotal);
+  if (billGap != null && billPrintedTotal != null)
+    checks.push({
+      key: 'bill-total',
+      label: `Bill total ₹${billPrintedTotal.toFixed(2)} · ₹${Math.abs(billGap).toFixed(2)} ${billGap > 0 ? 'over' : 'short'}`,
+      target: 'purchase-items-card',
+    });
+  const lineDisagrees = (item: PurchaseItem, idx: number) =>
+    item.fromBillExtract === true && scanLineDisagreesWithBill(item.printed_line_total, purchaseGstDoc?.lineComputeds[idx]);
+  const disagreeingLines = purchaseItems.filter(lineDisagrees).length;
+  if (disagreeingLines > 0)
+    checks.push({
+      key: 'line-amounts',
+      label: `${disagreeingLines} line${disagreeingLines === 1 ? '' : 's'} differ from the bill`,
       target: 'purchase-items-card',
     });
   if (needsWarehouse) checks.push({ key: 'warehouse', label: 'Pick a receiving warehouse', target: 'purchase-supplier-card' });
@@ -2319,9 +2342,13 @@ export default function NewPurchasePage() {
                               />
                             </div>
                             {item.printed_line_total != null && (
-                              <p className="mt-1 text-[11px] text-text-secondary">
+                              <p
+                                className={`mt-1 text-[11px] ${lineDisagrees(item, itemIdx) ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-text-secondary'}`}
+                                title={lineDisagrees(item, itemIdx) ? 'Qty × rate on this line does not give the amount printed on the bill. Check the qty, rate and amount.' : undefined}
+                              >
                                 Printed ₹{Number(item.printed_line_total).toFixed(2)}
                                 {item.printed_rate != null ? ` at ₹${Number(item.printed_rate).toFixed(2)}` : ''}
+                                {lineDisagrees(item, itemIdx) ? ' · does not match' : ''}
                               </p>
                             )}
                             {isUnlinked && (
@@ -2750,6 +2777,12 @@ export default function NewPurchasePage() {
             <div className="text-right">
               <p className="text-xs text-text-secondary">Grand total</p>
               <p className="text-2xl font-bold tabular-nums text-text-primary">₹{totals.grandTotal.toFixed(2)}</p>
+              {billPrintedTotal != null && (
+                <p className={`text-xs tabular-nums ${billGap != null ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-text-secondary'}`}>
+                  Bill ₹{billPrintedTotal.toFixed(2)}
+                  {billGap != null ? ` · ₹${Math.abs(billGap).toFixed(2)} ${billGap > 0 ? 'over' : 'short'}` : ' · matches'}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -2824,6 +2857,7 @@ export default function NewPurchasePage() {
             setLineItemInvoiceTotal={setLineItemInvoiceTotal}
             purchaseGstDoc={purchaseGstDoc}
             totals={totals}
+            billTotalCheck={billPrintedTotal != null ? { printed: billPrintedTotal, gap: billGap } : null}
             loading={loading}
             isOnline={isOnline}
             onSubmitDraft={() => void handleSubmit('draft')}

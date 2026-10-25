@@ -246,7 +246,27 @@ String? purchaseSaveTaxMode(String? lineMode, String headerMode) {
 
 String? purchaseSavePriceMode(String headerMode) => purchaseCanFinalize(headerMode) ? headerMode : null;
 
+/// The anchored branch of `calculatePurchaseLine` in `lib/purchase-gst-calculator.ts`
+/// (`splitFixedInclusive`): GST is backed out of the bill's line total, equal CGST and SGST
+/// halves, and the taxable value absorbs the rounding.
+LineGst _anchoredLineGst(double anchor, double taxRate, bool intraState, double discount) {
+  final total = invoiceRound2(anchor);
+  if (taxRate <= 0) {
+    return LineGst(discount: discount, taxable: total, cgst: 0, sgst: 0, igst: 0, tax: 0, total: total);
+  }
+  final provisional = invoiceRound2((total * 100) / (100 + taxRate));
+  if (intraState) {
+    final half = invoiceRound2((provisional * taxRate) / 200);
+    final tax = invoiceRound2(half * 2);
+    return LineGst(discount: discount, taxable: invoiceRound2(total - tax), cgst: half, sgst: half, igst: 0, tax: tax, total: total);
+  }
+  final tax = invoiceRound2(total - provisional);
+  return LineGst(discount: discount, taxable: provisional, cgst: 0, sgst: 0, igst: tax, tax: tax, total: total);
+}
+
 /// GST for one purchase line. Unknown does not call the exclusive calculator.
+/// A bill line total (`invoice_inclusive_line_total`) wins over qty × rate, as on the website;
+/// editing qty, rate, discount or tax clears it.
 LineGst purchaseScannedLineGst({
   required double quantity,
   required double unitPrice,
@@ -255,8 +275,13 @@ LineGst purchaseScannedLineGst({
   required bool intraState,
   required String? lineMode,
   required String headerMode,
+  double? inclusiveTotal,
 }) {
   final mode = purchaseSaveTaxMode(lineMode, headerMode);
+  if (mode != null && inclusiveTotal != null && inclusiveTotal.isFinite && inclusiveTotal.abs() > 1e-9) {
+    final discount = invoiceRound2((invoiceRound2(quantity * unitPrice) * discountPercent) / 100);
+    return _anchoredLineGst(inclusiveTotal, taxRate, intraState, discount);
+  }
   if (mode == null) {
     final gross = invoiceRound2(quantity * unitPrice);
     final discount = invoiceRound2((gross * discountPercent) / 100);
@@ -271,6 +296,39 @@ LineGst purchaseScannedLineGst({
     intraState: intraState,
     pricesIncludeGst: mode == 'inclusive',
   );
+}
+
+/// `amountsNear` in `lib/purchases/map-extracted-line.ts`.
+bool amountsNear(double a, double b, [double? ref]) {
+  final scale = [(ref ?? b).abs(), a.abs(), 1.0].reduce((x, y) => x > y ? x : y);
+  final tol = scale * 0.015 > 0.5 ? scale * 0.015 : 0.5;
+  return (a - b).abs() <= tol;
+}
+
+/// `BILL_TOTAL_GAP_TOLERANCE` in `lib/purchases/purchase-form-from-scan.ts`.
+const billTotalGapTolerance = 1.0;
+
+/// `scanPrintedGrandTotal`: the bill's printed payable, else the footer total.
+double? scanPrintedGrandTotal(Map totals) {
+  for (final value in [totals['printed_grand_total'], totals['grand_total']]) {
+    final n = _num(value);
+    if (n != null && n > 0) return invoiceRound2(n);
+  }
+  return null;
+}
+
+/// `billTotalGap`: form total minus the bill total, or null when there is none or they agree.
+double? billTotalGap(double? printedGrandTotal, double formGrandTotal) {
+  if (printedGrandTotal == null || !(printedGrandTotal > 0)) return null;
+  final gap = invoiceRound2(formGrandTotal - printedGrandTotal);
+  return gap.abs() > billTotalGapTolerance ? gap : null;
+}
+
+/// `scanLineDisagreesWithBill`: the bill printed an amount and the line is neither that
+/// amount with GST nor before GST.
+bool scanLineDisagreesWithBill(double? printedLineTotal, LineGst gst) {
+  if (printedLineTotal == null || !printedLineTotal.isFinite) return false;
+  return !amountsNear(gst.total, printedLineTotal, printedLineTotal) && !amountsNear(gst.taxable, printedLineTotal, printedLineTotal);
 }
 
 List<ScannedLine> scannedPurchaseLines(List<dynamic> extracted) {

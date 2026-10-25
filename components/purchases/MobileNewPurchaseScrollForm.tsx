@@ -245,6 +245,8 @@ export interface MobileNewPurchaseScrollFormProps {
   setLineItemInvoiceTotal: (id: string, raw: string) => void;
   purchaseGstDoc: PurchaseDocumentTotals | null;
   totals: TotalsView;
+  /** Scanned bill's printed total and the form's gap from it (null gap = matches). */
+  billTotalCheck?: { printed: number; gap: number | null } | null;
   loading: boolean;
   isOnline: boolean;
   onSubmitDraft: () => void;
@@ -265,6 +267,15 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
   );
 
   const balanceDue = props.totals.grandTotal - (Number(props.formData.paid_amount) || 0);
+  const billCheck = props.billTotalCheck;
+  const billTotalNote = billCheck ? (
+    <p className={`text-right text-xs tabular-nums ${billCheck.gap != null ? 'font-semibold text-amber-700' : 'text-text-secondary'}`}>
+      Bill ₹{billCheck.printed.toFixed(2)}
+      {billCheck.gap != null
+        ? ` · ₹${Math.abs(billCheck.gap).toFixed(2)} ${billCheck.gap > 0 ? 'over' : 'short'}. Check qty and amounts.`
+        : ' · matches'}
+    </p>
+  ) : null;
   const billNo = props.formData.bill_number.trim();
   const dateLabel = formatShortDate(props.formData.bill_date) || 'Date not set';
   const dueIn = daysUntil(props.formData.due_date);
@@ -1086,6 +1097,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             <span>Grand total</span>
             <span className="tabular-nums">₹{props.totals.grandTotal.toFixed(2)}</span>
           </div>
+          {billTotalNote}
         </div>
       </section>
 
@@ -1141,6 +1153,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             <span className="text-text-secondary">Total</span>
             <span className="text-lg font-bold tabular-nums text-text-primary">₹{props.totals.grandTotal.toFixed(2)}</span>
           </div>
+          {props.billTotalCheck?.gap != null && <div className="-mt-2 mb-3 px-4">{billTotalNote}</div>}
           <div className="flex gap-3 px-3">
             <Button
               type="button"

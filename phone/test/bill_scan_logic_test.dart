@@ -178,4 +178,46 @@ void main() {
     expect(edited['items_rows_changed'], 1);
     expect((edited['item_field_changes'] as Map)['quantity'], 1);
   });
+
+  group('bill line total and bill checks', () {
+    test('a checked bill line total wins over qty × rate, as on the website', () {
+      // Exclusive line: website backs GST out of the printed 1180 instead of 10 × 99.9 × 1.18.
+      final gst = purchaseScannedLineGst(quantity: 10, unitPrice: 99.9, discountPercent: 0, taxRate: 18, intraState: true, lineMode: 'exclusive', headerMode: 'exclusive', inclusiveTotal: 1180);
+      expect(gst.total, 1180);
+      expect(gst.cgst, 90);
+      expect(gst.sgst, 90);
+      expect(gst.taxable, 1000);
+      final igst = purchaseScannedLineGst(quantity: 1, unitPrice: 80, discountPercent: 0, taxRate: 18, intraState: false, lineMode: 'inclusive', headerMode: 'inclusive', inclusiveTotal: 80);
+      expect(igst.taxable, 67.8);
+      expect(igst.igst, 12.2);
+      final zero = purchaseScannedLineGst(quantity: 0.486, unitPrice: 137.5, discountPercent: 0, taxRate: 0, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive', inclusiveTotal: 66.83);
+      expect(zero.total, 66.83);
+      expect(zero.tax, 0);
+    });
+
+    test('an unresolved price basis ignores the bill line total', () {
+      final gst = purchaseScannedLineGst(quantity: 2, unitPrice: 80, discountPercent: 0, taxRate: 18, intraState: true, lineMode: null, headerMode: 'unknown', inclusiveTotal: 100);
+      expect(gst.total, 160);
+    });
+
+    test('flags a line whose qty × rate does not give the printed amount', () {
+      final oil = purchaseScannedLineGst(quantity: 3, unitPrice: 165, discountPercent: 0, taxRate: 5, intraState: true, lineMode: 'inclusive', headerMode: 'inclusive');
+      expect(scanLineDisagreesWithBill(165, oil), isTrue);
+      expect(scanLineDisagreesWithBill(495, oil), isFalse);
+      expect(scanLineDisagreesWithBill(null, oil), isFalse);
+      // Exclusive bills print the taxable value; that is not a mismatch.
+      final dal = purchaseScannedLineGst(quantity: 10, unitPrice: 100, discountPercent: 0, taxRate: 18, intraState: true, lineMode: 'exclusive', headerMode: 'exclusive');
+      expect(scanLineDisagreesWithBill(1000, dal), isFalse);
+    });
+
+    test('bill total gap ignores paise and needs a printed total', () {
+      expect(scanPrintedGrandTotal({'printed_grand_total': 2130.08, 'grand_total': 2000}), 2130.08);
+      expect(scanPrintedGrandTotal({'printed_grand_total': null, 'grand_total': 2130.08}), 2130.08);
+      expect(scanPrintedGrandTotal({}), isNull);
+      expect(billTotalGap(2130.08, 1831.57), -298.51);
+      expect(billTotalGap(2130.08, 2390), 259.92);
+      expect(billTotalGap(2130.08, 2130.5), isNull);
+      expect(billTotalGap(null, 1831.57), isNull);
+    });
+  });
 }

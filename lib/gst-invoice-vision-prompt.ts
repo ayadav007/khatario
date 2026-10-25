@@ -121,7 +121,16 @@ Many bills **do not** print GST % on each product line. Instead they print **ban
 3. Each **product row** (item code, name, qty, rate, line total) that appears **after** that header and **before** the next tax header gets \`gst_rate: current_gst_rate\`. Do **not** copy one product's slab from another section; do **not** infer line gst_rate only from HSN when the section header is visible.
 4. If a product row has its **own** printed tax % or tax columns, that row **wins** over \`current_gst_rate\` for that row only.
 5. If there are **no** section headers **and** no per-line tax, set \`gst_rate: null\` for that line (do not guess from footer alone).
-6. A band heading such as \`3) CGST @ 9.00%, SGST @ 9.00%\` is a label, not a purchased product. Do **not** emit it as an \`items[]\` row. Emit only rows that name a product and have a quantity or an amount.
+6. A band heading such as \`3) CGST @ 9.00%, SGST @ 9.00%\` is a label, not a purchased product. Do **not** emit it as an \`items[]\` row, and never use heading text as a \`description\`. The product row printed under the heading keeps its own name (e.g. \`WHEEL ACTIVE PO-1kg\`). Emit only rows that name a product and have a quantity or an amount.
+
+## TILL ROLLS (DMart, Reliance Smart, More, Star Bazaar and similar)
+Columns usually read HSN | Particulars | Qty/Kg | N/Rate | Value.
+- **qty** = the Qty/Kg column exactly as printed, decimals included (0.486, 3.700). A weighed quantity is never 1 unless 1 is printed.
+- **rate** = N/Rate (the unit rate). **line_total** = Value, the LAST number on the row. Never copy the rate into line_total, even when the Value is circled, ticked, stamped or overwritten by hand.
+- Check every row: qty × rate ≈ line_total (within a few paise). If it does not hold, re-read the digits of all three before answering; if a figure is still unreadable, return null for it rather than a guess.
+- **unit**: KGS for weighed lines (decimal Qty/Kg, often prefixed L for loose); otherwise PCS. Never take the unit from a pack size in the product name ("500g", "1kg", "1lt" are part of the name).
+- Pen marks, ticks, circles and rubber stamps are not part of the bill. Read the printed digits underneath them.
+- The sum of the Value column equals the printed items total (e.g. \`Items: 14 Qty: 18 2130.08\`) and grand_total. Use that to check you have every row exactly once.
 
 Other tools often implement this as a **state machine** over OCR lines; you must do the same in your reasoning over the image/text.
 
