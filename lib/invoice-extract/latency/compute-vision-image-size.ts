@@ -1,4 +1,8 @@
-import { INVOICE_VISION_MAX_LONG_SIDE } from '@/lib/invoice-extract/latency/constants';
+import {
+  INVOICE_VISION_MAX_LONG_SIDE,
+  INVOICE_VISION_MIN_SHORT_SIDE,
+  INVOICE_VISION_TALL_MAX_LONG_SIDE,
+} from '@/lib/invoice-extract/latency/constants';
 
 export interface InvoiceVisionTargetSize {
   width: number;
@@ -9,6 +13,8 @@ export interface InvoiceVisionTargetSize {
 
 /**
  * Fit inside `maxLongSide` without upscaling. Deterministic integer rounding.
+ * A long narrow image (till roll) may go past `maxLongSide` so its short side stays at
+ * `INVOICE_VISION_MIN_SHORT_SIDE`, never past `INVOICE_VISION_TALL_MAX_LONG_SIDE`.
  */
 export function computeInvoiceVisionTargetSize(
   width: number,
@@ -19,10 +25,15 @@ export function computeInvoiceVisionTargetSize(
   const h = Number.isFinite(height) ? Math.max(1, Math.round(height)) : 1;
   const cap = Number.isFinite(maxLongSide) && maxLongSide > 0 ? maxLongSide : INVOICE_VISION_MAX_LONG_SIDE;
   const longSide = Math.max(w, h);
-  if (longSide <= cap) {
+  const shortSide = Math.min(w, h);
+  const tallCap = Math.max(cap, INVOICE_VISION_TALL_MAX_LONG_SIDE);
+  const scale = Math.min(
+    1,
+    Math.max(cap / longSide, Math.min(INVOICE_VISION_MIN_SHORT_SIDE / shortSide, tallCap / longSide)),
+  );
+  if (scale >= 1) {
     return { width: w, height: h, scale: 1, resized: false };
   }
-  const scale = cap / longSide;
   return {
     width: Math.max(1, Math.round(w * scale)),
     height: Math.max(1, Math.round(h * scale)),

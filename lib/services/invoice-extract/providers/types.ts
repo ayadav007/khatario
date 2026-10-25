@@ -6,6 +6,8 @@ export interface InvoiceExtractionInput {
   includeDebug?: boolean;
   /** Tenant scope — enables supplier-aware deterministic config + correction priors when set */
   businessId?: string;
+  /** Extra prompt text for a second read (e.g. the first read missed the printed total). */
+  promptNote?: string;
 }
 
 export type InvoiceExtractionResult = ExtractionPipelineResult;

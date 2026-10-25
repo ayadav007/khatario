@@ -212,7 +212,9 @@ void main() {
 
     test('bill total gap ignores paise and needs a printed total', () {
       expect(scanPrintedGrandTotal({'printed_grand_total': 2130.08, 'grand_total': 2000}), 2130.08);
-      expect(scanPrintedGrandTotal({'printed_grand_total': null, 'grand_total': 2130.08}), 2130.08);
+      // No printed total: grand_total was filled from the lines, so it is not the bill's.
+      expect(scanPrintedGrandTotal({'printed_grand_total': null, 'grand_total': 2130.08}), isNull);
+      expect(scanPrintedGrandTotal({'grand_total': 2130.08}), 2130.08);
       expect(scanPrintedGrandTotal({}), isNull);
       expect(billTotalGap(2130.08, 1831.57), -298.51);
       expect(billTotalGap(2130.08, 2390), 259.92);

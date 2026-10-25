@@ -246,7 +246,12 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'file': MultipartFile.fromBytes(bytes, filename: capture.name),
         'business_id': widget.session.businessId,
       });
-      final res = await widget.session.api.dio.post<dynamic>('/api/invoices/extract', data: form);
+      // A bill whose lines miss its total is read twice on the server; allow nginx's 120s.
+      final res = await widget.session.api.dio.post<dynamic>(
+        '/api/invoices/extract',
+        data: form,
+        options: Options(receiveTimeout: const Duration(seconds: 120)),
+      );
       final body = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
       if ((res.statusCode ?? 500) >= 400) {
         throw ApiException(body['error']?.toString() ?? 'Could not read this bill');

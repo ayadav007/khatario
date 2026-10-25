@@ -308,13 +308,11 @@ bool amountsNear(double a, double b, [double? ref]) {
 /// `BILL_TOTAL_GAP_TOLERANCE` in `lib/purchases/purchase-form-from-scan.ts`.
 const billTotalGapTolerance = 1.0;
 
-/// `scanPrintedGrandTotal`: the bill's printed payable, else the footer total.
+/// `scanPrintedGrandTotal`: the bill's printed payable. `grand_total` is filled from the lines
+/// when the bill printed none, so it only counts on old reviews without `printed_grand_total`.
 double? scanPrintedGrandTotal(Map totals) {
-  for (final value in [totals['printed_grand_total'], totals['grand_total']]) {
-    final n = _num(value);
-    if (n != null && n > 0) return invoiceRound2(n);
-  }
-  return null;
+  final n = _num(totals.containsKey('printed_grand_total') ? totals['printed_grand_total'] : totals['grand_total']);
+  return n != null && n > 0 ? invoiceRound2(n) : null;
 }
 
 /// `billTotalGap`: form total minus the bill total, or null when there is none or they agree.

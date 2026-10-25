@@ -7,6 +7,7 @@ export class GeminiVisionProvider implements InvoiceExtractionProvider {
   async extract(input: InvoiceExtractionInput): Promise<InvoiceExtractionResult> {
     return runGeminiVisionPipeline(input.file, Boolean(input.includeDebug), {
       businessId: input.businessId,
+      promptNote: input.promptNote,
     });
   }
 }

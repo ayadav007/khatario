@@ -147,6 +147,7 @@ describe('scanned bill checks', () => {
     expect(billTotalGap(2130.08, 2130.6)).toBeNull();
     expect(billTotalGap(null, 1831.57)).toBeNull();
     expect(billTotalGap(2130.08, 1831.57)).toBe(-298.51);
-    expect(scanPrintedGrandTotal({ printed_grand_total: null, grand_total: 2130.08 })).toBe(2130.08);
+    expect(scanPrintedGrandTotal({ printed_grand_total: null, grand_total: 2130.08 })).toBeNull();
+    expect(scanPrintedGrandTotal({ grand_total: 2130.08 })).toBe(2130.08);
   });
 });

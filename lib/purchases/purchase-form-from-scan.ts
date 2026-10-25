@@ -209,14 +209,16 @@ export function previewPurchaseFormDocument(
 /** Gap allowed between the form's grand total and the bill's printed total (paise rounding). */
 export const BILL_TOTAL_GAP_TOLERANCE = 1;
 
-/** The bill's own payable figure from a scan review: the printed total, else the footer total. */
+/**
+ * The bill's own payable figure from a scan review. `printed_grand_total` is null when the
+ * bill printed none; `grand_total` is then filled from the lines, so it is only trusted on
+ * old reviews saved before `printed_grand_total` existed.
+ */
 export function scanPrintedGrandTotal(totals: unknown): number | null {
   if (!totals || typeof totals !== 'object') return null;
   const t = totals as Record<string, unknown>;
-  for (const value of [t.printed_grand_total, t.grand_total]) {
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return round2(value);
-  }
-  return null;
+  const value = 'printed_grand_total' in t ? t.printed_grand_total : t.grand_total;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? round2(value) : null;
 }
 
 /** Form total minus the bill's printed total, or null when there is no bill total or they agree. */

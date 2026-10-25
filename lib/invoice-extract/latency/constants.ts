@@ -6,6 +6,15 @@
 /** Long-side cap after crop / on the server. Never used to upscale. */
 export const INVOICE_VISION_MAX_LONG_SIDE = 1600;
 
+/**
+ * Till rolls are long and narrow: at 1600px long side a receipt is ~450px wide and its
+ * characters are a few pixels each. Tall (or wide) images keep at least this short side…
+ */
+export const INVOICE_VISION_MIN_SHORT_SIDE = 800;
+
+/** …up to this long side. Normal A4 / phone-shaped bills still stop at 1600. */
+export const INVOICE_VISION_TALL_MAX_LONG_SIDE = 3200;
+
 /** Browser canvas JPEG quality (0–1). */
 export const INVOICE_VISION_JPEG_QUALITY = 0.8;
 

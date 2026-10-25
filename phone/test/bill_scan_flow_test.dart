@@ -10,17 +10,33 @@ void main() {
   group('bill photo', () {
     final photo = img.encodePng(img.Image(width: 3000, height: 2000));
 
-    test('is capped at 2400px before cropping', () {
+    test('keeps a phone-sized photo whole and caps a bigger one at 4000px', () {
       final normal = normalizeBillPhoto(photo);
-      expect((normal.width, normal.height), (2400, 1600));
+      expect((normal.width, normal.height), (3000, 2000));
+      final big = normalizeBillPhoto(img.encodePng(img.Image(width: 6000, height: 4500)));
+      expect((big.width, big.height), (4000, 3000));
     });
 
-    test('crop keeps the box round the corners and sends at most 1600px', () {
+    test('crop keeps the box round the corners and sends a normal page at most 1600px', () {
       final normal = normalizeBillPhoto(photo);
       final page = img.decodeJpg(cropBillPhoto((normal.bytes, const Rect.fromLTRB(0.25, 0, 0.75, 0.5))))!;
-      expect((page.width, page.height), (1200, 800));
-      final tall = img.decodeJpg(cropBillPhoto((normal.bytes, const Rect.fromLTRB(0, 0, 1, 1))))!;
-      expect((tall.width, tall.height), (1600, 1067));
+      expect((page.width, page.height), (1500, 1000));
+      final whole = img.decodeJpg(cropBillPhoto((normal.bytes, const Rect.fromLTRB(0, 0, 1, 1))))!;
+      expect((whole.width, whole.height), (1600, 1067));
+    });
+
+    test('a till roll keeps its width instead of shrinking to 1600px tall', () {
+      final roll = normalizeBillPhoto(img.encodePng(img.Image(width: 3000, height: 4000)));
+      // Receipt is a narrow strip of the photo: 750 x 3500. It keeps its width, up to 3200px tall.
+      final page = img.decodeJpg(cropBillPhoto((roll.bytes, const Rect.fromLTRB(0.25, 0.0625, 0.5, 0.9375))))!;
+      expect((page.width, page.height), (686, 3200));
+    });
+
+    test('billVisionSize matches the server rule', () {
+      expect(billVisionSize(4032, 3024), (width: 1600, height: 1200));
+      expect(billVisionSize(1100, 3300), (width: 800, height: 2400));
+      expect(billVisionSize(8000, 2000), (width: 3200, height: 800));
+      expect(billVisionSize(700, 2600), (width: 700, height: 2600));
     });
   });
 
