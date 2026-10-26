@@ -7,7 +7,7 @@ import { useSubscriptionCheck } from '@/hooks/useSubscriptionCheck';
  * Plan-level WhatsApp access. Use this rather than hasCapability(), which always
  * allows the primary admin.
  * - hasConnect: Connect add-on (WABA, AI, templates, inbox, automation).
- * - hasAutoReminders: scheduled payment reminders from the billing plan (Growth and above).
+ * - hasAutoReminders: scheduled payment reminders from the billing plan (Starter and above).
  */
 export function useWhatsAppAccess() {
   const { business } = useAuth();

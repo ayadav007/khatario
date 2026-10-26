@@ -10,7 +10,7 @@ url: /signup
 
 ## Is there a free trial?
 
-Yes. New Khatario Billing accounts start with a 30-day free trial of the full product. No credit card is needed. The Billing trial includes everything in the top plan, so you can try GST reports, WhatsApp, the online store and multiple branches on your own data. Khatario Connect has no trial because the Connect platform itself is free. Khatario HR is coming soon and has no trial yet.
+Yes. New Khatario Billing accounts start with a 30-day free trial of the full product. No credit card is needed. The Billing trial includes everything in the top plan, so you can try GST reports, WhatsApp, the online store and multiple branches on your own data. The Billing trial does not include the paid Connect plan. Khatario Connect has no trial: a new Connect account is free and can link a number by QR code, and you buy the Connect plan when you want the official WhatsApp API and automation. Khatario HR is coming soon and has no trial yet.
 
 ## What happens when my trial ends?
 

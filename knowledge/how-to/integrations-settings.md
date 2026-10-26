@@ -30,22 +30,25 @@ Go to Settings > Integrations > Payment providers.
 
 ## How do I set up the AI sales agent for WhatsApp?
 
-The AI sales agent replies to your customers' WhatsApp messages automatically using your product catalogue and prices. It needs the WhatsApp Bot add-on and your own AI provider API key.
+The AI sales agent replies to your customers' WhatsApp messages automatically using your product catalogue and prices. It needs the Khatario Connect plan and your own AI provider API key.
 1. Go to Settings > Integrations > AI sales agent.
 2. Choose the AI Provider (Groq, OpenAI, Google Gemini, Anthropic Claude or a custom OpenAI-compatible API), paste your API Key (use Get API Key to create one), and optionally pick a Model.
 3. Keep AI Sales Agent Chatbot and AI Lead Analyzer on.
 4. Deployment Mode: start with Development and add 2–3 of your own numbers to test; switch to Production to reply to everyone.
-5. Tap Save Configuration. Without the WhatsApp Bot add-on, saving shows "WhatsApp Bot addon required".
+5. Tap Save Configuration. Without Connect, saving is blocked and Khatario asks you to add Connect.
 
 ## What is the AI assistant settings page?
 
 Settings > Integrations > AI assistant is a preview of personality options for customer-facing replies (business type, tone, offers, business hours). These settings are not saved yet, so use the AI sales agent page to set up automatic WhatsApp replies.
 
-## What is in WhatsApp bot and messaging settings?
+## What is in the WhatsApp settings, and what does each need?
 
-Settings > Connect > Bot & messaging (the Connect messaging page) has tabs:
-- **Connection** (free): connect your WhatsApp number by QR code, or optionally the Meta Cloud API.
-- **Bot Settings, Auto Reminders, Send Reminders, Logs**: need the WhatsApp Bot add-on (tap Unlock WhatsApp Bot addon). Bot Settings controls the typing animation and response delay; Auto Reminders schedules payment reminders; Send Reminders sends them in bulk; Logs show delivery history.
+Settings > WhatsApp:
+- **Connection** (every plan): link your WhatsApp number by QR code. The Meta Cloud API section (your own WhatsApp Business Account) needs the Connect plan.
+- **Notifications** (Starter plan and above): automatic payment reminders, with links to send reminders now and to the reminder history.
+- **Templates, Inbox & team, AI agent, Shop**: need the Connect plan.
+
+Sending invoices and one-off reminders works on every plan. Automatic and bulk reminders start at Starter and do not need Connect.
 
 ## What integrations are available?
 
@@ -53,7 +56,7 @@ Settings > Integrations > All integrations lists Email (SMTP), Send invoices on 
 
 ## Can I automate tasks with workflow automation?
 
-Not yet. The Workflow automation page in Settings > General is a preview and workflows created there do not run. For automatic payment reminders, use Auto Reminders in the WhatsApp bot settings.
+Not yet. The Workflow automation page in Settings > General is a preview and workflows created there do not run. For automatic payment reminders, use Settings > WhatsApp > Notifications (Starter plan and above).
 
 ## What are account mappings and do I need them?
 

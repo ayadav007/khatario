@@ -347,8 +347,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           href: '/whatsapp/reminders',
           label: 'Payment Reminders',
           module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
+          // Billing Starter and up, over QR; not a Connect feature
+          isLocked: !hasFeature(hasCapability, 'whatsapp_auto_reminders'),
+          featureKey: 'whatsapp_auto_reminders',
         },
         {
           href: '/whatsapp/orders',

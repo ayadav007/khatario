@@ -785,8 +785,9 @@ export const Sidebar = React.memo(function Sidebar() {
                 href: '/whatsapp/reminders',
                 label: 'Payment Reminders',
                 module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
+                // Billing Starter and up, over QR; not a Connect feature
+                isLocked: !hasFeature('whatsapp_auto_reminders'),
+                featureKey: 'whatsapp_auto_reminders',
               },
               {
                 href: '/whatsapp/orders',

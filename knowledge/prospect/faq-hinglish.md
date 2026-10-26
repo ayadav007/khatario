@@ -30,7 +30,7 @@ Khatario aapke bills se GSTR-1 aur GSTR-3B taiyaar karta hai. Inhe Excel ya JSON
 
 ## Udhaar (baaki paisa) ka hisaab kaise rakhe?
 
-Har customer ka baaki paisa, kitne din se baaki hai (ageing) aur statement Khatario mein dikhta hai. WhatsApp par payment reminder ek-ek karke ya sabko ek saath bhej sakte ho, aur payment link se customer UPI se turant pay kar sakta hai.
+Har customer ka baaki paisa, kitne din se baaki hai (ageing) aur statement Khatario mein dikhta hai. WhatsApp par payment reminder ek-ek customer ko har plan mein bhej sakte ho (QR se linked number se). Starter plan se upar sabko ek saath bhi bhej sakte ho, aur reminders apne aap bhi jaate hain, due date se pehle aur overdue hone par; iske liye Connect ki zaroorat nahi hai, aur payment link se customer UPI se turant pay kar sakta hai.
 
 ## Stock (maal) ka hisaab apne aap hota hai?
 

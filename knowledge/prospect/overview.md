@@ -23,7 +23,7 @@ Khatario is built for India: amounts are in rupees, bills carry HSN/SAC codes, a
 Khatario has two products available today that share one account:
 
 - **Khatario Billing**: GST invoicing, inventory, purchases, payments, accounting and reports for Indian shops and businesses.
-- **Khatario Connect**: WhatsApp CRM, WhatsApp bot and bulk messaging. The Connect platform has no monthly fee; you pay only for the WhatsApp add-ons you switch on.
+- **Khatario Connect**: the official WhatsApp Business API on your own WhatsApp Business Account, with a shared team inbox, AI agent, templates, campaigns and automation. A free Connect account can link a number by QR code; the paid Connect plan adds the rest.
 
 You can start with one product and add the other later from the same account. **Khatario HR** (employees, attendance, payroll and leave) is coming soon and is not available to sign up for yet.
 

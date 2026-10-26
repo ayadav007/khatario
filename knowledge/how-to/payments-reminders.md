@@ -14,7 +14,12 @@ Reports > Receivables Aging lists every customer's balance by how long it has be
 
 ## How do I send a payment reminder on WhatsApp?
 
-Connect WhatsApp first (More > Send invoices on WhatsApp). Then send a reminder from the invoice or customer. Bulk reminders (Send Reminders) and automatic scheduled reminders (Auto Reminders) are in Settings > Connect > Bot & messaging and need the WhatsApp Bot add-on.
+Link your WhatsApp number by QR code first (Settings > WhatsApp > Connection). Then:
+- One customer (every plan): Sales > Customers, tap the green WhatsApp icon next to a customer who owes you money.
+- Many invoices at once (Starter plan and above): Payment Reminders > Send reminders.
+- Automatic reminders before the due date and while overdue (Starter plan and above): Settings > WhatsApp > Notifications.
+
+All of these go out from your QR-linked number. You do not need Khatario Connect for reminders.
 
 ## How do I add a payment link to invoices?
 

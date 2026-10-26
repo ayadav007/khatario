@@ -29,7 +29,7 @@ export default function WhatsAppNotificationsPage() {
           description="Automatic WhatsApp reminders before and after invoices fall due."
         >
           <BillingPlanLockedCard
-            title="Automatic reminders come with the Growth plan"
+            title="Automatic reminders come with the Starter plan"
             description="Schedule payment reminders so customers are nudged without you lifting a finger. You can still send reminders yourself below."
             featureName="Automatic payment reminders"
           />
