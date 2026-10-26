@@ -361,6 +361,12 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/tools/hsn-finder', label: 'HSN/SAC Finder' },
     { href: '/tools/gst-calculator', label: 'GST Calculator' },
     { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+    {
+      href: '/tools/whatsapp-group-extractor',
+      label: 'Group Extractor',
+      featureKey: 'whatsapp_bot',
+      isLocked: !hasFeature(hasCapability, 'whatsapp_bot'),
+    },
     { href: '/tools/tds-calculator', label: 'TDS Calculator' },
     { href: '/tools/discount-calculator', label: 'Discount Calculator' },
     { href: '/tools/price-margin-calculator', label: 'Price Calculator' },

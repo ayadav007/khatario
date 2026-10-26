@@ -808,6 +808,12 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/tools/discount-calculator', label: 'Discount Calculator' },
             { href: '/tools/price-margin-calculator', label: 'Price Calculator' },
             { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+            {
+              href: '/tools/whatsapp-group-extractor',
+              label: 'Group Extractor',
+              featureKey: 'whatsapp_bot',
+              isLocked: !hasWhatsAppAddon(),
+            },
             { href: '/tools/pan-validator', label: 'PAN Validator' },
             { href: '/tools/gstin-validator', label: 'GSTIN Validator' },
             { href: '/tools/interest-calculator', label: 'Interest Calculator' },

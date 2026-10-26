@@ -48,7 +48,6 @@ export const CONNECT_NAV_GROUPS: ConnectNavGroupDef[] = [
       { href: '/whatsapp/contacts', label: 'Contacts', module: 'whatsapp_inbox' },
       { href: '/whatsapp/contacts/groups', label: 'Contact Groups', module: 'whatsapp' },
       { href: '/whatsapp/unsubscribes', label: 'Unsubscribes', module: 'whatsapp' },
-      { href: '/whatsapp/group-extractor', label: 'Group Extractor', module: 'whatsapp' },
     ],
   },
 ];

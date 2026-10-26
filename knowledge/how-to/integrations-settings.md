@@ -30,16 +30,17 @@ Go to Settings > Integrations > Payment providers.
 
 ## How do I set up the AI sales agent for WhatsApp?
 
-The AI sales agent replies to your customers' WhatsApp messages automatically using your product catalogue and prices. It needs the Khatario Connect plan and your own AI provider API key.
-1. Go to Settings > Integrations > AI sales agent.
-2. Choose the AI Provider (Groq, OpenAI, Google Gemini, Anthropic Claude or a custom OpenAI-compatible API), paste your API Key (use Get API Key to create one), and optionally pick a Model.
-3. Keep AI Sales Agent Chatbot and AI Lead Analyzer on.
-4. Deployment Mode: start with Development and add 2–3 of your own numbers to test; switch to Production to reply to everyone.
-5. Tap Save Configuration. Without Connect, saving is blocked and Khatario asks you to add Connect.
+The AI agent replies to your customers' WhatsApp messages automatically using your products, prices and policies, can take orders, and hands chats to your team when needed. It needs the Khatario Connect plan.
+1. Go to Settings > WhatsApp > AI agent (Settings > Integrations > AI Sales Agent opens the same page).
+2. Fill in Profile & tone, then Knowledge & products (FAQs, files or pasted text, and which items it may sell).
+3. Under Skills & payments choose what it may do, such as answer questions, take orders and share order status.
+4. Under Hours & handoff set your business hours and who takes over a chat.
+5. Under Testing & AI model, choose Khatario AI (no setup; replies come with Connect) or My own API key (Groq, OpenAI or Gemini, paid to the provider directly), and add 2–3 of your own numbers as test numbers.
+6. The agent starts in Test mode, where only test numbers get replies. Use Test your agent to try it, then tap Go live to reply to every customer.
 
 ## What is the AI assistant settings page?
 
-Settings > Integrations > AI assistant is a preview of personality options for customer-facing replies (business type, tone, offers, business hours). These settings are not saved yet, so use the AI sales agent page to set up automatic WhatsApp replies.
+There is no separate AI assistant page any more. Old links to Settings > AI assistant open Settings > WhatsApp > AI agent, where all automatic WhatsApp replies are set up.
 
 ## What is in the WhatsApp settings, and what does each need?
 
@@ -52,7 +53,7 @@ Sending invoices and one-off reminders works on every plan. Automatic and bulk r
 
 ## What integrations are available?
 
-Settings > Integrations > All integrations lists Email (SMTP), Send invoices on WhatsApp, AI Sales Agent and AI Assistant. SMS messaging is coming soon. Payment gateways are set up separately in Payment providers. There is no Tally, Shopify or Amazon integration yet.
+Settings > Integrations > All integrations lists Email (SMTP), Send invoices on WhatsApp and AI Sales Agent. SMS messaging is coming soon. Payment gateways are set up separately in Payment providers. There is no Tally, Shopify or Amazon integration yet.
 
 ## Can I automate tasks with workflow automation?
 
