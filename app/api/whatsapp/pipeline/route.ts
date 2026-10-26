@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/whatsapp/pipeline?owner=&label_id=&search=&closed_days=&stage_id=&offset=
+ * GET /api/whatsapp/pipeline?owner=&label_id=&source=&search=&closed_days=&stage_id=&offset=
  * The sales board: every stage with its count, total deal value and newest cards.
  * Agents only see chats they could open in the inbox. `stage_id` + `offset` loads more of one column.
  */
@@ -19,6 +19,7 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: 'read' }, async ({ 
     const columns = await loadBoard(viewer, {
       ownerId: sp.get('owner'),
       labelId: sp.get('label_id'),
+      source: sp.get('source'),
       search: sp.get('search'),
       closedDays: Number.isFinite(closedDays) && closedDays > 0 ? closedDays : undefined,
       stageId: sp.get('stage_id'),

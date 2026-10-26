@@ -8,6 +8,8 @@ import '../../session.dart';
 import 'chat_outreach_screens.dart';
 import 'chat_thread_logic.dart';
 import 'chat_thread_screen.dart';
+import 'pipeline_logic.dart';
+import 'pipeline_screen.dart';
 
 const _waGreen = Color(0xFF008069);
 const _waInk = Color(0xFF111B21);
@@ -35,6 +37,8 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
   String? _labelId;
   List<Map<String, dynamic>> _labels = const [];
   bool _unreadOnly = false;
+  bool _followupsOnly = false;
+  int _followupsDue = 0;
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = false;
@@ -72,6 +76,15 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadFollowups() async {
+    try {
+      final before = Uri.encodeComponent(endOfToday(DateTime.now()).toUtc().toIso8601String());
+      final body = await widget.session.api.getJson('/api/whatsapp/followups?when=due&due_before=$before');
+      if (!mounted) return;
+      setState(() => _followupsDue = dueFollowupCount(body));
+    } catch (_) {}
+  }
+
   Future<void> _loadLabels() async {
     try {
       final body = await widget.session.api.getJson('/api/whatsapp/labels');
@@ -88,6 +101,7 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
       _inboxState = _inboxState == state ? null : state;
       if (_inboxState != 'intervened') _intervenedBy = null;
       _unreadOnly = false;
+      _followupsOnly = false;
     });
     _load();
   }
@@ -109,6 +123,7 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
         if (_inboxState == 'intervened' && _intervenedBy != null) 'intervened_by=$_intervenedBy',
         if (_unreadOnly) 'unread_only=true',
         if (_labelId != null) 'label_id=${Uri.encodeComponent(_labelId!)}',
+        if (_followupsOnly) 'followups=due&due_before=${Uri.encodeComponent(endOfToday(DateTime.now()).toUtc().toIso8601String())}',
       ].join('&');
       final path = '/api/whatsapp/conversations?limit=50&offset=$offset'
           '${q.isEmpty ? '' : '&search=${Uri.encodeComponent(q)}'}'
@@ -123,7 +138,10 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
         _loading = false;
         _loadingMore = false;
       });
-      if (!more) _loadSummary();
+      if (!more) {
+        _loadSummary();
+        _loadFollowups();
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -181,12 +199,15 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert, color: Colors.white),
                       onSelected: (value) {
-                        final page = value == 'broadcasts'
-                            ? BroadcastsScreen(session: widget.session)
-                            : BotRepliesScreen(session: widget.session);
+                        final page = value == 'pipeline'
+                            ? PipelineScreen(session: widget.session)
+                            : value == 'broadcasts'
+                                ? BroadcastsScreen(session: widget.session)
+                                : BotRepliesScreen(session: widget.session);
                         Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
                       },
                       itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'pipeline', child: Text('Pipeline')),
                         PopupMenuItem(value: 'broadcasts', child: Text('Broadcasts')),
                         PopupMenuItem(value: 'bot', child: Text('Bot replies')),
                       ],
@@ -256,11 +277,33 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
                       if (_unreadOnly) {
                         _inboxState = null;
                         _intervenedBy = null;
+                        _followupsOnly = false;
                       }
                     });
                     _load();
                   },
                 ),
+                if (_followupsDue > 0 || _followupsOnly) ...[
+                  const SizedBox(width: 8),
+                  _chip(
+                    label: 'Follow-ups',
+                    count: _followupsDue,
+                    selected: _followupsOnly,
+                    background: const Color(0xFFFEF2F2),
+                    foreground: const Color(0xFFB91C1C),
+                    onTap: () {
+                      setState(() {
+                        _followupsOnly = !_followupsOnly;
+                        if (_followupsOnly) {
+                          _inboxState = null;
+                          _intervenedBy = null;
+                          _unreadOnly = false;
+                        }
+                      });
+                      _load();
+                    },
+                  ),
+                ],
               ],
             ),
           ),

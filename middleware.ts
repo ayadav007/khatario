@@ -88,6 +88,8 @@ function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/track/')) return true;
   // Rider link for the shop's own delivery rider (token-only, no login).
   if (pathname.startsWith('/r/')) return true;
+  // Connect tracked WhatsApp links and QR codes (public redirect to wa.me).
+  if (pathname.startsWith('/w/')) return true;
   if (pathname.startsWith('/portal/')) return true;
   return false;
 }

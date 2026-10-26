@@ -30,8 +30,9 @@ export function SlideOverPanel({
 
   if (!open) return null;
 
+  // z-[70]: above the z-[60] Help launcher; dialogs opened from a panel sit at z-[80].
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end">
+    <div className="fixed inset-0 z-[70] flex justify-end">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"

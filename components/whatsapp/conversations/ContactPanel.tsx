@@ -95,6 +95,11 @@ export function ContactPanel({
   const [labelBusy, setLabelBusy] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<{ is_blocked: boolean; opted_out: boolean; is_group: boolean } | null>(null);
   const [blocking, setBlocking] = useState(false);
+  // AI hot/warm/cold, or the agent's manual pick until the profile is reloaded.
+  const [temperature, setTemperature] = useState<string>(leadProfile?.lead_status || '');
+  useEffect(() => {
+    setTemperature(leadProfile?.lead_status || '');
+  }, [conversationId, leadProfile?.lead_status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -435,10 +440,16 @@ export function ContactPanel({
                 )}
               </label>
               <select
-                value={leadProfile?.lead_status || leadStatus || 'cold'}
-                onChange={(e) => onUpdate({ lead_status: e.target.value })}
+                value={temperature}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setTemperature(e.target.value);
+                  void onUpdate({ lead_status: e.target.value });
+                }}
                 className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
+                {/* The stage lives in the pipeline picker above; this is only the AI's hot/warm/cold. */}
+                {!temperature && <option value="">Not set yet</option>}
                 <option value="hot">🔥 Hot Lead</option>
                 <option value="warm">🟡 Warm Lead</option>
                 <option value="cold">🔵 Cold Lead</option>

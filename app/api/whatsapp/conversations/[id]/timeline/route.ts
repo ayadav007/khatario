@@ -69,7 +69,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: tru
           icon = 'megaphone';
           break;
         case 'stage_changed': {
-          const by = eventData.source === 'ai' ? ' by the AI agent' : eventData.source === 'flow' ? ' by a flow' : eventData.actor_name ? ` by ${eventData.actor_name}` : '';
+          const by = eventData.source === 'ai' ? ' by the AI agent' : eventData.source === 'flow' ? ' by a flow' : eventData.source === 'auto' ? ' automatically (new lead)' : eventData.actor_name ? ` by ${eventData.actor_name}` : '';
           description = eventData.to_stage
             ? `Moved to ${eventData.to_stage}${eventData.from_stage ? ` from ${eventData.from_stage}` : ''}${by}`
             : `Taken off the pipeline${by}`;

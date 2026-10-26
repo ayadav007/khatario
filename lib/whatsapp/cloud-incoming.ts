@@ -72,6 +72,15 @@ export function cloudReplyText(response: string, buttons?: BotButton[], footer?:
  * message, then the shop's bot reply (if any) goes back from the same number. Never throws, so a
  * queue retry cannot store or answer it twice.
  */
+/** Click-to-WhatsApp ad that opened this chat: record it as the lead's source (first touch only). */
+async function creditAd(job: CloudIncomingQueueJob, conversationId: string): Promise<void> {
+  if (!job.referral) return;
+  const { applyAdReferral } = await import('@/lib/whatsapp/lead-sources');
+  await applyAdReferral(job.businessId, conversationId, job.referral).catch((err) =>
+    console.warn('[cloud-incoming] ad attribution failed:', err instanceof Error ? err.message : err),
+  );
+}
+
 export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<void> {
   try {
     if (job.order?.items.length) {
@@ -96,6 +105,7 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
         job.sourceTimestampSec,
         null,
       );
+      if (conversationId) await creditAd(job, conversationId);
       await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
       return;
     }
@@ -117,6 +127,7 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
       null,
       out,
     );
+    if (out.conversationUuid) await creditAd(job, out.conversationUuid);
     await queueIfUnanswered(job.businessId, out.conversationUuid, {
       replied: !!result.response?.trim() || !!result.list || !!(result.buttons && result.buttons.length),
       handled: result.handled,

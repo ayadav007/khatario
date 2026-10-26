@@ -5,7 +5,7 @@ import { format, isPast } from 'date-fns';
 import { AlarmClock, Check, Loader2 } from 'lucide-react';
 import type { DealView } from '@/lib/whatsapp/pipeline';
 import type { FollowupRow } from '@/lib/whatsapp/followups';
-import { STAGE_DOT, type StageOption } from './stageStyle';
+import { describeSource, SOURCE_STYLE, STAGE_DOT, type StageOption } from './stageStyle';
 
 const field =
   'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-border-dark dark:bg-surface-dark';
@@ -115,6 +115,17 @@ export function DealSection({ conversationId, isGroup }: { conversationId: strin
 
   return (
     <div className="space-y-3 border-b border-gray-200 pb-4 dark:border-border-dark">
+      {deal && (
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-gray-600 dark:text-text-secondary">Lead source</span>
+          <span
+            className={`truncate rounded-full px-2 py-0.5 font-medium ${deal.source ? SOURCE_STYLE[deal.source] || 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-600'}`}
+            title={typeof deal.source_detail?.message === 'string' ? (deal.source_detail.message as string) : undefined}
+          >
+            {describeSource(deal.source, deal.source_detail)}
+          </span>
+        </div>
+      )}
       <div>
         <label className={labelCls} htmlFor="deal-stage">
           Pipeline stage

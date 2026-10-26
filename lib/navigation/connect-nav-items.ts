@@ -30,6 +30,7 @@ export const CONNECT_NAV_GROUPS: ConnectNavGroupDef[] = [
     items: [
       { href: '/whatsapp/conversations', label: 'Conversations', module: 'whatsapp_inbox' },
       { href: '/whatsapp/pipeline', label: 'Pipeline', module: 'whatsapp_inbox' },
+      { href: '/whatsapp/lead-sources', label: 'Lead sources', module: 'whatsapp' },
       { href: '/whatsapp/orders', label: 'Order Verification', module: 'whatsapp_inbox' },
       { href: '/whatsapp/flows', label: 'Flows', module: 'whatsapp' },
     ],

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../api.dart';
 import '../../session.dart';
 import 'chat_thread_logic.dart';
+import 'deal_sheet.dart';
 
 /// One WhatsApp conversation: read the messages and send a text reply.
 class ChatThreadScreen extends StatefulWidget {
@@ -396,6 +397,12 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           ],
         ),
         actions: [
+          if (thread == null || !thread.isGroup)
+            IconButton(
+              tooltip: 'Deal & follow-ups',
+              onPressed: () => showDealSheet(context, session: widget.session, conversationId: widget.conversationId),
+              icon: const Icon(Icons.trending_up),
+            ),
           IconButton(tooltip: 'Tags', onPressed: _tags, icon: const Icon(Icons.label_outline)),
         ],
       ),

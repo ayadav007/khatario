@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Kanban } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import type { PipelineSummary } from '@/lib/whatsapp/pipeline';
-import { formatDealValue, STAGE_DOT } from '@/components/whatsapp/pipeline/stageStyle';
+import { formatDealValue, SOURCE_LABEL, STAGE_DOT } from '@/components/whatsapp/pipeline/stageStyle';
 
 export function PipelinePerformance({ data }: { data: PipelineSummary | null }) {
   const header = (
@@ -78,6 +78,36 @@ export function PipelinePerformance({ data }: { data: PipelineSummary | null }) 
                   <td className="px-2 py-2 text-right tabular-nums">{formatDealValue(a.open_value)}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{a.won}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{formatDealValue(a.won_value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data.by_source?.length > 0 && (
+        <div className="mt-5 overflow-x-auto">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">New chats by source ({data.days} days)</p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="px-2 py-2 text-left font-medium text-gray-700">Source</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-700">Chats</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-700">On pipeline</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-700">Won</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-700">Win %</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-700">Won value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.by_source.map((r) => (
+                <tr key={r.source} className="border-b border-gray-100">
+                  <td className="px-2 py-2 text-gray-900">{SOURCE_LABEL[r.source] || r.source}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{r.leads}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{r.on_board}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{r.won}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{r.leads ? `${Math.round((r.won / r.leads) * 100)}%` : '—'}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatDealValue(r.won_value)}</td>
                 </tr>
               ))}
             </tbody>

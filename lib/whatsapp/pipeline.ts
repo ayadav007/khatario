@@ -34,7 +34,7 @@ export interface DealPatch {
 }
 
 /** Who moved the deal; shown in the chat timeline. */
-export type DealActor = { source: 'agent'; userId: string } | { source: 'flow' | 'ai' };
+export type DealActor = { source: 'agent'; userId: string } | { source: 'flow' | 'ai' | 'auto' };
 
 export interface DealView {
   stage_id: string | null;
@@ -42,6 +42,9 @@ export interface DealView {
   expected_close_on: string | null;
   lost_reason: string | null;
   stage_changed_at: string | null;
+  /** Where the lead came from (first touch); null = direct. */
+  source: string | null;
+  source_detail: Record<string, unknown> | null;
 }
 
 export class PipelineError extends Error {
@@ -229,7 +232,8 @@ function parseCloseDate(raw: string | null): string | null {
 export async function loadDeal(businessId: string, conversationId: string): Promise<DealView | null> {
   return queryOne<DealView>(
     `SELECT stage_id::text AS stage_id, deal_value::float8 AS deal_value,
-            to_char(expected_close_on, 'YYYY-MM-DD') AS expected_close_on, lost_reason, stage_changed_at
+            to_char(expected_close_on, 'YYYY-MM-DD') AS expected_close_on, lost_reason, stage_changed_at,
+            source, source_detail
        FROM whatsapp_conversations WHERE id = $1::uuid AND business_id = $2`,
     [conversationId, businessId],
   );
@@ -346,6 +350,7 @@ export interface BoardCard {
   temperature: string | null;
   lead_score: number | null;
   next_followup_at: string | null;
+  source: string | null;
 }
 
 export interface BoardColumn extends PipelineStage {
@@ -356,6 +361,8 @@ export interface BoardColumn extends PipelineStage {
 
 export interface BoardFilters {
   ownerId?: string | null;
+  /** A lead source key, or 'direct' for chats with none. */
+  source?: string | null;
   labelId?: string | null;
   search?: string | null;
   /** Won and lost columns only show deals closed in this many days. */
@@ -383,6 +390,12 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
   if (filters.ownerId && UUID_RE.test(filters.ownerId)) {
     params.push(filters.ownerId);
     where.push(`(c.inbox_state = 'intervened' AND c.assigned_to = $${params.length}::uuid)`);
+  }
+  if (filters.source === 'direct') {
+    where.push('c.source IS NULL');
+  } else if (filters.source && /^[a-z_]{2,16}$/.test(filters.source)) {
+    params.push(filters.source);
+    where.push(`c.source = $${params.length}`);
   }
   if (filters.labelId && UUID_RE.test(filters.labelId)) {
     params.push(filters.labelId);
@@ -435,7 +448,7 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
               c.stage_changed_at,
               CASE WHEN c.inbox_state = 'intervened' THEN c.assigned_to::text END AS owner_id,
               CASE WHEN c.inbox_state = 'intervened' THEN u.name END AS owner_name,
-              lp.lead_status AS temperature, lp.lead_score,
+              lp.lead_status AS temperature, lp.lead_score, c.source,
               (SELECT MIN(f.due_at) FROM whatsapp_followups f WHERE f.conversation_id = c.id AND f.status = 'pending') AS next_followup_at,
               ROW_NUMBER() OVER (PARTITION BY c.stage_id ORDER BY c.stage_changed_at DESC NULLS LAST, c.id) AS rn
        ${base} ${stageFilter}
@@ -462,6 +475,8 @@ export interface PipelineSummary {
   win_rate: number | null;
   by_agent: Array<{ agent_id: string; agent_name: string; open: number; open_value: number; won: number; won_value: number }>;
   lost_reasons: Array<{ reason: string; count: number }>;
+  /** Chats that started in the window, by first-touch source ('direct' = none). */
+  by_source: Array<{ source: string; leads: number; on_board: number; won: number; won_value: number }>;
 }
 
 /** Dashboard numbers for the whole business: open deals now, and what closed in the last `days`. */
@@ -474,7 +489,7 @@ export async function loadPipelineSummary(businessId: string, days = 30): Promis
   const base = `${from} ${scope}`;
   const closedIn = `c.stage_changed_at >= NOW() - ($2::int * INTERVAL '1 day')`;
 
-  const [perStage, agents, reasons] = await Promise.all([
+  const [perStage, agents, reasons, sources] = await Promise.all([
     queryRows<{ stage_id: string; count: number; total_value: number }>(
       `SELECT c.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(c.deal_value), 0)::float8 AS total_value
        ${base} AND (s.kind = 'open' OR ${closedIn})
@@ -502,6 +517,19 @@ export async function loadPipelineSummary(businessId: string, days = 30): Promis
        GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
       [businessId, span],
     ),
+    queryRows<PipelineSummary['by_source'][number]>(
+      `SELECT COALESCE(c.source, 'direct') AS source, COUNT(*)::int AS leads,
+              COUNT(c.stage_id)::int AS on_board,
+              COUNT(*) FILTER (WHERE s.kind = 'won')::int AS won,
+              COALESCE(SUM(c.deal_value) FILTER (WHERE s.kind = 'won'), 0)::float8 AS won_value
+         FROM whatsapp_conversations c
+         LEFT JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id AND s.business_id = c.business_id
+        WHERE c.business_id = $1 AND NOT COALESCE(c.is_group, false)
+          AND COALESCE(c.source_at, c.created_at) >= NOW() - ($2::int * INTERVAL '1 day')
+        GROUP BY 1
+        ORDER BY leads DESC`,
+      [businessId, span],
+    ),
   ]);
 
   const withTotals = stages.map((s) => {
@@ -519,5 +547,6 @@ export async function loadPipelineSummary(businessId: string, days = 30): Promis
     win_rate: wonCount + lost > 0 ? wonCount / (wonCount + lost) : null,
     by_agent: agents,
     lost_reasons: reasons,
+    by_source: sources,
   };
 }

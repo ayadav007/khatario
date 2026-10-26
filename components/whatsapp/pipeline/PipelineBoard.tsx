@@ -8,7 +8,7 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { Button } from '@/components/ui/Button';
 import { Toast } from '@/components/ui/Toast';
 import type { BoardCard, BoardColumn } from '@/lib/whatsapp/pipeline';
-import { formatDealValue, STAGE_DOT, type StageOption } from './stageStyle';
+import { formatDealValue, SOURCE_LABEL, SOURCE_STYLE, STAGE_DOT, type StageOption } from './stageStyle';
 import { StageManager } from './StageManager';
 
 type Agent = { id: string; name: string; can_receive?: boolean };
@@ -27,6 +27,7 @@ export function PipelineBoard() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [owner, setOwner] = useState('');
   const [labelId, setLabelId] = useState('');
+  const [source, setSource] = useState('');
   const [closedDays, setClosedDays] = useState('90');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [labels, setLabels] = useState<LabelRow[]>([]);
@@ -47,9 +48,10 @@ export function PipelineBoard() {
     if (debouncedSearch) p.set('search', debouncedSearch);
     if (owner) p.set('owner', owner);
     if (labelId) p.set('label_id', labelId);
+    if (source) p.set('source', source);
     p.set('closed_days', closedDays);
     return p;
-  }, [debouncedSearch, owner, labelId, closedDays]);
+  }, [debouncedSearch, owner, labelId, source, closedDays]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/whatsapp/pipeline?${query.toString()}`);
@@ -187,6 +189,12 @@ export function PipelineBoard() {
           <option value="">All labels</option>
           {labels.map((l) => (
             <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+        <select className={field} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Lead source">
+          <option value="">All sources</option>
+          {Object.entries(SOURCE_LABEL).map(([key, text]) => (
+            <option key={key} value={key}>{text}</option>
           ))}
         </select>
         <select className={field} value={closedDays} onChange={(e) => setClosedDays(e.target.value)} aria-label="Won and lost shown">
@@ -327,6 +335,11 @@ function DealCard({
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {card.source && (
+          <span className={`rounded-full px-1.5 py-0.5 font-medium ${SOURCE_STYLE[card.source] || 'bg-gray-100 text-gray-600'}`}>
+            {SOURCE_LABEL[card.source] || card.source}
+          </span>
+        )}
         {card.temperature && TEMPERATURE_STYLE[card.temperature] && (
           <span className={`rounded-full px-1.5 py-0.5 font-medium capitalize ${TEMPERATURE_STYLE[card.temperature]}`}>{card.temperature}</span>
         )}

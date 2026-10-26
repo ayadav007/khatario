@@ -387,6 +387,11 @@ export async function storeIncomingMessage(
       conversation = { id: newConv!.id, customer_id: customer?.id };
       // Fire-and-forget: cache profile picture for new conversation
       cacheProfilePicture(businessId, newConv!.id, conversationId, fromJid, isGroup);
+      // A tracked link / QR / website button puts "(ref CODE)" in the first message.
+      if (!isGroup) {
+        const { attributeNewChat } = await import('@/lib/whatsapp/lead-sources');
+        await attributeNewChat(businessId, newConv!.id, messageText).catch(() => undefined);
+      }
     } else {
       // Refresh profile picture in background if not updated recently (> 7 days)
       refreshProfilePictureIfStale(businessId, conversation.id, conversationId, fromJid, isGroup);
