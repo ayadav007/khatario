@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
 import { custodyBalances, transitBalances } from '@/lib/stock-custody/custody';
+import { inwardTransitBalances } from '@/lib/purchases/goods-in-transit';
 import { authorizeStockReport } from '@/lib/stock-custody/report-auth';
 
 export const dynamic = 'force-dynamic';
@@ -19,11 +20,12 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
   try {
     const pool = getPool();
-    const [custody, transit] = await Promise.all([
+    const [custody, transit, inward] = await Promise.all([
       custodyBalances(pool, auth.businessId, { warehouseId }),
       transitBalances(pool, auth.businessId, { warehouseId }),
+      inwardTransitBalances(pool, auth.businessId, { warehouseId }),
     ]);
-    const itemIds = [...new Set([...custody, ...transit].map((r) => r.item_id))];
+    const itemIds = [...new Set([...custody, ...transit, ...inward].map((r) => r.item_id))];
     const cost = itemIds.length
       ? await currentUnitCosts(pool, auth.businessId, itemIds, new Date().toISOString().slice(0, 10))
       : new Map<string, number>();
@@ -34,6 +36,7 @@ export async function GET(request: NextRequest) {
       });
     const custodyRows = withValue(custody);
     const transitRows = withValue(transit);
+    const inwardRows = withValue(inward);
     const sum = (rows: Array<{ qty: number; value: number }>) => ({
       qty: Math.round(rows.reduce((s, r) => s + r.qty, 0) * 1000) / 1000,
       value: round2(rows.reduce((s, r) => s + r.value, 0)),
@@ -42,11 +45,13 @@ export async function GET(request: NextRequest) {
       as_of: new Date().toISOString(),
       with_third_party: custodyRows,
       in_transit: transitRows,
+      inward_transit: inwardRows,
       totals: {
         with_third_party: sum(custodyRows),
         in_transit: sum(transitRows),
+        inward_transit: sum(inwardRows),
         overdue_returns: custodyRows.filter((r) => r.overdue).length,
-        unproven: [...custodyRows, ...transitRows].filter((r) => r.eway_bill_status === 'expired').length,
+        unproven: [...custodyRows, ...transitRows, ...inwardRows].filter((r) => r.eway_bill_status === 'expired').length,
       },
     });
   } catch (error: any) {

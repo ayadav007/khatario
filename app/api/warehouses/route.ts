@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
       pincode,
       country,
       warehouse_type,
+      gst_place_type,
     } = body;
 
     if (!business_id || !name) {
@@ -186,13 +187,14 @@ export async function POST(request: NextRequest) {
     const warehouse = await db.queryOne(`
       INSERT INTO warehouses (
         business_id, branch_id, name, warehouse_code, address_line1, address_line2,
-        city, state, pincode, country, warehouse_type
+        city, state, pincode, country, warehouse_type, gst_place_type
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
       business_id, branch_id || null, name, warehouse_code, address_line1, address_line2,
-      city, state, pincode, country || 'India', warehouse_type || 'physical'
+      city, state, pincode, country || 'India', warehouse_type || 'physical',
+      ['principal', 'additional', 'not_registered'].includes(gst_place_type) ? gst_place_type : null,
     ]);
 
     // If branch_id provided, create mapping

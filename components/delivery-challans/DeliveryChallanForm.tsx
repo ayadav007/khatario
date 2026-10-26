@@ -86,6 +86,7 @@ const EMPTY_FORM = {
   supplier_id: '',
   warehouse_id: '',
   expected_return_date: '',
+  job_work_goods: 'inputs',
   customer_id: '',
   invoice_id: '',
   sales_order_id: '',
@@ -242,6 +243,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
         supplier_id: dc.supplier_id || '',
         warehouse_id: dc.warehouse_id || '',
         expected_return_date: dateOnly(dc.expected_return_date),
+        job_work_goods: dc.job_work_goods || 'inputs',
         customer_id: dc.customer_id || '',
         invoice_id: dc.invoice_id || '',
         sales_order_id: dc.sales_order_id || '',
@@ -577,6 +579,19 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                     Inputs must come back from the job worker within 1 year, capital goods within 3 (GST s.143).
                   </p>
                 )}
+              </div>
+            )}
+            {returnable && formData.purpose === 'job_work' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Goods sent are</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.job_work_goods}
+                  onChange={(e) => setFormData({ ...formData, job_work_goods: e.target.value })}
+                >
+                  <option value="inputs">Inputs (back within 1 year)</option>
+                  <option value="capital_goods">Capital goods (back within 3 years)</option>
+                </select>
               </div>
             )}
             <div>

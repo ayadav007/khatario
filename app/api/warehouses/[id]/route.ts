@@ -93,6 +93,7 @@ export async function PATCH(
       pincode,
       country,
       warehouse_type,
+      gst_place_type,
       is_active,
     } = body;
 
@@ -229,6 +230,10 @@ export async function PATCH(
     if (warehouse_type !== undefined) {
       updates.push(`warehouse_type = $${paramIndex++}`);
       values.push(warehouse_type);
+    }
+    if (gst_place_type !== undefined) {
+      updates.push(`gst_place_type = $${paramIndex++}`);
+      values.push(['principal', 'additional', 'not_registered'].includes(gst_place_type) ? gst_place_type : null);
     }
     if (is_active !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);

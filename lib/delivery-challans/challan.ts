@@ -46,6 +46,8 @@ export interface ChallanWriteInput {
   /** Godown the goods leave from (warehouse mode). */
   warehouse_id?: string | null;
   expected_return_date?: string | null;
+  /** Job work only: inputs come back within 1 year, capital goods within 3 (s.143). */
+  job_work_goods?: string | null;
   notes?: string | null;
   terms?: string | null;
   items?: ChallanLineInput[];
@@ -154,6 +156,7 @@ export async function writeChallan(
     input.supplier_id || null,
     input.warehouse_id || null,
     kind === 'returnable' ? input.expected_return_date || null : null,
+    purpose === 'job_work' ? (input.job_work_goods === 'capital_goods' ? 'capital_goods' : 'inputs') : null,
   ];
 
   let challan: any;
@@ -166,8 +169,9 @@ export async function writeChallan(
          dispatch_from_address = $15, reason_for_transportation = $16, notes = $17, terms = $18,
          branch_id = $19, place_of_supply_state_code = $20, subtotal = $21, cgst_total = $22,
          sgst_total = $23, igst_total = $24, tax_total = $25, grand_total = $26,
-         challan_kind = $27, purpose = $28, supplier_id = $29, warehouse_id = $30, expected_return_date = $31
-       WHERE id = $32 AND business_id = $1 AND stock_posted_at IS NULL
+         challan_kind = $27, purpose = $28, supplier_id = $29, warehouse_id = $30, expected_return_date = $31,
+         job_work_goods = $32
+       WHERE id = $33 AND business_id = $1 AND stock_posted_at IS NULL
        RETURNING *`,
       [...values, existingId]
     );
@@ -183,8 +187,8 @@ export async function writeChallan(
          e_way_bill_number, vehicle_number, transporter_name, transporter_gstin, shipping_address,
          billing_address, place_of_delivery, dispatch_from_address, reason_for_transportation, notes, terms,
          branch_id, place_of_supply_state_code, subtotal, cgst_total, sgst_total, igst_total, tax_total,
-         grand_total, challan_kind, purpose, supplier_id, warehouse_id, expected_return_date, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+         grand_total, challan_kind, purpose, supplier_id, warehouse_id, expected_return_date, job_work_goods, created_by, status
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
        RETURNING *`,
       [...values, input.created_by || null, status]
     );

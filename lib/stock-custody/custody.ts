@@ -216,6 +216,7 @@ export async function settleReturnableChallan(
       userId,
     });
 
+    let adjustmentId: string | null = null;
     if (writtenOff > 0) {
       const adj = await createQuantityAdjustmentOn(client, {
         businessId,
@@ -230,8 +231,15 @@ export async function settleReturnableChallan(
         createdBy: userId ?? undefined,
       });
       adjustmentIds.push(adj.adjustmentId);
+      adjustmentId = adj.adjustmentId;
     }
 
+    await client.query(
+      `INSERT INTO delivery_challan_returns (
+         delivery_challan_id, challan_item_id, return_date, qty_returned, qty_invoiced, qty_written_off, adjustment_id, notes, created_by
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [c.id, line.id, input.date, returned, invoiced, writtenOff, adjustmentId, input.notes || null, userId]
+    );
     await client.query(
       `UPDATE delivery_challan_items
           SET qty_returned = qty_returned + $2, qty_invoiced = qty_invoiced + $3, qty_written_off = qty_written_off + $4
@@ -367,7 +375,7 @@ export async function transitBalances(
             st.id AS transfer_id, st.transfer_number, st.transfer_date::text,
             st.from_location_id AS from_warehouse_id, fw.name AS from_warehouse_name,
             st.to_location_id AS to_warehouse_id, tw.name AS to_warehouse_name,
-            SUM(COALESCE(sti.quantity_dispatched, 0) - COALESCE(sti.received_qty, 0))::float AS qty,
+            SUM(COALESCE(sti.quantity_dispatched, 0) - COALESCE(sti.received_qty, 0) - COALESCE(sti.qty_short, 0))::float AS qty,
             MAX(eb.ewb_number) AS eway_bill_number, MAX(eb.status) AS eway_bill_status, MAX(eb.valid_until) AS valid_until
        FROM stock_transfers st
        JOIN stock_transfer_items sti ON sti.transfer_id = st.id
@@ -382,7 +390,7 @@ export async function transitBalances(
       WHERE st.business_id = $1 AND st.status = 'in_transit'
         AND ($2::uuid IS NULL OR st.from_location_id = $2)
       GROUP BY sti.item_id, i.name, i.stock_class, st.id, fw.name, tw.name
-     HAVING SUM(COALESCE(sti.quantity_dispatched, 0) - COALESCE(sti.received_qty, 0)) > 0.0005
+     HAVING SUM(COALESCE(sti.quantity_dispatched, 0) - COALESCE(sti.received_qty, 0) - COALESCE(sti.qty_short, 0)) > 0.0005
       ORDER BY st.transfer_date, st.transfer_number, i.name`,
     [businessId, opts.warehouseId ?? null]
   );

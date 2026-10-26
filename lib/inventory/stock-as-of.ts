@@ -4,7 +4,7 @@ import { queryRows } from '@/lib/db';
  * Effective (document) date of each stock movement, so backdated bills and invoices fall in the
  * right period. Cancellations use the day they were recorded.
  */
-const MOVEMENT_DATE_SQL = `
+export const MOVEMENT_DATE_SQL = `
   COALESCE(
     CASE sm.reference_type
       WHEN 'invoice' THEN (SELECT inv.invoice_date FROM invoices inv WHERE inv.id = sm.reference_id)

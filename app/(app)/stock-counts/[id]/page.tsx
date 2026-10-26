@@ -205,6 +205,13 @@ export default function StockCountPage() {
         }
       />
 
+      {c.warehouse_id && c.gst_place_type === 'not_registered' && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          This godown is marked as not on the GST registration. Stock kept at an undeclared place can be seized (s.35); add it as an
+          additional place of business.
+        </div>
+      )}
+
       {counting && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
@@ -461,6 +468,48 @@ export default function StockCountPage() {
               </div>
             </section>
           )}
+
+          <section className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <h2 className="font-semibold text-gray-900 p-4">Billed, on the way from suppliers</h2>
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-left text-gray-600">
+                <tr>
+                  <th className="px-4 py-2">Supplier</th>
+                  <th className="px-4 py-2">Bill</th>
+                  <th className="px-4 py-2">Item</th>
+                  <th className="px-4 py-2">E-way bill</th>
+                  <th className="px-4 py-2 text-right">Qty</th>
+                  <th className="px-4 py-2">Days</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(data.inward_transit || []).length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                      Nothing is on the way from a supplier.
+                    </td>
+                  </tr>
+                )}
+                {(data.inward_transit || []).map((r: any) => (
+                  <tr key={`${r.purchase_id}-${r.item_id}`}>
+                    <td className="px-4 py-2">{r.supplier_name || '-'}</td>
+                    <td className="px-4 py-2">
+                      <Link className="text-primary-700" href={`/purchases/${r.purchase_id}`}>
+                        {r.bill_number || 'Bill'}
+                      </Link>
+                      <div className="text-xs text-gray-500">{r.bill_date}</div>
+                    </td>
+                    <td className="px-4 py-2">{r.item_name}</td>
+                    <td className={`px-4 py-2 ${r.eway_bill_status === 'expired' ? 'text-red-700' : ''}`}>
+                      {r.eway_bill_number ? `${r.eway_bill_number} (${r.eway_bill_status})` : '-'}
+                    </td>
+                    <td className="px-4 py-2 text-right">{qty(r.qty)}</td>
+                    <td className="px-4 py-2">{r.days_in_transit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
 
           <section className="bg-white rounded-xl border border-gray-200">
             <h2 className="font-semibold text-gray-900 p-4">By class of inventory (CARO 2020, 3(ii)(a))</h2>

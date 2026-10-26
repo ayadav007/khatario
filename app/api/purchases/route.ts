@@ -42,6 +42,8 @@ import {
 import { getInventoryModel } from '@/lib/inventory/cogs-posting';
 import { AcquisitionCostError, planAcquisitionCosts } from '@/lib/purchases/acquisition-cost';
 import { savePurchaseAcquisition } from '@/lib/purchases/save-purchase-acquisition';
+import { holdPurchaseInTransit } from '@/lib/purchases/goods-in-transit';
+import { stockErrorBody } from '@/lib/inventory/godown-stock';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -928,6 +930,8 @@ export async function POST(request: NextRequest) {
       const item = items[i];
       const computed = gstDoc.lineComputeds[i];
       const qty = Number(item.quantity) || 0;
+      // Free goods under a supplier scheme: stocked at no cost, so the line's cost spreads over them.
+      const freeQty = Math.max(0, Math.round((Number(item.free_qty) || 0) * 1000) / 1000);
       const taxable = computed.taxableValue;
       const taxAmount = computed.taxAmount;
       const cgst = computed.cgstAmount;
@@ -961,9 +965,9 @@ export async function POST(request: NextRequest) {
           purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
           unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
           tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-          location_id, line_item_type, itc_type, cess_amount
+          location_id, line_item_type, itc_type, cess_amount, free_qty
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
         RETURNING id
       `,
         [
@@ -990,6 +994,7 @@ export async function POST(request: NextRequest) {
           lineIntent,
           purchaseLineItcType(item, lineIntent),
           lineCess,
+          lineIntent === 'goods' ? freeQty : 0,
         ],
       );
       purchaseItemIds.push(insertedItem.rows[0].id);
@@ -1107,8 +1112,8 @@ export async function POST(request: NextRequest) {
                 item_id: effectiveItemId,
                 variant_id: rawVariantId,
                 item_name: item.item_name,
-                quantity: Number(item.quantity) || 0,
-                unit_price: unitCostForStock,
+                quantity: (Number(item.quantity) || 0) + freeQty,
+                unit_price: qty + freeQty > 0 ? (unitCostForStock * qty) / (qty + freeQty) : unitCostForStock,
                 location_id: item.location_id || null,
                 batch_number: item.batch_number ?? null,
                 serial_numbers: item.serial_numbers,
@@ -1321,6 +1326,20 @@ export async function POST(request: NextRequest) {
         dates: [String(bill_date).slice(0, 10)],
         monthly: ['gstr2b', 'gstr3b'],
       });
+    }
+
+    // Billed but not yet arrived: the goods stay on the books as in transit from the supplier.
+    if (status === 'final' && body.goods_in_transit === true && !supplierCreditNote) {
+      try {
+        await holdPurchaseInTransit(client, business_id, purchase.id, created_by);
+      } catch (e) {
+        const refused = stockErrorBody(e);
+        if (refused) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(refused.body, { status: refused.status });
+        }
+        throw e;
+      }
     }
 
     await client.query('COMMIT');

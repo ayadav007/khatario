@@ -100,6 +100,9 @@ export function getMobileRouteTitle(
   if (p.startsWith('/stock-counts/')) return 'Stock count';
   if (p === '/stock-counts') return 'Stock counts';
   if (p === '/reports/stock/third-party') return 'Stock with parties';
+  if (p === '/reports/stock/quantitative') return 'Quantity details';
+  if (p === '/reports/stock/bank-statement') return 'Bank stock statement';
+  if (p === '/reports/stock/job-work') return 'Job work';
   if (p.startsWith('/delivery-challans')) return 'Delivery challan';
 
   // —— Sales ——

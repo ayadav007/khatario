@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Download, Edit, Loader2, Printer } from 'lucide-react';
+import { Download, Edit, FileText, Loader2, PackageCheck, Printer } from 'lucide-react';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,8 @@ import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContex
 import { PurchasePaymentModal } from '@/components/modals/PurchasePaymentModal';
 import { PrintLabelsModal } from '@/components/purchases/PrintLabelsModal';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { PurchaseGoodsReceiptPanel } from '@/components/purchases/PurchaseGoodsReceiptPanel';
+import { EwayBillPanel } from '@/components/eway-bills/EwayBillPanel';
 
 function PurchaseDetailContent() {
   const params = useParams();
@@ -30,6 +32,8 @@ function PurchaseDetailContent() {
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showLabelsModal, setShowLabelsModal] = useState(false);
+  const [showGoodsPanel, setShowGoodsPanel] = useState(false);
+  const [showEwayPanel, setShowEwayPanel] = useState(false);
   const { hasFeature } = useFeatureRegistry();
   const canPrintLabelsFromPurchase = hasFeature('barcode_label_from_purchase');
 
@@ -115,6 +119,18 @@ function PurchaseDetailContent() {
               <Download className="w-4 h-4 mr-2" />
               PDF
             </Button>
+            {purchase.status === 'final' && (purchase.goods_status === 'in_transit' || purchase.goods_status === 'partial') && (
+              <Button onClick={() => setShowGoodsPanel(true)}>
+                <PackageCheck className="w-4 h-4 mr-2" />
+                Goods arrived
+              </Button>
+            )}
+            {purchase.status === 'final' && (
+              <Button variant="secondary" onClick={() => setShowEwayPanel(true)}>
+                <FileText className="w-4 h-4 mr-2" />
+                Record e-way bill
+              </Button>
+            )}
             {canPrintLabelsFromPurchase && (
               <Button
                 variant="secondary"
@@ -132,6 +148,30 @@ function PurchaseDetailContent() {
             )}
             </div>
           }
+        />
+
+        {(purchase.goods_status === 'in_transit' || purchase.goods_status === 'partial') && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {purchase.goods_status === 'partial' ? 'Part of these goods has arrived.' : 'These goods have not arrived yet.'} They stay on the books as
+            in transit from the supplier and are not counted in the godown until received.
+          </div>
+        )}
+
+        <PurchaseGoodsReceiptPanel
+          purchaseId={purchaseId}
+          items={purchase.items || []}
+          open={showGoodsPanel}
+          onClose={() => setShowGoodsPanel(false)}
+          onDone={fetchPurchase}
+        />
+        <EwayBillPanel
+          open={showEwayPanel}
+          onClose={() => setShowEwayPanel(false)}
+          onDone={fetchPurchase}
+          sourceType="purchase"
+          sourceId={purchaseId}
+          inward
+          defaults={{ doc_type: 'tax_invoice', sub_supply_type: 'supply', goods_value: Number(purchase.grand_total) || undefined }}
         />
 
         {showLabelsModal && business?.id && (

@@ -74,6 +74,8 @@ interface PurchaseItem {
   cess_amount?: number;
   hsn_sac: string;
   quantity: number;
+  /** Free goods under a supplier scheme ("buy 10, get 1"): stocked at no cost. */
+  free_qty?: number;
   unit: string;
   unit_price: number;
   discount_percent: number;
@@ -201,6 +203,8 @@ export default function NewPurchasePage() {
     status: 'draft',
     place_of_supply_state_code: '',
     is_reverse_charge: false,
+    /** Billed but not yet arrived: stock waits in transit until it is received. */
+    goods_in_transit: false,
     supplier_registration_status: 'unknown' as 'registered' | 'unregistered' | 'unknown',
     supply_received_on: '',
     document_type: 'tax_invoice',
@@ -425,6 +429,7 @@ export default function NewPurchasePage() {
           item_type: item.line_item_type === 'service' ? 'service' : 'goods',
           hsn_sac: item.hsn_sac || '',
           quantity: Number(item.quantity) || 1,
+          free_qty: Number((item as { free_qty?: number }).free_qty) || 0,
           unit: item.unit || 'pcs',
           unit_price: Number(item.unit_price) || 0,
           discount_percent: Number(item.discount_percent) || 0,
@@ -1362,6 +1367,7 @@ export default function NewPurchasePage() {
             itc_type: item.item_type !== 'service' && item.is_capital_goods ? 'capital_goods' : undefined,
             hsn_sac: item.hsn_sac,
             quantity: item.quantity,
+            free_qty: item.item_type === 'service' ? 0 : Number(item.free_qty) || 0,
             unit: item.unit,
             unit_price: item.unit_price,
             discount_percent: c.discountPercent,
@@ -2182,6 +2188,18 @@ export default function NewPurchasePage() {
               />
               Reverse charge
             </label>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+              title="The bill is booked now; the goods count as in transit until you record them as received."
+            >
+              <input
+                type="checkbox"
+                checked={formData.goods_in_transit}
+                onChange={(e) => setFormData({ ...formData, goods_in_transit: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+              />
+              Goods not yet arrived
+            </label>
             <span className="ml-auto rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-500 dark:bg-primary-900/40 dark:text-primary-200">
               {totals.intraState ? 'Intra-state · CGST + SGST' : 'Inter-state · IGST'}
             </span>
@@ -2381,6 +2399,20 @@ export default function NewPurchasePage() {
                             data-purchase-item-id={item.id}
                             data-field="quantity"
                           />
+                          {item.item_type !== 'service' && (
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min={0}
+                              className={`${cellInputClass} mt-1 !text-xs`}
+                              placeholder="+ free"
+                              title="Free quantity under a supplier scheme (no cost)"
+                              aria-label="Free quantity"
+                              value={item.free_qty || ''}
+                              onChange={(e) => updateItem(item.id, 'free_qty', Math.max(0, parseFloat(e.target.value) || 0))}
+                            />
+                          )}
                         </td>
                         <td className="py-2.5 align-middle">
                           <input

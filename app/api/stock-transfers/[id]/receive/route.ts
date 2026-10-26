@@ -136,8 +136,9 @@ export async function POST(
         );
       }
 
-      // Validate: Cannot receive more than dispatched
-      if (receivedQty > dispatchedQty) {
+      // Validate: Cannot receive more than dispatched (less any shortfall already written off)
+      const shortQty = parseFloat(transferItem.qty_short || '0');
+      if (receivedQty > dispatchedQty - shortQty) {
         await client.query('ROLLBACK');
         return NextResponse.json(
           { 
@@ -205,7 +206,7 @@ export async function POST(
     const allItemsReceived = await client.query(`
       SELECT 
         COUNT(*) as total_items,
-        COUNT(CASE WHEN received_qty >= quantity_dispatched THEN 1 END) as fully_received_items
+        COUNT(CASE WHEN COALESCE(received_qty, 0) + COALESCE(qty_short, 0) >= quantity_dispatched THEN 1 END) as fully_received_items
       FROM stock_transfer_items
       WHERE transfer_id = $1
     `, [params.id]);

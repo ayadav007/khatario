@@ -61,7 +61,7 @@ export async function weightedAverageCosts(
             ) AS rate
        FROM items i
        LEFT JOIN (
-         SELECT pi.item_id, SUM(pi.quantity) AS qty,
+         SELECT pi.item_id, SUM(pi.quantity + COALESCE(pi.free_qty, 0)) AS qty,
                 SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)) AS value
            FROM purchase_items pi
            JOIN purchases pu ON pu.id = pi.purchase_id
@@ -77,7 +77,7 @@ export async function weightedAverageCosts(
           GROUP BY pi.item_id
        ) p ON p.item_id = i.id
        LEFT JOIN (
-         SELECT pi.item_id, SUM(pi.quantity) AS qty,
+         SELECT pi.item_id, SUM(pi.quantity + COALESCE(pi.free_qty, 0)) AS qty,
                 SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)) AS value
            FROM purchase_items pi
            JOIN purchases pu ON pu.id = pi.purchase_id

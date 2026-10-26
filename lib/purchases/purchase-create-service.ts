@@ -44,6 +44,8 @@ export class PurchaseCreateServiceError extends Error {
 export interface CreatePurchaseInput {
   business_id: string;
   created_by: string;
+  /** Billed but not yet arrived: stock waits in transit from the supplier until received. */
+  goods_in_transit?: boolean;
   branch_id?: string;
   supplier_id?: string | null;
   bill_number?: string | null;
@@ -476,6 +478,8 @@ export async function createPurchaseInTransaction(
     const item = items[i];
     const computed = gstDoc.lineComputeds[i];
     const qty = Number(item.quantity) || 0;
+    // Free goods under a supplier scheme: stocked at no cost, so the line's cost spreads over them.
+    const freeQty = Math.max(0, Math.round((Number(item.free_qty) || 0) * 1000) / 1000);
     // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
     const lineIntent =
       item.item_type === 'service' ||
@@ -502,9 +506,9 @@ export async function createPurchaseInTransaction(
         purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
         unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
         tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-        location_id, line_item_type, itc_type, cess_amount
+        location_id, line_item_type, itc_type, cess_amount, free_qty
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
       RETURNING id
       `,
       [
@@ -531,6 +535,7 @@ export async function createPurchaseInTransaction(
         lineIntent,
         lineItcType,
         purchaseLineCess(item),
+        lineIntent === 'goods' ? freeQty : 0,
       ]
     );
     purchaseItemIds.push(insertedItem.rows[0].id);
@@ -630,8 +635,8 @@ export async function createPurchaseInTransaction(
             item_id: effectiveItemId,
             variant_id: rawVariantId,
             item_name: item.item_name as string,
-            quantity: Number(item.quantity) || 0,
-            unit_price: unitCostForStock,
+            quantity: (Number(item.quantity) || 0) + freeQty,
+            unit_price: qty + freeQty > 0 ? (unitCostForStock * qty) / (qty + freeQty) : unitCostForStock,
             location_id: (item.location_id as string) || null,
             batch_number: (item.batch_number as string) ?? null,
             serial_numbers: item.serial_numbers as string[] | undefined,
@@ -772,6 +777,12 @@ export async function createPurchaseInTransaction(
       [purchase.id]
     );
     purchase.status = 'final';
+  }
+
+  // Billed but not yet arrived: the goods stay on the books as in transit from the supplier.
+  if (status === 'final' && body.goods_in_transit === true) {
+    const { holdPurchaseInTransit } = await import('@/lib/purchases/goods-in-transit');
+    await holdPurchaseInTransit(client, business_id, String(purchase.id), created_by ?? null);
   }
 
   const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');

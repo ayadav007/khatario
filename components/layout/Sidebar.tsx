@@ -236,6 +236,9 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/stock/low-stock-warehouse': 'reports_basic',
     '/reports/stock/damaged': 'reports_basic',
     '/reports/stock/third-party': 'reports_basic',
+    '/reports/stock/quantitative': 'reports_basic',
+    '/reports/stock/bank-statement': 'reports_basic',
+    '/reports/stock/job-work': 'reports_basic',
     '/reports/stock/expired': 'reports_basic',
     '/reports/stock/closing-stock': 'reports_advanced',
     '/reports/stock/closing-stock/finalize': 'reports_advanced',
@@ -708,6 +711,16 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
             { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+          ],
+        },
+        {
+          label: 'Stock & Audit',
+          collapsible: true,
+          subItems: [
+            { href: '/reports/stock/quantitative', label: 'Quantity Details (3CD)', module: 'reports' },
+            { href: '/reports/stock/bank-statement', label: 'Bank Stock Statement', module: 'reports' },
+            { href: '/reports/stock/job-work', label: 'Job Work (ITC-04)', module: 'reports' },
+            { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
           ],
         },
         {

@@ -35,6 +35,7 @@ export function EwayBillPanel({
   sourceType,
   sourceId,
   defaults,
+  inward = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -42,6 +43,8 @@ export function EwayBillPanel({
   sourceType: 'invoice' | 'delivery_challan' | 'stock_transfer' | 'purchase';
   sourceId: string;
   defaults?: { doc_type?: string; sub_supply_type?: string; goods_value?: number; vehicle_number?: string | null };
+  /** The supplier generated it for goods coming to us. */
+  inward?: boolean;
 }) {
   const toast = useToastContext();
   const [form, setForm] = useState({
@@ -70,6 +73,7 @@ export function EwayBillPanel({
         body: JSON.stringify({
           source_type: sourceType,
           source_id: sourceId,
+          direction: inward ? 'inward' : 'outward',
           ewb_number: form.ewb_number.trim(),
           generated_at: new Date(form.generated_at).toISOString(),
           distance_km: Number(form.distance_km),

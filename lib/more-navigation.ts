@@ -282,6 +282,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
       { href: '/reports/deleted', label: 'Deleted items', module: 'reports' },
       { href: '/reports/stock/valuation', label: 'Stock valuation', module: 'reports' },
+      { href: '/reports/stock/quantitative', label: 'Quantity details (3CD)', module: 'reports' },
+      { href: '/reports/stock/bank-statement', label: 'Bank stock statement', module: 'reports' },
+      { href: '/reports/stock/job-work', label: 'Job work (ITC-04)', module: 'reports' },
       { href: '/reports/credit-risk', label: 'Credit risk', module: 'reports' },
     ],
     ctx

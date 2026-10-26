@@ -3,6 +3,7 @@ import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
 import { godownQuantities, resolveGodown, type Godown } from '@/lib/inventory/godown-stock';
 import { createQuantityAdjustmentOn, type ReasonCode } from '@/lib/inventory-adjustment-service';
 import { custodyBalances, transitBalances, type CustodyRow, type TransitRow } from '@/lib/stock-custody/custody';
+import { inwardTransitBalances, type InwardTransitRow } from '@/lib/purchases/goods-in-transit';
 
 /**
  * Physical stock count of one godown. Opening it captures the book figures and (with freeze on)
@@ -110,8 +111,13 @@ export async function openStockCount(client: PoolClient, businessId: string, inp
   const onHand = await godownQuantities(client, businessId, godown, null);
   const custody = await custodyBalances(client, businessId, godown.warehouseMode ? { warehouseId: godown.warehouseId } : { branchId: godown.branchId });
   const transit = godown.warehouseMode ? await transitBalances(client, businessId, { warehouseId: godown.warehouseId }) : [];
+  const inward = await inwardTransitBalances(
+    client,
+    businessId,
+    godown.warehouseMode ? { warehouseId: godown.warehouseId } : { branchId: godown.branchId }
+  );
   const heldBy = sumBy(custody, (r) => r.item_id, (r) => r.qty);
-  const transitBy = sumBy(transit, (r) => r.item_id, (r) => r.qty);
+  const transitBy = sumBy([...transit, ...inward], (r) => r.item_id, (r) => r.qty);
 
   const items = await client.query<{ id: string }>(
     `SELECT id FROM items
@@ -334,6 +340,7 @@ export interface Reconciliation {
   lines: ReconciliationLine[];
   with_third_party: CustodyRow[];
   in_transit: TransitRow[];
+  inward_transit: InwardTransitRow[];
   summary: {
     book_qty: number;
     with_third_party_qty: number;
@@ -356,7 +363,7 @@ export interface Reconciliation {
  */
 export async function stockCountReconciliation(db: Queryable, businessId: string, countId: string): Promise<Reconciliation> {
   const cr = await db.query(
-    `SELECT sc.*, sc.count_date::text AS count_date, w.name AS warehouse_name, b.name AS branch_name,
+    `SELECT sc.*, sc.count_date::text AS count_date, w.name AS warehouse_name, w.gst_place_type, b.name AS branch_name,
             ou.name AS opened_by_name, pu.name AS posted_by_name
        FROM stock_counts sc
        LEFT JOIN warehouses w ON w.id = sc.warehouse_id
@@ -415,6 +422,7 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
   const godownRef = count.warehouse_id ? { warehouseId: count.warehouse_id } : { branchId: count.branch_id };
   const custody = blind ? [] : await custodyBalances(db, businessId, godownRef);
   const transit = blind || !count.warehouse_id ? [] : await transitBalances(db, businessId, { warehouseId: count.warehouse_id });
+  const inward = blind ? [] : await inwardTransitBalances(db, businessId, godownRef);
 
   const counted = lines.filter((l) => l.physical_qty !== null);
   const classes = new Map<string, ClassSummary>();
@@ -441,6 +449,7 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
     lines,
     with_third_party: custody,
     in_transit: transit,
+    inward_transit: inward,
     summary: {
       book_qty: blind ? 0 : total((l) => l.book_qty),
       with_third_party_qty: blind ? 0 : total((l) => l.with_third_party_qty),
@@ -450,7 +459,7 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
       unexplained_qty: blind ? 0 : total((l) => l.difference ?? 0),
       shortage_value: blind ? 0 : r2(lines.reduce((s, l) => s + Math.min(0, l.difference_value ?? 0), 0) * -1),
       excess_value: blind ? 0 : r2(lines.reduce((s, l) => s + Math.max(0, l.difference_value ?? 0), 0)),
-      unproven: [...custody, ...transit].filter((r) => r.eway_bill_status === 'expired').length,
+      unproven: [...custody, ...transit, ...inward].filter((r) => r.eway_bill_status === 'expired').length,
       overdue_returns: custody.filter((r) => r.overdue).length,
       third_party_goods_in_godown: total((l) => l.third_party_qty),
     },

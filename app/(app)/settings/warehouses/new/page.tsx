@@ -66,6 +66,7 @@ export default function NewLocationPage() {
     pincode: '',
     country: 'India',
     warehouse_type: 'physical' as 'physical' | 'virtual' | 'damaged_holding',
+    gst_place_type: '',
   });
 
   useEffect(() => {
@@ -324,6 +325,22 @@ export default function NewLocationPage() {
                   <option value="virtual">Virtual Warehouse (Dropshipping)</option>
                   <option value="damaged_holding">Damaged Goods Holding</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">On the GST registration as</label>
+                <select
+                  value={formData.gst_place_type}
+                  onChange={(e) => handleChange('gst_place_type', e.target.value)}
+                  className="input w-full"
+                >
+                  <option value="">Not set</option>
+                  <option value="principal">Principal place of business</option>
+                  <option value="additional">Additional place of business</option>
+                  <option value="not_registered">Not on the registration</option>
+                </select>
+                <p className="text-xs text-text-secondary mt-1">
+                  Stock must be kept only at places on the GST registration (s.35). Goods at an unregistered godown can be seized.
+                </p>
               </div>
             </div>
           </WarehouseSection>
