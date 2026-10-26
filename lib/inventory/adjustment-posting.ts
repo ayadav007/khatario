@@ -15,7 +15,10 @@ export type AdjustmentReason =
   | 'PROCESS_LOSS'
   | 'TRANSIT_LOSS'
   | 'OWN_CONSUMPTION'
-  | 'CUSTODY_LOSS';
+  | 'CUSTODY_LOSS'
+  | 'PRODUCTION_ISSUE'
+  | 'PRODUCTION_RECEIPT'
+  | 'BY_PRODUCT';
 
 /**
  * s.17(5)(h): goods lost, stolen, destroyed, written off or given as free samples (transit and
@@ -35,6 +38,8 @@ export const ITC_REVERSAL_REASONS: ReadonlySet<AdjustmentReason> = new Set([
 
 /** Ledger code for the non-inventory side of an adjustment, with fallbacks. */
 export function counterAccountCodes(reason: AdjustmentReason, isDecrease: boolean): string[] {
+  // Production moves stock through work in progress: inputs in, output and by-products out.
+  if (reason === 'PRODUCTION_ISSUE' || reason === 'PRODUCTION_RECEIPT' || reason === 'BY_PRODUCT') return ['1161'];
   if (isDecrease) {
     if (reason === 'FREE_SAMPLE') return ['5202', '5201'];
     if (reason === 'LANDED_COST') return ['5105', '5101'];

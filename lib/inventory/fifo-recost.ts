@@ -118,11 +118,25 @@ export async function recostItems(
   if (candidates.size === 0) return report;
 
   const list = [...candidates.values()];
+  // Production adjustments post against Work in progress (1161), an inventory account; for them
+  // 1161 is the counter side, not the stock being costed.
+  const adjustmentIds = list.filter((c) => c.voucherType === 'stock_adjustment').map((c) => c.voucherId);
+  const productionIds = adjustmentIds.length
+    ? (
+        await client.query<{ id: string }>(
+          `SELECT id FROM inventory_adjustments
+            WHERE business_id = $1 AND id = ANY($2::uuid[]) AND reason_code IN ('PRODUCTION_ISSUE', 'PRODUCTION_RECEIPT', 'BY_PRODUCT')`,
+          [businessId, adjustmentIds]
+        )
+      ).rows.map((r) => r.id)
+    : [];
   const posted = await client.query<{
     voucher_type: VoucherType; voucher_id: string; net_out: string; branch_id: string | null; entry_date: string;
   }>(
     `SELECT l.voucher_type, l.voucher_id,
-            COALESCE(SUM(CASE WHEN a.account_code = ANY($4::text[]) THEN l.credit - l.debit ELSE 0 END), 0) AS net_out,
+            COALESCE(SUM(CASE WHEN a.account_code = ANY($4::text[])
+                               AND NOT (a.account_code = '1161' AND l.voucher_id = ANY($5::uuid[]))
+                              THEN l.credit - l.debit ELSE 0 END), 0) AS net_out,
             MAX(l.branch_id::text) AS branch_id,
             to_char(MIN(l.entry_date), 'YYYY-MM-DD') AS entry_date
        FROM ledger_entry_lines l
@@ -130,7 +144,7 @@ export async function recostItems(
        JOIN unnest($2::text[], $3::uuid[]) AS v(t, id) ON v.t = l.voucher_type AND v.id = l.voucher_id
       WHERE l.business_id = $1
       GROUP BY l.voucher_type, l.voucher_id`,
-    [businessId, list.map((c) => c.voucherType), list.map((c) => c.voucherId), INVENTORY_ACCOUNT_CODES]
+    [businessId, list.map((c) => c.voucherType), list.map((c) => c.voucherId), INVENTORY_ACCOUNT_CODES, productionIds]
   );
   const postedBy = new Map(posted.rows.map((p) => [`${p.voucher_type}:${p.voucher_id}`, p]));
 
@@ -179,10 +193,11 @@ export async function recostItems(
          FROM ledger_entry_lines l
          JOIN accounts a ON a.id = l.account_id AND a.account_code = ANY($4::text[])
         WHERE l.business_id = $1 AND l.voucher_type = $2 AND l.voucher_id = $3
+          AND NOT (a.account_code = '1161' AND $5::boolean)
         GROUP BY a.id, a.account_code
         ORDER BY ABS(SUM(l.credit - l.debit)) DESC
         LIMIT 1`,
-      [businessId, c.voucherType, c.voucherId, INVENTORY_ACCOUNT_CODES],
+      [businessId, c.voucherType, c.voucherId, INVENTORY_ACCOUNT_CODES, productionIds.includes(c.voucherId)],
     );
     const inventoryAccountId = used.rows[0]?.id ?? inventory;
     const inventoryCredit = c.outward ? delta : -delta;

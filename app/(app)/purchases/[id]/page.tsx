@@ -154,6 +154,33 @@ function PurchaseDetailContent() {
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             {purchase.goods_status === 'partial' ? 'Part of these goods has arrived.' : 'These goods have not arrived yet.'} They stay on the books as
             in transit from the supplier and are not counted in the godown until received.
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span>Now</span>
+              <select
+                className="border border-amber-300 rounded-md px-2 py-1 text-sm bg-white"
+                value={purchase.transit_stage || ''}
+                onChange={async (e) => {
+                  const stage = e.target.value;
+                  if (!stage) return;
+                  const boe = stage === 'at_customs' || stage === 'bonded_warehouse' ? window.prompt('Bill of entry number (leave blank if not filed yet)') : null;
+                  const res = await fetch(`/api/purchases/${purchaseId}/receive-goods`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'stage', stage, bill_of_entry_number: boe || null }),
+                  });
+                  if (res.ok) fetchPurchase();
+                }}
+              >
+                <option value="">Where are the goods?</option>
+                <option value="dispatched">Dispatched by supplier</option>
+                <option value="on_road">On the road</option>
+                <option value="at_sea">At sea</option>
+                <option value="at_port">At the port</option>
+                <option value="at_customs">At customs</option>
+                <option value="bonded_warehouse">In a bonded warehouse</option>
+              </select>
+              {purchase.bill_of_entry_number && <span>Bill of entry {purchase.bill_of_entry_number}</span>}
+            </div>
           </div>
         )}
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
-import { holdPurchaseInTransit, receivePurchaseGoods } from '@/lib/purchases/goods-in-transit';
+import { holdPurchaseInTransit, receivePurchaseGoods, setTransitStage } from '@/lib/purchases/goods-in-transit';
 import { stockErrorBody } from '@/lib/inventory/godown-stock';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/purchases/[id]/receive-goods
  *   { action: 'receive', date, lines: [{ purchase_item_id, qty }] } — goods of an in-transit bill arrive
  *   { action: 'hold' } — mark a final bill's goods as not yet arrived
+ *   { action: 'stage', stage, bill_of_entry_number?, bill_of_entry_date? } — where the goods are now
  */
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const userId = getAuthenticatedUserId(request);
@@ -35,7 +36,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     await client.query('BEGIN');
     let result: Record<string, unknown>;
-    if (body.action === 'hold') {
+    if (body.action === 'stage') {
+      await setTransitStage(client, businessId, params.id, {
+        stage: body.stage,
+        bill_of_entry_number: body.bill_of_entry_number ?? null,
+        bill_of_entry_date: body.bill_of_entry_date ?? null,
+      });
+      result = { stage: body.stage };
+    } else if (body.action === 'hold') {
       result = { lines: await holdPurchaseInTransit(client, businessId, params.id, userId), goods_status: 'in_transit' };
     } else {
       result = await receivePurchaseGoods(

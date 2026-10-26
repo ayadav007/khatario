@@ -14,6 +14,7 @@ export const MOVEMENT_DATE_SQL = `
       WHEN 'adjustment' THEN (SELECT ia.adjustment_date FROM inventory_adjustments ia WHERE ia.id = sm.reference_id)
       WHEN 'transfer' THEN (SELECT st.transfer_date::date FROM stock_transfers st WHERE st.id = sm.reference_id)
       WHEN 'stock_transfer' THEN (SELECT st.transfer_date::date FROM stock_transfers st WHERE st.id = sm.reference_id)
+      WHEN 'production' THEN (SELECT pe.entry_date FROM production_entries pe WHERE pe.id = sm.reference_id)
     END,
     sm.created_at::date
   )`;

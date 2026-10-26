@@ -159,6 +159,32 @@ export async function releasePurchaseInTransit(client: PoolClient, businessId: s
   );
 }
 
+export const TRANSIT_STAGES = ['dispatched', 'at_sea', 'at_port', 'at_customs', 'bonded_warehouse', 'on_road'] as const;
+export type TransitStage = (typeof TRANSIT_STAGES)[number];
+
+/**
+ * Where goods on an in-transit bill are now: for imports, at sea, at the port, held at customs
+ * or in a bonded warehouse (with the bill of entry once filed); otherwise dispatched or on road.
+ */
+export async function setTransitStage(
+  client: PoolClient,
+  businessId: string,
+  purchaseId: string,
+  input: { stage: TransitStage; bill_of_entry_number?: string | null; bill_of_entry_date?: string | null }
+): Promise<void> {
+  const purchase = await lockPurchase(client, businessId, purchaseId);
+  if (purchase.goods_status === 'received') throw new GodownStockError('These goods have already arrived.', 409);
+  if (!TRANSIT_STAGES.includes(input.stage)) throw new GodownStockError('Choose where the goods are');
+  const boe = String(input.bill_of_entry_number || '').trim() || null;
+  if (input.bill_of_entry_date && !/^\d{4}-\d{2}-\d{2}$/.test(input.bill_of_entry_date)) throw new GodownStockError('Bill of entry date must be YYYY-MM-DD');
+  await client.query(
+    `UPDATE purchases SET transit_stage = $2, bill_of_entry_number = COALESCE($3, bill_of_entry_number),
+            bill_of_entry_date = COALESCE($4::date, bill_of_entry_date), updated_at = NOW()
+      WHERE id = $1`,
+    [purchaseId, input.stage, boe, input.bill_of_entry_date || null]
+  );
+}
+
 export interface InwardTransitRow {
   item_id: string;
   item_name: string;
@@ -171,6 +197,8 @@ export interface InwardTransitRow {
   branch_id: string | null;
   qty: number;
   days_in_transit: number;
+  transit_stage: TransitStage | null;
+  bill_of_entry_number: string | null;
   eway_bill_number: string | null;
   eway_bill_status: string | null;
 }
@@ -195,6 +223,7 @@ export async function inwardTransitBalances(
      SELECT h.item_id, i.name AS item_name, COALESCE(i.stock_class, 'trading') AS stock_class,
             p.id AS purchase_id, p.bill_number, p.bill_date::text, s.name AS supplier_name,
             h.location_id AS warehouse_id, p.branch_id, h.qty::float AS qty,
+            p.transit_stage, p.bill_of_entry_number,
             eb.ewb_number AS eway_bill_number, eb.status AS eway_bill_status, eb.valid_until
        FROM held h
        JOIN items i ON i.id = h.item_id

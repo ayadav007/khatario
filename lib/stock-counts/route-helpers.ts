@@ -10,7 +10,7 @@ import { stockErrorBody } from '@/lib/inventory/godown-stock';
  */
 export async function authorizeStockCount(
   request: NextRequest,
-  action: 'read' | 'adjust_quantity',
+  action: 'read' | 'adjust_quantity' | 'adjust_value',
   context: { warehouseId?: string | null; adjustmentDate?: string | null; stockCountId?: string | null } = {}
 ): Promise<{ ok: true; userId: string; businessId: string } | { ok: false; response: NextResponse }> {
   const userId = getAuthenticatedUserId(request);

@@ -99,6 +99,22 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
         </Button>
       )}
       {status !== 'cancelled' && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!!busy}
+          title="Part A for the e-way bill portal's bulk upload"
+          onClick={() => {
+            const km = window.prompt('Distance to the destination, in km?');
+            if (km === null || km.trim() === '') return;
+            window.location.href = `/api/eway-bills/export?source_type=delivery_challan&source_id=${challan.id}&distance_km=${encodeURIComponent(km.trim())}`;
+          }}
+        >
+          <FileText className="w-4 h-4 mr-2" />
+          E-way bill JSON
+        </Button>
+      )}
+      {status !== 'cancelled' && (
         <Button variant="secondary" size="sm" onClick={() => setEwayOpen(true)} disabled={!!busy}>
           <FileText className="w-4 h-4 mr-2" />
           {challan.e_way_bill_number ? 'Add another e-way bill' : 'Record e-way bill'}

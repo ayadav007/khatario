@@ -303,7 +303,11 @@ export default function StockCountPage() {
             Shortage {inr(s.shortage_value)}, excess {inr(s.excess_value)} at cost.
             {s.unproven > 0 && ` ${s.unproven} line(s) out of the godown rest on an expired e-way bill.`}
             {s.overdue_returns > 0 && ` ${s.overdue_returns} challan line(s) are past their return date.`}
-            {s.third_party_goods_in_godown > 0 && ` ${qty(s.third_party_goods_in_godown)} units of others' goods were found in the godown and left out.`}
+            {s.held_qty > 0 && ` Expected includes ${qty(s.held_qty)} held (quarantine, QC, damaged, returns).`}
+            {(s.third_party_goods_in_godown > 0 || s.others_goods_registered > 0) &&
+              ` Others' goods: ${qty(s.third_party_goods_in_godown)} found, ${qty(s.others_goods_registered)} on the register${
+                Math.abs(s.third_party_goods_in_godown - s.others_goods_registered) > 0.0005 ? ' — check the difference' : ''
+              }.`}
           </p>
 
           <section className="bg-white rounded-xl border border-gray-200">

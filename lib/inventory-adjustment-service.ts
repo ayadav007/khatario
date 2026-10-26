@@ -32,7 +32,10 @@ export type ReasonCode =
   | 'PROCESS_LOSS'
   | 'TRANSIT_LOSS'
   | 'OWN_CONSUMPTION'
-  | 'CUSTODY_LOSS';
+  | 'CUSTODY_LOSS'
+  | 'PRODUCTION_ISSUE'
+  | 'PRODUCTION_RECEIPT'
+  | 'BY_PRODUCT';
 
 export interface QuantityAdjustmentParams {
   businessId: string;
@@ -185,7 +188,15 @@ export async function createQuantityAdjustment(
  */
 export async function createQuantityAdjustmentOn(
   client: PoolClient,
-  params: QuantityAdjustmentParams & { stockCountId?: string | null }
+  params: QuantityAdjustmentParams & {
+    stockCountId?: string | null;
+    /** Cost per unit of an INCREASE (production output), instead of the current unit cost. */
+    unitCostOverride?: number | null;
+    /** Ledger account on the other side of the inventory line (production uses work in progress). */
+    counterCodes?: string[];
+    /** Stock movement reference, when the adjustment belongs to another document (a production entry). */
+    movementReference?: { type: string; id: string } | null;
+  }
 ): Promise<AdjustmentResult> {
     // Check if warehouse mode is enabled
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
@@ -284,6 +295,9 @@ export async function createQuantityAdjustmentOn(
       throw new Error('Quantity cannot go below zero');
     }
 
+    if (params.unitCostOverride != null && quantityChange > 0) {
+      currentPurchasePrice = Math.round(Number(params.unitCostOverride) * 10000) / 10000;
+    }
     // Calculate value change (quantity_change * unit_cost); FIFO decreases are re-costed from lots below.
     let valueChange = quantityChange * currentPurchasePrice;
     const currentTotalValue = currentStock * currentPurchasePrice;
@@ -473,8 +487,8 @@ export async function createQuantityAdjustmentOn(
         params.locationId || null, // Always include location_id when provided
         'adjustment',
         quantityChange,
-        'adjustment',
-        adjustmentId, // Use adjustment ID directly
+        params.movementReference?.type ?? 'adjustment',
+        params.movementReference?.id ?? adjustmentId,
         `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units. Reason: ${params.reasonCode}`,
         params.createdBy || null,
         batchId,
@@ -506,6 +520,7 @@ export async function createQuantityAdjustmentOn(
       itemId: params.itemId,
       narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
       quantityAdjustment: true,
+      counterCodes: params.counterCodes,
     });
     await client.query(
       `UPDATE inventory_adjustments SET value_change = $1, gst_impact = $2 WHERE id = $3`,

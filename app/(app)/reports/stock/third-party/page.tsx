@@ -211,7 +211,11 @@ export default function StockWithThirdPartiesPage() {
                       <Link className="text-primary-700" href={`/purchases/${r.purchase_id}`}>
                         {r.bill_number || 'Bill'}
                       </Link>
-                      <div className="text-xs text-gray-500">{r.bill_date}</div>
+                      <div className="text-xs text-gray-500">
+                        {r.bill_date}
+                        {r.transit_stage ? ` · ${String(r.transit_stage).replace('_', ' ')}` : ''}
+                        {r.bill_of_entry_number ? ` · BoE ${r.bill_of_entry_number}` : ''}
+                      </div>
                     </td>
                     <td className="px-4 py-2">{r.item_name}</td>
                     <td className={`px-4 py-2 ${r.eway_bill_status === 'expired' ? 'text-red-700' : ''}`}>

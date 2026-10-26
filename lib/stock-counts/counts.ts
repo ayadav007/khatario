@@ -4,6 +4,8 @@ import { godownQuantities, resolveGodown, type Godown } from '@/lib/inventory/go
 import { createQuantityAdjustmentOn, type ReasonCode } from '@/lib/inventory-adjustment-service';
 import { custodyBalances, transitBalances, type CustodyRow, type TransitRow } from '@/lib/stock-custody/custody';
 import { inwardTransitBalances, type InwardTransitRow } from '@/lib/purchases/goods-in-transit';
+import { heldBalances, type HeldRow } from '@/lib/stock-custody/holds';
+import { othersGoodsHeld, type OthersGoodsRow } from '@/lib/stock-custody/inward-custody';
 
 /**
  * Physical stock count of one godown. Opening it captures the book figures and (with freeze on)
@@ -116,7 +118,9 @@ export async function openStockCount(client: PoolClient, businessId: string, inp
     businessId,
     godown.warehouseMode ? { warehouseId: godown.warehouseId } : { branchId: godown.branchId }
   );
+  const holds = await heldBalances(client, businessId, godown.warehouseMode ? { warehouseId: godown.warehouseId } : { branchId: godown.branchId });
   const heldBy = sumBy(custody, (r) => r.item_id, (r) => r.qty);
+  const onShelfHeld = sumBy(holds, (r) => r.item_id, (r) => r.qty);
   const transitBy = sumBy([...transit, ...inward], (r) => r.item_id, (r) => r.qty);
 
   const items = await client.query<{ id: string }>(
@@ -126,7 +130,7 @@ export async function openStockCount(client: PoolClient, businessId: string, inp
           (COALESCE(is_active, true) AND COALESCE(item_type, 'goods') <> 'service' AND NOT COALESCE(is_bundle, false))
           OR id = ANY($2::uuid[])
         )`,
-    [businessId, [...new Set([...onHand.keys(), ...heldBy.keys(), ...transitBy.keys()])]]
+    [businessId, [...new Set([...onHand.keys(), ...heldBy.keys(), ...transitBy.keys(), ...onShelfHeld.keys()])]]
   );
   const itemIds = items.rows.map((r) => r.id);
   const cost = itemIds.length
@@ -151,10 +155,10 @@ export async function openStockCount(client: PoolClient, businessId: string, inp
   const countId = ins.rows[0].id;
   if (itemIds.length) {
     await client.query(
-      `INSERT INTO stock_count_lines (count_id, item_id, godown_qty, with_third_party_qty, in_transit_qty, unit_cost)
-       SELECT $1, x.item_id, x.godown, x.held, x.transit, x.cost
-         FROM UNNEST($2::uuid[], $3::numeric[], $4::numeric[], $5::numeric[], $6::numeric[])
-           AS x(item_id, godown, held, transit, cost)`,
+      `INSERT INTO stock_count_lines (count_id, item_id, godown_qty, with_third_party_qty, in_transit_qty, unit_cost, held_qty)
+       SELECT $1, x.item_id, x.godown, x.held, x.transit, x.cost, x.on_hold
+         FROM UNNEST($2::uuid[], $3::numeric[], $4::numeric[], $5::numeric[], $6::numeric[], $7::numeric[])
+           AS x(item_id, godown, held, transit, cost, on_hold)`,
       [
         countId,
         itemIds,
@@ -162,6 +166,7 @@ export async function openStockCount(client: PoolClient, businessId: string, inp
         itemIds.map((id) => heldBy.get(id) || 0),
         itemIds.map((id) => transitBy.get(id) || 0),
         itemIds.map((id) => Math.round((cost.get(id) || 0) * 10000) / 10000),
+        itemIds.map((id) => onShelfHeld.get(id) || 0),
       ]
     );
   }
@@ -204,7 +209,7 @@ export async function recordCountEntries(
       throw new StockCountError('Counted quantities cannot be negative.');
     }
     const r = await client.query(
-      `SELECT id, godown_qty, unit_cost, physical_qty, recount_required, recounted
+      `SELECT id, godown_qty + held_qty AS godown_qty, unit_cost, physical_qty, recount_required, recounted
          FROM stock_count_lines WHERE count_id = $1 AND item_id = $2 FOR UPDATE`,
       [countId, e.item_id]
     );
@@ -259,7 +264,7 @@ export async function submitStockCount(
       throw new StockCountError(`${p.uncounted} item(s) have not been counted.`, 409, 'UNCOUNTED');
     }
     await client.query(
-      `UPDATE stock_count_lines SET physical_qty = CASE WHEN $2 = 'zero' THEN 0 ELSE godown_qty END, counted_at = NOW(), counted_by = $3
+      `UPDATE stock_count_lines SET physical_qty = CASE WHEN $2 = 'zero' THEN 0 ELSE godown_qty + held_qty END, counted_at = NOW(), counted_by = $3
         WHERE count_id = $1 AND physical_qty IS NULL`,
       [countId, opts.fillUncounted, opts.userId]
     );
@@ -286,7 +291,7 @@ export async function setDifferenceReasons(
   if (c.status !== 'review') throw new StockCountError('Reasons are given once counting is submitted.', 409);
   for (const r of reasons) {
     const line = await client.query(
-      `SELECT physical_qty, godown_qty FROM stock_count_lines WHERE count_id = $1 AND item_id = $2`,
+      `SELECT physical_qty, godown_qty + held_qty AS godown_qty FROM stock_count_lines WHERE count_id = $1 AND item_id = $2`,
       [countId, r.item_id]
     );
     if (!line.rows[0]) throw new StockCountError('Item is not on this count', 404);
@@ -309,6 +314,8 @@ export interface ReconciliationLine {
   book_qty: number;
   with_third_party_qty: number;
   in_transit_qty: number;
+  /** In the godown but not saleable (quarantine, QC, damaged, returns awaiting inspection). */
+  held_qty: number;
   expected_qty: number;
   physical_qty: number | null;
   third_party_qty: number;
@@ -341,6 +348,8 @@ export interface Reconciliation {
   with_third_party: CustodyRow[];
   in_transit: TransitRow[];
   inward_transit: InwardTransitRow[];
+  held: HeldRow[];
+  others_goods: OthersGoodsRow[];
   summary: {
     book_qty: number;
     with_third_party_qty: number;
@@ -353,6 +362,9 @@ export interface Reconciliation {
     unproven: number;
     overdue_returns: number;
     third_party_goods_in_godown: number;
+    /** Others' goods the register says should be on the shelf. */
+    others_goods_registered: number;
+    held_qty: number;
   };
   classes: ClassSummary[];
 }
@@ -386,7 +398,8 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
   );
 
   const lines: ReconciliationLine[] = lr.rows.map((l: any) => {
-    const godown = Number(l.godown_qty);
+    const godown = Number(l.godown_qty) + Number(l.held_qty);
+    const onHold = Number(l.held_qty);
     const held = Number(l.with_third_party_qty);
     const transit = Number(l.in_transit_qty);
     const physical = l.physical_qty === null ? null : Number(l.physical_qty);
@@ -403,6 +416,7 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
       book_qty: blind ? 0 : q3(godown + held + transit),
       with_third_party_qty: blind ? 0 : held,
       in_transit_qty: blind ? 0 : transit,
+      held_qty: blind ? 0 : onHold,
       expected_qty: blind ? 0 : godown,
       physical_qty: physical,
       third_party_qty: Number(l.third_party_qty),
@@ -423,6 +437,8 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
   const custody = blind ? [] : await custodyBalances(db, businessId, godownRef);
   const transit = blind || !count.warehouse_id ? [] : await transitBalances(db, businessId, { warehouseId: count.warehouse_id });
   const inward = blind ? [] : await inwardTransitBalances(db, businessId, godownRef);
+  const holds = blind ? [] : await heldBalances(db, businessId, godownRef);
+  const others = await othersGoodsHeld(db, businessId, godownRef);
 
   const counted = lines.filter((l) => l.physical_qty !== null);
   const classes = new Map<string, ClassSummary>();
@@ -450,6 +466,8 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
     with_third_party: custody,
     in_transit: transit,
     inward_transit: inward,
+    held: holds,
+    others_goods: blind ? [] : others,
     summary: {
       book_qty: blind ? 0 : total((l) => l.book_qty),
       with_third_party_qty: blind ? 0 : total((l) => l.with_third_party_qty),
@@ -462,6 +480,8 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
       unproven: [...custody, ...transit, ...inward].filter((r) => r.eway_bill_status === 'expired').length,
       overdue_returns: custody.filter((r) => r.overdue).length,
       third_party_goods_in_godown: total((l) => l.third_party_qty),
+      others_goods_registered: q3(others.reduce((s, r) => s + r.qty, 0)),
+      held_qty: blind ? 0 : total((l) => l.held_qty),
     },
     classes: [...classes.values()].sort((a, b) => a.stock_class.localeCompare(b.stock_class)),
   };

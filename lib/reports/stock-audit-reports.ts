@@ -53,6 +53,8 @@ const FLOW_SQL = `
     WHEN sm.reference_type IN ('invoice', 'sale', 'invoice_cancel', 'sale_cancel') THEN 'sales'
     WHEN sm.reference_type IN ('credit_note', 'credit_note_cancel', 'sales_return') THEN 'sales_returns'
     WHEN sm.reference_type = 'adjustment' THEN 'adjustments'
+    WHEN sm.reference_type = 'production' AND sm.quantity < 0 THEN 'consumed'
+    WHEN sm.reference_type = 'production' THEN 'produced'
     ELSE 'other'
   END`;
 
@@ -70,6 +72,9 @@ export interface QuantitativeRow {
   shortage: number;
   excess: number;
   other: number;
+  /** Manufacturing (clause 35(b)): raw material consumed and goods produced. */
+  consumed: number;
+  produced: number;
   closing: number;
 }
 
@@ -96,6 +101,8 @@ export async function quantitativeDetails(db: Queryable, businessId: string, fro
             COALESCE(-SUM(m.q) FILTER (WHERE m.d BETWEEN $2::date AND $3::date AND m.flow = 'adjustments' AND m.q < 0), 0)::float AS shortage,
             COALESCE(SUM(m.q) FILTER (WHERE m.d BETWEEN $2::date AND $3::date AND m.flow = 'adjustments' AND m.q > 0), 0)::float AS excess,
             COALESCE(SUM(m.q) FILTER (WHERE m.d BETWEEN $2::date AND $3::date AND m.flow = 'other'), 0)::float AS other,
+            COALESCE(-SUM(m.q) FILTER (WHERE m.d BETWEEN $2::date AND $3::date AND m.flow = 'consumed'), 0)::float AS consumed,
+            COALESCE(SUM(m.q) FILTER (WHERE m.d BETWEEN $2::date AND $3::date AND m.flow = 'produced'), 0)::float AS produced,
             COALESCE(SUM(m.q) FILTER (WHERE m.d > $3::date), 0)::float AS after_to
        FROM items i
        LEFT JOIN m ON m.item_id = i.id
@@ -116,11 +123,15 @@ export async function quantitativeDetails(db: Queryable, businessId: string, fro
       shortage: q3(x.shortage),
       excess: q3(x.excess),
       other: q3(x.other),
+      consumed: q3(x.consumed),
+      produced: q3(x.produced),
       closing: q3(now - after_to),
     };
   });
   return rows.filter(
-    (x) => x.opening || x.closing || x.purchases || x.purchase_returns || x.sales || x.sales_returns || x.shortage || x.excess || x.other
+    (x) =>
+      x.opening || x.closing || x.purchases || x.purchase_returns || x.sales || x.sales_returns || x.shortage || x.excess || x.other ||
+      x.consumed || x.produced
   );
 }
 

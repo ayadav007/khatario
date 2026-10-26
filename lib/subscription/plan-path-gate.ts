@@ -62,6 +62,10 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/inventory-adjustments', featureId: 'purchase_inventory_adjustments' },
   // A count posts its differences as inventory adjustments.
   { prefix: '/stock-counts', featureId: 'purchase_inventory_adjustments' },
+  // Holds, production and claims post or rest on inventory adjustments.
+  { prefix: '/stock-holds', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/manufacturing', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/insurance-claims', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/accounts', featureId: 'accounting_chart' },
   { prefix: '/journal-entries', featureId: 'advanced_ledger' },
   { prefix: '/ledger', featureId: 'advanced_ledger' },
@@ -155,6 +159,10 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/api/expenses', featureId: 'purchase_expenses' },
   { prefix: '/api/inventory-adjustments', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/api/stock-counts', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/stock-holds', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/inward-custody', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/manufacturing', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/api/insurance-claims', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/api/eway-bills', featureId: 'eway_bill' },
   { prefix: '/api/accounts', featureId: 'accounting_chart' },
   { prefix: '/api/journal-entries', featureId: 'advanced_ledger' },

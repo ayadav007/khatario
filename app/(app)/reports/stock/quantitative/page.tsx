@@ -36,12 +36,16 @@ export default function QuantitativeDetailsPage() {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Clause 35(b): manufacturers also report raw material consumed and goods produced.
+  const hasMfg = (rows || []).some((r) => r.consumed || r.produced);
+  const cols = hasMfg ? 13 : 11;
+
   function exportCsv() {
     downloadCsv(
       `3cd-clause-35-${from}-to-${to}.csv`,
-      ['Item', 'Code', 'Unit', 'Opening', 'Purchases', 'Purchase returns', 'Sales', 'Sales returns', 'Shortage', 'Excess', 'Other', 'Closing'],
+      ['Item', 'Code', 'Unit', 'Opening', 'Purchases', 'Purchase returns', 'Consumed', 'Produced', 'Sales', 'Sales returns', 'Shortage', 'Excess', 'Other', 'Closing'],
       (rows || []).map((r) => [
-        r.item_name, r.item_code, r.unit, r.opening, r.purchases, r.purchase_returns, r.sales, r.sales_returns,
+        r.item_name, r.item_code, r.unit, r.opening, r.purchases, r.purchase_returns, r.consumed, r.produced, r.sales, r.sales_returns,
         r.shortage, r.excess, r.other, r.closing,
       ])
     );
@@ -83,6 +87,8 @@ export default function QuantitativeDetailsPage() {
               <th className="px-3 py-2 text-right">Opening</th>
               <th className="px-3 py-2 text-right">Purchases</th>
               <th className="px-3 py-2 text-right">Purchase returns</th>
+              {hasMfg && <th className="px-3 py-2 text-right">Consumed</th>}
+              {hasMfg && <th className="px-3 py-2 text-right">Produced</th>}
               <th className="px-3 py-2 text-right">Sales</th>
               <th className="px-3 py-2 text-right">Sales returns</th>
               <th className="px-3 py-2 text-right">Shortage</th>
@@ -94,14 +100,14 @@ export default function QuantitativeDetailsPage() {
           <tbody className="divide-y divide-gray-100">
             {rows === null && (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={cols} className="px-3 py-6 text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             )}
             {rows?.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={cols} className="px-3 py-6 text-center text-gray-500">
                   No stock moved in this period.
                 </td>
               </tr>
@@ -116,6 +122,8 @@ export default function QuantitativeDetailsPage() {
                 <td className="px-3 py-2 text-right">{qty(r.opening)}</td>
                 <td className="px-3 py-2 text-right">{qty(r.purchases)}</td>
                 <td className="px-3 py-2 text-right">{qty(r.purchase_returns)}</td>
+                {hasMfg && <td className="px-3 py-2 text-right">{qty(r.consumed)}</td>}
+                {hasMfg && <td className="px-3 py-2 text-right">{qty(r.produced)}</td>}
                 <td className="px-3 py-2 text-right">{qty(r.sales)}</td>
                 <td className="px-3 py-2 text-right">{qty(r.sales_returns)}</td>
                 <td className={`px-3 py-2 text-right ${r.shortage ? 'text-red-700' : ''}`}>{qty(r.shortage)}</td>

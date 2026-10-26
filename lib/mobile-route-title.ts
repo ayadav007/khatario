@@ -99,6 +99,9 @@ export function getMobileRouteTitle(
   if (p === '/inventory-adjustments') return 'Adjustments';
   if (p.startsWith('/stock-counts/')) return 'Stock count';
   if (p === '/stock-counts') return 'Stock counts';
+  if (p === '/stock-holds') return 'Held stock';
+  if (p === '/manufacturing') return 'Manufacturing';
+  if (p === '/insurance-claims') return 'Insurance claims';
   if (p === '/reports/stock/third-party') return 'Stock with parties';
   if (p === '/reports/stock/quantitative') return 'Quantity details';
   if (p === '/reports/stock/bank-statement') return 'Bank stock statement';
