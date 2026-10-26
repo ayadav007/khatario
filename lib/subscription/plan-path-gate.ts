@@ -143,7 +143,7 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/whatsapp/pipeline', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/campaigns', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/flows', featureId: 'integration_whatsapp_bot' },
-  { prefix: '/whatsapp/reminders', featureId: 'whatsapp_auto_reminders' },
+  { prefix: '/payments/reminders', featureId: 'whatsapp_auto_reminders' },
 
   { prefix: '/api/items/scan-add', featureId: 'items_scan_onboarding' },
   { prefix: '/api/invoices', featureId: 'sales_invoices' },

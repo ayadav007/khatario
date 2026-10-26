@@ -120,6 +120,7 @@ export function getMobileRouteTitle(
   // —— Payments & accounts ——
   if (p.startsWith('/payments/in')) return 'Payments in';
   if (p.startsWith('/payments/out')) return 'Payments out';
+  if (p.startsWith('/payments/reminders')) return 'Payment reminders';
   if (p.startsWith('/payments')) return 'Payments';
   if (p.startsWith('/accounts/') && p.endsWith('/reconciliation')) return 'Reconciliation';
   if (p.startsWith('/accounts/')) return 'Account';

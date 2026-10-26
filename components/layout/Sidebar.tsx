@@ -77,6 +77,12 @@ import {
   HR_NAV_SECTION_TITLE,
 } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
+import {
+  CONNECT_DASHBOARD_ITEM,
+  CONNECT_NAV_FEATURE_KEY,
+  CONNECT_NAV_GROUPS,
+  CONNECT_SETTINGS_ITEM,
+} from '@/lib/navigation/connect-nav-items';
 import { featureIdForPath, isSupplierHubHref } from '@/lib/subscription/plan-path-gate';
 import { collectNavHrefs, pickActiveNavHref } from '@/lib/navigation/nav-active';
 
@@ -761,102 +767,20 @@ export const Sidebar = React.memo(function Sidebar() {
             collapsible: true,
             subItems: [
               {
-                href: '/whatsapp/dashboard',
-                label: 'Dashboard',
-                module: 'whatsapp',
+                ...CONNECT_DASHBOARD_ITEM,
                 isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
+                featureKey: CONNECT_NAV_FEATURE_KEY,
               },
-              {
-                href: '/whatsapp/conversations',
-                label: 'Conversations',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/pipeline',
-                label: 'Pipeline',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/reminders',
-                label: 'Payment Reminders',
-                module: 'whatsapp',
-                // Billing Starter and up, over QR; not a Connect feature
-                isLocked: !hasFeature('whatsapp_auto_reminders'),
-                featureKey: 'whatsapp_auto_reminders',
-              },
-              {
-                href: '/whatsapp/orders',
-                label: 'Order Verification',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/flows',
-                label: 'Flows',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/send-message',
-                label: 'Send Message',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/who-to-message',
-                label: 'Who to message',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/campaigns',
-                label: 'Campaigns',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/contacts',
-                label: 'Contacts',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/contacts/groups',
-                label: 'Contact Groups',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/group-extractor',
-                label: 'Group Extractor',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/unsubscribes',
-                label: 'Unsubscribes',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/settings/whatsapp',
-                label: 'WhatsApp Settings',
-                module: 'whatsapp',
-              },
+              ...CONNECT_NAV_GROUPS.map((group) => ({
+                label: group.label,
+                collapsible: true,
+                subItems: group.items.map((item) => ({
+                  ...item,
+                  isLocked: !hasWhatsAppAddon(),
+                  featureKey: CONNECT_NAV_FEATURE_KEY,
+                })),
+              })),
+              CONNECT_SETTINGS_ITEM,
             ],
           },
         ]

@@ -158,14 +158,14 @@ test.describe('Plan catalogue v2 and WhatsApp split', () => {
     expect(ids.has('integration_whatsapp_bot')).toBe(false);
   });
 
-  test('Free: reminder settings show the Growth upsell and manual sending stays', async () => {
+  test('Free: reminder settings show the Starter upsell and manual sending stays', async () => {
     await page.goto('/settings/whatsapp/notifications');
-    await expect(page.getByText('Automatic reminders come with the Growth plan')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText('Automatic reminders come with the Starter plan')).toBeVisible({ timeout: 30000 });
     await expect(page.getByRole('button', { name: 'See plans' })).toBeVisible();
     await expect(page.getByRole('link', { name: /send reminders/i })).toBeVisible();
 
-    await page.goto('/whatsapp/reminders');
-    await expect(page).toHaveURL(/\/whatsapp\/reminders/);
+    await page.goto('/payments/reminders');
+    await expect(page).toHaveURL(/\/payments\/reminders/);
     await expect(page).not.toHaveURL(/upsell=/);
   });
 

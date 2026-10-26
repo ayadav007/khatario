@@ -16,7 +16,7 @@ Reports > Receivables Aging lists every customer's balance by how long it has be
 
 Link your WhatsApp number by QR code first (Settings > WhatsApp > Connection). Then:
 - One customer (every plan): Sales > Customers, tap the green WhatsApp icon next to a customer who owes you money.
-- Many invoices at once (Starter plan and above): Payment Reminders > Send reminders.
+- Many invoices at once (Starter plan and above): Sales > Payment Reminders.
 - Automatic reminders before the due date and while overdue (Starter plan and above): Settings > WhatsApp > Reminders.
 
 All of these go out from your QR-linked number. You do not need Khatario Connect for reminders.

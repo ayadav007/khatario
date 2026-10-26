@@ -40,7 +40,7 @@ Open the invoice and tap the WhatsApp button. The customer's mobile number must 
 ## How do I send payment reminders now?
 
 - One customer (every plan): in Sales > Customers, tap the green WhatsApp icon next to a customer who owes you money (their mobile number must be saved).
-- Many invoices at once (Starter plan and above): open Payment Reminders (or Settings > WhatsApp > Reminders > Send reminders), pick the invoices and send. The History tab shows what was sent and whether it was delivered.
+- Many invoices at once (Starter plan and above): open Sales > Payment Reminders (or Settings > WhatsApp > Reminders > Send reminders), pick the invoices and send. The History tab shows what was sent and whether it was delivered.
 
 These go out from your QR-linked number; you do not need Connect.
 
@@ -54,4 +54,4 @@ Common reasons: the number is not connected or was logged out, the customer's nu
 
 ## How do I use the WhatsApp inbox and bot?
 
-These need the Khatario Connect plan. Connect > Conversations shows all chats; set auto-replies in Connect > Bot Rules or set up the AI agent in Settings > WhatsApp > AI agent, and review WhatsApp orders in Connect > Order Verification.
+These need the Khatario Connect plan. Connect > Chats > Conversations shows all chats; set up guided auto-replies in Connect > Chats > Flows or the AI agent in Settings > WhatsApp > AI agent, and review WhatsApp orders in Connect > Chats > Order Verification. Campaigns and one-off messages are under Connect > Send, and contacts, groups and unsubscribes under Connect > Audience.

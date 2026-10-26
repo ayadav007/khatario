@@ -246,6 +246,7 @@ const appPages = <AppPage>[
   AppPage('/whatsapp/contacts/groups', 'Contact Groups', '/api/whatsapp/contact-groups', listKey: 'groups'),
   AppPage('/whatsapp/orders', 'Order Verification', '/api/whatsapp/orders', listKey: 'orders'),
   AppPage('/whatsapp/unsubscribes', 'Unsubscribes', '/api/whatsapp/unsubscribes', listKey: 'unsubscribes'),
+  AppPage('/payments/reminders', 'Payment Reminders', '/api/whatsapp/reminders', listKey: 'settings'),
   AppPage('/whatsapp/reminders', 'Payment Reminders', '/api/whatsapp/reminders', listKey: 'settings'),
   AppPage('/whatsapp/group-extractor', 'Group Extractor', '/api/tools/whatsapp-groups'),
   AppPage('/settings/whatsapp', 'WhatsApp Settings', '/api/whatsapp/status'),

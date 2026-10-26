@@ -14,6 +14,8 @@ export const SALES_NAV_ITEMS: SalesNavItemDef[] = [
   { href: '/customers', label: 'Customers', module: 'customers' },
   { href: '/invoices', label: 'All Invoices', module: 'invoices' },
   { href: '/orders', label: 'Orders & Delivery', module: 'invoices' },
+  // WhatsApp reminders for unpaid invoices: Billing Starter and up, over QR (not a Connect feature)
+  { href: '/payments/reminders', label: 'Payment Reminders', module: 'whatsapp', featureKey: 'whatsapp_auto_reminders' },
   { href: '/estimates', label: 'Quotations', module: 'invoices' },
   { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
   { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices', featureKey: 'sales_delivery_challans' },
