@@ -42,6 +42,8 @@ export function stockCountErrorResponse(error: any, fallback: string): NextRespo
   }
   const refused = stockErrorBody(error);
   if (refused) return NextResponse.json(refused.body, { status: refused.status });
+  // A malformed id in the URL ("undefined", a typo) is a missing record, not a server fault.
+  if (error?.code === '22P02') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   console.error(fallback, error);
   return NextResponse.json({ error: fallback, details: error?.message }, { status: 500 });
 }

@@ -46,6 +46,7 @@ export function getMobileRouteTitle(
   }
 
   // —— Items ——
+  if (p === '/items/cleanup') return 'Units & duplicates';
   if (p === '/items/new') return isEdit ? 'Edit item' : 'Create item';
   if (p.startsWith('/items/')) {
     if (p.includes('/edit')) return 'Edit item';
@@ -102,6 +103,7 @@ export function getMobileRouteTitle(
   if (p === '/stock-holds') return 'Held stock';
   if (p === '/manufacturing') return 'Manufacturing';
   if (p === '/insurance-claims') return 'Insurance claims';
+  if (p === '/eway-bills') return 'E-way bills';
   if (p === '/reports/stock/third-party') return 'Stock with parties';
   if (p === '/reports/stock/quantitative') return 'Quantity details';
   if (p === '/reports/stock/bank-statement') return 'Bank stock statement';

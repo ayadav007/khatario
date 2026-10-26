@@ -66,6 +66,7 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/stock-holds', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/manufacturing', featureId: 'purchase_inventory_adjustments' },
   { prefix: '/insurance-claims', featureId: 'purchase_inventory_adjustments' },
+  { prefix: '/eway-bills', featureId: 'eway_bill' },
   { prefix: '/accounts', featureId: 'accounting_chart' },
   { prefix: '/journal-entries', featureId: 'advanced_ledger' },
   { prefix: '/ledger', featureId: 'advanced_ledger' },

@@ -627,6 +627,7 @@ export const Sidebar = React.memo(function Sidebar() {
         { href: '/stock-holds', label: "Held & Others' Goods", module: 'items' },
         { href: '/manufacturing', label: 'Manufacturing', module: 'items' },
         { href: '/insurance-claims', label: 'Insurance Claims', module: 'items' },
+        { href: '/items/cleanup', label: 'Units & Duplicates', module: 'items' },
         { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
         { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
         { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' },
@@ -714,6 +715,7 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
             { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+            { href: '/eway-bills', label: 'E-way Bills', module: 'reports', featureKey: 'eway_bill' },
           ],
         },
         {

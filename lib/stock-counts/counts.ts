@@ -6,6 +6,7 @@ import { custodyBalances, transitBalances, type CustodyRow, type TransitRow } fr
 import { inwardTransitBalances, type InwardTransitRow } from '@/lib/purchases/goods-in-transit';
 import { heldBalances, type HeldRow } from '@/lib/stock-custody/holds';
 import { othersGoodsHeld, type OthersGoodsRow } from '@/lib/stock-custody/inward-custody';
+import { listItemUnits, toBaseQty, type ItemUnit } from '@/lib/items/item-units';
 
 /**
  * Physical stock count of one godown. Opening it captures the book figures and (with freeze on)
@@ -177,6 +178,8 @@ export interface CountEntry {
   item_id: string;
   physical_qty: number;
   third_party_qty?: number;
+  /** Unit the quantities were counted in (an alternate unit such as BOX); converted to the item's unit. */
+  unit?: string | null;
 }
 
 /** Big enough to count again: over the % tolerance and over the value tolerance. */
@@ -202,9 +205,15 @@ export async function recordCountEntries(
   if (c.status !== 'counting') throw new StockCountError(`Count ${c.count_number} is ${c.status}; counting is closed.`, 409);
   const recount: string[] = [];
   let saved = 0;
+  const ids = entries.map((e) => e.item_id);
+  const units = ids.length ? await listItemUnits(client, businessId, ids) : [];
+  const baseUnit = new Map(
+    (await client.query(`SELECT id, unit FROM items WHERE business_id = $1 AND id = ANY($2::uuid[])`, [businessId, ids])).rows.map((r: any) => [r.id, r.unit])
+  );
   for (const e of entries) {
-    const physical = q3(e.physical_qty);
-    const others = q3(e.third_party_qty ?? 0);
+    const own = units.filter((u) => u.item_id === e.item_id);
+    const physical = q3(toBaseQty(Number(e.physical_qty), e.unit, baseUnit.get(e.item_id) ?? null, own));
+    const others = q3(toBaseQty(Number(e.third_party_qty ?? 0), e.unit, baseUnit.get(e.item_id) ?? null, own));
     if (!Number.isFinite(physical) || physical < 0 || others < 0) {
       throw new StockCountError('Counted quantities cannot be negative.');
     }
@@ -350,6 +359,8 @@ export interface Reconciliation {
   inward_transit: InwardTransitRow[];
   held: HeldRow[];
   others_goods: OthersGoodsRow[];
+  /** Alternate units of the items on the count, for entering counts in boxes or bags. */
+  units: ItemUnit[];
   summary: {
     book_qty: number;
     with_third_party_qty: number;
@@ -468,6 +479,7 @@ export async function stockCountReconciliation(db: Queryable, businessId: string
     inward_transit: inward,
     held: holds,
     others_goods: blind ? [] : others,
+    units: await listItemUnits(db, businessId, lines.map((l) => l.item_id)),
     summary: {
       book_qty: blind ? 0 : total((l) => l.book_qty),
       with_third_party_qty: blind ? 0 : total((l) => l.with_third_party_qty),

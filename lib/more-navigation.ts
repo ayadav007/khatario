@@ -205,6 +205,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/stock-holds', label: "Held & Others' Goods", module: 'items' },
     { href: '/manufacturing', label: 'Manufacturing', module: 'items' },
     { href: '/insurance-claims', label: 'Insurance Claims', module: 'items' },
+    { href: '/items/cleanup', label: 'Units & Duplicates', module: 'items' },
     { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
     { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
     { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' }
@@ -283,6 +284,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
       { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
       { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+      { href: '/eway-bills', label: 'E-way bills', module: 'reports' },
       { href: '/reports/deleted', label: 'Deleted items', module: 'reports' },
       { href: '/reports/stock/valuation', label: 'Stock valuation', module: 'reports' },
       { href: '/reports/stock/quantitative', label: 'Quantity details (3CD)', module: 'reports' },

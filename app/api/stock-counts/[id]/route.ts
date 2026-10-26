@@ -13,11 +13,13 @@ import { authorizeStockCount, stockCountErrorResponse } from '@/lib/stock-counts
 
 export const dynamic = 'force-dynamic';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type Params = { params: { id: string } };
 
 /** GET /api/stock-counts/[id] — the count with its reconciliation (book figures hidden while blind). */
 export async function GET(request: NextRequest, { params }: Params) {
-  const businessId = getSessionScopedBusinessId(request);
+  const businessId = UUID.test(params.id) ? getSessionScopedBusinessId(request) : null;
   const count = businessId
     ? await queryOne<{ warehouse_id: string | null }>(`SELECT warehouse_id FROM stock_counts WHERE id = $1 AND business_id = $2`, [
         params.id,
@@ -43,7 +45,7 @@ export async function GET(request: NextRequest, { params }: Params) {
  */
 export async function PATCH(request: NextRequest, { params }: Params) {
   const body = await request.json().catch(() => ({}));
-  const businessId = getSessionScopedBusinessId(request);
+  const businessId = UUID.test(params.id) ? getSessionScopedBusinessId(request) : null;
   const count = businessId
     ? await queryOne<{ warehouse_id: string | null; count_date: string }>(
         `SELECT warehouse_id, count_date::text FROM stock_counts WHERE id = $1 AND business_id = $2`,

@@ -170,14 +170,23 @@ CREATE TABLE IF NOT EXISTS stock_count_lines (
 );
 
 -- New write-off reasons, and the count an adjustment came from.
-ALTER TABLE inventory_adjustments DROP CONSTRAINT IF EXISTS inventory_adjustments_reason_code_check;
-ALTER TABLE inventory_adjustments ADD CONSTRAINT inventory_adjustments_reason_code_check CHECK (
-  reason_code IN (
-    'STOCK_TAKE', 'DAMAGE', 'THEFT', 'EXPIRED', 'FREE_SAMPLE', 'COST_CORRECTION', 'LANDED_COST',
-    'REVALUATION', 'WRITE_DOWN', 'REPACK_OUT', 'REPACK_IN',
-    'PROCESS_LOSS', 'TRANSIT_LOSS', 'OWN_CONSUMPTION', 'CUSTODY_LOSS'
-  )
-);
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'inventory_adjustments'::regclass AND conname = 'inventory_adjustments_reason_code_check' AND pg_get_constraintdef(oid) LIKE '%CUSTODY_LOSS%'
+  ) THEN
+    ALTER TABLE inventory_adjustments DROP CONSTRAINT IF EXISTS inventory_adjustments_reason_code_check;
+    ALTER TABLE inventory_adjustments ADD CONSTRAINT inventory_adjustments_reason_code_check CHECK (
+      reason_code IN (
+        'STOCK_TAKE', 'DAMAGE', 'THEFT', 'EXPIRED', 'FREE_SAMPLE', 'COST_CORRECTION', 'LANDED_COST',
+        'REVALUATION', 'WRITE_DOWN', 'REPACK_OUT', 'REPACK_IN',
+        'PROCESS_LOSS', 'TRANSIT_LOSS', 'OWN_CONSUMPTION', 'CUSTODY_LOSS'
+      )
+    );
+  END IF;
+END $$;
 ALTER TABLE inventory_adjustments
   ADD COLUMN IF NOT EXISTS stock_count_id UUID REFERENCES stock_counts(id) ON DELETE SET NULL;
 

@@ -8,12 +8,14 @@ import type { ReasonCode } from '@/lib/inventory-adjustment-service';
 
 export const dynamic = 'force-dynamic';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const WRITE_OFF: ReasonCode[] = ['DAMAGE', 'EXPIRED', 'WRITE_DOWN', 'THEFT'];
 
 /** POST /api/stock-holds/[id] — { date, release?, write_off?, reason?, notes? } */
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const body = await request.json().catch(() => ({}));
-  const businessId = getSessionScopedBusinessId(request);
+  const businessId = UUID.test(params.id) ? getSessionScopedBusinessId(request) : null;
   const hold = businessId
     ? await queryOne<{ warehouse_id: string | null }>(`SELECT warehouse_id FROM stock_holds WHERE id = $1 AND business_id = $2`, [params.id, businessId])
     : null;

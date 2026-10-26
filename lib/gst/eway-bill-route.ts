@@ -29,6 +29,7 @@ export function ewayBillErrorResponse(error: any, fallback: string): NextRespons
   if (error instanceof EwayBillInputError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
+  if (error?.code === '22P02') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (error?.code === '23505') {
     return NextResponse.json({ error: 'This e-way bill number is already recorded.' }, { status: 409 });
   }

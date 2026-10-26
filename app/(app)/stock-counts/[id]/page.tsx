@@ -5,7 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { AlertTriangle, CheckCircle, Lock, Save, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle, Lock, Save, XCircle } from 'lucide-react';
+import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -68,7 +69,11 @@ export default function StockCountPage() {
   const { id } = useParams() as { id: string };
   const toast = useToastContext();
   const [data, setData] = useState<any>(null);
-  const [entries, setEntries] = useState<Record<string, { physical: string; others: string }>>({});
+  const [entries, setEntries] = useState<Record<string, { physical: string; others: string; unit?: string }>>({});
+  const [barcodes, setBarcodes] = useState<Record<string, { item_id: string; qty: number; label: string }>>({});
+  const [scan, setScan] = useState('');
+  const [lastScan, setLastScan] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   const [reasons, setReasons] = useState<Record<string, { code: string; notes: string }>>({});
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,7 +96,27 @@ export default function StockCountPage() {
 
   useEffect(() => {
     load();
+    fetch(`/api/stock-counts/${id}/barcodes`)
+      .then((r) => (r.ok ? r.json() : { barcodes: {} }))
+      .then((d) => setBarcodes(d.barcodes || {}))
+      .catch(() => setBarcodes({}));
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** A scan adds to the item's tally in its own unit: one piece, or a whole box. */
+  function addScan(code: string) {
+    const hit = barcodes[code.trim()];
+    if (!hit) {
+      setLastScan(`Not on this count: ${code}`);
+      return;
+    }
+    setEntries((p) => {
+      const cur = p[hit.item_id];
+      const line = (data?.lines || []).find((l: Line) => l.item_id === hit.item_id);
+      const start = cur?.physical !== undefined && cur.unit === undefined ? Number(cur.physical) || 0 : line && !(line.recount_required && !line.recounted) ? Number(line.physical_qty) || 0 : 0;
+      return { ...p, [hit.item_id]: { physical: String(Math.round((start + hit.qty) * 1000) / 1000), others: cur?.others ?? '', unit: undefined } };
+    });
+    setLastScan(`+ ${hit.label}`);
+  }
 
   async function act(action: string, extra: Record<string, unknown> = {}, ok?: string) {
     setBusy(action);
@@ -132,7 +157,7 @@ export default function StockCountPage() {
   async function saveCounts() {
     const list = Object.entries(entries)
       .filter(([, e]) => e.physical !== '')
-      .map(([item_id, e]) => ({ item_id, physical_qty: Number(e.physical), third_party_qty: Number(e.others) || 0 }));
+      .map(([item_id, e]) => ({ item_id, physical_qty: Number(e.physical), third_party_qty: Number(e.others) || 0, unit: e.unit || null }));
     if (!list.length) {
       toast.error('Enter at least one counted quantity');
       return;
@@ -223,13 +248,44 @@ export default function StockCountPage() {
               <Input placeholder="Search item or code" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
           </div>
+          <div className="px-4 pb-4 flex flex-col md:flex-row md:items-center gap-2">
+            <div className="w-full md:w-72">
+              <Input
+                placeholder="Scan a barcode (or type it and press Enter)"
+                value={scan}
+                onChange={(e) => setScan(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && scan.trim()) {
+                    addScan(scan);
+                    setScan('');
+                  }
+                }}
+              />
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => setCamera(true)}>
+              <Camera className="w-4 h-4 mr-2" />
+              Scan with camera
+            </Button>
+            {lastScan && <span className={`text-sm ${lastScan.startsWith('+') ? 'text-green-700' : 'text-red-700'}`}>{lastScan}</span>}
+            <span className="text-xs text-gray-500 md:ml-auto">Scans add up on screen; press Save counts to keep them.</span>
+          </div>
+          {camera && (
+            <BarcodeScanner
+              feature={null}
+              onScan={(code) => {
+                addScan(code);
+                setCamera(false);
+              }}
+              onClose={() => setCamera(false)}
+            />
+          )}
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-left text-gray-600">
                 <tr>
                   <th className="px-4 py-2">Item</th>
-                  <th className="px-4 py-2">Unit</th>
                   <th className="px-4 py-2">Counted (ours)</th>
+                  <th className="px-4 py-2">In</th>
                   <th className="px-4 py-2">Others&apos; goods here</th>
                   <th className="px-4 py-2">State</th>
                 </tr>
@@ -243,14 +299,38 @@ export default function StockCountPage() {
                         <div className="font-medium text-gray-900">{l.item_name}</div>
                         {l.item_code && <div className="text-xs text-gray-500">{l.item_code}</div>}
                       </td>
-                      <td className="px-4 py-2">{l.unit || '-'}</td>
                       <td className="px-4 py-2 w-36">
                         <Input
                           type="number"
                           min={0}
                           value={e?.physical ?? (l.recount_required && !l.recounted ? '' : l.physical_qty ?? '')}
-                          onChange={(ev) => setEntries((p) => ({ ...p, [l.item_id]: { physical: ev.target.value, others: p[l.item_id]?.others ?? String(l.third_party_qty || '') } }))}
+                          onChange={(ev) => setEntries((p) => ({ ...p, [l.item_id]: { physical: ev.target.value, others: p[l.item_id]?.others ?? String(l.third_party_qty || ''), unit: p[l.item_id]?.unit } }))}
                         />
+                      </td>
+                      <td className="px-4 py-2 w-28">
+                        {(() => {
+                          const alts = (data.units || []).filter((u: any) => u.item_id === l.item_id);
+                          if (!alts.length) return <span className="text-sm text-gray-600">{l.unit || '-'}</span>;
+                          return (
+                            <select
+                              className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+                              value={e?.unit || ''}
+                              onChange={(ev) =>
+                                setEntries((p) => ({
+                                  ...p,
+                                  [l.item_id]: { physical: p[l.item_id]?.physical ?? '', others: p[l.item_id]?.others ?? '', unit: ev.target.value || undefined },
+                                }))
+                              }
+                            >
+                              <option value="">{l.unit || 'Unit'}</option>
+                              {alts.map((u: any) => (
+                                <option key={u.unit} value={u.unit}>
+                                  {u.unit} ({u.factor_to_base} {l.unit})
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-2 w-36">
                         <Input
@@ -260,7 +340,7 @@ export default function StockCountPage() {
                           onChange={(ev) =>
                             setEntries((p) => ({
                               ...p,
-                              [l.item_id]: { physical: p[l.item_id]?.physical ?? (l.physical_qty === null ? '' : String(l.physical_qty)), others: ev.target.value },
+                              [l.item_id]: { physical: p[l.item_id]?.physical ?? (l.physical_qty === null ? '' : String(l.physical_qty)), others: ev.target.value, unit: p[l.item_id]?.unit },
                             }))
                           }
                         />

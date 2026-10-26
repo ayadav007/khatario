@@ -37,6 +37,7 @@ const MORE_MENU_ROUTES: { href: string; section: string }[] = [
   { href: '/stock-holds', section: 'Inventory' },
   { href: '/manufacturing', section: 'Inventory' },
   { href: '/insurance-claims', section: 'Inventory' },
+  { href: '/items/cleanup', section: 'Inventory' },
   { href: '/reports/stock/third-party', section: 'Inventory' },
   { href: '/reports/stock/closing-stock', section: 'Inventory' },
   { href: '/reports/stock/summary', section: 'Inventory' },

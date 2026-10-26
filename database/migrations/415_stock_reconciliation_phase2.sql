@@ -3,14 +3,32 @@
 
 -- Goods billed by a supplier but not yet in the godown: the bill posts stock as before, then an
 -- 'out' movement tagged in_transit (purpose 'inward') takes it off the godown until it is received.
-ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_status_check;
-ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_status_check
-  CHECK (custody_status IS NULL OR custody_status IN ('with_third_party', 'in_transit'));
-ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_purpose_check;
-ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_purpose_check
-  CHECK (custody_purpose IS NULL OR custody_purpose IN (
-    'repair', 'job_work', 'approval', 'consignment', 'exhibition', 'demo', 'other', 'inward'
-  ));
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'stock_movements'::regclass AND conname = 'stock_movements_custody_status_check' AND pg_get_constraintdef(oid) LIKE '%in_transit%'
+  ) THEN
+    ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_status_check;
+    ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_status_check
+      CHECK (custody_status IS NULL OR custody_status IN ('with_third_party', 'in_transit'));
+  END IF;
+END $$;
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'stock_movements'::regclass AND conname = 'stock_movements_custody_purpose_check' AND pg_get_constraintdef(oid) LIKE '%inward%'
+  ) THEN
+    ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_purpose_check;
+    ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_purpose_check
+      CHECK (custody_purpose IS NULL OR custody_purpose IN (
+        'repair', 'job_work', 'approval', 'consignment', 'exhibition', 'demo', 'other', 'inward'
+      ));
+  END IF;
+END $$;
 
 ALTER TABLE purchases
   ADD COLUMN IF NOT EXISTS goods_status VARCHAR(20) NOT NULL DEFAULT 'received'

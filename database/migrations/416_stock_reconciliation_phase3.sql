@@ -2,15 +2,33 @@
 -- in our godown, import transit stages, insurance claims and manufacturing.
 
 -- Held stock stays in the godown (and in a physical count) but cannot be sold until released.
-ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_status_check;
-ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_status_check
-  CHECK (custody_status IS NULL OR custody_status IN ('with_third_party', 'in_transit', 'held'));
-ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_purpose_check;
-ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_purpose_check
-  CHECK (custody_purpose IS NULL OR custody_purpose IN (
-    'repair', 'job_work', 'approval', 'consignment', 'exhibition', 'demo', 'other', 'inward',
-    'quarantine', 'qc_hold', 'damaged', 'return_inspection'
-  ));
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'stock_movements'::regclass AND conname = 'stock_movements_custody_status_check' AND pg_get_constraintdef(oid) LIKE '%held%'
+  ) THEN
+    ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_status_check;
+    ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_status_check
+      CHECK (custody_status IS NULL OR custody_status IN ('with_third_party', 'in_transit', 'held'));
+  END IF;
+END $$;
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'stock_movements'::regclass AND conname = 'stock_movements_custody_purpose_check' AND pg_get_constraintdef(oid) LIKE '%quarantine%'
+  ) THEN
+    ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_custody_purpose_check;
+    ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_custody_purpose_check
+      CHECK (custody_purpose IS NULL OR custody_purpose IN (
+        'repair', 'job_work', 'approval', 'consignment', 'exhibition', 'demo', 'other', 'inward',
+        'quarantine', 'qc_hold', 'damaged', 'return_inspection'
+      ));
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS stock_holds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -161,12 +179,21 @@ CREATE TABLE IF NOT EXISTS production_lines (
   adjustment_id UUID REFERENCES inventory_adjustments(id) ON DELETE SET NULL
 );
 
-ALTER TABLE inventory_adjustments DROP CONSTRAINT IF EXISTS inventory_adjustments_reason_code_check;
-ALTER TABLE inventory_adjustments ADD CONSTRAINT inventory_adjustments_reason_code_check CHECK (
-  reason_code IN (
-    'STOCK_TAKE', 'DAMAGE', 'THEFT', 'EXPIRED', 'FREE_SAMPLE', 'COST_CORRECTION', 'LANDED_COST',
-    'REVALUATION', 'WRITE_DOWN', 'REPACK_OUT', 'REPACK_IN',
-    'PROCESS_LOSS', 'TRANSIT_LOSS', 'OWN_CONSUMPTION', 'CUSTODY_LOSS',
-    'PRODUCTION_ISSUE', 'PRODUCTION_RECEIPT', 'BY_PRODUCT'
-  )
-);
+DO $$
+BEGIN
+  -- Re-running this migration after a later one must not drop the values that one added.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'inventory_adjustments'::regclass AND conname = 'inventory_adjustments_reason_code_check' AND pg_get_constraintdef(oid) LIKE '%PRODUCTION_ISSUE%'
+  ) THEN
+    ALTER TABLE inventory_adjustments DROP CONSTRAINT IF EXISTS inventory_adjustments_reason_code_check;
+    ALTER TABLE inventory_adjustments ADD CONSTRAINT inventory_adjustments_reason_code_check CHECK (
+      reason_code IN (
+        'STOCK_TAKE', 'DAMAGE', 'THEFT', 'EXPIRED', 'FREE_SAMPLE', 'COST_CORRECTION', 'LANDED_COST',
+        'REVALUATION', 'WRITE_DOWN', 'REPACK_OUT', 'REPACK_IN',
+        'PROCESS_LOSS', 'TRANSIT_LOSS', 'OWN_CONSUMPTION', 'CUSTODY_LOSS',
+        'PRODUCTION_ISSUE', 'PRODUCTION_RECEIPT', 'BY_PRODUCT'
+      )
+    );
+  END IF;
+END $$;
