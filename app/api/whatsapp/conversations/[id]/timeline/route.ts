@@ -68,6 +68,14 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: tru
           description = `Campaign triggered: ${eventData.campaign_name || eventData.campaign_id || 'Unknown'}`;
           icon = 'megaphone';
           break;
+        case 'stage_changed': {
+          const by = eventData.source === 'ai' ? ' by the AI agent' : eventData.source === 'flow' ? ' by a flow' : eventData.actor_name ? ` by ${eventData.actor_name}` : '';
+          description = eventData.to_stage
+            ? `Moved to ${eventData.to_stage}${eventData.from_stage ? ` from ${eventData.from_stage}` : ''}${by}`
+            : `Taken off the pipeline${by}`;
+          icon = 'kanban';
+          break;
+        }
         default:
           description = 'Automation event';
       }

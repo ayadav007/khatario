@@ -156,7 +156,7 @@ function BranchNode({ id, data, selected }: NodeProps) {
 
 function ActionNode({ id, data, selected }: NodeProps) {
   const node = asFlow('action', id, data);
-  const title = node.data.kind === 'open_shop' ? 'Catalogue' : 'Action';
+  const title = node.data.kind === 'open_shop' ? 'Catalogue' : node.data.kind === 'set_stage' ? 'Pipeline stage' : 'Action';
   return (
     <EditableCard
       selected={selected}

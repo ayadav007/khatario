@@ -2,6 +2,7 @@ import type { FlowNode } from './schema';
 import { assignToAgent, markRequesting } from '@/lib/whatsapp/inbox-ownership';
 import { pauseConversationBot } from '@/lib/ai-agent/conversation';
 import { query } from '@/lib/db';
+import { setDeal } from '@/lib/whatsapp/pipeline';
 
 export async function runFlowActions(
   businessId: string,
@@ -36,6 +37,10 @@ export async function runFlowActions(
       if (node.data.userId) {
         await assignToAgent(businessId, conversationId, node.data.userId).catch(() => undefined);
       }
+    }
+    if (kind === 'set_stage' && node.data.stageId) {
+      // setDeal checks the stage belongs to this business; a deleted stage just does nothing.
+      await setDeal(businessId, conversationId, { stageId: node.data.stageId }, { source: 'flow' }).catch(() => undefined);
     }
     if (kind === 'open_shop') openShop = true;
   }

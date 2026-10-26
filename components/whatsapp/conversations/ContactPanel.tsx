@@ -10,6 +10,7 @@ import { AutomationTimeline, TimelineEvent } from './AutomationTimeline';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { Toast } from '@/components/ui/Toast';
 import { LinkedOrdersCard } from './LinkedOrdersCard';
+import { DealSection } from '../pipeline/DealSection';
 import type { OwnershipView } from './inbox';
 
 interface ContactInfo {
@@ -421,10 +422,12 @@ export function ContactPanel({
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <h3 className="text-sm font-bold text-gray-900 mb-4">Lead Management</h3>
           <div className="space-y-4">
+            <DealSection conversationId={conversationId} isGroup={!!(chatStatus?.is_group || ownership?.is_group)} />
+
             {/* Lead Status (AI-based with manual override) */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Lead Status
+                Lead temperature
                 {leadProfile && (
                   <span className="text-xs text-gray-500 ml-1">
                     (AI: {leadProfile.lead_status || 'not analyzed'})

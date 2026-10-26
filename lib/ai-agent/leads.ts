@@ -1,6 +1,7 @@
 import { query, queryRows } from '@/lib/db';
 import type { AgentSettings } from './types';
 import { performHandoff } from './conversation';
+import { setStageByLegacyKey } from '@/lib/whatsapp/pipeline';
 
 export interface LeadApplyResult {
   saved: string[];
@@ -82,12 +83,8 @@ export async function applyLeadAnswers(
   const q = lead.onQualify;
   try {
     if (q.labels.length) await addLabels(businessId, conversationId, q.labels);
-    if (q.leadStatus) {
-      await query(
-        `UPDATE whatsapp_conversations SET lead_status = $3 WHERE id = $1 AND business_id = $2`,
-        [conversationId, businessId, q.leadStatus],
-      );
-    }
+    // The stage that replaced this lead status; puts the qualified chat on the pipeline board.
+    if (q.leadStatus) await setStageByLegacyKey(businessId, conversationId, q.leadStatus, { source: 'ai' });
     if (q.handoff) {
       await performHandoff(businessId, conversationId, settings, {
         assignTo: q.assignTo || undefined,

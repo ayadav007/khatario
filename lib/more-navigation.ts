@@ -337,6 +337,13 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           featureKey: 'whatsapp_bot',
         },
         {
+          href: '/whatsapp/pipeline',
+          label: 'Pipeline',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
           href: '/whatsapp/reminders',
           label: 'Payment Reminders',
           module: 'whatsapp',

@@ -272,21 +272,32 @@ async function notifyAssignee(
     const who = label?.name || label?.phone || 'A customer';
     const title = 'WhatsApp chat assigned to you';
     const message = actorName ? `${actorName} transferred the chat with ${who} to you.` : `The chat with ${who} was assigned to you.`;
-    const ins = await queryOne<{ id: string }>(
-      `INSERT INTO notifications (business_id, user_id, type, title, message, reference_type, reference_id, created_at)
-       VALUES ($1, $2, 'general', $3, $4, 'whatsapp_conversation', $5, CURRENT_TIMESTAMP)
-       RETURNING id`,
-      [businessId, targetUserId, title, message, conversationId],
-    );
-    const { getRedisConnection } = await import('@/lib/queue/redis');
-    const redis = getRedisConnection();
-    if (ins?.id && redis && redis.status === 'ready') {
-      void redis
-        .publish('notifications', JSON.stringify({ businessId, userId: targetUserId, notificationId: ins.id, timestamp: Date.now() }))
-        .catch(() => undefined);
-    }
+    await notifyInboxUser(businessId, targetUserId, title, message, conversationId);
   } catch (err) {
     console.warn('[inbox-ownership] notify failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** In-app notification (and live push) for one user that opens the chat when tapped. */
+export async function notifyInboxUser(
+  businessId: string,
+  userId: string,
+  title: string,
+  message: string,
+  conversationId: string,
+): Promise<void> {
+  const ins = await queryOne<{ id: string }>(
+    `INSERT INTO notifications (business_id, user_id, type, title, message, reference_type, reference_id, created_at)
+     VALUES ($1, $2, 'general', $3, $4, 'whatsapp_conversation', $5, CURRENT_TIMESTAMP)
+     RETURNING id`,
+    [businessId, userId, title, message, conversationId],
+  );
+  const { getRedisConnection } = await import('@/lib/queue/redis');
+  const redis = getRedisConnection();
+  if (ins?.id && redis && redis.status === 'ready') {
+    void redis
+      .publish('notifications', JSON.stringify({ businessId, userId, notificationId: ins.id, timestamp: Date.now() }))
+      .catch(() => undefined);
   }
 }
 

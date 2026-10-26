@@ -41,6 +41,8 @@ function actionNotes(actions: Extract<FlowNode, { type: 'action' }>[]): string[]
         return 'Action: Add labels';
       case 'remove_labels':
         return 'Action: Remove labels';
+      case 'set_stage':
+        return 'Action: Move to pipeline stage';
       default:
         return `Action: ${a.data.kind}`;
     }

@@ -140,6 +140,7 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/whatsapp/send-message', featureId: 'integration_whatsapp_manual' },
   { prefix: '/whatsapp/bot-rules', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/conversations', featureId: 'integration_whatsapp_bot' },
+  { prefix: '/whatsapp/pipeline', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/campaigns', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/flows', featureId: 'integration_whatsapp_bot' },
   { prefix: '/whatsapp/reminders', featureId: 'whatsapp_auto_reminders' },
@@ -229,6 +230,8 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/api/whatsapp/conversations', featureId: 'integration_whatsapp_bot' },
   { prefix: '/api/whatsapp/campaigns', featureId: 'integration_whatsapp_bot' },
   { prefix: '/api/whatsapp/flows', featureId: 'integration_whatsapp_bot' },
+  { prefix: '/api/whatsapp/pipeline', featureId: 'integration_whatsapp_bot' },
+  { prefix: '/api/whatsapp/followups', featureId: 'integration_whatsapp_bot' },
   { prefix: '/api/whatsapp/reminders', featureId: 'whatsapp_auto_reminders' },
   // Custom sends. Invoice sends on this same route stay on settings_whatsapp inside the handler.
   { prefix: '/api/whatsapp/send', featureId: 'integration_whatsapp_manual' },

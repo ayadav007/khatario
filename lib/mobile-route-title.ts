@@ -176,6 +176,7 @@ export function getMobileRouteTitle(
   if (p === '/whatsapp/flows') return 'Flows';
   if (p.startsWith('/whatsapp/flows/')) return 'Flow';
   if (p === '/whatsapp/dashboard') return 'CRM dashboard';
+  if (p === '/whatsapp/pipeline') return 'Pipeline';
   if (p.startsWith('/whatsapp/campaigns/')) return 'Campaign';
   if (p.startsWith('/whatsapp')) return 'WhatsApp';
 

@@ -775,6 +775,13 @@ export const Sidebar = React.memo(function Sidebar() {
                 featureKey: 'whatsapp_bot',
               },
               {
+                href: '/whatsapp/pipeline',
+                label: 'Pipeline',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
                 href: '/whatsapp/reminders',
                 label: 'Payment Reminders',
                 module: 'whatsapp',

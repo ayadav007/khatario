@@ -9,7 +9,7 @@ import type { TemplateSendInput } from './conversations/TemplatePickerModal';
 import { fileToDataUrl } from './conversations/fileToDataUrl';
 import { ContactPanel } from './conversations/ContactPanel';
 import { TimelineEvent } from './conversations/AutomationTimeline';
-import { SummaryBar, type InboxFilter } from './conversations/SummaryBar';
+import { SummaryBar, endOfTodayIso, type InboxFilter } from './conversations/SummaryBar';
 import {
   playInboxChime,
   requestInboxNotificationPermission,
@@ -196,6 +196,10 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
       if (inboxFilter.state === 'intervened' && inboxFilter.intervenedBy) {
         params.set('intervened_by', inboxFilter.intervenedBy);
       }
+      if (inboxFilter.followups) {
+        params.set('followups', 'due');
+        params.set('due_before', endOfTodayIso());
+      }
 
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
 
@@ -228,7 +232,7 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
           // Save to cache after successful fetch (only when no filters active to keep cache clean)
           if (business?.id && !append) {
             const hasActiveFilters =
-              Object.keys(currentFilters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null;
+              Object.keys(currentFilters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null || !!inboxFilter.followups;
             if (!hasActiveFilters) {
               setConversationsCache(business.id, sorted);
             }
@@ -1140,6 +1144,8 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
         }
         const activeInbox = inboxFilterRef.current;
         const matchesInboxFilter = (c: ConversationType, wasListed: boolean): boolean => {
+          // Live updates don't know about reminders: keep the follow-up list to what was fetched.
+          if (activeInbox.followups) return wasListed;
           if (!activeInbox.state) return true;
           // Message-driven updates carry no ownership fields: keep listed rows, don't pull in unknown ones.
           if (!raw.inbox_state) return wasListed;
@@ -1282,7 +1288,7 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
   useEffect(() => {
     if (business?.id) {
       const hasActiveFilters =
-        Object.keys(filters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null;
+        Object.keys(filters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null || !!inboxFilter.followups;
 
       if (!hasActiveFilters) {
         const cached = getConversationsCache(business.id);
