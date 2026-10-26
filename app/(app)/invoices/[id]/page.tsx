@@ -11,7 +11,6 @@ import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { CancelInvoiceModal } from '@/components/modals/CancelInvoiceModal';
-import { AmendInvoiceModal } from '@/components/modals/AmendInvoiceModal';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -70,7 +69,6 @@ export default function InvoiceDetailPage() {
   } = useGatedDocumentEmail();
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
-  const [amendModalOpen, setAmendModalOpen] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [converting, setConverting] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -202,11 +200,6 @@ export default function InvoiceDetailPage() {
   const handleCancelSuccess = () => {
     fetchInvoice();
     router.push('/invoices');
-  };
-
-  const handleAmendSuccess = () => {
-    toast.success('Invoice amended');
-    fetchInvoice();
   };
 
   const handleConvertToTaxInvoice = () => {
@@ -487,7 +480,14 @@ export default function InvoiceDetailPage() {
                 {a4PrintButton}
                 {bluetoothPrintButton}
               {isFinal && !isProforma && !isCancelled && (
-                <Button variant="secondary" onClick={() => setAmendModalOpen(true)}>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    router.push(
+                      `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                    )
+                  }
+                >
                   <Edit className="w-4 h-4 mr-2" />
                   Amend
                 </Button>
@@ -561,7 +561,15 @@ export default function InvoiceDetailPage() {
               </Button>
             )}
             {isFinal && !isProforma && !isCancelled && (
-              <Button variant="secondary" onClick={() => setAmendModalOpen(true)} className="flex-1">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  router.push(
+                    `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                  )
+                }
+                className="flex-1"
+              >
                 <Edit className="w-4 h-4" />
                 <span className="ml-2">Amend</span>
               </Button>
@@ -794,18 +802,6 @@ export default function InvoiceDetailPage() {
       )}
 
       {receiptPrinter.dialog}
-      {amendModalOpen && invoice && (
-        <AmendInvoiceModal
-          invoiceId={invoice.id}
-          invoiceNumber={invoice.invoice_number}
-          invoiceDate={invoice.invoice_date}
-          dueDate={invoice.due_date || ''}
-          billingAddress={invoice.billing_address || ''}
-          billingName={invoice.billing_name || invoice.customer_name || ''}
-          onSuccess={handleAmendSuccess}
-          onClose={() => setAmendModalOpen(false)}
-        />
-      )}
       {cancelModalOpen && invoice && (
         <CancelInvoiceModal
           invoiceId={invoice.id}

@@ -45,6 +45,11 @@ export type DesktopInvoiceComposerProps = {
   onUseClassicForm: () => void;
   readOnly: boolean;
   isFinal: boolean;
+  amendMode?: boolean;
+  billingName?: string;
+  setBillingName?: (v: string) => void;
+  datesReadOnly?: boolean;
+  onSaveAmend?: () => void;
   keyboardBlocked: boolean;
   banners: React.ReactNode;
 
@@ -256,6 +261,10 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && lower === 's') {
       e.preventDefault();
+      if (p.amendMode) {
+        if (!p.saving) p.onSaveAmend?.();
+        return;
+      }
       if (p.readOnly || p.saving) return;
       if (e.shiftKey) p.onSaveDraft();
       else p.onSaveFinal();
@@ -421,6 +430,9 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               billingAddress={p.billingAddress}
               setBillingAddress={p.setBillingAddress}
               readOnly={p.readOnly}
+              amendBillTo={p.amendMode && !p.datesReadOnly}
+              billingName={p.billingName}
+              setBillingName={p.setBillingName}
               credit={p.credit}
             />
           </div>
@@ -465,6 +477,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               selectedWarehouseId={p.selectedWarehouseId}
               setSelectedWarehouseId={p.setSelectedWarehouseId}
               readOnly={p.readOnly}
+              datesReadOnly={p.datesReadOnly ?? p.readOnly}
             />
           </div>
         </div>
@@ -576,7 +589,17 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               </>
             )}
 
-            {p.readOnly ? (
+            {p.amendMode ? (
+              <button
+                type="button"
+                onClick={p.onSaveAmend}
+                disabled={p.saving || p.datesReadOnly}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-lg shadow-primary-600/30 transition hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+              >
+                {p.saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save amendment
+              </button>
+            ) : p.readOnly ? (
               <button
                 type="button"
                 onClick={p.onStartNew}

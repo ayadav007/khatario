@@ -393,6 +393,7 @@ function NewInvoiceContent() {
   const [blNumber, setBlNumber] = useState('');
   const [buyerTaxId, setBuyerTaxId] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
+  const [billingName, setBillingName] = useState('');
   const [shippingAddress, setShippingAddress] = useState('');
   const [ewayBillNumber, setEwayBillNumber] = useState('');
   const [ewayBillDate, setEwayBillDate] = useState('');
@@ -426,7 +427,7 @@ function NewInvoiceContent() {
   const [invoiceMobileLayout, setInvoiceMobileLayout] = useState(false);
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
   const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
-  const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
+  const [addressSupplyOpen, setAddressSupplyOpen] = useState(searchParams.get('amend') === '1');
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
@@ -699,6 +700,11 @@ function NewInvoiceContent() {
   const isFinal = documentType === 'proforma_invoice' 
     ? (estimateStatus === 'converted')
     : (savedStatus === 'final');
+  const isAmendMode =
+    searchParams.get('amend') === '1' &&
+    savedStatus === 'final' &&
+    documentType !== 'proforma_invoice';
+  const datesReadOnly = isInvoiceLocked || (isFinal && !isAmendMode);
   
   // PHASE 1: Initialize prefix and number as null - API is the single source of truth
   const [invoicePrefix, setInvoicePrefix] = useState<string | null>(null);
@@ -1247,7 +1253,7 @@ function NewInvoiceContent() {
   }, [business?.id, business?.state]);
 
   const resetFormForNewInvoice = useCallback(() => {
-    setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setSupplyKind('taxable'); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
+    setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setBillingName(''); setShippingAddress(''); setIsExport(false); setSupplyKind('taxable'); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
     setRows([]);
     setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
@@ -1317,6 +1323,7 @@ function NewInvoiceContent() {
       invoicePrefix,
       placeOfSupply,
       billingAddress,
+      billingName,
       shippingAddress,
       notes,
       extraCharges,
@@ -1353,7 +1360,7 @@ function NewInvoiceContent() {
       enableRoundOff,
       attachments,
     };
-  }, [rows, customerId, selectedCustomer, customerPhone, invoiceDate, dueDate, invoiceNumber, invoicePrefix, placeOfSupply, billingAddress, shippingAddress, notes, extraCharges, payments, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, invoiceCustomFieldValues, enableRoundOff, attachments]);
+  }, [rows, customerId, selectedCustomer, customerPhone, invoiceDate, dueDate, invoiceNumber, invoicePrefix, placeOfSupply, billingAddress, billingName, shippingAddress, notes, extraCharges, payments, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, invoiceCustomFieldValues, enableRoundOff, attachments]);
 
   // Restore invoice state from parked bill
   const restoreInvoiceState = useCallback((state: any) => {
@@ -1367,6 +1374,7 @@ function NewInvoiceContent() {
     if (state.invoicePrefix) setInvoicePrefix(state.invoicePrefix);
     if (state.placeOfSupply) setPlaceOfSupply(state.placeOfSupply);
     if (state.billingAddress !== undefined) setBillingAddress(state.billingAddress);
+    if (state.billingName !== undefined) setBillingName(state.billingName);
     if (state.shippingAddress !== undefined) setShippingAddress(state.shippingAddress);
     if (state.notes !== undefined) setNotes(state.notes);
     if (state.extraCharges) setExtraCharges(state.extraCharges);
@@ -2160,7 +2168,50 @@ function NewInvoiceContent() {
     }
   }, [grandTotal, totalPaid, selectedCustomer, customerId, creditMetrics?.current, rows]);
 
+  const handleAmend = useCallback(async () => {
+    if (!savedInvoiceId) return;
+    if (isInvoiceLocked) {
+      setToastMessage({
+        message: lockReason || 'This invoice is locked and cannot be amended because it was included in a GSTR-1 filing.',
+        type: 'error',
+      });
+      return;
+    }
+    if (!invoiceDate) {
+      setToastMessage({ message: 'Enter a valid invoice date.', type: 'error' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${savedInvoiceId}/amend`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_date: invoiceDate,
+          due_date: dueDate || null,
+          billing_address: billingAddress,
+          billing_name: billingName,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to amend the invoice');
+      }
+      toastCtx.success('Invoice amended');
+      setIsDirty(false);
+      router.push(`/invoices/${savedInvoiceId}`);
+    } catch (err: any) {
+      setToastMessage({ message: err.message || 'Failed to amend the invoice', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [savedInvoiceId, isInvoiceLocked, lockReason, invoiceDate, dueDate, billingAddress, billingName, router, toastCtx]);
+
   const handleSave = useCallback(async (targetStatus: 'draft' | 'final') => {
+    if (isAmendMode) {
+      await handleAmend();
+      return;
+    }
     const canFinalizeOffline =
       canQueueOffline &&
       targetStatus === 'final' &&
@@ -2458,7 +2509,7 @@ function NewInvoiceContent() {
       hotToast.error(errorMsg, { duration: 8000 });
       return false;
     } finally { setLoading(false); }
-  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, supplyKind, selectedCustomer, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, supplyKind, selectedCustomer, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams, isAmendMode, handleAmend]);
   handleSaveRef.current = handleSave;
   handlePrintBillRef.current = handlePrintBill;
 
@@ -2515,16 +2566,16 @@ function NewInvoiceContent() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (!isFinal && !loading) handleSave('draft'); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!loading) handleSave('final'); return; }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (isAmendMode) { if (!loading) handleAmend(); return; } if (!isFinal && !loading) handleSave('draft'); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (isAmendMode) { if (!loading) handleAmend(); return; } if (!loading) handleSave('final'); return; }
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (!isFinal && !loading) handleSave('draft'); }
-      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!loading) handleSave('final'); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (isAmendMode) { if (!loading) handleAmend(); return; } if (!isFinal && !loading) handleSave('draft'); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (isAmendMode) { if (!loading) handleAmend(); return; } if (!loading) handleSave('final'); }
       else if (((e.ctrlKey || e.metaKey) && e.key === 'p') || e.key === 'P') { e.preventDefault(); if (!isFinal && documentType !== 'proforma_invoice') setPaymentModalOpen(true); }
     };
     window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFinal, loading, handleSave, documentType]);
+  }, [isFinal, loading, handleSave, handleAmend, isAmendMode, documentType]);
 
   useEffect(() => {
     const init = async () => {
@@ -2584,7 +2635,13 @@ function NewInvoiceContent() {
         if (res.ok) {
           const data = await res.json();
           const inv = data.invoice || data;
-          setSavedInvoiceId(editId); 
+          setSavedInvoiceId(editId);
+          setIsInvoiceLocked(inv.is_editable === false);
+          setLockReason(
+            inv.is_editable === false
+              ? 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'
+              : null,
+          ); 
           // For proforma invoices, use estimate_status; for others, use status
           // Map estimate_status to savedStatus: 'converted' -> 'final' (prevents editing), others -> 'draft' (allows editing)
           const statusToSave = inv.document_type === 'proforma_invoice' 
@@ -2617,7 +2674,9 @@ function NewInvoiceContent() {
             // PHASE 2: Fetch series from API for new document type
             fetchDocumentSeries(newDocType as DocumentType);
           }
-          setBillingAddress(inv.billing_address || ''); setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || '');
+          setBillingAddress(inv.billing_address || '');
+          setBillingName(inv.billing_name || inv.customer_name || '');
+          setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || '');
           const loadedSupply = String(inv.supply_type || '');
           const loadedKind: 'taxable' | 'exempt' | 'export' | 'sez' =
             (business as { gst_registration_type?: string } | null)?.gst_registration_type === 'composition'
@@ -3236,6 +3295,11 @@ function NewInvoiceContent() {
           <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
         </div>
       )}
+      {isAmendMode && !isInvoiceLocked && (
+        <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 text-sm text-primary-900">
+          Amend this invoice: you can change the date, due date, billing address, and the name printed on this bill. Items and amounts stay as posted.
+        </div>
+      )}
       {!posMode && (
         <div className="bg-surface rounded-lg border border-border p-3 lg:p-4 shadow-sm">
           <div className="flex flex-wrap gap-x-3 gap-y-3 items-end min-w-0">
@@ -3308,7 +3372,7 @@ function NewInvoiceContent() {
               type="date"
               value={invoiceDate}
               onChange={e => setInvoiceDate(e.target.value)}
-              disabled={isFinal || isInvoiceLocked}
+              disabled={datesReadOnly}
               className="!px-3 !py-2 !text-sm"
             />
             {isFutureInvoiceDate ? (
@@ -3321,7 +3385,7 @@ function NewInvoiceContent() {
               type="date"
               value={dueDate}
               onChange={e => { dueDateUserEditedRef.current = true; setDueDate(e.target.value); }}
-              disabled={isFinal || isInvoiceLocked}
+              disabled={datesReadOnly}
               className="!px-3 !py-2 !text-sm"
               placeholder="Optional"
             />
@@ -3378,6 +3442,15 @@ function NewInvoiceContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <div>
               <label className="text-xs font-medium mb-1 block text-text-secondary uppercase tracking-wide">Bill To</label>
+              {isAmendMode ? (
+                <Input
+                  value={billingName}
+                  onChange={(e) => setBillingName(e.target.value)}
+                  placeholder="Name on this bill"
+                  className="mb-2 !px-2 !py-1.5 !text-sm"
+                  disabled={datesReadOnly}
+                />
+              ) : null}
               <textarea
                 className="w-full min-h-[80px] h-[100px] px-2 py-1.5 text-sm border border-gray-200 rounded-md resize-none bg-background text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-gray-300"
                 value={billingAddress}
@@ -3388,7 +3461,7 @@ function NewInvoiceContent() {
                   el.style.height = `${el.scrollHeight}px`;
                 }}
                 placeholder="Billing Address"
-                disabled={isFinal}
+                disabled={datesReadOnly}
               />
             </div>
             <div>
@@ -3488,10 +3561,12 @@ function NewInvoiceContent() {
             onPreview={handlePreview}
             onSaveDraft={() => handleSave('draft')}
             onSaveFinal={() => handleSave('final')}
+            onSaveAmend={handleAmend}
             onShare={() => setShareModalOpen(true)}
             previewLoading={previewLoading}
             saving={loading}
             isFinal={isFinal}
+            amendMode={isAmendMode}
             isOnline={true}
             savedInvoiceId={savedInvoiceId}
             invoicePrefix={invoicePrefix}
@@ -3615,6 +3690,11 @@ function NewInvoiceContent() {
 
     const banners = (
       <>
+        {isAmendMode && !isInvoiceLocked && (
+          <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-100">
+            Amend this invoice: you can change the date, due date, billing address, and the name printed on this bill. Items and amounts stay as posted.
+          </div>
+        )}
         {isInvoiceLocked && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
             <p className="font-semibold text-amber-900 dark:text-amber-200">Invoice locked</p>
@@ -3653,6 +3733,11 @@ function NewInvoiceContent() {
         onUseClassicForm={() => setClassicDesktopPreference(true)}
         readOnly={readOnly}
         isFinal={isFinal}
+        amendMode={isAmendMode}
+        billingName={billingName}
+        setBillingName={setBillingName}
+        datesReadOnly={datesReadOnly}
+        onSaveAmend={handleAmend}
         keyboardBlocked={
           createCustomerModalOpen || createItemModalOpen || paymentModalOpen || previewModalOpen ||
           shareModalOpen || showNavigationWarning || showResetConfirm || showUpgradePrompt || showContinuousScanner
@@ -3826,7 +3911,7 @@ function NewInvoiceContent() {
               type="date"
               value={invoiceDate}
               onChange={(e) => setInvoiceDate(e.target.value)}
-              disabled={isFinal || isInvoiceLocked}
+              disabled={datesReadOnly}
               className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
             {isFutureInvoiceDate ? (
@@ -3844,7 +3929,7 @@ function NewInvoiceContent() {
                 dueDateUserEditedRef.current = true;
                 setDueDate(e.target.value);
               }}
-              disabled={isFinal || isInvoiceLocked}
+              disabled={datesReadOnly}
               className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
           </div>
@@ -3928,8 +4013,10 @@ function NewInvoiceContent() {
             {selectedCustomer ? (
               <>
                 <div>
+                  <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Name on this bill</label>
+                  <Input value={billingName} onChange={(e) => setBillingName(e.target.value)} disabled={!isAmendMode || datesReadOnly} className="mb-1 h-9 min-h-0" />
                   <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
-                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
+                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={!isAmendMode && isFinal} />
                 </div>
                 <div>
                   <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
@@ -4209,7 +4296,18 @@ function NewInvoiceContent() {
             <p className="text-[9px] font-semibold uppercase tracking-wide text-white/80">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
             <p className="truncate text-base font-bold leading-tight tabular-nums text-white">{money(grandTotal)}</p>
           </div>
-          {!isFinal ? (
+          {isAmendMode ? (
+            <Button
+              variant="primary"
+              size="sm"
+              className="h-10 shrink-0 font-bold !bg-white !text-primary-700 hover:!bg-primary-50"
+              onClick={() => void handleAmend()}
+              isLoading={loading}
+              disabled={datesReadOnly}
+            >
+              Save amendment
+            </Button>
+          ) : !isFinal ? (
             <>
               <button
                 type="button"

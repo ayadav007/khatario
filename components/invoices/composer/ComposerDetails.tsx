@@ -38,9 +38,11 @@ type Props = {
   selectedWarehouseId: string;
   setSelectedWarehouseId: (v: string) => void;
   readOnly: boolean;
+  datesReadOnly?: boolean;
 };
 
 export function DetailsPanel(p: Props) {
+  const datesReadOnly = p.datesReadOnly ?? p.readOnly;
   const termDays = p.dueDate ? daysBetween(p.invoiceDate, p.dueDate) : null;
   const nonTaxable = p.documentType === 'bill_of_supply';
   const docNo =
@@ -145,7 +147,7 @@ export function DetailsPanel(p: Props) {
             type="date"
             value={p.invoiceDate}
             onChange={(e) => p.setInvoiceDate(e.target.value)}
-            disabled={p.readOnly}
+            disabled={datesReadOnly}
             className={inputCls}
           />
         </Field>
@@ -168,7 +170,7 @@ export function DetailsPanel(p: Props) {
                 <button
                   key={t.days}
                   type="button"
-                  disabled={p.readOnly}
+                  disabled={datesReadOnly}
                   onClick={() => p.setDueDate(t.days === 0 ? '' : addDaysIso(p.invoiceDate, t.days))}
                   title={t.days === 0 ? 'No credit period: payment due on the invoice date' : `Payment due ${t.label} after the invoice date`}
                   className={clsx(
@@ -191,7 +193,7 @@ export function DetailsPanel(p: Props) {
             value={p.dueDate}
             min={p.invoiceDate}
             onChange={(e) => p.setDueDate(e.target.value)}
-            disabled={p.readOnly}
+            disabled={datesReadOnly}
             aria-label="Due date"
             className={inputCls}
           />
