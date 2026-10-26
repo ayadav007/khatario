@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import type { BusinessDiscoveryVisibility } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/suppliers/hub/profile/[businessId]
- * Authenticated hub profile + listings visible to viewer.
+ * Authenticated hub profile + listings visible to viewer. The viewer is the session tenant only.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { businessId: string } }
 ) {
   try {
-    const viewerBusinessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId: viewerBusinessId, userId } = auth;
     const targetId = params.businessId;
-    if (!viewerBusinessId || !userId || !targetId) {
+    if (!targetId) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
     try {
@@ -58,8 +59,11 @@ export async function GET(
       gstin: string | null;
       phone: string | null;
       email: string | null;
+      logo_url: string | null;
+      created_at: string;
     }>(
-      `SELECT id, name, city, state, gstin, phone, email FROM businesses WHERE id = $1`,
+      `SELECT id, name, city, state, gstin, phone, email, logo_url, created_at
+       FROM businesses WHERE id = $1`,
       [targetId]
     );
     if (!business) {
@@ -73,8 +77,8 @@ export async function GET(
       [viewerBusinessId, targetId]
     ));
 
-    const pendingOut = await db.queryOne<{ id: string }>(
-      `SELECT id FROM supplier_connection_requests
+    const pendingOut = await db.queryOne<{ id: string; message: string | null; created_at: string }>(
+      `SELECT id, message, created_at FROM supplier_connection_requests
        WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
       [viewerBusinessId, targetId]
     );
@@ -85,6 +89,13 @@ export async function GET(
        WHERE business_id = $1 AND linked_business_id = $2 AND deleted_at IS NULL AND is_active = true
        LIMIT 1`,
       [viewerBusinessId, targetId]
+    );
+
+    const buyers = await db.queryOne<{ n: number }>(
+      `SELECT COUNT(DISTINCT business_id)::int AS n FROM suppliers
+       WHERE linked_business_id = $1 AND approval_status = 'approved'
+         AND is_active = true AND deleted_at IS NULL`,
+      [targetId]
     );
 
     const listings = await db.queryRows<{
@@ -100,14 +111,21 @@ export async function GET(
       item_name: string;
       item_unit: string;
       item_code: string | null;
+      item_mrp: string | null;
+      item_image_url: string | null;
+      item_brand: string | null;
+      category_name: string | null;
     }>(
       `
       SELECT l.id, l.item_id, l.audience, l.display_name, l.moq::text, l.lead_time_text,
              l.price_display, l.from_amount::text, l.sort_order,
-             i.name AS item_name, i.unit AS item_unit, i.code AS item_code
+             i.name AS item_name, i.unit AS item_unit, i.code AS item_code,
+             i.mrp::text AS item_mrp, i.image_url AS item_image_url, i.brand AS item_brand,
+             c.name AS category_name
       FROM supplier_published_listings l
       -- Soft delete: exclude records where deleted_at is set
       INNER JOIN items i ON i.id = l.item_id AND i.business_id = l.supplier_business_id AND i.deleted_at IS NULL
+      LEFT JOIN categories c ON c.id = i.category_id AND c.business_id = l.supplier_business_id
       WHERE l.supplier_business_id = $1
         AND l.is_active = true
         AND (
@@ -130,8 +148,11 @@ export async function GET(
       viewer: {
         is_linked: isLinked,
         pending_request_id: pendingOut?.id || null,
+        pending_request_message: pendingOut?.message || null,
+        pending_request_at: pendingOut?.created_at || null,
         supplier_record_id: buyerSupplier?.id || null,
       },
+      buyers_count: buyers?.n ?? 0,
       listings,
     });
   } catch (e: any) {

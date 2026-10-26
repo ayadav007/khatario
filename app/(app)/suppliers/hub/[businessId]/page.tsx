@@ -2,25 +2,43 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import {
-  Building2,
-  Loader2,
-  Link2,
-  Package,
-  Send,
-} from 'lucide-react';
+import { ArrowLeft, Check, Clock, Link2, Loader2, Lock, MessageCircle, Phone, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
+import {
+  CategoryChip,
+  GstinBadge,
+  ProductTile,
+  SupplierAvatar,
+  formatPlace,
+  headingFont,
+  supplierTint,
+} from '@/components/suppliers/hub/DirectoryUi';
+
+interface Listing {
+  id: string;
+  item_id: string;
+  audience: string;
+  display_name: string | null;
+  moq: string | null;
+  lead_time_text: string | null;
+  price_display: string;
+  from_amount: string | null;
+  item_name: string;
+  item_unit: string;
+  item_code: string | null;
+  item_mrp: string | null;
+  item_image_url: string | null;
+  item_brand: string | null;
+  category_name: string | null;
+}
 
 interface ProfilePayload {
   business: {
@@ -29,6 +47,9 @@ interface ProfilePayload {
     city: string | null;
     state: string | null;
     gstin: string | null;
+    phone: string | null;
+    logo_url: string | null;
+    created_at: string;
   };
   discovery: {
     visibility: string;
@@ -38,22 +59,40 @@ interface ProfilePayload {
   viewer: {
     is_linked: boolean;
     pending_request_id: string | null;
+    pending_request_message: string | null;
+    pending_request_at: string | null;
     supplier_record_id: string | null;
   };
-  listings: Array<{
-    id: string;
-    item_id: string;
-    audience: string;
-    display_name: string | null;
-    moq: string | null;
-    lead_time_text: string | null;
-    price_display: string;
-    from_amount: string | null;
-    item_name: string;
-    item_unit: string;
-    item_code: string | null;
-  }>;
+  buyers_count: number;
+  listings: Listing[];
 }
+
+const STEPS = [
+  { title: 'Ask to connect', body: 'Send a request with an optional note.' },
+  { title: 'They accept', body: 'You see the items they keep for connected shops, and their new arrivals.' },
+  { title: 'Bills arrive by themselves', body: 'Every bill they raise lands in your purchases, ready to save.' },
+];
+
+const rupees = (v: string | number) => `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+function monthYear(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+}
+
+/** wa.me wants the full international number without symbols; Indian 10-digit numbers get 91. */
+function whatsappHref(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) return `https://wa.me/91${digits}`;
+  if (digits.length >= 11 && digits.length <= 15) return `https://wa.me/${digits.replace(/^0+/, '')}`;
+  return null;
+}
+
+const cardClass = 'rounded-2xl border border-[#E6E1D6] bg-white';
+const outlineLink =
+  'inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#C9D3CF] text-sm font-semibold text-text-primary hover:border-primary-400';
 
 export default function SupplierHubProfilePage() {
   const params = useParams();
@@ -64,6 +103,7 @@ export default function SupplierHubProfilePage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [tab, setTab] = useState('');
 
   useMobileHeaderTitleOverride(data?.business.name);
 
@@ -77,10 +117,7 @@ export default function SupplierHubProfilePage() {
     if (!business?.id || !businessId) return;
     setLoading(true);
     try {
-      const url = buildApiUrl(`/api/suppliers/hub/profile/${businessId}`, {
-        business_id: business.id,
-        user_id: user?.id,
-      });
+      const url = buildApiUrl(`/api/suppliers/hub/profile/${businessId}`);
       const res = await fetch(url, { cache: 'no-store' });
       if (res.status === 404) {
         setData(null);
@@ -94,24 +131,22 @@ export default function SupplierHubProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [business?.id, businessId, user?.id, toast]);
+  }, [business?.id, businessId, toast]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   async function requestConnection() {
-    if (!business?.id || !user?.id || !businessId) return;
+    if (!businessId) return;
     setSubmitting(true);
     try {
       const res = await fetch('/api/suppliers/hub/connection-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: business.id,
           supplier_business_id: businessId,
           message: msg.trim() || null,
-          created_by_user_id: user.id,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -119,25 +154,32 @@ export default function SupplierHubProfilePage() {
         toast.error(j.error || 'Request failed');
         return;
       }
-      toast.success(
-        j.existing ? 'You already have a pending request.' : 'Connection request sent.'
-      );
+      toast.success(j.existing ? 'You already have a pending request.' : 'Connection request sent.');
+      setMsg('');
       load();
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (authStatus === 'loading' || authStatus === 'denied') {
-    if (authStatus === 'denied') return <AccessDenied />;
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-100px)]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-      </div>
-    );
-  }
+  const listings = useMemo(() => data?.listings ?? [], [data]);
+  const tabs = useMemo(() => {
+    const names = new Set<string>();
+    for (const l of listings) if (l.category_name) names.add(l.category_name);
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [listings]);
+  const brands = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const l of listings) {
+      const b = l.item_brand?.trim();
+      if (b && !names.has(b.toLowerCase())) names.set(b.toLowerCase(), b);
+    }
+    return Array.from(names.values());
+  }, [listings]);
+  const shown = tab ? listings.filter((l) => l.category_name === tab) : listings;
 
-  if (loading) {
+  if (authStatus === 'denied') return <AccessDenied />;
+  if (authStatus === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-100px)]">
         <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
@@ -147,154 +189,361 @@ export default function SupplierHubProfilePage() {
 
   if (!data) {
     return (
-      <div className="space-y-4">
-        <Card padding="lg">Listing not found or not visible.</Card>
+      <div className="mx-auto max-w-6xl space-y-4">
+        <Link
+          href="/suppliers/hub/find"
+          className="inline-flex min-h-8 items-center gap-1.5 text-sm text-text-secondary hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Find suppliers
+        </Link>
+        <div className={`${cardClass} p-6 text-text-primary`}>Listing not found or not visible.</div>
       </div>
     );
   }
 
-  const { viewer } = data;
+  const { viewer, business: biz, discovery } = data;
   const isSelf = business?.id === businessId;
+  const place = formatPlace(biz.city, biz.state);
+  const since = monthYear(biz.created_at);
+  const wa = biz.phone ? whatsappHref(biz.phone) : null;
+  const tint = supplierTint(biz.id);
+  const facts = [
+    listings.length > 0 && {
+      label: 'Products listed',
+      value: String(listings.length),
+      note: viewer.is_linked ? 'Including items for connected shops' : 'Open to every shop',
+    },
+    data.buyers_count > 0 && { label: 'Shops supplied', value: String(data.buyers_count), note: 'On Khatario' },
+    { label: 'Bills', value: 'Auto', note: 'Straight into purchases' },
+    since && { label: 'On Khatario since', value: since, note: '' },
+  ].filter(Boolean) as Array<{ label: string; value: string; note: string }>;
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <MobileDuplicatePageChrome
-        className="mb-0"
-        title={data.business.name}
-        description={
-          <>
-            {[data.business.city, data.business.state].filter(Boolean).join(', ')}
-            {data.business.gstin ? ` · ${data.business.gstin}` : ''}
-          </>
-        }
+    <div className="mx-auto max-w-6xl pb-12">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-text-secondary">
+        <Link
+          href="/suppliers/hub/find"
+          className="inline-flex min-h-8 items-center gap-1.5 text-text-primary hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Find suppliers
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="truncate" aria-current="page">
+          {biz.name}
+        </span>
+      </nav>
+
+      <div
+        aria-hidden="true"
+        className={`mt-4 h-28 rounded-3xl sm:h-44 lg:h-56 ${tint.cover} bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(255,255,255,0.35)_18px_36px)]`}
       />
 
-      <Card padding="md">
-        <div className="flex items-start gap-3">
-          <Building2 className="w-8 h-8 text-primary-500 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-bold text-text-primary hidden md:block">{data.business.name}</h2>
-            <p className="text-sm text-text-secondary mt-1 hidden md:block">
-              {[data.business.city, data.business.state].filter(Boolean).join(', ')}
-              {data.business.gstin ? ` · ${data.business.gstin}` : ''}
-            </p>
-            {data.discovery.profile_summary && (
-              <p className="text-sm text-text-primary mt-4 whitespace-pre-wrap">
-                {data.discovery.profile_summary}
-              </p>
-            )}
-            {data.discovery.featured_categories?.length > 0 && (
-              <p className="text-xs text-text-muted mt-2">
-                {data.discovery.featured_categories.join(' · ')}
-              </p>
-            )}
-          </div>
-        </div>
+      <div className="[container-type:inline-size]">
+        <div className="grid grid-cols-1 gap-8 [@container(min-width:52rem)]:grid-cols-[minmax(0,1fr)_320px] [@container(min-width:52rem)]:grid-rows-[auto_1fr]">
+          <header className="-mt-12 flex min-w-0 flex-col gap-3.5 px-2 sm:px-7 [@container(min-width:52rem)]:col-start-1 [@container(min-width:52rem)]:row-start-1">
+            <SupplierAvatar
+              id={biz.id}
+              name={biz.name}
+              logoUrl={biz.logo_url}
+              className="h-24 w-24 rounded-[26px] !border-[5px] !border-background text-[34px] sm:h-[104px] sm:w-[104px] sm:text-[38px]"
+            />
+            <div className="flex flex-col gap-2">
+              <h1
+                className={`${headingFont} flex flex-wrap items-center gap-3 text-3xl font-bold leading-tight tracking-tight text-text-primary sm:text-[40px]`}
+              >
+                {biz.name}
+                <GstinBadge gstin={biz.gstin} />
+              </h1>
+              {discovery.profile_summary && (
+                <p className="max-w-2xl whitespace-pre-wrap text-base leading-relaxed text-text-secondary sm:text-lg">
+                  {discovery.profile_summary}
+                </p>
+              )}
+              {(place || biz.gstin) && (
+                <p className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-text-secondary">
+                  {place && <span>{place}</span>}
+                  {biz.gstin && <span>GSTIN {biz.gstin}</span>}
+                </p>
+              )}
+              {discovery.featured_categories.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {discovery.featured_categories.map((c) => (
+                    <CategoryChip key={c}>{c}</CategoryChip>
+                  ))}
+                </div>
+              )}
+            </div>
+          </header>
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          {viewer.is_linked && viewer.supplier_record_id && (
-            <Link href={`/suppliers/${viewer.supplier_record_id}`}>
-              <Button variant="primary">
-                <Link2 className="w-4 h-4 mr-2" />
-                Open supplier
-              </Button>
-            </Link>
-          )}
-          {viewer.is_linked && (
-            <Link href={`/purchases/requests`}>
-              <Button variant="secondary">Purchase requests</Button>
-            </Link>
-          )}
-        </div>
-
-        {isSelf && (
-          <p className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
-            You are viewing your own directory profile. Buyers see this when you enable visibility in
-            Settings → Suppliers directory.
-          </p>
-        )}
-
-        {!isSelf && !viewer.is_linked && (
-          <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            {viewer.pending_request_id ? (
-              <p className="text-sm text-text-secondary">
-                Connection request pending — the supplier can accept it from their notifications
-                and purchase settings.
-              </p>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-text-primary mb-2">Request connection</p>
-                <textarea
-                  className="w-full text-sm border rounded-md p-2 mb-3 min-h-[72px]"
-                  placeholder="Optional message to the supplier"
-                  value={msg}
-                  onChange={(e) => setMsg(e.target.value)}
-                />
-                <Button
-                  variant="primary"
-                  onClick={requestConnection}
-                  disabled={submitting}
-                  className="gap-2"
-                >
-                  {submitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
+          <aside
+            aria-label={`Connect with ${biz.name}`}
+            className="flex min-w-0 flex-col gap-4 self-start [@container(min-width:52rem)]:col-start-2 [@container(min-width:52rem)]:row-span-2 [@container(min-width:52rem)]:row-start-1 [@container(min-width:52rem)]:mt-7"
+          >
+            <div
+              className={`${cardClass} flex flex-col gap-4 rounded-[20px] p-6 shadow-[0_10px_30px_rgba(3,43,35,0.08)]`}
+            >
+              {isSelf ? (
+                <>
+                  <h2 className={`${headingFont} text-xl font-bold text-text-primary`}>This is your profile</h2>
+                  <p className="text-sm leading-relaxed text-text-secondary">
+                    Buyers see this page when your business is listed. Change your summary, categories and visibility in
+                    Settings → Suppliers directory.
+                  </p>
+                  <Link href="/settings/suppliers-directory" className={outlineLink}>
+                    Edit directory profile
+                  </Link>
+                </>
+              ) : viewer.is_linked ? (
+                <>
+                  <h2 className={`${headingFont} flex items-center gap-2 text-xl font-bold text-text-primary`}>
+                    <Check className="h-5 w-5 text-[#0F7A5A]" aria-hidden="true" />
+                    You buy from {biz.name}
+                  </h2>
+                  <p className="text-sm leading-relaxed text-text-secondary">
+                    Their bills come straight into your purchases, and you see the items they keep for connected shops.
+                  </p>
+                  {viewer.supplier_record_id && (
+                    <Link
+                      href={`/suppliers/${viewer.supplier_record_id}`}
+                      className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-primary-600 text-base font-semibold text-white hover:bg-primary-700"
+                    >
+                      <Link2 className="h-[18px] w-[18px]" aria-hidden="true" />
+                      Open supplier
+                    </Link>
                   )}
-                  Send request
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-      </Card>
-
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary mb-3 flex items-center gap-2">
-          <Package className="w-5 h-5" />
-          Published listings
-        </h2>
-        {data.listings.length === 0 ? (
-          <Card padding="md" className="text-text-secondary text-sm">
-            No published items yet.
-          </Card>
-        ) : (
-          <ul className="space-y-2">
-            {data.listings.map((l) => (
-              <li key={l.id}>
-                <Card padding="sm" className="text-sm">
-                  <div className="flex justify-between gap-4">
-                    <div>
-                      <p className="font-medium text-text-primary">
-                        {l.display_name || l.item_name}
-                      </p>
-                      <p className="text-text-muted text-xs">
-                        {l.item_code ? `${l.item_code} · ` : ''}
-                        {l.item_unit}
-                        {l.audience === 'linked_only' ? ' · Linked customers only' : ''}
-                      </p>
-                      {(l.moq || l.lead_time_text) && (
-                        <p className="text-text-secondary text-xs mt-1">
-                          {l.moq ? `MOQ ${l.moq}` : ''}
-                          {l.moq && l.lead_time_text ? ' · ' : ''}
-                          {l.lead_time_text || ''}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right text-xs text-text-secondary shrink-0">
-                      {l.price_display === 'on_request' && 'Price on request'}
-                      {l.price_display === 'hidden' && 'Price hidden'}
-                      {l.price_display === 'from_amount' &&
-                        l.from_amount &&
-                        `From ₹${Number(l.from_amount).toLocaleString('en-IN')}`}
-                    </div>
+                  <Link href="/purchases/requests" className={outlineLink}>
+                    Purchase requests
+                  </Link>
+                </>
+              ) : viewer.pending_request_id ? (
+                <>
+                  <h2 className={`${headingFont} flex items-center gap-2 text-xl font-bold text-text-primary`}>
+                    <Clock className="h-5 w-5 text-accent-800" aria-hidden="true" />
+                    Request sent
+                  </h2>
+                  <p className="text-sm leading-relaxed text-text-secondary">
+                    {monthYear(viewer.pending_request_at) ? (
+                      <>
+                        You asked on{' '}
+                        {new Date(viewer.pending_request_at as string).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                        .{' '}
+                      </>
+                    ) : null}
+                    {biz.name} sees it in their notifications. Once they accept, their bills come straight into your
+                    purchases.
+                  </p>
+                  {viewer.pending_request_message && (
+                    <blockquote className="rounded-xl bg-background px-3.5 py-2.5 text-sm text-text-primary">
+                      “{viewer.pending_request_message}”
+                    </blockquote>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <h2 className={`${headingFont} text-xl font-bold text-text-primary`}>Buy from {biz.name}</h2>
+                    <p className="text-sm leading-relaxed text-text-secondary">
+                      Once they accept, their bills come straight into your purchases and you see the items they keep
+                      for connected shops.
+                    </p>
                   </div>
-                </Card>
-              </li>
-            ))}
-          </ul>
+                  <label className="flex flex-col gap-1.5 text-[13px] font-medium text-text-primary">
+                    Message (optional)
+                    <textarea
+                      rows={3}
+                      value={msg}
+                      onChange={(e) => setMsg(e.target.value)}
+                      placeholder="Hi, I run a shop nearby and would like your price list."
+                      className="resize-y rounded-xl border border-[#D8D3C8] px-3 py-2.5 text-sm font-normal text-text-primary placeholder:text-[#6B7A75]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={requestConnection}
+                    disabled={submitting}
+                    className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-primary-600 text-base font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+                  >
+                    {submitting ? (
+                      <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Send className="h-[18px] w-[18px]" aria-hidden="true" />
+                    )}
+                    Ask to connect
+                  </button>
+                </>
+              )}
+              {!isSelf && biz.phone && (
+                <div className="flex gap-2.5">
+                  <a href={`tel:${biz.phone.replace(/[^\d+]/g, '')}`} className={outlineLink}>
+                    <Phone className="h-4 w-4" aria-hidden="true" />
+                    Call
+                  </a>
+                  {wa && (
+                    <a href={wa} target="_blank" rel="noopener noreferrer" className={outlineLink}>
+                      <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                      WhatsApp
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!isSelf && !viewer.is_linked && <HowItWorks className={`hidden [@container(min-width:52rem)]:flex`} />}
+          </aside>
+
+          <div className="flex min-w-0 flex-col gap-9 [@container(min-width:52rem)]:col-start-1 [@container(min-width:52rem)]:row-start-2">
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+              {facts.map((f) => (
+                <div key={f.label} className={`${cardClass} flex flex-col gap-1.5 p-4`}>
+                  <dt className="text-xs font-medium text-text-secondary">{f.label}</dt>
+                  <dd className={`${headingFont} text-xl font-bold text-text-primary`}>{f.value}</dd>
+                  {f.note && <dd className="text-xs text-text-secondary">{f.note}</dd>}
+                </div>
+              ))}
+            </dl>
+
+            <section aria-labelledby="catalogue" className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h2 id="catalogue" className={`${headingFont} text-[26px] font-bold text-text-primary`}>
+                  Catalogue
+                </h2>
+                {listings.length > 0 && (
+                  <span className="text-sm text-text-secondary">
+                    {listings.length === 1 ? '1 product' : `${listings.length} products`}
+                  </span>
+                )}
+              </div>
+              {tabs.length > 1 && (
+                <div role="group" aria-label="Catalogue categories" className="flex flex-wrap gap-2">
+                  {['', ...tabs].map((t) => (
+                    <button
+                      key={t || 'all'}
+                      type="button"
+                      aria-pressed={tab === t}
+                      onClick={() => setTab(t)}
+                      className={`inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium ${
+                        tab === t
+                          ? 'border-primary-600 bg-primary-600 text-white'
+                          : 'border-[#DCD6CA] bg-white text-text-primary hover:border-primary-300'
+                      }`}
+                    >
+                      {t || 'All'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {listings.length === 0 ? (
+                <div className={`${cardClass} p-5 text-sm text-text-secondary`}>
+                  {biz.name} has not listed any products yet.
+                </div>
+              ) : (
+                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-4">
+                  {shown.map((l) => (
+                    <li key={l.id}>
+                      <ProductCard listing={l} seed={biz.id} linked={viewer.is_linked} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {brands.length > 0 && (
+              <section aria-labelledby="brands" className={`${cardClass} flex flex-col gap-3 p-6`}>
+                <h2 id="brands" className={`${headingFont} text-[22px] font-bold text-text-primary`}>
+                  Brands carried
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {brands.map((b) => (
+                    <span
+                      key={b}
+                      className="rounded-lg border border-[#DCD6CA] px-2.5 py-1.5 text-[13px] text-text-primary"
+                    >
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {!isSelf && !viewer.is_linked && <HowItWorks className="[@container(min-width:52rem)]:hidden" />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: string; linked: boolean }) {
+  const name = l.display_name || l.item_name;
+  const pack = [l.item_brand, l.item_unit && `Sold per ${l.item_unit}`].filter(Boolean).join(' · ');
+  const terms = [l.moq && Number(l.moq) > 0 && `Min ${Number(l.moq).toLocaleString('en-IN')}`, l.lead_time_text]
+    .filter(Boolean)
+    .join(' · ');
+
+  let price: ReactNode = null;
+  if (l.price_display === 'from_amount' && l.from_amount) {
+    price = <span className="text-[13px] font-semibold text-text-primary">From {rupees(l.from_amount)}</span>;
+  } else if (!linked && l.price_display !== 'hidden') {
+    price = (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-800">
+        <Lock className="h-3 w-3" aria-hidden="true" />
+        Rate after connecting
+      </span>
+    );
+  } else if (l.price_display === 'on_request') {
+    price = <span className="text-xs text-text-secondary">Price on request</span>;
+  }
+
+  return (
+    <article className={`${cardClass} flex h-full flex-col overflow-hidden`}>
+      <ProductTile seed={seed} imageUrl={l.item_image_url} className="aspect-[4/3]" />
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
+        <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-text-primary">{name}</h3>
+        {pack && <span className="text-[13px] text-text-secondary">{pack}</span>}
+        {terms && <span className="text-xs text-text-secondary">{terms}</span>}
+        {l.audience === 'linked_only' && (
+          <span className="w-fit rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-text-primary">
+            For connected shops
+          </span>
+        )}
+        {(l.item_mrp || price) && (
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-2">
+            {l.item_mrp && Number(l.item_mrp) > 0 ? (
+              <span className="text-[13px] text-text-secondary">MRP {rupees(l.item_mrp)}</span>
+            ) : (
+              <span />
+            )}
+            {price}
+          </div>
         )}
       </div>
+    </article>
+  );
+}
+
+function HowItWorks({ className }: { className?: string }) {
+  return (
+    <div className={`flex flex-col gap-4 rounded-[20px] bg-primary-600 p-6 text-white ${className ?? ''}`}>
+      <h2 className={`${headingFont} text-lg font-bold`}>How it works</h2>
+      <ol className="flex flex-col gap-3.5">
+        {STEPS.map((s, i) => (
+          <li key={s.title} className="flex items-start gap-3">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-500 text-[13px] font-bold text-primary-900">
+              {i + 1}
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[15px] font-semibold">{s.title}</span>
+              <span className="text-[13px] leading-snug text-[#CFDDD8]">{s.body}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
