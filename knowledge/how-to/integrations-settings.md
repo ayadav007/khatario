@@ -45,8 +45,8 @@ Settings > Integrations > AI assistant is a preview of personality options for c
 
 Settings > WhatsApp:
 - **Connection** (every plan): link your WhatsApp number by QR code. The Meta Cloud API section (your own WhatsApp Business Account) needs the Connect plan.
-- **Notifications** (Starter plan and above): automatic payment reminders, with links to send reminders now and to the reminder history.
-- **Templates, Inbox & team, AI agent, Shop**: need the Connect plan.
+- **Reminders** (Starter plan and above): automatic payment reminders, with links to send reminders now and to the reminder history.
+- **Team & inbox, AI agent, Templates, Shop**: need the Connect plan. Team & inbox holds WhatsApp agents, chat sharing and saved replies.
 
 Sending invoices and one-off reminders works on every plan. Automatic and bulk reminders start at Starter and do not need Connect.
 
@@ -56,7 +56,7 @@ Settings > Integrations > All integrations lists Email (SMTP), Send invoices on 
 
 ## Can I automate tasks with workflow automation?
 
-Not yet. The Workflow automation page in Settings > General is a preview and workflows created there do not run. For automatic payment reminders, use Settings > WhatsApp > Notifications (Starter plan and above).
+Not yet. The Workflow automation page in Settings > General is a preview and workflows created there do not run. For automatic payment reminders, use Settings > WhatsApp > Reminders (Starter plan and above).
 
 ## What are account mappings and do I need them?
 

@@ -3,10 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import { BookOpen, Bot, ChevronRight, Loader2, Workflow, type LucideIcon } from 'lucide-react';
+import { Bot, ChevronRight, Loader2, Workflow, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWhatsAppAccess } from '@/components/whatsapp/settings/useWhatsAppAccess';
+import { ConnectTeamCard } from '@/components/whatsapp/settings/ConnectTeamCard';
 import { InboxOwnershipSettingsCard } from '@/components/whatsapp/settings/InboxOwnershipSettingsCard';
+import { SavedRepliesCard } from '@/components/whatsapp/settings/SavedRepliesCard';
 import { ConnectLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
 import { WHATSAPP_SETTINGS_BASE } from '@/components/whatsapp/settings/WhatsAppSettingsNav';
 
@@ -25,7 +27,7 @@ function LinkRow({ href, icon: Icon, title, body }: { href: string; icon: Lucide
   );
 }
 
-export default function WhatsAppInboxSettingsPage() {
+export default function WhatsAppTeamInboxSettingsPage() {
   const { business } = useAuth();
   const { hasConnect, loading } = useWhatsAppAccess();
 
@@ -42,12 +44,12 @@ export default function WhatsAppInboxSettingsPage() {
       <SettingsPageBody>
         <SettingsBlock
           bare
-          title="Shared inbox"
+          title="Team & inbox"
           description="Share one WhatsApp number with your team and reply faster with saved answers."
         >
           <ConnectLockedCard
-            title="The shared inbox comes with Connect"
-            description="Unlock conversations, team assignment, keyword auto-replies and saved replies."
+            title="The team inbox comes with Connect"
+            description="Give agents their own login, share chats without two people answering the same customer, and keep saved replies for common questions."
           />
         </SettingsBlock>
       </SettingsPageBody>
@@ -57,6 +59,14 @@ export default function WhatsAppInboxSettingsPage() {
   return (
     <SettingsPageBody>
       <SettingsBlock
+        id="connect-agents"
+        title="WhatsApp agents"
+        description="Agents log in with their phone number and land in Conversations. They use Connect agent seats, not your Billing users. Move someone to Billing if they also need to create invoices."
+      >
+        <ConnectTeamCard />
+      </SettingsBlock>
+
+      <SettingsBlock
         id="inbox-assignment"
         title="How your team shares chats"
         description="Chats move between Active, Requesting and Intervened. Agents pick up waiting chats with Intervene, so two people never answer the same customer."
@@ -65,17 +75,19 @@ export default function WhatsAppInboxSettingsPage() {
       </SettingsBlock>
 
       <SettingsBlock
-        id="inbox-replies"
-        title="Ready-made replies"
-        description="Answers your team, or simple keyword rules, can send without typing. For smart answers, use the AI agent."
+        id="saved-replies"
+        title="Saved replies"
+        description="Short answers your team inserts in a chat by tapping them or typing /shortcut."
+      >
+        <SavedRepliesCard businessId={business.id} />
+      </SettingsBlock>
+
+      <SettingsBlock
+        id="inbox-automation"
+        title="Automatic answers"
+        description="Let customers get answers when nobody on the team is free."
       >
         <div className="divide-y divide-border dark:divide-border-dark">
-          <LinkRow
-            href="/whatsapp/saved-replies"
-            icon={BookOpen}
-            title="Saved replies"
-            body="Short answers your team inserts in a chat with a shortcut."
-          />
           <LinkRow
             href="/whatsapp/flows"
             icon={Workflow}

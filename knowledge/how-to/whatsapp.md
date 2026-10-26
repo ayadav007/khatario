@@ -21,14 +21,17 @@ The QR link works on every plan, including Free. To send through the official Wh
 
 ## Where do I find each WhatsApp setting?
 
-Settings > WhatsApp has these tabs:
+Settings > WhatsApp has these tabs, in setup order:
 
-- Connection: your number, QR code and Meta Cloud API.
-- Templates: which approved Meta template each message uses (Connect with Cloud API only).
-- Notifications: automatic payment reminders (Starter plan and above) and updates sent to you.
-- Inbox & team: how chats are assigned and saved replies (Connect).
-- AI agent: the assistant that answers customer chats (Connect).
-- Shop: take orders on WhatsApp (Connect).
+- Connection: your number by QR code, and the Meta Cloud API (Connect).
+- Reminders: automatic payment reminders (Starter plan and above) and updates sent to you.
+
+Under the Connect heading (each shows a lock until you have the Connect plan):
+
+- Team & inbox: WhatsApp agents, how chats are shared, and saved replies.
+- AI agent: the assistant that answers customer chats.
+- Templates: which approved Meta template each message uses (Cloud API only).
+- Shop: take orders on WhatsApp.
 
 ## How do I send an invoice on WhatsApp?
 
@@ -37,13 +40,13 @@ Open the invoice and tap the WhatsApp button. The customer's mobile number must 
 ## How do I send payment reminders now?
 
 - One customer (every plan): in Sales > Customers, tap the green WhatsApp icon next to a customer who owes you money (their mobile number must be saved).
-- Many invoices at once (Starter plan and above): open Payment Reminders (or Settings > WhatsApp > Notifications > Send reminders), pick the invoices and send. The History tab shows what was sent and whether it was delivered.
+- Many invoices at once (Starter plan and above): open Payment Reminders (or Settings > WhatsApp > Reminders > Send reminders), pick the invoices and send. The History tab shows what was sent and whether it was delivered.
 
 These go out from your QR-linked number; you do not need Connect.
 
 ## How do I set up automatic payment reminders?
 
-Automatic reminders are included from the Starter plan upwards. Open Settings > WhatsApp > Notifications, turn on the payment-due reminder (how many days before the due date) and the overdue reminder (how often to repeat), and save. They are sent from your QR-linked number, so keep it connected; with Connect and the Cloud API set up they go through the official API instead. On the Free plan reminders are sent by hand only.
+Automatic reminders are included from the Starter plan upwards. Open Settings > WhatsApp > Reminders, turn on the payment-due reminder (how many days before the due date) and the overdue reminder (how often to repeat), and save. They are sent from your QR-linked number, so keep it connected; with Connect and the Cloud API set up they go through the official API instead. On the Free plan reminders are sent by hand only.
 
 ## Why did my WhatsApp message fail?
 

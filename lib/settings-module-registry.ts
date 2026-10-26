@@ -5,6 +5,7 @@
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
+import { WHATSAPP_SETTINGS_LEGACY_TEAM, WHATSAPP_SETTINGS_PAGES } from '@/lib/whatsapp-settings-pages';
 
 export const SETTINGS_MODULE_ORDER: PlatformModule[] = ['billing', 'hr', 'connect', 'crm'];
 
@@ -177,56 +178,16 @@ const SETTINGS_TAIL_GROUPS: SettingsNavGroup[] = [
   },
 ];
 
-/** WhatsApp pages, matching the in-page tabs. Inbox and agents are Connect-only in the menu. */
+/** WhatsApp pages, same list and order as the in-page tabs (Connect pages show a lock without Connect). */
 export const WHATSAPP_SETTINGS_GROUP: SettingsNavGroup = {
   id: 'whatsapp',
   title: 'WhatsApp',
-  links: [
-    {
-      href: '/settings/whatsapp',
-      label: 'Connection',
-      searchKeywords: ['whatsapp', 'qr', 'meta', 'cloud api'],
-      accessModules: ['billing', 'connect'],
-    },
-    {
-      href: '/settings/whatsapp/templates',
-      label: 'Templates',
-      searchKeywords: ['whatsapp', 'template', 'reminder', 'invoice'],
-      accessModules: ['billing', 'connect'],
-    },
-    {
-      href: '/settings/whatsapp/notifications',
-      label: 'Notifications',
-      searchKeywords: ['whatsapp', 'reminder', 'notification'],
-      accessModules: ['billing', 'connect'],
-    },
-    {
-      href: '/settings/whatsapp/inbox',
-      label: 'Inbox & team',
-      searchKeywords: ['whatsapp', 'inbox', 'auto assign'],
-      accessModules: ['billing', 'connect'],
-      showForModules: ['connect'],
-    },
-    {
-      href: '/settings/whatsapp/team',
-      label: 'Agents',
-      searchKeywords: ['whatsapp', 'agents', 'team'],
-      accessModules: ['billing', 'connect'],
-      showForModules: ['connect'],
-    },
-    {
-      href: '/settings/whatsapp/ai-agent',
-      label: 'AI agent',
-      searchKeywords: ['ai', 'ai agent', 'chatbot', 'bot', 'assistant', 'knowledge'],
-      accessModules: ['billing', 'connect'],
-    },
-    {
-      href: '/settings/whatsapp/shop',
-      label: 'Shop',
-      searchKeywords: ['shop', 'catalog', 'whatsapp'],
-      accessModules: ['billing', 'connect'],
-    },
-  ],
+  links: WHATSAPP_SETTINGS_PAGES.map((page) => ({
+    href: page.href,
+    label: page.label,
+    searchKeywords: page.searchKeywords,
+    accessModules: ['billing', 'connect'],
+  })),
 };
 
 /**
@@ -235,6 +196,7 @@ export const WHATSAPP_SETTINGS_GROUP: SettingsNavGroup = {
  */
 export const SETTINGS_ACCESS_ONLY: { href: string; modules: PlatformModule[] }[] = [
   { href: '/settings/holidays', modules: ['hr'] },
+  { href: WHATSAPP_SETTINGS_LEGACY_TEAM, modules: ['billing', 'connect'] },
 ];
 
 export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleDefinition> = {

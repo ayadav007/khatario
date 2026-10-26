@@ -21,17 +21,16 @@ describe('buildFlatSettingsGroups', () => {
     expect(items).toContain('Holiday lists');
     expect(items).toContain('Connection');
     expect(items).toContain('AI agent');
-    expect(items).not.toContain('Inbox & team');
   });
 
-  it('shows connect inbox links only when connect is enabled', () => {
-    const connectItems = labels(['connect']);
-    expect(connectItems).toContain('Inbox & team');
-    expect(connectItems).toContain('Agents');
-    expect(connectItems).not.toContain('Templates & printing');
-
-    const billingItems = labels(['billing']);
-    expect(billingItems).toContain('Templates');
-    expect(billingItems).not.toContain('Inbox & team');
+  it('lists the same WhatsApp pages for billing and connect, in setup order', () => {
+    const whatsapp = ['Connection', 'Reminders', 'Team & inbox', 'AI agent', 'Templates', 'Shop'];
+    for (const mods of [['billing'], ['connect']] as const) {
+      const items = labels([...mods]);
+      expect(items.filter((label) => whatsapp.includes(label))).toEqual(whatsapp);
+      expect(items).not.toContain('Agents');
+      expect(items).not.toContain('Inbox & team');
+    }
+    expect(labels(['connect'])).not.toContain('Templates & printing');
   });
 });

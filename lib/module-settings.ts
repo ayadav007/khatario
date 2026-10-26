@@ -3,6 +3,8 @@
  * Keeps module-related settings in one place instead of a single deep link.
  */
 
+import { WHATSAPP_SETTINGS_PAGES } from '@/lib/whatsapp-settings-pages';
+
 export type ModuleSettingsSheetId =
   | 'items'
   | 'invoicing'
@@ -59,14 +61,8 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
       ariaLabel: 'WhatsApp settings',
       iconKind: 'whatsapp',
       entries: [
-        { href: '/settings/whatsapp', label: 'Connection', description: 'Link your business number' },
-        { href: '/settings/whatsapp/templates', label: 'Templates', description: 'Message templates for invoices and reminders' },
-        { href: '/settings/whatsapp/notifications', label: 'Notifications', description: 'Payment reminders and updates for you' },
-        { href: '/settings/whatsapp/inbox', label: 'Inbox & team', description: 'Chat assignment and saved replies', requiresModule: 'connect' },
-        { href: '/whatsapp/flows', label: 'Flows', description: 'Guided journeys and AI generate', requiresModule: 'connect' },
-        { href: '/settings/whatsapp/team', label: 'Agents', description: 'WhatsApp agent logins and seats', requiresModule: 'connect' },
-        { href: '/settings/whatsapp/ai-agent', label: 'AI agent', description: 'Answer customer chats automatically' },
-        { href: '/settings/whatsapp/shop', label: 'Shop', description: 'WhatsApp catalog and orders' },
+        ...WHATSAPP_SETTINGS_PAGES.map(({ href, label, description }) => ({ href, label, description })),
+        { href: '/whatsapp/flows', label: 'Flows', description: 'Guided journeys and AI generate' },
         { href: '/settings/products', label: 'Your products', description: 'Enable or manage Connect' },
       ],
     };

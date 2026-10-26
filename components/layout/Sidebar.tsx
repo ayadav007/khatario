@@ -988,7 +988,6 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/whatsapp/templates': FileText,
       '/settings/whatsapp/notifications': Bell,
       '/settings/whatsapp/inbox': Inbox,
-      '/settings/whatsapp/team': Users,
       '/settings/whatsapp/ai-agent': Bot,
       '/settings/whatsapp/shop': ShoppingBag,
       '/settings/online-store': ShoppingBag,
