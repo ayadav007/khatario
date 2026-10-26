@@ -181,6 +181,10 @@ else
 fi
 echo ""
 
+# The build typechecks .next/types first; types left from the last build still point at
+# pages deleted since then. next build regenerates them, and the running server never reads them.
+rm -rf .next/types
+
 echo ">> npm run build"
 npm run build
 echo ""
