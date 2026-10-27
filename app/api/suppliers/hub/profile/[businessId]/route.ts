@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { trustForBusinesses } from '@/lib/supplier-trust';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
@@ -148,8 +149,11 @@ export async function GET(
       [targetId, isLinked]
     );
 
+    const trust = (await trustForBusinesses([targetId])).get(targetId) ?? null;
+
     return NextResponse.json({
       business,
+      trust,
       discovery: {
         visibility: discovery.visibility,
         profile_summary: discovery.profile_summary,

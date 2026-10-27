@@ -193,6 +193,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron-staging.log 2>&1
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron-staging.log 2>&1
 20 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron-staging.log 2>&1
+*/5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
@@ -207,9 +208,12 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron.log 2>&1
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron.log 2>&1
 25 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron.log 2>&1
+*/5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron.log 2>&1
 ```
 
 `/api/cron/check-low-stock` drives the Supplier Hub reorder loop. It alerts each supplier when a connected buyer who shares stock has an item at or below its reorder level, and builds or tops up one suggested order per buyer and supplier. Stock changes also queue the alert part a few seconds after they are saved; suggested orders are built only here, and this run also catches any alert the queue missed. An item already alerted or already on an open order is skipped, so repeated runs never notify twice. Without this entry, suggested orders are only built when a supplier opens Buyers low on stock.
+
+`/api/cron/supplier-hub-whatsapp` sends Supplier Hub updates (new order, order to confirm, bill, dispatch, connection request) from the platform WhatsApp number. Each update is written to an outbox with the change and normally sent a few seconds after it is saved; this job sends anything a restart left behind. Nothing goes out until the `khatario_supplier_hub_update` template (seeded as a draft by migration 424, event `supplier_hub_update`) is submitted and approved in `/admin` → WhatsApp templates. A business can switch the updates off in Settings → Suppliers directory.
 
 `/api/cron/whatsapp-auto-resolve` keeps the WhatsApp inbox tidy: chats owned by a removed or deactivated agent go back to Requesting, and chats an agent intervened in are resolved (handed back to the bot) once the customer has been silent for 24 hours. Businesses can switch auto-resolve off in Settings > WhatsApp > Inbox. Both steps only touch chats that still qualify, so repeated runs are safe.
 

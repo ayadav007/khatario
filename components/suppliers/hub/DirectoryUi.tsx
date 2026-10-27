@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { BadgeCheck, Package } from 'lucide-react';
 import { isValidGstin } from '@/lib/tax/gstin';
+import { trustChips, type SupplierTrust } from '@/lib/suppliers-hub';
 
 /**
  * Shared pieces for the Find suppliers list and the supplier profile:
@@ -101,13 +102,33 @@ export function ProductTile({
  * Shown when the GSTIN on file passes the format and checksum test. That is not proof the
  * registration is active, so the label says the number was checked, not that the business was.
  */
-export function GstinBadge({ gstin, compact = false }: { gstin: string | null | undefined; compact?: boolean }) {
+/**
+ * The green tick means the GST registry shows this GSTIN as Active (lib/supplier-trust).
+ * A GSTIN that is only well-formed gets a plain "GSTIN on file" label, never the tick.
+ */
+export function GstinBadge({
+  gstin,
+  verified = false,
+  compact = false,
+}: {
+  gstin: string | null | undefined;
+  verified?: boolean;
+  compact?: boolean;
+}) {
   if (!gstin || !isValidGstin(gstin)) return null;
+  if (!verified) {
+    if (compact) return null;
+    return (
+      <span className="inline-flex items-center rounded-full bg-[#F1F3F2] px-2.5 py-1 font-sans text-[13px] font-medium text-text-secondary">
+        GSTIN on file
+      </span>
+    );
+  }
   if (compact) {
     return (
       <BadgeCheck
         role="img"
-        aria-label="GSTIN checked"
+        aria-label="GST verified"
         className="h-[18px] w-[18px] shrink-0 fill-[#0F7A5A] text-white"
       />
     );
@@ -115,8 +136,24 @@ export function GstinBadge({ gstin, compact = false }: { gstin: string | null | 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E3F2EB] px-2.5 py-1 font-sans text-[13px] font-semibold text-[#0B5E45]">
       <BadgeCheck aria-hidden="true" className="h-4 w-4 fill-[#0F7A5A] text-white" />
-      GSTIN checked
+      GST verified
     </span>
+  );
+}
+
+/** Fill rate, reply time and years on Khatario as quiet text chips. */
+export function TrustFacts({ trust }: { trust: SupplierTrust | null | undefined }) {
+  const facts = trustChips(trust).filter((c) => c !== 'GST verified');
+  if (!facts.length) return null;
+  return (
+    <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-text-secondary">
+      {facts.map((f) => (
+        <li key={f} className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-[#7c918d]" />
+          {f}
+        </li>
+      ))}
+    </ul>
   );
 }
 

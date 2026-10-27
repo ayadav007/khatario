@@ -94,7 +94,7 @@ export async function loadSellerInsights(businessId: string, client?: PoolClient
          JOIN supply_order_lines l ON l.order_id = o.id
         WHERE o.vendor_business_id = $1
           AND o.origin IN ('buyer', 'catalog')
-          AND o.status IN ('confirmed', 'partial', 'invoiced', 'received')
+          AND o.status IN ('confirmed', 'partial', 'invoiced', 'dispatched', 'received')
           AND o.created_at >= NOW() - INTERVAL '90 days'`,
       [businessId]
     ).then((r) => r.rows[0]),
@@ -331,8 +331,14 @@ export async function loadHubHome(businessId: string, client?: PoolClient): Prom
         ...base,
         key: `order-${o.id}`,
         kind: 'order_to_answer',
-        title: `${o.other_business_name} ordered ${plural(o.line_count, 'item')}`,
-        detail: 'Confirm how much of each you can supply.',
+        title:
+          o.origin === 'backorder'
+            ? `Backorder for ${o.other_business_name}: ${plural(o.line_count, 'item')}`
+            : `${o.other_business_name} ordered ${plural(o.line_count, 'item')}`,
+        detail:
+          o.origin === 'backorder'
+            ? 'The rest of an order you partly confirmed. Confirm it when the stock is in.'
+            : 'Confirm how much of each you can supply.',
         action: { kind: 'link', label: 'Answer', href: `/supply-orders/${o.id}` },
       });
     } else {

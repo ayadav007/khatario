@@ -5,6 +5,7 @@ import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import {
   CustomerLinkError,
   ensureVendorCustomerLink,
+  execFor,
   previewVendorCustomerLink,
   type CustomerLinkChoice,
 } from '@/lib/supplier-hub-links';
@@ -309,6 +310,12 @@ export async function PATCH(
         id,
       ]
     );
+    const { queueHubWhatsApp } = await import('@/lib/supplier-hub-whatsapp');
+    await queueHubWhatsApp(execFor(), row.buyer_business_id, {
+      title: `${peer.name} accepted your connection request`,
+      detail: 'You can order from them and receive their bills in Supplier Hub.',
+      path: '/suppliers/hub',
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {

@@ -4,6 +4,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import type { BusinessDiscovery } from '@/types/database';
 import { normalizeCategoryList } from '@/lib/suppliers-hub';
+import { refreshGstVerification } from '@/lib/supplier-trust';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,9 @@ const COVER_MAX_CHARS = Math.ceil((2 * 1024 * 1024 * 4) / 3) + 100;
  * GET /api/suppliers/hub/discovery — current business discovery settings
  * PATCH — update. Business and user come from the session only; `directory_approved` is a
  * platform decision and is never taken from the body. `cover_image_url` sets or clears (null)
- * the profile cover photo; it needs migration 420.
+ * the profile cover photo; it needs migration 420. `hub_whatsapp_enabled` switches Supplier Hub
+ * updates on WhatsApp for the business (migration 424). Listing in the directory or by link
+ * looks the GSTIN up in the GST registry in the background, for the "GST verified" badge.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -36,8 +39,13 @@ export async function GET(request: NextRequest) {
       `SELECT * FROM business_discovery WHERE business_id = $1`,
       [businessId]
     );
+    const hubWhatsApp = await db
+      .queryOne<{ on: boolean }>(`SELECT hub_whatsapp_enabled AS on FROM businesses WHERE id = $1`, [businessId])
+      .catch(() => null);
+    const hub_whatsapp_enabled = hubWhatsApp?.on ?? true;
     if (!row) {
       return NextResponse.json({
+        hub_whatsapp_enabled,
         discovery: {
           business_id: businessId,
           visibility: 'hidden',
@@ -48,7 +56,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
-    return NextResponse.json({ discovery: row });
+    return NextResponse.json({ discovery: row, hub_whatsapp_enabled });
   } catch (e: any) {
     console.error('hub discovery GET', e);
     return NextResponse.json({ error: e.message || 'Failed' }, { status: 500 });
@@ -60,7 +68,7 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const businessId = getSessionScopedBusinessId(request);
     const userId = getAuthenticatedUserId(request);
-    const { visibility, profile_summary, featured_categories, public_slug, cover_image_url } = body;
+    const { visibility, profile_summary, featured_categories, public_slug, cover_image_url, hub_whatsapp_enabled } = body;
 
     if (!businessId || !userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -205,6 +213,13 @@ export async function PATCH(request: NextRequest) {
         }
         throw error;
       }
+    }
+
+    if (typeof hub_whatsapp_enabled === 'boolean') {
+      await db.query(`UPDATE businesses SET hub_whatsapp_enabled = $2 WHERE id = $1`, [businessId, hub_whatsapp_enabled]);
+    }
+    if (updated && updated.visibility !== 'hidden') {
+      refreshGstVerification(businessId).catch((error) => console.error('hub GST verification', error));
     }
 
     return NextResponse.json({ discovery: updated });

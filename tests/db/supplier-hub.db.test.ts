@@ -10,7 +10,7 @@
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–394 and 421 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–394 and 421–424 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -49,6 +49,22 @@ jest.mock('@/lib/subscription', () => ({
   getBusinessSubscription: jest.fn().mockResolvedValue({ status: 'active', end_date: null }),
   isSubscriptionOperationalStatus: jest.fn(() => true),
 }));
+// WhatsApp and the GST registry are outside services; record what would be sent or asked.
+jest.mock('@/lib/platform-whatsapp-send', () => ({
+  lookupTenantWhatsAppPhone: jest.fn().mockResolvedValue('9876543210'),
+  sendPlatformEventWhatsApp: jest.fn().mockResolvedValue({ sent: true, skipped: null }),
+}));
+jest.mock('@/lib/gstin-registry', () => ({
+  fetchGstinRegistry: jest.fn().mockResolvedValue({
+    source: 'test',
+    record: {
+      gstin: '27AAPFU0939F1ZV',
+      lgnm: 'HUB STRANGER TRADING LLP',
+      sts: 'Active',
+      pradr: { addr: { dst: 'Pune', pncd: '411001' } },
+    },
+  }),
+}));
 jest.mock('@/lib/activity-logger', () => ({
   logActivity: jest.fn().mockResolvedValue(undefined),
   getClientIP: jest.fn(() => '127.0.0.1'),
@@ -60,6 +76,10 @@ import { closePool, query, queryOne } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { checkLowStockForItem, queueLowStockCheck } from '@/lib/low-stock-checker';
 import { PATCH as discoveryPATCH } from '@/app/api/suppliers/hub/discovery/route';
+import { GET as directoryGET } from '@/app/api/suppliers/hub/directory/route';
+import { flushHubWhatsApp } from '@/lib/supplier-hub-whatsapp';
+import { refreshGstVerification, trustForBusinesses } from '@/lib/supplier-trust';
+import { sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import { POST as createSupplier } from '@/app/api/suppliers/route';
 import { POST as approveSupplier } from '@/app/api/suppliers/[id]/approve/route';
 import { POST as createStockRequest } from '@/app/api/stock-requests/route';
@@ -71,7 +91,7 @@ import { GET as ordersGET, POST as ordersPOST } from '@/app/api/supply-orders/ro
 import { GET as orderGET, PATCH as orderPATCH } from '@/app/api/supply-orders/[id]/route';
 import { GET as invoiceDraftGET } from '@/app/api/supply-orders/[id]/invoice-draft/route';
 import { POST as suggestPOST } from '@/app/api/supply-orders/suggest/route';
-import { claimSupplyOrderForInvoice } from '@/lib/supply-orders';
+import { claimSupplyOrderForInvoice, markSupplyOrderReceived } from '@/lib/supply-orders';
 import { GET as collectionsGET, POST as collectionsPOST } from '@/app/api/suppliers/hub/collections/route';
 import { PATCH as collectionPATCH } from '@/app/api/suppliers/hub/collections/[id]/route';
 import { GET as newArrivalsGET } from '@/app/api/suppliers/hub/new-arrivals/route';
@@ -136,6 +156,8 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(migration('393_supply_orders.sql'));
     await query(migration('394_supplier_collections.sql'));
     await query(migration('421_connection_request_share_low_stock.sql'));
+    await query(migration('423_supply_order_backorder_dispatch.sql'));
+    await query(migration('424_supplier_hub_whatsapp_trust.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -183,6 +205,8 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
       await query(`DELETE FROM notifications WHERE business_id = ANY($1::uuid[])`, [[A, B, C]]);
       await query(`DELETE FROM low_stock_alerts WHERE customer_business_id = $1`, [A]);
       await query(`DELETE FROM quantity_requests WHERE requester_business_id = $1 OR responder_business_id = $1`, [A]);
+      // Orders go before the businesses, or their lines lose both items mid-cascade.
+      await query(`DELETE FROM supply_orders WHERE buyer_business_id = ANY($1::uuid[])`, [[A, B, C]]);
       const { getPool } = await import('@/lib/db');
       const client = await getPool().connect();
       try {
@@ -829,6 +853,15 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     expect((await orderPATCH(call('PATCH', url, UB, B, { action: 'respond', lines: [{ id: line.id, confirmed_qty: 9 }] }), octx)).status).toBe(400);
     const partial = await orderPATCH(call('PATCH', url, UB, B, { action: 'respond', lines: [{ id: line.id, confirmed_qty: 2 }] }), octx);
     expect((await partial.json()).status).toBe('partial');
+    // The carton B could not send now waits on a backorder for B to confirm later.
+    const backorder = await queryOne(
+      `SELECT o.id, o.status, o.origin, l.qty, l.vendor_item_id FROM supply_orders o JOIN supply_order_lines l ON l.order_id = o.id
+        WHERE o.parent_order_id = $1`,
+      [order.id]
+    );
+    expect(backorder).toMatchObject({ status: 'pending', origin: 'backorder', vendor_item_id: ITEM_B });
+    expect(Number(backorder.qty)).toBe(1);
+    await query(`UPDATE supply_orders SET status = 'cancelled' WHERE id = $1`, [backorder.id]);
     const cancelled = await orderPATCH(call('PATCH', url, UA, A, { action: 'cancel' }), octx);
     expect((await cancelled.json()).status).toBe('cancelled');
     expect((await orderPATCH(call('PATCH', url, UA, A, { action: 'cancel' }), octx)).status).toBe(409);
@@ -845,6 +878,80 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(`INSERT INTO suppliers (id, business_id, name, linked_business_id, approval_status) VALUES ($1, $2, 'B', $3, 'pending')`, [cSupplier, C, B]);
     const cOrder = await ordersPOST(post('/api/supply-orders', UC, C, { supplier_id: cSupplier, lines: [{ vendor_item_id: ITEM_B, qty: 1 }] }));
     expect(cOrder.status).toBe(403);
+  });
+
+  it('orders: B sets its pack size on an unmatched line, bills it to a customer with a state, and dispatches', async () => {
+    const BUYER_ITEM = randomUUID();
+    const VENDOR_BOX = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Hide & Seek 100g', 'PCS', 'goods', true)`,
+      [BUYER_ITEM, A]
+    );
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, selling_price) VALUES ($1, $2, 'Hide & Seek box', 'BOX', 'goods', true, 240)`,
+      [VENDOR_BOX, B]
+    );
+    const res = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ buyer_item_id: BUYER_ITEM, buyer_qty: 35 }] })
+    );
+    const { order } = await res.json();
+    const line = await queryOne(`SELECT id, qty, vendor_item_id FROM supply_order_lines WHERE order_id = $1`, [order.id]);
+    expect(line.vendor_item_id).toBeNull();
+    expect(Number(line.qty)).toBe(35);
+
+    const octx = { params: { id: order.id } };
+    const url = `/api/supply-orders/${order.id}`;
+    // 35 pieces at 12 a box is 3 whole boxes; B confirms all of it.
+    const answered = await orderPATCH(
+      call('PATCH', url, UB, B, { action: 'respond', lines: [{ id: line.id, vendor_item_id: VENDOR_BOX, factor: 12 }] }),
+      octx
+    );
+    expect((await answered.json()).status).toBe('confirmed');
+    const after = await queryOne(
+      `SELECT qty, confirmed_qty, buyer_units_per_vendor_unit AS factor FROM supply_order_lines WHERE id = $1`,
+      [line.id]
+    );
+    expect([Number(after.qty), Number(after.confirmed_qty), Number(after.factor)]).toEqual([3, 3, 12]);
+    const link = await queryOne(
+      `SELECT buyer_item_id, buyer_units_per_vendor_unit AS factor FROM supplier_item_links
+        WHERE buyer_business_id = $1 AND vendor_business_id = $2 AND vendor_item_id = $3`,
+      [A, B, VENDOR_BOX]
+    );
+    expect(link.buyer_item_id).toBe(BUYER_ITEM);
+    expect(Number(link.factor)).toBe(12);
+    expect(await queryOne(`SELECT id FROM supply_orders WHERE parent_order_id = $1`, [order.id])).toBeNull();
+
+    // The bill's place of supply comes from the customer's state, filled from A's business.
+    await query(`UPDATE businesses SET state = 'Karnataka' WHERE id = $1`, [A]);
+    await query(`UPDATE customers SET state = NULL, state_code = NULL WHERE id = $1`, [CUST_A_AT_B]);
+    const draft = await invoiceDraftGET(call('GET', `${url}/invoice-draft`, UB, B), octx);
+    expect(draft.status).toBe(200);
+    expect((await draft.json()).customer_id).toBe(CUST_A_AT_B);
+    const cust = await queryOne(`SELECT state, state_code, gstin FROM customers WHERE id = $1`, [CUST_A_AT_B]);
+    expect(cust).toMatchObject({ state: 'Karnataka', state_code: '29' });
+    expect(cust.gstin).toBeTruthy();
+
+    // Billed, then dispatched with a note, then received by A.
+    const BILL = INVOICE;
+    await query(`UPDATE supply_orders SET status = 'invoiced', invoice_id = NULL WHERE id = $1`, [order.id]);
+    expect((await orderPATCH(call('PATCH', url, UA, A, { action: 'dispatch' }), octx)).status).toBe(409);
+    const sent = await orderPATCH(call('PATCH', url, UB, B, { action: 'dispatch', note: 'VRL Logistics LR 4471' }), octx);
+    expect((await sent.json()).status).toBe('dispatched');
+    const shown = await (await orderGET(call('GET', url, UA, A), octx)).json();
+    expect(shown.order).toMatchObject({ status: 'dispatched', dispatch_note: 'VRL Logistics LR 4471' });
+    const asBuyer = await (await ordersGET(call('GET', '/api/supply-orders?role=buyer&group=action', UA, A))).json();
+    expect(JSON.stringify(asBuyer)).toContain(order.id);
+
+    // Any bill of B's to A will do here; receiving it is covered above.
+    await query(`UPDATE supply_orders SET invoice_id = $2 WHERE id = $1`, [order.id, BILL]);
+    const pool = (await import('@/lib/db')).getPool();
+    const client = await pool.connect();
+    try {
+      await markSupplyOrderReceived(client, A, BILL, null as unknown as string);
+    } finally {
+      client.release();
+    }
+    expect((await queryOne(`SELECT status FROM supply_orders WHERE id = $1`, [order.id])).status).toBe('received');
   });
 
   it('collections: publish notifies buyers once, mute, catalog order with MOQ and sets (Phase 6)', async () => {
@@ -1170,6 +1277,117 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     expect(row).toMatchObject({ directory_approved: false, updated_by_user_id: UB });
     const untouched = await queryOne(`SELECT business_id FROM business_discovery WHERE business_id = $1`, [A]);
     expect(untouched).toBeNull();
+  });
+
+  it('hub notices go out on WhatsApp once, after the change is saved, unless switched off', async () => {
+    const send = sendPlatformEventWhatsApp as jest.Mock;
+    await flushHubWhatsApp(500);
+    send.mockClear();
+
+    const res = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ vendor_item_id: ITEM_B, qty: 1 }] })
+    );
+    expect(res.status).toBe(201);
+    const { order } = await res.json();
+    const queued = await queryOne(
+      `SELECT status, path FROM supplier_hub_whatsapp_outbox WHERE business_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [B]
+    );
+    expect(queued).toMatchObject({ status: 'queued', path: `/supply-orders/${order.id}` });
+
+    expect((await flushHubWhatsApp(500)).sent).toBeGreaterThanOrEqual(1);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'supplier_hub_update',
+        toPhone: '9876543210',
+        vars: [expect.stringContaining('New order from'), expect.any(String), expect.stringContaining(`/supply-orders/${order.id}`)],
+      })
+    );
+
+    // A second update about the same order within 10 minutes is not sent again.
+    send.mockClear();
+    const octx = { params: { id: order.id } };
+    await orderPATCH(call('PATCH', `/api/supply-orders/${order.id}`, UA, A, { action: 'cancel' }), octx);
+    await flushHubWhatsApp(500);
+    expect(send).not.toHaveBeenCalled();
+    const repeat = await queryOne(
+      `SELECT status, skip_reason FROM supplier_hub_whatsapp_outbox WHERE business_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [B]
+    );
+    expect(repeat).toMatchObject({ status: 'skipped', skip_reason: 'SENT_RECENTLY' });
+
+    // Switched off in settings: nothing is sent.
+    const off = await discoveryPATCH(call('PATCH', '/api/suppliers/hub/discovery', UB, B, { hub_whatsapp_enabled: false }));
+    expect(off.status).toBe(200);
+    const again = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ vendor_item_id: ITEM_B, qty: 1 }] })
+    );
+    expect(again.status).toBe(201);
+    await flushHubWhatsApp(500);
+    expect(send).not.toHaveBeenCalled();
+    const skipped = await queryOne(
+      `SELECT skip_reason FROM supplier_hub_whatsapp_outbox WHERE business_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [B]
+    );
+    expect(skipped.skip_reason).toBe('TURNED_OFF');
+  });
+
+  it('directory trust: GST verified from the registry, district filter, fill rate and reply time', async () => {
+    const VALID_GSTIN = '27AAPFU0939F1ZV';
+    await query(`UPDATE businesses SET gstin = $2, created_at = '2024-05-01' WHERE id = $1`, [C, VALID_GSTIN]);
+    await query(
+      `INSERT INTO business_discovery (business_id, visibility, profile_summary) VALUES ($1, 'directory', 'Kitchenware wholesale')
+       ON CONFLICT (business_id) DO UPDATE SET visibility = 'directory', profile_summary = 'Kitchenware wholesale'`,
+      [C]
+    );
+    await refreshGstVerification(C);
+    const disc = await queryOne(
+      `SELECT gst_verified_gstin, gst_status, gst_district FROM business_discovery WHERE business_id = $1`,
+      [C]
+    );
+    expect(disc).toMatchObject({ gst_verified_gstin: VALID_GSTIN, gst_status: 'Active', gst_district: 'Pune' });
+
+    // C answered three of A's orders: 27 of 30 confirmed, each about two hours later.
+    const kadai = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Kadai', 'PCS', 'goods', true)`,
+      [kadai, C]
+    );
+    for (let n = 0; n < 3; n++) {
+      const o = await queryOne(
+        `INSERT INTO supply_orders (buyer_business_id, vendor_business_id, status, origin, created_by_business_id, created_at, confirmed_at)
+         VALUES ($1, $2, 'partial', 'buyer', $1, CURRENT_TIMESTAMP - INTERVAL '3 hours', CURRENT_TIMESTAMP - INTERVAL '1 hour')
+         RETURNING id`,
+        [A, C]
+      );
+      await query(
+        `INSERT INTO supply_order_lines (order_id, item_name, qty, confirmed_qty, vendor_item_id) VALUES ($1, 'Kadai', 10, 9, $2)`,
+        [o.id, kadai]
+      );
+    }
+    const trust = (await trustForBusinesses([C])).get(C)!;
+    expect(trust).toMatchObject({
+      gst_verified: true,
+      gst_legal_name: 'HUB STRANGER TRADING LLP',
+      district: 'Pune',
+      fill_rate: 0.9,
+      orders_answered: 3,
+      reply_hours: 2,
+    });
+    expect(trust.member_since?.slice(0, 4)).toBe('2024');
+
+    // A new GSTIN loses the badge until it is looked up again.
+    await query(`UPDATE businesses SET gstin = '29AAACR5055K1Z5' WHERE id = $1`, [C]);
+    expect((await trustForBusinesses([C])).get(C)!.gst_verified).toBe(false);
+    await query(`UPDATE businesses SET gstin = $2 WHERE id = $1`, [C, VALID_GSTIN]);
+
+    const list = await directoryGET(call('GET', '/api/suppliers/hub/directory?district=pune&gst_verified=1', UA, A));
+    expect(list.status).toBe(200);
+    const data = await list.json();
+    expect(data.districts).toContain('Pune');
+    const row = data.businesses.find((b: { id: string }) => b.id === C);
+    expect(row?.trust).toMatchObject({ gst_verified: true, fill_rate: 0.9 });
+    expect(data.businesses.every((b: { trust: { district: string } }) => b.trust.district.toLowerCase() === 'pune')).toBe(true);
   });
 
   it('a queued low-stock check runs after the stock change is saved', async () => {

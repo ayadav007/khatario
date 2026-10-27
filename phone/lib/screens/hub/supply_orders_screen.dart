@@ -303,7 +303,9 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
                 .then((_) => _load()),
           ),
         ),
-      if (role == 'buyer' && status == 'invoiced' && invoice != null)
+      if (role == 'vendor' && status == 'invoiced')
+        Expanded(child: KButton(label: 'Mark dispatched', icon: LucideIcons.truck, loading: _busy, onPressed: () => _act('dispatch'))),
+      if (role == 'buyer' && (status == 'invoiced' || status == 'dispatched') && invoice != null)
         Expanded(
           child: KButton(
             label: 'Receive bill',

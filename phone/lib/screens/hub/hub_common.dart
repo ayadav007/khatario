@@ -36,6 +36,30 @@ String hubDate(dynamic raw) {
 void hubSnack(BuildContext context, String message) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
+/// Supplier trust signals (GST verified, fill rate, reply time, years on Khatario) as short
+/// phrases, matching trustChips on the web.
+List<String> hubTrustFacts(dynamic trust) {
+  if (trust is! Map) return const [];
+  final facts = <String>[];
+  if (trust['gst_verified'] == true) facts.add('GST verified');
+  final fill = trust['fill_rate'];
+  if (fill is num) facts.add('Fills ${(fill * 100).round()}% of orders');
+  final hours = trust['reply_hours'];
+  if (hours is num) {
+    if (hours < 1) {
+      facts.add('Replies within an hour');
+    } else if (hours < 24) {
+      facts.add('Replies within ${hours.ceil()} hours');
+    } else {
+      final days = (hours / 24).ceil();
+      facts.add(days == 1 ? 'Replies within a day' : 'Replies within $days days');
+    }
+  }
+  final since = DateTime.tryParse(trust['member_since']?.toString() ?? '');
+  if (since != null) facts.add('On Khatario since ${since.year}');
+  return facts;
+}
+
 /// Order statuses as a tone and a short label for the phone.
 (KTone, String) supplyOrderTone(String status) => switch (status) {
       'draft' => (KTone.neutral, 'Draft'),
@@ -45,6 +69,7 @@ void hubSnack(BuildContext context, String message) =>
       'partial' => (KTone.due, 'Part confirmed'),
       'declined' => (KTone.negative, 'Declined'),
       'invoiced' => (KTone.brand, 'Billed'),
+      'dispatched' => (KTone.brand, 'On the way'),
       'received' => (KTone.positive, 'Received'),
       'cancelled' => (KTone.negative, 'Cancelled'),
       _ => statusTone(status),

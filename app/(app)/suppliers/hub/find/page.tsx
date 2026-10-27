@@ -13,11 +13,13 @@ import { buildApiUrl } from '@/lib/api-helpers';
 import {
   CategoryChip,
   GstinBadge,
+  TrustFacts,
   ProductTile,
   SupplierAvatar,
   formatPlace,
   headingFont,
 } from '@/components/suppliers/hub/DirectoryUi';
+import type { SupplierTrust } from '@/lib/suppliers-hub';
 
 interface DirectoryRow {
   id: string;
@@ -32,12 +34,13 @@ interface DirectoryRow {
   buyers_count: number;
   listing_count: number;
   preview_items: Array<{ name: string; image_url: string | null }>;
+  trust: SupplierTrust | null;
 }
 
 type Sort = 'name' | 'most_connected' | 'newest';
 
 const TRUST_POINTS = [
-  'See each supplier’s GSTIN before you connect',
+  'GST verified suppliers carry a green tick',
   'Their bills land in your purchases, no scanning',
   'More of their catalogue opens once they accept',
 ];
@@ -62,6 +65,9 @@ export default function FindSuppliersPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<DirectoryRow[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [district, setDistrict] = useState('');
+  const [districts, setDistricts] = useState<string[]>([]);
+  const [gstVerified, setGstVerified] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -79,6 +85,8 @@ export default function FindSuppliersPage() {
       const url = buildApiUrl('/api/suppliers/hub/directory', {
         q: q || undefined,
         category: category || undefined,
+        district: district || undefined,
+        gst_verified: gstVerified ? 1 : undefined,
         has_catalogue: hasCatalogue ? 1 : undefined,
         shows_prices: showsPrices ? 1 : undefined,
         sort,
@@ -90,6 +98,7 @@ export default function FindSuppliersPage() {
       const data = await res.json();
       setRows(data.businesses || []);
       setCategories(data.categories || []);
+      setDistricts(data.districts || []);
       setTotal(data.pagination?.total ?? 0);
       setTotalPages(data.pagination?.totalPages ?? 0);
     } catch {
@@ -98,7 +107,7 @@ export default function FindSuppliersPage() {
     } finally {
       setLoading(false);
     }
-  }, [business?.id, q, category, hasCatalogue, showsPrices, sort, page]);
+  }, [business?.id, q, category, district, gstVerified, hasCatalogue, showsPrices, sort, page]);
 
   useEffect(() => {
     load();
@@ -106,7 +115,7 @@ export default function FindSuppliersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [q, category, hasCatalogue, showsPrices, sort]);
+  }, [q, category, district, gstVerified, hasCatalogue, showsPrices, sort]);
 
   function submitSearch(e: FormEvent) {
     e.preventDefault();
@@ -125,7 +134,9 @@ export default function FindSuppliersPage() {
     return <AccessDenied />;
   }
 
-  const heading = category ? `${category} suppliers` : q ? `Suppliers matching “${q}”` : 'All suppliers';
+  const heading =
+    (category ? `${category} suppliers` : q ? `Suppliers matching “${q}”` : 'All suppliers') +
+    (district ? ` in ${district}` : '');
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-10">
@@ -214,6 +225,15 @@ export default function FindSuppliersPage() {
             <label className="flex min-h-7 items-center gap-2.5 text-sm text-text-primary">
               <input
                 type="checkbox"
+                checked={gstVerified}
+                onChange={(e) => setGstVerified(e.target.checked)}
+                className="h-[18px] w-[18px] accent-[#032B23]"
+              />
+              GST verified
+            </label>
+            <label className="flex min-h-7 items-center gap-2.5 text-sm text-text-primary">
+              <input
+                type="checkbox"
                 checked={hasCatalogue}
                 onChange={(e) => setHasCatalogue(e.target.checked)}
                 className="h-[18px] w-[18px] accent-[#032B23]"
@@ -230,6 +250,24 @@ export default function FindSuppliersPage() {
               Prices shown to all
             </label>
           </fieldset>
+          {districts.length > 0 && (
+            <label className="flex flex-[1_1_12rem] flex-col gap-2 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+              District
+              <select
+                id="district-filter"
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="min-h-11 rounded-xl border border-[#D8D3C8] bg-white px-3 text-sm font-normal normal-case tracking-normal text-text-primary"
+              >
+                <option value="">All districts</option>
+                {districts.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex flex-[1_1_12rem] flex-col gap-2 text-xs font-semibold uppercase tracking-wider text-text-secondary">
             Sort by
             <select
@@ -263,7 +301,7 @@ export default function FindSuppliersPage() {
           ) : rows.length === 0 ? (
             <div className="rounded-2xl border border-[#E6E1D6] bg-white p-8 text-center">
               <p className="font-medium text-text-primary">
-                {q || category || hasCatalogue || showsPrices
+                {q || category || district || gstVerified || hasCatalogue || showsPrices
                   ? 'No suppliers match these filters'
                   : 'No suppliers listed yet'}
               </p>
@@ -330,7 +368,7 @@ export default function FindSuppliersPage() {
 
 /** Ask to connect opens the profile, where the buyer adds a note and chooses what to share. */
 function SupplierCard({ row }: { row: DirectoryRow }) {
-  const place = formatPlace(row.city, row.state);
+  const place = formatPlace(row.trust?.district || row.city, row.state);
   const chips = (row.featured_categories || []).slice(0, 3);
   const items = row.preview_items || [];
   const href = `/suppliers/hub/${row.id}`;
@@ -350,7 +388,7 @@ function SupplierCard({ row }: { row: DirectoryRow }) {
             <Link href={href} className="truncate hover:underline">
               {row.name}
             </Link>
-            <GstinBadge gstin={row.gstin} compact />
+            <GstinBadge gstin={row.gstin} verified={!!row.trust?.gst_verified} compact />
           </h3>
           {place && <span className="text-[13px] text-text-secondary">{place}</span>}
           {chips.length > 0 && (
@@ -366,6 +404,8 @@ function SupplierCard({ row }: { row: DirectoryRow }) {
       {row.profile_summary && (
         <p className="line-clamp-2 text-sm leading-relaxed text-text-secondary">{row.profile_summary}</p>
       )}
+
+      <TrustFacts trust={row.trust} />
 
       {items.length > 0 && (
         <ul aria-label={`Products from ${row.name}`} className="grid grid-cols-3 gap-2.5">

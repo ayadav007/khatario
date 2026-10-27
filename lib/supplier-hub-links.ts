@@ -406,6 +406,12 @@ export async function openConnectionRequest(params: {
       request.id,
     ]
   );
+  const { queueHubWhatsApp } = await import('./supplier-hub-whatsapp');
+  await queueHubWhatsApp(exec, supplierBusinessId, {
+    title: `${buyer.rows[0]?.name || 'A business'} wants to buy from you`,
+    detail: 'Accept the connection request so their orders and your bills flow through Supplier Hub.',
+    path: '/suppliers/hub',
+  });
   return { request, existing: false };
 }
 

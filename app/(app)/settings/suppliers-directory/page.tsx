@@ -53,6 +53,8 @@ export default function SuppliersDirectorySettingsPage() {
   const [slug, setSlug] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('hidden');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [hubWhatsApp, setHubWhatsApp] = useState(true);
+  const [savingWhatsApp, setSavingWhatsApp] = useState(false);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [incoming, setIncoming] = useState<
     Array<{ id: string; status: string; counterparty_name: string; created_at: string; message?: string | null }>
@@ -87,6 +89,7 @@ export default function SuppliersDirectorySettingsPage() {
         setSlug(disc.public_slug || '');
         setVisibility(disc.visibility || 'hidden');
         setCoverUrl(disc.cover_image_url || null);
+        setHubWhatsApp(dj.hub_whatsapp_enabled !== false);
       }
 
       const lUrl = buildApiUrl('/api/suppliers/hub/published-listings', {
@@ -163,6 +166,28 @@ export default function SuppliersDirectorySettingsPage() {
       load();
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Saved on its own, straight away: it is about notices, not the directory listing. */
+  async function saveHubWhatsApp(on: boolean) {
+    setSavingWhatsApp(true);
+    setHubWhatsApp(on);
+    try {
+      const res = await fetch('/api/suppliers/hub/discovery', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hub_whatsapp_enabled: on }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setHubWhatsApp(!on);
+        toast.error(j.error || 'Could not save');
+        return;
+      }
+      toast.success(on ? 'Supplier Hub updates will come on WhatsApp' : 'Supplier Hub WhatsApp updates are off');
+    } finally {
+      setSavingWhatsApp(false);
     }
   }
 
@@ -319,6 +344,27 @@ export default function SuppliersDirectorySettingsPage() {
                   ) : null}
                 </div>
               </div>
+            </section>
+
+            <section>
+              <h3 className="settings-section-title">WhatsApp updates</h3>
+              <label className="flex max-w-2xl cursor-pointer items-start gap-3">
+                <input
+                  id="hub-whatsapp"
+                  type="checkbox"
+                  checked={hubWhatsApp}
+                  disabled={savingWhatsApp}
+                  onChange={(e) => saveHubWhatsApp(e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                />
+                <span className="min-w-0">
+                  <span className="block font-medium text-text-primary">Send Supplier Hub updates on WhatsApp</span>
+                  <span className="type-body-secondary mt-0.5 block">
+                    New orders, orders to confirm, bills, dispatches and connection requests come to the business
+                    owner&apos;s phone from Khatario, with a link to open them. In-app notices stay on either way.
+                  </span>
+                </span>
+              </label>
             </section>
 
             <section>

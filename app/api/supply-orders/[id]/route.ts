@@ -54,6 +54,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const invoice = order.invoice_id
       ? await db.queryOne(`SELECT id, invoice_number, invoice_date, grand_total FROM invoices WHERE id = $1`, [order.invoice_id])
       : null;
+    // Backorders this order opened (what the supplier will send later).
+    const backorders = await db.queryRows<{ id: string; status: string }>(
+      `SELECT id, status FROM supply_orders WHERE parent_order_id = $1 ${role === 'buyer' ? "AND status <> 'draft'" : ''} ORDER BY created_at`,
+      [order.id]
+    );
 
     return NextResponse.json({
       role,
@@ -69,6 +74,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         supplier_name: nameOf(order.vendor_business_id),
         invoice,
         purchase_id: role === 'buyer' ? order.purchase_id : null,
+        parent_order_id: order.parent_order_id ?? null,
+        dispatched_at: order.dispatched_at ?? null,
+        dispatch_note: order.dispatch_note ?? null,
+        backorders,
       },
       lines: lines.map((l: any) => ({
         ...l,
@@ -91,7 +100,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 /**
  * PATCH /api/supply-orders/[id]
- * Body: { action: 'update'|'send'|'confirm'|'respond'|'decline'|'cancel', lines?: [...], note? }
+ * Body: { action: 'update'|'send'|'confirm'|'respond'|'decline'|'cancel'|'dispatch', lines?: [...], note? }
  * See lib/supply-orders transitionSupplyOrder for who may do what.
  */
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

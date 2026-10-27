@@ -3,7 +3,9 @@
  *
  *   supplier side: draft -> proposed -> (buyer) confirmed
  *   buyer side:    pending -> (supplier) confirmed | partial | declined
- *   then:          invoiced -> received; cancelled any time before invoicing
+ *   then:          invoiced -> dispatched (optional) -> received; cancelled any time before invoicing
+ * What a supplier cannot send yet on a partly confirmed order becomes a backorder: a new pending
+ * order for the rest, which the supplier confirms when stock arrives (migration 423).
  *
  * Line quantities are in the supplier's unit (qty, confirmed_qty); buyer_units_per_vendor_unit
  * converts them to the buyer's unit. Suggested drafts are built from the buyer's own reorder
@@ -13,6 +15,7 @@
 import type { PoolClient } from 'pg';
 import { execFor, type Exec } from './supplier-hub-links';
 import { saveItemLink } from './supplier-item-links';
+import { queueHubWhatsApp } from './supplier-hub-whatsapp';
 
 export class SupplyOrderInputError extends Error {
   status: number;
@@ -33,10 +36,11 @@ export type SupplyOrderStatus =
   | 'partial'
   | 'declined'
   | 'invoiced'
+  | 'dispatched'
   | 'received'
   | 'cancelled';
 
-export const OPEN_STATUSES: SupplyOrderStatus[] = ['draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced'];
+export const OPEN_STATUSES: SupplyOrderStatus[] = ['draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced', 'dispatched'];
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -100,12 +104,14 @@ async function bestLinkForVendorItem(exec: Exec, buyer: string, vendor: string, 
   return r ? { buyerItemId: String(r.buyer_item_id), factor: Number(r.factor) || 1 } : null;
 }
 
+/** In-app notice about an order, plus the same update on WhatsApp once the change commits. */
 async function notify(exec: Exec, businessId: string, title: string, message: string, orderId: string) {
   await exec(
     `INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
      VALUES ($1, 'general', $2, $3, 'supply_order', $4, CURRENT_TIMESTAMP)`,
     [businessId, title, message, orderId]
   );
+  await queueHubWhatsApp(exec, businessId, { title, detail: message, path: `/supply-orders/${orderId}` });
 }
 
 async function businessName(exec: Exec, id: string) {
@@ -153,12 +159,12 @@ export async function buildSuggestedOrders(
         WHERE l.buyer_item_id = i.id
           AND o.buyer_business_id = i.business_id
           AND o.vendor_business_id = s.linked_business_id
-          AND o.status IN ('draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced')
+          AND o.status = ANY($${args.length + 1}::text[])
       )
       ${where.length ? `AND ${where.join(' AND ')}` : ''}
     ORDER BY i.business_id, s.linked_business_id, i.name
     `,
-    args
+    [...args, OPEN_STATUSES]
   );
 
   const byPair = new Map<string, any[]>();
@@ -400,14 +406,14 @@ export const LISTING_FOR_LINE_SQL = (vendorParam: string) =>
      ON pl.supplier_business_id = ${vendorParam} AND pl.item_id = l.vendor_item_id AND pl.is_active = true`;
 
 const STATUS_GROUPS: Record<string, SupplyOrderStatus[]> = {
-  open: ['draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced'],
+  open: OPEN_STATUSES,
   done: ['received', 'declined', 'cancelled'],
 };
 
 /** Statuses that wait on this side: the supplier's drafts, orders to answer and to bill; the buyer's proposals and bills. */
 export const ACTION_STATUSES: Record<'buyer' | 'vendor', SupplyOrderStatus[]> = {
   vendor: ['draft', 'pending', 'confirmed', 'partial'],
-  buyer: ['proposed', 'invoiced'],
+  buyer: ['proposed', 'invoiced', 'dispatched'],
 };
 
 /**
@@ -431,7 +437,7 @@ export async function listSupplyOrders(
   }
   const { rows } = await execFor(client)(
     `
-    SELECT o.id, o.status, o.origin, o.need_by, o.created_at, o.updated_at, o.invoice_id,
+    SELECT o.id, o.status, o.origin, o.need_by, o.created_at, o.updated_at, o.invoice_id, o.parent_order_id,
            ${theirs} AS other_business_id, ob.name AS other_business_name,
            (SELECT COUNT(*)::int FROM supply_order_lines l WHERE l.order_id = o.id) AS line_count,
            inv.invoice_number
@@ -454,6 +460,10 @@ export type LineEdit = {
   qty?: number | string | null;
   confirmed_qty?: number | string | null;
   vendor_item_id?: string | null;
+  /** Buyer units in one supplier unit, set with vendor_item_id on a line that had no match */
+  factor?: number | string | null;
+  /** respond: keep the unconfirmed rest as a backorder (default true) */
+  backorder?: boolean;
   remove?: boolean;
 };
 
@@ -462,9 +472,11 @@ export type LineEdit = {
  *   update  — supplier edits a draft (qty, supplier item, remove lines)
  *   send    — supplier sends a draft to the buyer (proposed)
  *   confirm — buyer agrees a proposed order, optionally changing quantities
- *   respond — supplier answers a pending order with the quantity it can supply per line
+ *   respond — supplier answers a pending order with the quantity it can supply per line; the
+ *             rest of each short line goes on a backorder unless the line says backorder: false
  *   decline — the side that has to answer turns it down
  *   cancel  — either side, before it is invoiced
+ *   dispatch — supplier marks a billed order as sent (note: transporter, LR or vehicle number)
  */
 export async function transitionSupplyOrder(
   p: { orderId: string; actorBusinessId: string; userId: string; action: string; lines?: LineEdit[]; note?: string | null },
@@ -491,7 +503,11 @@ export async function transitionSupplyOrder(
     await exec(`UPDATE supply_orders SET status = $2, updated_at = CURRENT_TIMESTAMP ${extra} WHERE id = $1`, [order.id, next]);
   };
 
-  /** Apply supplier-item choices (and learn the match) for a supplier acting on lines. */
+  /**
+   * Apply supplier-item choices (and learn the match) for a supplier acting on lines. A line
+   * with no supplier item was asked for in the buyer's units; with `factor` (buyer units in one
+   * supplier unit) its quantity becomes whole supplier units.
+   */
   const applyVendorItems = async () => {
     for (const l of lines) {
       const e = edits.get(l.id);
@@ -500,11 +516,32 @@ export async function transitionSupplyOrder(
         await exec(`SELECT 1 FROM items WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`, [e.vendor_item_id, vendor])
       ).rows[0];
       if (!own) throw new SupplyOrderInputError('Pick one of your own items');
+      const wasUnmatched = !l.vendor_item_id;
+      let factor = Number(l.buyer_units_per_vendor_unit) || 1;
+      if (wasUnmatched && e.factor != null && e.factor !== '') {
+        const f = Number(e.factor);
+        if (!(f > 0)) throw new SupplyOrderInputError(`Units per pack for ${l.item_name} must be more than zero`);
+        if (Math.abs(f - factor) > 1e-9) {
+          const buyerQty = Number(l.qty) * factor;
+          factor = round3(f);
+          l.qty = vendorQtyFor(buyerQty, factor);
+          l.buyer_units_per_vendor_unit = factor;
+          await exec(`UPDATE supply_order_lines SET qty = $2, buyer_units_per_vendor_unit = $3 WHERE id = $1`, [l.id, l.qty, factor]);
+        }
+      }
       await exec(`UPDATE supply_order_lines SET vendor_item_id = $2 WHERE id = $1`, [l.id, e.vendor_item_id]);
       l.vendor_item_id = e.vendor_item_id;
       if (l.buyer_item_id) {
         await saveItemLink(
-          { buyerBusinessId: buyer, vendorBusinessId: vendor, buyerItemId: l.buyer_item_id, vendorItemId: e.vendor_item_id, source: 'request', userId: p.userId },
+          {
+            buyerBusinessId: buyer,
+            vendorBusinessId: vendor,
+            buyerItemId: l.buyer_item_id,
+            vendorItemId: e.vendor_item_id,
+            factor: wasUnmatched ? factor : null,
+            source: 'request',
+            userId: p.userId,
+          },
           client
         );
       }
@@ -529,6 +566,30 @@ export async function transitionSupplyOrder(
       }
     }
     if (lines.every((l: any) => l._removed)) throw new SupplyOrderInputError('An order needs at least one item');
+  };
+
+  /** A pending order for the rest of the short lines, linked to this one. */
+  const openBackorder = async (rest: Array<{ line: any; qty: number }>) => {
+    const bo = (
+      await exec(
+        `INSERT INTO supply_orders (
+           buyer_business_id, vendor_business_id, status, origin, need_by, notes,
+           created_by_business_id, created_by_user_id, parent_order_id
+         )
+         VALUES ($1, $2, 'pending', 'backorder', $3, $4, $2, $5, $6)
+         RETURNING id`,
+        [buyer, vendor, order.need_by, order.notes, p.userId, order.id]
+      )
+    ).rows[0];
+    let sort = 0;
+    for (const { line, qty } of rest) {
+      await exec(
+        `INSERT INTO supply_order_lines (order_id, buyer_item_id, vendor_item_id, item_name, qty, buyer_units_per_vendor_unit, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [bo.id, line.buyer_item_id, line.vendor_item_id, line.item_name, qty, line.buyer_units_per_vendor_unit, sort++]
+      );
+    }
+    return bo.id as string;
   };
 
   switch (p.action) {
@@ -561,6 +622,7 @@ export async function transitionSupplyOrder(
       await applyVendorItems();
       let full = 0;
       let none = 0;
+      const rest: Array<{ line: any; qty: number }> = [];
       for (const l of lines) {
         const e = edits.get(l.id);
         const c = e?.confirmed_qty != null && e.confirmed_qty !== '' ? Number(e.confirmed_qty) : Number(l.qty);
@@ -570,15 +632,24 @@ export async function transitionSupplyOrder(
         if (c > 0 && !l.vendor_item_id) throw new SupplyOrderInputError(`Pick your item for ${l.item_name}`);
         await exec(`UPDATE supply_order_lines SET confirmed_qty = $2 WHERE id = $1`, [l.id, round3(c)]);
         if (Math.abs(c - Number(l.qty)) < 1e-9) full++;
+        else if (e?.backorder !== false) rest.push({ line: l, qty: round3(Number(l.qty) - c) });
         if (c === 0) none++;
       }
       const next: SupplyOrderStatus = none === lines.length ? 'declined' : full === lines.length ? 'confirmed' : 'partial';
       await setStatus(next, next === 'declined' ? '' : ', confirmed_at = CURRENT_TIMESTAMP');
+      // Nothing confirmed means nothing ships now; the buyer can order again, so no backorder then.
+      const backorderId = next === 'partial' && rest.length ? await openBackorder(rest) : null;
       await notify(
         exec,
         buyer,
         next === 'declined' ? `${actorName} cannot supply this order` : `${actorName} confirmed your order`,
-        next === 'partial' ? 'Some quantities are lower than you asked for.' : next === 'confirmed' ? 'All quantities confirmed.' : 'Nothing could be supplied.',
+        next === 'partial'
+          ? backorderId
+            ? `Some quantities are lower than you asked for. The rest of ${rest.length} item${rest.length === 1 ? '' : 's'} is on a backorder ${actorName} will confirm when stock arrives.`
+            : 'Some quantities are lower than you asked for.'
+          : next === 'confirmed'
+            ? 'All quantities confirmed.'
+            : 'Nothing could be supplied.',
         order.id
       );
       return next;
@@ -599,6 +670,18 @@ export async function transitionSupplyOrder(
         await notify(exec, other, `${actorName} cancelled the order`, p.note?.slice(0, 300) || 'No reason given.', order.id);
       }
       return 'cancelled';
+    }
+    case 'dispatch': {
+      need(role === 'vendor' && status === 'invoiced', 'Only the supplier can mark a billed order as dispatched');
+      const note = p.note?.trim().slice(0, 300) || null;
+      await exec(
+        `UPDATE supply_orders SET status = 'dispatched', dispatched_at = CURRENT_TIMESTAMP, dispatch_note = $2,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+        [order.id, note]
+      );
+      await notify(exec, buyer, `${actorName} dispatched your order`, note ? `On the way: ${note}` : 'Your order is on the way.', order.id);
+      return 'dispatched';
     }
     default:
       throw new SupplyOrderInputError('Unknown action');
@@ -630,6 +713,26 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
   }
   const { ensureVendorCustomerLink } = await import('./supplier-hub-links');
   const customerId = await ensureVendorCustomerLink(vendorBusinessId, order.buyer_business_id, client);
+  // The bill's place of supply and the buyer's input tax credit come from this customer's
+  // state and GSTIN, so fill any gaps from the buyer's own business (a GSTIN only when no
+  // other customer of the supplier already has it).
+  await exec(
+    `UPDATE customers c SET
+       state = COALESCE(NULLIF(c.state, ''), b.state),
+       state_code = COALESCE(NULLIF(c.state_code, ''), b.state_code),
+       gstin = CASE
+         WHEN NULLIF(c.gstin, '') IS NULL AND NULLIF(b.gstin, '') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM customers o
+             WHERE o.business_id = c.business_id AND o.id <> c.id AND o.deleted_at IS NULL AND UPPER(o.gstin) = UPPER(b.gstin)
+          )
+         THEN UPPER(b.gstin) ELSE c.gstin END,
+       updated_at = CURRENT_TIMESTAMP
+     FROM businesses b
+     WHERE c.id = $1 AND c.business_id = $2 AND b.id = $3
+       AND (NULLIF(c.state, '') IS NULL OR NULLIF(c.state_code, '') IS NULL OR NULLIF(c.gstin, '') IS NULL)`,
+    [customerId, vendorBusinessId, order.buyer_business_id]
+  );
   return {
     customer_id: customerId,
     lines: lines.map((l: any) => ({
@@ -694,7 +797,7 @@ export async function markSupplyOrderReceived(
 ): Promise<void> {
   await client.query(
     `UPDATE supply_orders SET status = 'received', purchase_id = $3, updated_at = CURRENT_TIMESTAMP
-      WHERE invoice_id = $1 AND buyer_business_id = $2 AND status = 'invoiced'`,
+      WHERE invoice_id = $1 AND buyer_business_id = $2 AND status IN ('invoiced', 'dispatched')`,
     [invoiceId, buyerBusinessId, purchaseId]
   );
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { DISTRICT_SQL, trustForBusinesses } from '@/lib/supplier-trust';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,10 +13,11 @@ const SORTS: Record<string, string> = {
 };
 
 /**
- * GET /api/suppliers/hub/directory?q=&category=&has_catalogue=1&shows_prices=1&sort=&page=
+ * GET /api/suppliers/hub/directory?q=&category=&district=&has_catalogue=1&shows_prices=1&gst_verified=1&sort=&page=
  * Lists businesses opted into directory search (excludes current business), each with
  * whether the signed-in business is already connected to it or has asked to be, how many
- * shops buy from it on Khatario, and the first three items of its public catalogue.
+ * shops buy from it on Khatario, the first three items of its public catalogue, and its trust
+ * signals (GST verified, district, fill rate, typical reply; see lib/supplier-trust).
  * `q` matches name, place, GSTIN, categories and the names/brands of public listings.
  */
 export async function GET(request: NextRequest) {
@@ -37,6 +39,8 @@ export async function GET(request: NextRequest) {
     const category = (searchParams.get('category') || '').trim();
     const hasCatalogue = searchParams.get('has_catalogue') === '1';
     const showsPrices = searchParams.get('shows_prices') === '1';
+    const district = (searchParams.get('district') || '').trim();
+    const gstVerified = searchParams.get('gst_verified') === '1';
     const orderBy = SORTS[searchParams.get('sort') || ''] || SORTS.name;
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
@@ -52,6 +56,7 @@ export async function GET(request: NextRequest) {
         OR b.name ILIKE $2
         OR COALESCE(b.city, '') ILIKE $2
         OR COALESCE(b.state, '') ILIKE $2
+        OR COALESCE(d.gst_district, '') ILIKE $2
         OR COALESCE(b.gstin, '') ILIKE $2
         OR EXISTS (SELECT 1 FROM unnest(d.featured_categories) c WHERE c ILIKE $2)
         OR EXISTS (
@@ -71,8 +76,12 @@ export async function GET(request: NextRequest) {
         WHERE l.supplier_business_id = b.id AND l.is_active = true AND l.audience = 'public_preview'
           AND l.price_display = 'from_amount' AND l.from_amount IS NOT NULL
       ))
+      AND ($6::text = '' OR lower(${DISTRICT_SQL}) = lower($6))
+      AND (NOT $7::boolean OR (
+        d.gst_verified_gstin = UPPER(b.gstin) AND lower(TRIM(COALESCE(d.gst_status, ''))) = 'active'
+      ))
     `;
-    const filterParams = [businessId, term, category, hasCatalogue, showsPrices];
+    const filterParams = [businessId, term, category, hasCatalogue, showsPrices, district, gstVerified];
 
     const rows = await db.queryRows<{
       id: string;
@@ -126,10 +135,11 @@ export async function GET(request: NextRequest) {
       INNER JOIN business_discovery d ON d.business_id = b.id
       WHERE ${where}
       ORDER BY ${orderBy}
-      LIMIT $6 OFFSET $7
+      LIMIT $8 OFFSET $9
       `,
       [...filterParams, limit, offset]
     );
+    const trust = await trustForBusinesses(rows.map((r) => r.id));
 
     const countRow = await db.queryOne<{ n: string }>(
       `
@@ -156,9 +166,25 @@ export async function GET(request: NextRequest) {
       [businessId]
     );
 
+    // District choices: where listed suppliers are, most suppliers first.
+    const districts = await db.queryRows<{ name: string }>(
+      `
+      SELECT min(${DISTRICT_SQL}) AS name
+      FROM business_discovery d
+      INNER JOIN businesses b ON b.id = d.business_id
+      WHERE d.visibility = 'directory' AND d.directory_approved = true AND d.business_id <> $1
+        AND ${DISTRICT_SQL} IS NOT NULL
+      GROUP BY lower(${DISTRICT_SQL})
+      ORDER BY COUNT(*) DESC, min(${DISTRICT_SQL}) ASC
+      LIMIT 40
+      `,
+      [businessId]
+    );
+
     return NextResponse.json({
-      businesses: rows,
+      businesses: rows.map((r) => ({ ...r, trust: trust.get(r.id) ?? null })),
       categories: categories.map((c) => c.name),
+      districts: districts.map((d) => d.name),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 0 },
     });
   } catch (e: any) {

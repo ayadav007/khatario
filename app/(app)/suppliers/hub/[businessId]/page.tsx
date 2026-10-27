@@ -21,6 +21,7 @@ import {
   headingFont,
   supplierTint,
 } from '@/components/suppliers/hub/DirectoryUi';
+import { replyLabel, type SupplierTrust } from '@/lib/suppliers-hub';
 
 interface Listing {
   id: string;
@@ -66,6 +67,7 @@ interface ProfilePayload {
   };
   buyers_count: number;
   listings: Listing[];
+  trust: SupplierTrust | null;
 }
 
 const STEPS = [
@@ -207,7 +209,9 @@ export default function SupplierHubProfilePage() {
 
   const { viewer, business: biz, discovery } = data;
   const isSelf = business?.id === businessId;
-  const place = formatPlace(biz.city, biz.state);
+  const trust = data.trust;
+  const place = formatPlace(trust?.district || biz.city, biz.state);
+  const reply = replyLabel(trust?.reply_hours);
   const since = monthYear(biz.created_at);
   const wa = biz.phone ? whatsappHref(biz.phone) : null;
   const tint = supplierTint(biz.id);
@@ -218,6 +222,12 @@ export default function SupplierHubProfilePage() {
       note: viewer.is_linked ? 'Including items for connected shops' : 'Open to every shop',
     },
     data.buyers_count > 0 && { label: 'Shops supplied', value: String(data.buyers_count), note: 'On Khatario' },
+    trust?.fill_rate != null && {
+      label: 'Orders filled',
+      value: `${Math.round(trust.fill_rate * 100)}%`,
+      note: `Of quantity asked, last 90 days`,
+    },
+    reply && { label: 'Replies', value: reply.replace('Usually replies within ', 'Within '), note: 'Typical, last 90 days' },
     { label: 'Bills', value: 'Auto', note: 'Straight into purchases' },
     since && { label: 'On Khatario since', value: since, note: '' },
   ].filter(Boolean) as Array<{ label: string; value: string; note: string }>;
@@ -266,7 +276,7 @@ export default function SupplierHubProfilePage() {
                 className={`${headingFont} flex flex-wrap items-center gap-3 text-3xl font-bold leading-tight tracking-tight text-text-primary sm:text-[40px]`}
               >
                 {biz.name}
-                <GstinBadge gstin={biz.gstin} />
+                <GstinBadge gstin={biz.gstin} verified={!!trust?.gst_verified} />
               </h1>
               {discovery.profile_summary && (
                 <p className="max-w-2xl whitespace-pre-wrap text-base leading-relaxed text-text-secondary sm:text-lg">
@@ -277,6 +287,7 @@ export default function SupplierHubProfilePage() {
                 <p className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-text-secondary">
                   {place && <span>{place}</span>}
                   {biz.gstin && <span>GSTIN {biz.gstin}</span>}
+                  {trust?.gst_legal_name && <span>Registered as {trust.gst_legal_name}</span>}
                 </p>
               )}
               {discovery.featured_categories.length > 0 && (

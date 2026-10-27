@@ -112,8 +112,9 @@ class _HubDirectoryScreenState extends State<HubDirectoryScreen> {
                           leading: KAvatar(name: b['name']?.toString() ?? ''),
                           title: b['name']?.toString() ?? '',
                           subtitle: [
-                            [b['city'], b['state']].whereType<Object>().join(', '),
-                            ...(b['featured_categories'] is List ? (b['featured_categories'] as List).take(3).map((e) => e.toString()) : const <String>[]),
+                            [hubText(b['trust'] is Map ? b['trust']['district'] : null) ?? b['city'], b['state']].whereType<Object>().join(', '),
+                            ...hubTrustFacts(b['trust']).take(2),
+                            ...(b['featured_categories'] is List ? (b['featured_categories'] as List).take(2).map((e) => e.toString()) : const <String>[]),
                           ].where((s) => s.isNotEmpty).join(' · '),
                           onTap: () => Navigator.of(context).push(MaterialPageRoute(
                             builder: (_) => HubProfileScreen(session: widget.session, businessId: b['id'].toString()),
@@ -272,6 +273,7 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
               child: KInfoCard(title: 'About', rows: [
                 if ([business['city'], business['state']].any((v) => v != null)) ('Location', [business['city'], business['state']].whereType<Object>().join(', ')),
                 if (hubText(business['gstin']) != null) ('GSTIN', business['gstin'].toString()),
+                if (hubTrustFacts(p['trust']).isNotEmpty) ('Track record', hubTrustFacts(p['trust']).join(' · ')),
                 if (hubText(discovery['profile_summary']) != null) ('About', discovery['profile_summary'].toString()),
                 if (discovery['featured_categories'] is List && (discovery['featured_categories'] as List).isNotEmpty)
                   ('Sells', (discovery['featured_categories'] as List).join(', ')),
