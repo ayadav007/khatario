@@ -10,10 +10,12 @@ import { Chip } from '@/components/ui/Chip';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SUPPLY_ORDER_STATUS_LABEL, supplyOrderChipVariant } from '@/components/suppliers/supplyOrderStatus';
+import { SupplyOrderComments } from '@/components/suppliers/SupplyOrderComments';
 
 type Line = {
   id: string;
   item_name: string;
+  option_label?: string | null;
   qty: number;
   confirmed_qty: number | null;
   factor: number;
@@ -142,7 +144,10 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
   const qtyEditable = vendorEditsDraft || buyerConfirms;
   const canPickVendorItem = vendorEditsDraft || vendorResponds;
   // Where the other side is waiting on an answer, Decline is the way out; Cancel covers the rest.
-  const canCancel = ['draft', 'proposed', 'pending', 'confirmed', 'partial'].includes(s) && !buyerConfirms && !vendorResponds;
+  const canCancel =
+    (['draft', 'proposed', 'pending', 'confirmed', 'partial'].includes(s) || (s === 'awaiting_link' && role === 'buyer')) &&
+    !buyerConfirms &&
+    !vendorResponds;
   const setEdit = (id: string, patch: Edit) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   /** A line asked for in the buyer's units becomes whole supplier units once its pack size is set. */
   const askedQty = (l: Line) => {
@@ -219,6 +224,7 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
                   <div className="min-w-0">
                     <p className="font-medium text-text-primary">
                       {role === 'buyer' ? l.buyer_item_name || l.item_name : l.vendor_item_name || l.item_name}
+                      {l.option_label ? <span className="font-normal text-text-secondary"> · {l.option_label}</span> : null}
                     </p>
                     <p className="text-xs text-text-secondary">
                       {role === 'vendor' && l.vendor_item_name && l.vendor_item_name !== l.item_name ? `Buyer calls it ${l.item_name} · ` : ''}
@@ -421,6 +427,13 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
             Cancel order
           </Button>
         )}
+        {s === 'awaiting_link' && (
+          <p className="w-full text-sm text-text-secondary">
+            {role === 'buyer'
+              ? `Sent with your connection request. ${order.supplier_name} gets it as an order once they accept.`
+              : `Sent with ${order.buyer_name}'s connection request. Accept the request to answer it.`}
+          </p>
+        )}
         {role === 'buyer' && s === 'pending' && (
           <p className="w-full text-sm text-text-secondary">Waiting for {order.supplier_name} to confirm quantities.</p>
         )}
@@ -428,6 +441,8 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
           <p className="w-full text-sm text-text-secondary">Waiting for {order.buyer_name} to confirm.</p>
         )}
       </Card>
+
+      <SupplyOrderComments orderId={order.id} otherName={role === 'buyer' ? order.supplier_name : order.buyer_name} />
     </div>
   );
 }

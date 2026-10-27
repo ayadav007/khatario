@@ -56,7 +56,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         COALESCE(i.min_stock, 0) AS min_stock,
         COALESCE(i.has_variants, false) AS has_variants,
         i.default_supplier_id,
+        i.backup_supplier_id,
         ds.name AS default_supplier_name,
+        CASE WHEN COALESCE(i.has_variants, false) THEN COALESCE((
+          SELECT json_agg(json_build_object('id', v.id, 'name', v.variant_name,
+                   'current_stock', COALESCE(v.current_stock, 0), 'min_stock', COALESCE(v.min_stock, 0)) ORDER BY v.variant_name)
+            FROM item_variants v WHERE v.item_id = i.id
+        ), '[]'::json) END AS variants,
         lp.last_purchased
       FROM items i
       LEFT JOIN suppliers ds ON ds.id = i.default_supplier_id AND ds.business_id = i.business_id
@@ -107,16 +113,35 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const minStockEntries = Object.entries(
       body.min_stock && typeof body.min_stock === 'object' ? (body.min_stock as Record<string, unknown>) : {}
     ).map(([id, v]) => [id, Number(v)] as const);
+    // Backup supplier: gets what the default supplier cannot send (lib/supply-orders routeToBackups).
+    const backupAssign = ids(body.backup_assign);
+    const backupUnassign = ids(body.backup_unassign).filter((id) => !backupAssign.includes(id));
+    // Reorder levels for sizes / colours of items with variants.
+    const variantLevels = Object.entries(
+      body.variant_min_stock && typeof body.variant_min_stock === 'object' ? (body.variant_min_stock as Record<string, unknown>) : {}
+    ).map(([id, v]) => [id, Number(v)] as const);
 
-    if (minStockEntries.some(([, v]) => !Number.isFinite(v) || v < 0)) {
+    if ([...minStockEntries, ...variantLevels].some(([, v]) => !Number.isFinite(v) || v < 0)) {
       return NextResponse.json({ error: 'Reorder levels must be zero or more' }, { status: 400 });
     }
-    if (assign.length + unassign.length + minStockEntries.length > MAX_CHANGES) {
+    if (assign.length + unassign.length + minStockEntries.length + backupAssign.length + backupUnassign.length + variantLevels.length > MAX_CHANGES) {
       return NextResponse.json({ error: `At most ${MAX_CHANGES} changes at a time` }, { status: 400 });
     }
 
-    const allIds = Array.from(new Set([...assign, ...unassign, ...minStockEntries.map(([id]) => id)]));
-    if (allIds.length === 0) return NextResponse.json({ ok: true, updated: 0 });
+    const allIds = Array.from(
+      new Set([...assign, ...unassign, ...backupAssign, ...backupUnassign, ...minStockEntries.map(([id]) => id)])
+    );
+    if (allIds.length === 0 && variantLevels.length === 0) return NextResponse.json({ ok: true, updated: 0 });
+    if (variantLevels.length) {
+      const ownVariants = await db.queryRows<{ id: string }>(
+        `SELECT v.id FROM item_variants v JOIN items i ON i.id = v.item_id
+          WHERE i.business_id = $1 AND i.deleted_at IS NULL AND v.id = ANY($2::uuid[])`,
+        [auth.businessId, variantLevels.map(([id]) => id)]
+      );
+      if (ownVariants.length !== variantLevels.length) {
+        return NextResponse.json({ error: 'Some sizes or colours were not found in your items' }, { status: 400 });
+      }
+    }
 
     const owned = await db.queryRows<{ id: string }>(
       `SELECT id FROM items
@@ -145,6 +170,30 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             WHERE business_id = $1 AND id = ANY($2::uuid[]) AND default_supplier_id = $3`,
           [auth.businessId, unassign, supplier.id]
         );
+      }
+      if (backupAssign.length) {
+        await client.query(
+          `UPDATE items SET backup_supplier_id = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE business_id = $1 AND id = ANY($2::uuid[]) AND default_supplier_id IS DISTINCT FROM $3`,
+          [auth.businessId, backupAssign, supplier.id]
+        );
+      }
+      if (backupUnassign.length) {
+        await client.query(
+          `UPDATE items SET backup_supplier_id = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE business_id = $1 AND id = ANY($2::uuid[]) AND backup_supplier_id = $3`,
+          [auth.businessId, backupUnassign, supplier.id]
+        );
+      }
+      // An item's default supplier is never also its backup.
+      if (assign.length) {
+        await client.query(
+          `UPDATE items SET backup_supplier_id = NULL WHERE business_id = $1 AND id = ANY($2::uuid[]) AND backup_supplier_id = $3`,
+          [auth.businessId, assign, supplier.id]
+        );
+      }
+      for (const [variantId, level] of variantLevels) {
+        await client.query(`UPDATE item_variants SET min_stock = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [variantId, level]);
       }
       for (const [itemId, level] of minStockEntries) {
         await client.query(

@@ -127,8 +127,12 @@ export async function PATCH(request: NextRequest) {
               .replace(/^-|-$/g, '')
               .slice(0, 80)
         : existing?.public_slug ?? null;
-    // Only the platform changes approval; a new row takes the column default.
-    const nextApproved = existing?.directory_approved ?? true;
+    // Only the platform changes approval. With listing review on, a listing a platform admin has
+    // not looked at yet waits (hidden) once it asks to be in the directory.
+    const { isListingReviewOn } = await import('@/lib/supplier-hub-visibility');
+    const awaitingReview =
+      nextVis === 'directory' && !(existing as { reviewed_at?: string | null } | null)?.reviewed_at && (await isListingReviewOn());
+    const nextApproved = awaitingReview ? false : existing?.directory_approved ?? true;
 
     if (nextSlug) {
       const taken = await db.queryOne(
@@ -159,9 +163,9 @@ export async function PATCH(request: NextRequest) {
         `
         INSERT INTO business_discovery (
           business_id, visibility, profile_summary, featured_categories, public_slug,
-          updated_by_user_id
+          updated_by_user_id, directory_approved
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         `,
         [
@@ -171,6 +175,7 @@ export async function PATCH(request: NextRequest) {
           nextCats,
           nextSlug,
           userId,
+          nextApproved,
         ]
       );
     } else {
@@ -182,6 +187,7 @@ export async function PATCH(request: NextRequest) {
           featured_categories = $4,
           public_slug = $5,
           updated_by_user_id = $6,
+          directory_approved = $7,
           updated_at = CURRENT_TIMESTAMP
         WHERE business_id = $1
         RETURNING *
@@ -193,6 +199,7 @@ export async function PATCH(request: NextRequest) {
           nextCats,
           nextSlug,
           userId,
+          nextApproved,
         ]
       );
     }

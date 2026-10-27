@@ -75,6 +75,66 @@ export async function publishCollection(
   return { notified: buyers.rows.length };
 }
 
+/** An uploaded photo (data URL) of about 600 KB; the catalogue screen scales photos down first. */
+const PHOTO_MAX_CHARS = Math.ceil((600 * 1024 * 4) / 3) + 100;
+
+export type ListingOption = { label: string; price: number | null };
+
+/**
+ * Sizes, colours or packs with their prices. Accepts a list of { label, price } or the short
+ * form typed on the catalogue screen: "S:450, M:450, L:480" (a price is optional: "Red, Blue").
+ * Undefined means "leave as is"; an empty list removes the options.
+ */
+export function parseListingOptions(raw: unknown): ListingOption[] | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === '') return [];
+  const parts: Array<{ label: unknown; price: unknown }> = Array.isArray(raw)
+    ? raw.map((o: any) => ({ label: o?.label, price: o?.price }))
+    : String(raw)
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const i = p.lastIndexOf(':');
+          return i > 0 ? { label: p.slice(0, i), price: p.slice(i + 1) } : { label: p, price: null };
+        });
+  if (parts.length > 40) throw new CatalogInputError('At most 40 options per item');
+  const seen = new Set<string>();
+  const out: ListingOption[] = [];
+  for (const part of parts) {
+    const label = String(part.label ?? '').trim().slice(0, 60);
+    if (!label) throw new CatalogInputError('Each option needs a name, for example M or Red');
+    if (seen.has(label.toLowerCase())) throw new CatalogInputError(`Option ${label} is listed twice`);
+    seen.add(label.toLowerCase());
+    const text = part.price == null ? '' : String(part.price).replace(/[₹,\s]/g, '');
+    const price = text === '' ? null : Number(text);
+    if (price != null && !(price >= 0)) throw new CatalogInputError(`Price for ${label} must be zero or more`);
+    out.push({ label, price });
+  }
+  return out;
+}
+
+/** Replace a listing's options. */
+export async function saveListingOptions(listingId: string, options: ListingOption[], client?: PoolClient) {
+  const exec = execFor(client);
+  await exec(`DELETE FROM supplier_listing_options WHERE listing_id = $1`, [listingId]);
+  let sort = 0;
+  for (const o of options) {
+    await exec(`INSERT INTO supplier_listing_options (listing_id, label, price, sort_order) VALUES ($1, $2, $3, $4)`, [
+      listingId,
+      o.label,
+      o.price,
+      sort++,
+    ]);
+  }
+}
+
+/** SQL: a listing's options as JSON, given the listing alias `l`. */
+export const LISTING_OPTIONS_SQL = `COALESCE((
+  SELECT json_agg(json_build_object('id', o.id, 'label', o.label, 'price', o.price) ORDER BY o.sort_order)
+    FROM supplier_listing_options o WHERE o.listing_id = l.id
+), '[]'::json)`;
+
 /** Listing fields a supplier may set, validated. Undefined means "leave as is". */
 export function parseListingExtras(body: any, supplierBusinessId: string) {
   const out: {
@@ -86,10 +146,12 @@ export function parseListingExtras(body: any, supplierBusinessId: string) {
   } = {};
   if (body.image_url !== undefined) {
     const url = body.image_url ? String(body.image_url).trim() : '';
-    if (url && !/^https:\/\//i.test(url) && !url.startsWith('/')) {
-      throw new CatalogInputError('Photo must be an https:// link or an uploaded file path');
+    const uploaded = /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(url);
+    if (url && !uploaded && !/^https:\/\//i.test(url) && !url.startsWith('/')) {
+      throw new CatalogInputError('Photo must be an uploaded image or an https:// link');
     }
-    out.image_url = url ? url.slice(0, 2000) : null;
+    if (uploaded && url.length > PHOTO_MAX_CHARS) throw new CatalogInputError('Photo is too large. Use an image under 600 KB.');
+    out.image_url = url ? (uploaded ? url : url.slice(0, 2000)) : null;
   }
   if (body.price !== undefined) {
     const p = body.price === null || body.price === '' ? null : Number(body.price);

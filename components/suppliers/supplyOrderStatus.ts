@@ -1,5 +1,6 @@
 /** Labels and chip colours for Supplier Hub order statuses. */
 export const SUPPLY_ORDER_STATUS_LABEL: Record<string, string> = {
+  awaiting_link: 'Waiting for connection',
   draft: 'Draft',
   proposed: 'Waiting for buyer',
   pending: 'Waiting for supplier',

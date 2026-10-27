@@ -90,6 +90,8 @@ function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/r/')) return true;
   // Connect tracked WhatsApp links and QR codes (public redirect to wa.me).
   if (pathname.startsWith('/w/')) return true;
+  // An order a business sent to a supplier who is not on Khatario (token-only, no login).
+  if (pathname.startsWith('/so/')) return true;
   if (pathname.startsWith('/portal/')) return true;
   return false;
 }

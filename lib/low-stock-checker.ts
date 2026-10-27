@@ -21,12 +21,22 @@ type LowStockCandidate = {
   supplier_business_id: string;
 };
 
+/**
+ * SQL: an item's stock. In warehouse mode stock is kept per location (location_stock) and
+ * items.current_stock is not updated, so the sum over locations is used. Needs `i` (items); the
+ * setting is read through to_jsonb so a database without the warehouse column still works.
+ */
+export const ITEM_STOCK_SQL = `(CASE WHEN COALESCE((SELECT (to_jsonb(bs) ->> 'warehouses_enabled')::boolean
+      FROM business_settings bs WHERE bs.business_id = i.business_id LIMIT 1), false)
+    THEN COALESCE((SELECT SUM(ls.current_stock_qty) FROM location_stock ls WHERE ls.item_id = i.id), 0)
+    ELSE COALESCE(i.current_stock, 0) END)`;
+
 /** Buyer items at or below their reorder level whose default supplier may see them. */
 const CANDIDATES_SQL = `
   SELECT
     i.id AS item_id,
     i.name AS item_name,
-    i.current_stock,
+    ${ITEM_STOCK_SQL} AS current_stock,
     i.min_stock,
     i.business_id AS customer_business_id,
     cb.name AS customer_name,
@@ -45,7 +55,7 @@ const CANDIDATES_SQL = `
     AND COALESCE(i.is_active, true) = true
     AND COALESCE(i.item_type, 'goods') <> 'service'
     AND COALESCE(i.min_stock, 0) > 0
-    AND COALESCE(i.current_stock, 0) <= i.min_stock
+    AND ${ITEM_STOCK_SQL} <= i.min_stock
 `;
 
 async function supplierIsOperational(supplierBusinessId: string, cache: Map<string, boolean>) {
@@ -141,7 +151,7 @@ async function resolveStaleAlerts(scope?: { itemId: string; businessId: string }
           AND i.business_id = a.customer_business_id
           AND i.deleted_at IS NULL
           AND COALESCE(i.min_stock, 0) > 0
-          AND COALESCE(i.current_stock, 0) <= i.min_stock
+          AND ${ITEM_STOCK_SQL} <= i.min_stock
       )
     `,
     params

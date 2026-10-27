@@ -24,6 +24,8 @@ type Line = {
 };
 
 type Detail = {
+  /** The supplier's UPI ID and a upi:// link with amount and bill number filled in */
+  pay?: { upi_id: string; link: string } | null;
   bill: {
     invoice_id: string;
     invoice_number: string;
@@ -194,6 +196,17 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
               Open purchase {purchase.bill_number}
             </Link>
           </div>
+          {detail?.pay && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+              <a href={detail.pay.link} className="inline-flex min-h-10 items-center rounded-md bg-primary-600 px-4 font-semibold text-white">
+                Pay ₹{Number(bill.grand_total).toLocaleString('en-IN')} by UPI
+              </a>
+              <span className="text-text-secondary">
+                UPI ID <span className="select-all font-medium text-text-primary">{detail.pay.upi_id}</span>. After paying, record
+                it on the purchase; {bill.supplier_name} is told so their books match.
+              </span>
+            </div>
+          )}
           {shortfalls.length > 0 && (
             <div>
               <p className="text-sm font-medium text-text-primary">Short or damaged</p>

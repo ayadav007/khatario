@@ -62,6 +62,27 @@ export async function refreshGstVerification(businessId: string, opts: { force?:
   );
 }
 
+/**
+ * Listings whose GSTIN has not been looked up yet, changed, or was looked up over 30 days ago
+ * (for example because every lookup service was down when the business saved). The hourly cron
+ * calls this so the badge appears without the business saving again.
+ */
+export async function refreshPendingGstVerifications(limit = 20): Promise<number> {
+  const due = await queryRows<{ business_id: string }>(
+    `SELECT d.business_id FROM business_discovery d JOIN businesses b ON b.id = d.business_id
+      WHERE d.visibility <> 'hidden' AND COALESCE(b.gstin, '') <> ''
+        AND (d.gst_verified_gstin IS DISTINCT FROM UPPER(b.gstin)
+             OR d.gst_checked_at IS NULL OR d.gst_checked_at < CURRENT_TIMESTAMP - INTERVAL '${RECHECK_DAYS} days')
+      ORDER BY d.gst_checked_at NULLS FIRST
+      LIMIT $1`,
+    [limit]
+  );
+  for (const row of due) {
+    await refreshGstVerification(row.business_id).catch((error) => console.error('GST recheck failed', error));
+  }
+  return due.length;
+}
+
 /** Trust signals for several businesses at once, keyed by business id. */
 export async function trustForBusinesses(ids: string[]): Promise<Map<string, SupplierTrust>> {
   const out = new Map<string, SupplierTrust>();

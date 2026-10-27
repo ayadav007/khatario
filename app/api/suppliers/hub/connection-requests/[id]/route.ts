@@ -9,6 +9,7 @@ import {
   previewVendorCustomerLink,
   type CustomerLinkChoice,
 } from '@/lib/supplier-hub-links';
+import { settleOrdersForRequest } from '@/lib/supply-orders';
 import type { SupplierConnectionRequest } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -124,6 +125,7 @@ export async function PATCH(
         `,
         [id, updatedByUserId]
       );
+      await settleOrdersForRequest(id, 'closed');
       // A supplier added with a link waits as 'pending' on this request; withdrawing ends it.
       await db.query(
         `UPDATE suppliers SET approval_status = 'disconnected', allow_low_stock_access = false,
@@ -155,6 +157,7 @@ export async function PATCH(
         `,
         [id, updatedByUserId]
       );
+      await settleOrdersForRequest(id, 'closed');
       await db.query(
         `UPDATE suppliers SET approval_status = 'rejected', allow_low_stock_access = false,
                 rejected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -310,6 +313,8 @@ export async function PATCH(
         id,
       ]
     );
+    // The first order sent with the request now reaches the supplier as a pending order.
+    await settleOrdersForRequest(id, 'accepted');
     const { queueHubWhatsApp } = await import('@/lib/supplier-hub-whatsapp');
     await queueHubWhatsApp(execFor(), row.buyer_business_id, {
       title: `${peer.name} accepted your connection request`,

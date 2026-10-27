@@ -332,7 +332,7 @@ export async function disconnectSupplierLink(params: {
     `UPDATE supply_orders
         SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
       WHERE buyer_business_id = $1 AND vendor_business_id = $2
-        AND status IN ('draft', 'proposed', 'pending', 'confirmed', 'partial')`,
+        AND status IN ('awaiting_link', 'draft', 'proposed', 'pending', 'confirmed', 'partial')`,
     [buyerBusinessId, vendorBusinessId]
   );
 

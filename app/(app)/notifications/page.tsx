@@ -81,7 +81,7 @@ export default function NotificationsPage() {
     
     // Navigate based on notification type
     if (notification.type === 'supplier_request') {
-      router.push('/suppliers/requests');
+      router.push('/suppliers/hub');
     } else if (notification.type === 'low_stock_alert') {
       router.push('/suppliers/dashboard');
     } else if (notification.reference_type === 'supplier' && notification.reference_id) {

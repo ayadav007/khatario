@@ -37,9 +37,12 @@ type Listing = {
   lead_time_text: string | null;
   image_url: string | null;
   collection_id: string | null;
+  options?: Array<{ id: string; label: string; price: string | number | null }>;
 };
 
-type Draft = Partial<Record<'display_name' | 'price' | 'moq' | 'order_multiple' | 'pack_label' | 'lead_time_text' | 'image_url' | 'collection_id', string>> & {
+type Draft = Partial<
+  Record<'display_name' | 'price' | 'moq' | 'order_multiple' | 'pack_label' | 'lead_time_text' | 'image_url' | 'collection_id' | 'options', string>
+> & {
   is_active?: boolean;
 };
 
@@ -50,8 +53,27 @@ const FIELDS: Array<{ key: keyof Draft; label: string; type?: string; width: str
   { key: 'order_multiple', label: 'In multiples of', type: 'number', width: 'w-20' },
   { key: 'pack_label', label: 'Pack', width: 'w-44' },
   { key: 'lead_time_text', label: 'Lead time', width: 'w-28' },
-  { key: 'image_url', label: 'Photo link (https://)', width: 'w-64' },
+  { key: 'options', label: 'Sizes / colours with price (S:450, M:450, L:480)', width: 'w-72' },
 ];
+
+/** Options as typed on this screen: "S:450, M:450, Red". */
+const optionsText = (options: Listing['options']) =>
+  (options || []).map((o) => (o.price == null ? o.label : `${o.label}:${Number(o.price)}`)).join(', ');
+
+/** Scale a photo to at most 1200 px and JPEG, so it stays under the 600 KB limit. */
+async function photoDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  for (const quality of [0.82, 0.7, 0.55]) {
+    const url = canvas.toDataURL('image/jpeg', quality);
+    if (url.length < 780_000) return url;
+  }
+  throw new Error('This photo is too large even after scaling. Try a smaller one.');
+}
 
 /**
  * The supplier's catalog for connected buyers: collections of new designs (publishing one
@@ -162,6 +184,7 @@ export default function SupplierCatalogPage() {
   const val = (l: Listing, k: keyof Draft) => {
     const d = drafts[l.id]?.[k];
     if (d !== undefined) return String(d);
+    if (k === 'options') return optionsText(l.options);
     const v = (l as any)[k];
     return v == null ? '' : String(k === 'price' || k === 'moq' || k === 'order_multiple' ? Number(v) : v);
   };
@@ -326,6 +349,39 @@ export default function SupplierCatalogPage() {
                       />
                     </label>
                   ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {(drafts[l.id]?.image_url ?? l.image_url) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={(drafts[l.id]?.image_url ?? l.image_url) || ''}
+                      alt=""
+                      className="h-14 w-14 rounded-md border border-gray-200 object-cover"
+                    />
+                  )}
+                  <label className="cursor-pointer text-sm font-medium text-primary-600 hover:underline">
+                    {(drafts[l.id]?.image_url ?? l.image_url) ? 'Change photo' : 'Add photo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        try {
+                          setVal(l.id, 'image_url', await photoDataUrl(file));
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Could not use this photo');
+                        }
+                      }}
+                    />
+                  </label>
+                  {(drafts[l.id]?.image_url ?? l.image_url) && (
+                    <button type="button" className="text-sm text-text-secondary hover:underline" onClick={() => setVal(l.id, 'image_url', '')}>
+                      Remove photo
+                    </button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={() => saveListing(l)} disabled={busy || !drafts[l.id]}>

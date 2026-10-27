@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { LISTING_OPTIONS_SQL } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,10 +10,14 @@ const LISTING_SQL = `
   SELECT l.id AS listing_id, l.item_id AS vendor_item_id, l.collection_id,
          COALESCE(NULLIF(l.display_name, ''), i.name) AS name, i.unit,
          COALESCE(l.image_url, i.image_url) AS image_url,
-         l.price, l.moq, l.order_multiple, l.pack_label, l.lead_time_text,
-         bi.id AS my_item_id, bi.name AS my_item_name
+         COALESCE(bp.price, l.price) AS price, (bp.price IS NOT NULL) AS my_price,
+         l.moq, l.order_multiple, l.pack_label, l.lead_time_text,
+         bi.id AS my_item_id, bi.name AS my_item_name,
+         ${LISTING_OPTIONS_SQL} AS options
   FROM supplier_published_listings l
   JOIN items i ON i.id = l.item_id AND i.business_id = l.supplier_business_id AND i.deleted_at IS NULL
+  LEFT JOIN supplier_buyer_prices bp
+    ON bp.vendor_business_id = l.supplier_business_id AND bp.buyer_business_id = $1 AND bp.item_id = l.item_id
   LEFT JOIN supplier_item_links sil
     ON sil.vendor_item_id = l.item_id AND sil.vendor_business_id = l.supplier_business_id AND sil.buyer_business_id = $1
   LEFT JOIN items bi ON bi.id = sil.buyer_item_id AND bi.deleted_at IS NULL

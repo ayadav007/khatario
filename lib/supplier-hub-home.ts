@@ -15,7 +15,9 @@ import { BUYER_LINE_PRICE_SQL, LISTING_FOR_LINE_SQL, listSupplyOrders } from './
 export type InboxAction =
   | { kind: 'link'; label: string; href: string }
   | { kind: 'order'; label: string; orderId: string; orderAction: 'confirm' | 'send' }
-  | { kind: 'request'; requestId: string };
+  | { kind: 'request'; requestId: string }
+  | { kind: 'money'; label: string; noticeId: string }
+  | { kind: 'standing'; standingId: string };
 
 export type InboxKind =
   | 'connection_request'
@@ -23,7 +25,10 @@ export type InboxKind =
   | 'order_to_confirm'
   | 'bill_to_receive'
   | 'ready_to_bill'
-  | 'draft_to_send';
+  | 'draft_to_send'
+  | 'payment_to_record'
+  | 'credit_note_to_issue'
+  | 'standing_to_accept';
 
 export type InboxItem = {
   key: string;
@@ -154,6 +159,9 @@ const PRIORITY: Record<InboxKind, number> = {
   order_to_confirm: 0,
   bill_to_receive: 1,
   ready_to_bill: 1,
+  payment_to_record: 1,
+  credit_note_to_issue: 1,
+  standing_to_accept: 0,
   draft_to_send: 2,
 };
 
@@ -162,7 +170,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 /** Order totals per order: the buyer's estimate or the supplier's list value. */
 async function orderTotals(exec: ReturnType<typeof execFor>, orderIds: string[], side: 'buyer' | 'vendor') {
   if (orderIds.length === 0) return new Map<string, { total: number; priced: boolean; unmatched: number }>();
-  const price = side === 'buyer' ? BUYER_LINE_PRICE_SQL : 'vi.selling_price';
+  const price = side === 'buyer' ? BUYER_LINE_PRICE_SQL : 'COALESCE(l.unit_price, bp.price, vi.selling_price)';
   const { rows } = await exec(
     `SELECT l.order_id,
             SUM(COALESCE(l.confirmed_qty, l.qty) * ${price})::float8 AS total,
@@ -171,7 +179,7 @@ async function orderTotals(exec: ReturnType<typeof execFor>, orderIds: string[],
        FROM supply_order_lines l
        JOIN supply_orders o ON o.id = l.order_id
        LEFT JOIN items vi ON vi.id = l.vendor_item_id
-       ${LISTING_FOR_LINE_SQL('o.vendor_business_id')}
+       ${LISTING_FOR_LINE_SQL('o.vendor_business_id', 'o.buyer_business_id')}
       WHERE l.order_id = ANY($1::uuid[])
       GROUP BY l.order_id`,
     [orderIds]
@@ -220,7 +228,9 @@ export async function loadHubHome(businessId: string, client?: PoolClient): Prom
     listSupplyOrders(businessId, 'buyer', 'open', client),
     listSupplyOrders(businessId, 'vendor', 'open', client),
     exec(
-      `SELECT r.id, r.created_at, b.name
+      `SELECT r.id, r.created_at, b.name,
+              (SELECT COUNT(*)::int FROM supply_order_lines l JOIN supply_orders o ON o.id = l.order_id
+                WHERE o.connection_request_id = r.id AND o.status = 'awaiting_link') AS order_lines
          FROM supplier_connection_requests r
          JOIN businesses b ON b.id = r.buyer_business_id
         WHERE r.supplier_business_id = $1 AND r.status = 'pending'
@@ -241,6 +251,14 @@ export async function loadHubHome(businessId: string, client?: PoolClient): Prom
 
   // Bills cover orders that are already invoiced, so only proposals wait here for the buyer.
   const proposals = buyerAction.filter((o: any) => o.status === 'proposed');
+  // Payments and debit notes connected buyers recorded against this supplier's bills.
+  const { listMoneyNotices } = await import('./supplier-hub-money');
+  const moneyNotices = await listMoneyNotices(businessId).catch(() => []);
+  const { listStandingOrders, weekdaysLabel } = await import('./supply-standing-orders');
+  const standingProposals = (await listStandingOrders(businessId, 'vendor').catch(() => [])).filter(
+    (s: any) => s.status === 'proposed'
+  );
+
   const [buyerTotals, vendorTotals] = await Promise.all([
     orderTotals(exec, proposals.map((o: any) => o.id), 'buyer'),
     orderTotals(exec, vendorAction.map((o: any) => o.id), 'vendor'),
@@ -255,7 +273,9 @@ export async function loadHubHome(businessId: string, client?: PoolClient): Prom
       side: 'selling',
       partner: r.name,
       title: `${r.name} wants to connect`,
-      detail: 'They want to buy from you through the Supplier Hub.',
+      detail: r.order_lines
+        ? `Their first order of ${plural(r.order_lines, 'item')} from your catalogue comes to you when you accept.`
+        : 'They want to buy from you through the Supplier Hub.',
       amount: null,
       approx: false,
       at: new Date(r.created_at).toISOString(),
@@ -349,6 +369,54 @@ export async function loadHubHome(businessId: string, client?: PoolClient): Prom
         title: `Order from ${o.other_business_name} is confirmed`,
         detail: o.status === 'partial' ? 'Partly confirmed. Ready to bill what you can supply.' : 'Ready to bill.',
         action: { kind: 'link', label: 'Create bill', href: `/invoices/new?supply_order_id=${o.id}` },
+      });
+    }
+  }
+
+  for (const s of standingProposals) {
+    const lines = (s.lines || []) as Array<{ item_name: string; qty: string }>;
+    inbox.push({
+      key: `standing-${s.id}`,
+      kind: 'standing_to_accept',
+      side: 'selling',
+      partner: s.other_business_name,
+      title: `${s.other_business_name} wants a standing order`,
+      detail: `${lines.map((l) => `${l.item_name} ${Number(l.qty)}`).join(', ')}, ${weekdaysLabel(s.weekdays)}.`,
+      amount: null,
+      approx: false,
+      at: new Date(s.created_at).toISOString(),
+      href: '/supply-orders',
+      action: { kind: 'standing', standingId: s.id },
+    });
+  }
+
+  for (const n of moneyNotices) {
+    const base = {
+      key: `money-${n.id}`,
+      side: 'selling' as const,
+      partner: n.buyer_name,
+      amount: n.amount,
+      approx: false,
+      at: n.created_at,
+    };
+    if (n.kind === 'payment') {
+      inbox.push({
+        ...base,
+        kind: 'payment_to_record',
+        title: `${n.buyer_name} paid for bill ${n.invoice_number || ''}`.trim(),
+        detail: `${n.payment_mode ? `By ${n.payment_mode}, ` : ''}${n.happened_on}. Record the receipt so both books agree.`,
+        href: `/invoices/${n.invoice_id}`,
+        action: { kind: 'money', label: 'Record receipt', noticeId: n.id },
+      });
+    } else {
+      const href = `/credit-notes/new?customer_id=${n.customer_id ?? ''}&invoice_id=${n.invoice_id}`;
+      inbox.push({
+        ...base,
+        kind: 'credit_note_to_issue',
+        title: `${n.buyer_name} returned goods from bill ${n.invoice_number || ''}`.trim(),
+        detail: `Debit note${n.note ? `: ${n.note}` : ''}. Issue the matching credit note.`,
+        href,
+        action: { kind: 'link', label: 'Credit note', href },
       });
     }
   }

@@ -62,6 +62,7 @@ List<String> hubTrustFacts(dynamic trust) {
 
 /// Order statuses as a tone and a short label for the phone.
 (KTone, String) supplyOrderTone(String status) => switch (status) {
+      'awaiting_link' => (KTone.due, 'Waiting for connection'),
       'draft' => (KTone.neutral, 'Draft'),
       'proposed' => (KTone.due, 'Waiting for buyer'),
       'pending' => (KTone.due, 'Waiting for supplier'),

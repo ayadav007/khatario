@@ -333,7 +333,7 @@ export default function SupplierDashboardPage() {
               <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/catalog')}>
                 My catalog
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/requests')}>
+              <Button variant="ghost" size="sm" onClick={() => router.push('/supply-orders?role=vendor')}>
                 View Requests
               </Button>
             </div>

@@ -66,7 +66,23 @@ export async function GET(request: NextRequest, { params }: { params: { invoiceI
       ).rows;
     }
 
+    // Pay by UPI: the supplier's default UPI ID, with amount and bill number filled in.
+    const { supplierUpiId, upiPayLink } = await import('@/lib/supplier-hub-money');
+    const upiId = await supplierUpiId(invoice.business_id);
+    const pay = upiId
+      ? {
+          upi_id: upiId,
+          link: upiPayLink({
+            upiId,
+            payeeName: invoice.supplier_business_name || 'Supplier',
+            amount: Number(invoice.grand_total) || 0,
+            billNumber: invoice.invoice_number,
+          }),
+        }
+      : null;
+
     return NextResponse.json({
+      pay,
       bill: {
         invoice_id: invoice.id,
         invoice_number: invoice.invoice_number,

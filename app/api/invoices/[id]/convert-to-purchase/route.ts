@@ -361,24 +361,52 @@ export async function POST(
             
             // If batch/serial tracking is enabled AND columns exist, use advanced inventory allocation
             if ((trackBatch || trackSerial) && (hasBatchId || hasSerialId)) {
+              // Carry the supplier's batch numbers and expiry dates: the batches their sale took
+              // this item from, each converted to the buyer's unit. Anything left has no batch.
+              const supplierBatches =
+                trackBatch && !trackSerial && hasBatchId && item.item_id
+                  ? (
+                      await client.query(
+                        `SELECT ib.batch_number, to_char(ib.manufacturing_date, 'YYYY-MM-DD') AS mfg,
+                                to_char(ib.expiry_date, 'YYYY-MM-DD') AS expiry, SUM(sm.quantity)::float8 AS qty
+                           FROM stock_movements sm
+                           JOIN item_batches ib ON ib.id = sm.batch_id
+                          WHERE sm.business_id = $1 AND sm.reference_type = 'invoice' AND sm.reference_id = $2
+                            AND sm.item_id = $3 AND sm.type = 'out' AND ib.batch_number IS NOT NULL
+                          GROUP BY ib.batch_number, ib.manufacturing_date, ib.expiry_date
+                          ORDER BY ib.expiry_date NULLS LAST`,
+                        [invoice.business_id, invoiceId, item.item_id]
+                      )
+                    ).rows
+                  : [];
+              const parts: Array<{ qty: number; batch?: string; mfg?: string; expiry?: string }> = [];
+              let left = quantity;
+              for (const b of supplierBatches) {
+                const q = Math.min(left, Math.round(Number(b.qty) * (resolvedLines[i].factor || 1) * 1000) / 1000);
+                if (q > 0) parts.push({ qty: q, batch: b.batch_number, mfg: b.mfg || undefined, expiry: b.expiry || undefined });
+                left = Math.round((left - q) * 1000) / 1000;
+              }
+              if (left > 0 || parts.length === 0) parts.push({ qty: left > 0 ? left : quantity });
+
+              for (const part of parts) {
               const allocation = await allocateStockOnPurchase(
                 customerItemId,
-                quantity,
+                part.qty,
                 unitCost,
                 business_id,
                 purchase.id,
                 locationIdForPurchase || undefined,
                 supplierId || undefined,
-                undefined, // batch_number
+                part.batch,
                 undefined, // serial_numbers
-                undefined, // manufacturing_date
-                undefined  // expiry_date
+                part.mfg,
+                part.expiry
               );
               
               // Create stock movement entries for batches if batch_id column exists
               if (allocation.batchId && hasBatchId) {
                 const batchColumns = ['business_id', 'item_id', 'type', 'quantity', 'reference_type', 'reference_id', 'batch_id'];
-                const batchValues = [business_id, customerItemId, 'in', quantity, 'purchase', purchase.id, allocation.batchId];
+                const batchValues = [business_id, customerItemId, 'in', part.qty, 'purchase', purchase.id, allocation.batchId];
                 
                 if (hasUnitCost) {
                   batchColumns.push('unit_cost');
@@ -413,6 +441,7 @@ export async function POST(
                     serialValues
                   );
                 }
+              }
               }
             }
             

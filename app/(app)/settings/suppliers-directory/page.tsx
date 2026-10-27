@@ -54,6 +54,8 @@ export default function SuppliersDirectorySettingsPage() {
   const [visibility, setVisibility] = useState<Visibility>('hidden');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [hubWhatsApp, setHubWhatsApp] = useState(true);
+  /** Listed in the directory but not shown yet: waiting for platform review, or hidden by it. */
+  const [listingHeld, setListingHeld] = useState<'waiting' | 'hidden' | null>(null);
   const [savingWhatsApp, setSavingWhatsApp] = useState(false);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [incoming, setIncoming] = useState<
@@ -90,6 +92,9 @@ export default function SuppliersDirectorySettingsPage() {
         setVisibility(disc.visibility || 'hidden');
         setCoverUrl(disc.cover_image_url || null);
         setHubWhatsApp(dj.hub_whatsapp_enabled !== false);
+        setListingHeld(
+          disc.visibility === 'directory' && disc.directory_approved === false ? (disc.reviewed_at ? 'hidden' : 'waiting') : null
+        );
       }
 
       const lUrl = buildApiUrl('/api/suppliers/hub/published-listings', {
@@ -306,6 +311,13 @@ export default function SuppliersDirectorySettingsPage() {
                     </label>
                   ))}
                 </div>
+                {listingHeld && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {listingHeld === 'waiting'
+                      ? 'Your listing is waiting for a quick review by Khatario before it shows in Find suppliers.'
+                      : 'Khatario hid your listing from Find suppliers. Contact support to have it reviewed again.'}
+                  </p>
+                )}
 
                 <div>
                   <label htmlFor="profile-summary" className="type-label mb-1.5 block">

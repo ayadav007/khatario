@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
+import { InviteOrderCard } from '@/components/suppliers/InviteOrderCard';
+import { StandingOrderCard } from '@/components/suppliers/StandingOrderCard';
 import { MessageCircle, FileText, Loader2, Edit } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -269,6 +271,10 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
             </div>
           </div>
 
+          {(!supplier.linked_business_id || link?.status === 'disconnected' || link?.status === 'rejected') && (
+            <InviteOrderCard supplierId={supplier.id} supplierName={supplier.name} phone={supplier.phone} />
+          )}
+
           {supplier.linked_business_id && link && (
             <div className="mb-6 rounded-xl border border-gray-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -290,6 +296,9 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                       <Button variant="secondary" className="w-full">Item matches</Button>
                     </Link>
                   </div>
+                  {supplier.linked_business_id && (
+                    <StandingOrderCard supplierId={supplier.id} vendorBusinessId={supplier.linked_business_id} />
+                  )}
                   <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-slate-50 p-3">
                     <input
                       type="checkbox"

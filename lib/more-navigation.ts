@@ -129,7 +129,6 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
         { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
         { href: '/suppliers/catalog', label: 'My Catalog' },
         { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
-        { href: '/suppliers/requests', label: 'Requests to Fulfill' },
       ].map((item) => withSupplierHubLock(item, hubLocked)),
       ctx
     );
@@ -166,9 +165,6 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           ]
         : []),
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-      ...(showHub
-        ? [withSupplierHubLock({ href: '/purchases/requests', label: 'Requests', module: 'purchases' }, hubLocked)]
-        : []),
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
       { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', module: 'expenses' },

@@ -552,7 +552,7 @@ export const Sidebar = React.memo(function Sidebar() {
           { href: '/suppliers/hub', label: 'Supplier Hub' },
           { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
           { href: '/suppliers/catalog', label: 'My Catalog' },
-          { href: '/suppliers/requests', label: 'Requests to Fulfill' },
+          { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
         ],
       }
     ] : []),
@@ -583,7 +583,6 @@ export const Sidebar = React.memo(function Sidebar() {
         { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
         { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
         { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-        { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
         { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
         { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
         { href: '/expenses', label: 'Expenses', module: 'expenses' },

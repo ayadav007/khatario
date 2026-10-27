@@ -148,17 +148,21 @@ class _SupplyOrdersScreenState extends State<SupplyOrdersScreen> {
 class _OrderLine {
   _OrderLine(this.line)
       : qty = TextEditingController(text: qtyText(toNum(line['qty']))),
-        confirmed = TextEditingController(text: qtyText(toNum(line['qty'])));
+        confirmed = TextEditingController(text: qtyText(toNum(line['qty']))),
+        packSize = TextEditingController(text: '1');
 
   final Map<String, dynamic> line;
   final TextEditingController qty;
   final TextEditingController confirmed;
+  /// Buyer units in one of the supplier's units, set when matching a line asked in buyer units.
+  final TextEditingController packSize;
   bool removed = false;
   Map<String, dynamic>? vendorItem; // picked by the supplier
 
   void dispose() {
     qty.dispose();
     confirmed.dispose();
+    packSize.dispose();
   }
 }
 
@@ -239,6 +243,7 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
         if (action == 'update' || action == 'send' || action == 'confirm') 'qty': double.tryParse(l.qty.text),
         if (action == 'respond') 'confirmed_qty': double.tryParse(l.confirmed.text) ?? 0,
         if (l.vendorItem != null) 'vendor_item_id': l.vendorItem!['id'],
+        if (l.vendorItem != null && l.line['vendor_item_id'] == null) 'factor': double.tryParse(l.packSize.text) ?? 1,
       });
     }
     setState(() => _busy = true);
@@ -363,6 +368,7 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
                   child: KButton.secondary(label: 'Save changes', loading: _busy, onPressed: () => _act('update')),
                 ),
+              _OrderMessages(session: widget.session, orderId: widget.orderId, otherName: other),
             ],
           ),
         ),
@@ -430,12 +436,23 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
         ],
         if (canPickItem && (needsItem || l.vendorItem != null)) ...[
           const SizedBox(height: AppSpace.sm),
+          if (line['vendor_item_id'] == null)
+            Text('Buyer asked for ${qtyText(toNum(line['buyer_qty'] ?? line['qty']))} ${line['buyer_unit'] ?? 'units'}', style: AppText.caption),
           KButton.secondary(
             label: l.vendorItem == null ? 'Pick your item' : 'Your item: ${l.vendorItem!['name']}',
             icon: LucideIcons.search,
             height: 40,
             onPressed: () => _pickVendorItem(l),
           ),
+          if (l.vendorItem != null && line['vendor_item_id'] == null) ...[
+            const SizedBox(height: AppSpace.sm),
+            Row(children: [
+              Expanded(child: Text('1 ${l.vendorItem!['unit'] ?? 'unit'} of yours holds', style: AppText.caption)),
+              HubQtyField(controller: l.packSize, onChanged: (_) => setState(() {})),
+              const SizedBox(width: 6),
+              Text('${line['buyer_unit'] ?? 'units'}', style: AppText.caption),
+            ]),
+          ],
         ],
       ],
     );
@@ -587,6 +604,100 @@ class _NewSupplyOrderScreenState extends State<NewSupplyOrderScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Messages between buyer and supplier on one order (same thread as on the web).
+class _OrderMessages extends StatefulWidget {
+  const _OrderMessages({required this.session, required this.orderId, required this.otherName});
+
+  final AppSession session;
+  final String orderId;
+  final String otherName;
+
+  @override
+  State<_OrderMessages> createState() => _OrderMessagesState();
+}
+
+class _OrderMessagesState extends State<_OrderMessages> {
+  final _draft = TextEditingController();
+  List<Map<String, dynamic>> _comments = const [];
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _draft.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final body = await widget.session.api.getJson('/api/supply-orders/${widget.orderId}/comments');
+      if (mounted) setState(() => _comments = hubList(body['comments']));
+    } on ApiException {
+      // The thread is optional; the order still works without it.
+    }
+  }
+
+  Future<void> _send() async {
+    final text = _draft.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await widget.session.api.postJson('/api/supply-orders/${widget.orderId}/comments', {'body': text});
+      _draft.clear();
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) hubSnack(context, e.message);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const KSectionHeader('Messages'),
+        if (_comments.isEmpty)
+          Text('Ask ${widget.otherName} about delivery, rates or a substitute item.', style: AppText.caption),
+        for (final c in _comments)
+          Align(
+            alignment: c['mine'] == true ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              constraints: const BoxConstraints(maxWidth: 300),
+              decoration: BoxDecoration(
+                color: c['mine'] == true ? AppColors.brandSoft : AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(c['body']?.toString() ?? '', style: AppText.body),
+                Text(c['mine'] == true ? 'You' : (c['business_name']?.toString() ?? ''), style: AppText.caption),
+              ]),
+            ),
+          ),
+        const SizedBox(height: AppSpace.sm),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _draft,
+              maxLength: 2000,
+              decoration: InputDecoration(hintText: 'Message ${widget.otherName}', counterText: ''),
+            ),
+          ),
+          KIconButton(icon: LucideIcons.send, tooltip: 'Send', onTap: _sending ? () {} : _send),
+        ]),
+      ]),
     );
   }
 }

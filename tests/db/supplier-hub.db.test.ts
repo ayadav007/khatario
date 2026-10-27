@@ -10,7 +10,7 @@
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–394 and 421–424 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–394 and 421–430 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -77,6 +77,17 @@ import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { checkLowStockForItem, queueLowStockCheck } from '@/lib/low-stock-checker';
 import { PATCH as discoveryPATCH } from '@/app/api/suppliers/hub/discovery/route';
 import { GET as directoryGET } from '@/app/api/suppliers/hub/directory/route';
+import { GET as commentsGET, POST as commentsPOST } from '@/app/api/supply-orders/[id]/comments/route';
+import { POST as inviteOrdersPOST, GET as inviteOrdersGET } from '@/app/api/suppliers/hub/invite-orders/route';
+import { POST as inviteClaimPOST } from '@/app/api/suppliers/hub/invite-orders/claim/route';
+import { GET as buyerPricesGET, PUT as buyerPricesPUT } from '@/app/api/suppliers/hub/buyer-prices/route';
+import { GET as moneyGET, POST as moneyPOST } from '@/app/api/suppliers/hub/money-notices/route';
+import { noticeBuyerDebitNote, noticeBuyerPayment, upiPayLink } from '@/lib/supplier-hub-money';
+import { POST as standingPOST } from '@/app/api/supply-orders/standing/route';
+import { PATCH as standingPATCH } from '@/app/api/supply-orders/standing/[id]/route';
+import { runDueStandingOrders } from '@/lib/supply-standing-orders';
+import { buildSuggestedOrders, suggestedBuyerQty } from '@/lib/supply-orders';
+import { GET as publicOrderGET, POST as publicOrderPOST } from '@/app/api/public/supplier-order/[token]/route';
 import { flushHubWhatsApp } from '@/lib/supplier-hub-whatsapp';
 import { refreshGstVerification, trustForBusinesses } from '@/lib/supplier-trust';
 import { sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
@@ -158,6 +169,12 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(migration('421_connection_request_share_low_stock.sql'));
     await query(migration('423_supply_order_backorder_dispatch.sql'));
     await query(migration('424_supplier_hub_whatsapp_trust.sql'));
+    await query(migration('425_supply_order_comments_first_order.sql'));
+    await query(migration('426_supplier_invite_orders.sql'));
+    await query(migration('427_catalogue_options_buyer_prices.sql'));
+    await query(migration('428_supplier_hub_money_notices.sql'));
+    await query(migration('429_hub_backup_standing_variants.sql'));
+    await query(migration('430_hub_listing_review_retire_requests.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -1388,6 +1405,363 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     const row = data.businesses.find((b: { id: string }) => b.id === C);
     expect(row?.trust).toMatchObject({ gst_verified: true, fill_rate: 0.9 });
     expect(data.businesses.every((b: { trust: { district: string } }) => b.trust.district.toLowerCase() === 'pune')).toBe(true);
+  });
+
+  it('a first order travels with the connection request, and both sides can write on it', async () => {
+    // C lists in the directory (previous test) with one public and one connected-only item.
+    const [PUB, PRIV] = [randomUUID(), randomUUID()];
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $3, 'Tawa', 'PCS', 'goods', true), ($2, $3, 'Pressure cooker', 'PCS', 'goods', true)`,
+      [PUB, PRIV, C]
+    );
+    await query(
+      `INSERT INTO supplier_published_listings (supplier_business_id, item_id, audience, moq) VALUES ($1, $2, 'public_preview', 6), ($1, $3, 'linked_only', NULL)`,
+      [C, PUB, PRIV]
+    );
+    // Only public catalogue items, and the minimum still applies.
+    const hidden = await connectPOST(
+      post('/api/suppliers/hub/connection-requests', UA, A, { supplier_business_id: C, lines: [{ vendor_item_id: PRIV, qty: 2 }] })
+    );
+    expect(hidden.status).toBe(400);
+    const tooFew = await connectPOST(
+      post('/api/suppliers/hub/connection-requests', UA, A, { supplier_business_id: C, lines: [{ vendor_item_id: PUB, qty: 2 }] })
+    );
+    expect(tooFew.status).toBe(400);
+    expect(await queryOne(`SELECT id FROM supplier_connection_requests WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`, [A, C])).toBeNull();
+
+    const ask = await connectPOST(
+      post('/api/suppliers/hub/connection-requests', UA, A, { supplier_business_id: C, lines: [{ vendor_item_id: PUB, qty: 6 }] })
+    );
+    expect(ask.status).toBe(201);
+    const { request: req, order } = await ask.json();
+    expect(order.status).toBe('awaiting_link');
+
+    // A writes before C has accepted; C can read it on the order.
+    const octx = { params: { id: order.id } };
+    const wrote = await commentsPOST(post(`/api/supply-orders/${order.id}/comments`, UA, A, { body: 'Need these by Friday' }), octx);
+    expect(wrote.status).toBe(201);
+    expect((await commentsPOST(post(`/api/supply-orders/${order.id}/comments`, UB, B, { body: 'hi' }), octx)).status).toBe(404);
+
+    const accept = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${req.id}`, UC, C, { action: 'accept', customer_decision: { choice: 'create' } }),
+      { params: { id: req.id } }
+    );
+    expect(accept.status).toBe(200);
+    expect((await queryOne(`SELECT status FROM supply_orders WHERE id = $1`, [order.id])).status).toBe('pending');
+    const note = await queryOne(
+      `SELECT title FROM notifications WHERE business_id = $1 AND reference_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [C, order.id]
+    );
+    expect(note.title).toContain('First order from');
+
+    await commentsPOST(post(`/api/supply-orders/${order.id}/comments`, UC, C, { body: 'Yes, Friday works' }), octx);
+    const thread = await (await commentsGET(call('GET', `/api/supply-orders/${order.id}/comments`, UA, A), octx)).json();
+    expect(thread.comments.map((c: { body: string; mine: boolean }) => [c.body, c.mine])).toEqual([
+      ['Need these by Friday', true],
+      ['Yes, Friday works', false],
+    ]);
+  });
+
+  it('an order link reaches a supplier not on Khatario, who answers without an account and joins', async () => {
+    const OFFLINE = randomUUID();
+    await query(`INSERT INTO suppliers (id, business_id, name, phone) VALUES ($1, $2, 'Gupta Agencies', '9812345678')`, [OFFLINE, A]);
+    const made = await inviteOrdersPOST(
+      post('/api/suppliers/hub/invite-orders', UA, A, {
+        supplier_id: OFFLINE,
+        notes: 'Deliver by Monday',
+        lines: [{ buyer_item_id: ITEM_A, qty: 48 }, { item_name: 'Loose sugar', qty: 25 }],
+      })
+    );
+    expect(made.status).toBe(201);
+    const created = await made.json();
+    expect(created.supplier_phone).toBe('9812345678');
+    expect(created.message).toContain('Parle-G 50g: 48 PCS');
+    expect(created.link).toContain('/so/');
+    const token = created.order.token as string;
+    // Another business cannot create orders for A's supplier.
+    expect((await inviteOrdersPOST(post('/api/suppliers/hub/invite-orders', UB, B, { supplier_id: OFFLINE, lines: [{ item_name: 'x', qty: 1 }] }))).status).toBe(404);
+
+    const tctx = { params: { token } };
+    expect((await publicOrderGET(new NextRequest(`http://localhost/api/public/supplier-order/nope-not-a-real-token-123`), { params: { token: 'nope-not-a-real-token-123' } })).status).toBe(404);
+    const viewed = await (await publicOrderGET(new NextRequest(`http://localhost/api/public/supplier-order/${token}`), tctx)).json();
+    expect(viewed.order).toMatchObject({ status: 'viewed', supplier_name: 'Gupta Agencies', notes: 'Deliver by Monday' });
+    expect(viewed.order._internal).toBeUndefined();
+    const [l1, l2] = viewed.order.lines;
+
+    const answer = await publicOrderPOST(
+      new NextRequest(`http://localhost/api/public/supplier-order/${token}`, {
+        method: 'POST',
+        body: JSON.stringify({ lines: [{ id: l1.id, confirmed_qty: 48 }, { id: l2.id, confirmed_qty: 20 }], note: 'Sugar short this week' }),
+      }),
+      tctx
+    );
+    expect((await answer.json()).status).toBe('partial');
+    const twice = await publicOrderPOST(
+      new NextRequest(`http://localhost/api/public/supplier-order/${token}`, { method: 'POST', body: JSON.stringify({ decline: true }) }),
+      tctx
+    );
+    expect(twice.status).toBe(409);
+    const listed = await (await inviteOrdersGET(call('GET', `/api/suppliers/hub/invite-orders?supplier_id=${OFFLINE}`, UA, A))).json();
+    expect(listed.orders[0]).toMatchObject({ status: 'partial', response_note: 'Sugar short this week' });
+
+    // A new business joins and connects from the link: A's record of Gupta links to it.
+    const D = randomUUID();
+    await query(`INSERT INTO businesses (id, name, state_code, gst_registration_type) VALUES ($1, $2, '29', 'regular')`, [D, `Gupta Agencies ${tag}`]);
+    try {
+      expect((await inviteClaimPOST(post('/api/suppliers/hub/invite-orders/claim', UA, A, { token }))).status).toBe(400);
+      const claimed = await inviteClaimPOST(post('/api/suppliers/hub/invite-orders/claim', randomUUID(), D, { token }));
+      expect(claimed.status).toBe(200);
+      const row = await queryOne(`SELECT linked_business_id, approval_status FROM suppliers WHERE id = $1`, [OFFLINE]);
+      expect(row).toMatchObject({ linked_business_id: D, approval_status: 'approved' });
+      const customer = await queryOne(`SELECT id FROM customers WHERE business_id = $1 AND linked_business_id = $2`, [D, A]);
+      expect(customer?.id).toBeTruthy();
+      expect((await inviteClaimPOST(post('/api/suppliers/hub/invite-orders/claim', UC, C, { token }))).status).toBe(409);
+    } finally {
+      await query(`UPDATE suppliers SET linked_business_id = NULL, approval_status = 'none' WHERE id = $1`, [OFFLINE]);
+      await query(`DELETE FROM supplier_invite_orders WHERE supplier_id = $1`, [OFFLINE]);
+      await query(`DELETE FROM notifications WHERE business_id = $1`, [D]);
+      await query(`DELETE FROM customers WHERE business_id = $1`, [D]);
+      await query(`DELETE FROM businesses WHERE id = $1`, [D]);
+    }
+  });
+
+  it('catalogue: uploaded photo, sizes with their own price, and a price for one buyer', async () => {
+    const PACKED = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, selling_price) VALUES ($1, $2, 'Cotton kurti', 'PCS', 'goods', true, 500)`,
+      [PACKED, B]
+    );
+    const made = await createListing(post('/api/suppliers/hub/published-listings', UB, B, { item_id: PACKED, audience: 'linked_only' }));
+    const { listing } = await made.json();
+    const photo = 'data:image/jpeg;base64,' + 'A'.repeat(2000);
+    const patch = (body: object) =>
+      patchListing(
+        new NextRequest(`http://localhost/api/suppliers/hub/published-listings/${listing.id}`, {
+          method: 'PATCH',
+          headers: headers(UB, B),
+          body: JSON.stringify(body),
+        }),
+        { params: { id: listing.id } }
+      );
+    expect((await patch({ options: 'S:450, M:450, M:480' })).status).toBe(400);
+    expect((await patch({ image_url: 'javascript:alert(1)' })).status).toBe(400);
+    expect((await patch({ options: 'S:450, M:450, L:480, XL', price: 460, image_url: photo })).status).toBe(200);
+    const options = await query(`SELECT id, label, price FROM supplier_listing_options WHERE listing_id = $1 ORDER BY sort_order`, [listing.id]);
+    expect(options.rows.map((o: any) => [o.label, o.price == null ? null : Number(o.price)])).toEqual([
+      ['S', 450],
+      ['M', 450],
+      ['L', 480],
+      ['XL', null],
+    ]);
+    const [, , large, xl] = options.rows;
+
+    // A orders L (its own price) and XL (no price of its own: the catalogue price).
+    const res = await ordersPOST(
+      post('/api/supply-orders', UA, A, {
+        supplier_id: supplierRowId,
+        from_catalog: true,
+        lines: [{ vendor_item_id: PACKED, option_id: large.id, qty: 2 }, { vendor_item_id: PACKED, option_id: xl.id, qty: 1 }],
+      })
+    );
+    expect(res.status).toBe(201);
+    const { order } = await res.json();
+    const lines = await query(`SELECT option_label, unit_price FROM supply_order_lines WHERE order_id = $1 ORDER BY sort_order`, [order.id]);
+    expect(lines.rows.map((l: any) => [l.option_label, Number(l.unit_price)])).toEqual([
+      ['L', 480],
+      ['XL', 460],
+    ]);
+    // An option of another listing is refused.
+    const wrong = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, from_catalog: true, lines: [{ vendor_item_id: ITEM_B, option_id: large.id, qty: 1 }] })
+    );
+    expect(wrong.status).toBe(400);
+
+    // B sets A's own price; it wins over option and catalogue prices on new orders and the bill.
+    expect((await buyerPricesPUT(call('PUT', '/api/suppliers/hub/buyer-prices', UB, B, { customer_id: CUST_A_AT_B, item_id: PACKED, price: 430 }))).status).toBe(200);
+    expect((await buyerPricesPUT(call('PUT', '/api/suppliers/hub/buyer-prices', UC, C, { customer_id: CUST_A_AT_B, item_id: PACKED, price: 1 }))).status).toBe(404);
+    const priced = await (await buyerPricesGET(call('GET', `/api/suppliers/hub/buyer-prices?customer_id=${CUST_A_AT_B}&q=kurti`, UB, B))).json();
+    expect(priced.items[0]).toMatchObject({ id: PACKED });
+    expect(Number(priced.items[0].buyer_price)).toBe(430);
+
+    const second = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, from_catalog: true, lines: [{ vendor_item_id: PACKED, option_id: large.id, qty: 3 }] })
+    );
+    const { order: o2 } = await second.json();
+    const line2 = await queryOne(`SELECT id, unit_price FROM supply_order_lines WHERE order_id = $1`, [o2.id]);
+    expect(Number(line2.unit_price)).toBe(430);
+    const octx = { params: { id: o2.id } };
+    await orderPATCH(call('PATCH', `/api/supply-orders/${o2.id}`, UB, B, { action: 'respond', lines: [{ id: line2.id, confirmed_qty: 3 }] }), octx);
+    const draft = await (await invoiceDraftGET(call('GET', `/api/supply-orders/${o2.id}/invoice-draft`, UB, B), octx)).json();
+    expect(draft.lines[0]).toMatchObject({ name: 'Cotton kurti (L)', selling_price: 430, quantity: 3 });
+  });
+
+  it("money: the buyer's payment and debit note reach the supplier to record", async () => {
+    const purchase = await queryOne(`SELECT id FROM purchases WHERE business_id = $1 AND source_invoice_id = $2`, [A, INVOICE]);
+    expect(purchase?.id).toBeTruthy();
+    const paymentId = randomUUID();
+    await noticeBuyerPayment({
+      buyerBusinessId: A, purchaseId: purchase.id, paymentId, amount: 500, paymentMode: 'upi', paymentDate: null, note: 'UTR 4471',
+    });
+    // The same payment never makes a second notice.
+    await noticeBuyerPayment({
+      buyerBusinessId: A, purchaseId: purchase.id, paymentId, amount: 500, paymentMode: 'upi', paymentDate: null, note: null,
+    });
+    await noticeBuyerDebitNote({ buyerBusinessId: A, purchaseId: purchase.id, returnId: randomUUID(), amount: 80, returnDate: null, reason: '4 short' });
+
+    const asB = await (await moneyGET(call('GET', '/api/suppliers/hub/money-notices', UB, B))).json();
+    const pay = asB.notices.filter((n: { kind: string }) => n.kind === 'payment');
+    expect(pay).toHaveLength(1);
+    expect(pay[0]).toMatchObject({ amount: 500, payment_mode: 'upi', invoice_id: INVOICE });
+    const debit = asB.notices.find((n: { kind: string }) => n.kind === 'debit_note');
+    expect(debit).toMatchObject({ amount: 80, note: '4 short' });
+    // Nobody else sees or acts on them.
+    expect((await (await moneyGET(call('GET', '/api/suppliers/hub/money-notices', UC, C))).json()).notices).toHaveLength(0);
+    expect((await moneyPOST(post('/api/suppliers/hub/money-notices', UC, C, { notice_id: pay[0].id, action: 'dismiss' }))).status).toBe(404);
+
+    // A credit note on that bill, made after the notice, settles the debit note.
+    await query(
+      `INSERT INTO credit_notes (business_id, branch_id, customer_id, invoice_id, credit_note_number, credit_note_date, grand_total, created_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 80, CURRENT_TIMESTAMP + INTERVAL '1 second')`,
+      [B, BRB, CUST_A_AT_B, INVOICE, `CN-${tag}`]
+    );
+    const after = await (await moneyGET(call('GET', '/api/suppliers/hub/money-notices', UB, B))).json();
+    expect(after.notices.some((n: { kind: string }) => n.kind === 'debit_note')).toBe(false);
+
+    // One tap records the receipt against B's bill through the normal payments API.
+    const recorded = await moneyPOST(post('/api/suppliers/hub/money-notices', UB, B, { notice_id: pay[0].id, action: 'record' }));
+    const rec = await recorded.json();
+    expect([recorded.status, rec.error]).toEqual([200, undefined]);
+    const receipt = await queryOne(`SELECT type, reference_type, reference_id, amount FROM payments WHERE id = $1`, [rec.payment_id]);
+    expect(receipt).toMatchObject({ type: 'receivable', reference_type: 'invoice', reference_id: INVOICE });
+    expect(Number(receipt.amount)).toBe(500);
+    // Tapping again does nothing more.
+    expect((await moneyPOST(post('/api/suppliers/hub/money-notices', UB, B, { notice_id: pay[0].id, action: 'record' }))).status).toBe(404);
+    expect((await (await moneyGET(call('GET', '/api/suppliers/hub/money-notices', UB, B))).json()).notices).toHaveLength(0);
+
+    expect(upiPayLink({ upiId: 'shop@okicici', payeeName: 'Hub Wholesaler', amount: 1200.5, billNumber: 'HUB-1' })).toBe(
+      'upi://pay?pa=shop%40okicici&pn=Hub+Wholesaler&am=1200.50&cu=INR&tn=Bill+HUB-1'
+    );
+  });
+
+  it('trades: backup supplier, standing orders, sizes running low, and reorder from sales', async () => {
+    expect(suggestedBuyerQty({ current_stock: 2, min_stock: 5, sold_30: 60 })).toBe(26); // 2 a day for 14 days, less 2 in stock
+    expect(suggestedBuyerQty({ current_stock: 2, min_stock: 5 })).toBe(8);
+
+    // Backup: B cannot supply; the item's backup supplier C gets the order.
+    const cSupplier = await queryOne(
+      `SELECT id FROM suppliers WHERE business_id = $1 AND linked_business_id = $2 AND approval_status = 'approved'`,
+      [A, C]
+    );
+    const BREAD = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, default_supplier_id, backup_supplier_id)
+       VALUES ($1, $2, 'Bread 400g', 'PCS', 'goods', true, $3, $4)`,
+      [BREAD, A, supplierRowId, cSupplier.id]
+    );
+    const made = await ordersPOST(post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ buyer_item_id: BREAD, buyer_qty: 30 }] }));
+    const { order } = await made.json();
+    const line = await queryOne(`SELECT id FROM supply_order_lines WHERE order_id = $1`, [order.id]);
+    await orderPATCH(
+      call('PATCH', `/api/supply-orders/${order.id}`, UB, B, { action: 'respond', lines: [{ id: line.id, confirmed_qty: 0 }] }),
+      { params: { id: order.id } }
+    );
+    const backup = await queryOne(
+      `SELECT o.vendor_business_id, o.status, o.origin, l.qty FROM supply_orders o JOIN supply_order_lines l ON l.order_id = o.id
+        WHERE o.parent_order_id = $1`,
+      [order.id]
+    );
+    expect(backup).toMatchObject({ vendor_business_id: C, status: 'pending', origin: 'backup' });
+    expect(Number(backup.qty)).toBe(30);
+
+    // Standing order: A proposes, C accepts, each due day becomes one confirmed order.
+    const proposed = await standingPOST(
+      post('/api/supply-orders/standing', UA, A, { supplier_id: cSupplier.id, weekdays: [0, 1, 2, 3, 4, 5, 6], lines: [{ buyer_item_id: BREAD, buyer_qty: 40 }] })
+    );
+    expect(proposed.status).toBe(201);
+    const { standing } = await proposed.json();
+    const sctx = { params: { id: standing.id } };
+    expect((await runDueStandingOrders()) >= 0).toBe(true);
+    expect(await queryOne(`SELECT id FROM supply_orders WHERE standing_order_id = $1`, [standing.id])).toBeNull();
+    expect((await standingPATCH(call('PATCH', `/api/supply-orders/standing/${standing.id}`, UA, A, { action: 'accept' }), sctx)).status).toBe(409);
+    expect((await standingPATCH(call('PATCH', `/api/supply-orders/standing/${standing.id}`, UC, C, { action: 'accept' }), sctx)).status).toBe(200);
+    await runDueStandingOrders();
+    await runDueStandingOrders();
+    const daily = await query(
+      `SELECT o.status, o.origin, l.qty, l.confirmed_qty FROM supply_orders o JOIN supply_order_lines l ON l.order_id = o.id
+        WHERE o.standing_order_id = $1`,
+      [standing.id]
+    );
+    expect(daily.rows).toHaveLength(1);
+    expect(daily.rows[0]).toMatchObject({ status: 'confirmed', origin: 'standing' });
+    expect(Number(daily.rows[0].confirmed_qty)).toBe(40);
+    await standingPATCH(call('PATCH', `/api/supply-orders/standing/${standing.id}`, UA, A, { action: 'end' }), sctx);
+
+    // Sizes: a kurti's M runs low on its own and the suggested order names the size.
+    const KURTI = randomUUID();
+    const [SIZE_M, SIZE_L] = [randomUUID(), randomUUID()];
+    await query(`UPDATE suppliers SET allow_low_stock_access = true WHERE id = $1`, [supplierRowId]);
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, has_variants, default_supplier_id)
+       VALUES ($1, $2, 'Kurti', 'PCS', 'goods', true, true, $3)`,
+      [KURTI, A, supplierRowId]
+    );
+    await query(
+      `INSERT INTO item_variants (id, item_id, variant_name, current_stock, min_stock) VALUES ($1, $3, 'M', 1, 4), ($2, $3, 'L', 9, 4)`,
+      [SIZE_M, SIZE_L, KURTI]
+    );
+    await buildSuggestedOrders({ buyerBusinessId: A });
+    const sized = await query(
+      `SELECT l.item_name, l.buyer_variant_id FROM supply_order_lines l JOIN supply_orders o ON o.id = l.order_id
+        WHERE o.buyer_business_id = $1 AND l.buyer_item_id = $2`,
+      [A, KURTI]
+    );
+    expect(sized.rows).toEqual([{ item_name: 'Kurti – M', buyer_variant_id: SIZE_M }]);
+  });
+
+  it('platform review holds new directory listings; warehouse stock counts for low stock', async () => {
+    // Review on: a business that has never been reviewed waits when it lists itself.
+    const { setListingReview } = await import('@/lib/supplier-hub-visibility');
+    await setListingReview(true);
+    try {
+      await query(`UPDATE business_discovery SET reviewed_at = NULL, directory_approved = true, visibility = 'hidden' WHERE business_id = $1`, [B]);
+      const listed = await discoveryPATCH(
+        call('PATCH', '/api/suppliers/hub/discovery', UB, B, { visibility: 'directory', profile_summary: 'Biscuits and namkeen wholesale' })
+      );
+      expect(listed.status).toBe(200);
+      expect((await queryOne(`SELECT directory_approved FROM business_discovery WHERE business_id = $1`, [B])).directory_approved).toBe(false);
+      // Once a platform admin approved it, saving again keeps it listed.
+      await query(`UPDATE business_discovery SET directory_approved = true, reviewed_at = CURRENT_TIMESTAMP WHERE business_id = $1`, [B]);
+      await discoveryPATCH(call('PATCH', '/api/suppliers/hub/discovery', UB, B, { visibility: 'directory', profile_summary: 'Biscuits, namkeen' }));
+      expect((await queryOne(`SELECT directory_approved FROM business_discovery WHERE business_id = $1`, [B])).directory_approved).toBe(true);
+    } finally {
+      await setListingReview(false);
+    }
+
+    // Warehouse mode: items.current_stock is stale; the sum over locations decides.
+    const WH_ITEM = randomUUID();
+    const LOC = randomUUID();
+    await query(`UPDATE suppliers SET allow_low_stock_access = true WHERE id = $1`, [supplierRowId]);
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, min_stock, current_stock, default_supplier_id)
+       VALUES ($1, $2, 'Good Day 75g', 'PCS', 'goods', true, 10, 500, $3)`,
+      [WH_ITEM, A, supplierRowId]
+    );
+    const hadSettings = await queryOne(`SELECT warehouses_enabled FROM business_settings WHERE business_id = $1`, [A]);
+    await query(
+      `INSERT INTO business_settings (business_id, warehouses_enabled) VALUES ($1, true)
+       ON CONFLICT (business_id) DO UPDATE SET warehouses_enabled = true`,
+      [A]
+    );
+    try {
+      await query(`INSERT INTO warehouses (id, business_id, name) VALUES ($1, $2, 'Godown')`, [LOC, A]);
+      await query(`INSERT INTO location_stock (location_id, item_id, current_stock_qty) VALUES ($1, $2, 3)`, [LOC, WH_ITEM]);
+      await checkLowStockForItem(WH_ITEM, A);
+      expect(await queryOne(`SELECT id FROM low_stock_alerts WHERE item_id = $1 AND alert_status = 'active'`, [WH_ITEM])).toBeTruthy();
+    } finally {
+      await query(`DELETE FROM location_stock WHERE item_id = $1`, [WH_ITEM]);
+      await query(`DELETE FROM warehouses WHERE id = $1`, [LOC]);
+      await query(`UPDATE business_settings SET warehouses_enabled = $2 WHERE business_id = $1`, [A, hadSettings?.warehouses_enabled ?? false]);
+    }
   });
 
   it('a queued low-stock check runs after the stock change is saved', async () => {

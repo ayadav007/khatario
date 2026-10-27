@@ -30,7 +30,7 @@ export function notificationHref(n: NotificationRef): string | null {
   if (type === 'low_stock_alert') return '/supply-orders?role=vendor';
   if (refType === 'business') return '/suppliers';
 
-  if (type === 'supplier_request') return '/suppliers/requests';
+  if (type === 'supplier_request') return '/suppliers/hub';
   if (refType === 'supplier' && id) return `/suppliers/${id}`;
   if (type === 'invoice_nearing_due' || type === 'invoice_overdue') return id ? `/invoices/${id}` : '/invoices';
   if (refType === 'invoice' && id) return `/invoices/${id}`;

@@ -18,10 +18,13 @@ export async function POST(request: NextRequest) {
     const stats = await checkLowStockForAllBusinesses();
     // One suggested order per connected buyer and supplier, topped up with newly low items.
     const suggestions = await buildSuggestedOrders();
+    // Retry Supplier Hub GST checks that a lookup outage left undone.
+    const { refreshPendingGstVerifications } = await import('@/lib/supplier-trust');
+    const gstChecked = await refreshPendingGstVerifications(20).catch(() => 0);
     return NextResponse.json({
       success: true,
       message: 'Low stock check completed',
-      stats: { ...stats, suggested_orders: suggestions.orders, suggested_lines: suggestions.lines },
+      stats: { ...stats, suggested_orders: suggestions.orders, suggested_lines: suggestions.lines, gst_checked: gstChecked },
     });
 
   } catch (error: any) {

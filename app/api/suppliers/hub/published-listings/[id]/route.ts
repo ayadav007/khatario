@@ -5,7 +5,7 @@ import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
-import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
+import { assertOwnCollection, CatalogInputError, parseListingExtras, parseListingOptions, saveListingOptions } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,8 +100,10 @@ export async function PATCH(
     if (pd !== 'from_amount') fa = null;
 
     let extras: ReturnType<typeof parseListingExtras>;
+    let options: ReturnType<typeof parseListingOptions>;
     try {
       extras = parseListingExtras(body, businessId);
+      options = parseListingOptions(body.options);
       if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
     } catch (e) {
       if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
@@ -160,6 +162,7 @@ export async function PATCH(
       ]
     );
 
+    if (updated && options) await saveListingOptions(id, options);
     return NextResponse.json({ listing: updated });
   } catch (e: any) {
     console.error('hub published-listings PATCH', e);

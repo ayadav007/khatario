@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api.dart';
 import '../capability.dart';
 import '../format.dart';
+import '../screens/hub/hub_home_screen.dart';
+import '../screens/hub/my_catalog_screen.dart';
 import '../screens/hub/hub_directory_screen.dart';
 import '../screens/hub/incoming_bills_screen.dart';
 import '../screens/hub/new_arrivals_screen.dart';
@@ -190,7 +192,9 @@ class _AppShellState extends State<AppShell> {
       '/supply-orders' => SupplyOrdersScreen(session: widget.session),
       '/supply-orders?role=vendor' => SupplyOrdersScreen(session: widget.session, selling: true),
       '/purchases/new-arrivals' => NewArrivalsScreen(session: widget.session),
-      '/suppliers/hub' => HubDirectoryScreen(session: widget.session),
+      '/suppliers/hub' => HubHomeScreen(session: widget.session),
+      '/suppliers/hub/find' => HubDirectoryScreen(session: widget.session),
+      '/suppliers/catalog' => MyCatalogScreen(session: widget.session),
       '/suppliers/requests' => ConnectionRequestsScreen(session: widget.session),
       _ => null,
     };

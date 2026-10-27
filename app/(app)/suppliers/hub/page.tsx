@@ -178,6 +178,18 @@ export default function SupplierHubHomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: a.orderAction, lines: [] }),
         });
+      } else if (a.kind === 'standing' && choice) {
+        res = await fetch(`/api/supply-orders/standing/${a.standingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: choice }),
+        });
+      } else if (a.kind === 'money') {
+        res = await fetch('/api/suppliers/hub/money-notices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notice_id: a.noticeId, action: 'record' }),
+        });
       } else if (a.kind === 'request' && choice === 'accept') {
         setConnectRequestId(a.requestId);
         setBusyKey(null);
@@ -198,9 +210,15 @@ export default function SupplierHubHomePage() {
           ? a.orderAction === 'confirm'
             ? `Order confirmed. ${item.partner} will bill it.`
             : `Sent to ${item.partner} to confirm.`
-          : choice === 'accept'
-            ? `Connected with ${item.partner}.`
-            : 'Request declined.',
+          : a.kind === 'standing'
+            ? choice === 'accept'
+              ? `Standing order with ${item.partner} is running.`
+              : 'Standing order declined.'
+            : a.kind === 'money'
+            ? `Receipt from ${item.partner} recorded.`
+            : choice === 'accept'
+              ? `Connected with ${item.partner}.`
+              : 'Request declined.',
       );
       // Drop the card at once, then refresh the counts behind it.
       setHome((h) => (h ? { ...h, inbox: h.inbox.filter((i) => i.key !== item.key) } : h));

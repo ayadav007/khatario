@@ -106,6 +106,8 @@ export default function SupplierHubProfilePage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [shareLowStock, setShareLowStock] = useState(true);
+  /** First order to send with the request: supplier item id -> quantity typed. */
+  const [firstOrder, setFirstOrder] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [tab, setTab] = useState('');
 
@@ -152,6 +154,9 @@ export default function SupplierHubProfilePage() {
           supplier_business_id: businessId,
           message: msg.trim() || null,
           share_low_stock: shareLowStock,
+          lines: Object.entries(firstOrder)
+            .filter(([, q]) => Number(q) > 0)
+            .map(([vendor_item_id, q]) => ({ vendor_item_id, qty: Number(q) })),
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -159,8 +164,15 @@ export default function SupplierHubProfilePage() {
         toast.error(j.error || 'Request failed');
         return;
       }
-      toast.success(j.existing ? 'You already have a pending request.' : 'Connection request sent.');
+      toast.success(
+        j.order
+          ? 'Request and first order sent. The order reaches them when they accept.'
+          : j.existing
+            ? 'You already have a pending request.'
+            : 'Connection request sent.'
+      );
       setMsg('');
+      setFirstOrder({});
       load();
     } finally {
       setSubmitting(false);
@@ -336,8 +348,8 @@ export default function SupplierHubProfilePage() {
                       Open supplier
                     </Link>
                   )}
-                  <Link href="/purchases/requests" className={outlineLink}>
-                    Purchase requests
+                  <Link href="/supply-orders" className={outlineLink}>
+                    Supplier orders
                   </Link>
                 </>
               ) : viewer.pending_request_id ? (
@@ -402,6 +414,12 @@ export default function SupplierHubProfilePage() {
                       </span>
                     </span>
                   </label>
+                  {Object.values(firstOrder).some((q) => Number(q) > 0) && (
+                    <p className="rounded-xl bg-[#fef6ef] px-3 py-2 text-[13px] text-[#6e3b0e]">
+                      Your first order of {Object.values(firstOrder).filter((q) => Number(q) > 0).length} item(s) goes
+                      with the request. {biz.name} gets it as an order once they accept.
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={requestConnection}
@@ -485,7 +503,17 @@ export default function SupplierHubProfilePage() {
                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-4">
                   {shown.map((l) => (
                     <li key={l.id}>
-                      <ProductCard listing={l} seed={biz.id} linked={viewer.is_linked} />
+                      <ProductCard
+                        listing={l}
+                        seed={biz.id}
+                        linked={viewer.is_linked}
+                        orderQty={
+                          !isSelf && !viewer.is_linked && !viewer.pending_request_id && l.audience === 'public_preview'
+                            ? firstOrder[l.item_id] ?? ''
+                            : undefined
+                        }
+                        onOrderQty={(q) => setFirstOrder((prev) => ({ ...prev, [l.item_id]: q }))}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -518,7 +546,20 @@ export default function SupplierHubProfilePage() {
   );
 }
 
-function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: string; linked: boolean }) {
+/** With `orderQty` set, the card takes a quantity for a first order sent with the connection request. */
+function ProductCard({
+  listing: l,
+  seed,
+  linked,
+  orderQty,
+  onOrderQty,
+}: {
+  listing: Listing;
+  seed: string;
+  linked: boolean;
+  orderQty?: string;
+  onOrderQty?: (qty: string) => void;
+}) {
   const name = l.display_name || l.item_name;
   const pack = [l.item_brand, l.item_unit && `Sold per ${l.item_unit}`].filter(Boolean).join(' · ');
   const terms = [l.moq && Number(l.moq) > 0 && `Min ${Number(l.moq).toLocaleString('en-IN')}`, l.lead_time_text]
@@ -560,6 +601,22 @@ function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: str
             )}
             {price}
           </div>
+        )}
+        {orderQty !== undefined && onOrderQty && (
+          <label className="mt-2 flex items-center justify-between gap-2 text-xs text-text-secondary">
+            Add to first order
+            <input
+              id={`first-order-${l.item_id}`}
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              value={orderQty}
+              onChange={(e) => onOrderQty(e.target.value)}
+              placeholder={l.moq && Number(l.moq) > 0 ? `Min ${Number(l.moq)}` : 'Qty'}
+              className="w-20 rounded-lg border border-[#D8D3C8] px-2 py-1 text-sm text-text-primary"
+            />
+          </label>
         )}
       </div>
     </article>

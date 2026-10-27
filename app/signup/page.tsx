@@ -122,6 +122,9 @@ function SignupPageContent() {
 
   const leadToken = searchParams.get('lead');
   const refFromUrl = searchParams.get('ref');
+  // Where to land after signup, e.g. a supplier joining from an order link. Same-site paths only.
+  const nextFromUrl = searchParams.get('next');
+  const nextPath = nextFromUrl && /^\/(?!\/)[\w\-/]*$/.test(nextFromUrl) ? nextFromUrl : '/dashboard';
   const [partnerRef, setPartnerRef] = useState<string | null>(null);
   const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [leadNotice, setLeadNotice] = useState<string | null>(null);
@@ -207,7 +210,7 @@ function SignupPageContent() {
 
       // Full reload so httpOnly session cookies from /api/signup are sent on /dashboard.
       await trackSignupComplete();
-      window.location.assign('/dashboard');
+      window.location.assign(nextPath);
     } catch (err: unknown) {
       completingRef.current = false;
       setError(err instanceof Error ? err.message : 'Signup failed');

@@ -551,6 +551,18 @@ export async function POST(request: NextRequest) {
       monthly: ['gstr2b', 'gstr3b'],
     });
     await client.query('COMMIT');
+    // A return against a connected supplier's bill: tell the supplier so they issue the credit note.
+    if (purchase_id && purchaseReturn?.id) {
+      const { noticeBuyerDebitNote } = await import('@/lib/supplier-hub-money');
+      await noticeBuyerDebitNote({
+        buyerBusinessId: business_id,
+        purchaseId: purchase_id,
+        returnId: purchaseReturn.id,
+        amount: Number(purchaseReturn.grand_total) || 0,
+        returnDate: return_date ? String(return_date).slice(0, 10) : null,
+        reason: typeof reason === 'string' ? reason : null,
+      });
+    }
     return NextResponse.json({ purchaseReturn }, { status: 201 });
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {});
