@@ -3,6 +3,7 @@
 Updated by the scheduled SEO tasks after every run. Newest entries at the top of each log.
 
 ## Current status
+- 2026-10-27: no change in GSC (0 clicks, 1 impression, no queries; range to 2026-10-25). All 6 key URLs still indexed; `/guides` recrawled 2026-10-27. Health all green. No page optimised (no trigger met).
 - 2026-10-26: all 6 key URLs indexed with apex canonicals; `/guides` fixed itself (recrawled 2026-10-26, Google canonical now `https://khatario.com/guides`). GSC: 0 clicks, 1 impression (www home, 2026-10-23, no query shown). Still no query data, so no page optimised.
 - 2026-10-25: 5 of 6 key URLs indexed (`/`, `/solution/accounting`, `/solution/inventory`, `/blog`, `/book-demo`). `/guides` is "Duplicate without user-selected canonical": Google picked `www.khatario.com/guides` on a crawl before the canonical/redirect were live; both are live now, so owner should Request indexing. Still 0 impressions (GSC lag). No page optimised because there is no query data yet.
 - 2026-10-25: production at `c15e7e9a`. Agent blog API live and verified (`GET /api/seo-agent/blog` → 200 with key, 401 without). All public pages have their own title, description and absolute canonical; home has Organization/WebSite/SoftwareApplication + FAQPage JSON-LD; share image live. Audit: 0 high, 0 medium, 5 low.
