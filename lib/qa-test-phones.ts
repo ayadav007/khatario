@@ -39,6 +39,7 @@ export function isQaTestPhone(
 /** Logs a WhatsApp send that was dropped because the recipient is a QA test phone. */
 export function logSuppressedQaSend(channel: string, to: string, preview?: string): string {
   const id = `qa-suppressed-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-  console.log(`[qa-test-phone] ${channel} to ${to} not sent (${id})${preview ? `: ${preview.slice(0, 120)}` : ''}`);
+  // console.error: production builds strip console.log, and this line is the QA evidence that nothing went out.
+  console.error(`[qa-test-phone] ${channel} to ${to} not sent (${id})${preview ? `: ${preview.slice(0, 120)}` : ''}`);
   return id;
 }
