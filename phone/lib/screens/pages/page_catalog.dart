@@ -178,7 +178,7 @@ const appPages = <AppPage>[
   AppPage('/suppliers/requests', 'Requests to Fulfill', '/api/suppliers/hub/connection-requests', listKey: 'requests'),
   AppPage('/suppliers/dashboard', 'Supplier Dashboard', '/api/suppliers/dashboard'),
   AppPage('/purchases', 'All Purchases', '/api/purchases', listKey: 'purchases'),
-  AppPage('/purchases/requests', 'Purchase requests', '/api/stock-requests', listKey: 'requests'),
+  AppPage('/purchases/requests', 'Supplier orders', '/api/supply-orders?role=buyer&group=all', listKey: 'orders'),
   AppPage('/purchase-orders', 'Purchase Orders', '/api/purchase-orders', listKey: 'purchaseOrders'),
   AppPage('/purchase-returns', 'Purchase Returns', '/api/purchase-returns', listKey: 'purchaseReturns'),
   AppPage('/expenses', 'Expenses', '/api/expenses', listKey: 'expenses'),

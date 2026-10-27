@@ -78,6 +78,8 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [pickQuery, setPickQuery] = useState<Record<string, string>>({});
   const [dispatchNote, setDispatchNote] = useState('');
+  /** What would stop the bill being finalised (supplier, confirmed orders only). */
+  const [billWarnings, setBillWarnings] = useState<Array<{ message: string; href: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,6 +99,15 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
   useEffect(() => {
     load();
   }, [load]);
+
+  const readyToBill = detail?.role === 'vendor' && (detail.order.status === 'confirmed' || detail.order.status === 'partial');
+  useEffect(() => {
+    if (!readyToBill) return setBillWarnings([]);
+    fetch(`/api/supply-orders/${params.id}/invoice-draft`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setBillWarnings(d?.warnings || []))
+      .catch(() => setBillWarnings([]));
+  }, [readyToBill, params.id]);
 
   const act = async (action: string, confirmText?: string, note?: string) => {
     if (confirmText && !confirm(confirmText)) return;
@@ -391,6 +402,20 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
               Decline
             </Button>
           </>
+        )}
+        {role === 'vendor' && (s === 'confirmed' || s === 'partial') && billWarnings.length > 0 && (
+          <div className="w-full rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+            <p className="font-medium">Fix these first, or the bill cannot be finalised:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {billWarnings.map((w) => (
+                <li key={w.message}>
+                  <Link href={w.href} className="underline">
+                    {w.message}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {role === 'vendor' && (s === 'confirmed' || s === 'partial') && (
           <Link href={`/invoices/new?supply_order_id=${order.id}`}>

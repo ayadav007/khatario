@@ -8,6 +8,7 @@ import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helper
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { saveItemLink } from '@/lib/supplier-item-links';
 import { markSupplyOrderReceived } from '@/lib/supply-orders';
 import { inBuyerUnits, loadBillForBuyer, loadBillLines, parseItemMap, resolveBillLines } from '@/lib/supplier-bills';
@@ -283,9 +284,29 @@ export async function POST(
 
     const purchase = purchaseRes.rows[0];
 
+    // A bill raised from a Supplier Hub order: lines ordered for one size or colour
+    // (supply_order_lines.buyer_variant_id) add stock to that size. The bill keeps the order's
+    // line order, so the nth bill line for a supplier item is the nth order line for it.
+    const variantQueue = new Map<string, Array<string | null>>();
+    const orderLines = await client.query(
+      `SELECT l.vendor_item_id, l.buyer_variant_id
+         FROM supply_order_lines l
+         JOIN supply_orders o ON o.id = l.order_id
+        WHERE o.invoice_id = $1 AND o.buyer_business_id = $2 AND COALESCE(l.confirmed_qty, l.qty) > 0
+        ORDER BY l.sort_order`,
+      [invoiceId, business_id]
+    );
+    for (const ol of orderLines.rows) {
+      if (!ol.vendor_item_id) continue;
+      const key = String(ol.vendor_item_id);
+      if (!variantQueue.has(key)) variantQueue.set(key, []);
+      variantQueue.get(key)!.push(ol.buyer_variant_id ?? null);
+    }
+
     // Create purchase items and update stock
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
+      const buyerVariantId = item.item_id ? variantQueue.get(String(item.item_id))?.shift() ?? null : null;
       
       // The supplier's item_id belongs to their business; use the caller's matched item, in the
       // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
@@ -298,9 +319,9 @@ export async function POST(
         INSERT INTO purchase_items (
           purchase_id, item_id, item_name, hsn_sac, quantity, unit, unit_price,
           discount_percent, discount_amount, tax_rate, tax_mode, tax_amount, taxable_value,
-          cgst_amount, sgst_amount, igst_amount, line_total, location_id, cess_amount
+          cgst_amount, sgst_amount, igst_amount, line_total, location_id, cess_amount, variant_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       `, [
         purchase.id,
         customerItemId, // Use customer's item_id, not supplier's
@@ -321,6 +342,7 @@ export async function POST(
         item.line_total || 0,
         locationIdForPurchase,
         Number(item.cess_amount) || 0,
+        buyerVariantId,
       ]);
 
       // Update stock if item was found in customer's inventory
@@ -457,6 +479,9 @@ export async function POST(
               `,
                 [locationIdForPurchase, customerItemId, quantity]
               );
+            } else if (!warehouseModeEnabled && buyerVariantId) {
+              await adjustBranchVariantStock(client, business_id, purchaseBranchId, buyerVariantId, quantity);
+              await refreshVariantGlobalStockFromBranches(client, business_id, buyerVariantId);
             } else if (!warehouseModeEnabled) {
               await adjustBranchItemStock(client, business_id, purchaseBranchId, customerItemId, quantity);
               await refreshItemGlobalStockFromBranches(client, business_id, customerItemId);

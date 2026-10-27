@@ -1006,11 +1006,13 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
   }
   const lines = (
     await exec(
-      `SELECT l.id, l.item_name, COALESCE(l.confirmed_qty, l.qty) AS qty, l.vendor_item_id, l.option_label,
+      `SELECT l.id, l.item_name, COALESCE(l.confirmed_qty, l.qty) AS qty, l.vendor_item_id,
+              COALESCE(l.option_label, bv.variant_name) AS option_label,
               i.name, i.unit, COALESCE(l.unit_price, bp.price, i.selling_price) AS selling_price,
               i.tax_rate, i.hsn_sac, COALESCE(i.gst_included, false) AS gst_included
          FROM supply_order_lines l
          LEFT JOIN items i ON i.id = l.vendor_item_id AND i.business_id = $2
+         LEFT JOIN item_variants bv ON bv.id = l.buyer_variant_id
          LEFT JOIN supplier_buyer_prices bp
            ON bp.vendor_business_id = $2 AND bp.buyer_business_id = $3 AND bp.item_id = l.vendor_item_id
         WHERE l.order_id = $1 AND COALESCE(l.confirmed_qty, l.qty) > 0
@@ -1044,8 +1046,31 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
        AND (NULLIF(c.state, '') IS NULL OR NULLIF(c.state_code, '') IS NULL OR NULLIF(c.gstin, '') IS NULL)`,
     [customerId, vendorBusinessId, order.buyer_business_id]
   );
+  // What would stop the bill being finalised, so the supplier can fix it before opening it.
+  const biz = (
+    await exec(
+      `SELECT COALESCE(NULLIF(TRIM(b.address_line1), ''), (
+                SELECT br.address_line1 FROM branches br
+                 WHERE br.business_id = b.id AND NULLIF(TRIM(br.address_line1), '') IS NOT NULL LIMIT 1)) AS address,
+              b.state, b.state_code
+         FROM businesses b WHERE b.id = $1`,
+      [vendorBusinessId]
+    )
+  ).rows[0];
+  const warnings: Array<{ code: 'business_address' | 'hsn'; message: string; href: string }> = [];
+  if (!String(biz?.address || '').trim() || !(biz?.state || biz?.state_code)) {
+    warnings.push({
+      code: 'business_address',
+      message: 'Add your business address and state; a tax invoice needs them.',
+      href: '/settings/business',
+    });
+  }
+  for (const l of lines.filter((x: any) => !String(x.hsn_sac || '').trim())) {
+    warnings.push({ code: 'hsn', message: `Add the HSN code for ${l.name}.`, href: `/items/${l.vendor_item_id}` });
+  }
   return {
     customer_id: customerId,
+    warnings,
     lines: lines.map((l: any) => ({
       item_id: l.vendor_item_id,
       name: l.option_label ? `${l.name} (${l.option_label})` : l.name,

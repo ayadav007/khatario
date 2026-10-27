@@ -190,6 +190,8 @@ class _AppShellState extends State<AppShell> {
     final hubScreen = switch (href) {
       '/purchases/incoming' => IncomingBillsScreen(session: widget.session),
       '/supply-orders' => SupplyOrdersScreen(session: widget.session),
+      // Single-item stock requests were replaced by supplier orders (migration 430).
+      '/purchases/requests' => SupplyOrdersScreen(session: widget.session),
       '/supply-orders?role=vendor' => SupplyOrdersScreen(session: widget.session, selling: true),
       '/purchases/new-arrivals' => NewArrivalsScreen(session: widget.session),
       '/suppliers/hub' => HubHomeScreen(session: widget.session),
@@ -206,7 +208,6 @@ class _AppShellState extends State<AppShell> {
       '/purchases': PurchaseKind.bills,
       '/purchase-orders': PurchaseKind.orders,
       '/purchase-returns': PurchaseKind.returns,
-      '/purchases/requests': PurchaseKind.requests,
     };
     final purchaseKind = purchaseHrefs[href];
     if (purchaseKind != null) {

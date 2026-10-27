@@ -228,12 +228,8 @@ export default function SupplierDashboardPage() {
         })
         .map(item => {
           const itemId = item.item_id || `temp-${item.item_name}`;
-          return {
-            requester_business_id: business.id, // Supplier is requesting
-            responder_business_id: finalCustomerBusinessId!, // Customer will respond
-            item_id: item.item_id!,
-            requested_qty: parseFloat(requestQuantities[itemId])
-          };
+          // The buyer's own item and quantity, in the buyer's unit.
+          return { buyer_item_id: item.item_id!, buyer_qty: parseFloat(requestQuantities[itemId]) };
         });
 
       if (requests.length === 0) {
@@ -242,20 +238,27 @@ export default function SupplierDashboardPage() {
         return;
       }
 
-      console.log('Submitting requests:', requests);
-
-      const res = await fetch('/api/stock-requests', {
+      // Proposed as one supplier order for the buyer to confirm (stock requests were retired).
+      const linkRes = await fetch('/api/suppliers/hub/linked-customer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests
-        })
+        body: JSON.stringify({ buyer_business_id: finalCustomerBusinessId }),
+      });
+      const link = await linkRes.json().catch(() => ({}));
+      if (!linkRes.ok || !link.customer_id) {
+        toast.error(link.error || 'This buyer is not connected with you');
+        return;
+      }
+      const res = await fetch('/api/supply-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: link.customer_id, lines: requests, send: true }),
       });
 
       const responseData = await res.json();
 
       if (res.ok) {
-        toast.success(`Successfully sent ${requests.length} quantity request(s) to ${selectedCustomer.customer_name}`);
+        toast.success(`Order proposed to ${selectedCustomer.customer_name} for ${requests.length} item(s). They confirm it in Supplier Hub.`);
         setShowRequestModal(false);
         setSelectedCustomer(null);
         setRequestQuantities({});
@@ -373,7 +376,7 @@ export default function SupplierDashboardPage() {
                       </div>
                       <div className="flex gap-2">
                         <Button size="sm" variant="primary" onClick={() => handleRequestQuantities(g)}>
-                          Request Quantities
+                          Propose order
                         </Button>
                       </div>
                     </div>
@@ -512,7 +515,7 @@ export default function SupplierDashboardPage() {
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">Request Quantities</h2>
+                  <h2 className="text-xl font-bold text-gray-900">Propose an order</h2>
                   <p className="text-sm text-gray-600 mt-1">Request quantities from {selectedCustomer.customer_name}</p>
                 </div>
                 <button

@@ -975,16 +975,13 @@ class _PurchaseRequestFormState extends State<PurchaseRequestForm> {
     }
     setState(() { _saving = true; _error = null; });
     try {
-      await widget.session.api.postJson('/api/stock-requests', {
-        'requests': [
-          {
-            'requester_business_id': widget.session.businessId,
-            'responder_business_id': linked,
-            'item_id': _itemId,
-            'requested_qty': qty,
-            'notes': _notes.text.trim(),
-          },
+      // Stock requests became supplier orders: the same ask, as a one-line order.
+      await widget.session.api.postJson('/api/supply-orders', {
+        'supplier_id': _supplierId,
+        'lines': [
+          {'buyer_item_id': _itemId, 'buyer_qty': qty},
         ],
+        'notes': _notes.text.trim(),
       });
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {

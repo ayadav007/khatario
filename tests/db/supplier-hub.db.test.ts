@@ -1764,6 +1764,68 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     }
   });
 
+  it('billing warns about a missing address or HSN; received sizes add stock to that size', async () => {
+    const [KURTI2, SIZE_M, SIZE_L, VEND_KURTI] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, has_variants) VALUES ($1, $2, 'Cotton kurti', 'PCS', 'goods', true, true)`,
+      [KURTI2, A]
+    );
+    await query(`INSERT INTO item_variants (id, item_id, variant_name, current_stock) VALUES ($1, $3, 'M', 0), ($2, $3, 'L', 0)`, [SIZE_M, SIZE_L, KURTI2]);
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, selling_price) VALUES ($1, $2, 'KURTI COTTON', 'PCS', 'goods', true, 400)`,
+      [VEND_KURTI, B]
+    );
+    await query(
+      `INSERT INTO supplier_item_links (buyer_business_id, vendor_business_id, buyer_item_id, vendor_item_id, buyer_units_per_vendor_unit, source)
+       VALUES ($1, $2, $3, $4, 1, 'manual')`,
+      [A, B, KURTI2, VEND_KURTI]
+    );
+    const order = await queryOne(
+      `INSERT INTO supply_orders (buyer_business_id, vendor_business_id, status, origin, created_by_business_id, confirmed_at)
+       VALUES ($1, $2, 'confirmed', 'buyer', $1, CURRENT_TIMESTAMP) RETURNING id`,
+      [A, B]
+    );
+    await query(
+      `INSERT INTO supply_order_lines (order_id, buyer_item_id, vendor_item_id, item_name, qty, confirmed_qty, buyer_variant_id, sort_order)
+       VALUES ($1, $2, $3, 'Cotton kurti – M', 2, 2, $4, 0), ($1, $2, $3, 'Cotton kurti – L', 3, 3, $5, 1)`,
+      [order.id, KURTI2, VEND_KURTI, SIZE_M, SIZE_L]
+    );
+
+    // B has no address on file and the kurti has no HSN: both are flagged before billing.
+    await query(`UPDATE businesses SET address_line1 = NULL WHERE id = $1`, [B]);
+    await query(`UPDATE branches SET address_line1 = NULL WHERE business_id = $1`, [B]).catch(() => undefined);
+    const octx = { params: { id: order.id } };
+    const draft = await (await invoiceDraftGET(call('GET', `/api/supply-orders/${order.id}/invoice-draft`, UB, B), octx)).json();
+    expect(draft.warnings.map((w: { code: string }) => w.code)).toEqual(['business_address', 'hsn', 'hsn']);
+    expect(draft.lines.map((l: { name: string }) => l.name)).toEqual(['KURTI COTTON (M)', 'KURTI COTTON (L)']);
+
+    // B bills it; A receives: 2 go to M and 3 to L.
+    const BILL = randomUUID();
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'final', 'tax_invoice', '29', 2000, 0, 0, 0, 0, 2000, 0, 2000, 'unpaid', $5)`,
+      [BILL, B, CUST_A_AT_B, `KUR-${tag}`, BRB]
+    );
+    await query(
+      `INSERT INTO invoice_items (invoice_id, item_id, item_name, quantity, unit, unit_price, taxable_value, line_total, sort_order)
+       VALUES ($1, $2, 'KURTI COTTON (M)', 2, 'PCS', 400, 800, 800, 0), ($1, $2, 'KURTI COTTON (L)', 3, 'PCS', 400, 1200, 1200, 1)`,
+      [BILL, VEND_KURTI]
+    );
+    await query(`UPDATE supply_orders SET status = 'invoiced', invoice_id = $2 WHERE id = $1`, [order.id, BILL]);
+    const rec = await convertInvoice(post(`/api/invoices/${BILL}/convert-to-purchase`, UA, A, {}), { params: { id: BILL } });
+    const recBody = await rec.json();
+    expect([rec.status, recBody.error]).toEqual([201, undefined]);
+    const variants = await query(`SELECT id, current_stock FROM item_variants WHERE item_id = $1 ORDER BY variant_name DESC`, [KURTI2]);
+    expect(variants.rows.map((v: any) => [v.id, Number(v.current_stock)])).toEqual([
+      [SIZE_M, 2],
+      [SIZE_L, 3],
+    ]);
+    const lines = await query(`SELECT variant_id FROM purchase_items WHERE purchase_id = $1 ORDER BY quantity`, [recBody.purchase.id]);
+    expect(lines.rows.map((l: any) => l.variant_id)).toEqual([SIZE_M, SIZE_L]);
+  });
+
   it('a queued low-stock check runs after the stock change is saved', async () => {
     const item = randomUUID();
     await query(`UPDATE suppliers SET allow_low_stock_access = true WHERE id = $1`, [supplierRowId]);
