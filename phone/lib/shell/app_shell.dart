@@ -6,6 +6,7 @@ import '../api.dart';
 import '../capability.dart';
 import '../format.dart';
 import '../screens/hub/hub_home_screen.dart';
+import '../screens/purchases/order_list_screen.dart';
 import '../screens/hub/my_catalog_screen.dart';
 import '../screens/hub/hub_directory_screen.dart';
 import '../screens/hub/incoming_bills_screen.dart';
@@ -192,6 +193,7 @@ class _AppShellState extends State<AppShell> {
       '/supply-orders' => SupplyOrdersScreen(session: widget.session),
       // Single-item stock requests were replaced by supplier orders (migration 430).
       '/purchases/requests' => SupplyOrdersScreen(session: widget.session),
+      '/purchases/order-list' => OrderListScreen(session: widget.session),
       '/supply-orders?role=vendor' => SupplyOrdersScreen(session: widget.session, selling: true),
       '/purchases/new-arrivals' => NewArrivalsScreen(session: widget.session),
       '/suppliers/hub' => HubHomeScreen(session: widget.session),

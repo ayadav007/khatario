@@ -10,7 +10,7 @@
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–394 and 421–430 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–394 and 421–431 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -86,6 +86,9 @@ import { noticeBuyerDebitNote, noticeBuyerPayment, upiPayLink } from '@/lib/supp
 import { POST as standingPOST } from '@/app/api/supply-orders/standing/route';
 import { PATCH as standingPATCH } from '@/app/api/supply-orders/standing/[id]/route';
 import { runDueStandingOrders } from '@/lib/supply-standing-orders';
+import { GET as orderListGET, POST as orderListPOST } from '@/app/api/purchases/order-list/route';
+import { POST as orderListAssign } from '@/app/api/purchases/order-list/assign/route';
+import { POST as orderListSend } from '@/app/api/purchases/order-list/send/route';
 import { buildSuggestedOrders, suggestedBuyerQty } from '@/lib/supply-orders';
 import { GET as publicOrderGET, POST as publicOrderPOST } from '@/app/api/public/supplier-order/[token]/route';
 import { flushHubWhatsApp } from '@/lib/supplier-hub-whatsapp';
@@ -175,6 +178,7 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(migration('428_supplier_hub_money_notices.sql'));
     await query(migration('429_hub_backup_standing_variants.sql'));
     await query(migration('430_hub_listing_review_retire_requests.sql'));
+    await query(migration('431_order_list.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -1824,6 +1828,55 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     ]);
     const lines = await query(`SELECT variant_id FROM purchase_items WHERE purchase_id = $1 ORDER BY quantity`, [recBody.purchase.id]);
     expect(lines.rows.map((l: any) => l.variant_id)).toEqual([SIZE_M, SIZE_L]);
+  });
+
+  it('order list: pick items, suppliers fill in, one pick for the rest, one order per supplier', async () => {
+    const NOSUP = randomUUID();
+    const OFFLINE2 = randomUUID();
+    await query(`INSERT INTO items (id, business_id, name, unit, item_type, is_active, rack) VALUES ($1, $2, 'Matchbox', 'PCS', 'goods', true, 'C1')`, [NOSUP, A]);
+    await query(`INSERT INTO suppliers (id, business_id, name, phone) VALUES ($1, $2, 'Local Agencies', '9811111111')`, [OFFLINE2, A]);
+    await query(`UPDATE items SET default_supplier_id = $2 WHERE id = $1`, [ITEM_A, supplierRowId]);
+
+    await orderListPOST(post('/api/purchases/order-list', UA, A, { item_id: ITEM_A, qty: 24 }));
+    const added = await (await orderListPOST(post('/api/purchases/order-list', UA, A, { item_id: NOSUP, qty: 10 }))).json();
+    const byItem = new Map(added.lines.map((l: any) => [l.item_id, l]));
+    expect(byItem.get(ITEM_A)).toMatchObject({ supplier_id: supplierRowId, way: 'hub', qty: 24 });
+    expect(byItem.get(NOSUP)).toMatchObject({ supplier_id: null, rack: 'C1' });
+    // Another business cannot see this list.
+    expect((await (await orderListGET(call('GET', '/api/purchases/order-list', UC, C))).json()).lines).toHaveLength(0);
+
+    // Nothing is sent while an item has no supplier.
+    const early = await orderListSend(post('/api/purchases/order-list/send', UA, A, {}));
+    expect(early.status).toBe(400);
+    expect((await early.json()).error).toContain('Choose a supplier for 1 item');
+
+    const noSupLine = (byItem.get(NOSUP) as any).id;
+    const assigned = await (
+      await orderListAssign(post('/api/purchases/order-list/assign', UA, A, { line_ids: [noSupLine], supplier_id: OFFLINE2 }))
+    ).json();
+    expect(assigned.lines.find((l: any) => l.item_id === NOSUP)).toMatchObject({ supplier_id: OFFLINE2, way: 'whatsapp' });
+    expect((await queryOne(`SELECT default_supplier_id FROM items WHERE id = $1`, [NOSUP])).default_supplier_id).toBe(OFFLINE2);
+
+    const sent = await orderListSend(post('/api/purchases/order-list/send', UA, A, {}));
+    const { results } = await sent.json();
+    expect(sent.status).toBe(200);
+    const hub = results.find((r: any) => r.way === 'hub');
+    const wa = results.find((r: any) => r.way === 'whatsapp');
+    expect(hub).toMatchObject({ supplier_id: supplierRowId, items: 1 });
+    expect((await queryOne(`SELECT status, buyer_business_id FROM supply_orders WHERE id = $1`, [hub.order_id]))).toMatchObject({
+      status: 'pending',
+      buyer_business_id: A,
+    });
+    expect(wa).toMatchObject({ supplier_id: OFFLINE2, phone: '9811111111' });
+    expect(wa.message).toContain('Matchbox: 10 PCS');
+    expect(wa.link).toContain('/so/');
+
+    // The sent list is closed; the next visit starts a fresh one, with the item remembered.
+    const fresh = await (await orderListGET(call('GET', '/api/purchases/order-list', UA, A))).json();
+    expect(fresh.lines).toHaveLength(0);
+    const again = await (await orderListPOST(post('/api/purchases/order-list', UA, A, { item_id: NOSUP, qty: 5 }))).json();
+    expect(again.lines[0]).toMatchObject({ supplier_id: OFFLINE2 });
+    await query(`DELETE FROM supplier_invite_orders WHERE supplier_id = $1`, [OFFLINE2]);
   });
 
   it('a queued low-stock check runs after the stock change is saved', async () => {
