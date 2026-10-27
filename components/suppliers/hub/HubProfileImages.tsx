@@ -81,7 +81,7 @@ export function HubProfileImages({
   coverUrl: string | null;
   onCoverChange: (url: string | null) => void;
 }) {
-  const { business, user, refresh } = useAuth();
+  const { business, refresh } = useAuth();
   const toast = useToastContext();
   const [busy, setBusy] = useState<'logo' | 'cover' | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
@@ -99,7 +99,6 @@ export function HubProfileImages({
     await patch('/api/suppliers/hub/discovery', {
       business_id: business!.id,
       cover_image_url: url,
-      updated_by_user_id: user?.id,
     });
     onCoverChange(url);
   }

@@ -103,6 +103,7 @@ export default function SupplierHubProfilePage() {
   const [data, setData] = useState<ProfilePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  const [shareLowStock, setShareLowStock] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [tab, setTab] = useState('');
 
@@ -148,6 +149,7 @@ export default function SupplierHubProfilePage() {
         body: JSON.stringify({
           supplier_business_id: businessId,
           message: msg.trim() || null,
+          share_low_stock: shareLowStock,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -372,6 +374,22 @@ export default function SupplierHubProfilePage() {
                       placeholder="Hi, I run a shop nearby and would like your price list."
                       className="resize-y rounded-xl border border-[#D8D3C8] px-3 py-2.5 text-sm font-normal text-text-primary placeholder:text-[#6B7A75]"
                     />
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-background p-3">
+                    <input
+                      type="checkbox"
+                      checked={shareLowStock}
+                      onChange={(e) => setShareLowStock(e.target.checked)}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-text-primary">Share stock and sales with {biz.name}</span>
+                      <span className="mt-0.5 block text-[13px] leading-relaxed text-text-secondary">
+                        They are told when their items reach your reorder level and can propose an order for you to
+                        confirm. Your sales of their items count in their area totals, never shown as your shop alone.
+                        You can switch this off later on the supplier page.
+                      </span>
+                    </span>
                   </label>
                   <button
                     type="button"

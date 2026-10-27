@@ -167,18 +167,33 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
 
   Future<void> _connect() async {
     final message = TextEditingController();
+    var shareLowStock = true;
     final ok = await showKSheet<bool>(
       context,
       title: 'Ask to connect',
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.md),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Once they accept, their bills come straight into your purchases and you can order from them here.', style: AppText.caption),
-          const SizedBox(height: AppSpace.sm),
-          TextField(controller: message, maxLines: 3, decoration: const InputDecoration(labelText: 'Message (optional)')),
-          const SizedBox(height: AppSpace.md),
-          KButton(label: 'Send request', onPressed: () => Navigator.pop(ctx, true)),
-        ]),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.md),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Once they accept, their bills come straight into your purchases and you can order from them here.', style: AppText.caption),
+            const SizedBox(height: AppSpace.sm),
+            TextField(controller: message, maxLines: 3, decoration: const InputDecoration(labelText: 'Message (optional)')),
+            const SizedBox(height: AppSpace.sm),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: shareLowStock,
+              onChanged: (v) => setSheet(() => shareLowStock = v),
+              title: Text('Share stock and sales with them', style: AppText.bodyStrong),
+              subtitle: Text(
+                'They are told when their items reach your reorder level and can propose an order. '
+                'Your sales of their items count in their area totals, never shown as your shop alone.',
+                style: AppText.caption,
+              ),
+            ),
+            const SizedBox(height: AppSpace.md),
+            KButton(label: 'Send request', onPressed: () => Navigator.pop(ctx, true)),
+          ]),
+        ),
       ),
     );
     if (ok == true && mounted) {
@@ -187,6 +202,7 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
         await widget.session.api.postJson('/api/suppliers/hub/connection-requests', {
           'supplier_business_id': widget.businessId,
           'message': message.text.trim(),
+          'share_low_stock': shareLowStock,
         });
         if (mounted) hubSnack(context, 'Request sent');
         await _load();

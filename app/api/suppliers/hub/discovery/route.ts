@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import type { BusinessDiscovery } from '@/types/database';
 import { normalizeCategoryList } from '@/lib/suppliers-hub';
 
@@ -12,15 +12,16 @@ const COVER_MAX_CHARS = Math.ceil((2 * 1024 * 1024 * 4) / 3) + 100;
 
 /**
  * GET /api/suppliers/hub/discovery — current business discovery settings
- * PATCH — update (requires updated_by_user_id). `cover_image_url` sets or clears (null) the
- * profile cover photo; it needs migration 420.
+ * PATCH — update. Business and user come from the session only; `directory_approved` is a
+ * platform decision and is never taken from the body. `cover_image_url` sets or clears (null)
+ * the profile cover photo; it needs migration 420.
  */
 export async function GET(request: NextRequest) {
   try {
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    const businessId = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
     if (!businessId || !userId) {
-      return NextResponse.json({ error: 'business_id and user context required' }, { status: 400 });
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
     try {
       await authorize(userId, 'settings', 'read', { businessId });
@@ -57,29 +58,16 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const businessId = getBusinessIdFromRequest(request, body);
-    const {
-      visibility,
-      profile_summary,
-      featured_categories,
-      public_slug,
-      updated_by_user_id,
-      directory_approved,
-      cover_image_url,
-    } = body;
+    const businessId = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
+    const { visibility, profile_summary, featured_categories, public_slug, cover_image_url } = body;
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
-      );
+    if (!businessId || !userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     try {
-      await authorize(updated_by_user_id, 'settings', 'update', { businessId });
+      await authorize(userId, 'settings', 'update', { businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -131,10 +119,8 @@ export async function PATCH(request: NextRequest) {
               .replace(/^-|-$/g, '')
               .slice(0, 80)
         : existing?.public_slug ?? null;
-    const nextApproved =
-      directory_approved !== undefined
-        ? Boolean(directory_approved)
-        : existing?.directory_approved ?? true;
+    // Only the platform changes approval; a new row takes the column default.
+    const nextApproved = existing?.directory_approved ?? true;
 
     if (nextSlug) {
       const taken = await db.queryOne(
@@ -165,9 +151,9 @@ export async function PATCH(request: NextRequest) {
         `
         INSERT INTO business_discovery (
           business_id, visibility, profile_summary, featured_categories, public_slug,
-          directory_approved, updated_by_user_id
+          updated_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         `,
         [
@@ -176,8 +162,7 @@ export async function PATCH(request: NextRequest) {
           nextSummary,
           nextCats,
           nextSlug,
-          nextApproved,
-          updated_by_user_id,
+          userId,
         ]
       );
     } else {
@@ -188,8 +173,7 @@ export async function PATCH(request: NextRequest) {
           profile_summary = $3,
           featured_categories = $4,
           public_slug = $5,
-          directory_approved = $6,
-          updated_by_user_id = $7,
+          updated_by_user_id = $6,
           updated_at = CURRENT_TIMESTAMP
         WHERE business_id = $1
         RETURNING *
@@ -200,8 +184,7 @@ export async function PATCH(request: NextRequest) {
           nextSummary,
           nextCats,
           nextSlug,
-          nextApproved,
-          updated_by_user_id,
+          userId,
         ]
       );
     }

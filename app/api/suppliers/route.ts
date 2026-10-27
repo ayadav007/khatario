@@ -8,6 +8,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } 
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { openConnectionRequest } from '@/lib/supplier-hub-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -321,28 +322,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If linking to a business account, ask that business to approve the link
+    // Linking to a business account is a Supplier Hub connection request; the pending
+    // supplier row goes live when that business accepts it in the hub.
     if (linked_business_id) {
-      const requesterBusiness = await db.queryOne(
-        `SELECT name FROM businesses WHERE id = $1`,
-        [business_id]
-      );
-
-      await db.query(`
-        INSERT INTO notifications (
-          business_id, type, title, message,
-          reference_type, reference_id, created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [
-        linked_business_id,
-        'supplier_request',
-        'New supplier request',
-        `${requesterBusiness?.name || 'A business'} wants to add you as their supplier. Approve or decline it from Supplier requests.`,
-        'supplier',
-        supplier.id,
-        new Date()
-      ]);
+      await openConnectionRequest({
+        buyerBusinessId: business_id,
+        supplierBusinessId: String(linked_business_id),
+        createdByUserId,
+        shareLowStock: finalAllowLowStockAccess,
+      });
     }
 
     const { logActivity, getClientIP, getUserAgent } = await import('@/lib/activity-logger');

@@ -10,7 +10,7 @@
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–394 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–394 and 421 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -58,7 +58,8 @@ jest.mock('@/lib/activity-logger', () => ({
 import { NextRequest } from 'next/server';
 import { closePool, query, queryOne } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
-import { checkLowStockForItem } from '@/lib/low-stock-checker';
+import { checkLowStockForItem, queueLowStockCheck } from '@/lib/low-stock-checker';
+import { PATCH as discoveryPATCH } from '@/app/api/suppliers/hub/discovery/route';
 import { POST as createSupplier } from '@/app/api/suppliers/route';
 import { POST as approveSupplier } from '@/app/api/suppliers/[id]/approve/route';
 import { POST as createStockRequest } from '@/app/api/stock-requests/route';
@@ -134,6 +135,7 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(migration('392_supplier_bill_receipts.sql'));
     await query(migration('393_supply_orders.sql'));
     await query(migration('394_supplier_collections.sql'));
+    await query(migration('421_connection_request_share_low_stock.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -214,11 +216,18 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     supplierRowId = supplier.id;
     expect(supplier.approval_status).toBe('pending');
 
+    // The link is a Supplier Hub request, so B sees it in "Needs you"; A's share choice travels with it.
+    const hubReq = await queryOne(
+      `SELECT id, share_low_stock FROM supplier_connection_requests
+        WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
+      [A, B]
+    );
+    expect(hubReq?.share_low_stock).toBe(true);
     const note = await queryOne(
       `SELECT type FROM notifications WHERE business_id = $1 AND reference_id = $2`,
-      [B, supplierRowId]
+      [B, hubReq.id]
     );
-    expect(note?.type).toBe('supplier_request');
+    expect(note?.type).toBe('hub_connection_request');
 
     // Not linked yet: A cannot send B a quantity request.
     const reqRes = await createStockRequest(
@@ -246,6 +255,12 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
       params: { id: supplierRowId },
     });
     expect(byB.status).toBe(200);
+    const hubReq = await queryOne(
+      `SELECT status FROM supplier_connection_requests WHERE buyer_business_id = $1 AND supplier_business_id = $2
+        ORDER BY created_at DESC LIMIT 1`,
+      [A, B]
+    );
+    expect(hubReq.status).toBe('accepted');
 
     await checkLowStockForItem(ITEM_A, A);
     const alert = await queryOne(
@@ -1062,7 +1077,9 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
       [B]
     );
 
-    const ask = await connectPOST(post('/api/suppliers/hub/connection-requests', UC, C, { supplier_business_id: B }));
+    const ask = await connectPOST(
+      post('/api/suppliers/hub/connection-requests', UC, C, { supplier_business_id: B, share_low_stock: true })
+    );
     expect(ask.status).toBe(201);
     const { request: connReq } = await ask.json();
 
@@ -1107,5 +1124,66 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
       [B, C, oldCustomer]
     );
     expect(created.n).toBe(0);
+
+    // C agreed to share low stock when asking, so the new supplier row shares from the start.
+    const cSupplierRow = await queryOne(
+      `SELECT allow_low_stock_access FROM suppliers WHERE business_id = $1 AND linked_business_id = $2 AND approval_status = 'approved'`,
+      [C, B]
+    );
+    expect(cSupplierRow?.allow_low_stock_access).toBe(true);
+  });
+
+  it('declining a request rejects a supplier that was added with a link', async () => {
+    const res = await createSupplier(post('/api/suppliers', UC, C, { name: `A Retail ${tag}`, linked_business_id: A }));
+    expect(res.status).toBeLessThan(300);
+    const { supplier } = await res.json();
+    const hubReq = await queryOne(
+      `SELECT id FROM supplier_connection_requests WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
+      [C, A]
+    );
+    const decline = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${hubReq.id}`, UA, A, { action: 'decline' }),
+      { params: { id: hubReq.id } }
+    );
+    expect(decline.status).toBe(200);
+    expect((await queryOne(`SELECT approval_status FROM suppliers WHERE id = $1`, [supplier.id])).approval_status).toBe(
+      'rejected'
+    );
+  });
+
+  it('a business cannot approve itself for the directory or act as another user', async () => {
+    await query(`UPDATE business_discovery SET directory_approved = false WHERE business_id = $1`, [B]);
+    const res = await discoveryPATCH(
+      call('PATCH', '/api/suppliers/hub/discovery', UB, B, {
+        visibility: 'directory',
+        profile_summary: 'Biscuits and namkeen wholesale',
+        directory_approved: true,
+        updated_by_user_id: UA,
+        business_id: A,
+      })
+    );
+    expect(res.status).toBe(200);
+    const row = await queryOne(
+      `SELECT directory_approved, updated_by_user_id FROM business_discovery WHERE business_id = $1`,
+      [B]
+    );
+    expect(row).toMatchObject({ directory_approved: false, updated_by_user_id: UB });
+    const untouched = await queryOne(`SELECT business_id FROM business_discovery WHERE business_id = $1`, [A]);
+    expect(untouched).toBeNull();
+  });
+
+  it('a queued low-stock check runs after the stock change is saved', async () => {
+    const item = randomUUID();
+    await query(`UPDATE suppliers SET allow_low_stock_access = true WHERE id = $1`, [supplierRowId]);
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, min_stock, current_stock, is_active, default_supplier_id)
+       VALUES ($1, $2, 'Monaco 75g', 'PCS', 'goods', 6, 2, true, $3)`,
+      [item, A, supplierRowId]
+    );
+    queueLowStockCheck(A, item);
+    expect(await queryOne(`SELECT id FROM low_stock_alerts WHERE item_id = $1`, [item])).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    const alert = await queryOne(`SELECT supplier_business_id FROM low_stock_alerts WHERE item_id = $1`, [item]);
+    expect(alert?.supplier_business_id).toBe(B);
   });
 });

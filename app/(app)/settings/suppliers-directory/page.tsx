@@ -152,7 +152,6 @@ export default function SuppliersDirectorySettingsPage() {
           profile_summary: summary.trim() || null,
           featured_categories: categories,
           public_slug: slug.trim() || null,
-          updated_by_user_id: user.id,
         }),
       });
       const j = await res.json().catch(() => ({}));

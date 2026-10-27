@@ -9,7 +9,6 @@ import { ArrowLeft, Check, Clock, Loader2, Search, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
 import {
   CategoryChip,
@@ -52,7 +51,6 @@ const chipClass = (active: boolean) =>
 
 export default function FindSuppliersPage() {
   const { business, user } = useAuth();
-  const toast = useToastContext();
   // The Supplier Hub home search lands here as ?q=.
   const initialQ = (useSearchParams()?.get('q') || '').trim();
   const [draft, setDraft] = useState(initialQ);
@@ -67,7 +65,6 @@ export default function FindSuppliersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [asking, setAsking] = useState<string | null>(null);
 
   const { status: authStatus } = useAuthorizationGuard({
     resource: 'purchases',
@@ -114,26 +111,6 @@ export default function FindSuppliersPage() {
   function submitSearch(e: FormEvent) {
     e.preventDefault();
     setQ(draft.trim());
-  }
-
-  async function askToConnect(row: DirectoryRow) {
-    setAsking(row.id);
-    try {
-      const res = await fetch('/api/suppliers/hub/connection-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier_business_id: row.id, message: null }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(j.error || 'Request failed');
-        return;
-      }
-      toast.success(j.existing ? 'You already asked to connect.' : `Request sent to ${row.name}.`);
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, connection: 'requested' } : r)));
-    } finally {
-      setAsking(null);
-    }
   }
 
   if (authStatus === 'loading') {
@@ -299,7 +276,7 @@ export default function FindSuppliersPage() {
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-4">
               {rows.map((b) => (
                 <li key={b.id}>
-                  <SupplierCard row={b} asking={asking === b.id} onAsk={() => askToConnect(b)} />
+                  <SupplierCard row={b} />
                 </li>
               ))}
             </ul>
@@ -351,7 +328,8 @@ export default function FindSuppliersPage() {
   );
 }
 
-function SupplierCard({ row, asking, onAsk }: { row: DirectoryRow; asking: boolean; onAsk: () => void }) {
+/** Ask to connect opens the profile, where the buyer adds a note and chooses what to share. */
+function SupplierCard({ row }: { row: DirectoryRow }) {
   const place = formatPlace(row.city, row.state);
   const chips = (row.featured_categories || []).slice(0, 3);
   const items = row.preview_items || [];
@@ -418,19 +396,13 @@ function SupplierCard({ row, asking, onAsk }: { row: DirectoryRow; asking: boole
               <Clock className="h-4 w-4" aria-hidden="true" /> Request sent
             </span>
           ) : (
-            <button
-              type="button"
-              onClick={onAsk}
-              disabled={asking}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#032B23] px-4 text-sm font-semibold text-white hover:bg-[#021f19] disabled:opacity-60"
+            <Link
+              href={href}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#032B23] px-4 text-sm font-semibold text-white hover:bg-[#021f19]"
             >
-              {asking ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Send className="h-4 w-4" aria-hidden="true" />
-              )}
+              <Send className="h-4 w-4" aria-hidden="true" />
               Ask to connect
-            </button>
+            </Link>
           )}
         </div>
       </footer>

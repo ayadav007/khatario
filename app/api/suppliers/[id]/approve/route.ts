@@ -109,6 +109,14 @@ export async function POST(
 
     const updatedSupplier = await queryOne<Supplier>(updateQuery, updateParams);
 
+    // Keep the matching Supplier Hub request in step, so it leaves the hub's "Needs you" list.
+    await query(
+      `UPDATE supplier_connection_requests
+          SET status = $3, resolved_at = CURRENT_TIMESTAMP
+        WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
+      [supplier.business_id, businessId, action === 'approve' ? 'accepted' : 'declined']
+    );
+
     // The approving supplier gets a customer record linked to the buyer.
     if (action === 'approve') {
       await ensureVendorCustomerLink(businessId, supplier.business_id);

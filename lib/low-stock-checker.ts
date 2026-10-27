@@ -169,6 +169,30 @@ export async function checkLowStockForMultipleItems(items: Array<{ item_id: stri
   }
 }
 
+/**
+ * Stock changes run inside a transaction, so a check made there reads the old quantity.
+ * Shared stock helpers queue the item here instead; the queue is checked a few seconds later,
+ * once the caller has committed. The cron sweep catches anything still uncommitted by then.
+ */
+const QUEUE_DELAY_MS = 3000;
+const queued = new Map<string, { item_id: string; business_id: string }>();
+let queueTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function queueLowStockCheck(businessId: string, itemId: string) {
+  if (!businessId || !itemId) return;
+  queued.set(`${businessId}|${itemId}`, { item_id: itemId, business_id: businessId });
+  if (queueTimer) return;
+  queueTimer = setTimeout(() => {
+    queueTimer = null;
+    const batch = Array.from(queued.values());
+    queued.clear();
+    checkLowStockForMultipleItems(batch).catch((error) =>
+      console.error('Error checking queued low stock:', error)
+    );
+  }, QUEUE_DELAY_MS);
+  queueTimer.unref?.();
+}
+
 /** Full sweep used by the cron job. */
 export async function checkLowStockForAllBusinesses() {
   const candidates = await queryRows<LowStockCandidate>(CANDIDATES_SQL);

@@ -776,6 +776,8 @@ export interface SupplierConnectionRequest {
   supplier_business_id: string;
   status: SupplierConnectionRequestStatus;
   message?: string | null;
+  /** Buyer agreed to share low stock once accepted (migration 421) */
+  share_low_stock?: boolean;
   created_by_user_id?: string | null;
   resolved_by_user_id?: string | null;
   created_at: Date;

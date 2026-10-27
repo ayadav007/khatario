@@ -9,7 +9,7 @@ import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
-import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
+import { queueLowStockCheck } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches, getBranchVariantQuantityDb } from '@/lib/branch-variant-stock';
 import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
@@ -2791,15 +2791,10 @@ export async function POST(request: NextRequest) {
       throw verifyError;
     }
 
-    // Check for low stock alerts (async, don't wait)
-    if (stockDeductedItems.length > 0) {
-      checkLowStockForMultipleItems(stockDeductedItems).catch(err => 
-        console.error('Error checking low stock:', err)
-      );
-    }
-
     // Commit transaction before returning
     await client.query('COMMIT');
+    // Supplier Hub low-stock check reads committed stock, so it is queued after commit.
+    for (const deducted of stockDeductedItems) queueLowStockCheck(deducted.business_id, deducted.item_id);
 
     if (status === 'final' && invoice?.id) {
       const { autoTrackDeliveryBill } = await import('@/lib/fulfilment/auto-track');
