@@ -45,8 +45,8 @@ const TRUST_POINTS = [
 const chipClass = (active: boolean) =>
   `inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium transition-colors ${
     active
-      ? 'border-primary-600 bg-primary-600 text-white'
-      : 'border-[#DCD6CA] bg-white text-text-primary hover:border-primary-300'
+      ? 'border-[#032B23] bg-[#032B23] text-white'
+      : 'border-[#DCD6CA] bg-white text-text-primary hover:border-[#7c918d]'
   }`;
 
 export default function FindSuppliersPage() {
@@ -136,7 +136,7 @@ export default function FindSuppliersPage() {
   if (authStatus === 'loading') {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-100px)]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#032B23]" />
       </div>
     );
   }
@@ -149,11 +149,11 @@ export default function FindSuppliersPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-10">
-      <section className="overflow-hidden rounded-3xl bg-primary-600 text-white">
+      <section className="overflow-hidden rounded-3xl bg-[#032B23] text-white">
         <div className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:pb-10">
           <Link
             href="/suppliers/hub"
-            className="inline-flex min-h-8 w-fit items-center gap-1.5 text-sm text-primary-100 hover:text-white hover:underline"
+            className="inline-flex min-h-8 w-fit items-center gap-1.5 text-sm text-[#d9dfde] hover:text-white hover:underline"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Supplier Hub
@@ -163,7 +163,7 @@ export default function FindSuppliersPage() {
               <h1 className={`${headingFont} text-3xl font-bold leading-tight tracking-tight sm:text-[2.75rem]`}>
                 Wholesalers who deliver to your shop
               </h1>
-              <p className="text-base leading-relaxed text-primary-100 sm:text-[17px]">
+              <p className="text-base leading-relaxed text-[#d9dfde] sm:text-[17px]">
                 Connect once. Their bills land straight in your purchases, and you hear about new arrivals first.
               </p>
             </div>
@@ -182,7 +182,7 @@ export default function FindSuppliersPage() {
             className="flex flex-col gap-1.5 rounded-2xl bg-white p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.18)] sm:flex-row"
           >
             <label className="flex min-h-[52px] flex-1 items-center gap-2.5 px-3.5">
-              <Search className="h-5 w-5 shrink-0 text-primary-400" aria-hidden="true" />
+              <Search className="h-5 w-5 shrink-0 text-[#45625c]" aria-hidden="true" />
               <span className="sr-only">Search suppliers</span>
               <input
                 type="search"
@@ -197,7 +197,7 @@ export default function FindSuppliersPage() {
             </label>
             <button
               type="submit"
-              className="min-h-[52px] rounded-xl bg-primary-600 px-7 text-[15px] font-semibold text-white hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              className="min-h-[52px] rounded-xl bg-[#032B23] px-7 text-[15px] font-semibold text-white hover:bg-[#021f19] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#032B23]"
             >
               Search
             </button>
@@ -236,7 +236,7 @@ export default function FindSuppliersPage() {
                 type="checkbox"
                 checked={hasCatalogue}
                 onChange={(e) => setHasCatalogue(e.target.checked)}
-                className="h-[18px] w-[18px] accent-primary-600"
+                className="h-[18px] w-[18px] accent-[#032B23]"
               />
               Has a catalogue
             </label>
@@ -245,7 +245,7 @@ export default function FindSuppliersPage() {
                 type="checkbox"
                 checked={showsPrices}
                 onChange={(e) => setShowsPrices(e.target.checked)}
-                className="h-[18px] w-[18px] accent-primary-600"
+                className="h-[18px] w-[18px] accent-[#032B23]"
               />
               Prices shown to all
             </label>
@@ -278,7 +278,7 @@ export default function FindSuppliersPage() {
 
           {loading ? (
             <div className="flex justify-center py-16">
-              <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+              <Loader2 className="w-8 h-8 animate-spin text-[#032B23]" />
             </div>
           ) : rows.length === 0 ? (
             <div className="rounded-2xl border border-[#E6E1D6] bg-white p-8 text-center">
@@ -339,7 +339,7 @@ export default function FindSuppliersPage() {
         </div>
         <Link
           href="/settings/suppliers-directory"
-          className="inline-flex min-h-12 items-center rounded-xl bg-accent-500 px-6 text-[15px] font-bold text-primary-900 hover:bg-accent-400"
+          className="inline-flex min-h-12 items-center rounded-xl bg-[#F58220] px-6 text-[15px] font-bold text-[#011310] hover:bg-[#f8a35a]"
         >
           List your business
         </Link>
@@ -402,7 +402,7 @@ function SupplierCard({ row, asking, onAsk }: { row: DirectoryRow; asking: boole
         <div className="flex gap-2">
           <Link
             href={href}
-            className="inline-flex min-h-11 items-center rounded-xl border border-[#C9D3CF] px-3.5 text-sm font-semibold text-text-primary hover:border-primary-400"
+            className="inline-flex min-h-11 items-center rounded-xl border border-[#C9D3CF] px-3.5 text-sm font-semibold text-text-primary hover:border-[#45625c]"
           >
             View
           </Link>
@@ -411,7 +411,7 @@ function SupplierCard({ row, asking, onAsk }: { row: DirectoryRow; asking: boole
               <Check className="h-4 w-4" aria-hidden="true" /> Connected
             </span>
           ) : row.connection === 'requested' ? (
-            <span className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent-50 px-3.5 text-sm font-semibold text-accent-900">
+            <span className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#fef6ef] px-3.5 text-sm font-semibold text-[#6e3b0e]">
               <Clock className="h-4 w-4" aria-hidden="true" /> Request sent
             </span>
           ) : (
@@ -419,7 +419,7 @@ function SupplierCard({ row, asking, onAsk }: { row: DirectoryRow; asking: boole
               type="button"
               onClick={onAsk}
               disabled={asking}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#032B23] px-4 text-sm font-semibold text-white hover:bg-[#021f19] disabled:opacity-60"
             >
               {asking ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

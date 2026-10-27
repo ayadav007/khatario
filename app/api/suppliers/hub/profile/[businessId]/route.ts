@@ -31,6 +31,17 @@ export async function GET(
       throw error;
     }
 
+    // cover_image_url arrives with migration 420; until then the profile shows the pattern.
+    const cover = await db
+      .queryOne<{ cover_image_url: string | null }>(
+        `SELECT cover_image_url FROM business_discovery WHERE business_id = $1`,
+        [targetId]
+      )
+      .catch((error: { code?: string }) => {
+        if (error?.code === '42703') return null;
+        throw error;
+      });
+
     const discovery = await db.queryOne<{
       visibility: BusinessDiscoveryVisibility;
       profile_summary: string | null;
@@ -144,6 +155,7 @@ export async function GET(
         profile_summary: discovery.profile_summary,
         featured_categories: discovery.featured_categories || [],
         public_slug: discovery.public_slug,
+        cover_image_url: cover?.cover_image_url ?? null,
       },
       viewer: {
         is_linked: isLinked,

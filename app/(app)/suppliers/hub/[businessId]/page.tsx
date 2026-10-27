@@ -55,6 +55,7 @@ interface ProfilePayload {
     visibility: string;
     profile_summary: string | null;
     featured_categories: string[];
+    cover_image_url: string | null;
   };
   viewer: {
     is_linked: boolean;
@@ -92,7 +93,7 @@ function whatsappHref(phone: string): string | null {
 
 const cardClass = 'rounded-2xl border border-[#E6E1D6] bg-white';
 const outlineLink =
-  'inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#C9D3CF] text-sm font-semibold text-text-primary hover:border-primary-400';
+  'inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#C9D3CF] text-sm font-semibold text-text-primary hover:border-[#45625c]';
 
 export default function SupplierHubProfilePage() {
   const params = useParams();
@@ -182,7 +183,7 @@ export default function SupplierHubProfilePage() {
   if (authStatus === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-100px)]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#032B23]" />
       </div>
     );
   }
@@ -235,10 +236,19 @@ export default function SupplierHubProfilePage() {
         </span>
       </nav>
 
-      <div
-        aria-hidden="true"
-        className={`mt-4 h-28 rounded-3xl sm:h-44 lg:h-56 ${tint.cover} bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(255,255,255,0.35)_18px_36px)]`}
-      />
+      {discovery.cover_image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={discovery.cover_image_url}
+          alt={`${biz.name} shop front`}
+          className="mt-4 h-28 w-full rounded-3xl object-cover sm:h-44 lg:h-56"
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className={`mt-4 h-28 rounded-3xl sm:h-44 lg:h-56 ${tint.cover} bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(255,255,255,0.35)_18px_36px)]`}
+        />
+      )}
 
       <div className="[container-type:inline-size]">
         <div className="grid grid-cols-1 gap-8 [@container(min-width:52rem)]:grid-cols-[minmax(0,1fr)_320px] [@container(min-width:52rem)]:grid-rows-[auto_1fr]">
@@ -307,7 +317,7 @@ export default function SupplierHubProfilePage() {
                   {viewer.supplier_record_id && (
                     <Link
                       href={`/suppliers/${viewer.supplier_record_id}`}
-                      className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-primary-600 text-base font-semibold text-white hover:bg-primary-700"
+                      className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-[#032B23] text-base font-semibold text-white hover:bg-[#021f19]"
                     >
                       <Link2 className="h-[18px] w-[18px]" aria-hidden="true" />
                       Open supplier
@@ -320,7 +330,7 @@ export default function SupplierHubProfilePage() {
               ) : viewer.pending_request_id ? (
                 <>
                   <h2 className={`${headingFont} flex items-center gap-2 text-xl font-bold text-text-primary`}>
-                    <Clock className="h-5 w-5 text-accent-800" aria-hidden="true" />
+                    <Clock className="h-5 w-5 text-[#8e4b13]" aria-hidden="true" />
                     Request sent
                   </h2>
                   <p className="text-sm leading-relaxed text-text-secondary">
@@ -367,7 +377,7 @@ export default function SupplierHubProfilePage() {
                     type="button"
                     onClick={requestConnection}
                     disabled={submitting}
-                    className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-primary-600 text-base font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+                    className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl bg-[#032B23] text-base font-semibold text-white hover:bg-[#021f19] disabled:opacity-60"
                   >
                     {submitting ? (
                       <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
@@ -429,8 +439,8 @@ export default function SupplierHubProfilePage() {
                       onClick={() => setTab(t)}
                       className={`inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium ${
                         tab === t
-                          ? 'border-primary-600 bg-primary-600 text-white'
-                          : 'border-[#DCD6CA] bg-white text-text-primary hover:border-primary-300'
+                          ? 'border-[#032B23] bg-[#032B23] text-white'
+                          : 'border-[#DCD6CA] bg-white text-text-primary hover:border-[#7c918d]'
                       }`}
                     >
                       {t || 'All'}
@@ -491,7 +501,7 @@ function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: str
     price = <span className="text-[13px] font-semibold text-text-primary">From {rupees(l.from_amount)}</span>;
   } else if (!linked && l.price_display !== 'hidden') {
     price = (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-800">
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#8e4b13]">
         <Lock className="h-3 w-3" aria-hidden="true" />
         Rate after connecting
       </span>
@@ -508,7 +518,7 @@ function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: str
         {pack && <span className="text-[13px] text-text-secondary">{pack}</span>}
         {terms && <span className="text-xs text-text-secondary">{terms}</span>}
         {l.audience === 'linked_only' && (
-          <span className="w-fit rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-text-primary">
+          <span className="w-fit rounded-full bg-[#edf0f0] px-2 py-0.5 text-[11px] font-medium text-text-primary">
             For connected shops
           </span>
         )}
@@ -529,12 +539,12 @@ function ProductCard({ listing: l, seed, linked }: { listing: Listing; seed: str
 
 function HowItWorks({ className }: { className?: string }) {
   return (
-    <div className={`flex flex-col gap-4 rounded-[20px] bg-primary-600 p-6 text-white ${className ?? ''}`}>
+    <div className={`flex flex-col gap-4 rounded-[20px] bg-[#032B23] p-6 text-white ${className ?? ''}`}>
       <h2 className={`${headingFont} text-lg font-bold`}>How it works</h2>
       <ol className="flex flex-col gap-3.5">
         {STEPS.map((s, i) => (
           <li key={s.title} className="flex items-start gap-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-500 text-[13px] font-bold text-primary-900">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F58220] text-[13px] font-bold text-[#011310]">
               {i + 1}
             </span>
             <span className="flex flex-col gap-0.5">

@@ -15,6 +15,7 @@ import { buildApiUrl } from '@/lib/api-helpers';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { ConnectBuyerDialog } from '@/components/suppliers/hub/ConnectBuyerDialog';
+import { HubProfileImages } from '@/components/suppliers/hub/HubProfileImages';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { clsx } from 'clsx';
 
@@ -51,6 +52,7 @@ export default function SuppliersDirectorySettingsPage() {
   const [categories, setCategories] = useState('');
   const [slug, setSlug] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('hidden');
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [incoming, setIncoming] = useState<
     Array<{ id: string; status: string; counterparty_name: string; created_at: string; message?: string | null }>
@@ -84,6 +86,7 @@ export default function SuppliersDirectorySettingsPage() {
         setCategories((disc.featured_categories || []).join(', '));
         setSlug(disc.public_slug || '');
         setVisibility(disc.visibility || 'hidden');
+        setCoverUrl(disc.cover_image_url || null);
       }
 
       const lUrl = buildApiUrl('/api/suppliers/hub/published-listings', {
@@ -254,6 +257,14 @@ export default function SuppliersDirectorySettingsPage() {
       ) : (
         <>
           <div className={STACK_PAGE_CLASS}>
+            <section>
+              <h3 className="settings-section-title">Logo and cover photo</h3>
+              <p className="type-body-secondary mb-4 max-w-2xl">
+                Shops see these on your Supplier Hub profile and in Find suppliers.
+              </p>
+              <HubProfileImages coverUrl={coverUrl} onCoverChange={setCoverUrl} />
+            </section>
+
             <section>
               <h3 className="settings-section-title">Visibility</h3>
               <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>

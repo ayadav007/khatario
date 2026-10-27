@@ -756,6 +756,8 @@ export interface BusinessDiscovery {
   featured_categories: string[];
   public_slug?: string | null;
   directory_approved: boolean;
+  /** Supplier Hub profile cover photo (migration 420). */
+  cover_image_url?: string | null;
   updated_by_user_id?: string | null;
   created_at: Date;
   updated_at: Date;

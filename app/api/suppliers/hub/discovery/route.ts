@@ -7,9 +7,13 @@ import { normalizeCategoryList } from '@/lib/suppliers-hub';
 
 export const dynamic = 'force-dynamic';
 
+/** A 2 MB image as a base64 data URL, with room for the prefix. */
+const COVER_MAX_CHARS = Math.ceil((2 * 1024 * 1024 * 4) / 3) + 100;
+
 /**
  * GET /api/suppliers/hub/discovery — current business discovery settings
- * PATCH — update (requires updated_by_user_id)
+ * PATCH — update (requires updated_by_user_id). `cover_image_url` sets or clears (null) the
+ * profile cover photo; it needs migration 420.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -61,6 +65,7 @@ export async function PATCH(request: NextRequest) {
       public_slug,
       updated_by_user_id,
       directory_approved,
+      cover_image_url,
     } = body;
 
     if (!businessId) {
@@ -80,6 +85,17 @@ export async function PATCH(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    let nextCover: string | null | undefined;
+    if (cover_image_url !== undefined) {
+      nextCover = cover_image_url ? String(cover_image_url) : null;
+      if (nextCover && !/^(data:image\/(png|jpe?g|webp|gif);base64,|https:\/\/)/i.test(nextCover)) {
+        return NextResponse.json({ error: 'Cover photo must be a PNG, JPEG, WebP or GIF image' }, { status: 400 });
+      }
+      if (nextCover && nextCover.length > COVER_MAX_CHARS) {
+        return NextResponse.json({ error: 'Cover photo is too large. Use an image under 2 MB.' }, { status: 400 });
+      }
     }
 
     const vis = visibility as string | undefined;
@@ -188,6 +204,24 @@ export async function PATCH(request: NextRequest) {
           updated_by_user_id,
         ]
       );
+    }
+
+    if (nextCover !== undefined) {
+      try {
+        updated = await db.queryOne<BusinessDiscovery>(
+          `UPDATE business_discovery SET cover_image_url = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE business_id = $1 RETURNING *`,
+          [businessId, nextCover]
+        );
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code === '42703') {
+          return NextResponse.json(
+            { error: 'Cover photos are not available until the database is updated (migration 420).' },
+            { status: 503 }
+          );
+        }
+        throw error;
+      }
     }
 
     return NextResponse.json({ discovery: updated });
