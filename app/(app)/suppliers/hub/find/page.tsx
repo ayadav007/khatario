@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Check, Clock, Loader2, Search, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
@@ -52,8 +53,10 @@ const chipClass = (active: boolean) =>
 export default function FindSuppliersPage() {
   const { business, user } = useAuth();
   const toast = useToastContext();
-  const [draft, setDraft] = useState('');
-  const [q, setQ] = useState('');
+  // The Supplier Hub home search lands here as ?q=.
+  const initialQ = (useSearchParams()?.get('q') || '').trim();
+  const [draft, setDraft] = useState(initialQ);
+  const [q, setQ] = useState(initialQ);
   const [category, setCategory] = useState('');
   const [hasCatalogue, setHasCatalogue] = useState(false);
   const [showsPrices, setShowsPrices] = useState(false);
