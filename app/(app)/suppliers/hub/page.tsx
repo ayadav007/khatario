@@ -35,9 +35,6 @@ type HomeResponse = Omit<HubHome, 'buying' | 'selling'> & {
   access: { buying: boolean; selling: boolean };
 };
 
-type Side = 'buying' | 'selling';
-const SIDE_KEY = 'supplier-hub-side';
-
 function Tile({
   href,
   icon: Icon,
@@ -119,7 +116,6 @@ export default function SupplierHubHomePage() {
   const [home, setHome] = useState<HomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [side, setSide] = useState<Side>('buying');
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [connectRequestId, setConnectRequestId] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -140,26 +136,6 @@ export default function SupplierHubHomePage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(SIDE_KEY);
-      if (saved === 'buying' || saved === 'selling') setSide(saved);
-    } catch {
-      /* storage unavailable */
-    }
-  }, []);
-
-  const both = !!home?.roles.buying && !!home?.roles.selling;
-  const shownSide: Side = both ? side : home?.roles.selling && !home?.roles.buying ? 'selling' : 'buying';
-  const pickSide = (s: Side) => {
-    setSide(s);
-    try {
-      localStorage.setItem(SIDE_KEY, s);
-    } catch {
-      /* storage unavailable */
-    }
-  };
 
   const act = async (item: InboxItem, choice?: 'accept' | 'decline') => {
     const a = item.action;
@@ -284,27 +260,14 @@ export default function SupplierHubHomePage() {
             )}
           </section>
 
-          {both && (
-            <div className="inline-flex w-full rounded-xl bg-gray-100 p-1 sm:w-auto" role="tablist" aria-label="Buying or selling">
-              {(['buying', 'selling'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="tab"
-                  aria-selected={shownSide === k}
-                  onClick={() => pickSide(k)}
-                  className={`flex-1 rounded-lg px-5 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                    shownSide === k ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary'
-                  }`}
-                >
-                  {k === 'buying' ? 'Buying' : 'Selling'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {shownSide === 'buying' && b && (
-            <section className="space-y-3" aria-label="Buying">
+          {b && (
+            <section aria-labelledby="hub-buying" className="space-y-3">
+              <div>
+                <h2 id="hub-buying" className="text-base font-semibold text-text-primary">
+                  Buying
+                </h2>
+                <p className="text-sm text-text-secondary">From the distributors and wholesalers you buy from.</p>
+              </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Tile href="/supply-orders?role=buyer" icon={Package} label="Orders" value={b.openOrders} hint="Open" />
                 <Tile href="/purchases/incoming" icon={Inbox} label="Incoming bills" value={b.billsToReceive} hint="To receive" />
@@ -312,50 +275,63 @@ export default function SupplierHubHomePage() {
                 <Tile href="/suppliers" icon={Store} label="My suppliers" hint={`${b.suppliers} connected`} />
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button className="sm:flex-1" onClick={() => setNewOrderOpen(true)} disabled={b.partners.length === 0}>
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  New order
-                </Button>
                 <Link href="/suppliers/hub/find" className="sm:flex-1">
-                  <Button variant="secondary" className="w-full">
+                  <Button className="w-full">
                     <Search className="mr-1.5 h-4 w-4" />
                     Find suppliers
                   </Button>
                 </Link>
+                <Button
+                  variant="secondary"
+                  className="sm:flex-1"
+                  onClick={() => setNewOrderOpen(true)}
+                  disabled={b.partners.length === 0}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  New order
+                </Button>
               </div>
             </section>
           )}
 
-          {shownSide === 'selling' && s && (
-            <section className="space-y-3" aria-label="Selling">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Tile href="/supply-orders?role=vendor" icon={Package} label="Orders" value={s.openOrders} hint="Open" />
-                <Tile
-                  href="/suppliers/dashboard"
-                  icon={TrendingDown}
-                  label="Shops low on stock"
-                  value={s.buyersLow}
-                  hint={`${s.buyersSharing} of ${s.buyers} share stock`}
-                />
-                <Tile href="/suppliers/catalog" icon={BookOpen} label="My catalog" hint={`${s.catalogItems} items listed`} />
-                <Tile href="/suppliers/dashboard/analytics" icon={BarChart3} label="Area report" hint="Where you sell" />
+          {s && (
+            <section aria-labelledby="hub-selling" className="space-y-3">
+              <div>
+                <h2 id="hub-selling" className="text-base font-semibold text-text-primary">
+                  Selling
+                </h2>
+                <p className="text-sm text-text-secondary">To the shops that buy from you.</p>
               </div>
-              <Button variant="secondary" className="w-full sm:w-auto" onClick={checkLowStock} disabled={checking}>
-                <Users className="mr-1.5 h-4 w-4" />
-                {checking ? 'Checking…' : 'Check shops’ low stock now'}
-              </Button>
-              <BuyerInsightsCard insights={s.insights} buyers={s.buyers} />
+              {home.roles.selling ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Tile href="/supply-orders?role=vendor" icon={Package} label="Orders" value={s.openOrders} hint="Open" />
+                    <Tile
+                      href="/suppliers/dashboard"
+                      icon={TrendingDown}
+                      label="Shops low on stock"
+                      value={s.buyersLow}
+                      hint={`${s.buyersSharing} of ${s.buyers} share stock`}
+                    />
+                    <Tile href="/suppliers/catalog" icon={BookOpen} label="My catalog" hint={`${s.catalogItems} items listed`} />
+                    <Tile href="/suppliers/dashboard/analytics" icon={BarChart3} label="Area report" hint="Where you sell" />
+                  </div>
+                  <Button variant="secondary" className="w-full sm:w-auto" onClick={checkLowStock} disabled={checking}>
+                    <Users className="mr-1.5 h-4 w-4" />
+                    {checking ? 'Checking…' : 'Check shops’ low stock now'}
+                  </Button>
+                  <BuyerInsightsCard insights={s.insights} buyers={s.buyers} />
+                </>
+              ) : (
+                <Link href="/suppliers/catalog" className="flex items-center justify-between rounded-2xl border border-dashed border-gray-300 p-4 text-sm hover:border-primary-300">
+                  <span>
+                    <span className="block font-medium text-text-primary">Do you also sell to shops?</span>
+                    <span className="block text-text-secondary">Publish your catalog so your buyers can order from you here.</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-text-muted" />
+                </Link>
+              )}
             </section>
-          )}
-
-          {!both && home.access.selling && !home.roles.selling && (
-            <Link href="/suppliers/catalog" className="flex items-center justify-between rounded-2xl border border-dashed border-gray-300 p-4 text-sm hover:border-primary-300">
-              <span>
-                <span className="block font-medium text-text-primary">Do you also sell to shops?</span>
-                <span className="block text-text-secondary">Publish your catalog so your buyers can order from you here.</span>
-              </span>
-              <ChevronRight className="h-4 w-4 text-text-muted" />
-            </Link>
           )}
         </>
       )}
