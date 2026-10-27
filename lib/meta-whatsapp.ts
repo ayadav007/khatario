@@ -6,6 +6,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { getMetaWaConfig } from '@/lib/meta-whatsapp-credentials';
 import { WA_LIMITS } from '@/lib/whatsapp/wa-limits';
+import { isQaTestPhone, logSuppressedQaSend } from '@/lib/qa-test-phones';
 
 export type { MetaWaConfig } from '@/lib/meta-whatsapp-credentials';
 export { getMetaWaConfig, isMetaWaConfigured } from '@/lib/meta-whatsapp-credentials';
@@ -162,6 +163,7 @@ export async function sendTemplateMessage(input: {
   language: string;
   components?: GraphComponent[];
 }): Promise<{ messageId: string }> {
+  if (isQaTestPhone(input.to)) return { messageId: logSuppressedQaSend('cloud-template', input.to, input.name) };
   const cfg = await requireConfig(input.businessId);
   const to = input.to.replace(/\D/g, '');
   const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
@@ -202,6 +204,7 @@ async function sendGraphMessage(
   to: string,
   payload: Record<string, unknown>,
 ): Promise<{ messageId: string }> {
+  if (isQaTestPhone(to)) return { messageId: logSuppressedQaSend('cloud', to, String(payload.type ?? '')) };
   const cfg = await requireConfig(businessId);
   const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
     token: cfg.accessToken,
@@ -556,6 +559,7 @@ export async function sendTextMessage(input: {
   body: string;
   previewUrl?: boolean;
 }): Promise<{ messageId: string }> {
+  if (isQaTestPhone(input.to)) return { messageId: logSuppressedQaSend('cloud-text', input.to, input.body) };
   const cfg = await requireConfig(input.businessId);
   const to = input.to.replace(/\D/g, '');
   const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {

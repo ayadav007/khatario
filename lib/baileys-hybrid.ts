@@ -15,6 +15,7 @@ import makeWASocketStandard, {
   initAuthCreds as initAuthCredsStandard,
   proto as protoStandard
 } from '@whiskeysockets/baileys';
+import { isQaTestPhone, logSuppressedQaSend } from '@/lib/qa-test-phones';
 
 // Import types separately (they're exported from Types, not main index)
 import type { AuthenticationCreds, SignalDataTypeMap } from '@whiskeysockets/baileys/lib/Types';
@@ -274,6 +275,11 @@ export function makeWASocket(config: any) {
   const originalSendMessage = socket.sendMessage.bind(socket);
   
   socket.sendMessage = async function(jid: string, content: any, options: any = {}) {
+    if (isQaTestPhone(jid)) {
+      const id = logSuppressedQaSend('qr', jid, typeof content?.text === 'string' ? content.text : undefined);
+      return { key: { remoteJid: jid, fromMe: true, id }, message: {}, status: 0 } as any;
+    }
+
     // Only log button-related messages, not every message
     const hasButtons = content && typeof content === 'object' && ('buttons' in content || 'buttonsMessage' in content);
     if (hasButtons) {
