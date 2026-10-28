@@ -12,6 +12,9 @@ import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from 
 import { saveItemLink } from '@/lib/supplier-item-links';
 import { markSupplyOrderReceived } from '@/lib/supply-orders';
 import { inBuyerUnits, loadBillForBuyer, loadBillLines, parseItemMap, resolveBillLines } from '@/lib/supplier-bills';
+import { readReceiptShortfallMode } from '@/lib/purchases/receipt-shortfall-mode';
+import { createPurchaseReturnInTx } from '@/lib/purchases/create-purchase-return';
+import { todayIst } from '@/lib/gst/time-limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -197,14 +200,16 @@ export async function POST(
     }
 
     // What actually arrived (body.received: { [invoice_item_id]: { short_qty, damaged_qty, note } },
-    // in the caller's unit). The purchase still matches the bill; shortfalls are recorded on the
-    // receipt and settled with a purchase return.
+    // in the caller's unit). The purchase still matches the bill and the receipt records the
+    // shortfalls. The business setting decides who raises the purchase return for them: the
+    // business later ('keep'), or this receipt at once ('auto_return', below).
     const receivedInput: Record<string, any> =
       body.received && typeof body.received === 'object' ? body.received : {};
     const receiptLines = invoiceItems.map((line: any, i: number) => {
       const billed = inBuyerUnits(line, resolvedLines[i].factor).qty;
       const r = receivedInput[String(line.id)] || {};
       return {
+        index: i,
         invoiceItemId: String(line.id),
         buyerItemId: resolvedLines[i].itemId,
         itemName: String(resolvedLines[i].itemName || line.item_name || ''),
@@ -304,9 +309,11 @@ export async function POST(
     }
 
     // Create purchase items and update stock
+    const lineVariantIds: Array<string | null> = [];
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
       const buyerVariantId = item.item_id ? variantQueue.get(String(item.item_id))?.shift() ?? null : null;
+      lineVariantIds[i] = buyerVariantId;
       
       // The supplier's item_id belongs to their business; use the caller's matched item, in the
       // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
@@ -579,6 +586,53 @@ export async function POST(
     }
 
     const issues = receiptLines.filter((l: any) => l.short > 0 || l.damaged > 0);
+
+    // Auto-return: a debit note for short + damaged through the same path as POST
+    // /api/purchase-returns, so stock, supplier balance, ledger and GST all move back together.
+    // Stock is not held back from the purchase: a later manual return would then take it twice.
+    const shortfallMode = await readReceiptShortfallMode(business_id, client);
+    let purchaseReturn: any = null;
+    if (shortfallMode === 'auto_return' && issues.length > 0) {
+      const billNo = String(invoice.invoice_number || purchase.id).slice(0, 80);
+      const taken = await client.query(
+        `SELECT return_number FROM purchase_returns WHERE business_id = $1 AND return_number LIKE $2`,
+        [business_id, `DN-${billNo.replace(/[\\%_]/g, '\\$&')}%`]
+      );
+      const used = new Set(taken.rows.map((r: any) => r.return_number));
+      let returnNumber = `DN-${billNo}`;
+      for (let n = 2; used.has(returnNumber); n++) returnNumber = `DN-${billNo}-${n}`;
+      const billDate = String(invoice.invoice_date instanceof Date
+        ? invoice.invoice_date.toISOString()
+        : invoice.invoice_date || '').slice(0, 10);
+      const today = todayIst();
+      const lineNotes = issues.filter((l: any) => l.note).map((l: any) => `${l.itemName}: ${l.note}`);
+      const created = await createPurchaseReturnInTx(client, {
+        businessId: business_id,
+        userId,
+        purchaseId: purchase.id,
+        supplierId,
+        returnNumber,
+        returnDate: billDate && billDate > today ? billDate : today,
+        reason: 'Short or damaged on receipt',
+        items: issues.map((l: any) => ({
+          item_id: l.buyerItemId,
+          // The size or colour this line's stock went into, so the return takes it back from there.
+          variant_id: l.buyerItemId ? lineVariantIds[l.index] ?? null : null,
+          item_name: l.itemName,
+          qty: Math.round((l.short + l.damaged) * 1000) / 1000,
+        })),
+        notes: lineNotes.length ? lineNotes.join('; ').slice(0, 1000) : null,
+      });
+      if (!created.ok) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `Could not raise the debit note for short and damaged goods: ${created.error}`, code: created.code ?? 'AUTO_RETURN_FAILED' },
+          { status: created.status }
+        );
+      }
+      purchaseReturn = created.purchaseReturn;
+    }
+
     const receiptRes = await client.query(
       `INSERT INTO supplier_bill_receipts (
          buyer_business_id, vendor_business_id, invoice_id, purchase_id, status, notes, received_by_user_id
@@ -618,7 +672,9 @@ export async function POST(
         invoice.business_id,
         issues.length ? `Bill ${invoice.invoice_number} received with issues` : `Bill ${invoice.invoice_number} received`,
         issues.length
-          ? `${buyerName} received bill ${invoice.invoice_number} with issues. ${issueText}. Expect a debit note for these.`
+          ? `${buyerName} received bill ${invoice.invoice_number} with issues. ${issueText}. ${
+              purchaseReturn ? `Debit note ${purchaseReturn.return_number} has been raised for these.` : 'Expect a debit note for these.'
+            }`
           : `${buyerName} received bill ${invoice.invoice_number} in full.`,
         invoiceId,
       ]
@@ -636,10 +692,26 @@ export async function POST(
 
     await client.query('COMMIT');
 
+    if (purchaseReturn) {
+      const { noticeBuyerDebitNote } = await import('@/lib/supplier-hub-money');
+      await noticeBuyerDebitNote({
+        buyerBusinessId: business_id,
+        purchaseId: purchase.id,
+        returnId: purchaseReturn.id,
+        amount: Number(purchaseReturn.grand_total) || 0,
+        returnDate: String(purchaseReturn.return_date instanceof Date
+          ? purchaseReturn.return_date.toISOString()
+          : purchaseReturn.return_date).slice(0, 10),
+        reason: 'Short or damaged on receipt',
+      });
+    }
+
     return NextResponse.json(
       {
         purchase,
         receipt,
+        shortfall_mode: shortfallMode,
+        purchase_return: purchaseReturn,
         shortfalls: issues.map((l: any) => ({
           item_id: l.buyerItemId,
           item_name: l.itemName,
@@ -651,6 +723,7 @@ export async function POST(
     );
   } catch (error: any) {
     await client.query('ROLLBACK');
+    if (error instanceof AuthorizationError) return error.toNextResponse();
     console.error('Error converting invoice to purchase:', error);
     return NextResponse.json(
       { error: 'Failed to convert invoice to purchase', details: error.message },

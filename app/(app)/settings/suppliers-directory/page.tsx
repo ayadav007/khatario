@@ -57,6 +57,8 @@ export default function SuppliersDirectorySettingsPage() {
   /** Listed in the directory but not shown yet: waiting for platform review, or hidden by it. */
   const [listingHeld, setListingHeld] = useState<'waiting' | 'hidden' | null>(null);
   const [savingWhatsApp, setSavingWhatsApp] = useState(false);
+  const [shortfallMode, setShortfallMode] = useState<'keep' | 'auto_return'>('keep');
+  const [savingShortfall, setSavingShortfall] = useState(false);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [incoming, setIncoming] = useState<
     Array<{ id: string; status: string; counterparty_name: string; created_at: string; message?: string | null }>
@@ -95,6 +97,12 @@ export default function SuppliersDirectorySettingsPage() {
         setListingHeld(
           disc.visibility === 'directory' && disc.directory_approved === false ? (disc.reviewed_at ? 'hidden' : 'waiting') : null
         );
+      }
+
+      const sRes = await fetch('/api/settings/receipt-shortfall', { cache: 'no-store' });
+      if (sRes.ok) {
+        const sj = await sRes.json();
+        setShortfallMode(sj.mode === 'auto_return' ? 'auto_return' : 'keep');
       }
 
       const lUrl = buildApiUrl('/api/suppliers/hub/published-listings', {
@@ -193,6 +201,33 @@ export default function SuppliersDirectorySettingsPage() {
       toast.success(on ? 'Supplier Hub updates will come on WhatsApp' : 'Supplier Hub WhatsApp updates are off');
     } finally {
       setSavingWhatsApp(false);
+    }
+  }
+
+  /** Saved on its own, straight away, like the WhatsApp switch. */
+  async function saveShortfallMode(mode: 'keep' | 'auto_return') {
+    const before = shortfallMode;
+    setSavingShortfall(true);
+    setShortfallMode(mode);
+    try {
+      const res = await fetch('/api/settings/receipt-shortfall', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setShortfallMode(before);
+        toast.error(j.error || 'Could not save');
+        return;
+      }
+      toast.success(
+        mode === 'auto_return'
+          ? 'Short and damaged goods will be returned to the supplier on receipt'
+          : 'Short and damaged goods will be kept for a debit note you record later'
+      );
+    } finally {
+      setSavingShortfall(false);
     }
   }
 
@@ -377,6 +412,46 @@ export default function SuppliersDirectorySettingsPage() {
                   </span>
                 </span>
               </label>
+            </section>
+
+            <section id="receipt-shortfall">
+              <h3 className="settings-section-title">Short or damaged goods on a supplier&apos;s bill</h3>
+              <p className="type-body-secondary mb-3 max-w-2xl">
+                When you receive a connected supplier&apos;s bill and mark some quantity short or damaged, the purchase
+                still matches the bill. Choose who raises the debit note for that quantity.
+              </p>
+              <div className="max-w-2xl space-y-3">
+                {(
+                  [
+                    {
+                      value: 'keep',
+                      label: 'I will record the debit note later',
+                      help: 'Everything billed goes into stock. The receipt keeps what was short or damaged until you record a purchase return.',
+                    },
+                    {
+                      value: 'auto_return',
+                      label: 'Return them to the supplier when I receive the bill',
+                      help: 'A debit note is raised at once for the short and damaged quantity: it leaves stock, comes off what you owe the supplier, and reverses its GST.',
+                    },
+                  ] as const
+                ).map((o) => (
+                  <label key={o.value} className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="radio"
+                      name="receipt-shortfall"
+                      value={o.value}
+                      checked={shortfallMode === o.value}
+                      disabled={savingShortfall}
+                      onChange={() => saveShortfallMode(o.value)}
+                      className="mt-1 h-4 w-4 shrink-0 border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-text-primary">{o.label}</span>
+                      <span className="type-body-secondary mt-0.5 block">{o.help}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </section>
 
             <section>

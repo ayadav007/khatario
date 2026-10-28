@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { inBuyerUnits, loadBillForBuyer, loadBillLines, resolveBillLines } from '@/lib/supplier-bills';
+import { readReceiptShortfallMode } from '@/lib/purchases/receipt-shortfall-mode';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/purchases/incoming-bills/[invoiceId]
  * One connected supplier's bill as the receive screen needs it: each line with the buyer's
  * matched item and quantity in the buyer's unit (or suggestions when unmatched), and the
- * receipt if it has already been received.
+ * receipt if it has already been received. `shortfall_mode` says whether receiving it raises the
+ * debit note for short and damaged goods at once (lib/purchases/receipt-shortfall-mode).
  */
 export async function GET(request: NextRequest, { params }: { params: { invoiceId: string } }) {
   const auth = requireAuthenticatedTenant(request);
@@ -122,6 +124,7 @@ export async function GET(request: NextRequest, { params }: { params: { invoiceI
       purchase,
       receipt_lines: receiptLines,
       purchase_returns: returns,
+      shortfall_mode: await readReceiptShortfallMode(auth.businessId, client),
     });
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();

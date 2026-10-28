@@ -78,10 +78,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const moves = await client.query(
-      `SELECT item_id, location_id, SUM(quantity)::float8 AS qty
+      `SELECT item_id, location_id, variant_id, SUM(quantity)::float8 AS qty
          FROM stock_movements
         WHERE business_id = $1 AND reference_type = 'purchase_return' AND reference_id = $2 AND type = 'out'
-        GROUP BY item_id, location_id`,
+        GROUP BY item_id, location_id, variant_id`,
       [businessId, pr.id]
     );
     for (const m of moves.rows) {
@@ -90,6 +90,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         branchId: pr.branch_id,
         warehouseId: m.location_id,
         itemId: m.item_id,
+        variantId: m.variant_id,
         qty: Number(m.qty),
         direction: 'in',
         returnId: pr.id,

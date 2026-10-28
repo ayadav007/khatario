@@ -39,6 +39,8 @@ type Detail = {
   purchase: { id: string; bill_number: string; receipt_status: string | null } | null;
   receipt_lines: Array<{ buyer_item_id: string | null; item_name: string; billed_qty: string; short_qty: string; damaged_qty: string; note: string | null }>;
   purchase_returns: Array<{ id: string; return_number: string }>;
+  /** Business setting: 'auto_return' raises the debit note for short + damaged on receipt */
+  shortfall_mode?: 'keep' | 'auto_return';
 };
 
 type Received = { short: string; damaged: string; note: string };
@@ -141,7 +143,11 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to receive the bill');
-      toast.success(`Purchase ${data.purchase?.bill_number || ''} created`);
+      toast.success(
+        data.purchase_return
+          ? `Purchase ${data.purchase?.bill_number || ''} created, debit note ${data.purchase_return.return_number} raised`
+          : `Purchase ${data.purchase?.bill_number || ''} created`
+      );
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to receive the bill');
@@ -418,8 +424,13 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
               />
             </label>
             <p className="text-xs text-text-secondary">
-              The purchase is recorded exactly as billed, so GST and the amount owed match the supplier&apos;s bill. Short or
-              damaged quantities are sent to the supplier, and you can record a debit note for them next.
+              The purchase is recorded exactly as billed, so GST and the amount owed match the supplier&apos;s bill.{' '}
+              {detail.shortfall_mode === 'auto_return'
+                ? 'Short or damaged quantities go back to the supplier at once: a debit note is raised for them, taking them out of stock and off what you owe.'
+                : 'Everything billed goes into stock. Short or damaged quantities are sent to the supplier, and you can record a debit note for them next.'}{' '}
+              <Link href="/settings/suppliers-directory#receipt-shortfall" className="link-primary">
+                Change
+              </Link>
             </p>
             {missing.length > 0 && (
               <p className="text-sm text-amber-700">Match or create an item for: {missing.map((l) => l.item_name).join(', ')}</p>

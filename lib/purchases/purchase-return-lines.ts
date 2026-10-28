@@ -23,10 +23,14 @@ export type BillLine = {
   taxable_value: number;
   tax_rate: number;
   igst_amount: number;
+  /** Size or colour the line was bought into, if any. */
+  variant_id?: string | null;
 };
 
 export type ReturnRequestLine = {
   item_id?: string | null;
+  /** Size or colour to return. May be left out when the bill has the item in one variant only. */
+  variant_id?: string | null;
   item_name?: string | null;
   description?: string | null;
   hsn_sac?: string | null;
@@ -40,6 +44,7 @@ export type ReturnRequestLine = {
 
 export type ComputedReturnLine = {
   item_id: string | null;
+  variant_id?: string | null;
   description: string;
   hsn_sac: string | null;
   unit: string;
@@ -63,8 +68,49 @@ export type ReturnTotals = {
   grand_total: number;
 };
 
-function lineKey(itemId: string | null | undefined, name: string | null | undefined): string {
-  return itemId ? `id:${itemId}` : `name:${String(name || '').trim().toLowerCase()}`;
+function lineKey(
+  itemId: string | null | undefined,
+  name: string | null | undefined,
+  variantId?: string | null
+): string {
+  if (!itemId) return `name:${String(name || '').trim().toLowerCase()}`;
+  return variantId ? `id:${itemId}:v:${variantId}` : `id:${itemId}`;
+}
+
+/**
+ * The bill line a return line belongs to. An item bought in one size or colour only is found
+ * without naming it; an item bought in several needs the variant (`ambiguous`), so stock leaves
+ * the size it went into.
+ */
+export function resolveBillLineKey(
+  billKeys: ReadonlySet<string> | ReadonlyMap<string, unknown>,
+  itemId: string | null | undefined,
+  name: string | null | undefined,
+  variantId?: string | null
+): { key: string; ambiguous: boolean } {
+  const key = lineKey(itemId, name, variantId);
+  if (billKeys.has(key) || !itemId || variantId) return { key, ambiguous: false };
+  const prefix = `id:${itemId}:v:`;
+  const variants = [...billKeys.keys()].filter((k) => k.startsWith(prefix));
+  if (variants.length === 1) return { key: variants[0], ambiguous: false };
+  return { key, ambiguous: variants.length > 1 };
+}
+
+/**
+ * Quantity already returned per bill line. Returns recorded before variants were kept on return
+ * lines (variant_id NULL) count against the item's only variant on the bill, if it has one.
+ */
+export function alreadyReturnedByBillLine(
+  billLines: Array<{ item_id: string | null; item_name: string | null; variant_id?: string | null }>,
+  returned: Array<{ item_id: string | null; description: string | null; variant_id?: string | null; qty: number | string }>
+): Map<string, number> {
+  const keys = new Set(billLines.map((b) => lineKey(b.item_id, b.item_name, b.variant_id)));
+  const out = new Map<string, number>();
+  for (const r of returned) {
+    const { key } = resolveBillLineKey(keys, r.item_id, r.description, r.variant_id);
+    out.set(key, (out.get(key) || 0) + (Number(r.qty) || 0));
+  }
+  return out;
 }
 
 function taxSplit(taxable: number, rate: number, interState: boolean) {
@@ -111,7 +157,7 @@ export function buildReturnLinesFromBill(p: {
 }): { lines: ComputedReturnLine[]; totals: ReturnTotals } {
   const byKey = new Map<string, { qty: number; taxable: number; rate: number; inter: boolean; line: BillLine }>();
   for (const b of p.billLines) {
-    const k = lineKey(b.item_id, b.item_name);
+    const k = lineKey(b.item_id, b.item_name, b.variant_id);
     const cur = byKey.get(k);
     if (cur) {
       cur.qty += Number(b.quantity) || 0;
@@ -133,7 +179,15 @@ export function buildReturnLinesFromBill(p: {
   for (const req of p.requested) {
     const qty = q3(Number(req.qty ?? req.quantity) || 0);
     if (!(qty > 0)) continue;
-    const k = lineKey(req.item_id, req.item_name || req.description);
+    const resolved = resolveBillLineKey(byKey, req.item_id, req.item_name || req.description, req.variant_id);
+    if (resolved.ambiguous) {
+      throw new PurchaseReturnValidationError(
+        `"${req.item_name || req.description || req.item_id}" was bought in more than one size or colour on this bill. Choose which one to return.`,
+        'RETURN_VARIANT_REQUIRED',
+        { item_id: req.item_id ?? null }
+      );
+    }
+    const k = resolved.key;
     const bill = byKey.get(k);
     if (!bill) {
       throw new PurchaseReturnValidationError(
@@ -158,6 +212,7 @@ export function buildReturnLinesFromBill(p: {
     const split = taxSplit(taxable, bill.rate, bill.inter);
     lines.push({
       item_id: bill.line.item_id,
+      variant_id: bill.line.variant_id ?? null,
       description: String(req.description || bill.line.item_name || ''),
       hsn_sac: bill.line.hsn_sac,
       unit: bill.line.unit || req.unit || 'PCS',
@@ -216,6 +271,9 @@ export function buildStandaloneReturnLines(p: {
 
 export type PurchaseItemForReturn = {
   item_id?: string | null;
+  variant_id?: string | null;
+  /** e.g. "Blue / L"; shown after the item name so sizes of one item can be told apart. */
+  variant_name?: string | null;
   item_name?: string | null;
   catalog_item_name?: string | null;
   hsn_sac?: string | null;
@@ -228,7 +286,7 @@ export type PurchaseItemForReturn = {
   cgst_amount?: number | string | null;
   sgst_amount?: number | string | null;
   igst_amount?: number | string | null;
-  /** Already returned for this item on this bill. Repeated on each split line as the group total. */
+  /** Already returned for this item (and variant) on this bill. Repeated on each split line as the group total. */
   returned_qty?: number | string | null;
 };
 
@@ -260,6 +318,7 @@ export function formLinesFromPurchase(items: PurchaseItemForReturn[]): PurchaseR
     string,
     {
       item_id: string | null;
+      variant_id: string | null;
       item_name: string;
       hsn: string | null;
       unit: string;
@@ -274,8 +333,10 @@ export function formLinesFromPurchase(items: PurchaseItemForReturn[]): PurchaseR
   >();
 
   for (const item of items) {
-    const name = String(item.item_name || '').trim() || String(item.catalog_item_name || '').trim() || 'Item';
-    const key = lineKey(item.item_id, name);
+    const baseName = String(item.item_name || '').trim() || String(item.catalog_item_name || '').trim() || 'Item';
+    const variantName = String(item.variant_name || '').trim();
+    const name = variantName && !baseName.includes(variantName) ? `${baseName} (${variantName})` : baseName;
+    const key = lineKey(item.item_id, baseName, item.variant_id);
     const qty = Number(item.quantity) || 0;
     const taxable = billTaxable(item, qty);
     const returned = Number(item.returned_qty) || 0;
@@ -283,6 +344,7 @@ export function formLinesFromPurchase(items: PurchaseItemForReturn[]): PurchaseR
     if (!cur) {
       groups.set(key, {
         item_id: item.item_id || null,
+        variant_id: (item.item_id && item.variant_id) || null,
         item_name: name,
         hsn: item.hsn_sac || null,
         unit: item.unit || 'PCS',
@@ -315,6 +377,7 @@ export function formLinesFromPurchase(items: PurchaseItemForReturn[]): PurchaseR
     const split = taxSplit(taxable, g.rate, inter);
     lines.push({
       item_id: g.item_id,
+      variant_id: g.variant_id,
       item_name: g.item_name,
       description: g.item_name,
       hsn_sac: g.hsn,

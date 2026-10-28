@@ -235,10 +235,16 @@ export default function NewPurchaseReturnPage() {
       const purchase = data.purchase;
       const prefill = prefillQtyRef.current;
       prefillQtyRef.current = null;
-      const loadedItems = prefill
-        ? formLinesFromPurchase(purchase.items || []).map((line) =>
-            scaleLinkedReturnLine(line, (line.item_id && prefill.get(line.item_id)) || 0)
-          )
+      // A prefilled quantity is per item; an item bought in several sizes takes it from its
+      // lines in turn, each up to what it can still return, so it is not repeated on every size.
+      const left = prefill ? new Map(prefill) : null;
+      const loadedItems = left
+        ? formLinesFromPurchase(purchase.items || []).map((line) => {
+            const want = (line.item_id && left.get(line.item_id)) || 0;
+            const scaled = scaleLinkedReturnLine(line, want);
+            if (line.item_id && want > 0) left.set(line.item_id, Math.max(0, want - scaled.qty));
+            return scaled;
+          })
         : formLinesFromPurchase(purchase.items || []);
       const linkedPurchase: Purchase = {
         id: purchase.id,
@@ -438,6 +444,7 @@ export default function NewPurchaseReturnPage() {
       place_of_supply_state_code: selectedSupplier?.state_code,
       items: linesToSave.map(item => ({
         item_id: item.item_id || null,
+        variant_id: item.variant_id || null,
         item_name: item.item_name,
         description: item.description,
         hsn_sac: item.hsn_sac,
