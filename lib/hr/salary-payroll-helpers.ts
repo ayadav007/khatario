@@ -32,6 +32,26 @@ export function inclusiveCalendarDays(fromYmd: string, toYmd: string): number {
   return Math.floor(diffMs / 86_400_000) + 1;
 }
 
+export interface DailyWageResult {
+  dailyRate: number;
+  presentDays: number;
+  halfDays: number;
+  payableDays: number;
+  amount: number;
+}
+
+/**
+ * Pay for a daily-wage employee: the day rate for each day marked present and half the rate for
+ * each half day. Absent days and days with no attendance earn nothing.
+ */
+export function computeDailyWage(dailyRate: number, records: ReadonlyArray<{ status: string }>): DailyWageResult {
+  const rate = Number(dailyRate) || 0;
+  const presentDays = records.filter((r) => r.status === 'present').length;
+  const halfDays = records.filter((r) => r.status === 'half_day').length;
+  const payableDays = presentDays + halfDays / 2;
+  return { dailyRate: rate, presentDays, halfDays, payableDays, amount: Math.round(rate * payableDays * 100) / 100 };
+}
+
 export interface ProRataSalaryResult {
   applied: boolean;
   proratedAmount: number;

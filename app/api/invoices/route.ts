@@ -443,6 +443,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A line without a price would otherwise reach the insert and fail as a database error.
+    const unpriced = (items as Array<{ unit_price?: unknown; item_name?: unknown }>).find(
+      (it) => it?.unit_price === undefined || it.unit_price === null || it.unit_price === '' || !Number.isFinite(Number(it.unit_price))
+    );
+    if (unpriced) {
+      return NextResponse.json(
+        { error: `Enter a price for ${String(unpriced.item_name || 'each item')}`, code: 'LINE_PRICE_REQUIRED' },
+        { status: 400 }
+      );
+    }
+
     if (invoice_date) {
       try {
         const cutoff = await getClosingStockLockedCutoffDate(business_id);

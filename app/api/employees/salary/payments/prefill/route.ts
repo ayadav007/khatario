@@ -7,7 +7,7 @@ import {
   payrollPrefillFromStructure,
   payrollPrefillWithProRata,
 } from '@/lib/hr/salary-structure';
-import { computeProRataMonthlySalary } from '@/lib/hr/salary-payroll-helpers';
+import { computeDailyWage, computeProRataMonthlySalary } from '@/lib/hr/salary-payroll-helpers';
 import {
   computeAttendanceDeductions,
   getAttendancePolicy,
@@ -46,13 +46,14 @@ export async function GET(request: NextRequest) {
 
     const employee = await queryOne<{
       salary: number | null;
+      pay_basis: string | null;
       joining_date: string | null;
       pf_applicable: boolean | null;
       esi_applicable: boolean | null;
       uan: string | null;
       esi_ip_number: string | null;
     }>(
-      `SELECT salary, joining_date,
+      `SELECT salary, pay_basis, joining_date,
               COALESCE(pf_applicable, true) AS pf_applicable,
               COALESCE(esi_applicable, true) AS esi_applicable,
               uan, esi_ip_number
@@ -66,7 +67,19 @@ export async function GET(request: NextRequest) {
     const structure = await getActiveSalaryStructure(employeeId, businessId, toDate);
     const policy = await getAttendancePolicy(businessId);
 
+    const attendanceRows = await queryRows<AttendanceRecordForPolicy>(
+      `SELECT date::text AS date, status,
+              COALESCE(is_late, false) AS is_late,
+              COALESCE(late_excused, false) AS late_excused,
+              COALESCE(late_minutes, 0) AS late_minutes,
+              COALESCE(late_marked_manual, false) AS late_marked_manual
+       FROM employee_attendance
+       WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date`,
+      [employeeId, fromDate, toDate],
+    );
+
     let prefillPayload: Record<string, unknown>;
+    const isDaily = !structure && employee.pay_basis === 'daily';
 
     if (structure) {
       const result = payrollPrefillWithProRata(
@@ -81,6 +94,25 @@ export async function GET(request: NextRequest) {
         effective_from: structure.effective_from,
         fields: result.fields,
         pro_rata: result.proRata,
+      };
+    } else if (isDaily) {
+      const daily = computeDailyWage(Number(employee.salary ?? 0), attendanceRows);
+      prefillPayload = {
+        source: 'daily_wage',
+        fields: {
+          basic_salary: daily.amount,
+          hra: 0,
+          transport_allowance: 0,
+          medical_allowance: 0,
+          special_allowance: 0,
+          other_earnings: 0,
+          provident_fund: 0,
+          professional_tax: 0,
+          tds: 0,
+          other_deductions: 0,
+          gross_monthly: daily.amount,
+        },
+        daily_wage: daily,
       };
     } else {
       const monthlySalary = Number(employee.salary ?? 0);
@@ -109,16 +141,6 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const attendanceRows = await queryRows<AttendanceRecordForPolicy>(
-      `SELECT date::text AS date, status,
-              COALESCE(is_late, false) AS is_late,
-              COALESCE(late_excused, false) AS late_excused,
-              COALESCE(late_minutes, 0) AS late_minutes,
-              COALESCE(late_marked_manual, false) AS late_marked_manual
-       FROM employee_attendance
-       WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date`,
-      [employeeId, fromDate, toDate],
-    );
 
     const fullGross = structure
       ? payrollPrefillFromStructure(structure).gross_monthly
@@ -127,7 +149,8 @@ export async function GET(request: NextRequest) {
       ? Number(structure.basic_salary ?? 0)
       : Number(employee.salary ?? 0);
 
-    const attendanceDeductions = computeAttendanceDeductions({
+    // A daily wage already pays only the days worked, so absences are not deducted again.
+    const computedDeductions = computeAttendanceDeductions({
       policy,
       records: attendanceRows,
       monthlyGross: fullGross,
@@ -135,6 +158,9 @@ export async function GET(request: NextRequest) {
       periodFrom: fromDate,
       periodTo: toDate,
     });
+    const attendanceDeductions = isDaily
+      ? { ...computedDeductions, lines: [], total: 0, policy_applied: false }
+      : computedDeductions;
 
     const settings = await getHrPayrollSettings(businessId);
     const fields = (prefillPayload.fields ?? {}) as Record<string, number>;

@@ -11,6 +11,7 @@ import {
   ValueAdjustmentParams,
   ReasonCode
 } from '@/lib/inventory-adjustment-service';
+import { REASON_CODES } from '@/lib/inventory/adjustment-reason-codes';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { stockErrorBody } from '@/lib/inventory/godown-stock';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
@@ -231,6 +232,12 @@ export async function POST(request: NextRequest) {
     if (!adjustment_type || !item_id || !reason_code || !adjustment_date) {
       return NextResponse.json(
         { error: 'adjustment_type, item_id, reason_code, and adjustment_date are required' },
+        { status: 400 }
+      );
+    }
+    if (!(REASON_CODES as readonly string[]).includes(String(reason_code))) {
+      return NextResponse.json(
+        { error: `Unknown reason "${String(reason_code)}". Use one of: ${REASON_CODES.join(', ')}`, code: 'REASON_CODE_INVALID' },
         { status: 400 }
       );
     }

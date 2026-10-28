@@ -26,6 +26,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 async function loadExpense(id: string, businessId: string): Promise<ExpenseRow | null> {
+  // Not an id at all (a broken link): not found, rather than a database cast error.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
   return db.queryOne<ExpenseRow>(
     `SELECT id, business_id, branch_id, category_id, amount, description,
             to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, settlement_account_id, reference_number,

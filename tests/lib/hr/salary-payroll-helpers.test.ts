@@ -1,4 +1,5 @@
 import {
+  computeDailyWage,
   computeProRataMonthlySalary,
   inclusiveCalendarDays,
   isPartialAdvanceRecovery,
@@ -13,6 +14,24 @@ describe('inclusiveCalendarDays', () => {
 
   it('counts partial span from join date', () => {
     expect(inclusiveCalendarDays('2025-05-10', '2025-05-31')).toBe(22);
+  });
+});
+
+describe('computeDailyWage', () => {
+  it('pays the day rate for present days and half for half days', () => {
+    const rows = [
+      ...Array.from({ length: 7 }, () => ({ status: 'present' })),
+      { status: 'half_day' },
+      { status: 'absent' },
+      { status: 'absent' },
+    ];
+    const r = computeDailyWage(700, rows);
+    expect(r.payableDays).toBe(7.5);
+    expect(r.amount).toBe(5250);
+  });
+
+  it('pays nothing when no attendance is marked', () => {
+    expect(computeDailyWage(700, []).amount).toBe(0);
   });
 });
 

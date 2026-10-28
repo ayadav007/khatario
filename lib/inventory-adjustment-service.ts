@@ -19,23 +19,9 @@ import { findReplayLog, insertReplayLogPending, markReplayCompleted } from '@/li
 
 export type AdjustmentType = 'QUANTITY' | 'VALUE';
 export type AdjustmentDirection = 'INCREASE' | 'DECREASE';
-export type ReasonCode = 
-  | 'STOCK_TAKE'
-  | 'DAMAGE'
-  | 'THEFT'
-  | 'EXPIRED'
-  | 'FREE_SAMPLE'
-  | 'COST_CORRECTION'
-  | 'LANDED_COST'
-  | 'REVALUATION'
-  | 'WRITE_DOWN'
-  | 'PROCESS_LOSS'
-  | 'TRANSIT_LOSS'
-  | 'OWN_CONSUMPTION'
-  | 'CUSTODY_LOSS'
-  | 'PRODUCTION_ISSUE'
-  | 'PRODUCTION_RECEIPT'
-  | 'BY_PRODUCT';
+import { REASON_CODES, type ReasonCode } from '@/lib/inventory/adjustment-reason-codes';
+export { REASON_CODES };
+export type { ReasonCode };
 
 export interface QuantityAdjustmentParams {
   businessId: string;
