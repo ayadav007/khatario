@@ -460,6 +460,7 @@ function SignupPageContent() {
                   <select name="businessType" value={formData.businessType} onChange={handleChange} className={selectClassName} required>
                     <option value="">Select</option>
                     <option value="retail">Retail</option>
+                    <option value="restaurant">Restaurant / food service</option>
                     <option value="wholesaler">Wholesaler</option>
                     <option value="distributor">Distributor</option>
                     <option value="manufacturer">Manufacturer</option>

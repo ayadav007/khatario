@@ -175,7 +175,10 @@ export interface CoaPack {
 const TRADING_TYPES = new Set(['retail', 'wholesaler', 'distributor']);
 const isType = (p: BusinessProfile, ...types: string[]) => types.includes(p.businessType ?? '');
 const isIndustry = (p: BusinessProfile, ...industries: string[]) => industries.includes(p.industry ?? '');
-const isRestaurant = (p: BusinessProfile) => isIndustry(p, 'food_beverages') && isType(p, 'retail', 'service');
+// Only a business that says it serves food: a grocery or kirana shop (retail + food & beverages)
+// sells packaged goods and keeps its input tax credit.
+const isRestaurant = (p: BusinessProfile) =>
+  isType(p, 'restaurant') || (isIndustry(p, 'food_beverages') && isType(p, 'service'));
 
 export const COA_PACKS: ReadonlyArray<CoaPack> = [
   {

@@ -10,7 +10,7 @@ export const BUSINESS_TYPES: Array<{ value: string; label: string; signupType: s
   { value: 'wholesale', label: 'Wholesale / Distribution', signupType: 'wholesaler', signupIndustry: 'other' },
   { value: 'trading', label: 'Trading business', signupType: 'distributor', signupIndustry: 'other' },
   { value: 'manufacturing', label: 'Manufacturing', signupType: 'manufacturer', signupIndustry: 'other' },
-  { value: 'restaurant', label: 'Restaurant / Food business', signupType: 'retail', signupIndustry: 'food_beverages' },
+  { value: 'restaurant', label: 'Restaurant / Food business', signupType: 'restaurant', signupIndustry: 'food_beverages' },
   { value: 'other', label: 'Other business', signupType: 'other', signupIndustry: 'other' },
 ];
 

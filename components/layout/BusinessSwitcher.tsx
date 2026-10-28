@@ -271,6 +271,7 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-base"
                   >
                     <option value="retail">Retail</option>
+                    <option value="restaurant">Restaurant / food service</option>
                     <option value="wholesaler">Wholesaler</option>
                     <option value="distributor">Distributor</option>
                     <option value="manufacturer">Manufacturer</option>

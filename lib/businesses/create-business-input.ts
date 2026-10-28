@@ -1,5 +1,6 @@
 export const ADD_BUSINESS_TYPES = [
   'retail',
+  'restaurant',
   'wholesaler',
   'distributor',
   'manufacturer',

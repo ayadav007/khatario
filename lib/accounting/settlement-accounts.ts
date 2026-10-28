@@ -81,6 +81,9 @@ export function settlementKind(row: {
   const group = String(row.group_name || '');
   const type = String(row.account_type || '');
   if (isClearingName(name)) return 'clearing';
+  // GST electronic cash/credit ledgers (1130–1133) hold tax paid on the portal, not money a receipt
+  // or payment can land in.
+  if (/electronic\s+(cash|credit)\s+ledger/i.test(name)) return null;
   if (code === '1101' || (type === 'asset' && /\bcash\b/i.test(name) && code !== '1102' && !row.linked_bank)) {
     return 'cash';
   }
@@ -167,6 +170,12 @@ export function resolveSettlementAccount(input: {
   if (modeClass === 'cash') {
     const cashInHand = eligible.find((a) => a.code === '1101');
     if (cashInHand) return { ok: true, accountId: cashInHand.id, modeClass };
+  }
+  if (modeClass === 'bank') {
+    // The seeded Bank OD / Cash Credit ledger (2112) is a loan account, not a second bank to pick
+    // between: with one real bank beside it, money goes to that bank unless the user chose 2112.
+    const banks = eligible.filter((a) => a.code !== '2112');
+    if (banks.length === 1) return { ok: true, accountId: banks[0].id, modeClass };
   }
   if (modeClass === 'cash' && eligible.length === 0) {
     return {
