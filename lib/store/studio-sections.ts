@@ -124,6 +124,8 @@ export interface StudioSettings {
   /** Any section: merchant class names on the wrapper, and CSS scoped to this section. */
   cssClass?: string;
   customCss?: string;
+  /** Quick header: delivery promise shown in the location bar, e.g. "in 30 minutes". */
+  deliveryEta?: string;
 }
 
 /** Per-section custom CSS limit; the store-wide box keeps its own 8,000. */
@@ -258,6 +260,7 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   speed: { kind: 'enum', values: ['slow', 'normal', 'fast'] },
   cssClass: { kind: 'cssclass' },
   customCss: { kind: 'css' },
+  deliveryEta: { kind: 'text', max: 40 },
 };
 
 function cleanUrl(v: string): string | undefined {

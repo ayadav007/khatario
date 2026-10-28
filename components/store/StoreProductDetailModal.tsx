@@ -7,7 +7,7 @@ import type { StoreProduct } from './StoreProductCard';
 import clsx from 'clsx';
 import { StoreKhatarioProductView } from './StoreKhatarioProductView';
 import { StoreProductGallery } from './StoreProductGallery';
-import { chowkInkOn, chowkOnAccent, isKhatarioPack, isStudioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas, storePackClass } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isKhatarioPack, sanitizeStoreTheme, usesStudioSections, sectionEnabled, storeCanvas, storePackClass } from '@/lib/store/store-theme';
 import { storeDiscountPercent } from '@/lib/store/map-store-product';
 
 interface StoreProductDetailModalProps {
@@ -21,7 +21,7 @@ export function StoreProductDetailModal({
 }: StoreProductDetailModalProps) {
   const { cart, addToCart, updateCartQuantity, store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
-  const grocery = theme.pack === 'grocery' || isStudioPack(theme);
+  const grocery = theme.pack === 'grocery' || usesStudioSections(theme);
   const paper = storeCanvas(theme);
   const accent = theme.accent;
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(

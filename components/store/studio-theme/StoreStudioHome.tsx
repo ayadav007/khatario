@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { sectionEnabled, type StoreTheme } from '@/lib/store/store-theme';
@@ -48,6 +48,7 @@ export function StoreStudioHome({
   onNavigate,
   onLoadMore,
   onViewDetail,
+  quick = false,
 }: {
   store: StoreBusinessContext;
   theme: StoreTheme;
@@ -65,6 +66,8 @@ export function StoreStudioHome({
   onNavigate: (target: StudioLinkTarget, label: string) => void;
   onLoadMore: () => void;
   onViewDetail: (p: StoreProduct) => void;
+  /** Quick pack: a category opens as a rail of categories beside the products. */
+  quick?: boolean;
 }) {
   const browsing = Boolean(searchQuery || selectedCategory || offersOnly);
   const mobileColumns = theme.mobile_columns === 3 ? 3 : 2;
@@ -73,10 +76,15 @@ export function StoreStudioHome({
   const productSettings = productsSection?.settings ?? { columns: 5 };
   const offersOn = sectionEnabled(theme, 'offers');
 
+  // Remembered across loads: once a category is open, the list only holds its own products.
+  const seenImages = useRef<Record<string, string>>({});
   const categoryImages: Record<string, string> = {};
   for (const c of categories) {
-    const img = theme.category_images[c.id] || items.find((p) => p.category_id === c.id && p.image_url)?.image_url;
-    if (img) categoryImages[c.id] = img;
+    const img =
+      theme.category_images[c.id] ||
+      items.find((p) => p.category_id === c.id && p.image_url)?.image_url ||
+      seenImages.current[c.id];
+    if (img) categoryImages[c.id] = seenImages.current[c.id] = img;
   }
 
   const grid = (
@@ -207,6 +215,51 @@ export function StoreStudioHome({
         return null;
     }
   };
+  if (browsing && quick && selectedCategory && !searchQuery) {
+    const current = categories.find((c) => c.id === selectedCategory);
+    return (
+      <div className="st-cq qk-split" id="all-products">
+        <nav className="qk-rail" aria-label="Categories">
+          {categories.map((c) => {
+            const img = categoryImages[c.id];
+            return (
+              <button
+                type="button"
+                key={c.id}
+                className={c.id === selectedCategory ? 'on' : ''}
+                aria-current={c.id === selectedCategory}
+                onClick={() => {
+                  onCategory(c.id);
+                  window.scrollTo({ top: 0 });
+                }}
+              >
+                {img ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={img} alt="" loading="lazy" />
+                ) : (
+                  <span>{c.name.charAt(0).toUpperCase()}</span>
+                )}
+                <b>{c.name}</b>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="qk-railMain">
+          <StudioProductsSection
+            s={{ ...productSettings, eyebrow: '', background: undefined, spacingTop: undefined, display: 'grid', columns: 4 }}
+            title={current?.name ?? 'Products'}
+            count={`${total} ${total === 1 ? 'product' : 'products'}`}
+            action={{ label: 'Home', onClick: onClear }}
+            mobileColumns={2}
+          >
+            {grid}
+          </StudioProductsSection>
+          {after}
+        </div>
+      </div>
+    );
+  }
+
   if (browsing) {
     const selectedName = selectedCategory ? categories.find((c) => c.id === selectedCategory)?.name : null;
     const title = selectedName || (offersOnly ? 'Offers' : `Results for “${searchQuery}”`);

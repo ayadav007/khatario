@@ -7,18 +7,21 @@ export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset
   'theme-studio': { preset: 'studio', pack: 'studio' },
   'theme-khatario': { preset: 'khatario', pack: 'khatario' },
   'theme-grocery': { preset: 'grocery', pack: 'grocery' },
+  'theme-quick': { preset: 'quick', pack: 'quick' },
 };
 
 const DEMO_BUSINESS: Record<StoreThemePack, string> = {
   studio: '00000000-0000-4000-8000-000000000001',
   khatario: '00000000-0000-4000-8000-000000000004',
   grocery: '00000000-0000-4000-8000-000000000007',
+  quick: '00000000-0000-4000-8000-000000000010',
 };
 
 const STORE_LABEL: Record<StoreThemePack, string> = {
   studio: 'Studio',
   khatario: 'Khatario',
   grocery: 'Premium Grocery',
+  quick: 'Quick',
 };
 
 export function isThemeDemoSubdomain(subdomain: string): boolean {
@@ -108,7 +111,7 @@ function groceryDemoProducts(): StoreProduct[] {
 
 /** Every demo product across all packs, for id lookups on detail routes. */
 export function themeDemoProducts(pack?: StoreThemePack | null): StoreProduct[] {
-  if (pack === 'grocery') return groceryDemoProducts();
+  if (pack === 'grocery' || pack === 'quick') return groceryDemoProducts();
   if (pack) return apparelDemoProducts();
   return [...apparelDemoProducts(), ...groceryDemoProducts()];
 }
@@ -117,14 +120,18 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   const spec = THEME_DEMO_SLUGS[subdomain.toLowerCase().trim()];
   if (!spec) return null;
   const presetTheme = applyStorePreset(spec.preset);
-  const grocery = spec.pack === 'grocery';
+  // Quick shows the grocery catalog; its look comes from the Quick pack.
+  const grocery = spec.pack === 'grocery' || spec.pack === 'quick';
   const theme = sanitizeStoreTheme({
     ...presetTheme,
     preset: spec.preset,
     pack: spec.pack,
     hero_slides: [
       {
-        image_url: spec.pack === 'studio' ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1400&q=80' : '',
+        image_url:
+          spec.pack === 'studio' || spec.pack === 'quick'
+            ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1400&q=80'
+            : '',
         title: grocery ? 'Fresh groceries, delivered fast.' : 'Welcome',
         subtitle: 'Theme preview — sample catalog, checkout off.',
         viewport: 'both',
@@ -188,7 +195,7 @@ export function filterDemoCatalog(opts: {
   maxPrice?: number | null;
   sort?: 'name' | 'new' | 'bestsellers';
 }) {
-  const grocery = opts.pack === 'grocery';
+  const grocery = opts.pack === 'grocery' || opts.pack === 'quick';
   const all = grocery ? groceryDemoProducts() : apparelDemoProducts();
   const categories = (grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
     ...c,

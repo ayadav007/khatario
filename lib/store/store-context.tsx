@@ -15,6 +15,8 @@ export interface StoreCartItem {
   unit: string;
   maxStock: number;
   taxRate?: number;
+  /** List price, when above `price`; only used to show savings. */
+  mrp?: number;
 }
 
 export type StoreShopper = {

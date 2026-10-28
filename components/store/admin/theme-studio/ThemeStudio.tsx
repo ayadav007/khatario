@@ -156,7 +156,10 @@ export function ThemeStudio({
   onPreview: (sections: StudioSection[], pages: StudioPagesState, page: StudioPageId) => void;
 }) {
   const [doc, setDoc] = useState<StudioDoc>({ sections: initialSections, pages: initialPages });
-  const studioPack = pack === 'studio';
+  // Quick renders the same section list, so every section setting applies to it too.
+  const studioPack = pack === 'studio' || pack === 'quick';
+  // Only Studio is drawn inside the editor; other themes preview the real storefront in a frame.
+  const inlinePreview = pack === 'studio';
   const themeName = GALLERY_PACKS.find((p) => p.pack === pack)?.label ?? 'Studio';
   const firstDoc = useRef(true);
   const onChangeRef = useRef(onChange);
@@ -485,7 +488,7 @@ export function ThemeStudio({
           )}
         </aside>
         <main className="previewArea">
-          {!studioPack ? (
+          {!inlinePreview ? (
             <div className={`liveFrame ${device}`}>
               <p className="liveNote">
                 Live preview of {themeName} with your draft. It refreshes a moment after each change.
@@ -939,6 +942,17 @@ function Content({
         <Field label="Tagline">
           <input value={s.tagline ?? ''} onChange={(e) => update({ tagline: e.target.value })} />
         </Field>
+        <Field label="Delivery time (Quick theme)">
+          <input
+            value={s.deliveryEta ?? ''}
+            maxLength={40}
+            placeholder="in 30 minutes"
+            onChange={(e) => update({ deliveryEta: e.target.value })}
+          />
+        </Field>
+        <p className="styleHint">
+          The Quick theme shows “Delivery in 30 minutes” at the top. Leave empty to show your store name instead. Only promise what you deliver.
+        </p>
         <Check label="Show search ◇" checked={s.showSearch !== false} onChange={(showSearch) => update({ showSearch })} />
         <Check label="Show navigation ◇" checked={s.showNav !== false} onChange={(showNav) => update({ showNav })} />
         <Field label="Navigation links ◇">

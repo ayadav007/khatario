@@ -146,9 +146,42 @@ export function themeToStudioSections(theme: StoreTheme, ctx: StudioContext): St
   ];
 }
 
+/** Quick's starting layout: the same sections, arranged like a quick-delivery app home. */
+function quickStartSections(base: StudioSection[]): StudioSection[] {
+  const by = (type: StudioSection['type']) => base.find((s) => s.type === type)!;
+  const hero = by('hero');
+  const banner = by('banner');
+  return [
+    by('announcement'),
+    { ...by('header'), settings: { ...by('header').settings, deliveryEta: '' } },
+    { ...hero, settings: { ...hero.settings, layout: 'full', height: 'small', overlay: 35, align: 'left' } },
+    { ...by('categories'), settings: { title: 'Shop by category', columns: 8 } },
+    {
+      id: 'quick-bestsellers',
+      type: 'products',
+      name: 'Bestsellers',
+      enabled: true,
+      settings: { title: 'Bestsellers', source: 'bestsellers', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+    },
+    {
+      id: 'quick-deals',
+      type: 'products',
+      name: 'Top Deals',
+      enabled: true,
+      settings: { title: 'Top deals', source: 'discounted', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+    },
+    { ...banner, enabled: banner.enabled },
+    { id: 'quick-usp', type: 'usp', name: 'Trust Badges', enabled: true, settings: {} },
+    { ...by('products'), settings: { ...by('products').settings, title: 'All products', columns: 6 } },
+    by('footer'),
+  ];
+}
+
 /** The saved Studio layout, or one derived from the theme for stores that never opened Studio. */
 export function resolveStudioSections(theme: StoreTheme, ctx: StudioContext): StudioSection[] {
-  return theme.studio_sections.length > 0 ? theme.studio_sections : themeToStudioSections(theme, ctx);
+  if (theme.studio_sections.length > 0) return theme.studio_sections;
+  const base = themeToStudioSections(theme, ctx);
+  return theme.pack === 'quick' ? quickStartSections(base) : base;
 }
 
 /** Colour tokens for Studio sections, so every surface stays readable in light, dim and dark. */

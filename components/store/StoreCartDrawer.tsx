@@ -2,7 +2,8 @@
 
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isStudioPack, sanitizeStoreTheme, storeCanvas, storePackClass } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isQuickPack, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
+import { QuickCartSheet } from './quick-theme/QuickSheets';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -12,12 +13,18 @@ interface StoreCartDrawerProps {
   onCheckout?: () => void;
 }
 
-export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
+export function StoreCartDrawer(props: StoreCartDrawerProps) {
+  const { store } = useStore();
+  if (isQuickPack(sanitizeStoreTheme(store?.store_theme))) return <QuickCartSheet {...props} />;
+  return <CartDrawer {...props} />;
+}
+
+function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
   const { cart, updateCartQuantity, cartTotal, store, cartCount } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const grocery = theme.pack === 'grocery';
-  const soft = grocery || isStudioPack(theme);
+  const soft = grocery || usesStudioSections(theme);
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;

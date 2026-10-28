@@ -15,7 +15,8 @@ import {
   type StudioNavCategory,
   type StudioNavState,
 } from './studio-theme/StoreStudioChrome';
-import { chowkInkOn, chowkOnAccent, isGroceryPack, isKhatarioPack, sanitizeStoreTheme, storeCanvas, storeFontStack, storePackClass } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isGroceryPack, isKhatarioPack, isQuickPack, sanitizeStoreTheme, storeCanvas, storeFontStack, storePackClass } from '@/lib/store/store-theme';
+import { QuickCartBar, QuickHeader, QuickSheet, QuickTabs } from './quick-theme/QuickChrome';
 import { studioThemeVars, type StudioLinkTarget } from '@/lib/store/studio-layout';
 
 interface StoreShellProps {
@@ -72,6 +73,14 @@ export function StoreShell({
       /* ignore */
     }
   }, [store]);
+
+  // Search links from other pages (and the Search tab) land on /?focus=search.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('focus') !== 'search') return;
+    const t = window.setTimeout(() => searchRef.current?.focus(), 300);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -179,6 +188,103 @@ export function StoreShell({
       onCart={openCart}
     />
   );
+
+  if (isQuickPack(theme)) {
+    const focusSearch = () => {
+      if (!showSearch || !searchRef.current) {
+        window.location.href = '/?focus=search';
+        return;
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      searchRef.current.focus();
+    };
+    const freeAbove = (selectedBranch ?? (branches.length === 1 ? branches[0] : undefined))?.free_delivery_above ?? null;
+    return (
+      <div
+        className={clsx('st-root min-h-screen', storePackClass(theme))}
+        style={{
+          ...studioThemeVars(theme),
+          ...(theme.font_family !== 'system' ? { fontFamily: storeFontStack(theme.font_family) } : {}),
+          backgroundColor: paper,
+          ['--store-accent' as string]: accent,
+          ['--store-paper' as string]: paper,
+        }}
+      >
+        <QuickHeader
+          sections={studioSections}
+          store={store}
+          logoUrl={logoUrl}
+          categories={categories}
+          cartCount={cartCount}
+          onCart={openCart}
+          showSearch={showSearch}
+          searchQuery={searchQuery}
+          onSearchChange={onSearchChange}
+          searchRef={searchRef}
+          searchPlaceholder={searchPlaceholder}
+          onNavigate={onStudioNavigate}
+          navState={studioNav}
+          locationLine={pincode ? `Deliver to ${pincode}` : showPlace ? locationLabel : 'Set delivery pincode'}
+          onLocation={() => setBranchPickerOpen(true)}
+        />
+        <QuickSheet
+          open={branchPickerOpen}
+          onClose={() => setBranchPickerOpen(false)}
+          label="Delivery location"
+          title={<h2>Where should we deliver?</h2>}
+          footer={
+            <button type="button" className="qk-cta qk-ctaPlain" onClick={() => setBranchPickerOpen(false)}>
+              Done
+            </button>
+          }
+        >
+          <div className="qk-locBody">
+            {showBranchPicker ? (
+              <div className="qk-branches">
+                {branches.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={b.id === selectedBranchId ? 'on' : ''}
+                    onClick={() => selectBranch(b.id)}
+                  >
+                    <MapPin />
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <label>
+              Pincode
+              <input
+                inputMode="numeric"
+                value={pincode}
+                onChange={(e) => persistPin(e.target.value)}
+                placeholder="6-digit pincode"
+                maxLength={6}
+                autoFocus
+              />
+            </label>
+            {pincode.length === 6 && !pinOk ? (
+              <p className="warn">This store may not deliver to {pincode}. Pickup may still be available.</p>
+            ) : pincode.length === 6 ? (
+              <p className="good">We deliver to {pincode}.</p>
+            ) : null}
+          </div>
+        </QuickSheet>
+        <main className={clsx('qk-main', hideCartBar ? 'noBar' : '', padded && 'qk-padded')}>{children}</main>
+        {hideCartBar ? null : <QuickCartBar freeAbove={freeAbove} onCart={openCart} />}
+        <QuickTabs onSearch={focusSearch} onCart={openCart} />
+        <StudioStoreFooter
+          sections={studioSections}
+          store={store}
+          theme={theme}
+          categories={categories}
+          hideBadge={hideBadge}
+        />
+      </div>
+    );
+  }
 
   if (studio) {
     return (

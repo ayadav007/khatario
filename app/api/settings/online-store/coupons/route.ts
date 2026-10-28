@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   const rows = await queryRows<Record<string, unknown>>(
     `SELECT id, code, discount_type, discount_value::text, min_order_amount::text,
-            usage_cap, used_count, expires_at, is_active
+            usage_cap, used_count, expires_at, is_active, show_in_store
      FROM store_coupons WHERE business_id = $1 ORDER BY created_at DESC`,
     [tenant.businessId],
   );
@@ -42,15 +42,16 @@ export async function POST(request: NextRequest) {
 
   const row = await queryOne(
     `INSERT INTO store_coupons
-       (business_id, code, discount_type, discount_value, min_order_amount, usage_cap, expires_at, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (business_id, code, discount_type, discount_value, min_order_amount, usage_cap, expires_at, is_active, show_in_store)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (business_id, code) DO UPDATE SET
        discount_type = EXCLUDED.discount_type,
        discount_value = EXCLUDED.discount_value,
        min_order_amount = EXCLUDED.min_order_amount,
        usage_cap = EXCLUDED.usage_cap,
        expires_at = EXCLUDED.expires_at,
-       is_active = EXCLUDED.is_active
+       is_active = EXCLUDED.is_active,
+       show_in_store = EXCLUDED.show_in_store
      RETURNING id, code`,
     [
       tenant.businessId,
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
       body.usage_cap != null ? Number(body.usage_cap) : null,
       body.expires_at || null,
       body.is_active !== false,
+      body.show_in_store === true,
     ],
   );
   return NextResponse.json(row);

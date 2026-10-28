@@ -3,10 +3,11 @@
 import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isStudioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isQuickPack, sanitizeStoreTheme, sectionEnabled, storeCanvas, usesStudioSections } from '@/lib/store/store-theme';
 import { isNewArrival, lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
 import { StudioAddButton, StudioProductTile, type StudioBadge } from './studio-theme/StudioSections';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { QuickVariantSheet } from './quick-theme/QuickSheets';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -135,6 +136,8 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const khatario = isKhatarioPack(theme);
+  const quick = isQuickPack(theme);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const layout: StoreProductCardVariant = variant ?? 'grid';
 
   const inCart = useMemo(() => {
@@ -162,7 +165,9 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
       e.preventDefault();
       e.stopPropagation();
       if (product.has_variants) {
-        onViewDetail?.(product);
+        // Quick picks the option in a bottom sheet instead of opening the product.
+        if (quick) setOptionsOpen(true);
+        else onViewDetail?.(product);
         return;
       }
       addToCart({
@@ -174,9 +179,10 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
         unit: product.unit,
         maxStock: product.current_stock,
         taxRate: product.tax_rate,
+        mrp: product.mrp != null && product.mrp > product.selling_price ? product.mrp : undefined,
       });
     },
-    [product, addToCart, onViewDetail],
+    [product, addToCart, onViewDetail, quick],
   );
 
   const handleIncrement = useCallback(
@@ -199,7 +205,7 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
     [product.id, cartItem, updateCartQuantity],
   );
 
-  if (isStudioPack(theme)) {
+  if (usesStudioSections(theme)) {
     const open = inCart > 0 && !product.has_variants;
     const add = !theme.show_listing_add ? null : open ? (
       <div className="stepper">
@@ -218,7 +224,19 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
       </div>
     ) : (
       <StudioAddButton
-        label={outOfStock ? 'Out of stock' : product.has_variants ? 'Choose options' : 'Add'}
+        label={
+          outOfStock
+            ? quick
+              ? 'Sold out'
+              : 'Out of stock'
+            : product.has_variants
+              ? quick
+                ? `${product.variants.length} options`
+                : 'Choose options'
+              : quick
+                ? 'ADD'
+                : 'Add'
+        }
         onClick={handleAdd}
         disabled={outOfStock}
       />
@@ -228,7 +246,7 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
       ...(isNewArrival(product.created_at) ? [{ label: 'New', tone: 'new' as const }] : []),
     ];
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
-    return (
+    const tile = (
       <StudioProductTile
         name={product.name}
         unit={product.has_variants ? `${product.variants.length} options` : product.unit}
@@ -247,6 +265,13 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
         onFav={() => void toggleFavorite(product.id)}
         add={add}
       />
+    );
+    if (!quick || !product.has_variants) return tile;
+    return (
+      <>
+        {tile}
+        <QuickVariantSheet product={product} open={optionsOpen} onClose={() => setOptionsOpen(false)} />
+      </>
     );
   }
 

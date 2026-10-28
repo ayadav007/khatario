@@ -12,6 +12,7 @@ import { StoreProductShelves } from './StoreProductShelves';
 import { StoreAnnouncementBar, resolveAnnouncementText } from './StoreAnnouncementBar';
 import { GroceryChips, StoreGroceryHome } from './StoreGroceryHome';
 import { StoreStudioHome } from './studio-theme/StoreStudioHome';
+import { BROWSE_CATEGORIES_EVENT } from './quick-theme/QuickChrome';
 import { useStudioSections } from './studio-theme/StoreStudioChrome';
 import { chowkInkOn, chowkOnAccent, isKhatarioPack, resolveHeroSlides, sanitizeStoreTheme, sectionEnabled, storeCanvas, type StoreOverlayBand } from '@/lib/store/store-theme';
 import { studioLinkTarget, type StudioLinkTarget } from '@/lib/store/studio-layout';
@@ -52,12 +53,14 @@ function scrollToProducts() {
 
 /** Links from other pages land here as ?category=, ?offers=1 or ?nav=<label>. */
 function readLandingParams() {
-  if (typeof window === 'undefined') return { category: null, offers: false, nav: null };
+  if (typeof window === 'undefined') return { category: null, offers: false, nav: null, browse: false };
   const p = new URLSearchParams(window.location.search);
   return {
     category: p.get('category'),
     offers: p.get('offers') === '1',
     nav: p.get('nav'),
+    /** Quick's Categories tab from another page. */
+    browse: p.get('browse') === 'categories',
   };
 }
 
@@ -96,6 +99,7 @@ export function StoreCatalogView() {
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
   const pendingNav = useRef<string | null>(null);
+  const pendingBrowse = useRef(false);
 
   const fetchItems = useCallback(
     async (opts: {
@@ -163,6 +167,7 @@ export function StoreCatalogView() {
       if (landing.category) categoryId = landing.category;
       if (landing.offers) offers = true;
       pendingNav.current = landing.nav;
+      pendingBrowse.current = landing.browse;
       setSelectedCategory(categoryId);
       setOffersOnly(offers);
       if (categoryId || offers) scrollToProducts();
@@ -233,6 +238,22 @@ export function StoreCatalogView() {
     },
     [handleCategoryChange, fetchItems, searchQuery, selectedCategory, offersOnly, clearFilters],
   );
+
+  // Quick's Categories tab opens the category view on the current (or first) category.
+  useEffect(() => {
+    const open = () => {
+      const first = selectedCategory ?? categories[0]?.id;
+      if (!first) return;
+      if (first !== selectedCategory) handleCategoryChange(first);
+      window.scrollTo({ top: 0 });
+    };
+    if (pendingBrowse.current && categories.length > 0) {
+      pendingBrowse.current = false;
+      open();
+    }
+    window.addEventListener(BROWSE_CATEGORIES_EVENT, open);
+    return () => window.removeEventListener(BROWSE_CATEGORIES_EVENT, open);
+  }, [categories, selectedCategory, handleCategoryChange]);
 
   useEffect(() => {
     const label = pendingNav.current;
@@ -357,6 +378,7 @@ export function StoreCatalogView() {
             onNavigate={handleStudioNavigate}
             onLoadMore={handleLoadMore}
             onViewDetail={setDetailProduct}
+            quick={theme.pack === 'quick'}
           />
         ) : grocery ? (
           <StoreGroceryHome

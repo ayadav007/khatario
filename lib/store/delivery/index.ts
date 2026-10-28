@@ -57,6 +57,14 @@ export async function getBranchDelivery(
   const fromAddress = (row.location_address ?? '').match(/\b(\d{6})\b/);
   const pickupPincode = row.pickup_pincode || fromAddress?.[1] || null;
 
+  const charges = chargeRows.map((c) => ({
+    min_distance_km: c.min_distance_km,
+    max_distance_km: c.max_distance_km,
+    charge: parseFloat(c.charge) || 0,
+    free_above_amount: c.free_above_amount ? parseFloat(c.free_above_amount) : null,
+  }));
+  const thresholds = new Set(charges.map((c) => c.free_above_amount));
+
   return {
     branch: {
       id: row.id,
@@ -68,13 +76,9 @@ export async function getBranchDelivery(
       delivery_radius_km: row.delivery_radius_km,
       serviceable_pincodes: row.serviceable_pincodes ?? [],
       allow_pickup: row.allow_pickup,
+      free_delivery_above: charges.length > 0 && thresholds.size === 1 ? charges[0].free_above_amount : null,
     },
-    charges: chargeRows.map((c) => ({
-      min_distance_km: c.min_distance_km,
-      max_distance_km: c.max_distance_km,
-      charge: parseFloat(c.charge) || 0,
-      free_above_amount: c.free_above_amount ? parseFloat(c.free_above_amount) : null,
-    })),
+    charges,
     pickupPincode,
   };
 }
