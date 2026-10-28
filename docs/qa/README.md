@@ -41,6 +41,7 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | `store-journey-audit-results.md` | Online store customer and merchant journey audit (2026-10-23): existing store suites, the new journey test, and the staging template check. Seven defects, D1–D7. |
 | `security-live-regression-results.md` | Repeatable command for the security suites already verified. It does not pass the rest of the application. |
 | `scan-add-items-results.md` | Scan & Add Items (barcode onboarding, web and phone), 2026-10-23: feature status, its tests, the regression run, and the failures that were already there. |
+| `supplier-hub-e2e-results.md` | Supplier Hub end to end (2026-10-28): feature inventory, 125 staging API checks as retailer and wholesaler, the WhatsApp outbox evidence (nothing ever sent: template still a draft), a local browser pass of every hub screen, findings F-011–F-016. |
 
 ## Completed work
 
@@ -76,6 +77,10 @@ Phase 1 discovered routes and actions and did not run them. Phase 2A executed sa
 | S04 `POST /api/invoices` accepted another business's customer | Fixed in Phase 2B. Regression PASS. `authorize` was stubbed, so RBAC is still NOT TESTED. |
 | S05 `POST /api/invoices` sold a soft-deleted item | Fixed in Phase 2B. Regression PASS. |
 | Periodic-inventory COGS | NOT TESTED. Perpetual COGS was observed on S01. |
+| F-011 Read-only staff can post messages on a Supplier Hub order (`comments` POST authorizes with `read`) | FIXED 2026-10-28, not committed or deployed. Regression `tests/api/supply-order-comments-permission.test.ts` PASS. Staging rerun NOT TESTED. |
+| F-012 Supplier orders list can show "Nothing needs you" for the Selling side (stale buyer-side response wins) | FIXED 2026-10-28, not committed. `tests/lib/latest-request.test.ts` PASS; local browser recheck PASS. |
+| F-013 Supplier Hub WhatsApp template `khatario_supplier_hub_update` is still a draft on staging; 42 outbox rows, 0 sent | OPEN. Owner action in `/admin` → WhatsApp templates. |
+| F-014 Staging crontab has one job; hub sweep, low-stock and standing-order crons are not scheduled | OPEN. Ops action. |
 | Invoice edit, cancel, credit note, payment on an invoice | NOT TESTED. |
 | Four list handlers trusted query `user_id` and `business_id` | Fixed in Phase 3B. Regression PASS. The Phase 3A failure remains recorded. |
 | Seven dashboard GET handlers trusted query identity | Fixed in Phase 3D. Regression PASS. The Phase 3C failure remains recorded. |
@@ -106,6 +111,7 @@ No open FAIL is recorded for S01–S08 after the Phase 2B rerun.
 | --- | --- | --- | --- |
 | `POST /api/invoices` (A0403) create final, draft, lock date, other-business customer, soft-deleted item, intra-state, inter-state, cash sale | S01–S08 | `tests/db/phase2a-invoice-s01-s08.db.test.ts` | PASS after Phase 2B. GET on this route is NOT TESTED. |
 | `GET /api/invoices/[id]` (A0404) one invoice after its item was soft-deleted | Soft-delete check | same file | PASS for that GET. PATCH is NOT TESTED. |
+| Supplier Hub: `suppliers/hub/*` (discovery, directory, profile, connection requests, published listings, collections, buyer prices, new arrivals, mute, invite orders and claim, money notices), `supply-orders` (create, respond, confirm, decline, cancel, dispatch, comments, invoice draft, suggest, standing), `incoming-bills` and `convert-to-purchase`, `settings/receipt-shortfall`, payments → money notice | Supplier Hub e2e H01–H27, P01–P07 | `tmp-qa/staging-hub-e2e*.mjs` on staging (`198f1498`); screens in the built-in browser on `localhost:3015` / `kh_phase2_test` | 125 checks: 114 PASS, 2 FAIL (F-011, F-012), 9 harness errors re-checked. WhatsApp: queued and flushed, 0 sent (F-013). Phone app, crons, `/so/<token>` submit, uploads and photos NOT TESTED. |
 | `DELETE /api/items/[id]` (A0428) one soft delete | Soft-delete check | `tests/db/phase2a-invoice-s01-s08.db.test.ts` | PASS for that call. `authorize` was stubbed. Superseded for permission by the later file. GET and PATCH are NOT TESTED. |
 | `GET /api/items` (A0427) list | Remaining soft-delete check | `tests/db/soft-delete-items-and-report.db.test.ts` | PASS. POST is NOT TESTED. |
 | `DELETE /api/items/[id]` denied user and allowed user | Remaining soft-delete check | same file | PASS. Real `authorize`. GET and PATCH are NOT TESTED. |
@@ -185,6 +191,7 @@ The Phase 3P functional follow-up is recorded in `phase-3p-live-workflow-results
 | Phase 3Q recurring calendar date | PASS. Persisted `invoice_date` is `2026-10-19`. `GET` and `PATCH` on the recurring id route, and the cron route, stay NOT TESTED. |
 | Phase 3Q staging browser | Partial. Invoice generate reached INV-072. Reopen was not run. Purchase, stock, and purchase return stay BLOCKED until staging login is allowed again. INV-072 and `P3QB` parties and items are still on Shalini Traders. |
 | Other middleware-public handlers | NOT TESTED, except `POST /api/cron/process-campaigns`. |
+| Supplier Hub end to end (2026-10-28) | Done for the API and the screens. F-011 and F-012 fixed locally, not deployed. Open: F-013 (template not submitted), F-014 (staging crontab). After F-013 is approved, rerun one order with a business whose owner phone is real and check `platform_whatsapp_sends`. |
 
 ## Rules for the next edit
 

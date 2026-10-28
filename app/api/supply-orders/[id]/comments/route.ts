@@ -25,7 +25,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     const body = await request.json().catch(() => ({}));
     const { role } = await loadOrderForParty(params.id, auth.businessId);
-    await authorizeOrderRole(auth.userId, auth.businessId, role, 'read');
+    // Writing on the order is a write: update on purchases (buyer) or invoices (supplier).
+    await authorizeOrderRole(auth.userId, auth.businessId, role, 'update');
     const comment = await addOrderComment({
       orderId: params.id,
       businessId: auth.businessId,
