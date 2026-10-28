@@ -123,7 +123,7 @@
   <body>
     <div class="page">
       <!-- Header -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="header" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td style="width: 140px;">
             {{#ifSetting 'show_logo'}}
@@ -164,7 +164,7 @@
       </table>
 
       <!-- BILL TO + Invoice details -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="details" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td>
             <div class="section-title">BILL TO:</div>
@@ -199,7 +199,7 @@
       </table>
 
       <!-- Items table -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="items" class="grid-table" style="margin-bottom: 10px;">
         <thead>
           <tr>
             {{#ifSetting 'show_serial_number'}}<th class="text-center" style="width: 32px;">#</th>{{/ifSetting}}
@@ -235,7 +235,7 @@
       </table>
 
       <!-- Tax Summary + Totals -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="totals" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td style="width: 65%; padding: 0;">
             <div style="padding: 6px 8px; font-weight: 700;">Tax Summary:</div>
@@ -384,7 +384,7 @@
 
       <!-- Bank details + payment terms -->
       {{#or (and settings.show_bank_details business.bank_name) (and settings.show_payment_terms settings.payment_terms)}}
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="footer" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           {{#ifSetting 'show_bank_details'}}{{#if business.bank_name}}
           <td class="small">
@@ -406,7 +406,7 @@
       {{/or}}
 
       <!-- Terms & Conditions + Signature -->
-      <table class="grid-table" style="margin-bottom: 8px;">
+      <table data-kh-section="footer" class="grid-table" style="margin-bottom: 8px;">
         {{#or (and settings.show_terms settings.terms) (and settings.show_notes settings.notes)}}
         <tr>
           <td class="shade" colspan="2">

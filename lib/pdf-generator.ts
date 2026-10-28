@@ -30,6 +30,9 @@ export type DocumentTable =
 export type DocumentPrintOptions = {
   /** Which copy's label to print, or 'all' for every copy Rule 48 asks for, one per page. */
   copy?: PrintCopy | 'all';
+  /** Template designer preview: render this template with these (unsaved) settings instead of the saved ones. */
+  templateId?: string;
+  settings?: Record<string, unknown>;
 };
 
 /** Puts each copy's <body> on its own page inside the first copy's document. */
@@ -412,6 +415,9 @@ export async function generateDocumentHtml(
       }
     }
     
+    if (options.templateId) finalTemplateId = options.templateId;
+    if (options.settings) savedSettings = options.settings;
+
     // Merge settings with defaults
     if (isDev) {
       console.log('[PDF Generator] Step 5: Merging settings...');
@@ -513,6 +519,7 @@ export async function generateDocumentHtml(
       templateId: finalTemplateId,
       settings: finalSettings,
       businessId: doc.business_id as string,
+      documentNumber: String(renderData.invoice?.invoice_number || ''),
     };
 }
 
@@ -560,9 +567,11 @@ export async function generateDocumentPdf(
     const { html, templateId, settings, businessId } = await generateDocumentHtml(documentId, table, options);
 
     const htmlForPdf = await finalizePrintHtml(html, templateId, settings, businessId);
+    return renderPrintHtmlToPdf(htmlForPdf, templateId, settings);
+}
 
-    // 3. Generate PDF with Puppeteer
-    // Optimize Puppeteer launch args for better performance
+/** Print-ready HTML (after finalizePrintHtml) to a PDF buffer, at the template's paper size. */
+export async function renderPrintHtmlToPdf(htmlForPdf: string, templateId: string, settings: unknown) {
     const browser = await puppeteer.launch(
       getPuppeteerLaunchOptions({
         headless: true,
@@ -579,21 +588,17 @@ export async function generateDocumentPdf(
         ],
       })
     );
-    const page = await browser.newPage();
-    // Use 'domcontentloaded' instead of 'networkidle0' for faster rendering
-    await page.setContent(htmlForPdf, { waitUntil: 'domcontentloaded' });
-    // CRITICAL: Render using print CSS (@media print) for consistent PDF layout
-    // Without this, Puppeteer uses screen media by default, which can introduce
-    // extra whitespace and unexpected page breaks across templates.
-    await page.emulateMediaType('print');
-
-    const printCfg = resolvePrintConfig(templateId, settings);
-    const pdfOptions: Record<string, unknown> = { ...printCfg.puppeteer };
-
-    const pdfBuffer = await page.pdf(pdfOptions as any);
-    await browser.close();
-
-    return Buffer.from(pdfBuffer);
+    try {
+      const page = await browser.newPage();
+      await page.setContent(htmlForPdf, { waitUntil: 'domcontentloaded' });
+      // Print CSS (@media print) for the same layout as a real print.
+      await page.emulateMediaType('print');
+      const printCfg = resolvePrintConfig(templateId, (settings ?? {}) as Record<string, unknown>);
+      const pdfBuffer = await page.pdf({ ...printCfg.puppeteer } as any);
+      return Buffer.from(pdfBuffer);
+    } finally {
+      await browser.close();
+    }
 }
 
 // Legacy wrapper for backward compatibility

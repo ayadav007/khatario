@@ -25,7 +25,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onRemove
 
   // Below sticky TopBar / notification cluster on mobile; desktop stays top-right.
   const positionClass =
-    'fixed z-50 space-y-2 top-[4.5rem] right-3 left-3 sm:left-auto sm:right-4 lg:top-4 max-w-md sm:max-w-sm ml-auto';
+    'fixed z-[100] space-y-2 top-[4.5rem] right-3 left-3 sm:left-auto sm:right-4 lg:top-4 max-w-md sm:max-w-sm ml-auto';
 
   if (!mounted) {
     return <div className={positionClass} style={{ display: 'none' }} />;

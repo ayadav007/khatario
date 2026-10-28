@@ -21,7 +21,7 @@
 </head>
 <body>
   <div class="container">
-    <div class="header">
+    <div data-kh-section="header" class="header">
       {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" style="height:64px; max-width:180px; object-fit:contain;" /><br>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_business_name'}}<div class="logo-area">{{business.name}}</div>{{/ifSetting}}
       {{#ifSetting 'show_business_address'}}
@@ -40,7 +40,7 @@
       <div>{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</div>
     </div>
 
-    <div class="details">
+    <div data-kh-section="details" class="details">
       <div class="box" style="min-width:240px;">
         <div class="label">Details</div>
         {{#ifSetting 'show_invoice_date'}}<div>Date: {{invoice.invoice_date}}</div>{{/ifSetting}}
@@ -88,7 +88,7 @@
       {{/ifSetting}}
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}<th style="width:5%;">#</th>{{/ifSetting}}
@@ -135,7 +135,7 @@
     </table>
     {{> hsn-summary}}
 
-    <div class="totals">
+    <div data-kh-section="totals" class="totals">
       {{#ifSetting 'show_subtotal'}}<div>Subtotal: {{formatCurrency invoice.subtotal}}</div>{{/ifSetting}}
       {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div>Discount: - {{formatCurrency invoice.discount_total}}</div>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div>Additional: + {{formatCurrency invoice.additional_charges}}</div>{{/if}}{{/unless}}{{/ifSetting}}
@@ -151,7 +151,7 @@
       {{#ifSetting 'show_balance_amount'}}{{#if (gt invoice.balance_amount 0)}}<div style="color:#dc2626; font-weight:700;">Balance: {{formatCurrency invoice.balance_amount}}</div>{{/if}}{{/ifSetting}}
     </div>
 
-    <div class="details" style="margin-top:20px;">
+    <div data-kh-section="footer" class="details" style="margin-top:20px;">
       {{#ifSetting 'show_bank_details'}}
       <div class="box" style="min-width:240px;">
         <div class="label">Bank</div>
@@ -178,7 +178,7 @@
       {{/if}}{{/ifSetting}}
     </div>
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       {{#if settings.footer_text}}{{settings.footer_text}}<br>{{/if}}
       {{#ifSetting 'show_qr_code'}}{{#if invoice.qr_code_url}}<img src="{{invoice.qr_code_url}}" style="height:70px; width:70px;" /><br>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_signature'}}

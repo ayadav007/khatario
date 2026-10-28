@@ -49,7 +49,7 @@
   <div class="document-title">CREDIT NOTE</div>
   <div class="notice-box">This document reduces your tax liability.{{#if invoice.original_invoice_number}} Original Invoice: {{invoice.original_invoice_number}}{{/if}}</div>
   
-  <div class="header">
+  <div data-kh-section="header" class="header">
     <div>
       {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
       <div style="font-size: 11px; color: #4b5563;">
@@ -62,14 +62,14 @@
     {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">{{/if}}{{/ifSetting}}
   </div>
   
-  <div class="meta-grid">
+  <div data-kh-section="details" class="meta-grid">
     {{#ifSetting 'show_invoice_number'}}<div><strong>Credit Note No:</strong><br>{{invoice.invoice_number}}</div>{{/ifSetting}}
     {{#ifSetting 'show_invoice_date'}}<div><strong>Date:</strong><br>{{invoice.invoice_date}}</div>{{/ifSetting}}
     {{#if invoice.original_invoice_number}}<div><strong>Original Invoice:</strong><br>{{invoice.original_invoice_number}}{{#if invoice.original_invoice_date}} dated {{invoice.original_invoice_date}}{{/if}}</div>{{/if}}
     {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><strong>Place of Supply:</strong><br>{{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
   </div>
   
-  <div class="party-section">
+  <div data-kh-section="details" class="party-section">
     <div class="party-box">
       <div class="label">Customer Details</div>
       {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
@@ -86,7 +86,7 @@
     </div>
   </div>
   
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         {{#ifSetting 'show_serial_number'}}<th>#</th>{{/ifSetting}}
@@ -115,7 +115,7 @@
     </tbody>
   </table>
   
-  <div class="summary-box">
+  <div data-kh-section="totals" class="summary-box">
     {{#ifSetting 'show_subtotal'}}<div class="summary-row"><span>Taxable Amount</span><span>₹{{invoice.subtotal}}</span></div>{{/ifSetting}}
     {{#ifSetting 'show_cgst'}}{{#if (gt invoice.cgst_total 0)}}<div class="summary-row"><span>CGST</span><span>₹{{invoice.cgst_total}}</span></div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_sgst'}}{{#if (gt invoice.sgst_total 0)}}<div class="summary-row"><span>SGST</span><span>₹{{invoice.sgst_total}}</span></div>{{/if}}{{/ifSetting}}
@@ -126,12 +126,12 @@
   {{#ifSetting 'show_amount_in_words'}}<div style="margin-top: 10px; text-align: right; font-size: 12px;"><strong>Amount in words:</strong> {{invoice.amount_in_words}}</div>{{/ifSetting}}
   
   {{#ifSetting 'show_notes'}}{{#if invoice.notes}}
-  <div class="notes-section">
+  <div data-kh-section="footer" class="notes-section">
     <strong>Notes:</strong><br>{{invoice.notes}}
   </div>
   {{/if}}{{/ifSetting}}
   
-  <div class="signature-section">
+  <div data-kh-section="footer" class="signature-section">
     <div class="signature-box">Customer Acknowledgement</div>
     <div class="signature-box">
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}

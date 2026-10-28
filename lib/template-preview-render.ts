@@ -6,6 +6,7 @@ import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/templat
 import { registerInvoiceHandlebarsPartials } from '@/lib/handlebars-invoice-partials';
 import { applyStatutorySettings, buildHsnTaxSummary, copyLabelFor } from '@/lib/invoice-statutory';
 import { attachItemTablePrintData } from '@/lib/print/item-columns';
+import { injectPreviewBridge } from '@/lib/template-preview-source';
 import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';
 import { enrichInvoiceRenderData } from '@/lib/custom-fields-render';
 import { finalizePrintHtml } from '@/lib/pdf-generator';
@@ -39,6 +40,10 @@ export type TemplatePreviewRenderInput = {
   customSettings?: Record<string, unknown> | null;
   /** Sample data factory from route module */
   getSampleData: (templateId: string) => Record<string, unknown>;
+  /** For a PDF: skip the screen-only preview CSS and the click-to-edit script. */
+  forPrint?: boolean;
+  /** Template designer: hovering a part of the page outlines it and a click opens its section. */
+  clickToEdit?: boolean;
 };
 
 /** The document a preview template stands for, when the sample data does not say. */
@@ -107,7 +112,7 @@ async function loadBusinessPreviewAssets(businessId: string | null | undefined) 
 export async function renderTemplatePreviewHtml(
   input: TemplatePreviewRenderInput
 ): Promise<string> {
-  const { templateId, businessId, customSettings, getSampleData } = input;
+  const { templateId, businessId, customSettings, getSampleData, forPrint, clickToEdit } = input;
 
   const templatePath = TEMPLATE_PREVIEW_PATHS[templateId];
   if (!templatePath) {
@@ -208,7 +213,7 @@ export async function renderTemplatePreviewHtml(
     finalSettings,
     businessId || ''
   );
+  if (forPrint) return html;
   html = injectTemplateScreenPreviewCss(html, templateId, settingsRecord);
-
-  return html;
+  return clickToEdit ? injectPreviewBridge(html) : html;
 }

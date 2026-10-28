@@ -35,7 +35,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/subscription': 'Subscription & Billing',
   '/settings/products': 'Your products',
   '/settings/templates': 'Templates & Printing',
-  '/settings/templates/customize': 'Customize Template',
+  '/settings/templates/design': 'Template designer',
   '/settings/bluetooth-printer': 'Print & devices',
   '/settings/bluetooth-printer/diagnostics': 'Printer diagnostics',
   '/settings/custom-fields': 'Custom fields',

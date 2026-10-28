@@ -64,7 +64,7 @@
   <div class="document-title">DELIVERY CHALLAN</div>
   <div class="gst-notice">GST Rule 55 Compliant • Goods in Transit • Not an Invoice</div>
   
-  <div class="header">
+  <div data-kh-section="header" class="header">
     <div>
       {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
       <div style="font-size: 11px; color: #4b5563;">
@@ -77,7 +77,7 @@
     {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">{{/if}}{{/ifSetting}}
   </div>
   
-  <div class="meta-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+  <div data-kh-section="details" class="meta-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
     {{#ifSetting 'show_invoice_number'}}
     <div class="meta-item">
       <div class="meta-label">Challan No.</div>
@@ -110,7 +110,7 @@
     {{/if}}
   </div>
   
-  <div class="party-section">
+  <div data-kh-section="details" class="party-section">
     <div class="party-box">
       <div class="label">Consignor (From)</div>
       <div style="font-size: 14px; font-weight: bold;">{{business.name}}</div>
@@ -134,7 +134,7 @@
   </div>
   
   {{#or invoice.vehicle_number invoice.transporter_name invoice.e_way_bill_number invoice.transporter_gstin}}
-  <div class="transport-details">
+  <div data-kh-section="details" class="transport-details">
     <div class="title">Transport & Vehicle Details</div>
     <div class="transport-grid">
       {{#if invoice.vehicle_number}}
@@ -165,7 +165,7 @@
   </div>
   {{/or}}
   
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         {{#ifSetting 'show_serial_number'}}<th class="col-sn">#</th>{{/ifSetting}}
@@ -213,7 +213,7 @@
   </table>
 
   {{#if invoice.items_have_prices}}
-  <table style="width: 320px; margin: 0 0 20px auto;">
+  <table data-kh-section="totals" style="width: 320px; margin: 0 0 20px auto;">
     <tbody>
       <tr><td>Taxable Value</td><td class="text-right">₹{{invoice.subtotal}}</td></tr>
       {{#if invoice.has_tax}}
@@ -230,7 +230,7 @@
   <div style="font-size: 11px; color: #4b5563; text-align: right; margin-bottom: 15px;">{{invoice.amount_in_words}}</div>
   {{/if}}
   
-  <div class="summary-note">
+  <div data-kh-section="footer" class="summary-note">
     <strong>Important:</strong> This is a Delivery Challan, not an invoice. 
     Tax invoice will be issued separately as per GST regulations.
     {{#if invoice.original_invoice_number}}
@@ -244,7 +244,7 @@
   </div>
   {{/if}}{{/ifSetting}}
   
-  <div class="signature-section">
+  <div data-kh-section="footer" class="signature-section">
     <div class="signature-box">Receiver's Signature<br><small>(With Date & Stamp)</small></div>
     <div class="signature-box">
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}

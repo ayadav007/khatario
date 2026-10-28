@@ -124,7 +124,7 @@
   </div>
   
   <div class="info-section">
-    <div class="info-box" style="margin-right: 10px;">
+    <div data-kh-section="header" class="info-box" style="margin-right: 10px;">
       <h3>From</h3>
       {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin-bottom: 6px;">{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_business_name'}}<strong>{{business.name}}</strong><br>{{/ifSetting}}
@@ -136,7 +136,7 @@
       {{#ifSetting 'show_business_email'}}{{#if business.email}}Email: {{business.email}}<br>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}GSTIN: {{business.gstin}}{{/if}}{{/ifSetting}}
     </div>
-    <div class="info-box" style="margin-left: 10px;">
+    <div data-kh-section="details" class="info-box" style="margin-left: 10px;">
       <h3>Bill Details</h3>
       {{#ifSetting 'show_invoice_number'}}<strong>Bill No:</strong> {{invoice.invoice_number}}<br>{{/ifSetting}}
       {{#ifSetting 'show_invoice_date'}}<strong>Date:</strong> {{invoice.invoice_date}}<br>{{/ifSetting}}
@@ -149,7 +149,7 @@
     </div>
   </div>
   
-  <div style="display: flex; gap: 20px; margin: 20px 0;">
+  <div data-kh-section="details" style="display: flex; gap: 20px; margin: 20px 0;">
     <div class="info-box">
       <h3>Bill To</h3>
       {{#ifSetting 'show_customer_name'}}<strong>{{customer.name}}</strong><br>{{/ifSetting}}
@@ -167,7 +167,7 @@
     {{/ifSetting}}
   </div>
   
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         {{#ifSetting 'show_serial_number'}}<th style="width: 5%;">#</th>{{/ifSetting}}
@@ -198,7 +198,7 @@
     </tbody>
   </table>
   
-  <div class="total-section">
+  <div data-kh-section="totals" class="total-section">
     {{#ifSetting 'show_subtotal'}}<div>Subtotal: ₹{{invoice.subtotal}}</div>{{/ifSetting}}
     {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div>Discount: -₹{{invoice.discount_total}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}: ₹{{invoice.additional_charges}}</div>{{/if}}{{/unless}}{{/ifSetting}}
@@ -215,7 +215,7 @@
 
   {{> bos-footer-blocks}}
   
-  <div style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
+  <div data-kh-section="footer" style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
     <div style="border-top: 1px solid #333; padding-top: 5px;">Customer Signature</div>
     <div style="text-align: center;">
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: 0 auto 6px;">{{/if}}{{/ifSetting}}
@@ -223,7 +223,7 @@
     </div>
   </div>
   
-  <div class="footer">
+  <div data-kh-section="footer" class="footer">
     {{#if settings.footer_text}}{{settings.footer_text}}<br>{{/if}}
     This is a computer-generated document.
   </div>

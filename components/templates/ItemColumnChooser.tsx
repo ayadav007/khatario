@@ -68,15 +68,11 @@ export function ItemColumnChooser({
 
   return (
     <div>
-      <h3 className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#0ea5e9' }} />
-        Item Table Columns
-      </h3>
-      <p className="text-xs text-gray-500 mb-3 pl-4">
+      <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
         Tick the columns to print and use the arrows to set their order. Columns with nothing to show on a bill
         (for example MRP when no item has one) are left out automatically.
       </p>
-      <div className="space-y-1 pl-4">
+      <div className="space-y-0.5">
         {chosen.map((id, i) => {
           const isLocked = locked.includes(id);
           return (
@@ -86,11 +82,10 @@ export function ItemColumnChooser({
                 checked
                 disabled={isLocked}
                 onChange={() => onChange(chosen.filter((x) => x !== id))}
-                className="w-4 h-4 rounded"
-                style={{ accentColor: '#0ea5e9' }}
+                className="h-4 w-4 rounded accent-primary-600"
                 aria-label={`Print ${labelOf(id)}`}
               />
-              <span className="text-sm text-gray-800 flex-1">{labelOf(id)}</span>
+              <span className="flex-1 text-[13px] text-gray-800 dark:text-slate-200">{labelOf(id)}</span>
               {isLocked && <span className="text-[11px] text-gray-400">Required by GST</span>}
               <button
                 type="button"
@@ -120,25 +115,24 @@ export function ItemColumnChooser({
               type="checkbox"
               checked={false}
               onChange={() => onChange([...chosen, c.id])}
-              className="w-4 h-4 rounded"
-              style={{ accentColor: '#0ea5e9' }}
+              className="h-4 w-4 rounded accent-primary-600"
             />
-            <span className="text-sm text-gray-500">{c.label}</span>
+            <span className="text-[13px] text-gray-500 dark:text-slate-400">{c.label}</span>
           </label>
         ))}
       </div>
-      <div className="pl-4 mt-2 flex items-center gap-3">
+      <div className="mt-2 flex items-center gap-3">
         <button type="button" onClick={() => onChange([])} className="text-xs font-medium text-primary-600 hover:text-primary-700">
           Reset to default
         </button>
         {chosen.length > CROWDED_AT && (
           <span className="text-xs text-amber-700">
-            {chosen.length} columns is crowded on A4 portrait. Consider landscape in the Layout tab.
+            {chosen.length} columns is crowded on A4 portrait. Consider landscape under Page.
           </span>
         )}
       </div>
       {locked.length > 0 && (
-        <p className="text-[11px] text-gray-400 pl-4 mt-1">
+        <p className="mt-1 text-[11px] text-gray-400">
           A quantity column and the GST amount columns always print on tax invoices.
         </p>
       )}

@@ -20,9 +20,9 @@
 <body>
   <div class="container">
     {{> copy-label}}
-    <h1>{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}#{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</h1>
+    <h1 data-kh-section="header">{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}#{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</h1>
 
-    <div class="row">
+    <div data-kh-section="details" class="row">
       <div class="box" style="min-width:240px;">
         <div class="label">From</div>
         {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" style="max-height: 50px; margin-bottom: 8px;" /><br>{{/if}}{{/ifSetting}}
@@ -83,7 +83,7 @@
       </div>
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}<th style="width:5%;">#</th>{{/ifSetting}}
@@ -131,13 +131,13 @@
     {{> hsn-summary}}
 
     <div class="row">
-      <div class="box" style="min-width:240px;">
+      <div data-kh-section="footer" class="box" style="min-width:240px;">
         {{#ifSetting 'show_terms'}}{{#if settings.terms}}<div class="label">Terms</div><div style="white-space:pre-line;">{{settings.terms}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_notes'}}{{#if settings.notes}}<div class="label" style="margin-top:8px;">Notes</div><div style="white-space:pre-line;">{{settings.notes}}</div>{{/if}}{{/ifSetting}}
         {{#if settings.footer_text}}<div class="label" style="margin-top:8px;">Footer</div><div>{{settings.footer_text}}</div>{{/if}}
       </div>
 
-      <div class="box" style="min-width:240px; flex:1;">
+      <div data-kh-section="footer" class="box" style="min-width:240px; flex:1;">
         {{#ifSetting 'show_bank_details'}}
           <div class="label">Bank Details</div>
           {{#ifSetting 'show_bank_name'}}{{#if business.bank_name}}<div>Bank: {{business.bank_name}}</div>{{/if}}{{/ifSetting}}
@@ -148,7 +148,7 @@
         {{/ifSetting}}
       </div>
 
-      <div class="box" style="min-width:260px;">
+      <div data-kh-section="totals" class="box" style="min-width:260px;">
         {{#ifSetting 'show_subtotal'}}<div class="row" style="margin-bottom:6px;"><span>Subtotal</span><span class="text-right">{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
         {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div class="row" style="margin-bottom:6px;"><span>Discount</span><span class="text-right">- {{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div class="row" style="margin-bottom:6px;"><span>Additional</span><span class="text-right">+ {{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}

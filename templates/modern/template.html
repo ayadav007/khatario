@@ -146,7 +146,7 @@
 </head>
 <body>
   <div class="container">
-    <div class="header-bg">
+    <div data-kh-section="header" class="header-bg">
       {{> copy-label}}
       <div class="invoice-title">{{invoice.invoice_title}}</div>
       <div style="display:flex; gap:16px; align-items:flex-start;">
@@ -177,7 +177,7 @@
       </div>
     </div>
 
-    <div class="section meta">
+    <div data-kh-section="details" class="section meta">
       <div class="meta-block">
         <div class="label">Details</div>
         {{#ifSetting 'show_invoice_number'}}<div class="value"># {{invoice.invoice_number}}</div>{{/ifSetting}}
@@ -240,7 +240,7 @@
     </div>
 
     <div class="section">
-      <table>
+      <table data-kh-section="items">
         <thead>
           <tr>
             {{#ifSetting 'show_serial_number'}}<th style="width:5%;">#</th>{{/ifSetting}}
@@ -308,7 +308,7 @@
     </div>
     {{/if}}
 
-    <div class="totals-wrapper">
+    <div data-kh-section="totals" class="totals-wrapper">
       <div class="total-box">
         {{#ifSetting 'show_subtotal'}}<div class="total-row"><span>Subtotal</span><span>{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
         {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div class="total-row muted"><span>Discount</span><span>- {{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
@@ -326,7 +326,7 @@
       </div>
     </div>
 
-    <div class="section flex-between" style="clear: both; margin-top: 20px;">
+    <div data-kh-section="footer" class="section flex-between" style="clear: both; margin-top: 20px;">
       {{#ifSetting 'show_bank_details'}}
         <div class="card" style="min-width:260px;">
           <div class="label">Bank Details</div>
@@ -360,7 +360,7 @@
       {{/ifSetting}}
     </div>
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       {{#if settings.footer_text}}{{settings.footer_text}}<br>{{/if}}
       {{#if invoice.is_export}}
         {{#ifSetting 'show_export_declaration'}}

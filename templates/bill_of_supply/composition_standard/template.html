@@ -345,7 +345,7 @@
   </div>
   
   <!-- Header -->
-  <div class="header">
+  <div data-kh-section="header" class="header">
     {{#ifSetting 'show_logo'}}{{#if business.logo_url}}
     <div class="logo-section">
       <img src="{{business.logo_url}}" alt="{{business.name}}">
@@ -363,7 +363,7 @@
   </div>
   
   <!-- Bill Details -->
-  <div class="bill-meta">
+  <div data-kh-section="details" class="bill-meta">
     {{#ifSetting 'show_invoice_number'}}
     <div class="meta-item">
       <div class="meta-label">Bill No.</div>
@@ -398,7 +398,7 @@
   </div>
   
   <!-- Party Information -->
-  <div class="party-section">
+  <div data-kh-section="details" class="party-section">
     <div class="party-box">
       <div class="label">Bill To</div>
       {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
@@ -432,7 +432,7 @@
   </div>
   
   <!-- Items Table (No Tax Columns) -->
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         {{#ifSetting 'show_serial_number'}}<th style="width: 5%">#</th>{{/ifSetting}}
@@ -478,7 +478,7 @@
   </table>
   
   <!-- Summary (No Tax Breakdown) -->
-  <div class="summary-section">
+  <div data-kh-section="totals" class="summary-section">
     <div class="summary-box">
       {{#ifSetting 'show_subtotal'}}
       <div class="summary-row">
@@ -536,7 +536,7 @@
   {{> bos-footer-blocks}}
   
   <!-- Signature -->
-  <div class="signature-section">
+  <div data-kh-section="footer" class="signature-section">
     <div class="signature-box">Customer Signature</div>
     <div class="signature-box">
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}

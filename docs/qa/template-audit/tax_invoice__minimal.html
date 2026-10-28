@@ -51,9 +51,9 @@
 <body class="print-root orientation-portrait format-A4">
   <div class="container">
     <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
-    <h1>TAX INVOICE #ZQINV-0042</h1>
+    <h1 data-kh-section="header">TAX INVOICE #ZQINV-0042</h1>
 
-    <div class="row">
+    <div data-kh-section="details" class="row">
       <div class="box" style="min-width:240px;">
         <div class="label">From</div>
         <img src="https://cdn.example.com/zqlogo.png" style="max-height: 50px; margin-bottom: 8px;" /><br>
@@ -111,7 +111,7 @@
       </div>
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           <th style="width:5%;">#</th>
@@ -175,7 +175,7 @@
       </tbody>
     </table>
     
-    <table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+    <table data-kh-section="totals" class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
       <thead>
         <tr>
           <th rowspan="2" style="background: #000000; color: #ffffff; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
@@ -224,13 +224,13 @@
     
 
     <div class="row">
-      <div class="box" style="min-width:240px;">
+      <div data-kh-section="footer" class="box" style="min-width:240px;">
         <div class="label">Terms</div><div style="white-space:pre-line;">ZQINVTERMS goods once sold</div>
         <div class="label" style="margin-top:8px;">Notes</div><div style="white-space:pre-line;">ZQINVNOTE thanks for the order</div>
         <div class="label" style="margin-top:8px;">Footer</div><div>ZQSETFOOTER</div>
       </div>
 
-      <div class="box" style="min-width:240px; flex:1;">
+      <div data-kh-section="footer" class="box" style="min-width:240px; flex:1;">
           <div class="label">Bank Details</div>
           <div>Bank: ZQBANK of India</div>
           <div>A/c No: 001122334455</div>
@@ -239,7 +239,7 @@
           <div>Terms: ZQSETPT settings payment terms</div>
       </div>
 
-      <div class="box" style="min-width:260px;">
+      <div data-kh-section="totals" class="box" style="min-width:260px;">
         <div class="row" style="margin-bottom:6px;"><span>Subtotal</span><span class="text-right">4,722.20</span></div>
         <div class="row" style="margin-bottom:6px;"><span>Discount</span><span class="text-right">- 166.67</span></div>
         <div class="row" style="margin-bottom:6px;"><span>Additional</span><span class="text-right">+ 150.25</span></div>

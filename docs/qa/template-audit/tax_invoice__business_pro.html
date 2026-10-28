@@ -71,7 +71,7 @@
 </style>
 </head>
 <body class="print-root orientation-portrait format-A4">
-  <div class="sidebar">
+  <div data-kh-section="header" class="sidebar">
         <img src="https://cdn.example.com/zqlogo.png" style="height: 60px; margin-bottom: 10px; max-width: 100%; object-fit: contain;" />
     
       <h1>ZQBIZ Enterprises</h1>
@@ -91,7 +91,7 @@
     
     
     
-      <div class="label">BILLED TO</div>
+      <div data-kh-section="details" class="label">BILLED TO</div>
         <div class="value">ZQCUST Traders</div>
           <p>ZQIBILL 12 MG Road Pune</p>
           <p>9812345670</p>
@@ -101,11 +101,11 @@
           <p>State Code: 27</p>
           <p><strong>Outstanding Balance: ₹20,000.00</strong></p>
     
-      <div class="label" style="margin-top: 30px;">SHIP TO</div>
+      <div data-kh-section="details" class="label" style="margin-top: 30px;">SHIP TO</div>
         <div class="value">ZQCUST Traders</div>
           <p>ZQISHIP Plot 9 Chakan</p>
     
-    <div class="label" style="margin-top: 30px;">DETAILS</div>
+    <div data-kh-section="details" class="label" style="margin-top: 30px;">DETAILS</div>
       <p>No: ZQINV-0042</p>
       <p>Date: 20 September 2026</p>
         <p>Due: 21 October 2026</p>
@@ -130,7 +130,7 @@
     <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
     <div style="font-size: 32px; color: #ddd; font-weight: bold; margin-bottom: 40px;">TAX INVOICE</div>
     
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
             <th style="width: 5%;">#</th>
@@ -192,7 +192,7 @@
       </tbody>
     </table>
     
-    <table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+    <table data-kh-section="totals" class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
       <thead>
         <tr>
           <th rowspan="2" style="background: #1e3a8a; color: #ffffff; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
@@ -240,7 +240,7 @@
     </table>
     
     
-    <div class="total-section">
+    <div data-kh-section="totals" class="total-section">
         <div style="margin-bottom: 5px;">Subtotal: 4,722.20</div>
           <div style="margin-bottom: 5px;">Discount: - 166.67</div>
           <div style="margin-bottom: 5px;">Additional Charges: + 150.25</div>
@@ -254,7 +254,7 @@
           <div style="margin-bottom: 5px; font-weight: bold; color: #dc2626;">Balance Due: 4,395.44</div>
     </div>
 
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
+          <div data-kh-section="footer" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
             <strong>Bank Details:</strong><br>
                 Bank: ZQBANK of India<br>
                 A/c No: 001122334455<br>
@@ -262,22 +262,22 @@
                 Branch: ZQBR-Baner
           </div>
 
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
           <strong>Terms & Conditions:</strong><br>
           <div style="white-space: pre-line;">ZQINVTERMS goods once sold</div>
         </div>
 
-        <div style="margin-top: 20px; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 20px; font-size: 11px;">
           <strong>Notes:</strong><br>
           <div style="white-space: pre-line;">ZQINVNOTE thanks for the order</div>
         </div>
 
-        <div style="margin-top: 20px; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 20px; font-size: 11px;">
           <strong>Payment Terms:</strong><br>
           <div style="white-space: pre-line;">ZQSETPT settings payment terms</div>
         </div>
 
-    <div style="margin-top: 40px; text-align: right; padding-right: 40px;">
+    <div data-kh-section="footer" style="margin-top: 40px; text-align: right; padding-right: 40px;">
       <div style="font-size: 12px; margin-bottom: 6px;">For ZQBIZ Enterprises</div>
         <img src="https://cdn.example.com/zqsign.png" style="max-height: 50px; max-width: 150px; object-fit: contain; margin-bottom: 5px;" />
         <div style="font-size: 12px; font-weight: bold; border-top: 1px solid #333; padding-top: 5px; display: inline-block; min-width: 150px;">Authorized Signatory</div>

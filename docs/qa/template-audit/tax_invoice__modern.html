@@ -177,7 +177,7 @@
 </head>
 <body class="print-root orientation-portrait format-A4">
   <div class="container">
-    <div class="header-bg">
+    <div data-kh-section="header" class="header-bg">
       <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
       <div class="invoice-title">TAX INVOICE</div>
       <div style="display:flex; gap:16px; align-items:flex-start;">
@@ -198,7 +198,7 @@
       </div>
     </div>
 
-    <div class="section meta">
+    <div data-kh-section="details" class="section meta">
       <div class="meta-block">
         <div class="label">Details</div>
         <div class="value"># ZQINV-0042</div>
@@ -246,7 +246,7 @@
     </div>
 
     <div class="section">
-      <table>
+      <table data-kh-section="items">
         <thead>
           <tr>
             <th style="width:5%;">#</th>
@@ -310,7 +310,7 @@
         </tbody>
       </table>
       
-      <table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+      <table data-kh-section="totals" class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
         <thead>
           <tr>
             <th rowspan="2" style="background: #4f46e5; color: #ffffff; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
@@ -360,7 +360,7 @@
     </div>
 
 
-    <div class="totals-wrapper">
+    <div data-kh-section="totals" class="totals-wrapper">
       <div class="total-box">
         <div class="total-row"><span>Subtotal</span><span>4,722.20</span></div>
         <div class="total-row muted"><span>Discount</span><span>- 166.67</span></div>
@@ -378,7 +378,7 @@
       </div>
     </div>
 
-    <div class="section flex-between" style="clear: both; margin-top: 20px;">
+    <div data-kh-section="footer" class="section flex-between" style="clear: both; margin-top: 20px;">
         <div class="card" style="min-width:260px;">
           <div class="label">Bank Details</div>
           <div>Bank: ZQBANK of India</div>
@@ -399,7 +399,7 @@
           </div>
     </div>
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       ZQSETFOOTER<br>
       
         <div class="signature">

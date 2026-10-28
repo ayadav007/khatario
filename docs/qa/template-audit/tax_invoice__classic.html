@@ -139,7 +139,7 @@
 </head>
 <body class="print-root orientation-portrait format-A4">
   <div class="container">
-    <div class="header">
+    <div data-kh-section="header" class="header">
           <img src="https://cdn.example.com/zqlogo.png" style="height: 60px; margin-bottom: 10px;" />
       
       <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
@@ -156,7 +156,7 @@
           <div>GSTIN: 27ZZZZZ9999Z1Z9</div>
     </div>
 
-    <div class="grid">
+    <div data-kh-section="details" class="grid">
       <div class="col">
         <strong>Billed To:</strong><br>
           ZQCUST Traders<br>
@@ -210,7 +210,7 @@
 
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
             <th class="col-sn">#</th>
@@ -313,7 +313,7 @@
     </table>
 
     
-    <table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+    <table data-kh-section="totals" class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
       <thead>
         <tr>
           <th rowspan="2" style="background: #dc2626; color: #ffffff; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
@@ -362,7 +362,7 @@
     
 
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
           <strong>Terms:</strong> ZQINVTERMS goods once sold<br>
       
           <strong>Notes:</strong> ZQINVNOTE thanks for the order<br>

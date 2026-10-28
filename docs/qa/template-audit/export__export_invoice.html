@@ -282,13 +282,13 @@
 </head>
 <body class="print-root orientation-portrait format-A4">
   <div class="invoice-container">
-    <div class="header-top">
+    <div data-kh-section="header" class="header-top">
       <div class="invoice-title">EXPORT INVOICE</div>
           <div class="gstin-header">GSTIN: 27ZZZZZ9999Z1Z9</div>
       <div class="original-label">Original for Recipient</div>
     </div>
 
-    <div class="business-info">
+    <div data-kh-section="header" class="business-info">
           <img src="https://cdn.example.com/zqlogo.png" class="business-logo" />
         <div style="font-weight: bold; font-size: 14px;">ZQBIZ Enterprises</div>
         <div style="margin-top: 5px;">
@@ -302,7 +302,7 @@
           <div>SWIFT: ZQSWIFTX</div>
     </div>
 
-    <div class="invoice-details">
+    <div data-kh-section="details" class="invoice-details">
       <div class="invoice-details-left">
           <div class="detail-row">
             <span class="detail-label">Invoice No:</span>
@@ -398,7 +398,7 @@
       </div>
     </div>
 
-    <div class="parties-section">
+    <div data-kh-section="details" class="parties-section">
         <div class="party-box">
           <div class="party-header">Bill To</div>
           <div class="party-content">
@@ -424,7 +424,7 @@
           </div>
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           <th style="width: 5%">S. No.</th>
@@ -479,7 +479,7 @@
     </table>
 
     
-    <table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+    <table data-kh-section="totals" class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
       <thead>
         <tr>
           <th rowspan="2" style="background: #4A90E2; color: #000000; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
@@ -528,7 +528,7 @@
         </div>
 
     <div class="summary-section">
-      <div class="summary-left">
+      <div data-kh-section="footer" class="summary-left">
           <div class="amount-words">
             Total invoice amount in words: Five Thousand Six Hundred Thirty Rupees Only
           </div>
@@ -546,7 +546,7 @@
             </div>
       </div>
 
-      <div class="summary-right">
+      <div data-kh-section="totals" class="summary-right">
         <div class="summary-box">
             <div class="summary-row">
               <span class="summary-label">Total Amount before Tax:</span>
@@ -594,7 +594,7 @@
               <div class="certification" style="margin-top: 10px;">
                 We hereby certify that the goods mentioned are of Indian origin and the information is true and correct.
               </div>
-          <div class="signature-section">
+          <div data-kh-section="footer" class="signature-section">
             <div class="signature-company">For ZQBIZ Enterprises</div>
             
               <img src="https://cdn.example.com/zqsign.png" class="signature-image" alt="Signature" />

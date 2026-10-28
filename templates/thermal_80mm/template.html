@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <div class="header">
+  <div data-kh-section="header" class="header">
     {{#ifSetting 'show_logo'}}
        {{#if business.logo_url}}<img src="{{business.logo_url}}" style="max-width: 40mm; max-height: 40px;" /><br>{{/if}}
     {{/ifSetting}}
@@ -36,7 +36,7 @@
     {{#ifSetting 'show_business_cin'}}{{#if business.cin}}<div>CIN: {{business.cin}}</div>{{/if}}{{/ifSetting}}
   </div>
 
-  <div class="meta">
+  <div data-kh-section="details" class="meta">
     <div style="text-align: center; font-weight: bold; margin-bottom: 4px;">{{invoice.invoice_title}}</div>
     <div class="row">{{#ifSetting 'show_invoice_number'}}<span>Inv No: {{invoice.invoice_number}}</span>{{/ifSetting}}{{#ifSetting 'show_invoice_date'}}<span>{{invoice.invoice_date}}</span>{{/ifSetting}}</div>
     {{#ifSetting 'show_invoice_type'}}{{#if invoice.invoice_type}}<div>Type: {{invoice.invoice_type}}</div>{{/if}}{{/ifSetting}}
@@ -73,7 +73,7 @@
   {{> thermal-items}}
   <div class="divider"></div>
 
-  <div class="totals">
+  <div data-kh-section="totals" class="totals">
     {{#ifSetting 'show_subtotal'}}<div class="row"><span>Subtotal</span><span>{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
     {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div class="row"><span>Discount</span><span>-{{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div class="row"><span>Add Chg</span><span>+{{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
@@ -90,7 +90,7 @@
     {{#ifSetting 'show_balance_amount'}}{{#if (gt invoice.balance_amount 0)}}<div class="row" style="color:#dc2626; font-weight:bold;"><span>Balance</span><span>{{formatCurrency invoice.balance_amount}}</span></div>{{/if}}{{/ifSetting}}
   </div>
 
-  <div class="footer">
+  <div data-kh-section="footer" class="footer">
     {{#ifSetting 'show_bank_details'}}
       {{#ifSetting 'show_bank_name'}}{{#if business.bank_name}}Bank: {{business.bank_name}}<br>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_account_number'}}{{#if business.account_number}}A/c: {{business.account_number}}<br>{{/if}}{{/ifSetting}}

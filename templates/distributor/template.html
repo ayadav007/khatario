@@ -79,7 +79,7 @@
 
   <!-- 2. Header grid: supplier, buyer, invoice -->
   <div class="head">
-    <div>
+    <div data-kh-section="header">
       {{#ifSetting 'show_business_name'}}<div class="name">{{business.name}}</div>{{/ifSetting}}
       {{#ifSetting 'show_business_address'}}
         {{#if business.address}}<div>{{business.address}}{{#if business.address_line2}}, {{business.address_line2}}{{/if}}</div>{{/if}}
@@ -93,7 +93,7 @@
       {{#if business.state_code}}<div class="kv"><span class="k">State Code</span><span class="v">{{business.state}} ({{business.state_code}})</span></div>{{/if}}
     </div>
 
-    <div>
+    <div data-kh-section="details">
       <div class="cap">Customer</div>
       {{#ifSetting 'show_bill_to'}}
         {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
@@ -108,7 +108,7 @@
       {{/if}}{{/ifSetting}}
     </div>
 
-    <div>
+    <div data-kh-section="details">
       {{#ifSetting 'show_invoice_number'}}<div class="kv"><span class="k">Invoice No</span><span class="v">{{invoice.invoice_number}}</span></div>{{/ifSetting}}
       {{#ifSetting 'show_invoice_date'}}<div class="kv"><span class="k">Date</span><span class="v">{{invoice.invoice_date}}</span></div>{{/ifSetting}}
       {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div class="kv"><span class="k">Due Date</span><span class="v">{{invoice.due_date}}</span></div>{{/if}}{{/ifSetting}}
@@ -121,7 +121,7 @@
 
   <!-- 3. GST slab summary -->
   {{#if invoice.has_tax}}{{#if invoice.slab_summary.rows.length}}
-  <div class="grid-wrap">
+  <div data-kh-section="totals" class="grid-wrap">
     <table class="slabs">
       <thead>
         <tr>
@@ -150,7 +150,7 @@
   {{/if}}{{/if}}
 
   <!-- 4. Items: columns chosen in the template settings -->
-  <div class="grid-wrap">
+  <div data-kh-section="items" class="grid-wrap">
     <table class="items">
       <colgroup>{{#each invoice.item_table.columns}}<col style="width: {{this.width_pct}}%;">{{/each}}</colgroup>
       <thead>
@@ -169,7 +169,7 @@
 
   <!-- 5. Footer: words, bank, terms | totals, signatory -->
   <div class="foot">
-    <div class="left-col">
+    <div data-kh-section="footer" class="left-col">
       {{#ifSetting 'show_amount_in_words'}}{{#if invoice.amount_in_words}}<div class="words">Amount in words: {{invoice.amount_in_words}}</div>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_bank_details'}}{{#if business.bank_name}}
       <div class="block">
@@ -184,7 +184,7 @@
       {{#ifSetting 'show_notes'}}{{#if settings.notes}}<div class="block"><div class="cap">Notes</div><div class="pre">{{settings.notes}}</div></div>{{/if}}{{/ifSetting}}
     </div>
     <div>
-      <table class="totals">
+      <table data-kh-section="totals" class="totals">
         {{#ifSetting 'show_subtotal'}}<tr><td>Taxable Amount</td><td class="right">{{formatCurrency invoice.subtotal}}</td></tr>{{/ifSetting}}
         {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<tr><td>Discount</td><td class="right">- {{formatCurrency invoice.discount_total}}</td></tr>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<tr><td>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</td><td class="right">+ {{formatCurrency invoice.additional_charges}}</td></tr>{{/if}}{{/unless}}{{/ifSetting}}
@@ -200,7 +200,7 @@
         {{#ifSetting 'show_balance_amount'}}{{#if (gt invoice.paid_amount 0)}}<tr><td>Balance Due</td><td class="right">{{formatCurrency invoice.balance_amount}}</td></tr>{{/if}}{{/ifSetting}}
       </table>
       {{#ifSetting 'show_signature'}}
-      <div class="sign">
+      <div data-kh-section="footer" class="sign">
         <div class="for">For {{business.name}}</div>
         {{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature">{{/if}}
         {{#ifSetting 'show_authorized_signatory'}}<div class="line">Authorised Signatory</div>{{/ifSetting}}

@@ -153,7 +153,7 @@
       <div class="subtitle">Registered under Section 10 of the CGST Act, 2017</div>
     </div>
     
-    <div class="header">
+    <div data-kh-section="header" class="header">
       <div>
         {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 60px; max-width: 160px; object-fit: contain; margin-bottom: 8px;">{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
@@ -177,7 +177,7 @@
       </div>
     </div>
     
-    <div style="display: flex; gap: 16px; margin: 20px 0;">
+    <div data-kh-section="details" style="display: flex; gap: 16px; margin: 20px 0;">
       <div style="flex: 1; padding: 15px; background: color-mix(in srgb, {{settings.primary_color}} 6%, #f8fafc); border-radius: 6px;">
         <strong>Bill To:</strong>{{#ifSetting 'show_customer_name'}} {{customer.name}}{{/ifSetting}}<br>
         {{#ifSetting 'show_customer_address'}}{{#if customer.address}}{{customer.address}}<br>{{/if}}{{/ifSetting}}
@@ -194,7 +194,7 @@
       {{/ifSetting}}
     </div>
     
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}<th>#</th>{{/ifSetting}}
@@ -225,7 +225,7 @@
       </tbody>
     </table>
     
-    <div class="summary">
+    <div data-kh-section="totals" class="summary">
       {{#ifSetting 'show_subtotal'}}<div>Subtotal: ₹{{invoice.subtotal}}</div>{{/ifSetting}}
       {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div>Discount: - ₹{{invoice.discount_total}}</div>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<div>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}: ₹{{invoice.additional_charges}}</div>{{/if}}{{/unless}}{{/ifSetting}}
@@ -242,7 +242,7 @@
 
     {{> bos-footer-blocks}}
     
-    <div style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
+    <div data-kh-section="footer" style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
       <div>Customer Signature</div>
       <div style="text-align: center;">
         {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: 0 auto 6px;">{{/if}}{{/ifSetting}}

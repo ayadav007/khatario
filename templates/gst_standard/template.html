@@ -117,7 +117,7 @@
 <body>
   <div class="invoice-container">
     <!-- Header -->
-    <div class="header">
+    <div data-kh-section="header" class="header">
       <div class="company-info">
         {{#ifSetting 'show_logo'}}
           {{#if business.logo_url}}
@@ -270,7 +270,7 @@
 
     <!-- Parties -->
     {{#ifSetting 'show_bill_to'}}
-    <div class="parties">
+    <div data-kh-section="details" class="parties">
       <div class="party-box">
         <div class="party-title">Billed To</div>
         {{#ifSetting 'show_customer_name'}}
@@ -340,7 +340,7 @@
 
     <!-- Items Table -->
     <div style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
-    <table style="width: 100%; table-layout: auto; max-width: 100%;">
+    <table data-kh-section="items" style="width: 100%; table-layout: auto; max-width: 100%;">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}<th class="col-sn">#</th>{{/ifSetting}}
@@ -516,7 +516,7 @@
     {{/if}}
 
     <!-- Totals -->
-    <div class="totals-section">
+    <div data-kh-section="totals" class="totals-section">
       <table class="totals-table">
         {{#ifSetting 'show_subtotal'}}
         <tr>
@@ -626,7 +626,7 @@
     </div>
 
     <!-- Footer -->
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       <div class="bank-details">
         {{#ifSetting 'show_bank_details'}}
           {{#ifSetting 'show_bank_name'}}

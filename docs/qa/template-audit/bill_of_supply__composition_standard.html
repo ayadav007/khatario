@@ -376,7 +376,7 @@
   </div>
   
   <!-- Header -->
-  <div class="header">
+  <div data-kh-section="header" class="header">
     
     <div class="logo-section">
       <img src="https://cdn.example.com/zqlogo.png" alt="ZQBIZ Enterprises">
@@ -394,7 +394,7 @@
   </div>
   
   <!-- Bill Details -->
-  <div class="bill-meta">
+  <div data-kh-section="details" class="bill-meta">
     <div class="meta-item">
       <div class="meta-label">Bill No.</div>
       <div class="meta-value">ZQBOS-0003</div>
@@ -431,7 +431,7 @@
   </div>
   
   <!-- Party Information -->
-  <div class="party-section">
+  <div data-kh-section="details" class="party-section">
     <div class="party-box">
       <div class="label">Bill To</div>
       <div class="name">ZQCUST Traders</div>
@@ -459,7 +459,7 @@
   </div>
   
   <!-- Items Table (No Tax Columns) -->
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         <th style="width: 5%">#</th>
@@ -509,7 +509,7 @@
   </table>
   
   <!-- Summary (No Tax Breakdown) -->
-  <div class="summary-section">
+  <div data-kh-section="totals" class="summary-section">
     <div class="summary-box">
       <div class="summary-row">
         <span>Subtotal</span>
@@ -556,7 +556,7 @@
     <div class="value">Four Thousand Eight Hundred Seventy Three Rupees and Thirty Four Paise Only</div>
   </div>
 
-  <div style="display: flex; gap: 20px; margin: 20px 0; font-size: 12px; line-height: 1.5;">
+  <div data-kh-section="footer" style="display: flex; gap: 20px; margin: 20px 0; font-size: 12px; line-height: 1.5;">
     
     <div style="flex: 1; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px;">
       <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--primary-color); margin-bottom: 6px;">Bank Details</div>
@@ -580,7 +580,7 @@
   </div>
   
   <!-- Signature -->
-  <div class="signature-section">
+  <div data-kh-section="footer" class="signature-section">
     <div class="signature-box">Customer Signature</div>
     <div class="signature-box">
       

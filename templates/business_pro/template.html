@@ -40,7 +40,7 @@
   </style>
 </head>
 <body>
-  <div class="sidebar">
+  <div data-kh-section="header" class="sidebar">
     {{#ifSetting 'show_logo'}}
       {{#if business.logo_url}}
         <img src="{{business.logo_url}}" style="height: 60px; margin-bottom: 10px; max-width: 100%; object-fit: contain;" />
@@ -96,7 +96,7 @@
     {{/ifSetting}}
     
     {{#ifSetting 'show_bill_to'}}
-      <div class="label">BILLED TO</div>
+      <div data-kh-section="details" class="label">BILLED TO</div>
       {{#ifSetting 'show_customer_name'}}
         <div class="value">{{customer.name}}</div>
       {{/ifSetting}}
@@ -148,7 +148,7 @@
     {{/ifSetting}}
     
     {{#ifSetting 'show_ship_to'}}
-      <div class="label" style="margin-top: 30px;">SHIP TO</div>
+      <div data-kh-section="details" class="label" style="margin-top: 30px;">SHIP TO</div>
       {{#ifSetting 'show_customer_name'}}
         <div class="value">{{#if customer.shipping_name}}{{customer.shipping_name}}{{else}}{{customer.name}}{{/if}}</div>
       {{/ifSetting}}
@@ -161,7 +161,7 @@
       {{/ifSetting}}
     {{/ifSetting}}
     
-    <div class="label" style="margin-top: 30px;">DETAILS</div>
+    <div data-kh-section="details" class="label" style="margin-top: 30px;">DETAILS</div>
     {{#ifSetting 'show_invoice_number'}}
       <p>No: {{invoice.invoice_number}}</p>
     {{/ifSetting}}
@@ -238,7 +238,7 @@
     {{> copy-label}}
     <div style="font-size: 32px; color: #ddd; font-weight: bold; margin-bottom: 40px;">{{invoice.invoice_title}}</div>
     
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}
@@ -370,7 +370,7 @@
     </table>
     {{> hsn-summary}}
     
-    <div class="total-section">
+    <div data-kh-section="totals" class="total-section">
       {{#ifSetting 'show_subtotal'}}
         <div style="margin-bottom: 5px;">Subtotal: {{formatCurrency invoice.subtotal}}</div>
       {{/ifSetting}}
@@ -445,7 +445,7 @@
     {{#ifSetting 'show_bank_details'}}
       {{#ifSetting 'show_bank_name'}}
         {{#if business.bank_name}}
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
+          <div data-kh-section="footer" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
             <strong>Bank Details:</strong><br>
             {{#ifSetting 'show_bank_name'}}
               {{#if business.bank_name}}
@@ -474,7 +474,7 @@
 
     {{#ifSetting 'show_terms'}}
       {{#if settings.terms}}
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 11px;">
           <strong>Terms & Conditions:</strong><br>
           <div style="white-space: pre-line;">{{settings.terms}}</div>
         </div>
@@ -483,7 +483,7 @@
 
     {{#ifSetting 'show_notes'}}
       {{#if settings.notes}}
-        <div style="margin-top: 20px; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 20px; font-size: 11px;">
           <strong>Notes:</strong><br>
           <div style="white-space: pre-line;">{{settings.notes}}</div>
         </div>
@@ -492,7 +492,7 @@
 
     {{#ifSetting 'show_payment_terms'}}
       {{#if settings.payment_terms}}
-        <div style="margin-top: 20px; font-size: 11px;">
+        <div data-kh-section="footer" style="margin-top: 20px; font-size: 11px;">
           <strong>Payment Terms:</strong><br>
           <div style="white-space: pre-line;">{{settings.payment_terms}}</div>
         </div>
@@ -500,7 +500,7 @@
     {{/ifSetting}}
 
     {{#ifSetting 'show_signature'}}
-    <div style="margin-top: 40px; text-align: right; padding-right: 40px;">
+    <div data-kh-section="footer" style="margin-top: 40px; text-align: right; padding-right: 40px;">
       <div style="font-size: 12px; margin-bottom: 6px;">For {{business.name}}</div>
       {{#if business.signature_url}}
         <img src="{{business.signature_url}}" style="max-height: 50px; max-width: 150px; object-fit: contain; margin-bottom: 5px;" />

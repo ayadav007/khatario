@@ -79,7 +79,7 @@
   <div class="document-title">DEBIT NOTE</div>
   <div class="notice-box">This document increases your tax liability. Original Invoice: ZQINV-0042</div>
   
-  <div class="header">
+  <div data-kh-section="header" class="header">
     <div>
       <div class="business-name">ZQBIZ Enterprises</div>
       <div style="font-size: 11px; color: #4b5563;">
@@ -92,14 +92,14 @@
     <img src="https://cdn.example.com/zqlogo.png" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">
   </div>
   
-  <div class="meta-grid">
+  <div data-kh-section="details" class="meta-grid">
     <div><strong>Debit Note No:</strong><br>ZQDBN-0004</div>
     <div><strong>Date:</strong><br>23 September 2026</div>
     <div><strong>Original Invoice:</strong><br>ZQINV-0042 dated 2026-09-20</div>
     <div><strong>Place of Supply:</strong><br>Maharashtra</div>
   </div>
   
-  <div class="party-section">
+  <div data-kh-section="details" class="party-section">
     <div class="party-box">
       <div class="label">Customer Details</div>
       <div class="name">ZQCUST Traders</div>
@@ -116,7 +116,7 @@
     </div>
   </div>
   
-  <table>
+  <table data-kh-section="items">
     <thead>
       <tr>
         <th>#</th>
@@ -144,7 +144,7 @@
     </tbody>
   </table>
   
-  <div class="summary-box">
+  <div data-kh-section="totals" class="summary-box">
     <div class="summary-row"><span>Taxable Amount</span><span>₹1000.00</span></div>
     <div class="summary-row"><span>CGST</span><span>₹90.00</span></div>
     <div class="summary-row"><span>SGST</span><span>₹90.00</span></div>
@@ -155,12 +155,12 @@
   <div style="margin-top: 10px; text-align: right; font-size: 12px;"><strong>Amount in words:</strong> One Thousand One Hundred Eighty Rupees Only</div>
   
   
-  <div class="notes-section">
+  <div data-kh-section="footer" class="notes-section">
     <strong>Notes:</strong><br>ZQDNNOTE debit note
   </div>
   
   
-  <div class="signature-section">
+  <div data-kh-section="footer" class="signature-section">
     <div class="signature-box">Customer Acknowledgement</div>
     <div class="signature-box">
       <img src="https://cdn.example.com/zqsign.png" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">

@@ -108,7 +108,7 @@
 </head>
 <body>
   <div class="container">
-    <div class="header">
+    <div data-kh-section="header" class="header">
       {{#ifSetting 'show_logo'}}
         {{#if business.logo_url}}
           <img src="{{business.logo_url}}" style="height: 60px; margin-bottom: 10px;" />
@@ -172,7 +172,7 @@
       {{/if}}
     </div>
 
-    <div class="grid">
+    <div data-kh-section="details" class="grid">
       {{#ifSetting 'show_bill_to'}}
       <div class="col">
         <strong>Billed To:</strong><br>
@@ -382,7 +382,7 @@
     </div>
     {{/or}}
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}
@@ -659,7 +659,7 @@
     </div>
     {{/if}}
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       {{#ifSetting 'show_terms'}}
         {{#if settings.terms}}
           <strong>Terms:</strong> {{settings.terms}}<br>

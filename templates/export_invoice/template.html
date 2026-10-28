@@ -255,7 +255,7 @@
 </head>
 <body>
   <div class="invoice-container">
-    <div class="header-top">
+    <div data-kh-section="header" class="header-top">
       <div class="invoice-title">{{invoice.invoice_title}}</div>
       {{#ifSetting 'show_business_gstin'}}
         {{#if business.gstin}}
@@ -265,7 +265,7 @@
       {{#ifSetting 'show_copy_label'}}{{#if invoice.copy_label}}<div class="original-label">{{invoice.copy_label}}</div>{{/if}}{{/ifSetting}}
     </div>
 
-    <div class="business-info">
+    <div data-kh-section="header" class="business-info">
       {{#ifSetting 'show_logo'}}
         {{#if business.logo_url}}
           <img src="{{business.logo_url}}" class="business-logo" />
@@ -308,7 +308,7 @@
       {{/ifSetting}}
     </div>
 
-    <div class="invoice-details">
+    <div data-kh-section="details" class="invoice-details">
       <div class="invoice-details-left">
         {{#ifSetting 'show_invoice_number'}}
           <div class="detail-row">
@@ -469,7 +469,7 @@
       </div>
     </div>
 
-    <div class="parties-section">
+    <div data-kh-section="details" class="parties-section">
       {{#ifSetting 'show_bill_to'}}
         <div class="party-box">
           <div class="party-header">Bill To</div>
@@ -529,7 +529,7 @@
       {{/ifSetting}}
     </div>
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}<th style="width: 5%">S. No.</th>{{/ifSetting}}
@@ -586,7 +586,7 @@
     {{/ifSetting}}
 
     <div class="summary-section">
-      <div class="summary-left">
+      <div data-kh-section="footer" class="summary-left">
         {{#ifSetting 'show_amount_in_words'}}
           <div class="amount-words">
             Total invoice amount in words: {{invoice.amount_in_words}}
@@ -618,7 +618,7 @@
         {{/ifSetting}}
       </div>
 
-      <div class="summary-right">
+      <div data-kh-section="totals" class="summary-right">
         <div class="summary-box">
           {{#ifSetting 'show_subtotal'}}
             <div class="summary-row">
@@ -705,7 +705,7 @@
               Certified that the particulars given above are true and correct.
             </div>
           {{/if}}
-          <div class="signature-section">
+          <div data-kh-section="footer" class="signature-section">
             <div class="signature-company">For {{business.name}}</div>
             {{#ifSetting 'show_signature'}}{{#if business.signature_url}}
               <img src="{{business.signature_url}}" class="signature-image" alt="Signature" />
