@@ -28,6 +28,7 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
+import { partyPricePatch } from '@/lib/invoices/party-price';
 import { useToastContext } from '@/contexts/ToastContext';
 import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
@@ -257,13 +258,10 @@ interface InvoiceItemRow {
   priceUserOverride?: boolean;
   code?: string;
   mrp?: number;
-}
-
-/** Convert GST-inclusive stored price into taxable-exclusive unit rate (matches catalog item picker logic). */
-function partyPriceDbToExclusiveUnit(price: number, gstIncluded: boolean | undefined, taxPercent: number) {
-  const tr = Number(taxPercent || 0);
-  if (gstIncluded && tr > 0) return price / (1 + tr / 100);
-  return price;
+  /** Item selling price as stored in the catalog (item's own GST basis). */
+  catalogPrice?: number;
+  /** True while `price` is the selected customer's party price. */
+  partyPriceApplied?: boolean;
 }
 
 const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => (
@@ -952,9 +950,12 @@ function NewInvoiceContent() {
     [rows]
   );
 
-  /** When customer + line identity changes, fetch party overrides (cached); skip manual edits and finalized/loaded invoice lines. */
+  /**
+   * When customer + line identity changes, fetch party overrides (cached); skip manual edits and finalized/loaded invoice lines.
+   * A line priced for a previous customer goes back to the catalog price when the new customer (or no customer) has none.
+   */
   useEffect(() => {
-    if (!customerId || isFinal || isInvoiceLocked) return;
+    if (isFinal || isInvoiceLocked) return;
 
     let cancelled = false;
     const custAtStart = customerId;
@@ -963,14 +964,14 @@ function NewInvoiceContent() {
       const snapshot = rowsRef.current;
       const pairs = snapshot
         .map((row, idx) => ({ row, idx }))
-        .filter(({ row }) => !!row.itemId && !row.priceUserOverride);
+        .filter(({ row }) => !!row.itemId && !row.priceUserOverride && (!!custAtStart || row.partyPriceApplied));
 
       if (pairs.length === 0) return;
 
       const fetched = await Promise.all(
         pairs.map(async ({ row, idx }) => {
-          const pp = await fetchPartyPriceCached(custAtStart, row.itemId);
-          return { idx, pp, itemId: row.itemId, rowSnap: row };
+          const pp = custAtStart ? await fetchPartyPriceCached(custAtStart, row.itemId) : null;
+          return { idx, pp, itemId: row.itemId };
         })
       );
 
@@ -980,28 +981,14 @@ function NewInvoiceContent() {
         let next = prev;
         let changed = false;
 
-        for (const { idx, pp, itemId, rowSnap } of fetched) {
-          if (pp == null) continue;
+        for (const { idx, pp, itemId } of fetched) {
           const current = prev[idx];
-          if (
-            !current ||
-            String(current.itemId) !== itemId ||
-            current.priceUserOverride
-          ) {
-            continue;
-          }
+          if (!current || String(current.itemId) !== itemId) continue;
 
-          const newPriceExclusive = partyPriceDbToExclusiveUnit(
-            pp,
-            rowSnap.gstIncluded ?? current.gstIncluded,
-            current.taxPercent ?? rowSnap.taxPercent
-          );
+          const patch = partyPricePatch(current, pp, pricesIncludeGst);
+          if (!patch) continue;
 
-          if (typeof current.price === 'number' && Math.abs(current.price - newPriceExclusive) < 1e-9) {
-            continue;
-          }
-
-          const updated = calculateRow({ ...current, price: newPriceExclusive });
+          const updated = calculateRow({ ...current, ...patch });
           if (!changed) next = [...prev];
           changed = true;
           next[idx] = updated;
@@ -1019,6 +1006,7 @@ function NewInvoiceContent() {
     rowsPartyTriggerKey,
     fetchPartyPriceCached,
     calculateRow,
+    pricesIncludeGst,
     isFinal,
     isInvoiceLocked,
   ]);
@@ -1068,7 +1056,7 @@ function NewInvoiceContent() {
         if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
         else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
       }
-      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
+      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, catalogPrice: Number(item.selling_price), code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
       if (posMode) {
@@ -1178,6 +1166,7 @@ function NewInvoiceContent() {
             total: 0,
             gstIncluded: !!item.gst_included,
             priceUserOverride: false,
+            catalogPrice: Number(item.selling_price),
           });
           if (targetIndex >= 0 && targetIndex < newRows.length) {
             newRows[targetIndex] = newRowData;
