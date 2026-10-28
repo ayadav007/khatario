@@ -115,6 +115,7 @@
         {{/if}}
       {{/ifSetting}}
       
+      {{> copy-label}}
       <div class="title">{{invoice.invoice_title}}</div>
       
       {{#ifSetting 'show_business_name'}}
@@ -295,9 +296,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_reverse_charge'}}
-          {{#if invoice.is_reverse_charge}}
-            Reverse Charge: Yes<br>
-          {{/if}}
+          Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}<br>
         {{/ifSetting}}
         {{#ifSetting 'show_eway_bill_number'}}
           {{#if invoice.eway_bill_number}}
@@ -587,6 +586,8 @@
         {{/ifSetting}}
       </tfoot>
     </table>
+
+    {{> hsn-summary}}
 
     {{#if invoice.is_export}}
     <div class="transport-details" style="margin-top: 20px;">

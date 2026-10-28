@@ -152,6 +152,7 @@
             {{/ifSetting}}
           </td>
           <td style="width: 220px;">
+            {{> copy-label}}
             <div class="section-title">{{invoice.invoice_title}}</div>
             <div class="small">
               {{#ifSetting 'show_invoice_number'}}<div><b>No:</b> {{invoice.invoice_number}}</div>{{/ifSetting}}
@@ -191,6 +192,7 @@
               {{> invoice-meta-extra itemClass="" labelClass="meta-inline-label" valueClass="meta-inline-value"}}
         {{> custom-invoice-meta}}
               {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><b>Place Of Supply:</b> {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
+              {{#ifSetting 'show_reverse_charge'}}<div><b>Reverse Charge:</b> {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</div>{{/ifSetting}}
             </div>
           </td>
         </tr>

@@ -12,6 +12,8 @@ import {
   type TemplatePreviewSpec,
 } from '@/lib/template-screen-preview';
 import { getDefaultTemplateSettings } from '@/lib/template-defaults';
+import { lockedSettingKeys } from '@/lib/invoice-statutory';
+import { ItemColumnChooser } from '@/components/templates/ItemColumnChooser';
 
 interface TemplateSettings {
   primary_color?: string;
@@ -97,6 +99,9 @@ interface TemplateSettings {
   show_signature?: boolean;
   show_authorized_signatory?: boolean;
   show_qr_code?: boolean;
+  show_copy_label?: boolean;
+  show_hsn_summary?: boolean;
+  item_columns?: string[];
   show_terms?: boolean;
   show_notes?: boolean;
   show_customer_country?: boolean;
@@ -226,6 +231,8 @@ const DEFAULT_SETTINGS: TemplateSettings = {
   show_signature: true,
   show_authorized_signatory: true,
   show_qr_code: false,
+  show_copy_label: true,
+  show_hsn_summary: true,
   show_terms: true,
   show_notes: true,
   show_payment_terms: true,
@@ -394,12 +401,14 @@ function ContentTextarea({ label, value, onChange, rows, maxLength, placeholder,
   );
 }
 
-function FieldToggleGroup({ title, color, fields, settings, onChange }: {
+function FieldToggleGroup({ title, color, fields, settings, onChange, locked = [] }: {
   title: string;
   color: string;
   fields: { key: string; label: string }[];
   settings: TemplateSettings;
   onChange: (key: keyof TemplateSettings, val: boolean) => void;
+  /** Fields GST requires on this document: always ticked, cannot be switched off. */
+  locked?: string[];
 }) {
   return (
     <div>
@@ -408,18 +417,27 @@ function FieldToggleGroup({ title, color, fields, settings, onChange }: {
         {title}
       </h3>
       <div className="space-y-1.5 pl-4">
-        {fields.map((f) => (
-          <label key={f.key} className="flex items-center gap-3 cursor-pointer group py-0.5">
-            <input
-              type="checkbox"
-              checked={settings[f.key as keyof TemplateSettings] as boolean ?? true}
-              onChange={(e) => onChange(f.key as keyof TemplateSettings, e.target.checked)}
-              className="w-4 h-4 rounded focus:ring-2"
-              style={{ accentColor: color }}
-            />
-            <span className="text-sm text-gray-700 group-hover:text-gray-900">{f.label}</span>
-          </label>
-        ))}
+        {fields.map((f) => {
+          const isLocked = locked.includes(f.key);
+          return (
+            <label
+              key={f.key}
+              className={`flex items-center gap-3 group py-0.5 ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+              title={isLocked ? 'Required on GST documents' : undefined}
+            >
+              <input
+                type="checkbox"
+                checked={isLocked || (settings[f.key as keyof TemplateSettings] as boolean ?? true)}
+                disabled={isLocked}
+                onChange={(e) => onChange(f.key as keyof TemplateSettings, e.target.checked)}
+                className="w-4 h-4 rounded focus:ring-2"
+                style={{ accentColor: color }}
+              />
+              <span className="text-sm text-gray-700 group-hover:text-gray-900">{f.label}</span>
+              {isLocked && <span className="text-[11px] text-gray-400">Required by GST</span>}
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -452,6 +470,7 @@ export default function CustomizeTemplateDrawer({
 
   // Start from the same defaults the print pipeline uses, otherwise an unsaved
   // business previews toggles (bank, signature, …) that never print.
+  const lockedFields = useMemo(() => lockedSettingKeys(documentType, templateId), [documentType, templateId]);
   const templateDefaults = useMemo<TemplateSettings>(() => {
     const server = getDefaultTemplateSettings(templateId) as unknown as TemplateSettings;
     return {
@@ -922,7 +941,8 @@ export default function CustomizeTemplateDrawer({
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={settings.show_signature as boolean ?? true}
+                        checked={lockedFields.includes('show_signature') || (settings.show_signature as boolean ?? true)}
+                        disabled={lockedFields.includes('show_signature')}
                         onChange={(e) => handleSettingChange('show_signature', e.target.checked)}
                         className="w-4 h-4 rounded"
                       />
@@ -931,7 +951,8 @@ export default function CustomizeTemplateDrawer({
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={settings.show_authorized_signatory as boolean ?? true}
+                        checked={lockedFields.includes('show_authorized_signatory') || (settings.show_authorized_signatory as boolean ?? true)}
+                        disabled={lockedFields.includes('show_authorized_signatory')}
                         onChange={(e) => handleSettingChange('show_authorized_signatory', e.target.checked)}
                         className="w-4 h-4 rounded"
                       />
@@ -1035,6 +1056,14 @@ export default function CustomizeTemplateDrawer({
 
             {activeTab === 'fields' && (
               <div className="space-y-6">
+                {templateId === 'distributor' && (
+                  <ItemColumnChooser
+                    value={settings.item_columns}
+                    onChange={(next) => handleSettingChange('item_columns', next)}
+                    documentType={documentType}
+                  />
+                )}
+
                 <FieldToggleGroup title="Business Information" color="#6366f1" fields={[
                   { key: 'show_logo', label: 'Logo' },
                   { key: 'show_business_name', label: 'Business Name' },
@@ -1047,7 +1076,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_business_cin', label: 'CIN' },
                   { key: 'show_business_iec', label: 'IEC Code' },
                   { key: 'show_business_swift', label: 'SWIFT Code' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Invoice Information" color="#f97316" fields={[
                   { key: 'show_invoice_number', label: 'Invoice Number' },
@@ -1065,7 +1094,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_dispatched_through', label: 'Dispatched through' },
                   { key: 'show_destination', label: 'Destination' },
                   { key: 'show_terms_of_delivery', label: 'Terms of Delivery' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <CustomFieldsTemplateLayout
                   settings={settings as Record<string, unknown>}
@@ -1087,7 +1116,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_contact_person', label: 'Contact Person' },
                   { key: 'show_customer_country', label: 'Country' },
                   { key: 'show_buyer_tax_id', label: 'Buyer Tax ID' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Item Table Columns" color="#22c55e" fields={[
                   { key: 'show_serial_number', label: 'Serial Number' },
@@ -1104,7 +1133,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_line_total', label: 'Line Total' },
                   { key: 'show_batch_number', label: 'Batch Number' },
                   { key: 'show_expiry_date', label: 'Expiry Date' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Totals & Summary" color="#a855f7" fields={[
                   { key: 'show_subtotal', label: 'Subtotal' },
@@ -1120,7 +1149,8 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_paid_amount', label: 'Paid Amount' },
                   { key: 'show_balance_amount', label: 'Balance Due' },
                   { key: 'show_amount_in_words', label: 'Amount in Words' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                  { key: 'show_hsn_summary', label: 'HSN-wise Tax Summary' },
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Bank & Payment" color="#6366f1" fields={[
                   { key: 'show_bank_details', label: 'Bank Details Section' },
@@ -1129,7 +1159,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_ifsc_code', label: 'IFSC Code' },
                   { key: 'show_branch_name', label: 'Branch Name' },
                   { key: 'show_swift_code', label: 'SWIFT Code' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Export Invoice Fields" color="#14b8a6" fields={[
                   { key: 'show_invoice_currency', label: 'Invoice Currency' },
@@ -1144,7 +1174,7 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_bl_number', label: 'BL Number' },
                   { key: 'show_export_declaration', label: 'Export Declaration' },
                   { key: 'show_lut_declaration', label: 'LUT Declaration' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
 
                 <FieldToggleGroup title="Footer & Additional" color="#ec4899" fields={[
                   { key: 'show_terms', label: 'Terms & Conditions' },
@@ -1152,7 +1182,8 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_signature', label: 'Signature' },
                   { key: 'show_authorized_signatory', label: 'Authorized Signatory' },
                   { key: 'show_qr_code', label: 'QR Code' },
-                ]} settings={settings} onChange={handleSettingChange} />
+                  { key: 'show_copy_label', label: 'Copy Label (Original for Recipient)' },
+                ]} settings={settings} onChange={handleSettingChange} locked={lockedFields} />
               </div>
             )}
 

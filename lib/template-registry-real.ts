@@ -101,6 +101,16 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     features: ['Detailed Tax Breakdown', 'Opening Balance', 'HSN-wise Summary', 'Financial Summary', 'Traditional Format']
   },
 
+  {
+    id: 'distributor',
+    name: 'Distributor (FMCG / Pharma)',
+    description: 'Dense distributor bill with GST slab summary, retailer margin and an item table you choose the columns of',
+    path: 'templates/distributor',
+    documentTypes: ['tax_invoice', 'proforma_invoice', 'sales_order'],
+    color: '#111827',
+    features: ['Choose Item Columns', 'Cases / Pieces', 'MRP & Margin', 'GST Slab Summary']
+  },
+
   // Bill of Supply Templates
   {
     id: 'composition_standard',

@@ -19,6 +19,7 @@
 </head>
 <body>
   <div class="container">
+    {{> copy-label}}
     <h1>{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}#{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</h1>
 
     <div class="row">
@@ -70,7 +71,7 @@
         {{#ifSetting 'show_po_number'}}{{#if invoice.po_number}}<div>PO: {{invoice.po_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_reference_number'}}{{#if invoice.reference_number}}<div>Ref: {{invoice.reference_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
-        {{#ifSetting 'show_reverse_charge'}}{{#if invoice.is_reverse_charge}}<div>Reverse Charge: Yes</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_reverse_charge'}}<div>Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</div>{{/ifSetting}}
         {{#ifSetting 'show_eway_bill_number'}}{{#if invoice.eway_bill_number}}<div>E-way: {{invoice.eway_bill_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_delivery_note'}}{{#if invoice.delivery_note}}<div>Delivery Note: {{invoice.delivery_note}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_payment_terms'}}{{#if invoice.payment_terms}}<div>Payment Terms: {{invoice.payment_terms}}</div>{{/if}}{{/ifSetting}}
@@ -127,6 +128,7 @@
         {{/each}}
       </tbody>
     </table>
+    {{> hsn-summary}}
 
     <div class="row">
       <div class="box" style="min-width:240px;">

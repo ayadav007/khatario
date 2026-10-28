@@ -167,6 +167,7 @@
       </div>
       
       <div class="invoice-meta">
+        {{> copy-label}}
         <div class="invoice-title">{{invoice.invoice_title}}</div>
         <div class="party-box" style="text-align: left; margin-top: 10px; border: 1px solid #eee; padding: 10px;">
           <div class="party-title">{{invoice.invoice_title}} Details</div>
@@ -192,7 +193,7 @@
             {{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}
           {{/ifSetting}}
           {{#ifSetting 'show_reverse_charge'}}
-            {{#if invoice.is_reverse_charge}}<div>Reverse Charge: Yes</div>{{/if}}
+            <div>Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</div>
           {{/ifSetting}}
           {{#ifSetting 'show_eway_bill_number'}}
             {{#if invoice.eway_bill_number}}<div>E-way: {{invoice.eway_bill_number}}</div>{{/if}}
@@ -441,6 +442,8 @@
       </tbody>
     </table>
     </div>
+
+    {{> hsn-summary}}
 
     {{#if invoice.is_export}}
     <div class="transport-details" style="margin-top: 20px;">

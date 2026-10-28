@@ -1,0 +1,59 @@
+{{#ifSetting 'show_hsn_summary'}}{{#if @root.invoice.has_tax}}{{#if @root.invoice.tax_breakdown.length}}
+<table class="kh-hsn-summary" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; page-break-inside: avoid;">
+  <thead>
+    <tr>
+      <th rowspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left;">HSN/SAC</th>
+      <th rowspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Taxable Value</th>
+      {{#if @root.invoice.is_igst}}
+      <th colspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: center;">IGST</th>
+      {{else}}
+      <th colspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: center;">CGST</th>
+      <th colspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: center;">SGST</th>
+      {{/if}}
+      <th rowspan="2" style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Total Tax</th>
+    </tr>
+    <tr>
+      <th style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Rate</th>
+      <th style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Amount</th>
+      {{#unless @root.invoice.is_igst}}
+      <th style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Rate</th>
+      <th style="background: {{#if @root.settings.table_header_color}}{{@root.settings.table_header_color}}{{else}}#f3f4f6{{/if}}; color: {{#if @root.settings.table_header_text_color}}{{@root.settings.table_header_text_color}}{{else}}#111827{{/if}}; font-weight: 700; border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">Amount</th>
+      {{/unless}}
+    </tr>
+  </thead>
+  <tbody>
+    {{#each @root.invoice.tax_breakdown}}
+    <tr>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px;">{{this.hsn_sac}}</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.taxable_value}}</td>
+      {{#if @root.invoice.is_igst}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{this.igst_rate}}%</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.igst_amount}}</td>
+      {{else}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{this.cgst_rate}}%</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.cgst_amount}}</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{this.sgst_rate}}%</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.sgst_amount}}</td>
+      {{/if}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.total_tax}}</td>
+    </tr>
+    {{/each}}
+    {{#with @root.invoice.tax_breakdown_totals}}
+    <tr style="font-weight: 700;">
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px;">Total</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.taxable_value}}</td>
+      {{#if @root.invoice.is_igst}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px;"></td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.igst_amount}}</td>
+      {{else}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px;"></td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.cgst_amount}}</td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px;"></td>
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.sgst_amount}}</td>
+      {{/if}}
+      <td style="border: 1px solid #d1d5db; padding: 3px 5px; text-align: right;">{{formatCurrency this.total_tax}}</td>
+    </tr>
+    {{/with}}
+  </tbody>
+</table>
+{{/if}}{{/if}}{{/ifSetting}}

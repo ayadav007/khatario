@@ -257,6 +257,7 @@ export class InvoiceRenderer {
     'tally_style': 'tally_style',
     'export_invoice': 'export_invoice',
     'gst_detailed': 'gst_detailed',
+    'distributor': 'distributor',
     'composition_standard': 'bill_of_supply/composition_standard',
     'composition_modern': 'bill_of_supply/composition_modern',
     'tax_exempt': 'bill_of_supply/tax_exempt',

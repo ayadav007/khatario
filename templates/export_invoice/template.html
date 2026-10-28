@@ -262,7 +262,7 @@
           <div class="gstin-header">GSTIN: {{business.gstin}}</div>
         {{/if}}
       {{/ifSetting}}
-      <div class="original-label">Original for recipient</div>
+      {{#ifSetting 'show_copy_label'}}{{#if invoice.copy_label}}<div class="original-label">{{invoice.copy_label}}</div>{{/if}}{{/ifSetting}}
     </div>
 
     <div class="business-info">
@@ -569,6 +569,8 @@
         {{/each}}
       </tbody>
     </table>
+
+    {{> hsn-summary}}
 
     {{#ifSetting 'show_bank_details'}}
       {{#if business.bank_name}}

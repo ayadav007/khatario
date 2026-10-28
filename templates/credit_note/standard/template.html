@@ -45,6 +45,7 @@
   </style>
 </head>
 <body>
+  {{> copy-label}}
   <div class="document-title">CREDIT NOTE</div>
   <div class="notice-box">This document reduces your tax liability.{{#if invoice.original_invoice_number}} Original Invoice: {{invoice.original_invoice_number}}{{/if}}</div>
   
@@ -134,7 +135,7 @@
     <div class="signature-box">Customer Acknowledgement</div>
     <div class="signature-box">
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}
-      For {{business.name}}
+      For {{business.name}}<br><small>Authorised Signatory</small>
     </div>
   </div>
   {{#if settings.footer_text}}<div style="margin-top: 20px; text-align: center; font-size: 10px; color: #6b7280;">{{settings.footer_text}}</div>{{/if}}

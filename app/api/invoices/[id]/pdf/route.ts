@@ -3,6 +3,7 @@ import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne } from '@/lib/db';
 import { getUserIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { parsePrintCopyParam } from '@/lib/invoice-statutory';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +56,9 @@ export async function GET(
     }
     
     // Use the shared generator which fetches data, renders HTML, and creates PDF buffer
-    const pdfBuffer = await generateInvoicePdf(id);
+    const pdfBuffer = await generateInvoicePdf(id, {
+      copy: parsePrintCopyParam(req.nextUrl.searchParams.get('copy')),
+    });
 
     return new NextResponse(pdfBuffer as any, {
         status: 200,

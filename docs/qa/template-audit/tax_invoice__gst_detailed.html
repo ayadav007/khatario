@@ -20,7 +20,7 @@
       font-family: var(--font-family), 'Arial', sans-serif; 
       font-size: var(--font-size); 
       color: var(--text-color, #000000); 
-      padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);
+      padding: 0;
     }
 
     .invoice-wrapper {
@@ -90,13 +90,15 @@
 
 @page {
   size: A4 portrait;
-  margin: 0;
+  margin: 10mm 10mm 10mm 10mm;
 }
 </style>
 </head>
 <body class="print-root orientation-portrait format-A4">
 
 <div class="invoice-wrapper">
+  <div style="padding: 2px 6px 0;"><div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
+</div>
   <div style="text-align: center; font-weight: bold; padding: 4px; border-bottom: 1px solid #000;">TAX INVOICE</div>
 
   <table class="grid-table header-section">
@@ -140,6 +142,10 @@
           </td>
     </tr>
     <tr>
+          <td class="meta-box">
+            <span class="label">Reverse Charge</span>
+            <span class="value">No</span>
+          </td>
           <td class="meta-box">
             <span class="label">E-way Bill No.</span>
             <span class="value">ZQEWB-331122</span>

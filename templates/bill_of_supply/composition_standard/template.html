@@ -335,6 +335,7 @@
 </head>
 <body>
   <!-- Document Title -->
+  {{> copy-label}}
   <div class="document-title">Bill of Supply</div>
   
   <!-- Composition Disclaimer -->
@@ -541,7 +542,7 @@
       {{#ifSetting 'show_signature'}}{{#if business.signature_url}}
       <img src="{{business.signature_url}}" alt="Signature">
       {{/if}}{{/ifSetting}}
-      For {{business.name}}
+      For {{business.name}}<br><small>Authorised Signatory</small>
     </div>
   </div>
   

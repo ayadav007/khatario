@@ -36,6 +36,7 @@
       {{#ifSetting 'show_business_iec'}}{{#if business.iec_code}}<div style="font-size:13px;">IEC Code: {{business.iec_code}}</div>{{/if}}{{/ifSetting}}
       {{#ifSetting 'show_business_swift'}}{{#if business.swift_code}}<div style="font-size:13px;">SWIFT: {{business.swift_code}}</div>{{/if}}{{/ifSetting}}
       <div class="divider"></div>
+      {{> copy-label}}
       <div>{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</div>
     </div>
 
@@ -48,7 +49,7 @@
         {{#ifSetting 'show_po_number'}}{{#if invoice.po_number}}<div>PO: {{invoice.po_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_reference_number'}}{{#if invoice.reference_number}}<div>Ref: {{invoice.reference_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
-        {{#ifSetting 'show_reverse_charge'}}{{#if invoice.is_reverse_charge}}<div>Reverse Charge: Yes</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_reverse_charge'}}<div>Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</div>{{/ifSetting}}
         {{#ifSetting 'show_eway_bill_number'}}{{#if invoice.eway_bill_number}}<div>E-way: {{invoice.eway_bill_number}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_delivery_note'}}{{#if invoice.delivery_note}}<div>Delivery Note: {{invoice.delivery_note}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_payment_terms'}}{{#if invoice.payment_terms}}<div>Payment Terms: {{invoice.payment_terms}}</div>{{/if}}{{/ifSetting}}
@@ -132,6 +133,7 @@
         {{/each}}
       </tbody>
     </table>
+    {{> hsn-summary}}
 
     <div class="totals">
       {{#ifSetting 'show_subtotal'}}<div>Subtotal: {{formatCurrency invoice.subtotal}}</div>{{/ifSetting}}

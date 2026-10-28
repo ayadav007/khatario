@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateDocumentPdf } from '@/lib/pdf-generator';
 import { requireDocumentReadAccess } from '@/lib/document-access';
+import { parsePrintCopyParam } from '@/lib/invoice-statutory';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,9 @@ export async function GET(
     const access = await requireDocumentReadAccess(req, table, id);
     if (!access.ok) return access.response;
 
-    const pdfBuffer = await generateDocumentPdf(id, access.table);
+    const pdfBuffer = await generateDocumentPdf(id, access.table, {
+      copy: parsePrintCopyParam(req.nextUrl.searchParams.get('copy')),
+    });
 
     return new NextResponse(pdfBuffer as any, {
       headers: {

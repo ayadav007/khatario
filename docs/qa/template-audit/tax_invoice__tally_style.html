@@ -27,21 +27,7 @@
       }
 
       .page {
-        /* IMPORTANT:
-         * The PDF generator already applies A4 margins.
-         * Using a fixed 210mm page box + extra padding can introduce top whitespace
-         * and force content to spill onto a second page.
-         */
-        width: 100%;
-        margin: 0;
-        padding: 0;
-      }
-
-      .grid-table {
-        width: 100%;
-        border-collapse: collapse;
-        border: 1px solid #333;
-      }
+        /* Page margin comes from the print pipeline (
       .grid-table th,
       .grid-table td {
         border: 1px solid #333;
@@ -149,7 +135,7 @@
 
 @page {
   size: A4 portrait;
-  margin: 0;
+  margin: 10mm 10mm 10mm 10mm;
 }
 </style>
 </head>
@@ -171,6 +157,7 @@
               <div class="small"><b>GSTIN:</b> 27ZZZZZ9999Z1Z9</div>
           </td>
           <td style="width: 220px;">
+            <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
             <div class="section-title">TAX INVOICE</div>
             <div class="small">
               <div><b>No:</b> ZQINV-0042</div>
@@ -217,6 +204,7 @@
             <span class="detail-value">ZQCF-SITE9</span>
           </div>
               <div><b>Place Of Supply:</b> Maharashtra</div>
+              <div><b>Reverse Charge:</b> No</div>
             </div>
           </td>
         </tr>

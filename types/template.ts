@@ -134,6 +134,12 @@ export interface TemplateSettings {
   show_signature: boolean;
   show_authorized_signatory: boolean;
   show_qr_code: boolean;
+  /** "Original for Recipient" / "Duplicate for Transporter" label above the title */
+  show_copy_label?: boolean;
+  /** HSN-wise tax summary table below the items */
+  show_hsn_summary?: boolean;
+  /** Ordered item-table column ids (lib/print/item-columns.ts); empty = template default */
+  item_columns?: string[];
   
   // Appearance
   primary_color: string;

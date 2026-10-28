@@ -194,9 +194,7 @@
       {{/if}}
     {{/ifSetting}}
     {{#ifSetting 'show_reverse_charge'}}
-      {{#if invoice.is_reverse_charge}}
-        <p>Reverse Charge: Yes</p>
-      {{/if}}
+      <p>Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</p>
     {{/ifSetting}}
     {{#ifSetting 'show_eway_bill_number'}}
       {{#if invoice.eway_bill_number}}
@@ -237,6 +235,7 @@
   </div>
   
   <div class="main">
+    {{> copy-label}}
     <div style="font-size: 32px; color: #ddd; font-weight: bold; margin-bottom: 40px;">{{invoice.invoice_title}}</div>
     
     <table>
@@ -369,6 +368,7 @@
         {{/each}}
       </tbody>
     </table>
+    {{> hsn-summary}}
     
     <div class="total-section">
       {{#ifSetting 'show_subtotal'}}
@@ -501,6 +501,7 @@
 
     {{#ifSetting 'show_signature'}}
     <div style="margin-top: 40px; text-align: right; padding-right: 40px;">
+      <div style="font-size: 12px; margin-bottom: 6px;">For {{business.name}}</div>
       {{#if business.signature_url}}
         <img src="{{business.signature_url}}" style="max-height: 50px; max-width: 150px; object-fit: contain; margin-bottom: 5px;" />
       {{/if}}

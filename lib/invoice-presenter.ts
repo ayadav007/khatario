@@ -1,4 +1,11 @@
 import { getDocumentRule } from './invoice-config';
+import {
+  applyStatutorySettings,
+  buildHsnTaxSummary,
+  copyLabelFor,
+  normalizePrintCopy,
+} from './invoice-statutory';
+import { attachItemTablePrintData } from './print/item-columns';
 import * as db from './db';
 import { enrichInvoiceRenderData } from './custom-fields-render';
 import { parseCustomFieldValues } from './custom-fields';
@@ -174,6 +181,13 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     effectiveSettings.show_igst = false;
     effectiveSettings.show_cess = false;
   }
+  // GST documents always print what Rules 46/49/53 require, whatever the template settings say.
+  Object.assign(
+    effectiveSettings,
+    applyStatutorySettings(effectiveSettings, docType, rawData.template_id || settings?.template_id, {
+      b2b: !!String(customer?.gstin || '').trim(),
+    }),
+  );
 
   // Proforma/Quotation title takes priority even if export is true
   let invoiceTitle = rule.title;
@@ -261,6 +275,12 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       batch_number: item.batch_number || null,
       expiry_date: item.expiry_date ? formatDate(item.expiry_date) : null,
       item_custom_fields: item.item_custom_fields ?? item.custom_fields,
+      // Item master facts for distributor bills (MRP, product code, case size).
+      mrp: item.mrp ?? item.item_mrp ?? null,
+      item_code: item.item_code || '',
+      case_unit: item.case_unit || null,
+      case_factor: item.case_factor || null,
+      cess_amount: Number(item.cess_amount || 0).toFixed(2),
     };
   });
 
@@ -296,53 +316,9 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   );
   const primaryUnit = processedItems.length > 0 ? processedItems[0].unit || 'Nos' : 'Nos';
 
-  // Calculate tax breakdown grouped by HSN/SAC
-  const taxBreakdownMap = new Map<string, {
-    hsn_sac: string;
-    taxable_value: number;
-    cgst_rate: number;
-    cgst_amount: number;
-    sgst_rate: number;
-    sgst_amount: number;
-    igst_rate: number;
-    igst_amount: number;
-    total_tax: number;
-  }>();
-
-  processedItems.forEach((item: any) => {
-    const hsn = item.hsn_sac || 'N/A';
-    const existing = taxBreakdownMap.get(hsn) || {
-      hsn_sac: hsn,
-      taxable_value: 0,
-      cgst_rate: Number(item.cgst_rate || 0),
-      cgst_amount: 0,
-      sgst_rate: Number(item.sgst_rate || 0),
-      sgst_amount: 0,
-      igst_rate: Number(item.igst_rate || 0),
-      igst_amount: 0,
-      total_tax: 0
-    };
-
-    existing.taxable_value += Number(item.taxable_value || 0);
-    existing.cgst_amount += Number(item.cgst_amount || 0);
-    existing.sgst_amount += Number(item.sgst_amount || 0);
-    existing.igst_amount += Number(item.igst_amount || 0);
-    existing.total_tax += Number(item.tax_amount || 0);
-
-    taxBreakdownMap.set(hsn, existing);
-  });
-
-  const taxBreakdown = Array.from(taxBreakdownMap.values()).map(item => ({
-    hsn_sac: item.hsn_sac,
-    taxable_value: item.taxable_value.toFixed(2),
-    cgst_rate: item.cgst_rate.toFixed(2).replace(/\.00$/, ''),
-    cgst_amount: item.cgst_amount.toFixed(2),
-    sgst_rate: item.sgst_rate.toFixed(2).replace(/\.00$/, ''),
-    sgst_amount: item.sgst_amount.toFixed(2),
-    igst_rate: item.igst_rate.toFixed(2).replace(/\.00$/, ''),
-    igst_amount: item.igst_amount.toFixed(2),
-    total_tax: item.total_tax.toFixed(2)
-  }));
+  // HSN-wise tax summary, grouped by HSN and rate
+  const taxSummary = buildHsnTaxSummary(processedItems);
+  const copyLabel = copyLabelFor(docType, normalizePrintCopy(rawData.copy), processedItems);
 
   // 7. Final Data Assembly
   const assembled = {
@@ -386,7 +362,9 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       terms_of_delivery: invoice.terms_of_delivery || ''
       ,
       // Tax breakdown grouped by HSN/SAC (for templates like Tally Style)
-      tax_breakdown: taxBreakdown,
+      tax_breakdown: taxSummary.rows,
+      tax_breakdown_totals: taxSummary.totals,
+      copy_label: copyLabel ? translatePhrase(documentLanguage, copyLabel) : null,
       work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate, documentLanguage) : null
     },
     business: {
@@ -425,5 +403,9 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     settings: effectiveSettings || {},
   };
 
-  return enrichInvoiceRenderData(assembled);
+  const enriched = await enrichInvoiceRenderData(assembled);
+  return attachItemTablePrintData(enriched, {
+    docType,
+    translate: (label) => translatePhrase(documentLanguage, label),
+  });
 }

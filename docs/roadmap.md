@@ -7,6 +7,7 @@
 - Orders and delivery: close the fulfilment gaps [[docs/plan/ORDERS_FULFILMENT_GAPS.md]]
 
 ## Next
+- Distributor invoice template: phase 2 (licences, salesman, scheme discount, free qty, batch and MRP on lines; migration 435) [[docs/plan/DISTRIBUTOR_INVOICE_TEMPLATE.md]]
 - Phone app: move screens from prototype to live data [[docs/plan/PHONE_APP.md]]
 - Printing makeover: thermal, label and A4 printing on every platform [[docs/plan/PRINTING_MAKEOVER.md]]
 - Staff attendance check-in: face recognition pass

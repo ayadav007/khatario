@@ -145,6 +145,7 @@
 </head>
 <body>
   <div class="container">
+    {{> copy-label}}
     <div class="document-title">BILL OF SUPPLY</div>
     
     <div class="composition-disclaimer">
@@ -245,7 +246,7 @@
       <div>Customer Signature</div>
       <div style="text-align: center;">
         {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: 0 auto 6px;">{{/if}}{{/ifSetting}}
-        For {{business.name}}
+        For {{business.name}}<br><small>Authorised Signatory</small>
       </div>
     </div>
     {{#if settings.footer_text}}<div style="margin-top: 20px; text-align: center; font-size: 10px; color: #64748b;">{{settings.footer_text}}</div>{{/if}}

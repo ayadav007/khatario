@@ -66,6 +66,7 @@
 <body>
 
 <div class="invoice-wrapper">
+  <div style="padding: 2px 6px 0;">{{> copy-label}}</div>
   <div style="text-align: center; font-weight: bold; padding: 4px; border-bottom: 1px solid #000;">{{invoice.invoice_title}}</div>
 
   <table class="grid-table header-section">
@@ -134,12 +135,10 @@
     </tr>
     <tr>
       {{#ifSetting 'show_reverse_charge'}}
-        {{#if invoice.is_reverse_charge}}
           <td class="meta-box">
             <span class="label">Reverse Charge</span>
-            <span class="value">Yes</span>
+            <span class="value">{{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</span>
           </td>
-        {{/if}}
       {{/ifSetting}}
       {{#ifSetting 'show_eway_bill_number'}}
         {{#if invoice.eway_bill_number}}

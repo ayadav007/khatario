@@ -43,7 +43,7 @@
     {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div>Due: {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
         {{> custom-invoice-meta}}
     {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_reverse_charge'}}{{#if invoice.is_reverse_charge}}<div>Rev Chg: Yes</div>{{/if}}{{/ifSetting}}
+    {{#if (or invoice.is_reverse_charge (and customer.gstin invoice.has_tax))}}<div>Rev Chg: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</div>{{/if}}
     {{> invoice-meta-extra itemClass="" labelClass="meta-inline-label" valueClass="meta-inline-value"}}
     <div class="divider"></div>
     {{#ifSetting 'show_bill_to'}}

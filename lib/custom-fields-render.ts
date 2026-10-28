@@ -98,6 +98,8 @@ export async function enrichInvoiceRenderData<T extends {
     invoice: {
       ...data.invoice,
       custom_meta_display: customMetaDisplay,
+      // Item custom fields a template's column chooser can print as columns.
+      item_field_defs: itemDefs.map((d) => ({ key: d.field_key, label: d.label })),
     },
     items,
   };

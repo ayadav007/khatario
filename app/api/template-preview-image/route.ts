@@ -4,6 +4,7 @@ import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
 import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { injectPrintHtmlEnhancements, resolvePrintConfig } from '@/lib/print-config';
+import { attachItemTablePrintData } from '@/lib/print/item-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +152,8 @@ function getSampleRenderData(templateId: string) {
         index: 1,
         sn: 1,
         item_name: 'Premium Hydraulic Oil - Grade 68',
+        item_code: 'HO-68',
+        mrp: 520,
         hsn_sac: '27101990',
         hsn_code: '27101990',
         unit: 'Ltr',
@@ -177,6 +180,8 @@ function getSampleRenderData(templateId: string) {
         index: 2,
         sn: 2,
         item_name: 'Industrial Gear Oil - EP 90',
+        item_code: 'GO-90',
+        mrp: 610,
         hsn_sac: '27101990',
         hsn_code: '27101990',
         unit: 'Ltr',
@@ -203,6 +208,10 @@ function getSampleRenderData(templateId: string) {
         index: 3,
         sn: 3,
         item_name: 'Engine Coolant - Long Life',
+        item_code: 'EC-LL',
+        mrp: 1100,
+        case_unit: 'CASE',
+        case_factor: 12,
         hsn_sac: '38200000',
         hsn_code: '38200000',
         unit: 'Pcs',
@@ -253,13 +262,13 @@ export async function GET(request: NextRequest) {
     const finalSettings = customSettings ? mergeTemplateSettings(customSettings, defaults) : defaults;
 
     const sample = getSampleRenderData(templateId);
-    const renderData = {
-      invoice: sample.invoice,
+    const renderData = attachItemTablePrintData({
+      invoice: { ...sample.invoice, has_tax: Number((sample.invoice as { tax_total?: unknown }).tax_total || 0) > 0 },
       business: sample.business,
       customer: sample.customer,
       items: sample.items,
-      settings: finalSettings,
-    };
+      settings: finalSettings as unknown as Record<string, unknown>,
+    }, { docType: 'tax_invoice' });
 
     const renderer = new InvoiceRenderer();
     const rawHtml = await renderer.renderHtml(templateId, renderData);

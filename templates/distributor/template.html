@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{invoice.invoice_title}}</title>
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --head-bg: {{settings.table_header_color}};
+      --head-fg: {{settings.table_header_text_color}};
+      --font-family: {{settings.font_family}};
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-family), Arial, sans-serif; font-size: 8.5px; color: var(--text-color, #111); line-height: 1.3; }
+    .sheet { border: 1px solid #000; }
+    .title-row { display: flex; align-items: center; border-bottom: 1px solid #000; padding: 2px 4px; }
+    .title-row .title { flex: 1; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--primary-color); }
+    .title-row .copy { width: 30%; text-align: right; }
+    .title-row .spacer { width: 30%; }
+    .title-row .kh-copy-label { margin: 0; font-size: 8px; }
+
+    .head { display: grid; grid-template-columns: 1.15fr 1.15fr 1fr; border-bottom: 1px solid #000; }
+    .head > div { padding: 3px 5px; border-right: 1px solid #000; }
+    .head > div:last-child { border-right: none; }
+    .head .name { font-size: 10.5px; font-weight: 700; margin-bottom: 1px; }
+    .head .cap { font-size: 7px; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 1px; }
+    .kv { display: flex; gap: 4px; }
+    .kv .k { color: #444; white-space: nowrap; }
+    .kv .k::after { content: ':'; }
+    .kv .v { font-weight: 600; word-break: break-word; }
+    .meta-inline-label { color: #444; white-space: nowrap; }
+    .meta-inline-label::after { content: ':'; }
+    .meta-inline-value { font-weight: 600; }
+    .meta-extra { display: flex; gap: 4px; }
+    .custom-field-row { display: flex; gap: 4px; }
+    .custom-field-row .detail-label { color: #444; }
+    .custom-field-row .detail-value { font-weight: 600; }
+
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #000; padding: 1.5px 2px; vertical-align: top; overflow-wrap: anywhere; }
+    th { background: var(--head-bg); color: var(--head-fg); font-size: 7.5px; font-weight: 700; text-align: center; vertical-align: middle; overflow-wrap: normal; }
+    td { font-size: 8px; }
+    .right { text-align: right; }
+    .left { text-align: left; }
+    .center { text-align: center; }
+    .grid-wrap { border-bottom: 1px solid #000; }
+    .grid-wrap table { border-style: hidden; }
+    tfoot td, tr.total td { font-weight: 700; background: #f5f5f5; }
+    .section-cap { font-size: 7.5px; font-weight: 700; text-transform: uppercase; padding: 2px 4px; border-bottom: 1px solid #000; background: #fafafa; }
+
+    .foot { display: grid; grid-template-columns: 1.6fr 1fr; }
+    .foot > div { padding: 4px 5px; }
+    .foot .left-col { border-right: 1px solid #000; }
+    .foot .words { font-weight: 700; margin-bottom: 4px; }
+    .foot .block { margin-bottom: 4px; }
+    .foot .block .cap { font-size: 7px; font-weight: 700; text-transform: uppercase; color: #555; }
+    .foot .pre { white-space: pre-line; }
+    .totals td { border: none; padding: 1px 0; font-size: 8.5px; }
+    .totals tr.grand td { border-top: 1px solid #000; font-size: 10.5px; font-weight: 700; padding-top: 3px; }
+    .sign { margin-top: 10px; text-align: right; }
+    .sign img { max-height: 40px; max-width: 140px; display: block; margin-left: auto; }
+    .sign .for { font-weight: 700; }
+    .sign .line { margin-top: 26px; font-size: 8px; }
+    .sign img + .line { margin-top: 2px; }
+    .declaration { border-top: 1px solid #000; padding: 3px 5px; font-size: 7.5px; color: #333; }
+    .footer-text { text-align: center; font-size: 7.5px; padding: 2px; border-top: 1px solid #000; }
+  </style>
+</head>
+<body>
+<div class="sheet">
+
+  <!-- 1. Title and copy label -->
+  <div class="title-row">
+    <div class="spacer">{{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="" style="max-height: 26px; max-width: 110px;">{{/if}}{{/ifSetting}}</div>
+    <div class="title">{{invoice.invoice_title}}</div>
+    <div class="copy">{{> copy-label}}</div>
+  </div>
+
+  <!-- 2. Header grid: supplier, buyer, invoice -->
+  <div class="head">
+    <div>
+      {{#ifSetting 'show_business_name'}}<div class="name">{{business.name}}</div>{{/ifSetting}}
+      {{#ifSetting 'show_business_address'}}
+        {{#if business.address}}<div>{{business.address}}{{#if business.address_line2}}, {{business.address_line2}}{{/if}}</div>{{/if}}
+        <div>{{#if business.city}}{{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}</div>
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_phone'}}{{#if business.phone}}<div class="kv"><span class="k">Phone</span><span class="v">{{business.phone}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_business_email'}}{{#if business.email}}<div class="kv"><span class="k">Email</span><span class="v">{{business.email}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<div class="kv"><span class="k">GSTIN</span><span class="v">{{business.gstin}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_business_pan'}}{{#if business.pan}}<div class="kv"><span class="k">PAN</span><span class="v">{{business.pan}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_business_cin'}}{{#if business.cin}}<div class="kv"><span class="k">CIN</span><span class="v">{{business.cin}}</span></div>{{/if}}{{/ifSetting}}
+      {{#if business.state_code}}<div class="kv"><span class="k">State Code</span><span class="v">{{business.state}} ({{business.state_code}})</span></div>{{/if}}
+    </div>
+
+    <div>
+      <div class="cap">Customer</div>
+      {{#ifSetting 'show_bill_to'}}
+        {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_customer_address'}}{{#if customer.address}}<div>{{customer.address}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div class="kv"><span class="k">Phone</span><span class="v">{{customer.phone}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div class="kv"><span class="k">GSTIN</span><span class="v">{{customer.gstin}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_pan'}}{{#if customer.pan}}<div class="kv"><span class="k">PAN</span><span class="v">{{customer.pan}}</span></div>{{/if}}{{/ifSetting}}
+        {{#if customer.state}}<div class="kv"><span class="k">State</span><span class="v">{{customer.state}}{{#if customer.state_code}} ({{customer.state_code}}){{/if}}</span></div>{{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_ship_to'}}{{#if customer.shipping_address}}
+        <div class="kv" style="margin-top: 2px;"><span class="k">Ship To</span><span class="v">{{customer.shipping_address}}</span></div>
+      {{/if}}{{/ifSetting}}
+    </div>
+
+    <div>
+      {{#ifSetting 'show_invoice_number'}}<div class="kv"><span class="k">Invoice No</span><span class="v">{{invoice.invoice_number}}</span></div>{{/ifSetting}}
+      {{#ifSetting 'show_invoice_date'}}<div class="kv"><span class="k">Date</span><span class="v">{{invoice.invoice_date}}</span></div>{{/ifSetting}}
+      {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div class="kv"><span class="k">Due Date</span><span class="v">{{invoice.due_date}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div class="kv"><span class="k">Place of Supply</span><span class="v">{{invoice.place_of_supply}}</span></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_reverse_charge'}}<div class="kv"><span class="k">Reverse Charge</span><span class="v">{{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}</span></div>{{/ifSetting}}
+      {{> invoice-meta-extra itemClass="meta-extra" labelClass="meta-inline-label" valueClass="meta-inline-value"}}
+      {{> custom-invoice-meta}}
+    </div>
+  </div>
+
+  <!-- 3. GST slab summary -->
+  {{#if invoice.has_tax}}{{#if invoice.slab_summary.rows.length}}
+  <div class="grid-wrap">
+    <table class="slabs">
+      <thead>
+        <tr>
+          <th>GST %</th><th>Pcs</th><th>Gross Amt</th><th>Disc Amt</th><th>Taxable Amt</th><th>Tax Amt</th><th>Net Amt</th>
+          {{#if invoice.slab_summary.has_margin}}<th>Margin</th><th>Margin %</th>{{/if}}
+        </tr>
+      </thead>
+      <tbody>
+        {{#each invoice.slab_summary.rows}}
+        <tr>
+          <td class="center">{{this.tax_rate}}%</td><td class="right">{{this.pieces}}</td><td class="right">{{this.gross}}</td>
+          <td class="right">{{this.discount}}</td><td class="right">{{this.taxable}}</td><td class="right">{{this.tax}}</td><td class="right">{{this.net}}</td>
+          {{#if @root.invoice.slab_summary.has_margin}}<td class="right">{{this.margin}}</td><td class="right">{{this.margin_pct}}</td>{{/if}}
+        </tr>
+        {{/each}}
+        {{#with invoice.slab_summary.totals}}
+        <tr class="total">
+          <td class="center">Total</td><td class="right">{{this.pieces}}</td><td class="right">{{this.gross}}</td>
+          <td class="right">{{this.discount}}</td><td class="right">{{this.taxable}}</td><td class="right">{{this.tax}}</td><td class="right">{{this.net}}</td>
+          {{#if @root.invoice.slab_summary.has_margin}}<td class="right">{{this.margin}}</td><td class="right">{{this.margin_pct}}</td>{{/if}}
+        </tr>
+        {{/with}}
+      </tbody>
+    </table>
+  </div>
+  {{/if}}{{/if}}
+
+  <!-- 4. Items: columns chosen in the template settings -->
+  <div class="grid-wrap">
+    <table class="items">
+      <colgroup>{{#each invoice.item_table.columns}}<col style="width: {{this.width_pct}}%;">{{/each}}</colgroup>
+      <thead>
+        <tr>{{#each invoice.item_table.columns}}<th>{{this.label}}</th>{{/each}}</tr>
+      </thead>
+      <tbody>
+        {{#each invoice.item_table.rows}}
+        <tr>{{#each this.cells}}<td class="{{this.align}}">{{this.text}}</td>{{/each}}</tr>
+        {{/each}}
+      </tbody>
+      <tfoot>
+        <tr>{{#each invoice.item_table.totals}}<td class="{{this.align}}">{{this.text}}</td>{{/each}}</tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- 5. Footer: words, bank, terms | totals, signatory -->
+  <div class="foot">
+    <div class="left-col">
+      {{#ifSetting 'show_amount_in_words'}}{{#if invoice.amount_in_words}}<div class="words">Amount in words: {{invoice.amount_in_words}}</div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_bank_details'}}{{#if business.bank_name}}
+      <div class="block">
+        <div class="cap">Bank Details</div>
+        {{#ifSetting 'show_bank_name'}}<div>{{business.bank_name}}{{#ifSetting 'show_branch_name'}}{{#if business.branch_name}}, {{business.branch_name}}{{/if}}{{/ifSetting}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_account_number'}}{{#if business.account_number}}<div>A/c No: {{business.account_number}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_ifsc_code'}}{{#if business.ifsc_code}}<div>IFSC: {{business.ifsc_code}}</div>{{/if}}{{/ifSetting}}
+      </div>
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_payment_terms'}}{{#if settings.payment_terms}}<div class="block"><div class="cap">Payment Terms</div><div class="pre">{{settings.payment_terms}}</div></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_terms'}}{{#if settings.terms}}<div class="block"><div class="cap">Terms &amp; Conditions</div><div class="pre">{{settings.terms}}</div></div>{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_notes'}}{{#if settings.notes}}<div class="block"><div class="cap">Notes</div><div class="pre">{{settings.notes}}</div></div>{{/if}}{{/ifSetting}}
+    </div>
+    <div>
+      <table class="totals">
+        {{#ifSetting 'show_subtotal'}}<tr><td>Taxable Amount</td><td class="right">{{formatCurrency invoice.subtotal}}</td></tr>{{/ifSetting}}
+        {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<tr><td>Discount</td><td class="right">- {{formatCurrency invoice.discount_total}}</td></tr>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_additional_charges'}}{{#unless invoice.charges_included}}{{#if (gt invoice.additional_charges 0)}}<tr><td>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</td><td class="right">+ {{formatCurrency invoice.additional_charges}}</td></tr>{{/if}}{{/unless}}{{/ifSetting}}
+        {{#if invoice.is_igst}}
+          {{#ifSetting 'show_igst'}}<tr><td>IGST</td><td class="right">{{formatCurrency invoice.igst_total}}</td></tr>{{/ifSetting}}
+        {{else}}
+          {{#ifSetting 'show_cgst'}}{{#if (gt invoice.cgst_total 0)}}<tr><td>CGST</td><td class="right">{{formatCurrency invoice.cgst_total}}</td></tr>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_sgst'}}{{#if (gt invoice.sgst_total 0)}}<tr><td>SGST</td><td class="right">{{formatCurrency invoice.sgst_total}}</td></tr>{{/if}}{{/ifSetting}}
+        {{/if}}
+        {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}<tr><td>Round Off</td><td class="right">{{invoice.round_off}}</td></tr>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_grand_total'}}<tr class="grand"><td>Net Payable</td><td class="right">₹ {{formatCurrency invoice.grand_total}}</td></tr>{{/ifSetting}}
+        {{#ifSetting 'show_paid_amount'}}{{#if (gt invoice.paid_amount 0)}}<tr><td>Paid</td><td class="right">{{formatCurrency invoice.paid_amount}}</td></tr>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_balance_amount'}}{{#if (gt invoice.paid_amount 0)}}<tr><td>Balance Due</td><td class="right">{{formatCurrency invoice.balance_amount}}</td></tr>{{/if}}{{/ifSetting}}
+      </table>
+      {{#ifSetting 'show_signature'}}
+      <div class="sign">
+        <div class="for">For {{business.name}}</div>
+        {{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature">{{/if}}
+        {{#ifSetting 'show_authorized_signatory'}}<div class="line">Authorised Signatory</div>{{/ifSetting}}
+      </div>
+      {{/ifSetting}}
+    </div>
+  </div>
+
+  <div class="declaration">
+    We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+  </div>
+  {{#if settings.footer_text}}<div class="footer-text">{{settings.footer_text}}</div>{{/if}}
+</div>
+</body>
+</html>
