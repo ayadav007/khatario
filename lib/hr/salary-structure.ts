@@ -258,7 +258,7 @@ export function payrollPrefillWithProRata(
   structure: Record<string, unknown>,
   periodFrom: string,
   periodTo: string,
-  joiningDate?: string | null,
+  joiningDate?: string | Date | null,
 ): {
   fields: ReturnType<typeof payrollPrefillFromStructure>;
   proRata: ProRataSalaryResult;
