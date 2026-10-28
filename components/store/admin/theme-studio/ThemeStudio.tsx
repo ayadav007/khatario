@@ -502,7 +502,7 @@ export function ThemeStudio({
               )}
             </div>
           ) : (
-          <div className={`store st-root st-cq ${device}`} style={rootStyle}>
+          <div className={`store st-root st-cq ${device} ${pages.phoneKit ? 'phone-kit' : ''}`} style={rootStyle}>
             {pages.customCss ? (
               <style dangerouslySetInnerHTML={{ __html: previewStoreCss(pages.customCss, '.ks-root .store') }} />
             ) : null}
@@ -1510,7 +1510,11 @@ function Store({
               <p className="previewNote">Only the first “All products” section shows on the store. Pick another source for this one.</p>
             ) : null}
             {s.type === 'products' && ((s.settings.source ?? 'all') !== 'all' || s.id === catalogId) ? (
-              <StudioProductsSection s={s.settings} mobileColumns={mobileColumns}>
+              <StudioProductsSection
+                s={s.settings}
+                mobileColumns={mobileColumns}
+                gridClassName={(s.settings.source ?? 'all') === 'all' ? undefined : 'isRow'}
+              >
                 {previewProducts(products, s.settings).map((p, i) => (
                   <StudioProductTile
                     key={p.id}

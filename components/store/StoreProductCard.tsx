@@ -8,6 +8,7 @@ import { isNewArrival, lowStockCount, storeDiscountPercent } from '@/lib/store/m
 import { StudioAddButton, StudioProductTile, type StudioBadge } from './studio-theme/StudioSections';
 import { useCallback, useMemo, useState } from 'react';
 import { QuickVariantSheet } from './quick-theme/QuickSheets';
+import { usePhoneSheets } from '@/lib/store/phone-kit';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -54,6 +55,22 @@ interface StoreProductCardProps {
   variant?: StoreProductCardVariant;
   /** Studio: an extra badge from the section, e.g. "Bestseller". */
   highlight?: string;
+}
+
+/** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
+export function StoreProductCard(props: StoreProductCardProps) {
+  const { store } = useStore();
+  const sheets = usePhoneSheets(sanitizeStoreTheme(store?.store_theme));
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const picker = sheets && props.product.has_variants;
+  return (
+    <>
+      <ProductCard {...props} onOptions={picker ? () => setOptionsOpen(true) : undefined} />
+      {picker && optionsOpen ? (
+        <QuickVariantSheet product={props.product} open onClose={() => setOptionsOpen(false)} />
+      ) : null}
+    </>
+  );
 }
 
 function ChowkAddControl({
@@ -131,13 +148,18 @@ function ChowkAddControl({
   );
 }
 
-export function StoreProductCard({ product, onViewDetail, variant, highlight }: StoreProductCardProps) {
+function ProductCard({
+  product,
+  onViewDetail,
+  variant,
+  highlight,
+  onOptions,
+}: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const khatario = isKhatarioPack(theme);
   const quick = isQuickPack(theme);
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const layout: StoreProductCardVariant = variant ?? 'grid';
 
   const inCart = useMemo(() => {
@@ -165,8 +187,8 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
       e.preventDefault();
       e.stopPropagation();
       if (product.has_variants) {
-        // Quick picks the option in a bottom sheet instead of opening the product.
-        if (quick) setOptionsOpen(true);
+        // The bottom-sheet picker (Quick, phone kit) instead of opening the product.
+        if (onOptions) onOptions();
         else onViewDetail?.(product);
         return;
       }
@@ -182,7 +204,7 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
         mrp: product.mrp != null && product.mrp > product.selling_price ? product.mrp : undefined,
       });
     },
-    [product, addToCart, onViewDetail, quick],
+    [product, addToCart, onViewDetail, onOptions],
   );
 
   const handleIncrement = useCallback(
@@ -266,13 +288,7 @@ export function StoreProductCard({ product, onViewDetail, variant, highlight }: 
         add={add}
       />
     );
-    if (!quick || !product.has_variants) return tile;
-    return (
-      <>
-        {tile}
-        <QuickVariantSheet product={product} open={optionsOpen} onClose={() => setOptionsOpen(false)} />
-      </>
-    );
+    return tile;
   }
 
   if (theme.pack === 'grocery') {

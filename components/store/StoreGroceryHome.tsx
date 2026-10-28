@@ -124,7 +124,7 @@ function HeroCard({
     ? `linear-gradient(135deg, color-mix(in srgb, ${accent} 22%, #0d1711), color-mix(in srgb, ${accent} 34%, #0d1711))`
     : `linear-gradient(135deg, color-mix(in srgb, ${accent} 14%, #ffffff), color-mix(in srgb, ${accent} 24%, #ffffff))`;
   return (
-    <div className="relative overflow-hidden rounded-[28px] px-6 py-9 sm:px-10 sm:py-12 lg:px-14" style={{ background: bg }}>
+    <div className="g-hero relative overflow-hidden rounded-[28px] px-6 py-9 sm:px-10 sm:py-12 lg:px-14" style={{ background: bg }}>
       <div className="relative z-10 grid items-center gap-8 md:grid-cols-2">
         <div>
           <span
@@ -134,7 +134,7 @@ function HeroCard({
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
             {storeName}
           </span>
-          <h1 key={`t-${idx}`} className="mt-4 text-[clamp(34px,5vw,64px)] font-black leading-[1.02] tracking-[-0.03em]">
+          <h1 key={`t-${idx}`} className="g-heroTitle mt-4 text-[clamp(34px,5vw,64px)] font-black leading-[1.02] tracking-[-0.03em]">
             {slide.title}
           </h1>
           {slide.subtitle ? (
@@ -142,7 +142,7 @@ function HeroCard({
               {slide.subtitle}
             </p>
           ) : null}
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="g-heroCtas mt-7 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => scrollToId('all-products')}
@@ -155,14 +155,14 @@ function HeroCard({
             <button
               type="button"
               onClick={() => scrollToId('g-categories')}
-              className="inline-flex h-12 items-center rounded-full border-[1.5px] px-6 text-[14px] font-bold transition-colors"
+              className="g-heroAlt inline-flex h-12 items-center rounded-full border-[1.5px] px-6 text-[14px] font-bold transition-colors"
               style={{ borderColor: `color-mix(in srgb, currentColor 22%, transparent)` }}
             >
               Browse categories
             </button>
           </div>
           {stats.length > 0 ? (
-            <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3">
+            <div className="g-heroStats mt-8 flex flex-wrap gap-x-8 gap-y-3">
               {stats.map((s) => (
                 <span key={s} className="text-[13px] font-semibold" style={{ opacity: 0.7 }}>
                   {s}
@@ -363,7 +363,7 @@ export function StoreGroceryHome({
               </button>
             }
           />
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-6">
+          <div className="g-cats grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-6">
             {categories.slice(0, 12).map((c) => {
               const img = theme.category_images[c.id];
               return (
@@ -371,7 +371,7 @@ export function StoreGroceryHome({
                   key={c.id}
                   type="button"
                   onClick={() => pickCategory(c.id)}
-                  className="g-lift g-line flex flex-col items-center rounded-[18px] border px-2 py-4 text-center sm:py-5"
+                  className="g-cat g-lift g-line flex flex-col items-center rounded-[18px] border px-2 py-4 text-center sm:py-5"
                   style={{ backgroundColor: tileBg }}
                 >
                   <span

@@ -60,6 +60,22 @@ export function PageSettings({
 }) {
   const key = `${page}:${section}`;
   switch (key) {
+    case 'products:phone':
+      return (
+        <>
+          <Check
+            label="Phone layout"
+            checked={pages.phoneKit}
+            onChange={(phoneKit) => update({ phoneKit })}
+          />
+          <p className="styleHint">
+            On phones: a floating “View cart” bar with free-delivery progress, the cart and size/weight picker open from the
+            bottom of the screen, and a more compact home page. Computers and tablets are not affected. The Quick theme always
+            works this way.
+          </p>
+          <p className="note">Saved when you Publish. Check it with Preview on store on your phone.</p>
+        </>
+      );
     case 'css:css':
       return (
         <>

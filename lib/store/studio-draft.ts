@@ -17,6 +17,7 @@ export interface StudioDraftPages {
   instagramUrl: string;
   contactForm: StoreContactForm;
   customCss: string;
+  phoneKit: boolean;
 }
 
 /** Unpublished Studio work, auto-saved so it survives closing the editor. */
@@ -70,6 +71,7 @@ export function sanitizeStudioDraft(raw: unknown): StudioDraft | null {
       contactForm: sanitizeContactForm(p.contactForm),
       // Drafts saved before Custom CSS moved into Studio fall back to the theme's.
       customCss: typeof p.customCss === 'string' ? sanitizeCustomCss(p.customCss) : theme.custom_css,
+      phoneKit: typeof p.phoneKit === 'boolean' ? p.phoneKit : theme.phone_kit,
     },
   };
 }

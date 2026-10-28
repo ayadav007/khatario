@@ -2,8 +2,9 @@
 
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isQuickPack, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
+import { usePhoneSheets } from '@/lib/store/phone-kit';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -15,7 +16,9 @@ interface StoreCartDrawerProps {
 
 export function StoreCartDrawer(props: StoreCartDrawerProps) {
   const { store } = useStore();
-  if (isQuickPack(sanitizeStoreTheme(store?.store_theme))) return <QuickCartSheet {...props} />;
+  // Quick always, and the other themes on phones (phone kit), use the bottom-sheet cart.
+  const sheet = usePhoneSheets(sanitizeStoreTheme(store?.store_theme));
+  if (sheet) return <QuickCartSheet {...props} />;
   return <CartDrawer {...props} />;
 }
 

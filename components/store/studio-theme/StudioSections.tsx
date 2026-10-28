@@ -655,6 +655,7 @@ export function StudioProductsSection({
   mobileColumns = 2,
   chips,
   id,
+  gridClassName,
   children,
 }: {
   s: StudioSettings;
@@ -664,9 +665,11 @@ export function StudioProductsSection({
   mobileColumns?: 2 | 3;
   chips?: ReactNode;
   id?: string;
+  /** Extra grid classes, e.g. `isRow` for a sourced row the phone kit turns into a swipe row. */
+  gridClassName?: string;
   children: ReactNode;
 }) {
-  const className = productGridClass(s);
+  const className = [productGridClass(s), gridClassName].filter(Boolean).join(' ');
   const style = { '--columns': String(s.columns ?? 5), '--mcols': String(mobileColumns) } as CSSProperties;
   return (
     <section className="st-section" style={boxStyle(s)} id={id}>

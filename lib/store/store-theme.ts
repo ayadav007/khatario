@@ -136,6 +136,8 @@ export interface StoreTheme {
   whatsapp_url: string;
   /** Studio pack home layout, in order. Empty until first customised in Studio. */
   studio_sections: StudioSection[];
+  /** Phone kit on Studio, Grocery and Khatario (cart bar, bottom sheets, compact layouts). On unless switched off. */
+  phone_kit: boolean;
 }
 
 /** Theme-owned ink. Merchant accent never replaces this. */
@@ -243,6 +245,7 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   instagram_url: '',
   whatsapp_url: '',
   studio_sections: [],
+  phone_kit: true,
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -646,6 +649,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     instagram_url: sanitizeHttpUrl(src.instagram_url),
     whatsapp_url: sanitizeHttpUrl(src.whatsapp_url),
     studio_sections: sanitizeStudioSections(src.studio_sections),
+    phone_kit: src.phone_kit !== false,
   };
 }
 

@@ -17,6 +17,8 @@ import {
 } from './studio-theme/StoreStudioChrome';
 import { chowkInkOn, chowkOnAccent, isGroceryPack, isKhatarioPack, isQuickPack, sanitizeStoreTheme, storeCanvas, storeFontStack, storePackClass } from '@/lib/store/store-theme';
 import { QuickCartBar, QuickHeader, QuickSheet, QuickTabs } from './quick-theme/QuickChrome';
+import { phoneKitEnabled } from '@/lib/store/phone-kit';
+import './phone-kit.css';
 import { studioThemeVars, type StudioLinkTarget } from '@/lib/store/studio-layout';
 
 interface StoreShellProps {
@@ -176,17 +178,27 @@ export function StoreShell({
     </div>
   ) : null;
 
+  const kit = phoneKitEnabled(theme);
+  const kitFreeAbove = (selectedBranch ?? (branches.length === 1 ? branches[0] : undefined))?.free_delivery_above ?? null;
   const mobileNav = (
-    <StoreMobileNav
-      onSearch={() => {
-        if (!showSearch) {
-          window.location.href = '/';
-          return;
-        }
-        searchRef.current?.focus();
-      }}
-      onCart={openCart}
-    />
+    <>
+      <StoreMobileNav
+        onSearch={() => {
+          if (!showSearch) {
+            window.location.href = '/';
+            return;
+          }
+          searchRef.current?.focus();
+        }}
+        onCart={openCart}
+      />
+      {/* Phone kit: floating cart bar above the tabs (phones only; hidden by CSS on wider screens). */}
+      {kit && !hideCartBar && cartCount > 0 ? (
+        <div className="qk-kit" style={studioThemeVars(theme)}>
+          <QuickCartBar freeAbove={kitFreeAbove} onCart={openCart} />
+        </div>
+      ) : null}
+    </>
   );
 
   if (isQuickPack(theme)) {
@@ -289,7 +301,7 @@ export function StoreShell({
   if (studio) {
     return (
       <div
-        className={clsx('st-root min-h-screen', storePackClass(theme))}
+        className={clsx('st-root min-h-screen', storePackClass(theme), kit && 'phone-kit')}
         style={{
           ...studioThemeVars(theme),
           ...(theme.font_family !== 'system' ? { fontFamily: storeFontStack(theme.font_family) } : {}),
@@ -330,6 +342,7 @@ export function StoreShell({
         <main
           className={clsx(
             hideCartBar ? 'pb-10' : 'pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-10',
+            kit && !hideCartBar && cartCount > 0 && 'qk-kitRoom',
             padded && 'mx-auto max-w-6xl px-4 pt-6',
           )}
         >
@@ -349,7 +362,7 @@ export function StoreShell({
 
   return (
     <div
-      className={clsx('min-h-screen', storePackClass(theme))}
+      className={clsx('min-h-screen', storePackClass(theme), kit && 'phone-kit')}
       style={{
         backgroundColor: paper,
         color: ink,
@@ -453,6 +466,7 @@ export function StoreShell({
             : hideCartBar
               ? 'pb-[calc(var(--chowk-nav)+var(--chowk-safe)+1rem)] sm:pb-10'
               : 'pb-[var(--chowk-chrome)]',
+          kit && !hideCartBar && cartCount > 0 && 'qk-kitRoom',
           padded && clsx('mx-auto px-4 pt-6', grocery ? 'max-w-7xl' : 'max-w-6xl'),
         )}
       >

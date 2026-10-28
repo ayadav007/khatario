@@ -48,7 +48,7 @@ export function StudioSourcedProducts({
   const limit = s.limit ?? 8;
 
   return (
-    <StudioProductsSection s={s} action={action} mobileColumns={mobileColumns}>
+    <StudioProductsSection s={s} action={action} mobileColumns={mobileColumns} gridClassName="isRow">
       {items === null
         ? Array.from({ length: Math.min(limit, s.columns ?? 5) }).map((_, i) => <div key={i} className="skeleton" />)
         : items.map((item, i) => (

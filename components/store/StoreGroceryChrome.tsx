@@ -1,5 +1,6 @@
 'use client';
 
+import { phoneKitEnabled, shortSearchHint, useIsPhone } from '@/lib/store/phone-kit';
 import Link from 'next/link';
 import clsx from 'clsx';
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
@@ -90,6 +91,8 @@ export function GroceryHeader({
   branchPanel: ReactNode;
   subnav?: ReactNode;
 }) {
+  const phone = useIsPhone();
+  const phoneHint = phone && phoneKitEnabled(theme);
   const accent = theme.accent;
   const onAccent = chowkOnAccent(accent);
   const dark = hexLuminance(paper) < 0.4;
@@ -121,7 +124,7 @@ export function GroceryHeader({
         type="search"
         value={searchQuery}
         onChange={(e) => onSearchChange?.(e.target.value)}
-        placeholder={searchPlaceholder}
+        placeholder={phoneHint ? shortSearchHint(searchPlaceholder) : searchPlaceholder}
         aria-label={searchPlaceholder}
         enterKeyHint="search"
         autoComplete="off"

@@ -174,17 +174,17 @@
 }
 
 /* ---------- Floating cart bar ---------- */
-.st-root .qk-cartBar{position:fixed;left:12px;right:12px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:44;animation:qk-up .3s cubic-bezier(.2,.8,.2,1)}
-.st-root .qk-cartBar>button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-radius:14px;padding:11px 16px;background:var(--primary);color:var(--on-primary);font:inherit;cursor:pointer;box-shadow:0 12px 28px -12px color-mix(in srgb,var(--primary) 80%,#000)}
-.st-root .qk-cartBar>button>span:first-child{display:flex;flex-direction:column;align-items:flex-start;font-size:15px;font-weight:800;line-height:1.2}
-.st-root .qk-cartBar>button>span:first-child b{font-size:11px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.4px}
-.st-root .qk-view{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:700}
-.st-root .qk-view svg{width:18px;height:18px}
-.st-root .qk-free{margin:0 6px -6px;padding:6px 12px 12px;border-radius:12px 12px 0 0;background:var(--st-card);font-size:11.5px;font-weight:600;color:var(--text);box-shadow:0 -4px 16px -10px rgba(15,23,42,.4);position:relative;overflow:hidden}
-.st-root .qk-free i{position:absolute;left:0;bottom:6px;height:3px;border-radius:3px;background:var(--primary);transition:width .4s}
+.qk-cartBar{position:fixed;left:12px;right:12px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:44;animation:qk-up .3s cubic-bezier(.2,.8,.2,1)}
+.qk-cartBar>button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-radius:14px;padding:11px 16px;background:var(--primary);color:var(--on-primary);font:inherit;cursor:pointer;box-shadow:0 12px 28px -12px color-mix(in srgb,var(--primary) 80%,#000)}
+.qk-cartBar>button>span:first-child{display:flex;flex-direction:column;align-items:flex-start;font-size:15px;font-weight:800;line-height:1.2}
+.qk-cartBar>button>span:first-child b{font-size:11px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.4px}
+.qk-view{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:700}
+.qk-view svg{width:18px;height:18px}
+.qk-free{margin:0 6px -6px;padding:6px 12px 12px;border-radius:12px 12px 0 0;background:var(--st-card);font-size:11.5px;font-weight:600;color:var(--text);box-shadow:0 -4px 16px -10px rgba(15,23,42,.4);position:relative;overflow:hidden}
+.qk-free i{position:absolute;left:0;bottom:6px;height:3px;border-radius:3px;background:var(--primary);transition:width .4s}
 @keyframes qk-up{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
 @media (min-width:768px){
-.st-root .qk-cartBar{left:auto;right:24px;bottom:24px;width:380px}
+.qk-cartBar{left:auto;right:24px;bottom:24px;width:380px}
 }
 
 /* ---------- Bottom sheets ---------- */
@@ -261,6 +261,15 @@
 .qk-variants li.out{opacity:.55}
 .qk-variants li small{font-size:12px;color:var(--st-muted)}
 @media (prefers-reduced-motion:reduce){
-.qk-sheet,.qk-scrim,.st-root .qk-cartBar{transition:none;animation:none}
+.qk-sheet,.qk-scrim,.qk-cartBar{transition:none;animation:none}
 }
 .st-root.qk-portal{background:none;min-height:0}
+
+/* ---------- Phone kit on Studio, Grocery and Khatario (phones only) ---------- */
+.qk-kit .qk-cartBar{bottom:calc(64px + env(safe-area-inset-bottom));font-family:inherit}
+@media (min-width:640px){
+.qk-kit{display:none}
+}
+@media (max-width:639px){
+.qk-kitRoom{padding-bottom:calc(9rem + env(safe-area-inset-bottom))!important}
+}

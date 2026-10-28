@@ -131,6 +131,8 @@ export interface StudioPagesState {
   contactForm: StoreContactForm;
   /** Store-wide custom CSS (theme.custom_css). */
   customCss: string;
+  /** Phone layout kit for Studio, Grocery and Khatario (theme.phone_kit). */
+  phoneKit: boolean;
 }
 
 export interface StudioPageSection {
@@ -148,6 +150,7 @@ export const STUDIO_PAGES: Array<{ id: StudioPageId; label: string; icon: string
     sections: [
       { id: 'search', name: 'Search bar' },
       { id: 'grid', name: 'Product grid' },
+      { id: 'phone', name: 'Phone layout' },
     ],
   },
   { id: 'collections', label: 'Collections', icon: '▤', path: '/', sections: [{ id: 'grid', name: 'Category tiles' }] },
@@ -223,6 +226,7 @@ export function pagesFromSettings(
     instagramUrl: theme.instagram_url,
     contactForm: { ...theme.contact_form },
     customCss: theme.custom_css,
+    phoneKit: theme.phone_kit,
   };
 }
 
@@ -239,6 +243,7 @@ export function applyPagesToTheme(theme: StoreTheme, pages: StudioPagesState): S
     instagram_url: pages.instagramUrl.trim(),
     contact_form: sanitizeContactForm(pages.contactForm),
     custom_css: sanitizeCustomCss(pages.customCss ?? ''),
+    phone_kit: pages.phoneKit !== false,
   };
 }
 
