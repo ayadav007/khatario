@@ -50,18 +50,28 @@ export function getAuthenticatedUserId(request: NextRequest): string | null {
 }
 
 /**
- * Acting user id for create endpoints: prefers `created_by_user_id` or legacy `created_by`
- * in the JSON body, then session/header fallbacks via {@link getUserIdFromRequest}.
+ * Acting user for an authorized write: the session user when there is one. A user id named in the
+ * body or query (`legacy`) is used only without a session (tests, jobs), so a signed-in caller
+ * cannot act as someone else.
+ */
+export function actingUserId(request: NextRequest, ...legacy: unknown[]): string | null {
+  const verified = getAuthenticatedUserId(request);
+  if (verified) return verified;
+  for (const v of legacy) {
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return null;
+}
+
+/**
+ * Acting user id for create endpoints: the session user, else `created_by_user_id` or legacy
+ * `created_by` in the body, then the other legacy sources in {@link getUserIdFromRequest}.
  */
 export function resolveCreatedByUserId(
   request: NextRequest,
   body: Record<string, unknown> | null | undefined
 ): string | null {
-  const explicit = body?.created_by_user_id ?? body?.created_by;
-  if (explicit != null && String(explicit).trim() !== '') {
-    return String(explicit).trim();
-  }
-  return getUserIdFromRequest(request, body);
+  return actingUserId(request, body?.created_by_user_id, body?.created_by) ?? getUserIdFromRequest(request, body);
 }
 
 /**

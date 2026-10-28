@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,7 +97,7 @@ export async function PATCH(
       is_active,
     } = body;
 
-    const updated_by = body.updated_by || getUserIdFromRequest(request, body);
+    const updated_by = actingUserId(request, body.updated_by) || getUserIdFromRequest(request, body);
     const businessId = getBusinessIdFromRequest(request, body);
 
     if (!updated_by) {

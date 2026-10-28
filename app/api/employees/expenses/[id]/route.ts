@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  actingUserId,
   getUserIdFromRequest,
   getSessionScopedBusinessId,
 } from '@/lib/auth-helpers';
@@ -35,7 +36,8 @@ export async function PATCH(
       );
     }
 
-    const { action, approved_by, rejection_reason, reimbursement_reference, updated_by_user_id } = body;
+    const { action, approved_by, rejection_reason, reimbursement_reference } = body;
+    const updated_by_user_id = actingUserId(request, body.updated_by_user_id);
 
     if (!action || !['approve', 'reject', 'reimburse', 'cancel', 'update'].includes(action)) {
       return NextResponse.json(

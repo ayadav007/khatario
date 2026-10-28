@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { actingUserId } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
@@ -12,7 +13,8 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, user_id } = body;
+    const { business_id } = body;
+    const user_id = actingUserId(request, body.user_id);
 
     if (!business_id || !user_id) {
       return NextResponse.json(

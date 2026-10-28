@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { queryOne, query, queryRows } from '@/lib/db';
 import { Employee } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -146,7 +146,7 @@ export async function PATCH(
     const { searchParams } = new URL(request.url);
     const businessId = getBusinessIdFromRequest(request);
     const body = await request.json();
-    const { updated_by_user_id } = body; // REQUIRED for authorization
+    const updated_by_user_id = actingUserId(request, body.updated_by_user_id);
 
     if (!businessId) {
       return NextResponse.json(

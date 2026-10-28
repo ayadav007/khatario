@@ -188,7 +188,7 @@ export const POST = withPremiumSubscriptionApi(
     parseJsonBody: true,
     resolveActingUserId: ({ body, sessionUserId }) => {
       if (body != null && typeof body === 'object') {
-        return (body as { created_by?: string }).created_by ?? sessionUserId;
+        return sessionUserId ?? (body as { created_by?: string }).created_by;
       }
       return sessionUserId;
     },

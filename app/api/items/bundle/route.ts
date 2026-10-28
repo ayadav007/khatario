@@ -4,7 +4,7 @@ import { Item } from '@/types/database';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { validateBundleComponentItems } from '@/lib/bundle-items-validation';
 
 export const dynamic = 'force-dynamic';
@@ -41,9 +41,10 @@ export async function POST(request: NextRequest) {
     plu_code,
     weight_barcode_mode = 'weight',
     allow_sale_when_out_of_stock,
-    created_by,
+    created_by: bodyCreatedBy,
     bundle_components = [] as BundleComponentInput[],
   } = body;
+  const created_by = actingUserId(request, bodyCreatedBy);
 
   if (!business_id || !name) {
     return NextResponse.json({ error: 'Name and Business ID are required' }, { status: 400 });

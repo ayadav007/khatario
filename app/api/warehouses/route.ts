@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const created_by = body.created_by || getUserIdFromRequest(request, body); // Support both field names
+    const created_by = actingUserId(request, body.created_by) || getUserIdFromRequest(request, body);
     if (!created_by) {
       return NextResponse.json(
         { error: 'created_by (user_id) is required for authorization' },
