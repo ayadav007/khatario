@@ -82,10 +82,9 @@ export async function PATCH(
     invoice_date: string | Date;
     due_date: string | Date | null;
     customer_name: string | null;
-    is_editable: boolean | null;
   }>(
     `SELECT i.id, i.branch_id, i.status, i.document_type, i.invoice_number, i.invoice_date, i.due_date,
-            c.name AS customer_name, i.is_editable
+            c.name AS customer_name
        FROM invoices i
        LEFT JOIN customers c ON c.id = i.customer_id AND c.deleted_at IS NULL
       WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
@@ -104,7 +103,16 @@ export async function PATCH(
       { status: 409 },
     );
   }
-  if (inv.is_editable === false) {
+  // is_editable is false on every finalized invoice, so it cannot tell whether a GSTR-1 was filed.
+  // Ask the filing itself.
+  const filed = await pool.query(
+    `SELECT 1 FROM gstr1_filing_invoices fi
+       JOIN gstr1_filings f ON f.id = fi.gstr1_filing_id
+      WHERE fi.invoice_id = $1 AND f.status = 'filed'
+      LIMIT 1`,
+    [params.id],
+  );
+  if (filed.rows.length > 0) {
     return NextResponse.json(
       {
         error: 'This invoice is locked and cannot be amended because it was included in a GSTR-1 filing.',
