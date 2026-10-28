@@ -559,94 +559,111 @@ export async function PATCH(
     }
 
     // Handle Variants Update
+    // Sync instead of replace: variants that come back with their id are updated in place, new ones
+    // are inserted and only the ones left out are deleted. Ids stay the same, so invoice, purchase and
+    // stock-movement lines and customer prices stay linked, and stock already moved is kept.
     if (finalHasVariants && variants.length > 0) {
-      // For simplicity in PATCH, we'll replace variants or update existing ones
-      // A more robust way would be to sync them, but for now we'll delete and re-insert
-      // if it's a small number of variants.
-      // Customer prices set per variant are cascaded away with the old rows, so keep them
-      // by variant name and put them back on the re-inserted variants below.
-      const variantPartyPrices = await queryRows<{ party_id: string; variant_name: string; price: string }>(
-        `SELECT p.party_id, v.variant_name, p.price
-           FROM party_item_prices p
-           JOIN item_variants v ON v.id = p.variant_id
-          WHERE p.item_id = $1 AND p.business_id = $2`,
-        [itemId, businessId]
-      ).catch((error: any) => {
-        // Before migration 433 there is no variant_id column, so no variant prices to keep.
-        if (error?.code === '42703') return [];
-        throw error;
-      });
-      await query('DELETE FROM item_variants WHERE item_id = $1', [itemId]);
-      
-      for (const variant of variants) {
-        // Validate variant barcode if provided
-        let variantBarcode: string | null = null;
-        let variantBarcodeType: string | null = null;
-        
-        if (variant.barcode) {
-          variantBarcode = normalizeBarcode(variant.barcode);
-          const validation = validateBarcode(variantBarcode, variant.barcode_type);
-          
-          if (!validation.isValid) {
-            console.error(`Invalid barcode for variant ${variant.name}: ${validation.error}`);
-            variantBarcode = null;
-          } else {
-            variantBarcodeType = validation.type || null;
-            
-            // Check variant barcode uniqueness within item
-            try {
-              const existingVariant = await queryOne(
+      const pool = getPool();
+      const vc = await pool.connect();
+      try {
+        await vc.query('BEGIN');
+        const existingVariants = (
+          await vc.query<{ id: string; opening_stock: string | null }>(
+            'SELECT id, opening_stock FROM item_variants WHERE item_id = $1 FOR UPDATE',
+            [itemId]
+          )
+        ).rows;
+        const existingById = new Map(existingVariants.map((v) => [v.id, v]));
+        // An id from another item (or a made-up one) is never trusted: that variant is treated as new.
+        const keptIds = new Set<string>(
+          variants
+            .map((v: { id?: unknown }) => (typeof v.id === 'string' ? v.id : ''))
+            .filter((id: string) => existingById.has(id))
+        );
+        const removedIds = existingVariants.filter((v) => !keptIds.has(v.id)).map((v) => v.id);
+        if (removedIds.length > 0) {
+          await vc.query('DELETE FROM item_variants WHERE item_id = $1 AND id = ANY($2::uuid[])', [itemId, removedIds]);
+        }
+        // Every kept variant gets its barcode back from the form below. Clearing them first lets an
+        // edit swap barcodes between variants without the duplicate check seeing the old values.
+        await vc.query('UPDATE item_variants SET barcode = NULL, barcode_type = NULL WHERE item_id = $1', [itemId]);
+
+        const updatedIds = new Set<string>();
+        for (const variant of variants) {
+          const keepId = typeof variant.id === 'string' && keptIds.has(variant.id) && !updatedIds.has(variant.id)
+            ? variant.id as string
+            : null;
+
+          // Validate variant barcode if provided
+          let variantBarcode: string | null = null;
+          let variantBarcodeType: string | null = null;
+
+          if (variant.barcode) {
+            variantBarcode = normalizeBarcode(variant.barcode);
+            const validation = validateBarcode(variantBarcode, variant.barcode_type);
+
+            if (!validation.isValid) {
+              console.error(`Invalid barcode for variant ${variant.name}: ${validation.error}`);
+              variantBarcode = null;
+            } else {
+              variantBarcodeType = validation.type || null;
+
+              // Check variant barcode uniqueness within item
+              const existingVariant = await vc.query(
                 'SELECT id FROM item_variants WHERE item_id = $1 AND barcode = $2 AND id != COALESCE($3, \'00000000-0000-0000-0000-000000000000\'::uuid)',
-                [itemId, variantBarcode, variant.id]
+                [itemId, variantBarcode, keepId]
               );
-              
-              if (existingVariant) {
+
+              if (existingVariant.rows.length > 0) {
                 console.error(`Duplicate barcode for variant ${variant.name}`);
                 variantBarcode = null;
                 variantBarcodeType = null;
               }
-            } catch (err) {
-              // Table might not exist yet, ignore
-              console.warn('Could not check variant barcode uniqueness:', err);
             }
           }
-        }
-        
-        await query(`
-          INSERT INTO item_variants (
-            item_id, variant_name, sku, barcode, barcode_type, purchase_price, 
-            selling_price, opening_stock, current_stock, attributes
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [
-          itemId,
-          variant.name,
-          variant.sku,
-          variantBarcode,
-          variantBarcodeType,
-          variant.purchase_price || purchase_price,
-          variant.selling_price || selling_price,
-          variant.opening_stock || 0,
-          variant.opening_stock || 0,
-          JSON.stringify(variant.attributes || {})
-        ]);
-      }
 
-      if (variantPartyPrices.length > 0) {
-        await query(
-          `INSERT INTO party_item_prices (business_id, party_id, item_id, variant_id, price)
-           SELECT $2, x.party_id, $1, v.id, x.price
-             FROM unnest($3::uuid[], $4::text[], $5::numeric[]) AS x(party_id, variant_name, price)
-             JOIN item_variants v ON v.item_id = $1 AND v.variant_name = x.variant_name
-           ON CONFLICT DO NOTHING`,
-          [
-            itemId,
-            businessId,
-            variantPartyPrices.map((r) => r.party_id),
-            variantPartyPrices.map((r) => r.variant_name),
-            variantPartyPrices.map((r) => r.price),
-          ]
-        );
+          const openingStock = Number(variant.opening_stock) || 0;
+          const fields = [
+            variant.name,
+            variant.sku,
+            variantBarcode,
+            variantBarcodeType,
+            variant.purchase_price || purchase_price,
+            variant.selling_price || selling_price,
+            openingStock,
+            JSON.stringify(variant.attributes || {}),
+          ];
+
+          if (keepId) {
+            updatedIds.add(keepId);
+            // Stock on hand keeps every movement so far; only a change to opening stock shifts it.
+            const oldOpening = Number(existingById.get(keepId)?.opening_stock) || 0;
+            await vc.query(
+              `UPDATE item_variants
+                  SET variant_name = $3, sku = $4, barcode = $5, barcode_type = $6, purchase_price = $7,
+                      selling_price = $8, opening_stock = $9, attributes = $10,
+                      current_stock = COALESCE(current_stock, 0) + $11,
+                      updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1 AND item_id = $2`,
+              [keepId, itemId, ...fields, openingStock - oldOpening]
+            );
+          } else {
+            await vc.query(
+              `INSERT INTO item_variants (
+                 item_id, variant_name, sku, barcode, barcode_type, purchase_price,
+                 selling_price, opening_stock, attributes, current_stock
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $8)`,
+              [itemId, ...fields]
+            );
+          }
+        }
+        await vc.query('COMMIT');
+      } catch (e) {
+        await vc.query('ROLLBACK');
+        throw e;
+      } finally {
+        vc.release();
       }
     }
 
