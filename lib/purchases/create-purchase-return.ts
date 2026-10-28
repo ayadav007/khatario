@@ -4,12 +4,14 @@ import { nextCostShare } from '@/lib/purchases/acquisition-cost';
 import { landedCostLeavingWithReturn } from '@/lib/inventory/landed-cost-application';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import {
+  alreadyReturnedByBillLine,
   applyIncidentalFreightRefund,
   buildReturnLinesFromBill,
   buildStandaloneReturnLines,
   incidentalAllocationsFromCharges,
   purchaseReturnLineKey,
   PurchaseReturnValidationError,
+  resolveBillLineKey,
   type ReturnRequestLine,
 } from '@/lib/purchases/purchase-return-lines';
 import { movePurchaseReturnStock } from '@/lib/purchases/purchase-return-stock';
@@ -139,28 +141,23 @@ export async function createPurchaseReturnInTx(
       const billLines = await client.query(
         `SELECT item_id, item_name, hsn_sac, unit, quantity::float8 AS quantity,
                 taxable_value::float8 AS taxable_value, tax_rate::float8 AS tax_rate,
-                COALESCE(igst_amount, 0)::float8 AS igst_amount
+                COALESCE(igst_amount, 0)::float8 AS igst_amount, variant_id
            FROM purchase_items WHERE purchase_id = $1`,
         [bill.id]
       );
       const returned = await client.query(
-        `SELECT pri.item_id, pri.description, SUM(pri.qty)::float8 AS qty
+        `SELECT pri.item_id, pri.description, pri.variant_id, SUM(pri.qty)::float8 AS qty
            FROM purchase_return_items pri
            JOIN purchase_returns pr ON pr.id = pri.return_id
           WHERE pr.purchase_id = $1 AND pr.business_id = $2
             AND COALESCE(pr.status, 'final') <> 'cancelled'
-          GROUP BY pri.item_id, pri.description`,
+          GROUP BY pri.item_id, pri.description, pri.variant_id`,
         [bill.id, business_id]
       );
-      const alreadyReturned = new Map<string, number>();
-      for (const r of returned.rows) {
-        const k = purchaseReturnLineKey(r.item_id, r.description);
-        alreadyReturned.set(k, (alreadyReturned.get(k) || 0) + Number(r.qty));
-      }
       computed = buildReturnLinesFromBill({
         billLines: billLines.rows,
         requested: input.items,
-        alreadyReturned,
+        alreadyReturned: alreadyReturnedByBillLine(billLines.rows, returned.rows),
         roundOff: input.roundOff || 0,
       });
     } else {
@@ -180,18 +177,19 @@ export async function createPurchaseReturnInTx(
   if (bill) {
     const sourceLines = await client.query<{
       item_id: string;
+      variant_id: string | null;
       quantity: string;
       taxable_value: string;
       acquisition_cost: string | null;
       line_item_type: string | null;
       itc_type: string | null;
     }>(
-      `SELECT item_id, quantity, taxable_value, acquisition_cost, line_item_type, itc_type
+      `SELECT item_id, variant_id, quantity, taxable_value, acquisition_cost, line_item_type, itc_type
          FROM purchase_items WHERE purchase_id = $1 FOR UPDATE`,
       [bill.id]
     );
-    const priorQty = await client.query<{ item_id: string; qty: string }>(
-      `SELECT pri.item_id, pri.qty
+    const priorQty = await client.query<{ item_id: string; variant_id: string | null; description: string | null; qty: string }>(
+      `SELECT pri.item_id, pri.variant_id, pri.description, pri.qty
          FROM purchase_return_items pri
          JOIN purchase_returns pr ON pr.id = pri.return_id
         WHERE pr.purchase_id = $1 AND pr.business_id = $2
@@ -199,19 +197,30 @@ export async function createPurchaseReturnInTx(
         ORDER BY pr.created_at, pri.sort_order`,
       [bill.id, business_id]
     );
+    // Earlier return slices: per item for freight, per bill line (item and variant) for cost.
+    const sourceKeys = new Set(
+      sourceLines.rows.map((row) => purchaseReturnLineKey(row.item_id, null, row.variant_id))
+    );
     const priors = new Map<string, number[]>();
+    const priorsByLine = new Map<string, number[]>();
     for (const row of priorQty.rows) {
       if (!row.item_id) continue;
       const list = priors.get(row.item_id) || [];
       list.push(Number(row.qty) || 0);
       priors.set(row.item_id, list);
+      const { key } = resolveBillLineKey(sourceKeys, row.item_id, row.description, row.variant_id);
+      const byLine = priorsByLine.get(key) || [];
+      byLine.push(Number(row.qty) || 0);
+      priorsByLine.set(key, byLine);
     }
     inventoryRelief = 0;
     for (const line of lines) {
       if (!line.item_id) continue;
+      // The bill line this return line was matched to, so each size is valued at its own cost.
       const source = sourceLines.rows.find(
         (row) =>
           row.item_id === line.item_id &&
+          (row.variant_id ?? null) === (line.variant_id ?? null) &&
           row.itc_type !== 'capital_goods' &&
           row.line_item_type !== 'service'
       );
@@ -221,7 +230,7 @@ export async function createPurchaseReturnInTx(
       inventoryRelief += nextCostShare(
         acquisition,
         Number(source.quantity) || 0,
-        priors.get(line.item_id) || [],
+        priorsByLine.get(purchaseReturnLineKey(line.item_id, null, line.variant_id)) || [],
         line.qty
       );
     }
@@ -347,9 +356,9 @@ export async function createPurchaseReturnInTx(
       `INSERT INTO purchase_return_items (
          return_id, item_id, description, hsn_sac, qty, unit, unit_price,
          discount_percent, discount_amount, taxable_value,
-         tax_rate, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total, sort_order
+         tax_rate, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total, sort_order, variant_id
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10,$11,$12,$13,$14,$15)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [
         purchaseReturn.id,
         l.item_id,
@@ -366,6 +375,7 @@ export async function createPurchaseReturnInTx(
         l.igst_amount,
         l.line_total,
         i,
+        l.variant_id ?? null,
       ]
     );
     if (l.item_id) {
@@ -379,6 +389,7 @@ export async function createPurchaseReturnInTx(
         branchId: stockBranchId,
         warehouseId: defaultWarehouseId,
         itemId: l.item_id,
+        variantId: l.variant_id ?? null,
         qty: l.qty,
         direction: 'out',
         returnId: purchaseReturn.id,

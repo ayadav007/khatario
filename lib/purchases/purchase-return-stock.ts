@@ -1,9 +1,12 @@
 import type { PoolClient } from 'pg';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 
 /**
  * Moves stock for a purchase-return line. `direction: 'out'` sends goods back to the supplier;
- * `'in'` restores them when the return is cancelled. Services are ignored.
+ * `'in'` restores them when the return is cancelled. Services are ignored. A line bought into a
+ * size or colour (`variantId`) moves that variant's branch stock, where its purchase put it;
+ * in warehouse mode variants share the item's location stock.
  */
 export async function movePurchaseReturnStock(
   client: PoolClient,
@@ -12,6 +15,7 @@ export async function movePurchaseReturnStock(
     branchId: string;
     warehouseId: string | null;
     itemId: string;
+    variantId?: string | null;
     qty: number;
     direction: 'out' | 'in';
     returnId: string;
@@ -34,14 +38,17 @@ export async function movePurchaseReturnStock(
        DO UPDATE SET current_stock_qty = location_stock.current_stock_qty + $3, last_updated = CURRENT_TIMESTAMP`,
       [p.warehouseId, p.itemId, signed]
     );
+  } else if (p.variantId) {
+    await adjustBranchVariantStock(client, p.businessId, p.branchId, p.variantId, signed);
+    await refreshVariantGlobalStockFromBranches(client, p.businessId, p.variantId);
   } else {
     await adjustBranchItemStock(client, p.businessId, p.branchId, p.itemId, signed);
     await refreshItemGlobalStockFromBranches(client, p.businessId, p.itemId);
   }
 
   await client.query(
-    `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, reference_id, location_id, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [p.businessId, p.itemId, p.direction, p.qty, p.referenceType, p.returnId, p.warehouseId, p.notes]
+    `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, reference_id, location_id, notes, variant_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [p.businessId, p.itemId, p.direction, p.qty, p.referenceType, p.returnId, p.warehouseId, p.notes, p.variantId ?? null]
   );
 }

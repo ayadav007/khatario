@@ -6,6 +6,8 @@
  * - auto_return: receiving raises debit note DN-<bill> for short + damaged through the same code
  *   as POST /api/purchase-returns, so stock, supplier balance, ledger and GST move together,
  *   and a later manual return cannot take the same tins out again.
+ * - sizes: a hub order for a kurti in M and L lands in each size's stock; the debit note, a
+ *   manual return and a cancelled return all move that size's stock, never the item's own.
  * Writes only after current_database() is kh_phase2_test on port 5433:
  *   npx jest tests/db/supplier-bill-shortfall.db.test.ts --runInBand
  */
@@ -81,6 +83,7 @@ import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { POST as convertInvoice } from '@/app/api/invoices/[id]/convert-to-purchase/route';
 import { POST as postReturn } from '@/app/api/purchase-returns/route';
+import { POST as cancelReturn } from '@/app/api/purchase-returns/[id]/cancel/route';
 import { GET as getMode, PATCH as patchMode } from '@/app/api/settings/receipt-shortfall/route';
 import { GET as incomingBillGET } from '@/app/api/purchases/incoming-bills/[invoiceId]/route';
 import { GET as trialBalance } from '@/app/api/reports/trial-balance/route';
@@ -182,6 +185,7 @@ describe('Supplier Hub receipt: short and damaged goods (F-008, kh_phase2_test)'
       '393_supply_orders.sql',
       '428_supplier_hub_money_notices.sql',
       '429_hub_backup_standing_variants.sql',
+      '436_purchase_return_item_variant.sql',
     ]) {
       await pool.query(migration(file));
     }
@@ -398,5 +402,144 @@ describe('Supplier Hub receipt: short and damaged goods (F-008, kh_phase2_test)'
     expect(body.purchase_return).toBeNull();
     expect(body.receipt.status).toBe('received');
     expect((await stockOf()) - stockBefore).toBe(10);
+  });
+
+  it("sizes: returns take stock from the size it went into, at that size's cost, and cancelling puts it back", async () => {
+    await patchMode(req('PATCH', '/api/settings/receipt-shortfall', { mode: 'auto_return' }));
+    const [KURTI_R, KURTI_W, SIZE_M, SIZE_L] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await pool.query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, tax_rate, hsn_sac, has_variants, current_stock, is_active)
+       VALUES ($1, $2, 'Kurti Floral', 'PCS', 'goods', 5, '6204', true, 0, true),
+              ($3, $4, 'Kurti Floral', 'PCS', 'goods', 5, '6204', false, 100, true)`,
+      [KURTI_R, R, KURTI_W, W]
+    );
+    await pool.query(
+      `INSERT INTO item_variants (id, item_id, variant_name) VALUES ($1, $3, 'Blue / M'), ($2, $3, 'Blue / L')`,
+      [SIZE_M, SIZE_L, KURTI_R]
+    );
+    await pool.query(`INSERT INTO branch_item_stock (business_id, branch_id, item_id, quantity) VALUES ($1, $2, $3, 0)`, [
+      R,
+      BR_R,
+      KURTI_R,
+    ]);
+
+    // W bills R's order: 10 in M at 400 and 5 in L at 500, 5% GST.
+    const invoiceId = randomUUID();
+    const [LINE_M, LINE_L] = [randomUUID(), randomUUID()];
+    await pool.query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'final', 'tax_invoice', '29', 6500, 325, 162.5, 162.5, 0, 6825, 0, 6825, 'unpaid', $5)`,
+      [invoiceId, W, CUST, `SIZE-${tag}`, BR_W]
+    );
+    await pool.query(
+      `INSERT INTO invoice_items (id, invoice_id, item_id, item_name, hsn_sac, quantity, unit, unit_price,
+          tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount, line_total, sort_order)
+       VALUES ($1, $3, $4, 'Kurti Floral', '6204', 10, 'PCS', 400, 5, 200, 4000, 100, 100, 0, 4200, 0),
+              ($2, $3, $4, 'Kurti Floral', '6204', 5, 'PCS', 500, 5, 125, 2500, 62.5, 62.5, 0, 2625, 1)`,
+      [LINE_M, LINE_L, invoiceId, KURTI_W]
+    );
+    const order = (
+      await pool.query(
+        `INSERT INTO supply_orders (buyer_business_id, vendor_business_id, status, created_by_business_id, invoice_id)
+         VALUES ($1, $2, 'invoiced', $1, $3) RETURNING id`,
+        [R, W, invoiceId]
+      )
+    ).rows[0].id;
+    await pool.query(
+      `INSERT INTO supply_order_lines (order_id, buyer_item_id, vendor_item_id, item_name, qty, buyer_variant_id, sort_order)
+       VALUES ($1, $2, $3, 'Kurti Floral', 10, $4, 0), ($1, $2, $3, 'Kurti Floral', 5, $5, 1)`,
+      [order, KURTI_R, KURTI_W, SIZE_M, SIZE_L]
+    );
+
+    const sizeStock = async (variantId: string) =>
+      Number(
+        (
+          await pool.query(
+            `SELECT quantity FROM branch_item_variant_stock WHERE business_id = $1 AND branch_id = $2 AND item_variant_id = $3`,
+            [R, BR_R, variantId]
+          )
+        ).rows[0]?.quantity ?? 0
+      );
+    const itemStock = async () =>
+      Number(
+        (
+          await pool.query(`SELECT quantity FROM branch_item_stock WHERE business_id = $1 AND branch_id = $2 AND item_id = $3`, [
+            R,
+            BR_R,
+            KURTI_R,
+          ])
+        ).rows[0].quantity
+      );
+
+    // 2 of the L kurtis arrive torn: the debit note takes them from L at L's cost.
+    const res = await convert(invoiceId, { received: { [LINE_L]: { damaged_qty: 2, note: 'torn' } } });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const dnLines = (
+      await pool.query(`SELECT variant_id, qty, taxable_value FROM purchase_return_items WHERE return_id = $1`, [
+        body.purchase_return.id,
+      ])
+    ).rows;
+    expect(dnLines).toHaveLength(1);
+    expect(dnLines[0].variant_id).toBe(SIZE_L);
+    expect(Number(dnLines[0].qty)).toBe(2);
+    expect(Number(dnLines[0].taxable_value)).toBe(1000);
+    expect(await sizeStock(SIZE_M)).toBe(10);
+    expect(await sizeStock(SIZE_L)).toBe(3);
+    expect(await itemStock()).toBe(0);
+    const variantRow = await pool.query(`SELECT current_stock FROM item_variants WHERE id = $1`, [SIZE_L]);
+    expect(Number(variantRow.rows[0].current_stock)).toBe(3);
+    await expectTrialBalanceBalanced();
+
+    // A manual return has to say which size; with the size it moves only that size.
+    const today = new Date().toISOString().slice(0, 10);
+    const noSize = await postReturn(
+      req('POST', '/api/purchase-returns', {
+        purchase_id: body.purchase.id,
+        return_number: `PR-SIZE0-${tag}`,
+        return_date: today,
+        items: [{ item_id: KURTI_R, qty: 1 }],
+      })
+    );
+    expect(noSize.status).toBe(400);
+    expect((await noSize.json()).code).toBe('RETURN_VARIANT_REQUIRED');
+    // L has 3 left to return; 4 is too many even though the item was bought 15 times.
+    const tooMany = await postReturn(
+      req('POST', '/api/purchase-returns', {
+        purchase_id: body.purchase.id,
+        return_number: `PR-SIZE1-${tag}`,
+        return_date: today,
+        items: [{ item_id: KURTI_R, variant_id: SIZE_L, qty: 4 }],
+      })
+    );
+    expect(tooMany.status).toBe(400);
+    expect((await tooMany.json()).code).toBe('RETURN_EXCEEDS_PURCHASED');
+    const mReturn = await postReturn(
+      req('POST', '/api/purchase-returns', {
+        purchase_id: body.purchase.id,
+        return_number: `PR-SIZE2-${tag}`,
+        return_date: today,
+        items: [{ item_id: KURTI_R, variant_id: SIZE_M, qty: 1 }],
+      })
+    );
+    expect(mReturn.status).toBe(201);
+    const { purchaseReturn } = await mReturn.json();
+    expect(Number(purchaseReturn.subtotal)).toBe(400);
+    expect(await sizeStock(SIZE_M)).toBe(9);
+    expect(await sizeStock(SIZE_L)).toBe(3);
+    expect(await itemStock()).toBe(0);
+
+    // Cancelling the debit note puts the 2 back into L.
+    const cancelled = await cancelReturn(
+      req('POST', `/api/purchase-returns/${body.purchase_return.id}/cancel`, { reason: 'Supplier took them back' }),
+      { params: { id: body.purchase_return.id } }
+    );
+    expect(cancelled.status).toBe(200);
+    expect(await sizeStock(SIZE_L)).toBe(5);
+    expect(await sizeStock(SIZE_M)).toBe(9);
+    expect(await itemStock()).toBe(0);
+    await expectTrialBalanceBalanced();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  alreadyReturnedByBillLine,
   applyIncidentalFreightRefund,
   buildReturnLinesFromBill,
   buildStandaloneReturnLines,
@@ -253,5 +254,68 @@ describe('buildStandaloneReturnLines', () => {
       interState: false,
     });
     expect(totals).toMatchObject({ subtotal: 100, cgst_total: 2.5, sgst_total: 2.5, grand_total: 105 });
+  });
+});
+
+describe('sizes and colours on a purchase return', () => {
+  const kurti = (variant_id: string, quantity: number, taxable: number) => ({
+    item_id: 'kurti',
+    item_name: 'Kurti Floral',
+    hsn_sac: '6204',
+    unit: 'PCS',
+    quantity,
+    taxable_value: taxable,
+    tax_rate: 5,
+    igst_amount: 0,
+    variant_id,
+  });
+  const twoSizes = [kurti('M', 10, 4000), kurti('L', 5, 2500)];
+
+  test('each size is returned at its own cost and keeps its variant', () => {
+    const { lines } = buildReturnLinesFromBill({
+      billLines: twoSizes,
+      requested: [{ item_id: 'kurti', variant_id: 'L', qty: 2 }],
+      alreadyReturned: new Map(),
+    });
+    expect(lines[0]).toMatchObject({ item_id: 'kurti', variant_id: 'L', qty: 2, unit_price: 500, taxable_value: 1000 });
+  });
+
+  test('an item bought in several sizes needs the size', () => {
+    expect(() =>
+      buildReturnLinesFromBill({ billLines: twoSizes, requested: [{ item_id: 'kurti', qty: 1 }], alreadyReturned: new Map() })
+    ).toThrow(expect.objectContaining({ code: 'RETURN_VARIANT_REQUIRED' }));
+  });
+
+  test('an item bought in one size is found without naming it', () => {
+    const { lines } = buildReturnLinesFromBill({
+      billLines: [kurti('M', 10, 4000)],
+      requested: [{ item_id: 'kurti', qty: 1 }],
+      alreadyReturned: new Map(),
+    });
+    expect(lines[0].variant_id).toBe('M');
+  });
+
+  test('the cap is per size, and an older return without a variant counts against the only size', () => {
+    const returned = alreadyReturnedByBillLine(twoSizes, [{ item_id: 'kurti', description: 'Kurti Floral', variant_id: 'L', qty: 5 }]);
+    expect(() =>
+      buildReturnLinesFromBill({ billLines: twoSizes, requested: [{ item_id: 'kurti', variant_id: 'L', qty: 1 }], alreadyReturned: returned })
+    ).toThrow(expect.objectContaining({ code: 'RETURN_EXCEEDS_PURCHASED' }));
+    expect(
+      buildReturnLinesFromBill({ billLines: twoSizes, requested: [{ item_id: 'kurti', variant_id: 'M', qty: 10 }], alreadyReturned: returned }).lines[0].qty
+    ).toBe(10);
+
+    const legacy = alreadyReturnedByBillLine([kurti('M', 10, 4000)], [{ item_id: 'kurti', description: 'Kurti Floral', variant_id: null, qty: 4 }]);
+    expect(legacy.get('id:kurti:v:M')).toBe(4);
+  });
+
+  test('the return form shows one line per size with its name', () => {
+    const lines = formLinesFromPurchase([
+      { ...kurti('M', 10, 4000), variant_name: 'Blue / M' },
+      { ...kurti('L', 5, 2500), variant_name: 'Blue / L', returned_qty: 2 },
+    ]);
+    expect(lines.map((l) => [l.item_name, l.variant_id, l.max_qty])).toEqual([
+      ['Kurti Floral (Blue / M)', 'M', 10],
+      ['Kurti Floral (Blue / L)', 'L', 3],
+    ]);
   });
 });

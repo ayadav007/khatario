@@ -209,6 +209,7 @@ export async function POST(
       const billed = inBuyerUnits(line, resolvedLines[i].factor).qty;
       const r = receivedInput[String(line.id)] || {};
       return {
+        index: i,
         invoiceItemId: String(line.id),
         buyerItemId: resolvedLines[i].itemId,
         itemName: String(resolvedLines[i].itemName || line.item_name || ''),
@@ -308,9 +309,11 @@ export async function POST(
     }
 
     // Create purchase items and update stock
+    const lineVariantIds: Array<string | null> = [];
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
       const buyerVariantId = item.item_id ? variantQueue.get(String(item.item_id))?.shift() ?? null : null;
+      lineVariantIds[i] = buyerVariantId;
       
       // The supplier's item_id belongs to their business; use the caller's matched item, in the
       // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
@@ -613,6 +616,8 @@ export async function POST(
         reason: 'Short or damaged on receipt',
         items: issues.map((l: any) => ({
           item_id: l.buyerItemId,
+          // The size or colour this line's stock went into, so the return takes it back from there.
+          variant_id: l.buyerItemId ? lineVariantIds[l.index] ?? null : null,
           item_name: l.itemName,
           qty: Math.round((l.short + l.damaged) * 1000) / 1000,
         })),
