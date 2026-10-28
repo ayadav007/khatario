@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
+import { baseQtyLabel, unitFactorOf, useItemUnits, type SaleUnitOption } from '@/lib/invoices/use-item-units';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -39,6 +41,8 @@ interface ChallanRow {
   price_note?: string;
   /** Purchase price (pre-GST), for the below-cost warning. */
   cost_price?: number | null;
+  /** Units the item sells in (own unit first), once loaded. */
+  units?: SaleUnitOption[];
 }
 
 const newRow = (): ChallanRow => ({
@@ -358,11 +362,24 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const removeItem = (id: string) => setItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
   const patchItem = (id: string, patch: Partial<ChallanRow>) =>
     setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  useItemUnits(items, setItems);
+  /** Another of the item's units: the rate scales now and the price lookup settles it. */
+  const changeUnit = (row: ChallanRow, unit: string) => {
+    const from = unitFactorOf(row);
+    const to = row.units?.find((u) => u.unit === unit)?.factor || 1;
+    const k = to / from;
+    patchItem(row.id, {
+      unit,
+      unit_price: Math.round(row.unit_price * k * 100) / 100,
+      cost_price: row.cost_price == null ? row.cost_price : Math.round(row.cost_price * k * 100) / 100,
+      fixed_price: false,
+    });
+  };
 
   // Customer price, price level and discounts for the customer on the challan date, as on the
   // invoice. Challans have no discount column, so a discount is taken off the rate.
   const pricingKey = items
-    .map((r) => (r.item_id ? `${r.id}:${r.item_id}:${r.qty}:${r.fixed_price ? 1 : 0}` : ''))
+    .map((r) => (r.item_id ? `${r.id}:${r.item_id}:${r.qty}:${r.unit}:${r.fixed_price ? 1 : 0}` : ''))
     .filter(Boolean)
     .join('|');
   useEffect(() => {
@@ -379,7 +396,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
           body: JSON.stringify({
             customer_id: customerId,
             date: formData.challan_date,
-            lines: lines.map((r) => ({ item_id: r.item_id, qty: r.qty || 1 })),
+            lines: lines.map((r) => ({ item_id: r.item_id, qty: r.qty || 1, unit: r.unit || null })),
           }),
         });
         if (!res.ok) return;
@@ -903,6 +920,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                               item_name: selected.name,
                               hsn_sac: selected.hsn_sac || '',
                               unit: selected.unit || 'PCS',
+                              units: undefined,
                               unit_price: Number(selected.selling_price ?? 0),
                               tax_rate: Number(selected.tax_rate ?? 0),
                               fixed_price: false,
@@ -928,11 +946,18 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                         />
                       </td>
                       <td className="px-2 py-2" data-label="Unit">
-                        <Input
-                          type="text"
-                          value={row.unit}
-                          onChange={(e) => patchItem(row.id, { unit: e.target.value })}
-                        />
+                        {row.units && row.units.length > 1 ? (
+                          <SaleUnitSelect unit={row.unit} units={row.units} className="h-9 w-full text-sm" onChange={(unit) => changeUnit(row, unit)} />
+                        ) : (
+                          <Input
+                            type="text"
+                            value={row.unit}
+                            onChange={(e) => patchItem(row.id, { unit: e.target.value })}
+                          />
+                        )}
+                        {baseQtyLabel({ ...row, quantity: row.qty }) ? (
+                          <p className="mt-0.5 text-[11px] text-gray-500">{baseQtyLabel({ ...row, quantity: row.qty })}</p>
+                        ) : null}
                       </td>
                       <td className="px-2 py-2" data-label="Rate">
                         <Input

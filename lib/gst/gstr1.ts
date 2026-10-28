@@ -410,8 +410,12 @@ export class GSTR1Generator {
           i.ecommerce_operator_gstin, i.is_ecommerce_supply, i.subtotal, i.branch_id,
           i.customer_gstin AS customer_gstin, c.name as customer_name, -- GSTIN on the invoice date (migration 388)
           ii.tax_rate, COALESCE(NULLIF(TRIM(ii.hsn_sac), ''), it.hsn_sac) AS hsn_sac,
-          ii.quantity, ii.unit, ii.taxable_value as item_taxable_value,
-          CASE WHEN UPPER(TRIM(COALESCE(ii.unit, ''))) = UPPER(TRIM(COALESCE(it.unit, ''))) THEN it.uqc END AS item_uqc,
+          -- A line sold in boxes is reported in the item's own UQC, so one HSN keeps one row.
+          ii.quantity * COALESCE(ii.unit_factor, 1) AS quantity,
+          CASE WHEN COALESCE(ii.unit_factor, 1) <> 1 THEN COALESCE(it.unit, ii.unit) ELSE ii.unit END AS unit,
+          ii.taxable_value as item_taxable_value,
+          CASE WHEN COALESCE(ii.unit_factor, 1) <> 1
+                 OR UPPER(TRIM(COALESCE(ii.unit, ''))) = UPPER(TRIM(COALESCE(it.unit, ''))) THEN it.uqc END AS item_uqc,
           ii.cgst_amount, ii.sgst_amount, ii.igst_amount,
           COALESCE(ii.cess_amount, 0) AS item_cess_amount,
           ii.item_name
@@ -996,8 +1000,9 @@ export class GSTR1Generator {
 
       // Table 12 is reported net of credit/debit notes issued in the period.
       const noteLines = await client.query(
-        `SELECT -1 AS sign, COALESCE(NULLIF(TRIM(cni.hsn_sac), ''), it.hsn_sac, 'NA') AS hsn_sac, cni.description AS item_name, cni.unit,
-                cni.qty AS quantity, cni.tax_rate,
+        `SELECT -1 AS sign, COALESCE(NULLIF(TRIM(cni.hsn_sac), ''), it.hsn_sac, 'NA') AS hsn_sac, cni.description AS item_name,
+                CASE WHEN COALESCE(cni.unit_factor, 1) <> 1 THEN COALESCE(it.unit, cni.unit) ELSE cni.unit END AS unit,
+                cni.qty * COALESCE(cni.unit_factor, 1) AS quantity, cni.tax_rate,
                 (cni.line_total - cni.tax_amount) AS item_taxable_value,
                 CASE WHEN cn.igst_total > 0 THEN cni.tax_amount ELSE 0 END AS igst_amount,
                 CASE WHEN cn.igst_total > 0 THEN 0 ELSE ROUND(cni.tax_amount / 2, 2) END AS cgst_amount,

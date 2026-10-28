@@ -30,6 +30,7 @@ import {
 import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
 import { storedPriceToBillUnit, type LastRateInfo } from '@/lib/invoices/party-price';
 import { usePartyPricing } from '@/lib/invoices/use-party-pricing';
+import { unitFactorOf, useItemUnits, withSaleUnit, type SaleUnitOption } from '@/lib/invoices/use-item-units';
 import { useToastContext } from '@/contexts/ToastContext';
 import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
@@ -277,6 +278,8 @@ interface InvoiceItemRow {
   scheme?: { buyQty: number; freeQty: number } | null;
   /** Free-goods line added by a scheme: the paid line's item:variant. */
   schemeOf?: string;
+  /** Units the item sells in (own unit first), loaded by useItemUnits. */
+  units?: SaleUnitOption[];
   /** Display only (added by usePartyPricing, never kept in state). */
   priceNote?: string;
   priceWarning?: string;
@@ -926,6 +929,8 @@ function NewInvoiceContent() {
     setRows((prev) => prev.map((r) => calculateRow(r, true)));
   }, [pricesIncludeGst, calculateRow]);
 
+  useItemUnits(rows, setRows, isFinal || isInvoiceLocked);
+
   const displayRows = usePartyPricing({
     rows,
     setRows,
@@ -938,8 +943,11 @@ function NewInvoiceContent() {
 
   const handleItemSelect = useCallback((item: any, rowIndex?: number) => {
     const variantId = item.variantId, variantName = item.variantName, itemId = item.id, itemIdStr = String(itemId || ''), variantIdStr = variantId ? String(variantId) : null;
+    // A scanned box barcode adds one box; otherwise the item's own unit.
+    const box: { unit: string; factor_to_base: number; selling_price: number | null } | null = item.scanned_unit || null;
+    const lineUnit = String(box?.unit || item.unit || 'PCS').toUpperCase();
     setRows(currentRows => {
-      const existingRowIndex = currentRows.findIndex(r => String(r.itemId || '') === itemIdStr && (variantIdStr ? String(r.variantId || '') === variantIdStr : !r.variantId));
+      const existingRowIndex = currentRows.findIndex(r => String(r.itemId || '') === itemIdStr && (variantIdStr ? String(r.variantId || '') === variantIdStr : !r.variantId) && String(r.unit || 'PCS').toUpperCase() === lineUnit);
       const newRows = [...currentRows];
       if (existingRowIndex >= 0) {
         newRows[existingRowIndex] = calculateRow({ ...newRows[existingRowIndex], quantity: newRows[existingRowIndex].quantity + 1 });
@@ -976,12 +984,13 @@ function NewInvoiceContent() {
       }
       let displayName = variantName ? `${item.name} - ${variantName}` : item.name;
       if (displayName === item.barcode && item.code && item.code !== item.barcode) displayName = variantName ? `${item.code} - ${variantName}` : item.code;
-      let price = Number(item.selling_price), tr = Number(item.tax_rate || 0);
+      const f = box ? Number(box.factor_to_base) || 1 : 1;
+      let price = box?.selling_price != null ? Number(box.selling_price) : Number(item.selling_price) * f, tr = Number(item.tax_rate || 0);
       if (tr > 0) {
         if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
         else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
       }
-      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, catalogPrice: Number(item.selling_price), costPrice: item.purchase_price != null ? Number(item.purchase_price) : null, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
+      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: box?.unit || item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, catalogPrice: Number(item.selling_price), costPrice: item.purchase_price != null ? Number(item.purchase_price) * f : null, code: item.code || item.sku || '', mrp: (Number(item.mrp) || 0) * f });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
       if (posMode) {
@@ -1129,7 +1138,7 @@ function NewInvoiceContent() {
           const { normalizeBarcode } = await import('@/lib/barcode-validator');
           const norm = normalizeBarcode(barcode); let match: any = null, vMatch: any = null;
           for (const item of foundItems) {
-            if (item.barcode && normalizeBarcode(item.barcode) === norm) { match = item; break; }
+            if ((item.barcode && normalizeBarcode(item.barcode) === norm) || item.scanned_unit) { match = item; break; }
             if (item.has_variants && item.variants?.length) { const v = item.variants.find((x: any) => x.barcode && normalizeBarcode(x.barcode) === norm); if (v) { match = item; vMatch = v; break; } }
           }
           if (match) { if (vMatch) handleItemSelect({ ...match, selling_price: vMatch.selling_price ?? match.selling_price, current_stock: vMatch.current_stock, tax_rate: match.tax_rate, variantId: vMatch.id, variantName: vMatch.variant_name }); else if (match.has_variants && match.variants?.length) { setSizeChoice(match); return; } else handleItemSelect(match); toastCtx.success('Item added!'); }
@@ -1753,7 +1762,7 @@ function NewInvoiceContent() {
               .filter((r) => r.itemId)
               .map((r) => ({
                 itemId: r.itemId!,
-                quantity: r.quantity,
+                quantity: r.quantity * unitFactorOf(r),
                 variantId: r.variantId || null,
                 locationId: selectedWarehouseId || null,
               })),
@@ -2294,7 +2303,7 @@ function NewInvoiceContent() {
             .filter((r) => r.itemId)
             .map((r) => ({
               itemId: r.itemId!,
-              quantity: r.quantity,
+              quantity: r.quantity * unitFactorOf(r),
               variantId: r.variantId || null,
               locationId: selectedWarehouseId || null,
             })),
@@ -3193,6 +3202,16 @@ function NewInvoiceContent() {
     setRows(nr);
   };
 
+  /** A line switched to another of the item's units: price scales now, the resolver settles it. */
+  const changeRowUnit = (index: number, unit: string) => {
+    setRows((prev) => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      next[index] = calculateRow(withSaleUnit(prev[index], unit));
+      return next;
+    });
+  };
+
   const isEditMode = !!searchParams.get('edit');
 
   const renderDesktopForm = () => (
@@ -3471,7 +3490,7 @@ function NewInvoiceContent() {
           <p className="mt-2 text-xs text-text-secondary">The customer needs an SEZ GSTIN. IGST applies even when the SEZ is in your state.</p>
         </div>
       )}
-      <ItemsTable rows={displayRows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
+      <ItemsTable rows={displayRows} onUpdateRow={updateRow} onChangeUnit={changeRowUnit} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
@@ -3968,6 +3987,7 @@ function NewInvoiceContent() {
         <ItemsTable
           rows={displayRows}
           onUpdateRow={updateRow}
+          onChangeUnit={changeRowUnit}
           onItemSelect={handleItemSelect}
           onAddRow={() => setShowMobileItemPicker(true)}
           onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))}

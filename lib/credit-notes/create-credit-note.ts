@@ -3,6 +3,7 @@ import { createCreditNoteLedgerEntries } from '@/lib/ledger-utils';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { refreshCreditNoteRefundStatus } from '@/lib/credit-notes/customer-credit';
 
 /**
@@ -162,7 +163,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
     const invItems = await client.query(
       `SELECT item_id,
-              SUM(quantity)::numeric AS qty,
+              SUM(quantity * COALESCE(unit_factor, 1))::numeric AS qty,
               SUM(taxable_value)::numeric AS taxable,
               SUM(cgst_amount)::numeric AS cgst,
               SUM(sgst_amount)::numeric AS sgst,
@@ -177,7 +178,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     );
     const credited = await client.query(
       `SELECT cni.item_id,
-              SUM(cni.qty)::numeric AS qty,
+              SUM(cni.qty * COALESCE(cni.unit_factor, 1))::numeric AS qty,
               SUM(cni.line_total - cni.tax_amount)::numeric AS taxable,
               SUM(cni.tax_amount)::numeric AS tax
          FROM credit_note_items cni
@@ -225,10 +226,32 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     }
   }
 
+  // Units: a line credited in boxes takes the factor the invoice line was sold at, else the
+  // item's current box, else 1. Quantity pools against the invoice are all in base units.
+  const saleUnits = await resolveSaleUnits(client, business_id, input.items).catch((e) => {
+    if (e instanceof SaleUnitError) throw new CreditNoteCreateError(400, e.code, e.message);
+    throw e;
+  });
+  if (invoice_id) {
+    const soldUnits = await client.query<{ item_id: string; unit: string | null; unit_factor: string }>(
+      `SELECT DISTINCT ON (item_id, UPPER(COALESCE(unit, ''))) item_id, unit, unit_factor::text
+         FROM invoice_items WHERE invoice_id = $1 AND item_id IS NOT NULL
+        ORDER BY item_id, UPPER(COALESCE(unit, '')), sort_order`,
+      [invoice_id],
+    );
+    input.items.forEach((item, i) => {
+      const sent = String(item.unit ?? '').trim().toUpperCase();
+      const sold = soldUnits.rows.find((r) => r.item_id === item.item_id && String(r.unit ?? '').toUpperCase() === sent);
+      if (sold && sent) saleUnits[i] = { unit: sold.unit, unit_factor: Number(sold.unit_factor) || 1 };
+    });
+  }
+
   const intraState = (finalPosStateCode?.substring(0, 2) || '') === businessStateCode;
   const zeroRated = invoice ? isZeroRatedWithoutTax(invoice) : false;
-  const lines = input.items.map((item) => {
+  const lines = input.items.map((item, index) => {
     const qty = Number(item.qty ?? item.quantity) || 0;
+    const { unit, unit_factor: unitFactor } = saleUnits[index];
+    const baseQ = qty * unitFactor;
     const unitPrice = Number(item.unit_price ?? item.price) || 0;
     const gross = qty * unitPrice;
     const discountPercent = Number(item.discount_percent) || 0;
@@ -240,8 +263,8 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     const already = linkedId ? creditedByItem.get(linkedId) : undefined;
     if (original && already && invoice_id) {
       const openQty = original.qty - already.qty;
-      const closes = qty >= openQty - 1e-9;
-      const share = original.qty > 0 ? qty / original.qty : 0;
+      const closes = baseQ >= openQty - 1e-9;
+      const share = original.qty > 0 ? baseQ / original.qty : 0;
       const taxable = closes ? round2(original.taxable - already.taxable) : round2(original.taxable * share);
       const taxAmount = closes ? round2(original.tax - already.tax) : round2(original.tax * share);
       const head = (amount: number) =>
@@ -253,13 +276,15 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
       const cgst = head(original.cgst);
       const sgst = head(original.sgst);
       const igst = head(original.igst);
-      already.qty = round2(already.qty + qty);
+      already.qty = round2(already.qty + baseQ);
       already.taxable = round2(already.taxable + taxable);
       already.tax = round2(already.tax + taxAmount);
       const taxRate = zeroRated ? 0 : original.taxRate;
       return {
         item,
         qty,
+        unit,
+        unitFactor,
         unitPrice: qty > 0 ? round2(taxable / qty) : 0,
         discount: 0,
         taxRate,
@@ -274,7 +299,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     const linked = item.item_id ? invoicedByItem.get(item.item_id) : undefined;
     const taxRate = linked ? linked.taxRate : Number(item.tax_rate) || 0;
     const line = computeLineGst({ quantity: 1, unit_price: gross - discount, tax_rate: taxRate }, intraState, zeroRated);
-    return { item, qty, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
+    return { item, qty, unit, unitFactor, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
   });
   const { gstRateError } = await import('@/lib/gst/rates');
   const invDate: unknown = invoice?.invoice_date;
@@ -304,7 +329,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
           `"${l.item.item_name || l.item.description || l.item.item_id}" is not on invoice ${invoice.invoice_number}`,
         );
       }
-      requested.set(l.item.item_id, (requested.get(l.item.item_id) || 0) + l.qty);
+      requested.set(l.item.item_id, (requested.get(l.item.item_id) || 0) + l.qty * l.unitFactor);
     }
     for (const [itemId, qty] of requested) {
       const available = invoicedByItem.get(itemId)!.qty;
@@ -381,23 +406,23 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
   // Insert credit note items and increase stock (goods coming back)
   for (let i = 0; i < lines.length; i++) {
-    const { item, qty, unitPrice, discount, taxRate, taxAmount, lineTotal } = lines[i];
+    const { item, qty, unit, unitFactor, unitPrice, discount, taxRate, taxAmount, lineTotal } = lines[i];
 
     await client.query(
       `
       INSERT INTO credit_note_items (
         credit_note_id, item_id, description, qty, unit, unit_price,
-        discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac, restocked
+        discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac, restocked, unit_factor
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-              COALESCE(NULLIF(TRIM($12::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)), $13)
+              COALESCE(NULLIF(TRIM($12::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)), $13, $14)
     `,
       [
         creditNote.id,
         item.item_id || null,
         item.description || item.item_name || 'Adjustment',
         qty,
-        item.unit || 'PCS',
+        unit || item.unit || 'PCS',
         unitPrice,
         discount,
         taxRate,
@@ -406,6 +431,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
         i,
         item.hsn_sac || null,
         item.restock !== false,
+        unitFactor,
       ],
     );
 
@@ -433,7 +459,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
       const itemType = itemTypeRes.rows[0]?.item_type || 'goods';
 
       if (itemType === 'goods') {
-        const returnQty = parseFloat(String(item.qty || item.quantity || '0'));
+        const returnQty = qty * unitFactor;
 
         if (warehouseModeEnabled) {
           if (!locationId) {
@@ -491,12 +517,12 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
   // Cost of goods coming back into stock; damaged lines are written off so their cost stays in COGS.
   let totalCogsAmount = 0;
-  for (const { item } of lines) {
+  for (const { item, qty, unitFactor } of lines) {
     if (item.item_id && item.restock !== false) {
       const itemData = await client.query('SELECT purchase_price, item_type FROM items WHERE id = $1', [item.item_id]);
       if (itemData.rows[0]?.item_type === 'goods' && itemData.rows[0]?.purchase_price) {
         const itemCost = Number(itemData.rows[0].purchase_price) || 0;
-        const itemQuantity = Number(item.qty || item.quantity) || 0;
+        const itemQuantity = qty * unitFactor;
         totalCogsAmount += itemCost * itemQuantity;
       }
     }

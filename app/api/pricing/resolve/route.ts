@@ -13,8 +13,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * POST /api/pricing/resolve
- * Body: { customer_id?: string | null, date?: 'YYYY-MM-DD', lines: { item_id, variant_id?, qty? }[] } (max 300)
- * → { lines: PriceLineResult[] } in the same order. Without the party pricing plan, or without a
+ * Body: { customer_id?: string | null, date?: 'YYYY-MM-DD', lines: { item_id, variant_id?, qty?, unit? }[] } (max 300)
+ * → { lines: PriceLineResult[] } in the same order. A line in an alternate unit (unit: 'BOX') is
+ * priced per box, with `unitFactor` saying how many base units it holds. Without the party pricing plan, or without a
  * customer, every line gets the item's own price.
  */
 export async function POST(request: NextRequest) {
@@ -45,7 +46,8 @@ export async function POST(request: NextRequest) {
       }
       const qty = l.qty == null ? 1 : Number(l.qty);
       if (!Number.isFinite(qty) || qty < 0) return NextResponse.json({ error: 'Invalid qty' }, { status: 400 });
-      lines.push({ itemId, variantId, qty });
+      const unit = typeof l.unit === 'string' && l.unit.trim() ? l.unit.trim().slice(0, 20) : null;
+      lines.push({ itemId, variantId, qty, unit });
     }
 
     let customerId: string | null = typeof body.customer_id === 'string' && body.customer_id.trim() ? body.customer_id.trim() : null;

@@ -20,6 +20,7 @@ import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
+import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
@@ -45,6 +46,8 @@ export interface CreateInvoiceItemInput {
   item_name: string;
   quantity: number;
   unit?: string;
+  /** Base units in one `unit`. Set by the server from the item's units; read from the input only with `keepUnitFactors`. */
+  unit_factor?: number;
   unit_price: number;
   discount_percent?: number;
   tax_rate?: number;
@@ -102,6 +105,11 @@ export interface CreateInvoiceOptions {
   deviceId?: string | null;
   /** Recurring invoices: a draft is numbered and saved but posts no stock, balance or ledger. */
   allowDraft?: boolean;
+  /**
+   * Lines copied from a saved document (a sales order) keep the factor that document stored,
+   * so a box changed from 12 to 10 since the order still bills the order's box.
+   */
+  keepUnitFactors?: boolean;
 }
 
 export interface CreateInvoiceResult {
@@ -223,7 +231,7 @@ async function deductGoodsStockForLine(
     | undefined;
   if (!itemData || itemData.item_type === 'service') return;
 
-  const quantity = Number(item.quantity) || 0;
+  const quantity = baseQty(item);
   if (quantity <= 0) return;
 
   if (itemData.is_bundle) {
@@ -418,6 +426,18 @@ export async function createInvoiceInTransaction(
     }
   }
 
+  try {
+    const saleUnits = await resolveSaleUnits(client, business_id, items);
+    saleUnits.forEach((su, i) => {
+      const kept = options.keepUnitFactors ? Number(items[i].unit_factor) : NaN;
+      items[i].unit = (options.keepUnitFactors ? items[i].unit : su.unit) ?? items[i].unit;
+      items[i].unit_factor = kept > 0 ? kept : su.unit_factor;
+    });
+  } catch (e) {
+    if (e instanceof SaleUnitError) throw new InvoiceCreateServiceError(e.message, e.statusCode, e.code);
+    throw e;
+  }
+
   const businessRes = await client.query(
     `SELECT state_code, state, aggregate_turnover_above_5cr AS above, gst_registration_type FROM businesses WHERE id = $1`,
     [business_id]
@@ -582,9 +602,9 @@ export async function createInvoiceInTransaction(
         invoice_id, item_id, variant_id, item_name, description, hsn_sac,
         quantity, unit, unit_price, discount_percent, discount_amount,
         tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
-        line_total, sort_order
+        line_total, sort_order, unit_factor
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       `,
       [
         invoiceId,
@@ -606,6 +626,7 @@ export async function createInvoiceInTransaction(
         igst,
         lineTotal,
         i,
+        Number(item.unit_factor) || 1,
       ]
     );
 

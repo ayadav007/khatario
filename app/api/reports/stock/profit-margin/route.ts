@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
         item.code,
         item.purchase_price,
         item.selling_price,
-        COALESCE(SUM(ii.quantity) FILTER (WHERE i.status != 'cancelled'), 0) as total_sold_qty,
+        COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1)) FILTER (WHERE i.status != 'cancelled'), 0) as total_sold_qty,
         COALESCE(SUM(ii.line_total) FILTER (WHERE i.status != 'cancelled'), 0) as total_sales_value,
         COALESCE(AVG(ii.unit_price) FILTER (WHERE i.status != 'cancelled'), 0) as avg_selling_price,
         CASE 
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
         AND item.is_active = true
         ${dateFilter.replace(/i\.invoice_date/g, 'i.invoice_date')}
       GROUP BY item.id, item.name, item.code, item.purchase_price, item.selling_price
-      HAVING COALESCE(SUM(ii.quantity) FILTER (WHERE i.status != 'cancelled'), 0) > 0
+      HAVING COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1)) FILTER (WHERE i.status != 'cancelled'), 0) > 0
       ORDER BY margin_percent DESC
     `, queryParams);
 

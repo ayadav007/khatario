@@ -154,13 +154,14 @@ class InvoiceLineDraft {
     Object? warning = _keep,
     Object? scheme = _keep,
     Object? schemeOf = _keep,
+    String? unit,
   }) =>
       InvoiceLineDraft(
         itemId: itemId,
         name: name ?? this.name,
         quantity: quantity ?? this.quantity,
         unitPrice: unitPrice ?? this.unitPrice,
-        unit: unit,
+        unit: unit ?? this.unit,
         discountPercent: discountPercent ?? this.discountPercent,
         taxRate: taxRate,
         hsn: hsn,
@@ -287,6 +288,79 @@ List<InvoiceLineDraft> reconcileSchemeLines(List<InvoiceLineDraft> lines) {
     }
   }
   return out;
+}
+
+/// A unit a line can be sold in: the item's own unit (factor 1) or an alternate such as
+/// BOX = 12 PCS. The server works out the factor again when the bill is saved.
+class SaleUnitOption {
+  const SaleUnitOption({required this.unit, required this.factor, this.sellingPrice});
+
+  final String unit;
+
+  /// Base units in one of this unit.
+  final double factor;
+
+  /// The unit's own selling price (the item's price for its own unit), if it has one.
+  final double? sellingPrice;
+}
+
+/// The units of `itemId` from `GET /api/items/units?ids=…`: own unit first, then alternates.
+List<SaleUnitOption> saleUnitsFromJson(Map<String, dynamic> body, String itemId) {
+  final items = body['items'];
+  final item = items is Map ? items[itemId] : null;
+  if (item is! Map) return const [];
+  final own = SaleUnitOption(
+    unit: item['unit']?.toString() ?? 'PCS',
+    factor: 1,
+    sellingPrice: item['selling_price'] == null ? null : _asDouble(item['selling_price']),
+  );
+  final alts = item['units'] is List ? item['units'] as List : const [];
+  return [
+    own,
+    for (final u in alts.whereType<Map>())
+      SaleUnitOption(
+        unit: u['unit']?.toString() ?? '',
+        factor: _asDouble(u['factor_to_base']) > 0 ? _asDouble(u['factor_to_base']) : 1,
+        sellingPrice: u['selling_price'] == null ? null : _asDouble(u['selling_price']),
+      ),
+  ];
+}
+
+double saleUnitFactor(List<SaleUnitOption> units, String unit) {
+  for (final u in units) {
+    if (u.unit.toUpperCase() == unit.toUpperCase()) return u.factor;
+  }
+  return 1;
+}
+
+/// The line moved to `unit`: a box's own price if it has one, else the item's price × factor
+/// (a variant line, whose price is the variant's, scales by the change in factor).
+InvoiceLineDraft lineInSaleUnit(InvoiceLineDraft line, List<SaleUnitOption> units, String unit) {
+  SaleUnitOption? to;
+  for (final u in units) {
+    if (u.unit.toUpperCase() == unit.toUpperCase()) to = u;
+  }
+  if (to == null || units.isEmpty) return line;
+  final from = saleUnitFactor(units, line.unit);
+  final base = units.first.sellingPrice;
+  final double price;
+  if (to.factor != 1 && to.sellingPrice != null) {
+    price = to.sellingPrice!;
+  } else if (line.variantId == null && base != null) {
+    price = base * to.factor;
+  } else {
+    price = line.unitPrice / from * to.factor;
+  }
+  return line.copyWith(unit: to.unit, unitPrice: invoiceRound2(price));
+}
+
+/// "= 60 PCS" under a line sold in boxes; null for a line in the item's own unit.
+String? baseQtyNote(InvoiceLineDraft line, List<SaleUnitOption> units) {
+  final f = saleUnitFactor(units, line.unit);
+  if (f == 1 || units.isEmpty) return null;
+  final q = (line.quantity * f * 1000).round() / 1000;
+  final shown = q == q.roundToDouble() ? q.toInt().toString() : q.toString();
+  return '= $shown ${units.first.unit}';
 }
 
 /// A charge added on top of the items (delivery, packing, freight…). Like the website, the bill

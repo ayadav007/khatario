@@ -162,7 +162,7 @@ export async function salesByItem(ctx: SalesReportContext) {
     `WITH lines AS (
        SELECT COALESCE(ii.item_id::text, 'name:' || LOWER(TRIM(ii.item_name))) AS k,
               ii.item_id, ii.item_name AS line_name, ii.hsn_sac, ii.unit, i.id AS invoice_id,
-              CASE WHEN COALESCE(ii.charge_line, false) THEN 0 ELSE COALESCE(ii.quantity, 0) END AS qty_in,
+              CASE WHEN COALESCE(ii.charge_line, false) THEN 0 ELSE COALESCE(ii.quantity, 0) * COALESCE(ii.unit_factor, 1) END AS qty_in,
               0::numeric AS qty_out,
               COALESCE(ii.taxable_value, 0) AS amount, COALESCE(ii.tax_amount, 0) AS tax,
               COALESCE(ii.discount_amount, 0) AS discount
@@ -172,7 +172,7 @@ export async function salesByItem(ctx: SalesReportContext) {
        UNION ALL
        SELECT COALESCE(cni.item_id::text, 'name:' || LOWER(TRIM(cni.description))),
               cni.item_id, cni.description, cni.hsn_sac, cni.unit, NULL,
-              0, COALESCE(cni.qty, 0),
+              0, COALESCE(cni.qty, 0) * COALESCE(cni.unit_factor, 1),
               -(COALESCE(cni.line_total, 0) - COALESCE(cni.tax_amount, 0)), -COALESCE(cni.tax_amount, 0),
               0
          FROM credit_note_items cni

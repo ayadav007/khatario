@@ -94,7 +94,7 @@ export async function dispatchReturnableChallan(
   const godown = await resolveGodown(client, businessId, { warehouseId: c.warehouse_id, branchId: c.branch_id });
 
   const lines = await client.query<{ item_id: string; qty: string; item_name: string }>(
-    `SELECT dci.item_id, SUM(dci.qty)::text AS qty, MAX(dci.item_name) AS item_name
+    `SELECT dci.item_id, SUM(dci.qty * COALESCE(dci.unit_factor, 1))::text AS qty, MAX(dci.item_name) AS item_name
        FROM delivery_challan_items dci
        JOIN items i ON i.id = dci.item_id AND i.business_id = $2
       WHERE dci.delivery_challan_id = $1 AND dci.item_id IS NOT NULL AND dci.qty > 0
@@ -179,8 +179,9 @@ export async function settleReturnableChallan(
     qty_returned: string;
     qty_invoiced: string;
     qty_written_off: string;
+    unit_factor: string;
   }>(
-    `SELECT id, item_id, item_name, qty, qty_returned, qty_invoiced, qty_written_off
+    `SELECT id, item_id, item_name, qty, qty_returned, qty_invoiced, qty_written_off, unit_factor
        FROM delivery_challan_items WHERE delivery_challan_id = $1 AND item_id IS NOT NULL FOR UPDATE`,
     [c.id]
   );
@@ -202,7 +203,9 @@ export async function settleReturnableChallan(
       throw new GodownStockError(`${line.item_name}: only ${open} is still out on this challan.`, 409);
     }
 
-    await changeGodownStock(client, businessId, godown, line.item_id, total);
+    // Counters stay in the challan's unit (boxes); stock comes back in base units.
+    const factor = Number(line.unit_factor) || 1;
+    await changeGodownStock(client, businessId, godown, line.item_id, q3(total * factor));
     const parts = [
       returned ? `${returned} returned` : '',
       invoiced ? `${invoiced} sold to holder` : '',
@@ -211,7 +214,7 @@ export async function settleReturnableChallan(
     await insertCustodyMovement(client, c, godown, {
       itemId: line.item_id,
       type: 'in',
-      qty: total,
+      qty: q3(total * factor),
       note: `Challan ${c.challan_number}: ${parts.join(', ')}`,
       userId,
     });
@@ -224,7 +227,7 @@ export async function settleReturnableChallan(
         locationId: godown.warehouseId,
         branchId: godown.branchId,
         direction: 'DECREASE',
-        quantity: writtenOff,
+        quantity: q3(writtenOff * factor),
         reasonCode: reason,
         reasonNotes: `Lost while out on challan ${c.challan_number}${input.notes ? `: ${input.notes}` : ''}`,
         adjustmentDate: input.date,

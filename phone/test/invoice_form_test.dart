@@ -136,4 +136,30 @@ void main() {
     expect(v.price, 949);
     expect(matchScannedItem(items, '999'), isNull);
   });
+
+  test('a line moved to a box takes the box price, or the item price × factor, and back', () {
+    final units = saleUnitsFromJson({
+      'items': {
+        'soap': {
+          'unit': 'PCS',
+          'selling_price': 10,
+          'units': [
+            {'unit': 'BOX', 'factor_to_base': 12, 'selling_price': null},
+            {'unit': 'CASE', 'factor_to_base': 48, 'selling_price': 450},
+          ],
+        },
+      },
+    }, 'soap');
+    expect(units.map((u) => u.unit), ['PCS', 'BOX', 'CASE']);
+    const line = InvoiceLineDraft(itemId: 'soap', name: 'Soap', quantity: 5, unitPrice: 10, unit: 'PCS');
+    final box = lineInSaleUnit(line, units, 'box');
+    expect(box.unit, 'BOX');
+    expect(box.unitPrice, 120);
+    expect(baseQtyNote(box, units), '= 60 PCS');
+    expect(lineInSaleUnit(box, units, 'CASE').unitPrice, 450);
+    final back = lineInSaleUnit(lineInSaleUnit(box, units, 'CASE'), units, 'PCS');
+    expect(back.unitPrice, 10);
+    expect(baseQtyNote(back, units), isNull);
+    expect(invoiceCreateBody(InvoiceDraft(invoiceDate: '2026-10-20', status: 'final', lines: [box]))['items'][0]['unit'], 'BOX');
+  });
 }

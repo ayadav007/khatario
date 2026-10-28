@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
+import { baseQtyLabel, withSaleUnit, type SaleUnitOption } from '@/lib/invoices/use-item-units';
 
 // InvoiceItemRow interface (matching parent definition)
 interface InvoiceItemRow {
@@ -31,6 +33,9 @@ interface InvoiceItemRow {
   priceUserOverride?: boolean;
   code?: string;
   mrp?: number;
+  costPrice?: number | null;
+  /** Units the item sells in (own unit first), once loaded. */
+  units?: SaleUnitOption[];
   /** Where the price came from and the last rate this customer paid. */
   priceNote?: string;
   /** Shown in red, e.g. a price below the purchase price. */
@@ -86,6 +91,8 @@ interface ItemsTableProps {
   recalculateRow?: (row: InvoiceItemRow, skipDiscountRecalc?: boolean) => InvoiceItemRow;
   onReplaceRow?: (index: number, row: InvoiceItemRow) => void;
   onDuplicateRow?: (index: number) => void;
+  /** Sell the line in another of the item's units (BOX = 12 PCS). */
+  onChangeUnit?: (index: number, unit: string) => void;
   /** Hide built-in Items header / Add item when the parent composer owns them. */
   hideChrome?: boolean;
   onClearAllRows?: () => void;
@@ -110,6 +117,7 @@ const ItemsTable = React.memo(function ItemsTable({
   recalculateRow,
   onReplaceRow,
   onDuplicateRow,
+  onChangeUnit,
   hideChrome = false,
   onClearAllRows,
 }: ItemsTableProps) {
@@ -291,7 +299,9 @@ const ItemsTable = React.memo(function ItemsTable({
                   </p>
                   <p className="truncate text-[11px] leading-tight text-text-secondary">
                     ₹{Number(row.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {row.units && row.units.length > 1 ? ` / ${unit}` : ''}
                     {documentType !== 'bill_of_supply' ? ` · GST ${Number(row.taxPercent) || 0}%` : ''}
+                    {baseQtyLabel(row) ? ` · ${baseQtyLabel(row)}` : ''}
                   </p>
                   {row.priceWarning ? <p className="truncate text-[10px] font-semibold text-red-600">{row.priceWarning}</p> : null}
                 </button>
@@ -420,7 +430,21 @@ const ItemsTable = React.memo(function ItemsTable({
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-text-secondary uppercase">Unit</label>
-                    <input value={editDraft.unit || 'PCS'} readOnly className={`${tableFieldBase} mt-1 bg-gray-50`} />
+                    {editDraft.units && editDraft.units.length > 1 && !isFinal && recalculateRow ? (
+                      <SaleUnitSelect
+                        unit={editDraft.unit || 'PCS'}
+                        units={editDraft.units}
+                        className={`${tableFieldBase} mt-1 h-auto`}
+                        onChange={(unit) =>
+                          setEditDraft((prev) => (prev ? recalculateRow(withSaleUnit(prev, unit)) : prev))
+                        }
+                      />
+                    ) : (
+                      <input value={editDraft.unit || 'PCS'} readOnly className={`${tableFieldBase} mt-1 bg-gray-50`} />
+                    )}
+                    {baseQtyLabel(editDraft) ? (
+                      <p className="mt-0.5 text-[11px] text-text-muted">{baseQtyLabel(editDraft)}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -836,8 +860,15 @@ const ItemsTable = React.memo(function ItemsTable({
                     data-pos-row={i}
                     data-pos-field="quantity"
                 />
-                {posMode && row.unit ? (
+                {row.units && row.units.length > 1 && onChangeUnit ? (
+                  <div className="mt-0.5 flex justify-center">
+                    <SaleUnitSelect unit={row.unit} units={row.units} disabled={isFinal} onChange={(unit) => onChangeUnit(i, unit)} />
+                  </div>
+                ) : posMode && row.unit ? (
                   <div className="mt-0.5 text-center text-[10px] uppercase text-text-muted">{row.unit}</div>
+                ) : null}
+                {baseQtyLabel(row) ? (
+                  <div className="mt-0.5 text-center text-[10px] text-text-muted">{baseQtyLabel(row)}</div>
                 ) : null}
               </td>
               <td className="px-2 py-2.5 align-middle">

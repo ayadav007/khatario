@@ -209,6 +209,7 @@ export async function POST(
         hsn_sac: row.hsn_sac,
         quantity,
         unit: row.unit,
+        unit_factor: row.unit_factor,
         unit_price: row.unit_price,
         discount_percent: row.discount_percent,
         tax_rate: row.tax_rate,
@@ -228,7 +229,8 @@ export async function POST(
         salesOrderId,
         itemId: row.item_id,
         variantId: row.variant_id,
-        quantity,
+        // Reservations are held in base units; the order line may be in boxes.
+        quantity: quantity * (Number(row.unit_factor) || 1),
         userId,
       });
     }

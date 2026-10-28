@@ -66,6 +66,8 @@ export type ReturnableLine = {
   variant_id: string | null;
   item_name: string;
   unit: string | null;
+  /** Base units in one `unit`, as sold. Return quantities stay in the sold unit. */
+  unit_factor: number;
   sold_qty: number;
   returnable_qty: number;
   unit_price: number;
@@ -86,6 +88,7 @@ export async function returnableLines(
     item_name: string | null;
     description: string | null;
     unit: string | null;
+    unit_factor: string | null;
     quantity: string;
     taxable_value: string | null;
     unit_price: string | null;
@@ -93,7 +96,7 @@ export async function returnableLines(
     tax_rate: string | null;
     in_returns: string;
   }>(
-    `SELECT ii.id, ii.item_id, ii.variant_id, ii.item_name, ii.description, ii.unit,
+    `SELECT ii.id, ii.item_id, ii.variant_id, ii.item_name, ii.description, ii.unit, ii.unit_factor::text,
             ii.quantity::text, ii.taxable_value::text, ii.unit_price::text, ii.discount_amount::text, ii.tax_rate::text,
             COALESCE((
               SELECT SUM(COALESCE(ri.received_qty, ri.quantity))
@@ -122,6 +125,7 @@ export async function returnableLines(
       variant_id: r.variant_id,
       item_name: r.item_name || r.description || 'Item',
       unit: r.unit,
+      unit_factor: Number(r.unit_factor) || 1,
       sold_qty: qty,
       returnable_qty: Math.max(0, qty - (Number(r.in_returns) || 0)),
       unit_price: qty > 0 ? Math.round((taxable / qty) * 10000) / 10000 : 0,
@@ -274,9 +278,9 @@ export async function createReturn(client: PoolClient, input: CreateReturnInput)
   for (const { line, qty } of wanted) {
     await client.query(
       `INSERT INTO order_return_items
-         (return_id, invoice_item_id, item_id, variant_id, item_name, unit, quantity, unit_price, tax_rate, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [returnId, line.invoice_item_id, line.item_id, line.variant_id, line.item_name, line.unit, qty, line.unit_price, line.tax_rate, i++],
+         (return_id, invoice_item_id, item_id, variant_id, item_name, unit, quantity, unit_price, tax_rate, sort_order, unit_factor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [returnId, line.invoice_item_id, line.item_id, line.variant_id, line.item_name, line.unit, qty, line.unit_price, line.tax_rate, i++, line.unit_factor],
     );
   }
   return returnId;

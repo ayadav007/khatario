@@ -1,5 +1,6 @@
 import type { InvoiceItemRow } from '@/lib/invoice-engine/calculateRow';
 import type { PartyPricedRow } from '@/lib/invoices/party-price';
+import type { SaleUnitOption } from '@/lib/invoices/use-item-units';
 
 export type ComposerDocType = 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply';
 
@@ -21,6 +22,8 @@ export type ComposerRow = InvoiceItemRow &
   > & {
   code?: string;
   mrp?: number;
+  /** Units the item sells in (own unit first), once loaded. */
+  units?: SaleUnitOption[];
   /** Where the price came from and the last rate this customer paid. */
   priceNote?: string;
   /** Shown in red, e.g. a price below the purchase price. */

@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
               0
             )
           END AS line_revenue,
-          COALESCE(ii.quantity, 0)::numeric * COALESCE(
+          COALESCE(ii.quantity, 0)::numeric * COALESCE(ii.unit_factor, 1)::numeric * COALESCE(
             iv.purchase_price,
             i.purchase_price,
             iv_parent.purchase_price,

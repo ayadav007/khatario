@@ -250,10 +250,21 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       }
     }
 
+    // A line sold in boxes says how many pieces that is: "= 60 PCS" under the item.
+    const unitFactor = Number(item.unit_factor) || 1;
+    const baseUnit = item.item_base_unit || null;
+    const baseQtyNote =
+      unitFactor !== 1 && !item.charge_line
+        ? `= ${Number((qty * unitFactor).toFixed(3)).toLocaleString('en-IN')} ${baseUnit || ''}`.trim()
+        : '';
+    const description = translatePrintedItemName(documentLanguage, item.description || '');
+
     return {
       index: index + 1,
       item_name: translatePrintedItemName(documentLanguage, item.item_name || ''),
-      description: translatePrintedItemName(documentLanguage, item.description || ''),
+      description: [description, baseQtyNote].filter(Boolean).join(' · '),
+      unit_factor: unitFactor,
+      base_qty_note: baseQtyNote,
       hsn_sac: item.hsn_sac || '',
       quantity: qty,
       charge_line: item.charge_line === true,

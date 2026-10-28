@@ -928,7 +928,7 @@ export async function createInvoiceLedgerEntries(params: {
   if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
     const lines = await ledgerQueryRows<{ item_id: string | null; quantity: string }>(
       poolClient,
-      'SELECT item_id, quantity FROM invoice_items WHERE invoice_id = $1',
+      'SELECT item_id, quantity * COALESCE(unit_factor, 1) AS quantity FROM invoice_items WHERE invoice_id = $1',
       [invoiceId]
     );
     await postPerpetualGoodsCost(poolClient, {
@@ -1809,7 +1809,7 @@ export async function createCreditNoteLedgerEntries(params: {
     const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
       poolClient,
       // Damaged returns (restocked = false) are written off: no stock, so no cost comes back.
-      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
+      'SELECT item_id, qty * COALESCE(unit_factor, 1) AS qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
       [creditNoteId]
     );
     const [origin] = await ledgerQueryRows<{ invoice_date: string | Date; branch_id: string | null }>(
