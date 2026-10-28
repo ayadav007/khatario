@@ -31,6 +31,20 @@ interface InvoiceItemRow {
   priceUserOverride?: boolean;
   code?: string;
   mrp?: number;
+  /** Where the price came from and the last rate this customer paid. */
+  priceNote?: string;
+  /** Shown in red, e.g. a price below the purchase price. */
+  priceWarning?: string;
+}
+
+function PriceHints({ row }: { row: InvoiceItemRow }) {
+  if (!row.priceNote && !row.priceWarning) return null;
+  return (
+    <div className="mt-0.5 space-y-0.5 text-right text-[10px] leading-tight">
+      {row.priceWarning ? <div className="font-semibold text-red-600">{row.priceWarning}</div> : null}
+      {row.priceNote ? <div className="text-text-muted">{row.priceNote}</div> : null}
+    </div>
+  );
 }
 
 interface ItemsTableProps {
@@ -279,6 +293,7 @@ const ItemsTable = React.memo(function ItemsTable({
                     ₹{Number(row.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     {documentType !== 'bill_of_supply' ? ` · GST ${Number(row.taxPercent) || 0}%` : ''}
                   </p>
+                  {row.priceWarning ? <p className="truncate text-[10px] font-semibold text-red-600">{row.priceWarning}</p> : null}
                 </button>
                 {!isFinal ? (
                   <div className="ml-3 flex shrink-0 items-center gap-0.5">
@@ -556,6 +571,7 @@ const ItemsTable = React.memo(function ItemsTable({
                       className="w-full border border-border rounded px-2 py-1.5 text-sm text-right bg-surface text-text-primary"
                       disabled={isFinal}
                     />
+                    <PriceHints row={row} />
                   </div>
                   <div>
                     <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Disc %</label>
@@ -836,6 +852,7 @@ const ItemsTable = React.memo(function ItemsTable({
                   data-pos-row={i}
                   data-pos-field="price"
                 />
+                {!posMode ? <PriceHints row={row} /> : null}
               </td>
               {posMode && (
                 <td className="px-2 py-2.5 align-middle">

@@ -42,6 +42,7 @@ const routeMetadata: Record<string, { label: string; parent?: string }> = {
   '/reports/deleted': { label: 'Deleted items', parent: '/reports' },
   '/pricing': { label: 'Pricing', parent: '/dashboard' },
   '/pricing/party-item': { label: 'Party item prices', parent: '/pricing' },
+  '/pricing/levels': { label: 'Price levels', parent: '/pricing' },
   '/settings': { label: 'Settings' },
   '/employees': { label: 'Employees' },
   '/employees/new': { label: 'Add Employee', parent: '/employees' },

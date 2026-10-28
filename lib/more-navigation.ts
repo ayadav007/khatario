@@ -177,6 +177,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const invItems: MoreNavItem[] = [
     { href: '/items', label: 'Items', module: 'items' },
     { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+    { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
   ];
   if (hasFeature(hasCapability, 'barcode_label_printing')) {
     invItems.push({
@@ -219,6 +220,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       [
         { href: '/items', label: 'Items', module: 'items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+        { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
       ],
       ctx
     );

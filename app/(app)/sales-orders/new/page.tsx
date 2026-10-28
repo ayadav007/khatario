@@ -25,6 +25,7 @@ import {
 } from '@/lib/invoice-engine';
 import type { ComposerCharge, ComposerRow, PickerItem } from '@/components/invoices/composer/types';
 import type { Customer } from '@/types/database';
+import { usePartyPricing } from '@/lib/invoices/use-party-pricing';
 
 const CLASSIC_DESKTOP_FORM_KEY = 'salesOrderClassicDesktop';
 
@@ -208,9 +209,19 @@ export default function NewSalesOrderPage() {
     return !!b && !!p && b === p;
   }, [business?.state, business?.state_code, placeOfSupply]);
 
+  // Customer price, price level, discounts and last rate, as on the invoice.
+  const pricedRows = usePartyPricing({
+    rows,
+    setRows,
+    customerId,
+    date: orderDate,
+    pricesIncludeGst,
+    recalc: (r) => ({ ...r, ...calculateRow(r, rowContext, false) }),
+  });
+
   const recalculatedRows = useMemo(
-    () => rows.map((r) => calculateRow(r, rowContext, true)),
-    [rows, rowContext]
+    () => pricedRows.map((r) => ({ ...r, ...calculateRow(r, rowContext, true) })),
+    [pricedRows, rowContext]
   );
 
   const engineTotals = useMemo(() => {
@@ -333,6 +344,7 @@ export default function NewSalesOrderPage() {
                   quantity: Number(i.qty || 1),
                   unit: String(i.unit || 'PCS'),
                   price: Number(i.unit_price || 0),
+                  priceUserOverride: true,
                   discountPercent: Number(i.discount_percent || 0),
                   discountAmount: Number(i.discount_amount || 0),
                   taxPercent: Number(i.tax_rate || 0),
@@ -438,6 +450,7 @@ export default function NewSalesOrderPage() {
                     quantity: Number(i.quantity || 1),
                     unit: String(i.unit || 'PCS'),
                     price: Number(i.unit_price || 0),
+                    priceUserOverride: true,
                     discountPercent: Number(i.discount_percent || 0),
                     discountAmount: 0,
                     taxPercent: Number(i.tax_rate || 0),
@@ -496,7 +509,8 @@ export default function NewSalesOrderPage() {
     (index: number, patch: Partial<ComposerRow>, skipDiscountRecalc = false) => {
       setRows((prev) => {
         const next = [...prev];
-        const merged = { ...next[index], ...patch } as InvoiceItemRow;
+        const handDiscount = 'discountPercent' in patch || 'discountAmount' in patch ? { discountUserOverride: true } : {};
+        const merged = { ...next[index], ...patch, ...handDiscount } as InvoiceItemRow;
         next[index] = calculateRow(merged, rowContext, skipDiscountRecalc);
         return next;
       });
@@ -941,6 +955,10 @@ export default function NewSalesOrderPage() {
                         price: Number(item.selling_price || 0),
                         taxPercent: Number(item.tax_rate || 0),
                         unit: item.unit || 'PCS',
+                        variantId: undefined,
+                        gstIncluded: undefined,
+                        priceUserOverride: false,
+                        discountUserOverride: false,
                       })
                     }
                     disabled={readOnly}
@@ -960,7 +978,7 @@ export default function NewSalesOrderPage() {
                   <Input
                     type="number"
                     value={row.price}
-                    onChange={(e) => patchRow(index, { price: Number(e.target.value) || 0 })}
+                    onChange={(e) => patchRow(index, { price: Number(e.target.value) || 0, priceUserOverride: true })}
                     disabled={readOnly}
                   />
                 </div>

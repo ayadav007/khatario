@@ -15,6 +15,7 @@
  */
 
 import type { PoolClient } from 'pg';
+import { BUYER_PRICE_JOIN } from '@/lib/pricing/buyer-price-sql';
 import { execFor, type Exec } from './supplier-hub-links';
 import { saveItemLink } from './supplier-item-links';
 import { queueHubWhatsApp } from './supplier-hub-whatsapp';
@@ -339,8 +340,7 @@ export async function prepareLines(
           `SELECT i.name, l.id AS listing_id, l.display_name, l.is_active AS listed, l.audience, l.moq, l.order_multiple,
                   l.price, bp.price AS buyer_price
              FROM items i
-             LEFT JOIN supplier_buyer_prices bp
-               ON bp.vendor_business_id = i.business_id AND bp.buyer_business_id = $3 AND bp.item_id = i.id
+             ${BUYER_PRICE_JOIN('i.business_id', '$3::uuid', 'i.id')}
              LEFT JOIN supplier_published_listings l ON l.item_id = i.id AND l.supplier_business_id = i.business_id
             WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
           [vendorItemId, vendor, buyer]
@@ -520,9 +520,7 @@ export const BUYER_LINE_PRICE_SQL = `COALESCE(l.unit_price, bp.price, pl.price, 
 export const LISTING_FOR_LINE_SQL = (vendorParam: string, buyerParam?: string) =>
   `LEFT JOIN supplier_published_listings pl
      ON pl.supplier_business_id = ${vendorParam} AND pl.item_id = l.vendor_item_id AND pl.is_active = true
-   LEFT JOIN supplier_buyer_prices bp
-     ON bp.vendor_business_id = ${vendorParam} AND bp.item_id = l.vendor_item_id
-    AND bp.buyer_business_id = ${buyerParam ?? `(SELECT buyer_business_id FROM supply_orders so WHERE so.id = l.order_id)`}`;
+   ${BUYER_PRICE_JOIN(vendorParam, buyerParam ?? `(SELECT buyer_business_id FROM supply_orders so WHERE so.id = l.order_id)`, 'l.vendor_item_id')}`;
 
 const STATUS_GROUPS: Record<string, SupplyOrderStatus[]> = {
   open: OPEN_STATUSES,
@@ -1013,8 +1011,7 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
          FROM supply_order_lines l
          LEFT JOIN items i ON i.id = l.vendor_item_id AND i.business_id = $2
          LEFT JOIN item_variants bv ON bv.id = l.buyer_variant_id
-         LEFT JOIN supplier_buyer_prices bp
-           ON bp.vendor_business_id = $2 AND bp.buyer_business_id = $3 AND bp.item_id = l.vendor_item_id
+         ${BUYER_PRICE_JOIN('$2::uuid', '$3::uuid', 'l.vendor_item_id')}
         WHERE l.order_id = $1 AND COALESCE(l.confirmed_qty, l.qty) > 0
         ORDER BY l.sort_order`,
       [orderId, vendorBusinessId, order.buyer_business_id]

@@ -599,6 +599,7 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/items', label: 'Items', module: 'items', tourId: 'nav-items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+        { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
         {
           href: '/items/barcodes',
           label: 'Print Labels',

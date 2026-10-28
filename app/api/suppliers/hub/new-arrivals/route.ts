@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { BUYER_PRICE_JOIN } from '@/lib/pricing/buyer-price-sql';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
@@ -16,8 +17,7 @@ const LISTING_SQL = `
          ${LISTING_OPTIONS_SQL} AS options
   FROM supplier_published_listings l
   JOIN items i ON i.id = l.item_id AND i.business_id = l.supplier_business_id AND i.deleted_at IS NULL
-  LEFT JOIN supplier_buyer_prices bp
-    ON bp.vendor_business_id = l.supplier_business_id AND bp.buyer_business_id = $1 AND bp.item_id = l.item_id
+  ${BUYER_PRICE_JOIN('l.supplier_business_id', '$1::uuid', 'l.item_id')}
   LEFT JOIN supplier_item_links sil
     ON sil.vendor_item_id = l.item_id AND sil.vendor_business_id = l.supplier_business_id AND sil.buyer_business_id = $1
   LEFT JOIN items bi ON bi.id = sil.buyer_item_id AND bi.deleted_at IS NULL

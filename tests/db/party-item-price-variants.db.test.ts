@@ -144,9 +144,10 @@ d('party item prices per variant (real DB)', () => {
 
     const res = await GET(new NextRequest(`http://localhost/api/pricing/party-item?party_id=${CUSTOMER}`, { headers }));
     const body = await res.json();
+    const none = { discount_percent: null, valid_from: null, valid_to: null };
     expect(body.overrides).toEqual([
-      { item_id: ITEM, variant_id: null, price: 100 },
-      { item_id: ITEM, variant_id: RED, price: 95 },
+      { item_id: ITEM, variant_id: null, price: 100, ...none },
+      { item_id: ITEM, variant_id: RED, price: 95, ...none },
     ]);
     expect(body.variants.map((v: { id: string }) => v.id).sort()).toEqual([RED, BLUE, OTHER_VARIANT].sort());
   });

@@ -28,7 +28,8 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
-import { partyPricePatch, storedPriceToBillUnit } from '@/lib/invoices/party-price';
+import { storedPriceToBillUnit, type LastRateInfo } from '@/lib/invoices/party-price';
+import { usePartyPricing } from '@/lib/invoices/use-party-pricing';
 import { useToastContext } from '@/contexts/ToastContext';
 import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
@@ -260,8 +261,21 @@ interface InvoiceItemRow {
   mrp?: number;
   /** Item selling price as stored in the catalog (item's own GST basis). */
   catalogPrice?: number;
-  /** True while `price` is the selected customer's party price. */
+  /** True while `price` is the selected customer's party price or price level rate. */
   partyPriceApplied?: boolean;
+  /** Discount % typed by hand: pricing rules never replace it. */
+  discountUserOverride?: boolean;
+  /** True while `discountPercent` came from a customer or level discount. */
+  pricingDiscountApplied?: boolean;
+  priceSource?: 'party' | 'level' | 'catalog';
+  levelName?: string | null;
+  /** Purchase price (pre-GST), for the below-cost warning. */
+  costPrice?: number | null;
+  /** Last rate charged to this customer for the item. */
+  lastSale?: LastRateInfo | null;
+  /** Display only (added by usePartyPricing, never kept in state). */
+  priceNote?: string;
+  priceWarning?: string;
 }
 
 const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => (
@@ -415,7 +429,6 @@ function NewInvoiceContent() {
   rowsRef.current = rows;
   const customerIdRef = useRef(customerId);
   customerIdRef.current = customerId;
-  const partyPriceCacheRef = useRef<Map<string, number | null>>(new Map());
   const [notes, setNotes] = useState('');
   const [extraCharges, setExtraCharges] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -909,108 +922,15 @@ function NewInvoiceContent() {
     setRows((prev) => prev.map((r) => calculateRow(r, true)));
   }, [pricesIncludeGst, calculateRow]);
 
-  const fetchPartyPriceCached = useCallback(async (partyId: string, itemId: string, variantId?: string): Promise<number | null> => {
-    const cache = partyPriceCacheRef.current;
-    const key = `${partyId}:${itemId}:${variantId ?? ''}`;
-    if (cache.has(key)) return cache.get(key)!;
-    try {
-      const variantQs = variantId ? `&variant_id=${encodeURIComponent(variantId)}` : '';
-      const res = await fetch(
-        `/api/pricing/party-item?party_id=${encodeURIComponent(partyId)}&item_id=${encodeURIComponent(itemId)}${variantQs}`,
-        { credentials: 'include' }
-      );
-      if (!res.ok) {
-        return null;
-      }
-      const data = await res.json();
-      const raw = data?.price;
-      if (raw == null || raw === '') {
-        cache.set(key, null);
-        return null;
-      }
-      const n = typeof raw === 'number' ? raw : Number(raw);
-      const resolved = Number.isFinite(n) ? n : null;
-      cache.set(key, resolved);
-      return resolved;
-    } catch (e) {
-      console.warn('[invoice] Party price lookup failed:', e);
-      return null;
-    }
-  }, []);
-
-  const rowsPartyTriggerKey = useMemo(
-    () =>
-      rows
-        .map((r, i) =>
-          r.itemId
-            ? `${i}:${r.itemId}:${r.variantId ?? ''}:${r.priceUserOverride ? '1' : '0'}`
-            : ''
-        )
-        .filter(Boolean)
-        .join('|'),
-    [rows]
-  );
-
-  /**
-   * When customer + line identity changes, fetch party overrides (cached); skip manual edits and finalized/loaded invoice lines.
-   * A line priced for a previous customer goes back to the catalog price when the new customer (or no customer) has none.
-   */
-  useEffect(() => {
-    if (isFinal || isInvoiceLocked) return;
-
-    let cancelled = false;
-    const custAtStart = customerId;
-
-    (async () => {
-      const snapshot = rowsRef.current;
-      const pairs = snapshot
-        .map((row, idx) => ({ row, idx }))
-        .filter(({ row }) => !!row.itemId && !row.priceUserOverride && (!!custAtStart || row.partyPriceApplied));
-
-      if (pairs.length === 0) return;
-
-      const fetched = await Promise.all(
-        pairs.map(async ({ row, idx }) => {
-          const pp = custAtStart ? await fetchPartyPriceCached(custAtStart, row.itemId, row.variantId) : null;
-          return { idx, pp, itemId: row.itemId, variantId: row.variantId ?? '' };
-        })
-      );
-
-      if (cancelled || custAtStart !== customerIdRef.current) return;
-
-      setRows((prev) => {
-        let next = prev;
-        let changed = false;
-
-        for (const { idx, pp, itemId, variantId } of fetched) {
-          const current = prev[idx];
-          if (!current || String(current.itemId) !== itemId || (current.variantId ?? '') !== variantId) continue;
-
-          const patch = partyPricePatch(current, pp, pricesIncludeGst);
-          if (!patch) continue;
-
-          const updated = calculateRow({ ...current, ...patch });
-          if (!changed) next = [...prev];
-          changed = true;
-          next[idx] = updated;
-        }
-
-        return changed ? next : prev;
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
+  const displayRows = usePartyPricing({
+    rows,
+    setRows,
     customerId,
-    rowsPartyTriggerKey,
-    fetchPartyPriceCached,
-    calculateRow,
+    date: invoiceDate,
     pricesIncludeGst,
-    isFinal,
-    isInvoiceLocked,
-  ]);
+    recalc: (r) => calculateRow(r),
+    disabled: isFinal || isInvoiceLocked,
+  });
 
   const handleItemSelect = useCallback((item: any, rowIndex?: number) => {
     const variantId = item.variantId, variantName = item.variantName, itemId = item.id, itemIdStr = String(itemId || ''), variantIdStr = variantId ? String(variantId) : null;
@@ -1057,7 +977,7 @@ function NewInvoiceContent() {
         if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
         else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
       }
-      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, catalogPrice: Number(item.selling_price), code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
+      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, catalogPrice: Number(item.selling_price), costPrice: item.purchase_price != null ? Number(item.purchase_price) : null, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
       if (posMode) {
@@ -3257,7 +3177,12 @@ function NewInvoiceContent() {
   // Helper functions
   const updateRow = (index: number, field: keyof InvoiceItemRow, value: any) => {
     const nr = [...rows];
-    const pricePatch = field === 'price' ? { priceUserOverride: true as const } : {};
+    const pricePatch =
+      field === 'price'
+        ? { priceUserOverride: true as const }
+        : field === 'discountPercent' || field === 'discountAmount'
+          ? { discountUserOverride: true as const }
+          : {};
     nr[index] = { ...nr[index], [field]: value, ...pricePatch };
     if (['quantity', 'price', 'discountPercent', 'taxPercent'].includes(field)) nr[index] = calculateRow(nr[index], false);
     else if (field === 'discountAmount') nr[index] = calculateRow(nr[index], true);
@@ -3542,7 +3467,7 @@ function NewInvoiceContent() {
           <p className="mt-2 text-xs text-text-secondary">The customer needs an SEZ GSTIN. IGST applies even when the SEZ is in your state.</p>
         </div>
       )}
-      <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
+      <ItemsTable rows={displayRows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
@@ -3600,7 +3525,8 @@ function NewInvoiceContent() {
     setRows((prev) => {
       if (!prev[index]) return prev;
       const next = [...prev];
-      next[index] = calculateRow({ ...prev[index], ...patch } as InvoiceItemRow, skipDiscountRecalc);
+      const handDiscount = 'discountPercent' in patch || 'discountAmount' in patch ? { discountUserOverride: true } : {};
+      next[index] = calculateRow({ ...prev[index], ...patch, ...handDiscount } as InvoiceItemRow, skipDiscountRecalc);
       return next;
     });
   };
@@ -3798,7 +3724,7 @@ function NewInvoiceContent() {
           ) : null
         }
         customFieldsRequired={invoiceCustomFieldDefs.some((d) => d.is_required)}
-        rows={rows}
+        rows={displayRows}
         patchRow={patchComposerRow}
         removeRow={(idx) => setRows((prev) => prev.filter((_, i) => i !== idx))}
         onApplyPicked={handleMobilePickerApply}
@@ -4036,7 +3962,7 @@ function NewInvoiceContent() {
           </div>
         </div>
         <ItemsTable
-          rows={rows}
+          rows={displayRows}
           onUpdateRow={updateRow}
           onItemSelect={handleItemSelect}
           onAddRow={() => setShowMobileItemPicker(true)}

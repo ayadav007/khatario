@@ -111,6 +111,10 @@ interface PurchaseItem {
    * Used to show "Replace with catalogue item" only in that flow.
    */
   fromBillExtract?: boolean;
+  /** Rate still the item's purchase price from the catalogue: the supplier's last rate may replace it. */
+  rate_from_catalog?: boolean;
+  /** The last rate paid to this supplier for the item. */
+  supplier_rate_note?: string;
 }
 
 /** Snapshot after "Fill Purchase Form" for debugging extractor → form mapping. */
@@ -154,6 +158,7 @@ function purchaseLineFromCatalogPick(raw: Record<string, unknown>): PurchaseItem
     quantity: roundRetailQty(1),
     unit: String(raw.unit || (itemType === 'service' ? 'NOS' : 'pcs')),
     unit_price: roundExclusiveUnitPrice(Number(raw.purchase_price) || 0),
+    rate_from_catalog: true,
     tax_rate: round2(Number(raw.tax_rate) || 0),
     discount_percent: 0,
     discount_amount: 0,
@@ -1073,6 +1078,64 @@ export default function NewPurchasePage() {
     );
   }
 
+  // The last rate paid to the selected supplier for each item: shown under the rate, and used in
+  // place of the catalogue purchase price on lines nobody has typed a rate into.
+  const supplierRateKey = purchaseItems
+    .map((i) => (i.item_id ? `${i.id}:${i.item_id}:${i.rate_from_catalog ? 1 : 0}` : ''))
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const supplierId = formData.supplier_id;
+    const itemIds = [...new Set(purchaseItems.map((i) => i.item_id).filter(Boolean))];
+    if (itemIds.length === 0) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      let rates: Record<string, { exclusivePrice: number; discountPercent: number; date: string; documentNumber: string | null }> = {};
+      if (supplierId) {
+        try {
+          const res = await fetch('/api/pricing/supplier-rates', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ supplier_id: supplierId, item_ids: itemIds }),
+          });
+          if (!res.ok) return;
+          rates = (await res.json()).rates || {};
+        } catch {
+          return;
+        }
+      }
+      if (cancelled) return;
+      setPurchaseItems((prev) => {
+        let changed = false;
+        const next = prev.map((i) => {
+          const r = i.item_id ? rates[i.item_id] : undefined;
+          const note = r
+            ? `Last from this supplier ₹${r.exclusivePrice.toFixed(2)}${r.discountPercent > 0 ? ` −${r.discountPercent}%` : ''} + GST on ${r.date}${r.documentNumber ? ` (${r.documentNumber})` : ''}`
+            : undefined;
+          let unitPrice = i.unit_price;
+          if (r && i.rate_from_catalog) {
+            const rate = Number(i.tax_rate) || 0;
+            const inclusive = (i.tax_mode ?? formData.price_mode) === 'inclusive';
+            unitPrice = roundExclusiveUnitPrice(inclusive && rate > 0 ? r.exclusivePrice * (1 + rate / 100) : r.exclusivePrice);
+          }
+          if (note === i.supplier_rate_note && unitPrice === i.unit_price) return i;
+          changed = true;
+          const updated: PurchaseItem = { ...i, supplier_rate_note: note, unit_price: unitPrice };
+          if (unitPrice !== i.unit_price) delete updated.invoice_inclusive_line_total;
+          return updated;
+        });
+        return changed ? next : prev;
+      });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // Lines are read from the render that changed `supplierRateKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierRateKey, formData.supplier_id]);
+
   function updateItem(id: string, field: keyof PurchaseItem, value: any) {
     const clearsInvoiceAnchor: Partial<Record<keyof PurchaseItem, true>> = {
       quantity: true,
@@ -1115,6 +1178,7 @@ export default function NewPurchasePage() {
         }
 
         const next: PurchaseItem = { ...item, [field]: coercedValue };
+        if (field === 'unit_price') next.rate_from_catalog = false;
         if (clearsInvoiceAnchor[field]) {
           delete next.invoice_inclusive_line_total;
         }
@@ -2423,6 +2487,9 @@ export default function NewPurchasePage() {
                             value={item.unit_price}
                             onChange={(e) => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
                           />
+                          {item.supplier_rate_note ? (
+                            <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{item.supplier_rate_note}</p>
+                          ) : null}
                         </td>
                         <td className="py-2.5 align-middle">
                           <input

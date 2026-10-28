@@ -185,6 +185,8 @@ export function ItemsTable({
                       disabled={readOnly}
                       className={clsx(cellInput, noPrice && 'bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-950/30')}
                     />
+                    {row.priceWarning && <p className="mt-0.5 text-right text-[10px] font-semibold text-red-600">{row.priceWarning}</p>}
+                    {row.priceNote && <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{row.priceNote}</p>}
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center justify-end gap-1">

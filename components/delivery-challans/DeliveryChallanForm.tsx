@@ -16,6 +16,7 @@ import { Customer } from '@/types/database';
 import { useToastContext } from '@/contexts/ToastContext';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { toDateInputValue } from '@/lib/date-input';
+import { priceNote, storedPriceToBillUnit, type ResolvedLinePrice } from '@/lib/invoices/party-price';
 import {
   computeChallanLines,
   EWAY_BILL_THRESHOLD,
@@ -32,6 +33,12 @@ interface ChallanRow {
   unit: string;
   unit_price: number;
   tax_rate: number;
+  /** Rate typed by hand or copied from a saved document: customer pricing never replaces it. */
+  fixed_price?: boolean;
+  /** Where the rate came from and the last rate this customer paid. */
+  price_note?: string;
+  /** Purchase price (pre-GST), for the below-cost warning. */
+  cost_price?: number | null;
 }
 
 const newRow = (): ChallanRow => ({
@@ -66,6 +73,7 @@ function rowFromSourceLine(line: any): ChallanRow {
     unit: line.unit || 'PCS',
     unit_price: unitPrice,
     tax_rate: Number(line.tax_rate || 0),
+    fixed_price: true,
   };
 }
 
@@ -273,6 +281,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
         unit: l.unit || 'PCS',
         unit_price: Number(l.unit_price || 0),
         tax_rate: Number(l.tax_rate || 0),
+        fixed_price: true,
       }));
       setItems(rows.length ? rows : [newRow()]);
     } catch (error) {
@@ -349,6 +358,67 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const removeItem = (id: string) => setItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
   const patchItem = (id: string, patch: Partial<ChallanRow>) =>
     setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  // Customer price, price level and discounts for the customer on the challan date, as on the
+  // invoice. Challans have no discount column, so a discount is taken off the rate.
+  const pricingKey = items
+    .map((r) => (r.item_id ? `${r.id}:${r.item_id}:${r.qty}:${r.fixed_price ? 1 : 0}` : ''))
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const lines = items.filter((r) => r.item_id);
+    if (lines.length === 0) return;
+    const customerId = formData.customer_id || null;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/pricing/resolve', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: customerId,
+            date: formData.challan_date,
+            lines: lines.map((r) => ({ item_id: r.item_id, qty: r.qty || 1 })),
+          }),
+        });
+        if (!res.ok) return;
+        const resolved: ResolvedLinePrice[] = (await res.json()).lines || [];
+        if (cancelled) return;
+        const byRow = new Map(lines.map((r, k) => [r.id, resolved[k]]));
+        setItems((prev) =>
+          prev.map((r) => {
+            const p = byRow.get(r.id);
+            if (!p || !r.item_id) return r;
+            const note = priceNote({
+              price: r.unit_price,
+              discountPercent: 0,
+              taxPercent: r.tax_rate,
+              priceSource: p.priceSource,
+              levelName: p.levelName,
+              lastSale: p.lastSale,
+              priceUserOverride: r.fixed_price,
+            });
+            let unitPrice = r.unit_price;
+            if (!r.fixed_price && p.price != null) {
+              const exclusive = storedPriceToBillUnit(p.price, p.gstIncluded, r.tax_rate, false);
+              unitPrice = Math.round(exclusive * (1 - (p.discountPercent ?? 0) / 100) * 100) / 100;
+            }
+            if (unitPrice === r.unit_price && note === r.price_note && (p.costPrice ?? null) === (r.cost_price ?? null)) return r;
+            return { ...r, unit_price: unitPrice, price_note: note, cost_price: p.costPrice ?? null };
+          })
+        );
+      } catch (e) {
+        console.warn('[challan] Price lookup failed:', e);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // Lines are read from the render that changed `pricingKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingKey, formData.customer_id, formData.challan_date]);
 
   const posCode = formData.place_of_supply_state_code || supplierStateCode;
   const interState = !!(posCode && supplierStateCode && posCode !== supplierStateCode);
@@ -835,6 +905,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                               unit: selected.unit || 'PCS',
                               unit_price: Number(selected.selling_price ?? 0),
                               tax_rate: Number(selected.tax_rate ?? 0),
+                              fixed_price: false,
                               ...(row.qty > 0 ? {} : { qty: 1 }),
                             });
                           }}
@@ -869,8 +940,12 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           min={0}
                           step="0.01"
                           value={row.unit_price}
-                          onChange={(e) => patchItem(row.id, { unit_price: Number(e.target.value) })}
+                          onChange={(e) => patchItem(row.id, { unit_price: Number(e.target.value), fixed_price: true })}
                         />
+                        {row.cost_price != null && row.cost_price > 0 && row.unit_price > 0 && row.unit_price < row.cost_price - 0.005 ? (
+                          <p className="mt-0.5 text-right text-[10px] font-semibold text-red-600">Below purchase price</p>
+                        ) : null}
+                        {row.price_note ? <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{row.price_note}</p> : null}
                       </td>
                       {chargeTax && (
                         <td className="px-2 py-2" data-label="GST %">
