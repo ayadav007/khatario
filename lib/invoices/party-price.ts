@@ -38,6 +38,10 @@ export interface ResolvedLinePrice {
   lastSale: LastRateInfo | null;
   /** The item's GST basis, for screens whose lines do not carry it. */
   gstIncluded?: boolean;
+  /** True when the picked price was brought down to MRP. */
+  mrpCapped?: boolean;
+  /** Free units: `freeQty` for every `buyQty` billed. */
+  scheme?: { buyQty: number; freeQty: number } | null;
 }
 
 export interface PartyPricedRow {
@@ -59,12 +63,27 @@ export interface PartyPricedRow {
   levelName?: string | null;
   costPrice?: number | null;
   lastSale?: LastRateInfo | null;
+  mrpCapped?: boolean;
+  /** The scheme on this line's item, shown in the note. */
+  scheme?: { buyQty: number; freeQty: number } | null;
+  /** Set on a free-goods line added by a scheme: the paid line it belongs to (item:variant). */
+  schemeOf?: string;
 }
 
 type Patch = Partial<
   Pick<
     PartyPricedRow,
-    'price' | 'discountPercent' | 'gstIncluded' | 'partyPriceApplied' | 'pricingDiscountApplied' | 'priceSource' | 'levelName' | 'costPrice' | 'lastSale'
+    | 'price'
+    | 'discountPercent'
+    | 'gstIncluded'
+    | 'partyPriceApplied'
+    | 'pricingDiscountApplied'
+    | 'priceSource'
+    | 'levelName'
+    | 'costPrice'
+    | 'lastSale'
+    | 'mrpCapped'
+    | 'scheme'
   >
 >;
 
@@ -79,6 +98,9 @@ export function pricingPatch(row: PartyPricedRow, res: ResolvedLinePrice, prices
   const patch: Patch = {};
   if (JSON.stringify(row.lastSale ?? null) !== JSON.stringify(res.lastSale ?? null)) patch.lastSale = res.lastSale ?? null;
   if ((row.costPrice ?? null) !== (res.costPrice ?? null)) patch.costPrice = res.costPrice ?? null;
+  if (JSON.stringify(row.scheme ?? null) !== JSON.stringify(res.scheme ?? null)) patch.scheme = res.scheme ?? null;
+  const capped = !row.priceUserOverride && !!res.mrpCapped;
+  if (!!row.mrpCapped !== capped) patch.mrpCapped = capped;
   const gstIncluded = row.gstIncluded ?? res.gstIncluded;
   if (row.gstIncluded === undefined && res.gstIncluded !== undefined) patch.gstIncluded = res.gstIncluded;
 
@@ -120,6 +142,9 @@ const fmt = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigi
 /** Short note under a line's price: where it came from and the last rate this customer paid. */
 export function priceNote(row: PartyPricedRow): string | undefined {
   const parts: string[] = [];
+  if (row.schemeOf) return 'Free under scheme';
+  if (row.scheme) parts.push(`Scheme: ${row.scheme.freeQty} free on every ${row.scheme.buyQty}`);
+  if (row.mrpCapped) parts.push('Capped at MRP');
   if (!row.priceUserOverride && row.priceSource === 'party') parts.push('Customer price');
   if (!row.priceUserOverride && row.priceSource === 'level' && row.levelName) parts.push(`${row.levelName} rate`);
   if (row.lastSale) {

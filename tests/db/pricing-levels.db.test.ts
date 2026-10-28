@@ -33,6 +33,7 @@ import { POST as partyPOST } from '@/app/api/pricing/party-item/route';
 import { POST as categoryPOST } from '@/app/api/pricing/party-category/route';
 import { GET as historyGET } from '@/app/api/pricing/history/route';
 import { POST as resolvePOST } from '@/app/api/pricing/resolve/route';
+import { POST as schemesPOST } from '@/app/api/pricing/schemes/route';
 import { lastPurchaseRates } from '@/lib/pricing/resolve-price';
 import { BUYER_PRICE_JOIN } from '@/lib/pricing/buyer-price-sql';
 
@@ -213,6 +214,40 @@ d('price levels and party pricing (real DB)', () => {
     expect(r.rows).toEqual([
       { id: ITEM_C, price: null },
       { id: ITEM_A, price: 80 },
+    ]);
+  });
+  it('never prices above MRP', async () => {
+    await pool.query(`UPDATE items SET mrp = 220 WHERE id = $1`, [ITEM_C]); // 220 incl. 18% GST = 186.44 before GST
+    expect(await resolve(ITEM_C, 1)).toMatchObject({ price: 186.44, mrpCapped: true });
+    await pool.query(`UPDATE items SET mrp = NULL WHERE id = $1`, [ITEM_C]);
+    expect(await resolve(ITEM_C, 1)).toMatchObject({ price: 200, mrpCapped: false });
+  });
+
+  it('returns the scheme for everyone, and a level scheme over it for level customers', async () => {
+    expect((await post(schemesPOST, '/api/pricing/schemes', { item_id: ITEM_C, buy_qty: 10, free_qty: 1 })).status).toBe(201);
+    expect((await post(schemesPOST, '/api/pricing/schemes', { item_id: ITEM_A, buy_qty: 10, free_qty: 1 })).status).toBe(201);
+    expect((await post(schemesPOST, '/api/pricing/schemes', { item_id: ITEM_A, price_level_id: levelId, buy_qty: 5, free_qty: 2 })).status).toBe(201);
+    expect((await post(schemesPOST, '/api/pricing/schemes', { item_id: ITEM_A, buy_qty: 0, free_qty: 1 })).status).toBe(400);
+    expect((await resolve(ITEM_C, 1)).scheme).toEqual({ buyQty: 10, freeQty: 1 });
+    expect((await resolve(ITEM_A, 1)).scheme).toEqual({ buyQty: 5, freeQty: 2 });
+  });
+
+  it('fills a level from item prices and raises it by a percentage, logging each change', async () => {
+    const fill = await post(ratesPOST, `/api/pricing/levels/${levelId}/rates`, { fill_from_catalog_percent: -10 }, { params: { id: levelId } });
+    expect(fill.body).toEqual({ ok: true, changed: 1 }); // Soap already has a base rate
+    expect(await resolve(ITEM_C, 1)).toMatchObject({ price: 180, priceSource: 'level' });
+
+    const raise = await post(ratesPOST, `/api/pricing/levels/${levelId}/rates`, { adjust_percent: 10 }, { params: { id: levelId } });
+    expect(raise.body).toEqual({ ok: true, changed: 4 });
+    expect((await resolve(ITEM_C, 1)).price).toBe(198);
+    const log = await pool.query(
+      `SELECT old_price::float AS old_price, new_price::float AS new_price FROM price_change_log
+        WHERE price_level_id = $1 AND item_id = $2 ORDER BY changed_at`,
+      [levelId, ITEM_C]
+    );
+    expect(log.rows).toEqual([
+      { old_price: null, new_price: 180 },
+      { old_price: 180, new_price: 198 },
     ]);
   });
 });

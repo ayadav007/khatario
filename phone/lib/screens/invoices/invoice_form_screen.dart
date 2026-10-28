@@ -130,12 +130,16 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                 itemId: l['item_id']?.toString(),
                 name: l['name']?.toString() ?? '',
                 quantity: toNum(l['quantity']).toDouble(),
-                unitPrice: l['gst_included'] == true && toNum(l['tax_rate']) > 0
-                    ? toNum(l['selling_price']) / (1 + toNum(l['tax_rate']) / 100)
-                    : toNum(l['selling_price']).toDouble(),
+                unitPrice: storedPriceToBillUnit(
+                  toNum(l['selling_price']).toDouble(),
+                  l['gst_included'] == true,
+                  toNum(l['tax_rate']).toDouble(),
+                  _pricesIncludeGst,
+                ),
                 unit: l['unit']?.toString() ?? 'PCS',
                 taxRate: toNum(l['tax_rate']).toDouble(),
                 hsn: l['hsn_sac']?.toString(),
+                priceFixed: true,
               ),
           ]);
         _customerId = customerId;
@@ -180,11 +184,64 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
   @override
   void dispose() {
+    _priceTimer?.cancel();
     _notes.dispose();
     _terms.dispose();
     _po.dispose();
     _reference.dispose();
     super.dispose();
+  }
+
+  Timer? _priceTimer;
+  int _priceRun = 0;
+
+  /// Price the bill again shortly after a line, the customer, the date or the GST mode changes.
+  void _schedulePricing() {
+    _priceTimer?.cancel();
+    _priceTimer = Timer(const Duration(milliseconds: 250), _reprice);
+  }
+
+  /// Customer price, price level (with quantity slabs), discounts, MRP cap, schemes and the last
+  /// rate, from the same `/api/pricing/resolve` the website uses. Lines typed by hand or loaded
+  /// from a saved bill keep their price.
+  Future<void> _reprice() async {
+    final snapshot = List<InvoiceLineDraft>.of(_lines);
+    final paid = [
+      for (var i = 0; i < snapshot.length; i++)
+        if (snapshot[i].itemId != null && snapshot[i].schemeOf == null) i,
+    ];
+    if (paid.isEmpty) {
+      final cleaned = reconcileSchemeLines(_lines);
+      if (cleaned.length != _lines.length && mounted) setState(() => _lines..clear()..addAll(cleaned));
+      return;
+    }
+    final run = ++_priceRun;
+    final customerAtStart = _customerId;
+    try {
+      final body = await widget.session.api.postJson('/api/pricing/resolve', {
+        'customer_id': customerAtStart,
+        'date': ymd(_date),
+        'lines': [
+          for (final i in paid)
+            {'item_id': snapshot[i].itemId, 'variant_id': snapshot[i].variantId, 'qty': snapshot[i].quantity},
+        ],
+      });
+      final results = (body['lines'] as List?)?.whereType<Map>().toList() ?? const [];
+      if (!mounted || run != _priceRun || customerAtStart != _customerId) return;
+      setState(() {
+        for (var k = 0; k < paid.length && k < results.length; k++) {
+          final i = paid[k];
+          if (i >= _lines.length || _lines[i].pricingKey != snapshot[i].pricingKey) continue;
+          _lines[i] = applyResolvedPrice(_lines[i], Map<String, dynamic>.from(results[k]), _pricesIncludeGst);
+        }
+        final reconciled = reconcileSchemeLines(_lines);
+        _lines
+          ..clear()
+          ..addAll(reconciled);
+      });
+    } catch (_) {
+      // Pricing is a convenience: the bill keeps the item prices if the lookup fails.
+    }
   }
 
   /// Number preview only; the server assigns the real number on save.
@@ -228,6 +285,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                 taxRate: toNum(e['tax_rate']).toDouble(),
                 hsn: e['hsn_sac']?.toString(),
                 variantId: e['variant_id']?.toString(),
+                priceFixed: true,
               );
             }).toList()
           : <InvoiceLineDraft>[];
@@ -282,6 +340,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         _customerStateCode = customer['state_code']?.toString();
         _placeOverride = null;
       });
+      _schedulePricing();
     } catch (_) {}
   }
 
@@ -296,6 +355,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       _customerStateCode = null;
       _placeOverride = null;
     });
+    _schedulePricing();
   }
 
   InvoiceDraft _draft(String status) => InvoiceDraft(
@@ -476,7 +536,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   void _addOrBump(Map<String, dynamic> row, {Map<String, dynamic>? variant}) {
     final id = row['id']?.toString();
     final variantId = variant?['id']?.toString();
-    final at = id == null ? -1 : _lines.indexWhere((l) => l.itemId == id && l.variantId == variantId);
+    final at = id == null ? -1 : _lines.indexWhere((l) => l.itemId == id && l.variantId == variantId && l.schemeOf == null);
     setState(() {
       if (at >= 0) {
         _lines[at] = _withQty(_lines[at], _lines[at].quantity + 1);
@@ -487,13 +547,19 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           variantId: variantId,
           name: vName == null || vName.isEmpty ? row['name']?.toString() ?? '' : '${row['name']} ($vName)',
           quantity: 1,
-          unitPrice: toNum(variant?['selling_price'] ?? row['selling_price']).toDouble(),
+          unitPrice: storedPriceToBillUnit(
+            toNum(variant?['selling_price'] ?? row['selling_price']).toDouble(),
+            row['gst_included'] == true,
+            toNum(row['tax_rate']).toDouble(),
+            _pricesIncludeGst,
+          ),
           unit: row['unit']?.toString() ?? 'PCS',
           taxRate: toNum(row['tax_rate']).toDouble(),
           hsn: row['hsn_sac']?.toString(),
         ));
       }
     });
+    _schedulePricing();
   }
 
   /// Camera (or scanner gun / typed code) straight onto the bill, like the website's Scan.
@@ -641,6 +707,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         _lines[index] = _withQty(_lines[index], next);
       }
     });
+    _schedulePricing();
   }
 
   Future<void> _editLine(int index) async {
@@ -658,6 +725,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         _lines[index] = result.$1!;
       }
     });
+    _schedulePricing();
   }
 
   Future<void> _pickPlace() async {
@@ -692,6 +760,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         if (_dueDate != null && _dueDate!.isBefore(picked)) _dueDate = null;
       }
     });
+    if (!due) _schedulePricing();
   }
 
   @override
@@ -824,7 +893,10 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   title: 'Prices include GST',
                   subtitle: 'Item prices already have tax in them',
                   value: _pricesIncludeGst,
-                  onChanged: (v) => update(() => _pricesIncludeGst = v),
+                  onChanged: (v) {
+                    update(() => _pricesIncludeGst = v);
+                    _schedulePricing();
+                  },
                 ),
                 const SizedBox(height: AppSpace.md),
                 KButton(label: 'Done', onPressed: () => Navigator.of(ctx).pop()),
@@ -1511,7 +1583,7 @@ class _LineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final details = [
-      '${formatAmount(line.unitPrice)} / ${line.unit}',
+      line.schemeOf != null ? 'Free' : '${formatAmount(line.unitPrice)} / ${line.unit}',
       'GST ${enIn(line.taxRate)}%',
       if (line.discountPercent > 0) '${enIn(line.discountPercent)}% off',
     ].join(' · ');
@@ -1539,6 +1611,14 @@ class _LineRow extends StatelessWidget {
                 _QtyStepper(quantity: line.quantity, unit: line.unit, onMinus: onMinus, onPlus: onPlus),
               ],
             ),
+            if (line.warning != null) ...[
+              const SizedBox(height: 4),
+              Text(line.warning!, style: AppText.caption.copyWith(color: AppColors.negative)),
+            ],
+            if (line.note != null) ...[
+              const SizedBox(height: 2),
+              Text(line.note!, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.caption),
+            ],
           ],
         ),
       ),
@@ -1637,6 +1717,12 @@ class _LineEditorState extends State<_LineEditor> {
         discountPercent: discount!,
         taxRate: _tax,
         hsn: _hsn.text.trim().isEmpty ? null : _hsn.text.trim(),
+        priceFixed: l.priceFixed || price != l.unitPrice || discount != l.discountPercent,
+        ruleDiscount: discount == l.discountPercent && l.ruleDiscount,
+        note: l.note,
+        warning: l.warning,
+        scheme: l.scheme,
+        schemeOf: l.schemeOf,
       ),
       false,
     ));

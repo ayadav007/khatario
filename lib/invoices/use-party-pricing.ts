@@ -4,7 +4,50 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isBelowCost, priceNote, pricingPatch, type PartyPricedRow, type ResolvedLinePrice } from '@/lib/invoices/party-price';
 
-export type PricedLine = PartyPricedRow & { itemId: string; variantId?: string; quantity: number };
+export type PricedLine = PartyPricedRow & { itemId: string; variantId?: string; quantity: number; name: string };
+
+const lineKey = (r: { itemId: string; variantId?: string }) => `${r.itemId}:${r.variantId ?? ''}`;
+
+/**
+ * Keep one free-goods line (price 0, right after its paid line) per paid line that earns free
+ * units under a scheme; drop free lines whose paid line is gone or no longer earns any. Only
+ * lines priced by the system get scheme lines, so saved documents are left as they were.
+ */
+export function reconcileSchemeLines<R extends PricedLine>(rows: R[], makeFree: (paid: R, qty: number) => R): R[] {
+  const paidFree = new Map<string, { row: R; qty: number }>();
+  for (const r of rows) {
+    if (!r.itemId || r.schemeOf || r.priceUserOverride || !r.scheme) continue;
+    const qty = Math.floor(r.quantity / r.scheme.buyQty + 1e-9) * r.scheme.freeQty;
+    if (qty > 0 && !paidFree.has(lineKey(r))) paidFree.set(lineKey(r), { row: r, qty });
+  }
+  const out: R[] = [];
+  let changed = false;
+  const placed = new Set<string>();
+  for (const r of rows) {
+    if (r.schemeOf) {
+      const want = paidFree.get(r.schemeOf);
+      if (!want || placed.has(r.schemeOf)) {
+        changed = true;
+        continue;
+      }
+      placed.add(r.schemeOf);
+      if (Math.abs(r.quantity - want.qty) > 1e-9) {
+        out.push(makeFree(want.row, want.qty));
+        changed = true;
+      } else out.push(r);
+      continue;
+    }
+    out.push(r);
+    const key = r.itemId ? lineKey(r) : '';
+    const want = key ? paidFree.get(key) : undefined;
+    if (want && want.row === r && !rows.some((x) => x.schemeOf === key)) {
+      out.push(makeFree(r, want.qty));
+      placed.add(key);
+      changed = true;
+    }
+  }
+  return changed ? out : rows;
+}
 
 /**
  * Prices every line of a sales document for the selected customer on the document date, through
@@ -31,6 +74,33 @@ export function usePartyPricing<R extends PricedLine>(opts: {
   const recalcRef = useRef(recalc);
   recalcRef.current = recalc;
 
+  /** The free-goods line for a paid line under a scheme: same item, no charge, never repriced. */
+  const makeFree = (paid: R, qty: number): R =>
+    recalcRef.current({
+      ...paid,
+      name: `${paid.name} (free)`,
+      quantity: qty,
+      price: 0,
+      discountPercent: 0,
+      discountAmount: 0,
+      priceUserOverride: true,
+      discountUserOverride: true,
+      partyPriceApplied: false,
+      pricingDiscountApplied: false,
+      priceSource: undefined,
+      mrpCapped: false,
+      scheme: null,
+      lastSale: null,
+      schemeOf: lineKey(paid),
+    } as R);
+
+  // A free line whose paid line was removed or changed goes at once, without waiting for a lookup.
+  useEffect(() => {
+    if (!rows.some((r) => r.schemeOf)) return;
+    setRows((prev) => reconcileSchemeLines(prev, makeFree));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   const key = useMemo(
     () =>
       rows
@@ -46,7 +116,7 @@ export function usePartyPricing<R extends PricedLine>(opts: {
 
   useEffect(() => {
     if (disabled) return;
-    const pairs = rowsRef.current.map((row, idx) => ({ row, idx })).filter(({ row }) => !!row.itemId);
+    const pairs = rowsRef.current.map((row, idx) => ({ row, idx })).filter(({ row }) => !!row.itemId && !row.schemeOf);
     if (pairs.length === 0) return;
     if (!customerId && !pairs.some(({ row }) => row.partyPriceApplied || row.pricingDiscountApplied || row.lastSale)) return;
 
@@ -83,7 +153,7 @@ export function usePartyPricing<R extends PricedLine>(opts: {
             changed = true;
             next[idx] = 'price' in patch || 'discountPercent' in patch ? recalcRef.current(merged) : merged;
           });
-          return changed ? next : prev;
+          return reconcileSchemeLines(changed ? next : prev, makeFree);
         });
       } catch (e) {
         console.warn('[pricing] Price lookup failed:', e);

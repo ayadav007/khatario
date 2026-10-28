@@ -71,6 +71,66 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!level) return NextResponse.json({ error: 'Price level not found' }, { status: 404 });
 
     const body = await request.json().catch(() => ({}));
+
+    // { adjust_percent: n } raises (or with a negative n lowers) every fixed rate on the level.
+    // { fill_from_catalog_percent: n } adds a base rate of item price ± n% for every item that has
+    // no base rate on the level yet (variants get one each from their own price).
+    if (body.adjust_percent !== undefined || body.fill_from_catalog_percent !== undefined) {
+      const isFill = body.fill_from_catalog_percent !== undefined;
+      const pct = Number(isFill ? body.fill_from_catalog_percent : body.adjust_percent);
+      if (!Number.isFinite(pct) || pct <= -100 || pct > 1000) throw new RateInputError('Enter a percentage above -100');
+      const changed = await inTransaction(getPool(), async (client) => {
+        const rows = isFill
+          ? (
+              await client.query(
+                `WITH targets AS (
+                   SELECT i.id AS item_id, NULL::uuid AS variant_id, i.selling_price AS base
+                     FROM items i
+                    WHERE i.business_id = $1 AND i.deleted_at IS NULL AND COALESCE(i.has_variants, false) = false
+                      AND i.selling_price IS NOT NULL
+                   UNION ALL
+                   SELECT v.item_id, v.id, v.selling_price
+                     FROM item_variants v JOIN items i ON i.id = v.item_id
+                    WHERE i.business_id = $1 AND i.deleted_at IS NULL AND v.selling_price IS NOT NULL
+                 )
+                 INSERT INTO price_level_rates (business_id, price_level_id, item_id, variant_id, min_qty, price)
+                 SELECT $1, $2, t.item_id, t.variant_id, 0, ROUND(t.base * (1 + $3::numeric / 100), 2)
+                   FROM targets t
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM price_level_rates r
+                     WHERE r.price_level_id = $2 AND r.item_id = t.item_id
+                       AND r.variant_id IS NOT DISTINCT FROM t.variant_id AND r.min_qty = 0 AND r.valid_from IS NULL)
+                 RETURNING item_id, variant_id, min_qty::float AS min_qty, NULL::float AS old_price, price::float AS new_price`,
+                [auth.businessId, levelId, pct]
+              )
+            ).rows
+          : (
+              await client.query(
+                `UPDATE price_level_rates r SET price = ROUND(r.price * (1 + $3::numeric / 100), 2), updated_at = CURRENT_TIMESTAMP
+                   FROM price_level_rates old
+                  WHERE old.id = r.id AND r.business_id = $1 AND r.price_level_id = $2 AND r.price IS NOT NULL
+                  RETURNING r.item_id, r.variant_id, r.min_qty::float AS min_qty, old.price::float AS old_price, r.price::float AS new_price`,
+                [auth.businessId, levelId, pct]
+              )
+            ).rows;
+        for (const r of rows) {
+          await logPriceChange(client, {
+            businessId: auth.businessId,
+            scope: 'price_level',
+            priceLevelId: levelId,
+            itemId: r.item_id,
+            variantId: r.variant_id,
+            minQty: r.min_qty,
+            old: r.old_price == null ? null : { price: r.old_price, discount_percent: null },
+            next: { price: r.new_price, discount_percent: null, valid_from: null, valid_to: null },
+            changedBy: auth.userId,
+          });
+        }
+        return rows.length;
+      });
+      return NextResponse.json({ ok: true, changed });
+    }
+
     const rows: Record<string, unknown>[] = Array.isArray(body.rows) ? body.rows : [];
     if (rows.length === 0 || rows.length > 300) throw new RateInputError('Send between 1 and 300 rows');
 

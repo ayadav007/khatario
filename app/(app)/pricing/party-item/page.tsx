@@ -15,6 +15,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { Item, Customer } from '@/types/database';
+import { csvToRateRows, downloadText, parseCsv, toCsv } from '@/lib/pricing/rate-csv';
 
 function formatInr(n: number): string {
   if (!Number.isFinite(n)) return '₹—';
@@ -341,6 +342,56 @@ export default function PartyItemPricingPage() {
     [partyId, partyLevelId, toast]
   );
 
+  const exportCsv = () => {
+    const customer = customers.find((c) => c.id === partyId);
+    const lines: unknown[][] = [['item_code', 'item_name', 'variant', 'default_price', 'price', 'discount_percent', 'valid_from', 'valid_to']];
+    for (const { key, item, variant } of allRows) {
+      const r = serverRates[key];
+      lines.push([
+        item.code ?? '',
+        item.name,
+        variant?.variant_name ?? '',
+        variant ? variant.selling_price ?? '' : item.selling_price ?? '',
+        r?.price ?? '',
+        r?.discount_percent ?? '',
+        r?.valid_from ?? '',
+        r?.valid_to ?? '',
+      ]);
+    }
+    downloadText(`prices-${(customer?.name ?? 'customer').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`, toCsv(lines));
+  };
+
+  const importCsv = async (file: File) => {
+    const { rows, errors } = csvToRateRows(parseCsv(await file.text()), items, variants, { withMinQty: false });
+    if (errors.length) {
+      toast.error(`${errors.length} problem(s), nothing saved. ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}`);
+      return;
+    }
+    if (rows.length === 0) {
+      toast.error('No rows to import');
+      return;
+    }
+    setSaving(true);
+    try {
+      for (let i = 0; i < rows.length; i += 300) {
+        const res = await fetch('/api/pricing/party-item', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ party_id: partyId, rows: rows.slice(i, i + 300) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+      }
+      toast.success(`Imported ${rows.length} row(s)`);
+      await loadParty(partyId);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!canEdit) {
     return <AccessDenied module="items" action="update" details={reason} />;
   }
@@ -433,10 +484,35 @@ export default function PartyItemPricingPage() {
               <span className="text-xs font-semibold uppercase text-text-muted">Search items</span>
               <Input value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Filter by name, code or variant…" />
             </label>
-            <Button type="button" variant="primary" onClick={() => void saveItemRows(dirtyKeys)} disabled={saving || dirtyKeys.length === 0} isLoading={saving}>
-              <Save className="mr-2 h-4 w-4" aria-hidden />
-              Save all changes{dirtyKeys.length > 0 ? ` (${dirtyKeys.length})` : ''}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={exportCsv} disabled={listLoading}>
+                Export CSV
+              </Button>
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-text-primary hover:bg-muted/50">
+                Import CSV
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="sr-only"
+                  disabled={saving}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+                    if (f) void importCsv(f);
+                  }}
+                />
+              </label>
+              <Link
+                href={`/pricing/price-list?customer_id=${encodeURIComponent(partyId)}`}
+                className="inline-flex items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-text-primary hover:bg-muted/50"
+              >
+                Price list
+              </Link>
+              <Button type="button" variant="primary" onClick={() => void saveItemRows(dirtyKeys)} disabled={saving || dirtyKeys.length === 0} isLoading={saving}>
+                <Save className="mr-2 h-4 w-4" aria-hidden />
+                Save all changes{dirtyKeys.length > 0 ? ` (${dirtyKeys.length})` : ''}
+              </Button>
+            </div>
           </div>
           {listLoading ? (
             <div className="flex min-h-[240px] items-center justify-center p-8">

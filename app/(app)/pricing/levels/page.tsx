@@ -15,6 +15,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import type { Customer, Item } from '@/types/database';
+import { csvToRateRows, downloadText, parseCsv, toCsv } from '@/lib/pricing/rate-csv';
 
 interface Level {
   id: string;
@@ -256,6 +257,75 @@ export default function PriceLevelsPage() {
     }
   };
 
+  const bulk = async (kind: 'adjust_percent' | 'fill_from_catalog_percent') => {
+    if (!selected) return;
+    const ask =
+      kind === 'adjust_percent'
+        ? 'Raise every rate on this level by what %? (use a minus sign to lower, e.g. -5)'
+        : 'Add a rate for every item without one, at item price plus what %? (e.g. -10 for 10% below item price)';
+    const answer = window.prompt(ask, kind === 'adjust_percent' ? '5' : '-10');
+    if (answer == null) return;
+    const pct = Number(answer.replace('%', '').trim());
+    if (!Number.isFinite(pct)) {
+      toast.error('Enter a number');
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await postJson(`/api/pricing/levels/${selected.id}/rates`, { [kind]: pct });
+      await Promise.all([loadRates(selected.id), loadLevels()]);
+      toast.success(`${data.changed} rate(s) ${kind === 'adjust_percent' ? 'changed' : 'added'}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportCsv = () => {
+    if (!selected) return;
+    const lines: unknown[][] = [['item_code', 'item_name', 'variant', 'min_qty', 'price', 'discount_percent', 'valid_from', 'valid_to']];
+    for (const r of rates) {
+      const it = itemById.get(r.item_id);
+      lines.push([
+        it?.code ?? '',
+        it?.name ?? '',
+        r.variant_id ? variantById.get(r.variant_id)?.variant_name ?? '' : '',
+        r.min_qty,
+        r.price ?? '',
+        r.discount_percent ?? '',
+        r.valid_from ?? '',
+        r.valid_to ?? '',
+      ]);
+    }
+    downloadText(`price-level-${selected.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`, toCsv(lines));
+  };
+
+  const importCsv = async (file: File) => {
+    if (!selected) return;
+    const { rows, errors } = csvToRateRows(parseCsv(await file.text()), items, variants, { withMinQty: true });
+    if (errors.length) {
+      toast.error(`${errors.length} problem(s), nothing saved. ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}`);
+      return;
+    }
+    if (rows.length === 0) {
+      toast.error('No rows to import');
+      return;
+    }
+    setBusy(true);
+    try {
+      for (let i = 0; i < rows.length; i += 300) {
+        await postJson(`/api/pricing/levels/${selected.id}/rates`, { rows: rows.slice(i, i + 300) });
+      }
+      await Promise.all([loadRates(selected.id), loadLevels()]);
+      toast.success(`Imported ${rows.length} rate(s)`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!canEdit) return <AccessDenied module="items" action="update" details={reason} />;
 
   const selectClass =
@@ -324,6 +394,35 @@ export default function PriceLevelsPage() {
                   <Trash2 className="mr-1 h-4 w-4" /> Delete
                 </Button>
               </div>
+            </Card>
+
+            <Card className="flex flex-wrap items-center gap-2 p-4">
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void bulk('fill_from_catalog_percent')}>
+                Fill from item prices ±%
+              </Button>
+              <Button type="button" variant="secondary" disabled={busy || rates.length === 0} onClick={() => void bulk('adjust_percent')}>
+                Raise all rates by %
+              </Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={exportCsv}>
+                Export CSV
+              </Button>
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-text-primary hover:bg-muted/50">
+                Import CSV
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="sr-only"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+                    if (f) void importCsv(f);
+                  }}
+                />
+              </label>
+              <span className="text-xs text-text-muted">
+                CSV columns: item_code or item_name, variant, min_qty, price, discount_percent, valid_from, valid_to.
+              </span>
             </Card>
 
             <Card className="space-y-4 p-4">

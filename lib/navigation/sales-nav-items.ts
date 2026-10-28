@@ -35,6 +35,8 @@ export const CONNECT_AGENT_LOOKUP_HREFS = [
   '/items',
   '/pricing/party-item',
   '/pricing/levels',
+  '/pricing/schemes',
+  '/pricing/price-list',
 ] as const;
 
 export function isConnectAgentLookupPath(pathname: string): boolean {

@@ -73,6 +73,24 @@ bool invoiceIntraState(String? placeOfSupply, String? supplierStateCode) {
   return placeOfSupply == supplier.padLeft(2, '0');
 }
 
+/// Free units for every [buyQty] billed ("buy 10, get 1 free").
+class PricingScheme {
+  const PricingScheme(this.buyQty, this.freeQty);
+
+  final double buyQty;
+  final double freeQty;
+
+  double freeFor(double qty) => buyQty > 0 && qty > 0 ? (qty / buyQty + 1e-9).floorToDouble() * freeQty : 0;
+
+  @override
+  bool operator ==(Object other) => other is PricingScheme && other.buyQty == buyQty && other.freeQty == freeQty;
+
+  @override
+  int get hashCode => Object.hash(buyQty, freeQty);
+}
+
+const Object _keep = Object();
+
 class InvoiceLineDraft {
   const InvoiceLineDraft({
     this.itemId,
@@ -84,6 +102,12 @@ class InvoiceLineDraft {
     this.taxRate = 0,
     this.hsn,
     this.variantId,
+    this.priceFixed = false,
+    this.ruleDiscount = false,
+    this.note,
+    this.warning,
+    this.scheme,
+    this.schemeOf,
   });
 
   final String? itemId;
@@ -98,9 +122,42 @@ class InvoiceLineDraft {
   /// The size / colour variant, when the line came from a variant (for example a scanned barcode).
   final String? variantId;
 
-  InvoiceLineDraft copyWith({double? quantity, double? unitPrice, double? discountPercent}) => InvoiceLineDraft(
+  /// Price (and discount) typed by hand, loaded from a saved bill or agreed on a hub order:
+  /// customer pricing never changes it.
+  final bool priceFixed;
+
+  /// The discount came from a customer, category or price level rule.
+  final bool ruleDiscount;
+
+  /// Where the price came from and the last rate this customer paid.
+  final String? note;
+
+  /// Shown in red, e.g. a price below the purchase price.
+  final String? warning;
+
+  /// The scheme on this line's item.
+  final PricingScheme? scheme;
+
+  /// Set on a free-goods line added by a scheme: the paid line's `item:variant`.
+  final String? schemeOf;
+
+  String get pricingKey => '${itemId ?? ''}:${variantId ?? ''}';
+
+  InvoiceLineDraft copyWith({
+    String? name,
+    double? quantity,
+    double? unitPrice,
+    double? discountPercent,
+    bool? priceFixed,
+    bool? ruleDiscount,
+    Object? note = _keep,
+    Object? warning = _keep,
+    Object? scheme = _keep,
+    Object? schemeOf = _keep,
+  }) =>
+      InvoiceLineDraft(
         itemId: itemId,
-        name: name,
+        name: name ?? this.name,
         quantity: quantity ?? this.quantity,
         unitPrice: unitPrice ?? this.unitPrice,
         unit: unit,
@@ -108,7 +165,128 @@ class InvoiceLineDraft {
         taxRate: taxRate,
         hsn: hsn,
         variantId: variantId,
+        priceFixed: priceFixed ?? this.priceFixed,
+        ruleDiscount: ruleDiscount ?? this.ruleDiscount,
+        note: identical(note, _keep) ? this.note : note as String?,
+        warning: identical(warning, _keep) ? this.warning : warning as String?,
+        scheme: identical(scheme, _keep) ? this.scheme : scheme as PricingScheme?,
+        schemeOf: identical(schemeOf, _keep) ? this.schemeOf : schemeOf as String?,
       );
+}
+
+/// A stored item / customer price (on the item's own GST basis) as the unit price this bill uses,
+/// as on the website (`lib/invoices/party-price.ts`).
+double storedPriceToBillUnit(double price, bool storedGstIncluded, double taxRate, bool pricesIncludeGst) {
+  if (taxRate <= 0) return price;
+  if (pricesIncludeGst && !storedGstIncluded) return price * (1 + taxRate / 100);
+  if (!pricesIncludeGst && storedGstIncluded) return price / (1 + taxRate / 100);
+  return price;
+}
+
+double? _numOrNull(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse(v.toString()));
+
+String _rupees(double v) => '₹${v.toStringAsFixed(2)}';
+
+/// Apply one line of `/api/pricing/resolve` to a bill line: customer price, price level or item
+/// price, rule discount, MRP cap, scheme, last rate and the below-cost warning. Fixed lines keep
+/// their price and discount and only pick up the note.
+InvoiceLineDraft applyResolvedPrice(InvoiceLineDraft line, Map<String, dynamic> r, bool pricesIncludeGst) {
+  final gstIncluded = r['gstIncluded'] == true;
+  final schemeMap = r['scheme'];
+  final scheme = schemeMap is Map
+      ? PricingScheme(_numOrNull(schemeMap['buyQty']) ?? 0, _numOrNull(schemeMap['freeQty']) ?? 0)
+      : null;
+
+  var price = line.unitPrice;
+  var discount = line.discountPercent;
+  var ruleDiscount = line.ruleDiscount;
+  if (!line.priceFixed) {
+    final p = _numOrNull(r['price']);
+    if (p != null) price = storedPriceToBillUnit(p, gstIncluded, line.taxRate, pricesIncludeGst);
+    final d = _numOrNull(r['discountPercent']);
+    if (d != null) {
+      discount = d;
+      ruleDiscount = true;
+    } else if (ruleDiscount) {
+      discount = 0;
+      ruleDiscount = false;
+    }
+  }
+
+  final parts = <String>[];
+  if (!line.priceFixed) {
+    if (scheme != null) parts.add('Scheme: ${_trim(scheme.freeQty)} free on every ${_trim(scheme.buyQty)}');
+    if (r['mrpCapped'] == true) parts.add('Capped at MRP');
+    if (r['priceSource'] == 'party') parts.add('Customer price');
+    if (r['priceSource'] == 'level' && r['levelName'] != null) parts.add('${r['levelName']} rate');
+  }
+  final last = r['lastSale'];
+  if (last is Map) {
+    final lp = _numOrNull(last['exclusivePrice']) ?? 0;
+    final ld = _numOrNull(last['discountPercent']) ?? 0;
+    parts.add('Last ${_rupees(lp)}${ld > 0 ? ' −${_trim(ld)}%' : ''} + GST on ${last['date']}');
+  }
+
+  String? warning;
+  final cost = _numOrNull(r['costPrice']);
+  if (cost != null && cost > 0 && price > 0) {
+    final exclusive = pricesIncludeGst && line.taxRate > 0 ? price / (1 + line.taxRate / 100) : price;
+    if (exclusive * (1 - discount / 100) < cost - 0.005) warning = 'Below purchase price';
+  }
+
+  return line.copyWith(
+    unitPrice: price,
+    discountPercent: discount,
+    ruleDiscount: ruleDiscount,
+    note: parts.isEmpty ? null : parts.join(' · '),
+    warning: warning,
+    scheme: line.priceFixed ? null : scheme,
+  );
+}
+
+String _trim(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+/// One free-goods line (no charge, right after its paid line) per line that earns free units
+/// under a scheme; free lines whose paid line is gone or no longer earns any are dropped.
+List<InvoiceLineDraft> reconcileSchemeLines(List<InvoiceLineDraft> lines) {
+  final want = <String, (InvoiceLineDraft, double)>{};
+  for (final l in lines) {
+    if (l.itemId == null || l.schemeOf != null || l.priceFixed || l.scheme == null) continue;
+    final free = l.scheme!.freeFor(l.quantity);
+    if (free > 0) want.putIfAbsent(l.pricingKey, () => (l, free));
+  }
+  InvoiceLineDraft freeLine(InvoiceLineDraft paid, double qty) => InvoiceLineDraft(
+        itemId: paid.itemId,
+        variantId: paid.variantId,
+        name: '${paid.name} (free)',
+        quantity: qty,
+        unitPrice: 0,
+        unit: paid.unit,
+        taxRate: paid.taxRate,
+        hsn: paid.hsn,
+        priceFixed: true,
+        note: 'Free under scheme',
+        schemeOf: paid.pricingKey,
+      );
+
+  final out = <InvoiceLineDraft>[];
+  final placed = <String>{};
+  for (final l in lines) {
+    if (l.schemeOf != null) {
+      final w = want[l.schemeOf];
+      if (w == null || placed.contains(l.schemeOf)) continue;
+      placed.add(l.schemeOf!);
+      out.add(l.quantity == w.$2 ? l : freeLine(w.$1, w.$2));
+      continue;
+    }
+    out.add(l);
+    final w = l.itemId == null ? null : want[l.pricingKey];
+    if (w != null && identical(w.$1, l) && !lines.any((x) => x.schemeOf == l.pricingKey)) {
+      out.add(freeLine(l, w.$2));
+      placed.add(l.pricingKey);
+    }
+  }
+  return out;
 }
 
 /// A charge added on top of the items (delivery, packing, freight…). Like the website, the bill

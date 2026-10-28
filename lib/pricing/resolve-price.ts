@@ -9,6 +9,8 @@ import type { PoolClient } from 'pg';
  * A discount % comes from the customer's item rule, else the customer's category discount, else
  * the level rate. Rules only count on the bill date when they have a date range. All prices are on
  * the item's own GST basis (`items.gst_included`); screens convert to the bill's basis.
+ * The picked price is never above the item's MRP (MRP includes GST). A quantity scheme ("buy 10,
+ * get 1 free") comes back as `scheme` for the screen to add the free units.
  */
 
 export interface PriceRule {
@@ -118,7 +120,30 @@ export interface PriceLineResult extends ResolvedPrice {
   /** Purchase price, on the item's GST basis, for the below-cost warning. */
   costPrice: number | null;
   mrp: number | null;
+  /** True when the picked price was above MRP and was brought down to it. */
+  mrpCapped: boolean;
+  /** Free units: `freeQty` for every `buyQty` billed. */
+  scheme: { buyQty: number; freeQty: number } | null;
   lastSale: LastRate | null;
+}
+
+/** Bring a price (on the item's GST basis) down to MRP, which always includes GST. */
+export function capAtMrp(
+  price: number | null,
+  mrp: number | null,
+  gstIncluded: boolean,
+  taxRate: number
+): { price: number | null; capped: boolean } {
+  if (price == null || mrp == null || !(mrp > 0)) return { price, capped: false };
+  const tr = Number(taxRate) || 0;
+  const mrpOnBasis = gstIncluded || tr <= 0 ? mrp : Math.round((mrp / (1 + tr / 100)) * 100) / 100;
+  return price > mrpOnBasis + 0.005 ? { price: mrpOnBasis, capped: true } : { price, capped: false };
+}
+
+/** Free units for a billed quantity under a scheme. */
+export function schemeFreeUnits(qty: number, scheme: { buyQty: number; freeQty: number } | null): number {
+  if (!scheme || !(scheme.buyQty > 0) || !(qty > 0)) return 0;
+  return Math.floor(qty / scheme.buyQty + 1e-9) * scheme.freeQty;
 }
 
 export interface LastRate {
@@ -173,6 +198,7 @@ export async function resolvePrices(
   let partyRules: any[] = [];
   let levelRules: any[] = [];
   let levelName: string | null = null;
+  let levelId: string | null = null;
   const categoryDiscounts = new Map<string, any[]>();
   const lastSales = new Map<string, LastRate>();
 
@@ -198,6 +224,7 @@ export async function resolvePrices(
       ).rows;
       if (cust.level_id) {
         levelName = cust.level_name;
+        levelId = cust.level_id;
         levelRules = (
           await db.query(
             `SELECT item_id, variant_id, min_qty::float AS min_qty, price::float AS price,
@@ -249,6 +276,19 @@ export async function resolvePrices(
     }
   }
 
+  // Schemes for everyone, or for this customer's price level. A level scheme beats an
+  // everyone scheme; otherwise the usual variant / later-start order applies.
+  const schemes = (
+    await db.query(
+      `SELECT item_id, variant_id, price_level_id, buy_qty::float AS buy_qty, free_qty::float AS free_qty,
+              valid_from::text AS valid_from, valid_to::text AS valid_to
+         FROM item_schemes
+        WHERE business_id = $1 AND is_active AND item_id = ANY($2::uuid[])
+          AND (price_level_id IS NULL OR price_level_id = $3::uuid)`,
+      [businessId, itemIds, levelId]
+    )
+  ).rows.map((r: any) => ({ ...r, price: null, discount_percent: null }));
+
   return lines.map((line) => {
     const item = items.get(line.itemId);
     const variant = line.variantId ? variants.get(line.variantId) : null;
@@ -265,8 +305,15 @@ export async function resolvePrices(
       levelName,
       categoryDiscount: catRule?.discount_percent ?? null,
     });
+    const capped = capAtMrp(resolved.price, num(item?.mrp), !!item?.gst_included, Number(item?.tax_rate) || 0);
+    const itemSchemes = schemes.filter((r: any) => r.item_id === line.itemId);
+    const scheme =
+      pickRule(itemSchemes.filter((r: any) => r.price_level_id), opts) ?? pickRule(itemSchemes.filter((r: any) => !r.price_level_id), opts);
     return {
       ...resolved,
+      price: capped.price,
+      mrpCapped: capped.capped,
+      scheme: scheme ? { buyQty: Number(scheme.buy_qty), freeQty: Number(scheme.free_qty) } : null,
       itemId: line.itemId,
       variantId,
       catalogPrice,

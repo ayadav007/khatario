@@ -178,6 +178,8 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/items', label: 'Items', module: 'items' },
     { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
     { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
+    { href: '/pricing/schemes', label: 'Schemes', module: 'items' },
+    { href: '/pricing/price-list', label: 'Price List', module: 'items' },
   ];
   if (hasFeature(hasCapability, 'barcode_label_printing')) {
     invItems.push({
@@ -221,6 +223,8 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
         { href: '/items', label: 'Items', module: 'items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
         { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
+        { href: '/pricing/schemes', label: 'Schemes', module: 'items' },
+        { href: '/pricing/price-list', label: 'Price List', module: 'items' },
       ],
       ctx
     );

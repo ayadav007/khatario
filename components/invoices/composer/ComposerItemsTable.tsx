@@ -130,7 +130,7 @@ export function ItemsTable({
           </thead>
           <tbody>
             {visible.map(({ row, index }, pos) => {
-              const noPrice = !(Number(row.price) > 0);
+              const noPrice = !(Number(row.price) > 0) && !row.schemeOf;
               const byAmount = amountMode[index] ?? (row.discountAmount > 0 && !row.discountPercent);
               const rateOptions = GST_RATES.includes(row.taxPercent) ? GST_RATES : [...GST_RATES, row.taxPercent].sort((a, b) => a - b);
               return (

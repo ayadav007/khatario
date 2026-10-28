@@ -273,6 +273,10 @@ interface InvoiceItemRow {
   costPrice?: number | null;
   /** Last rate charged to this customer for the item. */
   lastSale?: LastRateInfo | null;
+  mrpCapped?: boolean;
+  scheme?: { buyQty: number; freeQty: number } | null;
+  /** Free-goods line added by a scheme: the paid line's item:variant. */
+  schemeOf?: string;
   /** Display only (added by usePartyPricing, never kept in state). */
   priceNote?: string;
   priceWarning?: string;

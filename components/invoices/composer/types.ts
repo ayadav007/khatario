@@ -15,6 +15,9 @@ export type ComposerRow = InvoiceItemRow &
     | 'levelName'
     | 'costPrice'
     | 'lastSale'
+    | 'mrpCapped'
+    | 'scheme'
+    | 'schemeOf'
   > & {
   code?: string;
   mrp?: number;
