@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { assertExpenseAccountForBusiness } from '@/lib/expense-category-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,10 @@ export async function PATCH(
   try {
     const id = params.id;
     const body = await request.json();
-    const { business_id, name, description, account_id } = body;
+    const { business_id: claimedBusinessId, name, description, account_id } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'expenses', 'update');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
 
     if (!business_id) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });

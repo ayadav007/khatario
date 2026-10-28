@@ -1,4 +1,5 @@
 import { queryRows, queryOne } from '@/lib/db';
+import { escapeDocumentValue, sanitizeDocumentTemplateHtml } from '@/lib/hr/document-html';
 
 export type DocumentTemplate = {
   id: string;
@@ -117,16 +118,24 @@ export async function generateDocumentHtml(
     today: new Date().toISOString().slice(0, 10),
   };
 
-  let html = template.body_html;
+  // Sanitize stored markup (older rows were saved unsanitized), then insert escaped values.
+  let html = sanitizeDocumentTemplateHtml(template.body_html);
   for (const attr of DOCUMENT_ATTRIBUTES) {
-    const val = getNested(vars, attr.key);
+    const val = escapeDocumentValue(getNested(vars, attr.key));
     html = html.replaceAll(`{{${attr.key}}}`, val);
   }
 
-  const margin = template.margin_mm;
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const margin = {
+    top: num(template.margin_mm.top),
+    right: num(template.margin_mm.right),
+    bottom: num(template.margin_mm.bottom),
+    left: num(template.margin_mm.left),
+  };
   const border = template.show_border ? 'border: 1px solid #ccc;' : '';
-  const logo = template.show_logo && data.logo_url
-    ? `<img src="${data.logo_url}" alt="" style="max-height:48px;margin-bottom:12px;" />`
+  const logoUrl = data.logo_url && /^https:\/\//i.test(data.logo_url) ? data.logo_url : '';
+  const logo = template.show_logo && logoUrl
+    ? `<img src="${escapeDocumentValue(logoUrl)}" alt="" style="max-height:48px;margin-bottom:12px;" />`
     : '';
 
   html = `<div style="padding:${margin.top}mm ${margin.right}mm ${margin.bottom}mm ${margin.left}mm;${border}">${logo}${html}</div>`;

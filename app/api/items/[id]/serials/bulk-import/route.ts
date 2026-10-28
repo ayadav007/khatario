@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export async function POST(
     const itemId = params.id;
     const body = await request.json();
     const {
-      business_id,
+      business_id: claimedBusinessId,
       variant_id,
       serials_text, // Newline-separated or comma-separated serial numbers
       purchase_price,
@@ -28,6 +29,33 @@ export async function POST(
       batch_id,
       delimiter = '\n', // Default to newline, can be comma, semicolon, etc.
     } = body;
+
+    const access = await requireTenantPermission(request, claimedBusinessId, 'items', 'create');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
+
+    // Every id named in the body must belong to this business.
+    const refs: Array<[string, unknown]> = [
+      ['items', itemId],
+      ['item_variants', variant_id],
+      ['warehouses', location_id],
+      ['suppliers', supplier_id],
+      ['purchases', purchase_id],
+    ];
+    for (const [table, id] of refs) {
+      if (id == null || id === '') continue;
+      const owned =
+        table === 'item_variants'
+          ? await client.query(
+              `SELECT 1 FROM item_variants v JOIN items i ON i.id = v.item_id
+                WHERE v.id = $1 AND v.item_id = $2 AND i.business_id = $3`,
+              [id, itemId, business_id]
+            )
+          : await client.query(`SELECT 1 FROM ${table} WHERE id = $1 AND business_id = $2`, [id, business_id]);
+      if (owned.rowCount === 0) {
+        return NextResponse.json({ error: 'Item, variant, location, supplier or purchase not found' }, { status: 404 });
+      }
+    }
 
     if (!business_id || !serials_text || purchase_price === undefined) {
       return NextResponse.json(

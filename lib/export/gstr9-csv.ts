@@ -1,12 +1,13 @@
 import { GSTR9Data } from '../gst/gstr9';
 import archiver from 'archiver';
+import { csvSafeText } from '@/lib/csv-safe';
 
 function toCSV(rows: any[], headers: string[]): string {
   const csvRows = [headers.join(',')];
   rows.forEach(row => {
     const values = headers.map(header => {
       const val = row[header] || '';
-      const escaped = ('' + val).replace(/"/g, '""');
+      const escaped = csvSafeText('' + val).replace(/"/g, '""');
       return `"${escaped}"`;
     });
     csvRows.push(values.join(','));

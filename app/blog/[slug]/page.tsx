@@ -67,7 +67,7 @@ export default async function BlogArticlePage({ params }: Props) {
   return (
     <BlogShell>
       <div className="mx-auto max-w-3xl">
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
         <BlogArticle
           title={post.title}
           excerpt={post.excerpt}

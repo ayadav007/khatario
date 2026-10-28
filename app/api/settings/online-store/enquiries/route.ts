@@ -3,6 +3,7 @@ import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { ENQUIRY_STATUSES, type EnquiryStatus } from '@/lib/store/enquiry';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ const SELECT = `id, name, phone, email, topic, message, source_path, status, cre
 /** GET /api/settings/online-store/enquiries — contact-form inbox. */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'customers', 'read');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 /** PATCH /api/settings/online-store/enquiries — { enquiry_id, status }. */
 export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const tenant = requireTenantBusinessId(request, body.business_id);
+  const tenant = await requireTenantPermission(request, body.business_id, 'customers', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

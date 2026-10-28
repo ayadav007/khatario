@@ -602,6 +602,8 @@ d('Phase 3.6B store payment lifecycle (real DB)', () => {
     expect((await orderRow(id)).payment_status).toBe('refund_pending');
     expect(await reversalCount((await orderRow(id)).receipt_payment_id, 'payment')).toBe(0);
     const notice = {
+      businessId: B,
+      orderId: id,
       providerPaymentId: payId,
       providerRefundId: 'rfnd_webhook_1',
       amountInr: 236,

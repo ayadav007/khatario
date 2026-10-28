@@ -52,6 +52,8 @@ export async function POST(request: NextRequest) {
   if (refund.event.startsWith('refund.') && refund.providerPaymentId && refund.providerRefundId && refund.status) {
     try {
       const result = await confirmStoreRefundFromProvider({
+        businessId: order.business_id,
+        orderId: order.id,
         providerPaymentId: refund.providerPaymentId,
         providerRefundId: refund.providerRefundId,
         amountInr: refund.amountInr,

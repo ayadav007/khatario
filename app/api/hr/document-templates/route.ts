@@ -7,6 +7,7 @@ import {
   mapRowToTemplate,
   DOCUMENT_ATTRIBUTES,
 } from '@/lib/hr/document-templates';
+import { sanitizeDocumentTemplateHtml } from '@/lib/hr/document-html';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
         businessId,
         name,
         String(body?.document_type ?? 'appointment_letter'),
-        String(body?.body_html ?? '<p>Dear {{employee.first_name}},</p><p>We are pleased to appoint you as {{employee.designation}} effective {{employee.joining_date}}.</p>'),
+        sanitizeDocumentTemplateHtml(String(body?.body_html ?? '<p>Dear {{employee.first_name}},</p><p>We are pleased to appoint you as {{employee.designation}} effective {{employee.joining_date}}.</p>')),
         JSON.stringify(body?.margin_mm ?? { top: 20, right: 20, bottom: 20, left: 20 }),
         body?.show_border === true,
         body?.show_logo !== false,
@@ -86,7 +87,7 @@ export async function PATCH(request: NextRequest) {
         id,
         businessId,
         body.name ? String(body.name) : null,
-        body.body_html != null ? String(body.body_html) : null,
+        body.body_html != null ? sanitizeDocumentTemplateHtml(String(body.body_html)) : null,
         body.margin_mm ? JSON.stringify(body.margin_mm) : null,
         body.show_border != null ? Boolean(body.show_border) : null,
         body.show_logo != null ? Boolean(body.show_logo) : null,

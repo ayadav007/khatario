@@ -7,7 +7,9 @@ const g = globalThis as typeof globalThis & { __khatarioThemeDrafts?: Map<string
 const drafts = (g.__khatarioThemeDrafts ??= new Map<string, DraftRow>());
 
 function secret(): string {
-  return process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'khatario-dev-theme-draft';
+  const key = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!key) throw new Error('JWT_SECRET is required for theme drafts');
+  return key;
 }
 
 function prune() {

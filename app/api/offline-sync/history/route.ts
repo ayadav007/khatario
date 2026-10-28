@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
   listReplayLogsForBusiness,
@@ -19,9 +19,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userId = request.nextUrl.searchParams.get('user_id');
+    // Permission is checked for the signed-in user, never a user named in the query.
+    const userId = getAuthenticatedUserId(request);
     if (!userId) {
-      return NextResponse.json({ error: 'user_id is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     try {

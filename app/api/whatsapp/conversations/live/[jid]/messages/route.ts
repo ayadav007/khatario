@@ -21,6 +21,7 @@ import {
 } from '@/lib/whatsapp/inbox-ownership';
 import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { extractWebMessageInfoTimestampSec, orderResolveMessageTimestamps, normalizeMessage } from '@/lib/baileys-store-helpers';
+import { loadOutboundMedia, OutboundMediaError } from '@/lib/http/outbound-media';
 
 /**
  * Baileys may index chats by a JID that differs from our DB/URL (e.g. LID, leading country code).
@@ -885,12 +886,16 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
 
     // Determine message type
     const msgType = message_type || (media_url ? 'image' : 'text');
-    let media: string | Buffer | undefined = media_url;
-
-    // If media_url is a base64 data URL, convert to Buffer
-    if (media_url && typeof media_url === 'string' && media_url.startsWith('data:')) {
-      const base64Data = media_url.split(',')[1];
-      media = Buffer.from(base64Data, 'base64');
+    let media: Buffer | undefined;
+    if (media_url) {
+      try {
+        media = await loadOutboundMedia(String(media_url));
+      } catch (e) {
+        if (e instanceof OutboundMediaError) {
+          return NextResponse.json({ error: 'media_url must be an uploaded file or a public https URL' }, { status: 400 });
+        }
+        throw e;
+      }
     }
 
     // Send message via WhatsApp

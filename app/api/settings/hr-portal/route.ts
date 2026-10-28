@@ -34,8 +34,15 @@ export async function PATCH(request: NextRequest) {
     await authorize(userId, 'settings', 'update', { businessId });
 
     const body = await request.json();
+    const current = await getHrPortalSettings(businessId);
+    const kioskEnabled = typeof body.kiosk_enabled === 'boolean' ? body.kiosk_enabled : undefined;
     const settings = await updateHrPortalSettings(businessId, {
-      kiosk_enabled: body.kiosk_enabled,
+      kiosk_enabled: kioskEnabled,
+      // Turning the kiosk off, or asking to revoke, signs out every registered kiosk device.
+      kiosk_device_generation:
+        body.revoke_kiosk_devices === true || (kioskEnabled === false && current.kiosk_enabled)
+          ? current.kiosk_device_generation + 1
+          : undefined,
     });
     return NextResponse.json({ settings });
   } catch (error) {

@@ -186,12 +186,6 @@ export const POST = withPremiumSubscriptionApi(
   {
     feature: 'accounting_chart',
     parseJsonBody: true,
-    resolveActingUserId: ({ body, sessionUserId }) => {
-      if (body != null && typeof body === 'object') {
-        return sessionUserId ?? (body as { created_by?: string }).created_by;
-      }
-      return sessionUserId;
-    },
   },
   async (ctx) => {
     try {
@@ -207,7 +201,6 @@ export const POST = withPremiumSubscriptionApi(
         opening_balance_type = 'debit',
         description,
         sort_order = 0,
-        created_by,
         pl_section,
       } = body as {
         account_code?: string;
@@ -225,6 +218,8 @@ export const POST = withPremiumSubscriptionApi(
       };
 
       const business_id = ctx.businessId;
+      // The actor is the signed-in user; a created_by in the body is ignored.
+      const created_by = ctx.userId;
 
       if (!account_code || !account_name || !account_type || !account_group_id || !nature) {
         return NextResponse.json(
@@ -242,7 +237,7 @@ export const POST = withPremiumSubscriptionApi(
 
       // AUTHORIZATION: Check create permission (accounts are part of settings/accounting)
       try {
-        await authorize(created_by, 'settings', 'create');
+        await authorize(created_by, 'settings', 'create', { businessId: business_id });
       } catch (error) {
         if (error instanceof AuthorizationError) {
           return error.toNextResponse();

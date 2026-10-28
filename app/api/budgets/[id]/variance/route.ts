@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Get budget vs actual variance report
  */
 export const GET = withPremiumSubscriptionApi<{ id: string }>(
-  { feature: 'accounting_budgets' },
+  { module: 'report.financial', action: 'read', feature: 'accounting_budgets' },
   async ({ request, businessId, params }) => {
     try {
       const budgetId = params.id;

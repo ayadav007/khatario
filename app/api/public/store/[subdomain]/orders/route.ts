@@ -25,8 +25,12 @@ import {
 } from '@/lib/store/checkout-stock';
 import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
 import { getBusinessUpiVpa, upiAppLinks } from '@/lib/payments/upi-pay-link';
+import { claimStoreCouponUse } from '@/lib/store/coupons';
 
 export const dynamic = 'force-dynamic';
+
+/** Open COD / UPI orders one shopper may have before paying or cancelling one. */
+const MAX_OPEN_UNPAID_ORDERS = 3;
 
 export async function POST(
   request: NextRequest,
@@ -142,6 +146,24 @@ export async function POST(
     }
     const storeCustomerId = verified.id;
 
+    // COD and UPI orders hold stock until invoiced or cancelled, so one shopper must not be able
+    // to tie up the whole store with unpaid orders.
+    if (paymentMethod !== 'online') {
+      const open = await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM store_orders
+          WHERE business_id = $1 AND store_customer_id = $2
+            AND payment_status IN ('cod', 'unpaid')
+            AND status <> 'cancelled' AND invoice_id IS NULL`,
+        [store.business_id, storeCustomerId],
+      );
+      if (Number(open?.n ?? 0) >= MAX_OPEN_UNPAID_ORDERS) {
+        return NextResponse.json(
+          { error: 'You already have orders waiting for payment. Please complete or cancel them first.', code: 'TOO_MANY_OPEN_ORDERS' },
+          { status: 429 },
+        );
+      }
+    }
+
     await client.query('BEGIN');
     // Lock and compare against what is left (on-hand minus other orders' holds) before saving.
     const shortfall = await checkStoreCartStock(client, {
@@ -217,6 +239,21 @@ export async function POST(
       );
     }
 
+    if (
+      !(await claimStoreCouponUse(client, {
+        businessId: store.business_id,
+        code: quote.coupon_code,
+        orderId,
+        storeCustomerId,
+      }))
+    ) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'This coupon can no longer be used', code: 'COUPON_UNAVAILABLE' },
+        { status: 409 },
+      );
+    }
+
     await holdStoreOrderStock(client, {
       businessId: store.business_id,
       orderId,
@@ -259,8 +296,6 @@ export async function POST(
 
     if (paymentMethod === 'cod' || paymentMethod === 'upi') {
       const { createInvoiceForStoreOrder } = await import('@/lib/store/fulfill-paid-order');
-      const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
-      await incrementStoreCouponUse(store.business_id, quote.coupon_code);
       await createInvoiceForStoreOrder(orderId, store.business_id).catch((err) => {
         console.error(`[store invoice ${paymentMethod}]`, err);
       });

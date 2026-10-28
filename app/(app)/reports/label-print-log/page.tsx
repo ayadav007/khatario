@@ -16,6 +16,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
+import { csvSafeText } from '@/lib/csv-safe';
 
 interface LogLineSnapshot {
   product_name?: string;
@@ -146,7 +147,7 @@ function LabelPrintAuditPage() {
     const csv = [header, ...rows]
       .map((r) =>
         r
-          .map((c) => `"${String(c).replace(/"/g, '""')}"`)
+          .map((c) => `"${csvSafeText(String(c)).replace(/"/g, '""')}"`)
           .join(',')
       )
       .join('\n');

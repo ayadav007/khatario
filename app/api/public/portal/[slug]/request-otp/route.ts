@@ -73,6 +73,12 @@ export async function POST(
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
+    // One live code per account: a resend retires the earlier ones.
+    await query(
+      `UPDATE customer_portal_otps SET is_used = true
+        WHERE business_id = $1 AND lower(trim(email)) = $2 AND is_used = false`,
+      [business.id, email]
+    );
     await query(
       `INSERT INTO customer_portal_otps (business_id, customer_id, email, otp_code, expires_at)
        VALUES ($1, $2, $3, $4, $5)`,

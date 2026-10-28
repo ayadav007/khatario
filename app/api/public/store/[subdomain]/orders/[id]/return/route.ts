@@ -37,9 +37,10 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     `SELECT r.return_number, r.status, r.reason, r.requested_at, r.credit_amount::float8 AS credit_amount,
             r.refunded_amount::float8 AS refunded_amount, r.refund_method, r.rejected_reason
        FROM order_returns r
-      WHERE r.business_id = $1 AND r.store_order_id = $2
+       JOIN store_orders o ON o.id = r.store_order_id AND o.business_id = r.business_id
+      WHERE r.business_id = $1 AND r.store_order_id = $2 AND o.store_customer_id = $3
       ORDER BY r.requested_at DESC`,
-    [who.businessId, params.id],
+    [who.businessId, params.id, who.customerId],
   );
   const eligible = await storeReturnEligibility(pool, {
     businessId: who.businessId,

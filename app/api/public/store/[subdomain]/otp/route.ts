@@ -12,6 +12,9 @@ const OTP_LIMIT = 8;
 const OTP_WINDOW_MS = 15 * 60 * 1000;
 const VERIFY_LIMIT = 20;
 const VERIFY_WINDOW_MS = 15 * 60 * 1000;
+/** Guesses per phone (from any IP) before the live code is burned. */
+const PHONE_GUESS_LIMIT = 5;
+const PHONE_REQUEST_LIMIT = 5;
 
 function cookieOptions() {
   return {
@@ -47,8 +50,17 @@ export async function POST(
         { status: 429 },
       );
     }
+    const phoneRl = checkRateLimit(`store-otp-req-phone:${store.business_id}:${phone}`, PHONE_REQUEST_LIMIT, OTP_WINDOW_MS);
+    if (!phoneRl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many codes. Try again in a few minutes.' },
+        { status: 429 },
+      );
+    }
     const debug = otpDebugAllowedFor(phone);
     const code = debug ? DEBUG_FIXED_OTP : String(randomInt(100000, 1000000));
+    // Only the newest code is valid, so resends do not multiply the codes an attacker can hit.
+    await query(`DELETE FROM store_customer_otp WHERE business_id = $1 AND phone = $2`, [store.business_id, phone]);
     await query(
       `INSERT INTO store_customer_otp (business_id, phone, code, expires_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
@@ -81,6 +93,19 @@ export async function POST(
   if (!verifyRl.allowed) {
     return NextResponse.json(
       { error: 'Too many attempts. Try again in a few minutes.' },
+      { status: 429 },
+    );
+  }
+
+  const phoneVerifyRl = checkRateLimit(
+    `store-otp-verify-phone:${store.business_id}:${phone}`,
+    PHONE_GUESS_LIMIT,
+    VERIFY_WINDOW_MS,
+  );
+  if (!phoneVerifyRl.allowed) {
+    await query(`DELETE FROM store_customer_otp WHERE business_id = $1 AND phone = $2`, [store.business_id, phone]);
+    return NextResponse.json(
+      { error: 'Too many attempts. Request a new code in a few minutes.' },
       { status: 429 },
     );
   }

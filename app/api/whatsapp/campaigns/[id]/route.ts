@@ -21,8 +21,8 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ managePermission: tr
         started_at, completed_at, paused_at, last_sent_at,
         created_at, updated_at
       FROM whatsapp_campaigns
-      WHERE id = $1
-    `, [campaignId]);
+      WHERE id = $1 AND business_id = $2
+    `, [campaignId, businessId]);
 
     if (!campaign) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
@@ -49,7 +49,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ managePermission: tr
     });
   } catch (error: any) {
     console.error('Error getting campaign:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Campaign request failed' }, { status: 500 });
   }
 });
 /**
@@ -62,8 +62,8 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
     const { action } = (body ?? {}) as { action?: string }; // 'start', 'pause', 'resume'
 
     const campaign = await queryOne(`
-      SELECT business_id, status FROM whatsapp_campaigns WHERE id = $1
-    `, [campaignId]);
+      SELECT business_id, status FROM whatsapp_campaigns WHERE id = $1 AND business_id = $2
+    `, [campaignId, businessId]);
 
     if (!campaign) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
@@ -165,7 +165,7 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error updating campaign:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Campaign request failed' }, { status: 500 });
   }
 });
 
@@ -179,8 +179,8 @@ export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission:
 
     // Verify campaign belongs to business
     const campaign = await queryOne(`
-      SELECT business_id, status FROM whatsapp_campaigns WHERE id = $1
-    `, [campaignId]);
+      SELECT business_id, status FROM whatsapp_campaigns WHERE id = $1 AND business_id = $2
+    `, [campaignId, businessId]);
 
     if (!campaign) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
@@ -219,7 +219,7 @@ export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission:
     return NextResponse.json({ success: true, message: 'Campaign deleted successfully' });
   } catch (error: any) {
     console.error('Error deleting campaign:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Campaign request failed' }, { status: 500 });
   }
 });
 

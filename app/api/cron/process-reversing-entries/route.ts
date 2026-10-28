@@ -182,6 +182,9 @@ export async function POST(request: NextRequest) {
  * Get list of pending reversing entries (for debugging/monitoring)
  */
 export async function GET(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get('business_id');

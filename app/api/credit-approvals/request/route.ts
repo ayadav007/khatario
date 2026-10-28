@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateProjectedCreditMetrics } from '@/lib/credit-utils';
@@ -25,9 +25,10 @@ export async function POST(request: NextRequest) {
       entity_id,
       reference_type, // 'invoice' | 'purchase'
       reference_id,
-      requested_by,
       reason,
     } = body;
+    // The actor is the signed-in user, never a user named in the body.
+    const requested_by = getAuthenticatedUserId(request);
 
     if (!business_id || !entity_type || !entity_id || !reference_type || !reference_id || !requested_by) {
       client.release();

@@ -7,6 +7,7 @@ import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/stor
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, body.business_id ?? searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, body.business_id ?? searchParams.get('business_id'), 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, query } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { requirePortalSession } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,13 +12,15 @@ export async function GET(
   try {
     const gate = await requirePortalSession(request);
     if (gate) return gate;
+    const tenant = requireTenantBusinessId(request);
+    if (!tenant.ok) return tenant.response;
 
     const { id } = params;
     
     // Get todo with history
     const todo = await queryOne(
-      `SELECT * FROM todos WHERE id = $1`,
-      [id]
+      `SELECT * FROM todos WHERE id = $1 AND business_id = $2`,
+      [id, tenant.businessId]
     );
 
     if (!todo) {
@@ -46,7 +48,7 @@ export async function GET(
     return NextResponse.json({ todo, history });
   } catch (error: any) {
     console.error('[GET /api/todos/:id] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Todo request failed' }, { status: 500 });
   }
 }
 
@@ -57,6 +59,8 @@ export async function PATCH(
   try {
     const gate = await requirePortalSession(request);
     if (gate) return gate;
+    const tenant = requireTenantBusinessId(request);
+    if (!tenant.ok) return tenant.response;
 
     const { id } = params;
     const body = await request.json();
@@ -75,7 +79,7 @@ export async function PATCH(
     } = body;
 
     // Get current todo to compare changes
-    const currentTodo = await queryOne('SELECT * FROM todos WHERE id = $1', [id]);
+    const currentTodo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
     if (!currentTodo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -159,6 +163,15 @@ export async function PATCH(
       values.push(reminder_channels);
     }
     
+    if (assigned_to) {
+      const assignee = await queryOne(
+        'SELECT id FROM users WHERE id = $1 AND business_id = $2',
+        [assigned_to, tenant.businessId]
+      );
+      if (!assignee) {
+        return NextResponse.json({ error: 'Assignee is not in this business' }, { status: 400 });
+      }
+    }
     if (assigned_to !== undefined) {
       fields.push(`assigned_to = $${paramIndex++}`);
       values.push(assigned_to || null);
@@ -185,7 +198,7 @@ export async function PATCH(
           entry.action,
           entry.old_val?.toString() || null,
           entry.new_val?.toString() || null,
-          action_by || null,
+          getAuthenticatedUserId(request),
           entry.old_due || null,
           entry.new_due || null,
           reason || null
@@ -204,7 +217,7 @@ export async function PATCH(
     return NextResponse.json(updatedTodo);
   } catch (error: any) {
     console.error('[PATCH /api/todos/:id] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Todo request failed' }, { status: 500 });
   }
 }
 
@@ -215,11 +228,13 @@ export async function DELETE(
   try {
     const gate = await requirePortalSession(request);
     if (gate) return gate;
+    const tenant = requireTenantBusinessId(request);
+    if (!tenant.ok) return tenant.response;
 
     const { id } = params;
     
     // Get todo to check feature access
-    const todo = await queryOne('SELECT * FROM todos WHERE id = $1', [id]);
+    const todo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
     if (!todo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -253,6 +268,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[DELETE /api/todos/:id] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Todo request failed' }, { status: 500 });
   }
 }

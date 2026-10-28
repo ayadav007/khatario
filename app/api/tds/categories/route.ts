@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/categories
  * List TDS categories
  */
-export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, async ({ businessId }) => {
+export const GET = withPremiumSubscriptionApi({ module: 'journal', action: 'read', feature: 'accounting_tds',}, async ({ businessId }) => {
   try {
     const categories = await queryRows<TDSCategory>(`
       SELECT * FROM tds_categories
@@ -32,7 +32,7 @@ export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, asy
  * Create TDS category
  */
 export const POST = withPremiumSubscriptionApi(
-  { feature: 'accounting_tds', parseJsonBody: true },
+  { module: 'settings', action: 'update', feature: 'accounting_tds', parseJsonBody: true },
   async ({ body, businessId }) => {
     try {
       const {

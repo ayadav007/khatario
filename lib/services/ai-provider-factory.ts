@@ -3,6 +3,7 @@
 
 import { queryOne } from '@/lib/db';
 import { decryptSecret } from '@/lib/secret-encryption';
+import { assertPublicHttpUrl } from '@/lib/http/outbound-media';
 
 // Supported AI providers
 export type AIProvider = 'openai' | 'gemini' | 'groq' | 'anthropic' | 'custom';
@@ -371,9 +372,11 @@ class CustomProvider implements AIProviderInterface {
     if (!this.config.apiBaseUrl) {
       throw new Error('Custom provider requires apiBaseUrl');
     }
+    await assertPublicHttpUrl(this.config.apiBaseUrl, { httpsOnly: true });
 
     const response = await fetch(this.config.apiBaseUrl, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
         'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
@@ -387,8 +390,8 @@ class CustomProvider implements AIProviderInterface {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Custom API error: ${response.status} - ${error}`);
+      // The body is not echoed: it could be any internal service's response.
+      throw new Error(`Custom API error: ${response.status}`);
     }
 
     const data = await response.json();
@@ -413,8 +416,10 @@ class CustomProvider implements AIProviderInterface {
 
   async analyzeImage(imageUrl: string, prompt: string): Promise<string> {
     // Assume custom provider might support OpenAI-compatible vision if it's based on it
+    await assertPublicHttpUrl(this.config.apiBaseUrl!, { httpsOnly: true });
     const response = await fetch(this.config.apiBaseUrl!, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
         'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',

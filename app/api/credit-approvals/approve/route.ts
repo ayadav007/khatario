@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { checkUserPermission } from '@/lib/permissions';
@@ -22,9 +22,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       approval_id,
-      approved_by,
       business_id,
     } = body;
+    // The actor is the signed-in user, never a user named in the body.
+    const approved_by = getAuthenticatedUserId(request);
 
     if (!approval_id || !approved_by || !business_id) {
       client.release();

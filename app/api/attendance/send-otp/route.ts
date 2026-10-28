@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { phone, business_id } = body;
+    const { phone, business_id: claimedBusinessId } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'attendance', 'create');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
 
     if (!phone || !business_id) {
       return NextResponse.json(

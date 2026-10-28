@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const tenant = requireTenantBusinessId(request, body.business_id);
+  const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * Note: This is a simplified version. Full implementation would parse CSV/Excel files
  */
 export const POST = withPremiumSubscriptionApi(
-  { feature: 'accounting_bank', parseJsonBody: true },
+  { module: 'journal', action: 'create', feature: 'accounting_bank', parseJsonBody: true },
   async ({ body, businessId }) => {
     const pool = getPool();
     const client = await pool.connect();

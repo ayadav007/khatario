@@ -12,7 +12,7 @@ export function EmployeePortalSettingsPanel() {
   const toast = useToastContext();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [kioskEnabled, setKioskEnabled] = useState(true);
+  const [kioskEnabled, setKioskEnabled] = useState(false);
 
   const load = useCallback(async () => {
     if (!business?.id) return;
@@ -23,7 +23,7 @@ export function EmployeePortalSettingsPanel() {
       });
       if (res.ok) {
         const data = await res.json();
-        setKioskEnabled(data.settings?.kiosk_enabled !== false);
+        setKioskEnabled(data.settings?.kiosk_enabled === true);
       }
     } finally {
       setLoading(false);
@@ -66,8 +66,10 @@ export function EmployeePortalSettingsPanel() {
       <section className={STACK_SECTION_CLASS}>
         <h3 className="settings-section-title mb-0">Attendance kiosk</h3>
         <p className="type-body-secondary">
-          Shared tablet mode for quick check-in without full employee login. Link appears on your
-          employee portal URL under <span className="font-mono text-sm">/employees/kiosk</span>.
+          Shared tablet mode for quick check-in without full employee login. Open{' '}
+          <span className="font-mono text-sm">/employees/kiosk</span> on your employee portal URL
+          while signed in to Khatario on the tablet and register it; employee codes work only on
+          registered devices. Turning the kiosk off signs out every registered device.
         </p>
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-text-secondary">

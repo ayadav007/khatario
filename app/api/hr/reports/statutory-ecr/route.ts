@@ -7,6 +7,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { query, queryRows } from '@/lib/db';
 import { getHrPayrollSettings } from '@/lib/hr/hr-payroll-settings';
 import { businessHasModule, getBusinessPlatformContext } from '@/lib/business-modules';
+import { csvSafeText } from '@/lib/csv-safe';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,7 +146,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function csv(v: string): string {
+function csv(raw: string): string {
+  const v = csvSafeText(raw);
   if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
   return v;
 }

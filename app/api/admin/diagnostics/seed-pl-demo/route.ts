@@ -18,11 +18,9 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getUserIdFromRequest,
-  getBusinessIdFromRequest,
-  requirePortalSession,
-} from '@/lib/auth-helpers';
+import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import { primaryAdminUserId } from '@/lib/admin-diagnostics-auth';
+import { requirePortalSession } from '@/lib/auth-helpers';
 import { queryOne, getPool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 
@@ -49,8 +47,12 @@ async function authorize(request: NextRequest): Promise<
   const gate = await requirePortalSession(request);
   if (gate) return { ok: false, response: gate };
 
-  const businessId = getBusinessIdFromRequest(request);
-  const userId = getUserIdFromRequest(request);
+  // Platform diagnostics: super admins only. The business comes from ?business_id= and the
+  // actor recorded on any writes is that business's primary admin.
+  const platform = await requirePlatformRequest(request, 'super_admin');
+  if (!platform.ok) return { ok: false, response: platform.response };
+  const businessId = new URL(request.url).searchParams.get('business_id');
+  const userId = businessId ? await primaryAdminUserId(businessId) : null;
   if (!businessId) {
     return { ok: false, response: NextResponse.json({ error: 'business_id is required' }, { status: 400 }) };
   }

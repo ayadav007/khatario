@@ -13,6 +13,7 @@ import { accountOutstandingStoreOrders, createInvoiceForStoreOrder } from '@/lib
 import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
 import { collectStoreOrderCash, StoreCashCollectError } from '@/lib/store/store-receipt';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,7 +98,7 @@ async function loadOrder(orderId: string, businessId: string) {
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'invoices', 'read');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -169,7 +170,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const tenant = requireTenantBusinessId(request, body.business_id);
+  const tenant = await requireTenantPermission(request, body.business_id, 'invoices', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

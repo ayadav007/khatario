@@ -24,6 +24,7 @@ import {
   isTransactionalWhatsAppSend,
   withPremiumSubscriptionApi,
 } from '@/lib/security/premium-module-api';
+import { loadOutboundMedia, OutboundMediaError } from '@/lib/http/outbound-media';
 
 export const dynamic = 'force-dynamic';
 
@@ -232,7 +233,17 @@ export const POST = withPremiumSubscriptionApi(
         imageBuffer = Buffer.from(arrayBuffer);
       }
 
-      let media: string | Buffer | undefined = mediaUrl || imageBuffer;
+      let media: string | Buffer | undefined = imageBuffer;
+      if (mediaUrl) {
+        try {
+          media = await loadOutboundMedia(mediaUrl);
+        } catch (e) {
+          if (e instanceof OutboundMediaError) {
+            return NextResponse.json({ error: 'mediaUrl must be an uploaded file or a public https URL' }, { status: 400 });
+          }
+          throw e;
+        }
+      }
 
       if (invoiceId) {
         const invoice = await queryOne<{

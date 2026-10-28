@@ -4,7 +4,7 @@ import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ businessId }) => {
+export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission: 'update' }, async ({ businessId }) => {
   try {
     await disconnectWhatsApp(businessId);
     return NextResponse.json({ success: true });

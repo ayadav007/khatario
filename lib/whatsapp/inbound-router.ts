@@ -24,7 +24,7 @@ export function samePhone(a: string | null | undefined, b: string | null | undef
   return x.length >= 10 && y.length >= 10 && x.slice(-10) === y.slice(-10);
 }
 
-const LINK_RE = /^\s*LINK\s+(\d{4,6})\s*$/i;
+const LINK_RE = /^\s*LINK\s+(\d{4,8})\s*$/i;
 
 export function parseLinkCode(text: string | null | undefined): string | null {
   const m = LINK_RE.exec(text ?? '');

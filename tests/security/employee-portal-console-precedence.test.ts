@@ -20,7 +20,7 @@ const PORTAL_HEADER = 'x-middleware-request-x-employee-portal-session';
 function attendanceRequest(referer?: string, host = 'staging.khatario.com') {
   const headers: Record<string, string> = {
     host,
-    cookie: 'khatario_employee_portal=portal-token; khatario_session=owner-token',
+    cookie: 'khatario_employee_portal=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; khatario_session=owner-token',
   };
   if (referer) headers.referer = referer;
   // The Next origin is internal behind nginx; the public host comes from the Host header.

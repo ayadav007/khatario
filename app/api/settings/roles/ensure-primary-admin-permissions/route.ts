@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { actingUserId } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +14,10 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id } = body;
-    const user_id = actingUserId(request, body.user_id);
+    const access = await requireTenantPermission(request, body.business_id, 'settings', 'update');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
+    const user_id = actingUserId(request);
 
     if (!business_id || !user_id) {
       return NextResponse.json(

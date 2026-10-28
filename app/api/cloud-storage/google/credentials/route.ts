@@ -5,7 +5,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 /**
  * GET /api/cloud-storage/google/credentials
@@ -14,7 +14,7 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
+    const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
     const { user_id, client_id, client_secret, redirect_uri } = body;
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 

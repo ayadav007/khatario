@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
     if (!tenant.ok) {
       return tenant.response;
     }
@@ -58,7 +59,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
+    const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
     if (!tenant.ok) {
       return tenant.response;
     }

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/reports/summary
  * Get TDS summary report
  */
-export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ module: 'report.financial', action: 'read', feature: 'accounting_tds',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const financialYear = searchParams.get('financial_year');

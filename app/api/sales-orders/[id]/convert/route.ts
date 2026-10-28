@@ -14,6 +14,7 @@ import {
   lineRemainingQty,
 } from '@/lib/sales-orders/billing-status';
 import { releaseSalesOrderReservationQty } from '@/lib/stock/sales-order-reservations';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,14 @@ export async function POST(
   const tenant = requireTenantBusinessId(request);
   if (!tenant.ok) return tenant.response;
   const body = await request.json().catch(() => ({}));
-  const userId = getUserIdFromRequest(request, body);
+  const userId = getUserIdFromRequest(request);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await authorize(userId, 'invoices', 'create', { businessId: tenant.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   const salesOrderId = params.id;
   const invoiceDate = body?.invoice_date ? String(body.invoice_date).slice(0, 10) : todayIsoDate();

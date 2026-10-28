@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleDriveService } from '@/lib/cloud-storage';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,10 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, backup_data, filename } = body;
+    const { business_id: claimedBusinessId, backup_data, filename } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'settings', 'update');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
 
     if (!business_id || !backup_data || !filename) {
       return NextResponse.json(

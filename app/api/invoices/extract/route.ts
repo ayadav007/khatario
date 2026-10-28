@@ -34,6 +34,7 @@ import { recordInvoiceExtractionTelemetry } from '@/lib/services/invoice-extract
 import { getParserVersionMetadata } from '@/lib/services/invoice-extract/parserVersion';
 import { buildSupplierLayoutFingerprint } from '@/lib/services/invoice-extract/supplierFingerprintEngine';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,7 +161,9 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const businessId = formData.get('business_id') as string;
+    const access = await requireTenantPermission(request, formData.get('business_id'), 'purchases', 'create');
+    if (!access.ok) return access.response;
+    const businessId = access.businessId;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });

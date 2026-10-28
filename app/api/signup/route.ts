@@ -200,6 +200,10 @@ export async function POST(request: NextRequest) {
       }
     })();
 
+    {
+      const { consumePlatformOtpProof } = await import('@/lib/platform-public-otp');
+      await consumePlatformOtpProof(request, response);
+    }
     return response;
 
   } catch (error: any) {

@@ -1,12 +1,26 @@
+import { createHmac, randomInt } from 'crypto';
 import { query, queryOne } from '@/lib/db';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { sendWhatsAppMessage, getWhatsAppStatus } from '@/lib/whatsapp';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { updateEmployeePortalPassword } from '@/lib/employee-portal/password';
 
 const OTP_TTL_MINUTES = 10;
+/** Wrong codes per employee (from any IP) before the live code is burned. */
+const OTP_GUESS_LIMIT = 5;
+const OTP_GUESS_WINDOW_MS = 15 * 60 * 1000;
+
+const GENERIC_SENT_MESSAGE = 'If an account exists for this phone number, a verification code will be sent.';
 
 export function generatePortalOtpCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return String(randomInt(100000, 1000000));
+}
+
+/** Codes are stored as an HMAC, never in plain text. */
+function hashPortalOtp(employeeId: string, code: string): string {
+  const key = process.env.JWT_SECRET;
+  if (!key) throw new Error('JWT_SECRET is required');
+  return 'h1:' + createHmac('sha256', key).update(`emp-portal-otp:${employeeId}:${code.trim()}`).digest('hex');
 }
 
 export async function sendEmployeePortalPasswordResetOtp(
@@ -28,10 +42,7 @@ export async function sendEmployeePortalPasswordResetOtp(
   );
 
   if (!employee) {
-    return {
-      sent: true,
-      message: 'If an account exists for this phone number, a verification code will be sent.',
-    };
+    return { sent: true, message: GENERIC_SENT_MESSAGE };
   }
 
   const otpCode = generatePortalOtpCode();
@@ -47,7 +58,7 @@ export async function sendEmployeePortalPasswordResetOtp(
   await query(
     `INSERT INTO employee_portal_otps (business_id, employee_id, phone, otp_code, purpose, expires_at)
      VALUES ($1, $2, $3, $4, 'password_reset', $5)`,
-    [businessId, employee.id, phone, otpCode, expiresAt]
+    [businessId, employee.id, phone, hashPortalOtp(employee.id, otpCode), expiresAt]
   );
 
   const text = [
@@ -79,12 +90,16 @@ export async function sendEmployeePortalPasswordResetOtp(
     }
   }
 
+  if (!sent) {
+    console.warn('[employee portal forgot-password] code not delivered: business WhatsApp not connected');
+  }
+
+  // Same answer whether or not the phone belongs to an employee, and whether or not delivery
+  // worked, so the endpoint cannot be used to find out who works where.
   return {
-    sent: sent || isDevelopment,
+    sent: true,
     devOtp: isDevelopment ? otpCode : undefined,
-    message: sent
-      ? 'Verification code sent to your registered phone number.'
-      : 'Could not deliver verification code. Ask your employer to connect WhatsApp or share a reset link.',
+    message: GENERIC_SENT_MESSAGE,
   };
 }
 
@@ -111,6 +126,16 @@ export async function resetEmployeePortalPasswordWithOtp(params: {
     throw new Error('Invalid verification code');
   }
 
+  const guesses = checkRateLimit(`emp-portal-otp-guess:${employee.id}`, OTP_GUESS_LIMIT, OTP_GUESS_WINDOW_MS);
+  if (!guesses.allowed) {
+    await query(
+      `UPDATE employee_portal_otps SET is_used = true
+        WHERE employee_id = $1 AND purpose = 'password_reset' AND is_used = false`,
+      [employee.id]
+    );
+    throw new Error('Too many attempts. Request a new code later.');
+  }
+
   const otp = await queryOne<{ id: string }>(
     `SELECT id FROM employee_portal_otps
      WHERE business_id = $1 AND employee_id = $2 AND phone = $3 AND otp_code = $4
@@ -118,7 +143,7 @@ export async function resetEmployeePortalPasswordWithOtp(params: {
        AND expires_at > CURRENT_TIMESTAMP AND is_used = false
      ORDER BY created_at DESC
      LIMIT 1`,
-    [params.businessId, employee.id, phone, params.otpCode.trim()]
+    [params.businessId, employee.id, phone, hashPortalOtp(employee.id, params.otpCode)]
   );
 
   if (!otp) {
@@ -130,4 +155,11 @@ export async function resetEmployeePortalPasswordWithOtp(params: {
   await updateEmployeePortalPassword(employee.id, params.businessId, params.newPassword, {
     mustChange: false,
   });
+
+  // A reset means the old password may be known to someone else: end every session.
+  await query(`DELETE FROM employee_portal_sessions WHERE employee_id = $1`, [employee.id]);
+  await query(
+    `UPDATE users SET auth_session_version = COALESCE(auth_session_version, 0) + 1 WHERE id = $1`,
+    [employee.id]
+  );
 }

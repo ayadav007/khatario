@@ -7,7 +7,7 @@ import { withPremiumSubscriptionApi } from '@/lib/security';
 export const dynamic = 'force-dynamic';
 
 export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
-  {},
+  { module: 'report.financial', action: 'read',},
   async (ctx) => {
     try {
       const { accountId } = ctx.params;

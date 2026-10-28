@@ -16,7 +16,9 @@ export interface PlatformSessionPayload extends JWTPayload {
 }
 
 function getSecret(): Uint8Array {
-  const secret = PLATFORM_JWT_SECRET || APP_JWT_SECRET;
+  // Without PLATFORM_JWT_SECRET, a key derived from JWT_SECRET (never the same bytes) keeps
+  // platform-admin tokens separate from business-user tokens.
+  const secret = PLATFORM_JWT_SECRET || (APP_JWT_SECRET ? `khatario-platform:${APP_JWT_SECRET}` : '');
   if (!secret) {
     throw new Error('PLATFORM_JWT_SECRET or JWT_SECRET must be set');
   }

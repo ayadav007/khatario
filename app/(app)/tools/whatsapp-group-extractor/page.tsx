@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Loader2, Users, Download, Search, CheckCircle2, XCircle, Phone, Copy, Check, UserPlus, CheckSquare, Square, Settings2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { csvSafeText } from '@/lib/csv-safe';
 
 interface Group {
   jid: string;
@@ -240,7 +241,7 @@ export default function WhatsAppGroupExtractorPage() {
   const escapeCsvField = (field: string | null): string => {
     if (field === null || field === undefined) return '';
     // Replace any existing quotes with double quotes (CSV escaping)
-    const escaped = field.replace(/"/g, '""');
+    const escaped = csvSafeText(field).replace(/"/g, '""');
     // Wrap in quotes to ensure it's treated as text
     return `"${escaped}"`;
   };

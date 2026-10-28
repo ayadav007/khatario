@@ -3,6 +3,7 @@ import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { query, queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { STUDIO_DRAFT_MAX_BYTES, sanitizeStudioDraft } from '@/lib/store/studio-draft';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export async function PUT(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
-  const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+  const tenant = await requireTenantPermission(request, body.business_id as string | undefined, 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -61,7 +62,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { format } from 'date-fns';
+import { csvSafeText } from '@/lib/csv-safe';
 
 /** Shared building blocks for the sales and purchase register reports. */
 
@@ -100,7 +101,7 @@ export function exportCsv(fileName: string, data: any, rowKeys: string[]) {
   const rows: Record<string, unknown>[] = data[key];
   const cols = Object.keys(rows[0]).filter((c) => typeof rows[0][c] !== 'object' || rows[0][c] === null);
   const esc = (v: unknown) => {
-    const s = v == null ? '' : String(v);
+    const s = csvSafeText(v == null ? '' : String(v));
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');

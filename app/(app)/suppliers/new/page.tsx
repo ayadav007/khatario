@@ -105,7 +105,8 @@ export default function NewSupplierPage() {
   }
 
   const searchBusinesses = async (name: string, phone: string, gstin?: string) => {
-    if ((!name || name.length < 3) && (!phone || phone.length < 3) && (!gstin || gstin.length < 15)) {
+    const phoneDigits = (phone || '').replace(/\D/g, '');
+    if ((!name || name.length < 3) && phoneDigits.length < 10 && (!gstin || gstin.length < 15)) {
       setBusinessSearchResults([]);
       return;
     }
@@ -113,10 +114,9 @@ export default function NewSupplierPage() {
     setSearchingBusinesses(true);
     try {
       const params = new URLSearchParams();
-      if (name) params.append('name', name);
-      if (phone) params.append('phone', phone);
+      if (name && name.length >= 3) params.append('name', name);
+      if (phoneDigits.length >= 10) params.append('phone', phoneDigits);
       if (gstin && gstin.length === 15) params.append('gstin', gstin);
-      params.append('exclude_business_id', business!.id);
 
       const res = await fetch(`/api/suppliers/search-business?${params.toString()}`);
       if (res.ok) {

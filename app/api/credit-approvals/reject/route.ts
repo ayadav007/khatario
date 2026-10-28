@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { checkUserPermission } from '@/lib/permissions';
 
@@ -19,10 +19,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       approval_id,
-      rejected_by,
       business_id,
       rejection_reason,
     } = body;
+    // The actor is the signed-in user, never a user named in the body.
+    const rejected_by = getAuthenticatedUserId(request);
 
     if (!approval_id || !rejected_by || !business_id) {
       client.release();

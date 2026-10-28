@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { requirePortalSession } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +11,8 @@ export async function POST(
 ) {
   const gate = await requirePortalSession(request);
   if (gate) return gate;
+  const tenant = requireTenantBusinessId(request);
+  if (!tenant.ok) return tenant.response;
 
   try {
     const { id } = params;
@@ -21,7 +23,7 @@ export async function POST(
       return NextResponse.json({ error: 'Snooze until time is required' }, { status: 400 });
     }
 
-    const todo = await queryOne('SELECT * FROM todos WHERE id = $1', [id]);
+    const todo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
     if (!todo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -47,7 +49,7 @@ export async function POST(
 
     await query(
       `SELECT create_todo_history($1, 'snoozed', $2, $3, $4)`,
-      [id, todo.reminder_time?.toString() || null, snooze_until.toString(), action_by || null]
+      [id, todo.reminder_time?.toString() || null, snooze_until.toString(), getAuthenticatedUserId(request)]
     );
 
     try {
@@ -64,6 +66,6 @@ export async function POST(
     return NextResponse.json(updatedTodo);
   } catch (error: any) {
     console.error('[POST /api/todos/:id/snooze] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Todo request failed' }, { status: 500 });
   }
 }

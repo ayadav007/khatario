@@ -343,6 +343,8 @@ d('Easebuzz store payment lifecycle (real DB)', () => {
     const easepayid = `E${order.id.slice(0, 12)}`;
     await payViaReturn(order, easepayid);
     const out = await confirmStoreRefundFromProvider({
+      businessId: B,
+      orderId: order.id,
       provider: 'easebuzz',
       providerPaymentId: easepayid,
       providerRefundId: `refund-${order.id.slice(0, 8)}`,
@@ -359,6 +361,8 @@ d('Easebuzz store payment lifecycle (real DB)', () => {
     const easepayid = `E${order.id.slice(0, 12)}`;
     await payViaReturn(order, easepayid);
     const out = await confirmStoreRefundFromProvider({
+      businessId: B,
+      orderId: order.id,
       providerPaymentId: easepayid,
       providerRefundId: 'rfnd_spoof00001',
       amountInr: 236,

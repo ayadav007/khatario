@@ -17,7 +17,7 @@ function baileysGapMs(): number {
   return randomGapMs(BAILEYS_BULK_GAP_MS);
 }
 
-export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ body, businessId }) => {
+export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission: 'create' }, async ({ body, businessId }) => {
   try {
     const { invoice_ids, message_template, include_pdf } = (body ?? {}) as {
       invoice_ids?: string[];

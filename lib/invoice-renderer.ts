@@ -287,7 +287,14 @@ export class InvoiceRenderer {
     this.registerHelpers();
     
     const folderName = InvoiceRenderer.TEMPLATE_PATH_MAP[templateId] || templateId;
+    // Template ids are folder names under templateDir; never let one climb out of it.
+    if (!/^[a-z0-9_-]+(\/[a-z0-9_-]+)*$/i.test(folderName)) {
+      throw new Error(`Template ${templateId} not found`);
+    }
     const templatePath = path.join(this.templateDir, folderName, 'template.html');
+    if (!path.resolve(templatePath).startsWith(path.resolve(this.templateDir) + path.sep)) {
+      throw new Error(`Template ${templateId} not found`);
+    }
     
     console.log('[Renderer] Template ID:', templateId);
     console.log('[Renderer] Resolved folder:', folderName);
@@ -295,7 +302,7 @@ export class InvoiceRenderer {
     console.log('[Renderer] File Exists:', fs.existsSync(templatePath));
     
     if (!fs.existsSync(templatePath)) {
-      throw new Error(`Template ${templateId} not found at ${templatePath}`);
+      throw new Error(`Template ${templateId} not found`);
     }
 
     const source = fs.readFileSync(templatePath, 'utf-8');

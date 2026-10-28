@@ -4,6 +4,7 @@ import { query, queryOne } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 /**
  * GET /api/settings/product-variants
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
+    const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
     const {

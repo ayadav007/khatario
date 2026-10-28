@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { autoDetectAccountMappings } from '@/lib/account-mappings';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
+    const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
 

@@ -26,7 +26,10 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { login, user, loading: authLoading, platformSession } = useAuth();
   const { isOffline } = useNetworkStatus();
-  const redirectFromQuery = searchParams.get('redirect');
+  const rawRedirect = searchParams.get('redirect');
+  // Same-site paths only: `//evil.com`, `/\evil.com` or `https://…` would leave Khatario.
+  const redirectFromQuery =
+    rawRedirect && /^\/(?![/\\])[^\s\\]*$/.test(rawRedirect) ? rawRedirect : null;
   const defaultHome = resolveHomePathForUser(platformSession, user);
   const redirectTarget =
     redirectFromQuery &&

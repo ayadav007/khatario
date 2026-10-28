@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { assertFeatureAccess } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
@@ -11,11 +12,13 @@ export async function DELETE(
 ) {
   try {
     const { id } = params;
+    const tenant = requireTenantBusinessId(request);
+    if (!tenant.ok) return tenant.response;
 
     // Get preset to check business_id
     const preset = await db.queryRows(
-      'SELECT business_id FROM filter_presets WHERE id = $1',
-      [id]
+      'SELECT business_id FROM filter_presets WHERE id = $1 AND business_id = $2',
+      [id, tenant.businessId]
     );
 
     if (!preset[0]) {
@@ -50,11 +53,13 @@ export async function PUT(
     const { id } = params;
     const body = await request.json();
     const { name, description, filters, is_public, is_default } = body;
+    const tenant = requireTenantBusinessId(request);
+    if (!tenant.ok) return tenant.response;
 
     // Get preset to check business_id
     const preset = await db.queryRows(
-      'SELECT business_id, entity_type, user_id FROM filter_presets WHERE id = $1',
-      [id]
+      'SELECT business_id, entity_type, user_id FROM filter_presets WHERE id = $1 AND business_id = $2',
+      [id, tenant.businessId]
     );
 
     if (!preset[0]) {

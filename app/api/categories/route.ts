@@ -3,6 +3,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { queryRows, queryOne, query } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, name, description } = body;
+    const { business_id: claimedBusinessId, name, description } = body;
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const createdByUserId = resolveCreatedByUserId(request, body);
 
     if (!business_id || !name) {
@@ -152,8 +156,8 @@ export async function DELETE(request: NextRequest) {
 
     // Check if category has items
     const itemsCount = await queryOne(
-      `SELECT COUNT(*) as count FROM items WHERE category_id = $1`,
-      [categoryId]
+      `SELECT COUNT(*) as count FROM items WHERE category_id = $1 AND business_id = $2`,
+      [categoryId, businessId]
     );
 
     if (parseInt(itemsCount?.count || '0') > 0) {
@@ -163,7 +167,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await query(`DELETE FROM categories WHERE id = $1`, [categoryId]);
+    await query(`DELETE FROM categories WHERE id = $1 AND business_id = $2`, [categoryId, businessId]);
 
     return NextResponse.json({
       success: true,

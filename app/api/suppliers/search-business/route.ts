@@ -1,20 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Search for business accounts by name and phone number
  * Used when adding a supplier to find if they have an account
- * GET /api/suppliers/search-business?name=xxx&phone=xxx&exclude_business_id=xxx
+ * GET /api/suppliers/search-business?name=xxx&phone=xxx&gstin=xxx
+ *
+ * Returns only what identifies a match (id, name, city, state). Another business's phone,
+ * email, address and PAN are never returned; GSTIN only when the caller already typed it.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const name = searchParams.get('name');
-    const phone = searchParams.get('phone');
+    // Short names and partial phones would turn this into a directory of every business.
+    const rawName = searchParams.get('name')?.trim() ?? '';
+    const name = rawName.length >= 3 ? rawName : null;
+    const rawPhone = (searchParams.get('phone') ?? '').replace(/\D/g, '');
+    const phone = rawPhone.length >= 10 ? rawPhone : null;
     const gstin = searchParams.get('gstin');
-    const excludeBusinessId = searchParams.get('exclude_business_id');
+    const access = await requireTenantPermission(request, null, 'suppliers', 'create');
+    if (!access.ok) return access.response;
+    const excludeBusinessId = access.businessId;
+
+    const rl = checkRateLimit(`supplier-business-search:${access.userId}`, 60, 5 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Too many searches. Try again in a few minutes.' }, { status: 429 });
+    }
 
     if (!name && !phone && !gstin) {
       return NextResponse.json(
@@ -45,8 +60,8 @@ export async function GET(request: NextRequest) {
     // Search by phone (exact or partial match, removing common formatting)
     if (phone && phone.trim().length > 0) {
       const cleanPhone = phone.replace(/\D/g, ''); // Remove non-digits
-      whereConditions.push(`REGEXP_REPLACE(b.phone, '[^0-9]', '', 'g') LIKE $${paramIndex}`);
-      params.push(`%${cleanPhone}%`);
+      whereConditions.push(`RIGHT(REGEXP_REPLACE(b.phone, '[^0-9]', '', 'g'), 10) = RIGHT($${paramIndex}, 10)`);
+      params.push(cleanPhone);
       paramIndex++;
     }
 
@@ -152,8 +167,14 @@ export async function GET(request: NextRequest) {
         matchConfidence = 60;
       }
 
+      const gstinMatched = !!normalizedGstin && b.gstin?.trim().toUpperCase() === normalizedGstin;
       return {
-        ...b,
+        id: b.id,
+        name: b.name,
+        city: b.city,
+        state: b.state,
+        gstin: gstinMatched ? b.gstin : null,
+        already_linked: b.already_linked,
         match_confidence: matchConfidence,
         name_similarity: nameSim
       };
@@ -184,7 +205,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Error searching businesses:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to search businesses' },
+      { error: 'Failed to search businesses' },
       { status: 500 }
     );
   }

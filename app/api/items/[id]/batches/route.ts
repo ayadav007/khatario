@@ -89,6 +89,21 @@ export async function POST(
       notes,
     } = body;
 
+    // The item (and any variant, location, supplier or purchase named) must be this business's.
+    const ownership = await queryOne<{ ok: boolean }>(
+      `SELECT (
+          EXISTS (SELECT 1 FROM items WHERE id = $1 AND business_id = $2)
+          AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM item_variants WHERE id = $3 AND item_id = $1))
+          AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM warehouses WHERE id = $4 AND business_id = $2))
+          AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM suppliers WHERE id = $5 AND business_id = $2))
+          AND ($6::uuid IS NULL OR EXISTS (SELECT 1 FROM purchases WHERE id = $6 AND business_id = $2))
+        ) AS ok`,
+      [itemId, business_id, variant_id || null, location_id || null, supplier_id || null, purchase_id || null]
+    );
+    if (!ownership?.ok) {
+      return NextResponse.json({ error: 'Item, variant, location, supplier or purchase not found' }, { status: 404 });
+    }
+
     if (!business_id || !batch_number || !purchase_price || quantity === undefined) {
       return NextResponse.json(
         { error: 'business_id, batch_number, purchase_price, and quantity are required' },

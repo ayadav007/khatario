@@ -1,7 +1,8 @@
+import { csvSafeText } from '@/lib/csv-safe';
 /** Downloads rows as a CSV file in the browser. Values are quoted when they need it. */
 export function downloadCsv(filename: string, header: string[], rows: Array<Array<string | number | null | undefined>>): void {
   const cell = (v: string | number | null | undefined) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    const s = csvSafeText(v === null || v === undefined ? '' : String(v));
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const text = [header, ...rows].map((r) => r.map(cell).join(',')).join('\n');

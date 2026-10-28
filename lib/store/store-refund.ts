@@ -206,7 +206,14 @@ export async function applyStoreRefundResult(input: {
   }
 }
 
+/**
+ * Apply a provider refund notice. `businessId` and `orderId` are the store order whose
+ * webhook signature was verified: the refund is looked up only inside that order, so a
+ * notice signed with one store's secret can never refund another store's payment.
+ */
 export async function confirmStoreRefundFromProvider(input: {
+  businessId: string;
+  orderId: string;
   providerPaymentId: string;
   providerRefundId: string;
   amountInr: number | null;
@@ -220,8 +227,10 @@ export async function confirmStoreRefundFromProvider(input: {
        JOIN store_orders o ON o.id = r.order_id AND o.business_id = r.business_id
       WHERE o.provider_payment_id = $1
         AND COALESCE(o.payment_provider, 'razorpay') = $2
+        AND o.business_id = $3
+        AND o.id = $4
       LIMIT 1`,
-    [input.providerPaymentId, provider],
+    [input.providerPaymentId, provider, input.businessId, input.orderId],
   );
   let refund = found.rows[0];
   if (!refund) {
@@ -417,6 +426,8 @@ async function claimRefund(
 }
 
 async function openWebhookRefund(input: {
+  businessId: string;
+  orderId: string;
   providerPaymentId: string;
   providerRefundId: string;
   amountInr: number | null;
@@ -437,8 +448,10 @@ async function openWebhookRefund(input: {
          FROM store_orders
         WHERE provider_payment_id = $1
           AND COALESCE(payment_provider, 'razorpay') = $2
+          AND business_id = $3
+          AND id = $4
         FOR UPDATE`,
-      [input.providerPaymentId, input.provider],
+      [input.providerPaymentId, input.provider, input.businessId, input.orderId],
     );
     const row = order.rows[0];
     if (!row || !row.receipt_payment_id) {

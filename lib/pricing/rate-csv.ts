@@ -1,3 +1,4 @@
+import { csvSafeText } from '@/lib/csv-safe';
 /**
  * Customer prices and price level rates as CSV (Excel opens and saves it), for bulk upload.
  * Columns, matched by header name in any order:
@@ -40,7 +41,7 @@ export function parseCsv(text: string): string[][] {
 }
 
 const cell = (v: unknown) => {
-  const s = v == null ? '' : String(v);
+  const s = csvSafeText(v == null ? '' : String(v));
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Get account balance as of a specific date (branch-scoped when branch_id is provided).
  */
 export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
-  {},
+  { module: 'report.financial', action: 'read',},
   async (ctx) => {
     try {
       const accountId = ctx.params.accountId;

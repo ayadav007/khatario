@@ -4,8 +4,9 @@
  *
  * The middleware (middleware.ts) validates the JWT cookie and sets
  * trusted headers: x-authenticated-user-id, x-authenticated-business-id.
- * These helpers read those headers first, falling back to legacy
- * query-param / body patterns for backward compatibility during migration.
+ * These helpers read only those headers. Body, query and `x-user-id` values are never
+ * identity: middleware strips client copies of the trusted headers, so a request without
+ * them has no signed-in user (public paths, store hosts, employee-portal passthrough).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,26 +19,12 @@ export interface RequestUser {
 }
 
 /**
- * Get the authenticated user ID from the request.
- * Priority: middleware-injected header > legacy sources.
+ * Get the authenticated user ID from the request (middleware-verified session only).
+ * `body` is accepted for call-site compatibility and ignored.
  */
-export function getUserIdFromRequest(request: NextRequest, body?: any): string | null {
-  // Trusted: set by middleware after JWT verification
-  const verified = request.headers.get('x-authenticated-user-id');
-  if (verified) return verified;
-
-  // Legacy fallbacks (kept during migration; middleware still ensures auth)
-  if (body?.user_id) return body.user_id;
-  if (body?.created_by) return body.created_by;
-  
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('user_id') || searchParams.get('userId');
-  if (userId) return userId;
-  
-  const headerUserId = request.headers.get('x-user-id');
-  if (headerUserId) return headerUserId;
-  
-  return null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getUserIdFromRequest(request: NextRequest, _body?: any): string | null {
+  return request.headers.get('x-authenticated-user-id');
 }
 
 /**
@@ -50,42 +37,32 @@ export function getAuthenticatedUserId(request: NextRequest): string | null {
 }
 
 /**
- * Acting user for an authorized write: the session user when there is one. A user id named in the
- * body or query (`legacy`) is used only without a session (tests, jobs), so a signed-in caller
- * cannot act as someone else.
+ * Acting user for an authorized write: the session user only. User ids named in the body or
+ * query (`_legacy`) are ignored, so a caller cannot act as someone else.
  */
-export function actingUserId(request: NextRequest, ...legacy: unknown[]): string | null {
-  const verified = getAuthenticatedUserId(request);
-  if (verified) return verified;
-  for (const v of legacy) {
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function actingUserId(request: NextRequest, ..._legacy: unknown[]): string | null {
+  return getAuthenticatedUserId(request);
 }
 
 /**
- * Acting user id for create endpoints: the session user, else `created_by_user_id` or legacy
- * `created_by` in the body, then the other legacy sources in {@link getUserIdFromRequest}.
+ * Acting user id for create endpoints: the session user only (body `created_by*` is ignored).
  */
 export function resolveCreatedByUserId(
   request: NextRequest,
-  body: Record<string, unknown> | null | undefined
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _body: Record<string, unknown> | null | undefined
 ): string | null {
-  return actingUserId(request, body?.created_by_user_id, body?.created_by) ?? getUserIdFromRequest(request, body);
+  return getAuthenticatedUserId(request);
 }
 
 /**
- * Get the authenticated business ID from the request.
- * Priority: JWT/middleware (`x-authenticated-business-id`), then legacy body/query params.
+ * Get the authenticated business ID from the request (middleware-verified session only).
+ * `body` is accepted for call-site compatibility and ignored.
  */
-export function getBusinessIdFromRequest(request: NextRequest, body?: any): string | null {
-  const verified = request.headers.get('x-authenticated-business-id');
-  if (verified) return verified;
-
-  if (body?.business_id) return body.business_id;
-
-  const { searchParams } = new URL(request.url);
-  return searchParams.get('business_id');
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getBusinessIdFromRequest(request: NextRequest, _body?: any): string | null {
+  return request.headers.get('x-authenticated-business-id');
 }
 
 /**
@@ -182,6 +159,12 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
   const h = await headers();
   const mwUser = h.get('x-authenticated-user-id');
   if (!mwUser) {
+    // Employee-portal passthrough carries a portal cookie, never a business session: it must
+    // not reach business authorization with a user id taken from the request.
+    if (h.get('x-employee-portal-session') === '1') {
+      const { AuthorizationError } = await import('./authorization');
+      throw new AuthorizationError('Authentication required', 'UNAUTHENTICATED', undefined, 401);
+    }
     return;
   }
   if (mwUser !== userId) {

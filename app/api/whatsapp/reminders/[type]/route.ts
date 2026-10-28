@@ -7,7 +7,7 @@ import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 export const dynamic = 'force-dynamic';
 
 export const PATCH = withWhatsAppBaseApi<{ type: string }>(
-  { parseJsonBody: true },
+  { managePermission: 'update', parseJsonBody: true },
   async ({ params, body, businessId }) => {
     try {
       const reminderType = params.type;
@@ -135,7 +135,7 @@ export const PATCH = withWhatsAppBaseApi<{ type: string }>(
   },
 );
 
-export const DELETE = withWhatsAppBaseApi<{ type: string }>({}, async ({ params, businessId }) => {
+export const DELETE = withWhatsAppBaseApi<{ type: string }>({ managePermission: 'delete' }, async ({ params, businessId }) => {
   try {
     const reminderType = params.type;
 

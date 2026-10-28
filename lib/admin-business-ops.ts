@@ -541,20 +541,19 @@ export async function consumeImpersonationToken(
   plainToken: string,
 ): Promise<{ userId: string; businessId: string; sessionVersion: number } | null> {
   const tokenHash = crypto.createHash('sha256').update(plainToken).digest('hex');
+  // Claim the token atomically: two concurrent requests cannot both see it unused.
   const row = await queryOne<{
     id: string;
     user_id: string;
     business_id: string;
-    expires_at: string;
-    used_at: string | null;
   }>(
-    `SELECT id, user_id, business_id, expires_at, used_at
-     FROM admin_impersonation_tokens WHERE token_hash = $1`,
+    `UPDATE admin_impersonation_tokens SET used_at = NOW()
+      WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+      RETURNING id, user_id, business_id`,
     [tokenHash],
   );
 
-  if (!row || row.used_at) return null;
-  if (new Date(row.expires_at) < new Date()) return null;
+  if (!row) return null;
 
   if (await isBusinessPlatformSuspended(row.business_id)) return null;
 
@@ -563,7 +562,6 @@ export async function consumeImpersonationToken(
     [row.user_id],
   );
 
-  await query(`UPDATE admin_impersonation_tokens SET used_at = NOW() WHERE id = $1`, [row.id]);
 
   return {
     userId: row.user_id,

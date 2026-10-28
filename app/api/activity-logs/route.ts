@@ -6,6 +6,7 @@ import {
 } from '@/lib/auth-helpers';
 import { queryRows } from '@/lib/db';
 import { ActivityLog } from '@/types/database';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,9 +20,12 @@ export async function GET(request: NextRequest) {
     if (gate) return gate;
 
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
+    // The audit log of the whole business: settings read rights, in the session's business.
+    const access = await requireTenantPermission(request, null, 'settings', 'read');
+    if (!access.ok) return access.response;
+    const businessId = access.businessId;
     const employeeId = searchParams.get('employee_id');
-    const userId = getUserIdFromRequest(request);
+    const userId = searchParams.get('user_id');
     const module = searchParams.get('module');
     const actionType = searchParams.get('action_type');
     const startDate = searchParams.get('start_date');

@@ -2,17 +2,23 @@ import { query, queryOne } from '@/lib/db';
 
 export type HrPortalSettings = {
   kiosk_enabled: boolean;
+  /** Bumped to revoke every registered kiosk device (lib/employee-portal/kiosk-device). */
+  kiosk_device_generation: number;
 };
 
+/** Kiosk stays off until a business turns it on: a kiosk login needs only an employee code. */
 export const DEFAULT_HR_PORTAL_SETTINGS: HrPortalSettings = {
-  kiosk_enabled: true,
+  kiosk_enabled: false,
+  kiosk_device_generation: 0,
 };
 
 export function parseHrPortalSettings(raw: unknown): HrPortalSettings {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_HR_PORTAL_SETTINGS };
   const o = raw as Record<string, unknown>;
+  const generation = Number(o.kiosk_device_generation);
   return {
-    kiosk_enabled: o.kiosk_enabled !== false,
+    kiosk_enabled: o.kiosk_enabled === true,
+    kiosk_device_generation: Number.isInteger(generation) && generation >= 0 ? generation : 0,
   };
 }
 
@@ -42,6 +48,7 @@ export async function updateHrPortalSettings(
   const current = await getHrPortalSettings(businessId);
   const merged: HrPortalSettings = {
     kiosk_enabled: partial.kiosk_enabled ?? current.kiosk_enabled,
+    kiosk_device_generation: partial.kiosk_device_generation ?? current.kiosk_device_generation,
   };
 
   await ensureBusinessSettingsRow(businessId);

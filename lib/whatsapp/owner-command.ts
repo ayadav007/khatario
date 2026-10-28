@@ -6,6 +6,7 @@ import { answerTurn } from '@/lib/rag/answer';
 import type { OwnerCommandQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
 import { clearOwnerLinkCache, digits, getOwnerLink, linkCodeValid, parseLinkCode } from './inbound-router';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const OWNER_MESSAGES_PER_HOUR = 20;
 const REPLY_MAX_CHARS = 3500;
@@ -70,7 +71,18 @@ export async function ownerReply(input: { businessId: string; userId: string; ph
 async function completeLink(job: OwnerCommandQueueJob): Promise<boolean> {
   const code = parseLinkCode(job.text);
   const link = await getOwnerLink(job.businessId, true);
-  if (!code || !link || !linkCodeValid(link, code)) return false;
+  if (!code || !link) return false;
+  if (!linkCodeValid(link, code)) {
+    // Five wrong guesses retire the code; the owner starts a new one in Settings.
+    if (link.link_code && !checkRateLimit(`owner-link-guess:${job.businessId}`, 5, 15 * 60 * 1000).allowed) {
+      await query(
+        `UPDATE owner_whatsapp_links SET link_code = NULL, link_code_expires_at = NULL, updated_at = NOW() WHERE business_id = $1`,
+        [job.businessId],
+      );
+      clearOwnerLinkCache(job.businessId);
+    }
+    return false;
+  }
   const res = await query(
     `UPDATE owner_whatsapp_links
         SET linked_phone = $2, self_chat = $3, linked_at = NOW(), last_owner_message_at = NOW(),

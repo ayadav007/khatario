@@ -145,8 +145,7 @@ export async function fulfillStoreOrderPayment(
     client.release();
   }
 
-  const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
-  await incrementStoreCouponUse(businessId, notify.couponCode);
+  // The coupon use was claimed when the order was placed (claimStoreCouponUse).
   const { notifyStoreEvent } = await import('@/lib/store/notify-whatsapp');
   const paidTotal = notify.grandTotal.toLocaleString('en-IN');
   void notifyStoreEvent({

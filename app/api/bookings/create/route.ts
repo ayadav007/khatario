@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { notifyAdminsOfNewBooking } from '@/lib/demo-booking-notifications';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,9 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get IP address and user agent
-    const ipAddress = request.headers.get('x-forwarded-for') || 
-                     request.headers.get('x-real-ip') || 
-                     'unknown';
+    const ipAddress = getClientIp(request);
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
     // Generate booking number
@@ -117,10 +116,13 @@ export async function POST(request: NextRequest) {
       )
       .catch((err) => console.error('[Demo Booking] incident notify failed', err));
 
-    return NextResponse.json({ 
+    const created = NextResponse.json({
       booking,
       message: 'Booking created successfully'
     }, { status: 201 });
+    const { consumePlatformOtpProof } = await import('@/lib/platform-public-otp');
+    await consumePlatformOtpProof(request, created);
+    return created;
   } catch (error: any) {
     console.error('Error creating booking:', error);
     

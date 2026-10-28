@@ -10,7 +10,7 @@ import { withPremiumSubscriptionApi } from '@/lib/security';
  * Get account-wise ledger with running balance
  */
 export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
-  {},
+  { module: 'report.financial', action: 'read',},
   async (ctx) => {
     try {
       const gate = await requirePortalSession(ctx.request);

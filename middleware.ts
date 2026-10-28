@@ -8,6 +8,7 @@ import {
   EMPLOYEE_PORTAL_SESSION_HEADER,
   EMPLOYEE_PORTAL_COOKIE,
 } from './lib/employee-portal';
+import { isKioskSessionApiAllowed, isKioskSessionToken } from './lib/employee-portal/ess-api-allowlist';
 import { PARTNER_SESSION_COOKIE } from './lib/partners/constants';
 import { extractStoreSubdomain } from './lib/store/subdomain';
 import { resolvePublicRequestOrigin } from './lib/http/public-request-origin';
@@ -163,12 +164,25 @@ function isBusinessConsoleReferer(request: NextRequest): boolean {
   return !isPublicBusinessEmployeePath(url.pathname);
 }
 
-/** Allowlisted ESS APIs with employee portal cookie (session validated in route handlers). */
+const PORTAL_TOKEN_RE = /^(k_)?[0-9a-f]{64}$/;
+
+/**
+ * Allowlisted ESS APIs with employee portal cookie. The edge runtime cannot reach the database,
+ * so the session itself is validated in route handlers (resolveActorContext); no identity
+ * headers are set here, and handlers never take a user or business from the request body.
+ */
 function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | null {
   const token = request.cookies.get(EMPLOYEE_PORTAL_COOKIE)?.value;
   if (!token) return null;
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith('/api/')) return null;
+  if (!PORTAL_TOKEN_RE.test(token)) {
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+  }
+  // Kiosk punch sessions may only check in or out.
+  if (isKioskSessionToken(token) && !isKioskSessionApiAllowed(request.method, pathname)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   if (!isEssApiAllowed(request.method, pathname)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
