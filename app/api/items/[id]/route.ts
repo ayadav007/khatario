@@ -563,6 +563,19 @@ export async function PATCH(
       // For simplicity in PATCH, we'll replace variants or update existing ones
       // A more robust way would be to sync them, but for now we'll delete and re-insert
       // if it's a small number of variants.
+      // Customer prices set per variant are cascaded away with the old rows, so keep them
+      // by variant name and put them back on the re-inserted variants below.
+      const variantPartyPrices = await queryRows<{ party_id: string; variant_name: string; price: string }>(
+        `SELECT p.party_id, v.variant_name, p.price
+           FROM party_item_prices p
+           JOIN item_variants v ON v.id = p.variant_id
+          WHERE p.item_id = $1 AND p.business_id = $2`,
+        [itemId, businessId]
+      ).catch((error: any) => {
+        // Before migration 433 there is no variant_id column, so no variant prices to keep.
+        if (error?.code === '42703') return [];
+        throw error;
+      });
       await query('DELETE FROM item_variants WHERE item_id = $1', [itemId]);
       
       for (const variant of variants) {
@@ -617,6 +630,23 @@ export async function PATCH(
           variant.opening_stock || 0,
           JSON.stringify(variant.attributes || {})
         ]);
+      }
+
+      if (variantPartyPrices.length > 0) {
+        await query(
+          `INSERT INTO party_item_prices (business_id, party_id, item_id, variant_id, price)
+           SELECT $2, x.party_id, $1, v.id, x.price
+             FROM unnest($3::uuid[], $4::text[], $5::numeric[]) AS x(party_id, variant_name, price)
+             JOIN item_variants v ON v.item_id = $1 AND v.variant_name = x.variant_name
+           ON CONFLICT DO NOTHING`,
+          [
+            itemId,
+            businessId,
+            variantPartyPrices.map((r) => r.party_id),
+            variantPartyPrices.map((r) => r.variant_name),
+            variantPartyPrices.map((r) => r.price),
+          ]
+        );
       }
     }
 

@@ -28,7 +28,7 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { authoritativeInvoiceTotals, InvoiceChargeError } from '@/lib/invoices/invoice-charges';
-import { partyPricePatch } from '@/lib/invoices/party-price';
+import { partyPricePatch, storedPriceToBillUnit } from '@/lib/invoices/party-price';
 import { useToastContext } from '@/contexts/ToastContext';
 import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
@@ -909,13 +909,14 @@ function NewInvoiceContent() {
     setRows((prev) => prev.map((r) => calculateRow(r, true)));
   }, [pricesIncludeGst, calculateRow]);
 
-  const fetchPartyPriceCached = useCallback(async (partyId: string, itemId: string): Promise<number | null> => {
+  const fetchPartyPriceCached = useCallback(async (partyId: string, itemId: string, variantId?: string): Promise<number | null> => {
     const cache = partyPriceCacheRef.current;
-    const key = `${partyId}:${itemId}`;
+    const key = `${partyId}:${itemId}:${variantId ?? ''}`;
     if (cache.has(key)) return cache.get(key)!;
     try {
+      const variantQs = variantId ? `&variant_id=${encodeURIComponent(variantId)}` : '';
       const res = await fetch(
-        `/api/pricing/party-item?party_id=${encodeURIComponent(partyId)}&item_id=${encodeURIComponent(itemId)}`,
+        `/api/pricing/party-item?party_id=${encodeURIComponent(partyId)}&item_id=${encodeURIComponent(itemId)}${variantQs}`,
         { credentials: 'include' }
       );
       if (!res.ok) {
@@ -970,8 +971,8 @@ function NewInvoiceContent() {
 
       const fetched = await Promise.all(
         pairs.map(async ({ row, idx }) => {
-          const pp = custAtStart ? await fetchPartyPriceCached(custAtStart, row.itemId) : null;
-          return { idx, pp, itemId: row.itemId };
+          const pp = custAtStart ? await fetchPartyPriceCached(custAtStart, row.itemId, row.variantId) : null;
+          return { idx, pp, itemId: row.itemId, variantId: row.variantId ?? '' };
         })
       );
 
@@ -981,9 +982,9 @@ function NewInvoiceContent() {
         let next = prev;
         let changed = false;
 
-        for (const { idx, pp, itemId } of fetched) {
+        for (const { idx, pp, itemId, variantId } of fetched) {
           const current = prev[idx];
-          if (!current || String(current.itemId) !== itemId) continue;
+          if (!current || String(current.itemId) !== itemId || (current.variantId ?? '') !== variantId) continue;
 
           const patch = partyPricePatch(current, pp, pricesIncludeGst);
           if (!patch) continue;
@@ -2965,9 +2966,8 @@ function NewInvoiceContent() {
         if (data.customer_id) setCustomerId(data.customer_id);
         setRows(
           (data.lines || []).map((line: any) => {
-            let price = Number(line.selling_price) || 0;
             const taxRate = Number(line.tax_rate) || 0;
-            if (line.gst_included && taxRate > 0) price = price / (1 + taxRate / 100);
+            const price = storedPriceToBillUnit(Number(line.selling_price) || 0, !!line.gst_included, taxRate, pricesIncludeGst);
             return calculateRow({
               itemId: line.item_id,
               name: line.name,
@@ -2986,14 +2986,15 @@ function NewInvoiceContent() {
               igstAmount: 0,
               total: 0,
               gstIncluded: !!line.gst_included,
-              priceUserOverride: false,
+              // The price agreed on the order; a saved customer price must not replace it.
+              priceUserOverride: true,
             });
           })
         );
         setIsDirty(true);
       })
       .catch(() => toastCtx.error('Could not load this order'));
-  }, [supplyOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, toastCtx]);
+  }, [supplyOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, pricesIncludeGst, toastCtx]);
 
   // ?work_order_id=: open the invoice for review. Nothing is saved until Generate/Save.
   const workOrderId = searchParams.get('work_order_id');

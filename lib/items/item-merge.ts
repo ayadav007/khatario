@@ -15,7 +15,7 @@ const r3 = (n: unknown) => Math.round((Number(n) || 0) * 1000) / 1000;
 /** Rows of the source whose key already exists for the target: the target's row is kept. */
 const KEEP_TARGET: Record<string, string> = {
   bundle_items: 'bundle_id',
-  party_item_prices: 'business_id, party_id',
+  party_item_prices: 'business_id, party_id, variant_id',
   store_item_favorites: 'business_id, customer_id',
   store_item_ratings: 'business_id, customer_id',
   supplier_item_thresholds: 'supplier_business_id, customer_business_id',

@@ -20,8 +20,32 @@ function formatInr(n: number): string {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function normalizeDraftValue(overrides: Record<string, number>, itemId: string): string {
-  const p = overrides[itemId];
+/** Prices are keyed by item, or by item + variant for a price that covers one variant only. */
+function priceKey(itemId: string, variantId?: string | null): string {
+  return variantId ? `${itemId}::${variantId}` : itemId;
+}
+
+function splitPriceKey(key: string): { item_id: string; variant_id: string | null } {
+  const [itemId, variantId] = key.split('::');
+  return { item_id: itemId, variant_id: variantId || null };
+}
+
+interface VariantOption {
+  id: string;
+  item_id: string;
+  variant_name: string;
+  selling_price: number | null;
+}
+
+/** One row on screen: a whole item, or one variant of it. */
+interface PriceRow {
+  key: string;
+  item: Item;
+  variant?: VariantOption;
+}
+
+function normalizeDraftValue(overrides: Record<string, number>, key: string): string {
+  const p = overrides[key];
   return p !== undefined && p !== null && Number.isFinite(p) ? String(p) : '';
 }
 
@@ -62,6 +86,7 @@ export default function PartyItemPricingPage() {
 
   const [partyId, setPartyId] = useState('');
   const [serverOverrides, setServerOverrides] = useState<Record<string, number>>({});
+  const [variants, setVariants] = useState<VariantOption[]>([]);
   const [draftByItem, setDraftByItem] = useState<Record<string, string>>({});
   const [overridesLoading, setOverridesLoading] = useState(false);
 
@@ -69,10 +94,27 @@ export default function PartyItemPricingPage() {
   const [savingBulk, setSavingBulk] = useState(false);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
-  const itemsRef = useRef<Item[]>([]);
+  const allRows = useMemo<PriceRow[]>(() => {
+    const byItem = new Map<string, VariantOption[]>();
+    for (const v of variants) {
+      const list = byItem.get(v.item_id) ?? [];
+      list.push(v);
+      byItem.set(v.item_id, list);
+    }
+    const rows: PriceRow[] = [];
+    for (const it of items) {
+      rows.push({ key: priceKey(it.id), item: it });
+      for (const v of byItem.get(it.id) ?? []) {
+        rows.push({ key: priceKey(it.id, v.id), item: it, variant: v });
+      }
+    }
+    return rows;
+  }, [items, variants]);
+
+  const allRowsRef = useRef<PriceRow[]>([]);
   useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+    allRowsRef.current = allRows;
+  }, [allRows]);
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;
@@ -106,6 +148,7 @@ export default function PartyItemPricingPage() {
     async (pid: string) => {
       if (!pid.trim()) {
         setServerOverrides({});
+        setVariants([]);
         setDraftByItem({});
         return;
       }
@@ -119,17 +162,17 @@ export default function PartyItemPricingPage() {
         if (!res.ok) {
           throw new Error(data.error || `Request failed (${res.status})`);
         }
-        const list = (data.overrides ?? []) as { item_id: string; price: number }[];
+        const list = (data.overrides ?? []) as { item_id: string; variant_id: string | null; price: number }[];
         const map: Record<string, number> = {};
         for (const r of list) {
-          map[r.item_id] = Number(r.price);
+          map[priceKey(r.item_id, r.variant_id)] = Number(r.price);
         }
         setServerOverrides(map);
+        setVariants((data.variants ?? []) as VariantOption[]);
 
-        const snapshot = itemsRef.current;
         const nextDraft: Record<string, string> = {};
-        for (const it of snapshot) {
-          nextDraft[it.id] = normalizeDraftValue(map, it.id);
+        for (const row of allRowsRef.current) {
+          nextDraft[row.key] = normalizeDraftValue(map, row.key);
         }
         setDraftByItem(nextDraft);
       } catch (e: unknown) {
@@ -141,47 +184,49 @@ export default function PartyItemPricingPage() {
     [toast]
   );
 
-  /** When catalog items arrive after overrides, hydrate missing draft keys only */
+  /** When catalog items or variants arrive after overrides, hydrate missing draft keys only */
   useEffect(() => {
     if (!partyId.trim()) return;
     setDraftByItem((prev) => {
       let changed = false;
       const next = { ...prev };
-      for (const it of items) {
-        if (next[it.id] === undefined) {
-          next[it.id] = normalizeDraftValue(serverOverrides, it.id);
+      for (const row of allRows) {
+        if (next[row.key] === undefined) {
+          next[row.key] = normalizeDraftValue(serverOverrides, row.key);
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [partyId, items, serverOverrides]);
+  }, [partyId, allRows, serverOverrides]);
 
   useEffect(() => {
     void loadOverrides(partyId);
   }, [partyId, loadOverrides]);
 
-  const filteredItems = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (i) =>
-        (i.name ?? '').toLowerCase().includes(q) || (i.code ?? '').toLowerCase().includes(q)
+    if (!q) return allRows;
+    return allRows.filter(
+      ({ item: i, variant: v }) =>
+        (i.name ?? '').toLowerCase().includes(q) ||
+        (i.code ?? '').toLowerCase().includes(q) ||
+        (v?.variant_name ?? '').toLowerCase().includes(q)
     );
-  }, [items, itemSearch]);
+  }, [allRows, itemSearch]);
 
   const dirtyRows = useMemo(() => {
-    const ids: string[] = [];
-    for (const it of items) {
-      const d = draftByItem[it.id] ?? '';
-      if (rowIsDirty(it.id, d, serverOverrides)) ids.push(it.id);
+    const keys: string[] = [];
+    for (const row of allRows) {
+      const d = draftByItem[row.key] ?? '';
+      if (rowIsDirty(row.key, d, serverOverrides)) keys.push(row.key);
     }
-    return ids;
-  }, [items, draftByItem, serverOverrides]);
+    return keys;
+  }, [allRows, draftByItem, serverOverrides]);
 
   const saveRow = useCallback(
-    async (itemId: string) => {
-      const raw = draftByItem[itemId] ?? '';
+    async (key: string) => {
+      const raw = draftByItem[key] ?? '';
       const target = parseCustomPrice(raw);
       if (target === 'invalid') {
         toast.error('Enter a valid non‑negative price, or leave empty to use the catalog default.');
@@ -192,12 +237,9 @@ export default function PartyItemPricingPage() {
         return;
       }
 
-      setSavingRowId(itemId);
+      setSavingRowId(key);
       try {
-        const body =
-          target === null
-            ? { party_id: partyId, item_id: itemId, price: null }
-            : { party_id: partyId, item_id: itemId, price: target };
+        const body = { party_id: partyId, ...splitPriceKey(key), price: target };
 
         const res = await fetch('/api/pricing/party-item', {
           method: 'POST',
@@ -229,15 +271,15 @@ export default function PartyItemPricingPage() {
       return;
     }
 
-    const rows: { item_id: string; price: number | null }[] = [];
-    for (const itemId of dirtyRows) {
-      const raw = draftByItem[itemId] ?? '';
+    const rows: { item_id: string; variant_id: string | null; price: number | null }[] = [];
+    for (const key of dirtyRows) {
+      const raw = draftByItem[key] ?? '';
       const target = parseCustomPrice(raw);
       if (target === 'invalid') {
         toast.error('Fix invalid prices before saving all.');
         return;
       }
-      rows.push({ item_id: itemId, price: target });
+      rows.push({ ...splitPriceKey(key), price: target });
     }
 
     setSavingBulk(true);
@@ -273,7 +315,7 @@ export default function PartyItemPricingPage() {
       <div>
         <PageHeader
   title="Party item prices"
-  subtitle="Set catalog overrides per customer. Empty custom price keeps the default selling price from the item master."
+  subtitle="Set catalog overrides per customer. Empty custom price keeps the default selling price from the item master. A price on an item covers its variants unless a variant has its own."
 />
       </div>
 
@@ -336,7 +378,7 @@ export default function PartyItemPricingPage() {
           <div className="flex min-h-[240px] items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary-600" aria-hidden />
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <div className="flex min-h-[200px] items-center justify-center p-8 text-text-secondary">
             {items.length === 0 ? 'No active items.' : 'No items match your search.'}
           </div>
@@ -354,27 +396,37 @@ export default function PartyItemPricingPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((it) => {
-                  const selling = Number(it.selling_price ?? 0);
-                  const placeholder = Number.isFinite(selling)
-                    ? `Default ${formatInr(selling)}`
-                    : 'No default in catalog';
-                  const dv = draftByItem[it.id] ?? '';
-                  const dirty = rowIsDirty(it.id, dv, serverOverrides);
+                {filteredRows.map(({ key, item: it, variant }) => {
+                  const rawSelling = variant ? variant.selling_price : it.selling_price;
+                  const selling = rawSelling == null ? NaN : Number(rawSelling);
+                  const itemWide = !variant && it.has_variants;
+                  const placeholder = itemWide
+                    ? 'Applies to all variants'
+                    : Number.isFinite(selling)
+                      ? `Default ${formatInr(selling)}`
+                      : 'No default in catalog';
+                  const dv = draftByItem[key] ?? '';
+                  const dirty = rowIsDirty(key, dv, serverOverrides);
+                  const label = variant ? `${it.name} - ${variant.variant_name}` : it.name;
 
                   return (
                     <tr
-                      key={it.id}
+                      key={key}
                       className="border-b border-border/80 hover:bg-muted/40 dark:hover:bg-slate-800/30"
                     >
-                      <td className="max-w-[280px] px-4 py-2 align-middle">
-                        <div className="font-medium text-text-primary">{it.name}</div>
-                        {it.code ? (
+                      <td className={`max-w-[280px] px-4 py-2 align-middle ${variant ? 'pl-10' : ''}`}>
+                        <div className="font-medium text-text-primary">{variant ? variant.variant_name : it.name}</div>
+                        {itemWide ? (
+                          <div className="mt-0.5 text-xs text-text-muted">All variants{it.code ? ` · ${it.code}` : ''}</div>
+                        ) : !variant && it.code ? (
                           <div className="mt-0.5 text-xs text-text-muted">{it.code}</div>
                         ) : null}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2 align-middle text-right tabular-nums text-text-secondary">
                         {Number.isFinite(selling) ? formatInr(selling) : '—'}
+                        {Number.isFinite(selling) || itemWide ? (
+                          <div className="text-xs text-text-muted">{it.gst_included ? 'incl. GST' : 'excl. GST'}</div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-2 align-middle">
                         <Input
@@ -385,10 +437,10 @@ export default function PartyItemPricingPage() {
                           }
                           value={dv}
                           onChange={(e) =>
-                            setDraftByItem((prev) => ({ ...prev, [it.id]: e.target.value }))
+                            setDraftByItem((prev) => ({ ...prev, [key]: e.target.value }))
                           }
                           placeholder={placeholder}
-                          aria-label={`Custom price for ${it.name}`}
+                          aria-label={`Custom price for ${label}`}
                         />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2 align-middle text-right">
@@ -397,8 +449,8 @@ export default function PartyItemPricingPage() {
                           variant="secondary"
                           size="sm"
                           disabled={!dirty || savingRowId !== null || savingBulk}
-                          isLoading={savingRowId === it.id}
-                          onClick={() => void saveRow(it.id)}
+                          isLoading={savingRowId === key}
+                          onClick={() => void saveRow(key)}
                         >
                           Save
                         </Button>

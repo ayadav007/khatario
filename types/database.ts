@@ -820,6 +820,8 @@ export interface Item {
   selling_price: number | null;
   mrp?: number;
   tax_rate: number;
+  /** selling_price (and variant prices) already include GST */
+  gst_included?: boolean;
   opening_stock: number;
   current_stock: number;
   min_stock: number;
