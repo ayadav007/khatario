@@ -1,5 +1,6 @@
 import {
   sanitizeContactForm,
+  sanitizeCustomCss,
   type StoreCategoryStyle,
   type StoreContactForm,
   type StoreHomepageSectionId,
@@ -110,7 +111,8 @@ export type StudioPageId =
   | 'cart'
   | 'checkout'
   | 'about'
-  | 'contact';
+  | 'contact'
+  | 'css';
 
 /** Store-wide settings edited from the non-home Studio pages. Every field here is saved on Publish. */
 export interface StudioPagesState {
@@ -127,6 +129,8 @@ export interface StudioPagesState {
   whatsappUrl: string;
   instagramUrl: string;
   contactForm: StoreContactForm;
+  /** Store-wide custom CSS (theme.custom_css). */
+  customCss: string;
 }
 
 export interface StudioPageSection {
@@ -189,6 +193,7 @@ export const STUDIO_PAGES: Array<{ id: StudioPageId; label: string; icon: string
       { id: 'social', name: 'Social links' },
     ],
   },
+  { id: 'css', label: 'Custom CSS', icon: '{}', path: '/', sections: [{ id: 'css', name: 'Store-wide CSS' }] },
 ];
 
 /** Pages whose preview on the live store only reflects published values (not the unsaved draft). */
@@ -217,6 +222,7 @@ export function pagesFromSettings(
     whatsappUrl: theme.whatsapp_url,
     instagramUrl: theme.instagram_url,
     contactForm: { ...theme.contact_form },
+    customCss: theme.custom_css,
   };
 }
 
@@ -232,6 +238,7 @@ export function applyPagesToTheme(theme: StoreTheme, pages: StudioPagesState): S
     whatsapp_url: pages.whatsappUrl.trim(),
     instagram_url: pages.instagramUrl.trim(),
     contact_form: sanitizeContactForm(pages.contactForm),
+    custom_css: sanitizeCustomCss(pages.customCss ?? ''),
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import {
   BadgeCheck,
   Banknote,
@@ -22,9 +22,35 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-theme';
-import type { StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
+import type { StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
+import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import './studio-theme.css';
+
+/**
+ * Wrapper every Studio section renders in, on the store and in the editor: a stable
+ * `#section-{id}` hook, `data-section-type`, the merchant's class names, and that section's own CSS.
+ */
+export function StudioSectionFrame({
+  section,
+  className,
+  children,
+  ...rest
+}: { section: StudioSection; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
+  const css = useMemo(() => scopeSectionCss(section.settings.customCss, section.id), [section.settings.customCss, section.id]);
+  return (
+    <div
+      {...rest}
+      id={sectionDomId(section.id)}
+      data-section-type={section.type}
+      className={['st-sec', className, sanitizeCssClass(section.settings.cssClass)].filter(Boolean).join(' ')}
+    >
+      {/* Scoped and brace-balanced by scopeSectionCss, with every `<` removed. */}
+      {css ? <style dangerouslySetInnerHTML={{ __html: css }} /> : null}
+      {children}
+    </div>
+  );
+}
 
 export function boxStyle(s: StudioSettings = {}, extras: CSSProperties = {}): CSSProperties {
   const style: CSSProperties = { ...extras };

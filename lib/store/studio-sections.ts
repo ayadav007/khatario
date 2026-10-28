@@ -121,6 +121,29 @@ export interface StudioSettings {
   usps?: StudioUsp[];
   /** Marquee. */
   speed?: 'slow' | 'normal' | 'fast';
+  /** Any section: merchant class names on the wrapper, and CSS scoped to this section. */
+  cssClass?: string;
+  customCss?: string;
+}
+
+/** Per-section custom CSS limit; the store-wide box keeps its own 8,000. */
+export const SECTION_CSS_MAX = 3000;
+
+const CLASS_TOKEN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,39}$/;
+
+/** Merchant class names for a section: up to 3 plain CSS class tokens, anything else dropped. */
+export function sanitizeCssClass(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return Array.from(
+    new Set(
+      raw
+        .split(/\s+/)
+        .map((t) => t.replace(/^\./, ''))
+        .filter((t) => CLASS_TOKEN.test(t)),
+    ),
+  )
+    .slice(0, 3)
+    .join(' ');
 }
 
 export interface StudioSection {
@@ -166,7 +189,9 @@ type Rule =
   | { kind: 'svg' }
   | { kind: 'icon' }
   | { kind: 'slides' }
-  | { kind: 'usps' };
+  | { kind: 'usps' }
+  | { kind: 'cssclass' }
+  | { kind: 'css' };
 
 const RULES: Record<keyof StudioSettings, Rule> = {
   text: { kind: 'text', max: 2000 },
@@ -231,6 +256,8 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   showBadges: { kind: 'bool' },
   usps: { kind: 'usps' },
   speed: { kind: 'enum', values: ['slow', 'normal', 'fast'] },
+  cssClass: { kind: 'cssclass' },
+  customCss: { kind: 'css' },
 };
 
 function cleanUrl(v: string): string | undefined {
@@ -300,6 +327,11 @@ function cleanValue(rule: Rule, raw: unknown): unknown {
       return cleanSlides(raw);
     case 'usps':
       return cleanUsps(raw);
+    case 'cssclass':
+      return typeof raw === 'string' ? sanitizeCssClass(raw) : undefined;
+    case 'css':
+      // Kept as typed (minus `<`); it is cleaned and scoped again every time it is rendered.
+      return typeof raw === 'string' ? raw.slice(0, SECTION_CSS_MAX).replace(/</g, '') : undefined;
   }
 }
 

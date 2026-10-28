@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
 import { Search } from 'lucide-react';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { storeDraftToken } from '@/lib/store/store-context';
 import type { StoreTheme } from '@/lib/store/store-theme';
 import type { StudioSection, StudioSettings } from '@/lib/store/studio-sections';
 import { resolveStudioSections, splitList, studioLinkTarget, type StudioLinkTarget } from '@/lib/store/studio-layout';
-import { StudioAnnouncement, StudioFooter, StudioHeader, type StudioLink } from './StudioSections';
+import { StudioAnnouncement, StudioFooter, StudioHeader, StudioSectionFrame, type StudioLink } from './StudioSections';
 
 export interface StudioNavCategory {
   id: string;
@@ -28,9 +28,17 @@ export function useStudioSections(
   );
 }
 
+/** Header renders even without a saved header section; only a real section gets a frame. */
+function wrapSection(section: StudioSection | null, node: ReactNode): ReactNode {
+  return section ? <StudioSectionFrame section={section}>{node}</StudioSectionFrame> : node;
+}
+
+export function studioSection(sections: StudioSection[], type: StudioSection['type']): StudioSection | null {
+  return sections.find((x) => x.type === type && x.enabled) ?? null;
+}
+
 export function studioSettings(sections: StudioSection[], type: StudioSection['type']): StudioSettings | null {
-  const s = sections.find((x) => x.type === type && x.enabled);
-  return s ? s.settings : null;
+  return studioSection(sections, type)?.settings ?? null;
 }
 
 /** Draft token is read after mount so server and client markup agree. */
@@ -96,8 +104,10 @@ export function StudioStoreHeader({
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const announce = studioSettings(sections, 'announcement');
-  const header = studioSettings(sections, 'header') ?? { logo: store.name };
+  const announceSection = studioSection(sections, 'announcement');
+  const headerSection = studioSection(sections, 'header');
+  const announce = announceSection?.settings ?? null;
+  const header = headerSection?.settings ?? { logo: store.name };
 
   const nav: StudioLink[] = splitList(header.navLinks, 'All Products').map((label) => {
     const target = studioLinkTarget(label, categories);
@@ -150,17 +160,24 @@ export function StudioStoreHeader({
 
   return (
     <div className={`st-sticky st-cq ${scrolled ? 'scrolled' : ''}`}>
-      {announce && (announce.text || announce.autoText) ? <StudioAnnouncement s={announce} live /> : null}
-      <StudioHeader
-        s={{ ...header, logo: header.logo || store.name }}
-        logoUrl={logoUrl}
-        search={search}
-        nav={nav}
-        cartCount={cartCount}
-        onCart={onCart}
-        accountHref={withDraft('/account', td)}
-        homeHref={withDraft('/', td)}
-      />
+      {announceSection && announce && (announce.text || announce.autoText) ? (
+        <StudioSectionFrame section={announceSection}>
+          <StudioAnnouncement s={announce} live />
+        </StudioSectionFrame>
+      ) : null}
+      {wrapSection(
+        headerSection,
+        <StudioHeader
+          s={{ ...header, logo: header.logo || store.name }}
+          logoUrl={logoUrl}
+          search={search}
+          nav={nav}
+          cartCount={cartCount}
+          onCart={onCart}
+          accountHref={withDraft('/account', td)}
+          homeHref={withDraft('/', td)}
+        />,
+      )}
     </div>
   );
 }
@@ -179,8 +196,9 @@ export function StudioStoreFooter({
   hideBadge: boolean;
 }) {
   const td = useDraftToken();
-  const footer = studioSettings(sections, 'footer');
-  if (!footer) return null;
+  const footerSection = studioSection(sections, 'footer');
+  const footer = footerSection?.settings;
+  if (!footerSection || !footer) return null;
   const links: StudioLink[] = splitList(footer.links, 'Shop, About, Contact, Privacy').map((label) => {
     const key = label.trim().toLowerCase();
     const target = key === 'shop' ? ({ kind: 'href', href: '/' } as const) : studioLinkTarget(label, categories);
@@ -190,11 +208,13 @@ export function StudioStoreFooter({
   if (theme.whatsapp_url) links.push({ label: 'WhatsApp', href: theme.whatsapp_url });
   return (
     <div className="st-cq">
-      <StudioFooter
-        s={{ ...footer, brand: footer.brand || store.name }}
-        links={links}
-        badge={hideBadge ? undefined : 'Powered by Khatario'}
-      />
+      <StudioSectionFrame section={footerSection}>
+        <StudioFooter
+          s={{ ...footer, brand: footer.brand || store.name }}
+          links={links}
+          badge={hideBadge ? undefined : 'Powered by Khatario'}
+        />
+      </StudioSectionFrame>
     </div>
   );
 }

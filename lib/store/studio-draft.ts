@@ -1,4 +1,4 @@
-import { sanitizeContactForm, sanitizeStoreTheme, type StoreCategoryStyle, type StoreContactForm, type StoreTheme } from './store-theme';
+import { sanitizeContactForm, sanitizeCustomCss, sanitizeStoreTheme, type StoreCategoryStyle, type StoreContactForm, type StoreTheme } from './store-theme';
 import { sanitizeStudioSections, type StudioSection } from './studio-sections';
 
 /** Mirrors the Studio editor's page settings; kept here so the server can validate drafts. */
@@ -16,6 +16,7 @@ export interface StudioDraftPages {
   whatsappUrl: string;
   instagramUrl: string;
   contactForm: StoreContactForm;
+  customCss: string;
 }
 
 /** Unpublished Studio work, auto-saved so it survives closing the editor. */
@@ -67,6 +68,8 @@ export function sanitizeStudioDraft(raw: unknown): StudioDraft | null {
       whatsappUrl: typeof p.whatsappUrl === 'string' && p.whatsappUrl.trim() ? pageTheme.whatsapp_url : '',
       instagramUrl: typeof p.instagramUrl === 'string' && p.instagramUrl.trim() ? pageTheme.instagram_url : '',
       contactForm: sanitizeContactForm(p.contactForm),
+      // Drafts saved before Custom CSS moved into Studio fall back to the theme's.
+      customCss: typeof p.customCss === 'string' ? sanitizeCustomCss(p.customCss) : theme.custom_css,
     },
   };
 }

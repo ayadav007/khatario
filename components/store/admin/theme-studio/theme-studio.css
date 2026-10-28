@@ -251,3 +251,15 @@
 .ks-root .stickyTag{right:14px}
 }
 .ks-root .previewNote{margin:10px 38px;padding:10px 12px;border:1px dashed #c8c2bb;border-radius:8px;font-size:12px;color:#817a73;background:#fff}
+.ks-root .field textarea.cssBox{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:2;resize:vertical;min-height:140px}
+.ks-root .styleHint code,.ks-root .cssRef code{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f3eee6;border-radius:4px;padding:1px 4px}
+.ks-root .cssRef{margin:0 18px 16px;border:1px solid #e7e1d9;border-radius:8px;background:#fcfaf7;font-size:12px}
+.ks-root .cssRef summary{cursor:pointer;padding:9px 12px;font-weight:600}
+.ks-root .cssRefBody{padding:0 12px 10px}
+.ks-root .cssRefBody>b,.ks-root .cssRefBody>div>b{display:block;margin:10px 0 4px;text-transform:capitalize}
+.ks-root .cssRefBody ul{margin:0;padding:0;list-style:none}
+.ks-root .cssRefBody li{padding:2px 0;color:#68635d}
+.ks-root .cssRefBody p{color:#68635d;line-height:1.5;margin:10px 0 0}
+.ks-root .cssExamples{display:flex;flex-wrap:wrap;gap:6px}
+.ks-root .cssExamples button{border:1px solid #e0d9d0;background:#fff;border-radius:999px;padding:4px 10px;font-size:11px;cursor:pointer}
+.ks-root .cssExamples button:hover{border-color:var(--primary);color:var(--primary)}

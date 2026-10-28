@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { sectionEnabled, type StoreTheme } from '@/lib/store/store-theme';
@@ -14,6 +15,7 @@ import {
   StudioMarquee,
   StudioProductsSection,
   StudioRichText,
+  StudioSectionFrame,
   StudioTestimonials,
   StudioUspStrip,
 } from './StudioSections';
@@ -104,6 +106,107 @@ export function StoreStudioHome({
     </>
   );
 
+  const renderSection = (section: StudioSection): ReactNode => {
+    const s = section.settings;
+    switch (section.type) {
+      case 'hero':
+        return (
+          <StudioHero
+            key={section.id}
+            s={s}
+            live
+            onCta={(link) => (link ? onNavigate({ kind: 'href', href: link }, link) : scrollToProducts())}
+          />
+        );
+      case 'categories':
+        if (categories.length === 0) return null;
+        return (
+          <div key={section.id} id="st-categories">
+            <StudioCategoriesSection
+              s={s}
+              categories={categories.slice(0, Math.max(s.columns ?? 6, 6) * 2).map((c) => ({
+                id: c.id,
+                name: c.name,
+                count: c.item_count,
+              }))}
+              style={theme.category_style}
+              images={categoryImages}
+              selectedId={selectedCategory}
+              onSelect={(id) => {
+                onCategory(id);
+                scrollToProducts();
+              }}
+              viewAll={{ label: 'View All', onClick: scrollToProducts }}
+            />
+          </div>
+        );
+      case 'products':
+        if (section.id !== productsSection?.id) {
+          const source = s.source ?? 'all';
+          const categoryId = s.categoryId;
+          return (
+            <StudioSourcedProducts
+              key={section.id}
+              s={s}
+              mobileColumns={mobileColumns}
+              onViewDetail={onViewDetail}
+              action={{
+                label: 'View All',
+                onClick: () => {
+                  if (source === 'category' && categoryId) {
+                    onCategory(categoryId);
+                    scrollToProducts();
+                  } else if (source === 'discounted' && offersOn) {
+                    onNavigate({ kind: 'offers' }, 'Offers');
+                  } else {
+                    scrollToProducts();
+                  }
+                },
+              }}
+            />
+          );
+        }
+        return (
+          <div key={section.id}>
+            <StudioProductsSection
+              id="all-products"
+              s={s}
+              count={total > 0 ? `${total} ${total === 1 ? 'product' : 'products'}` : undefined}
+              action={null}
+              mobileColumns={mobileColumns}
+            >
+              {grid}
+            </StudioProductsSection>
+            {after}
+          </div>
+        );
+      case 'banner':
+        return (
+          <StudioBanner
+            key={section.id}
+            s={s}
+            onCta={() =>
+              s.link
+                ? onNavigate({ kind: 'href', href: s.link }, s.link)
+                : offersOn
+                  ? onNavigate({ kind: 'offers' }, 'Offers')
+                  : scrollToProducts()
+            }
+          />
+        );
+      case 'testimonials':
+        if (theme.testimonials.length === 0) return null;
+        return <StudioTestimonials key={section.id} s={s} testimonials={theme.testimonials} />;
+      case 'richtext':
+        return <StudioRichText key={section.id} s={s} />;
+      case 'usp':
+        return <StudioUspStrip key={section.id} s={s} />;
+      case 'marquee':
+        return <StudioMarquee key={section.id} s={s} />;
+      default:
+        return null;
+    }
+  };
   if (browsing) {
     const selectedName = selectedCategory ? categories.find((c) => c.id === selectedCategory)?.name : null;
     const title = selectedName || (offersOnly ? 'Offers' : `Results for “${searchQuery}”`);
@@ -151,105 +254,12 @@ export function StoreStudioHome({
     <div className="st-cq">
       {sections.map((section) => {
         if (!section.enabled) return null;
-        const s = section.settings;
-        switch (section.type) {
-          case 'hero':
-            return (
-              <StudioHero
-                key={section.id}
-                s={s}
-                live
-                onCta={(link) => (link ? onNavigate({ kind: 'href', href: link }, link) : scrollToProducts())}
-              />
-            );
-          case 'categories':
-            if (categories.length === 0) return null;
-            return (
-              <div key={section.id} id="st-categories">
-                <StudioCategoriesSection
-                  s={s}
-                  categories={categories.slice(0, Math.max(s.columns ?? 6, 6) * 2).map((c) => ({
-                    id: c.id,
-                    name: c.name,
-                    count: c.item_count,
-                  }))}
-                  style={theme.category_style}
-                  images={categoryImages}
-                  selectedId={selectedCategory}
-                  onSelect={(id) => {
-                    onCategory(id);
-                    scrollToProducts();
-                  }}
-                  viewAll={{ label: 'View All', onClick: scrollToProducts }}
-                />
-              </div>
-            );
-          case 'products':
-            if (section.id !== productsSection?.id) {
-              const source = s.source ?? 'all';
-              const categoryId = s.categoryId;
-              return (
-                <StudioSourcedProducts
-                  key={section.id}
-                  s={s}
-                  mobileColumns={mobileColumns}
-                  onViewDetail={onViewDetail}
-                  action={{
-                    label: 'View All',
-                    onClick: () => {
-                      if (source === 'category' && categoryId) {
-                        onCategory(categoryId);
-                        scrollToProducts();
-                      } else if (source === 'discounted' && offersOn) {
-                        onNavigate({ kind: 'offers' }, 'Offers');
-                      } else {
-                        scrollToProducts();
-                      }
-                    },
-                  }}
-                />
-              );
-            }
-            return (
-              <div key={section.id}>
-                <StudioProductsSection
-                  id="all-products"
-                  s={s}
-                  count={total > 0 ? `${total} ${total === 1 ? 'product' : 'products'}` : undefined}
-                  action={null}
-                  mobileColumns={mobileColumns}
-                >
-                  {grid}
-                </StudioProductsSection>
-                {after}
-              </div>
-            );
-          case 'banner':
-            return (
-              <StudioBanner
-                key={section.id}
-                s={s}
-                onCta={() =>
-                  s.link
-                    ? onNavigate({ kind: 'href', href: s.link }, s.link)
-                    : offersOn
-                      ? onNavigate({ kind: 'offers' }, 'Offers')
-                      : scrollToProducts()
-                }
-              />
-            );
-          case 'testimonials':
-            if (theme.testimonials.length === 0) return null;
-            return <StudioTestimonials key={section.id} s={s} testimonials={theme.testimonials} />;
-          case 'richtext':
-            return <StudioRichText key={section.id} s={s} />;
-          case 'usp':
-            return <StudioUspStrip key={section.id} s={s} />;
-          case 'marquee':
-            return <StudioMarquee key={section.id} s={s} />;
-          default:
-            return null;
-        }
+        const body = renderSection(section);
+        return body ? (
+          <StudioSectionFrame key={section.id} section={section}>
+            {body}
+          </StudioSectionFrame>
+        ) : null;
       })}
 
       {!productsSection ? (

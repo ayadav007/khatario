@@ -54,6 +54,7 @@ import {
   StudioProductTile,
   StudioProductsSection,
   StudioRichText,
+  StudioSectionFrame,
   StudioTestimonials,
   StudioUspStrip,
   DEFAULT_USPS,
@@ -71,6 +72,8 @@ import {
   type StudioSettings,
 } from './studio-map';
 import { PagePreview, PageSettings } from './StudioPages';
+import { CssReference } from './CssReference';
+import { previewStoreCss, sectionDomId, SECTION_CSS_MAX } from '@/lib/store/section-css';
 import {
   Check,
   Field,
@@ -470,6 +473,7 @@ export function ThemeStudio({
                 <Advanced
                   studioPack={studioPack}
                   current={current}
+                  update={update}
                   updateEnabled={(enabled) =>
                     setSections(sections.map((s) => (s.id === selected ? { ...s, enabled } : s)))
                   }
@@ -496,7 +500,10 @@ export function ThemeStudio({
             </div>
           ) : (
           <div className={`store st-root st-cq ${device}`} style={rootStyle}>
-            {page === 'home' ? (
+            {pages.customCss ? (
+              <style dangerouslySetInnerHTML={{ __html: previewStoreCss(pages.customCss, '.ks-root .store') }} />
+            ) : null}
+            {page === 'home' || page === 'css' ? (
               <Store
                 sections={sections}
                 select={setSelected}
@@ -1374,13 +1381,17 @@ function AnnouncementPosition({
 
 function Advanced({
   current,
+  update,
   updateEnabled,
   studioPack,
 }: {
   current: StudioSection;
+  update: (p: Partial<StudioSettings>) => void;
   updateEnabled: (v: boolean) => void;
   studioPack: boolean;
 }) {
+  const s = current.settings;
+  const css = s.customCss ?? '';
   return (
     <>
       <div className="field">
@@ -1394,6 +1405,37 @@ function Advanced({
           ? 'Visibility and section order are saved to your store when you Publish. Drag sections in the left panel to reorder.'
           : 'Visibility is saved when you Publish. Section order and custom text sections only apply to the Studio theme.'}
       </div>
+      <h3 className="styleSub">Custom CSS</h3>
+      {studioPack ? null : <p className="note">Section CSS and class names only apply to the Studio theme.</p>}
+      <Field label="CSS class names">
+        <input
+          value={s.cssClass ?? ''}
+          maxLength={120}
+          placeholder="festive-banner"
+          onChange={(e) => update({ cssClass: e.target.value })}
+        />
+      </Field>
+      <p className="styleHint">
+        Lets store-wide CSS target this section. Its id is <code>#{sectionDomId(current.id)}</code>.
+      </p>
+      <Field label="CSS for this section only">
+        <textarea
+          className="cssBox"
+          rows={9}
+          spellCheck={false}
+          value={css}
+          maxLength={SECTION_CSS_MAX}
+          placeholder={'h2 { font-size: 40px; }\n.st-btn { border-radius: 999px; }'}
+          onChange={(e) => update({ customCss: e.target.value })}
+        />
+      </Field>
+      <p className="styleHint">
+        {css.length}/{SECTION_CSS_MAX}. Shows in the preview as you type and goes live when you Publish. No scripts or @import.
+      </p>
+      <CssReference
+        type={current.type}
+        onInsert={(snippet) => update({ customCss: `${css.trim() ? `${css.trimEnd()}\n` : ''}${snippet}`.slice(0, SECTION_CSS_MAX) })}
+      />
     </>
   );
 }
@@ -1429,8 +1471,9 @@ function Store({
       {sections
         .filter((s) => s.enabled)
         .map((s) => (
-          <div
+          <StudioSectionFrame
             key={s.id}
+            section={s}
             className={`editable ${selected === s.id ? 'selectedPreview' : ''}`}
             onClick={() => select(s.id)}
           >
@@ -1481,7 +1524,7 @@ function Store({
             ) : null}
             {s.type === 'footer' ? <StudioFooter s={s.settings} links={footerLinks(s.settings)} /> : null}
             {s.type === 'richtext' ? <StudioRichText s={s.settings} /> : null}
-          </div>
+          </StudioSectionFrame>
         ))}
     </>
   );

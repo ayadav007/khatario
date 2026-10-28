@@ -4,6 +4,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Heart, Instagram, Mail, MessageCircle, Minus, Phone, Plus, Search, ShoppingCart } from 'lucide-react';
 import type { StoreCategoryStyle, StoreContactForm, StoreFormFieldMode } from '@/lib/store/store-theme';
 import type { StudioPageId, StudioPagesState } from './studio-map';
+import { CssReference } from './CssReference';
 import {
   CategoryTiles,
   Check,
@@ -59,6 +60,32 @@ export function PageSettings({
 }) {
   const key = `${page}:${section}`;
   switch (key) {
+    case 'css:css':
+      return (
+        <>
+          <Field label="CSS for the whole store">
+            <textarea
+              className="cssBox"
+              rows={16}
+              spellCheck={false}
+              value={pages.customCss}
+              maxLength={8000}
+              placeholder={'.st-root .product { border-radius: 16px; }\n.st-root .st-sec { --primary: #7c3aed; }'}
+              onChange={(e) => update({ customCss: e.target.value })}
+            />
+          </Field>
+          <p className="styleHint">
+            {pages.customCss.length}/8000. Applies to every page of your store, on every theme. The preview updates as you type;
+            shoppers see it when you Publish. No scripts or @import.
+          </p>
+          <CssReference
+            onInsert={(snippet) =>
+              update({ customCss: `${pages.customCss.trim() ? `${pages.customCss.trimEnd()}\n` : ''}${snippet}`.slice(0, 8000) })
+            }
+          />
+          <p className="note">To style just one section, select it on the Home page and open its Advanced tab.</p>
+        </>
+      );
     case 'products:search':
       return (
         <>
