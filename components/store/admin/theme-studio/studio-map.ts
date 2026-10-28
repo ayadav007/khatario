@@ -70,7 +70,18 @@ export function applyStudioToTheme(
       title: s.heading?.trim() ?? '',
       subtitle: s.description?.trim() ?? '',
     };
-    next.hero_slides = slides;
+    // Studio's extra slides replace the theme's, so Khatario's carousel shows the same slides.
+    next.hero_slides = s.slides
+      ? [
+          slides[0],
+          ...s.slides.map((sl) => ({
+            viewport: 'both' as const,
+            image_url: sl.image,
+            title: sl.heading.trim(),
+            subtitle: sl.description.trim(),
+          })),
+        ].slice(0, 6)
+      : slides;
     next.hero_subtitle = s.description?.trim() ?? '';
     next.hero_cta = s.buttonText?.trim() || theme.hero_cta;
     heroImage = image || null;

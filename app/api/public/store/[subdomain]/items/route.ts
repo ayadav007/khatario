@@ -24,6 +24,8 @@ interface StoreItem {
   rating_avg: number;
   rating_count: number;
   featured_in_store?: boolean;
+  created_at: string | null;
+  sold_count: number;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -39,6 +41,7 @@ interface StoreItem {
  *   ?category_id=...  — filter by category
  *   ?search=...       — search by name/code
  *   ?branch_id=...    — stock from specific branch
+ *   ?sort=new|bestsellers — newest or most sold first (default A-Z)
  *   ?page=1&limit=40  — pagination
  */
 export async function GET(
@@ -63,6 +66,8 @@ export async function GET(
       Number.isFinite(maxPriceRaw) && maxPriceRaw > 0
         ? Math.min(999999, maxPriceRaw)
         : null;
+    const { parseStoreItemsSort } = await import('@/lib/store/store-items-query');
+    const sort = parseStoreItemsSort(searchParams.get('sort'));
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '40', 10)));
     const offset = (page - 1) * limit;
@@ -79,6 +84,7 @@ export async function GET(
           featuredOnly,
           discountedOnly,
           maxPrice,
+          sort,
         }),
       );
     }
@@ -92,6 +98,7 @@ export async function GET(
       featuredOnly,
       discountedOnly,
       maxPrice,
+      sort,
       limit,
       offset,
     });
@@ -117,6 +124,8 @@ export async function GET(
       featured_in_store: !!(r as { featured_in_store?: boolean }).featured_in_store,
       tax_rate: parseFloat(r.tax_rate as string) || 0,
       gst_included: !!(r as { gst_included?: boolean }).gst_included,
+      created_at: r.created_at ? new Date(r.created_at as string).toISOString() : null,
+      sold_count: parseFloat(r.sold_count as string) || 0,
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
 

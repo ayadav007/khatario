@@ -183,6 +183,20 @@
 .ks-root .sectionItem.selected{background:#fff0e8;color:var(--primary);border-left:2px solid var(--primary)}
 .ks-root .add{margin-top:10px;width:100%;padding:9px;background:#fff;border:1px dashed #c8c2bb;border-radius:6px;display:flex;justify-content:center;gap:6px}
 .ks-root .add svg{width:15px}
+.ks-root .addMenu{margin-top:6px;background:#fff;border:1px solid #ddd8d0;border-radius:8px;box-shadow:0 10px 26px -14px rgba(0,0,0,.3);overflow:hidden}
+.ks-root .addMenu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;cursor:pointer}
+.ks-root .addMenu button+button{border-top:1px solid #f0ebe4}
+.ks-root .addMenu button:hover{background:#fff0e8}
+.ks-root .addMenu b{display:block;font-size:12px}
+.ks-root .addMenu small{display:block;font-size:11px;color:#817a73;margin-top:2px}
+.ks-root .listCard{margin:0 18px 12px;border:1px solid #e7e1d9;border-radius:8px;padding:4px 0 2px;background:#fcfaf7}
+.ks-root .listCard .field{margin-left:12px;margin-right:12px}
+.ks-root .listCardHead{display:flex;align-items:center;justify-content:space-between;padding:6px 12px 2px;font-size:12px;font-weight:600}
+.ks-root .listCardHead div{display:flex;gap:4px}
+.ks-root .listCardHead button{border:1px solid #e0d9d0;background:#fff;border-radius:5px;font-size:11px;padding:3px 7px;cursor:pointer}
+.ks-root .listCardHead button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.ks-root .listCardHead button.danger{color:#a23a15}
+.ks-root .addSmall{margin:0 18px 14px;width:calc(100% - 36px);padding:7px;background:#fff;border:1px dashed #c8c2bb;border-radius:6px;font-size:12px;cursor:pointer}
 .ks-root .settings{border-right:1px solid #ddd8d0;overflow:auto;background:#fff}
 .ks-root .settingsHead{display:flex;justify-content:space-between;padding:18px 18px 12px}
 .ks-root .settingsHead h2{font-size:18px;margin:0 0 4px}
@@ -236,3 +250,4 @@
 .ks-root .buyBar,.ks-root .buyBar.sticky{padding-left:14px;padding-right:14px}
 .ks-root .stickyTag{right:14px}
 }
+.ks-root .previewNote{margin:10px 38px;padding:10px 12px;border:1px dashed #c8c2bb;border-radius:8px;font-size:12px;color:#817a73;background:#fff}

@@ -26,7 +26,22 @@ import {
   type StoreThemePack,
   type StoreThemePreset,
 } from '@/lib/store/store-theme';
-import { STUDIO_EYEBROW, splitList, studioVars } from '@/lib/store/studio-layout';
+import {
+  ADDABLE_SECTIONS,
+  STUDIO_EYEBROW,
+  STUDIO_SOURCE_LABELS,
+  studioEyebrow,
+  newStudioSection,
+  splitList,
+  studioVars,
+} from '@/lib/store/studio-layout';
+import {
+  STUDIO_PRODUCT_SOURCES,
+  STUDIO_USP_ICONS,
+  type StudioProductSource,
+  type StudioSectionType,
+  type StudioSlide,
+} from '@/lib/store/studio-sections';
 import {
   StudioAddButton,
   StudioAnnouncement,
@@ -35,10 +50,15 @@ import {
   StudioFooter,
   StudioHeader,
   StudioHero,
+  StudioMarquee,
   StudioProductTile,
   StudioProductsSection,
   StudioRichText,
   StudioTestimonials,
+  StudioUspStrip,
+  DEFAULT_USPS,
+  heroSlides,
+  type StudioBadge,
 } from '@/components/store/studio-theme/StudioSections';
 import {
   PUBLISHED_ONLY_PAGES,
@@ -187,17 +207,25 @@ export function ThemeStudio({
     setFuture((f) => f.slice(0, -1));
     setDoc(next);
   };
-  const addSection = () => {
-    const id = `custom-${Date.now()}`;
-    setSections([
-      ...sections,
-      { id, type: 'richtext', name: 'New Text Section', enabled: true, settings: { title: 'Your heading', text: 'Add your content here.' } },
-    ]);
+  const [adding, setAdding] = useState(false);
+  const [heroSlide, setHeroSlide] = useState(0);
+  const addSection = (type: StudioSectionType) => {
+    const id = `${type}-${Date.now().toString(36)}`;
+    const section = newStudioSection(type, id);
+    // New sections go above the footer so they show on the page right away.
+    const footerAt = sections.findIndex((s) => s.type === 'footer');
+    const next = [...sections];
+    next.splice(footerAt >= 0 ? footerAt : next.length, 0, section);
+    setSections(next);
     setSelected(id);
+    setTab('content');
+    setAdding(false);
   };
   const removeSection = () => {
     if (!current) return;
-    if (isSavedSection(current.type)) {
+    // The first section of a linked type also drives the other themes, so it is hidden rather than deleted.
+    const firstOfType = sections.find((s) => s.type === current.type)?.id === current.id;
+    if (isSavedSection(current.type) && firstOfType) {
       setSections(sections.map((s) => (s.id === current.id ? { ...s, enabled: false } : s)));
       return;
     }
@@ -342,9 +370,19 @@ export function ThemeStudio({
                   </div>
                 ))}
               </div>
-              <button type="button" className="add" onClick={addSection}>
+              <button type="button" className="add" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
                 <Plus /> Add Section
               </button>
+              {adding ? (
+                <div className="addMenu" role="menu">
+                  {ADDABLE_SECTIONS.map((a) => (
+                    <button type="button" role="menuitem" key={a.type} onClick={() => addSection(a.type)}>
+                      <b>{a.label}</b>
+                      <small>{a.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="sectionList">
@@ -415,7 +453,17 @@ export function ThemeStudio({
                 </button>
               </div>
               {tab === 'content' ? (
-                <Content current={current} update={update} pages={pages} updatePages={updatePages} themeName={themeName} studioPack={studioPack} />
+                <Content
+                  current={current}
+                  update={update}
+                  pages={pages}
+                  updatePages={updatePages}
+                  themeName={themeName}
+                  studioPack={studioPack}
+                  categories={categories}
+                  heroSlide={heroSlide}
+                  setHeroSlide={setHeroSlide}
+                />
               ) : null}
               {tab === 'style' ? <Style current={current} update={update} accent={accent} studioPack={studioPack} /> : null}
               {tab === 'advanced' ? (
@@ -460,6 +508,7 @@ export function ThemeStudio({
                 logoUrl={logoUrl}
                 footerLinks={footerLinks}
                 mobileColumns={device === 'mobile' ? pages.mobileColumns : 2}
+                heroSlide={heroSlide}
               />
             ) : (
               <PagePreview
@@ -580,6 +629,207 @@ function Eyebrow({ s, update, fallback }: { s: StudioSettings; update: (p: Parti
   );
 }
 
+const USP_ICON_LABELS: Record<(typeof STUDIO_USP_ICONS)[number], string> = {
+  truck: 'Delivery truck',
+  cash: 'Cash',
+  return: 'Returns',
+  shield: 'Shield',
+  clock: 'Clock',
+  leaf: 'Leaf',
+  star: 'Star',
+  gift: 'Gift',
+  phone: 'Phone',
+  badge: 'Badge',
+};
+
+const MAX_EXTRA_SLIDES = 5;
+const MAX_USPS = 6;
+
+function HeroSlides({
+  s,
+  update,
+  heroSlide,
+  setHeroSlide,
+}: {
+  s: StudioSettings;
+  update: (p: Partial<StudioSettings>) => void;
+  heroSlide: number;
+  setHeroSlide: (i: number) => void;
+}) {
+  const slides = s.slides ?? [];
+  const setSlides = (next: StudioSlide[]) => update({ slides: next });
+  const patch = (i: number, p: Partial<StudioSlide>) => setSlides(slides.map((sl, j) => (j === i ? { ...sl, ...p } : sl)));
+  return (
+    <>
+      <h3 className="styleSub">More slides ◇</h3>
+      <p className="styleHint">The fields above are slide 1. Extra slides turn the hero into a slideshow.</p>
+      {slides.map((sl, i) => (
+        <div className="listCard" key={i}>
+          <div className="listCardHead">
+            <span>Slide {i + 2}</span>
+            <div>
+              <button type="button" className={heroSlide === i + 1 ? 'on' : ''} onClick={() => setHeroSlide(i + 1)}>
+                Show
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  setSlides(slides.filter((_, j) => j !== i));
+                  setHeroSlide(0);
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+          <Field label="Heading">
+            <input value={sl.heading} maxLength={120} onChange={(e) => patch(i, { heading: e.target.value })} onFocus={() => setHeroSlide(i + 1)} />
+          </Field>
+          <Field label="Description">
+            <textarea value={sl.description} maxLength={400} onChange={(e) => patch(i, { description: e.target.value })} onFocus={() => setHeroSlide(i + 1)} />
+          </Field>
+          <Field label="Image">
+            <ImagePicker
+              value={sl.image}
+              onChange={(image) => {
+                patch(i, { image });
+                setHeroSlide(i + 1);
+              }}
+            />
+          </Field>
+          <Field label="Button text">
+            <input value={sl.buttonText} maxLength={40} onChange={(e) => patch(i, { buttonText: e.target.value })} />
+          </Field>
+          <Field label="Button link">
+            <input value={sl.link} placeholder="/?offers=1 or https://…" onChange={(e) => patch(i, { link: e.target.value })} />
+          </Field>
+        </div>
+      ))}
+      {slides.length < MAX_EXTRA_SLIDES ? (
+        <button
+          type="button"
+          className="addSmall"
+          onClick={() => {
+            setSlides([...slides, { heading: 'New collection', description: '', image: '', buttonText: s.buttonText || 'Shop now', link: '' }]);
+            setHeroSlide(slides.length + 1);
+          }}
+        >
+          + Add slide
+        </button>
+      ) : null}
+      {slides.length ? (
+        <Field label="Change slide every ◇">
+          <select value={s.autoplay ?? 6} onChange={(e) => update({ autoplay: +e.target.value })}>
+            <option value={0}>Don&apos;t auto-play</option>
+            {[4, 6, 8, 10].map((n) => (
+              <option key={n} value={n}>
+                {n} seconds
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+    </>
+  );
+}
+
+function ProductSource({
+  s,
+  update,
+  categories,
+}: {
+  s: StudioSettings;
+  update: (p: Partial<StudioSettings>) => void;
+  categories: StudioCategory[];
+}) {
+  const source = s.source ?? 'all';
+  return (
+    <>
+      <Field label="Show ◇">
+        <select value={source} onChange={(e) => update({ source: e.target.value as StudioProductSource })}>
+          {STUDIO_PRODUCT_SOURCES.map((v) => (
+            <option key={v} value={v}>
+              {STUDIO_SOURCE_LABELS[v]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {source === 'category' ? (
+        <Field label="Category ◇">
+          <select value={s.categoryId ?? ''} onChange={(e) => update({ categoryId: e.target.value })}>
+            <option value="">Choose a category</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+      {source === 'price_max' ? (
+        <Field label="Maximum price (₹) ◇">
+          <input
+            type="number"
+            min={1}
+            value={s.priceMax ?? 499}
+            onChange={(e) => update({ priceMax: Math.max(1, Math.round(+e.target.value || 1)) })}
+          />
+        </Field>
+      ) : null}
+      {source === 'bestsellers' ? (
+        <p className="styleHint">Ranked by units sold on your online store. The top three get a Bestseller badge.</p>
+      ) : null}
+      {source === 'new' ? <p className="styleHint">Newest items first. Items added in the last 30 days get a New badge.</p> : null}
+      {source === 'all' ? (
+        <p className="styleHint">The full catalog with Load more. Menu links and search scroll here. Only the first one of these is shown.</p>
+      ) : (
+        <>
+          <Field label="How many products ◇">
+            <select value={s.limit ?? 8} onChange={(e) => update({ limit: +e.target.value })}>
+              {[4, 6, 8, 12, 16, 24].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Layout ◇">
+            <div className="seg">
+              {(['grid', 'carousel'] as const).map((v) => (
+                <button type="button" key={v} className={(s.display ?? 'grid') === v ? 'on' : ''} onClick={() => update({ display: v })}>
+                  {v === 'grid' ? 'Grid' : 'Swipe row'}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </>
+      )}
+      <h3 className="styleSub">Product cards ◇</h3>
+      <Field label="Card style ◇">
+        <div className="seg">
+          {(['bordered', 'shadow', 'minimal'] as const).map((v) => (
+            <button type="button" key={v} className={(s.cardStyle ?? 'bordered') === v ? 'on' : ''} onClick={() => update({ cardStyle: v })}>
+              {v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Image shape ◇">
+        <div className="seg">
+          {(['square', 'portrait', 'landscape'] as const).map((v) => (
+            <button type="button" key={v} className={(s.imageRatio ?? 'square') === v ? 'on' : ''} onClick={() => update({ imageRatio: v })}>
+              {v === 'square' ? '1:1' : v === 'portrait' ? '3:4' : '4:3'}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Check label="Show star ratings ◇" checked={s.showRating !== false} onChange={(showRating) => update({ showRating })} />
+      <Check label="Show badges (Sale, New, Only N left) ◇" checked={s.showBadges !== false} onChange={(showBadges) => update({ showBadges })} />
+    </>
+  );
+}
+
 function Content({
   current,
   update,
@@ -587,6 +837,9 @@ function Content({
   updatePages,
   themeName,
   studioPack,
+  categories,
+  heroSlide,
+  setHeroSlide,
 }: {
   current: StudioSection;
   update: (p: Partial<StudioSettings>) => void;
@@ -594,6 +847,9 @@ function Content({
   updatePages: (p: Partial<StudioPagesState>) => void;
   themeName: string;
   studioPack: boolean;
+  categories: StudioCategory[];
+  heroSlide: number;
+  setHeroSlide: (i: number) => void;
 }) {
   const s = current.settings;
   const PreviewOnly = () =>
@@ -624,6 +880,16 @@ function Content({
         <Field label="Button text">
           <input value={s.buttonText ?? ''} maxLength={32} onChange={(e) => update({ buttonText: e.target.value })} />
         </Field>
+        <Field label="Button link ◇">
+          <input
+            value={s.link ?? ''}
+            placeholder="Empty scrolls to products"
+            onChange={(e) => update({ link: e.target.value })}
+            onFocus={() => setHeroSlide(0)}
+          />
+        </Field>
+        <HeroSlides s={s} update={update} heroSlide={heroSlide} setHeroSlide={setHeroSlide} />
+        <h3 className="styleSub">All slides</h3>
         <Field label="Highlights ◇">
           <input
             value={s.benefits ?? ''}
@@ -825,7 +1091,7 @@ function Content({
     return (
       <>
         <PreviewOnly />
-        <Eyebrow s={s} update={update} fallback={STUDIO_EYEBROW.products ?? ''} />
+        <Eyebrow s={s} update={update} fallback={studioEyebrow('products', undefined, s.source)} />
         <Field label="Heading ◇">
           <input value={s.title ?? ''} onChange={(e) => update({ title: e.target.value })} />
         </Field>
@@ -844,6 +1110,7 @@ function Content({
           checked={pages.showListingAdd}
           onChange={(showListingAdd) => updatePages({ showListingAdd })}
         />
+        <ProductSource s={s} update={update} categories={categories} />
       </>
     );
   }
@@ -861,9 +1128,80 @@ function Content({
         <Field label="Button">
           <input value={s.button ?? ''} maxLength={40} onChange={(e) => update({ button: e.target.value })} />
         </Field>
+        <Field label="Button link ◇">
+          <input value={s.link ?? ''} placeholder="Empty opens your offers" onChange={(e) => update({ link: e.target.value })} />
+        </Field>
         <Field label="Background image">
           <ImagePicker value={s.image ?? ''} onChange={(image) => update({ image })} />
         </Field>
+      </>
+    );
+  }
+  if (current.type === 'usp') {
+    const usps = s.usps ?? DEFAULT_USPS;
+    const setUsps = (next: typeof usps) => update({ usps: next });
+    return (
+      <>
+        <PreviewOnly />
+        <Field label="Heading (optional) ◇">
+          <input value={s.title ?? ''} maxLength={120} placeholder="Leave empty to hide" onChange={(e) => update({ title: e.target.value })} />
+        </Field>
+        {usps.map((u, i) => (
+          <div className="listCard" key={i}>
+            <div className="listCardHead">
+              <span>Badge {i + 1}</span>
+              <div>
+                <button type="button" className="danger" onClick={() => setUsps(usps.filter((_, j) => j !== i))}>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <Field label="Icon">
+              <select
+                value={u.icon}
+                onChange={(e) => setUsps(usps.map((x, j) => (j === i ? { ...x, icon: e.target.value as typeof u.icon } : x)))}
+              >
+                {STUDIO_USP_ICONS.map((icon) => (
+                  <option key={icon} value={icon}>
+                    {USP_ICON_LABELS[icon]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Title">
+              <input value={u.title} maxLength={60} onChange={(e) => setUsps(usps.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
+            </Field>
+            <Field label="Text">
+              <input value={u.text} maxLength={120} onChange={(e) => setUsps(usps.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+            </Field>
+          </div>
+        ))}
+        {usps.length < MAX_USPS ? (
+          <button type="button" className="addSmall" onClick={() => setUsps([...usps, { icon: 'badge', title: 'Your promise', text: '' }])}>
+            + Add badge
+          </button>
+        ) : null}
+      </>
+    );
+  }
+  if (current.type === 'marquee') {
+    return (
+      <>
+        <PreviewOnly />
+        <Field label="Messages ◇">
+          <textarea value={s.text ?? ''} maxLength={2000} onChange={(e) => update({ text: e.target.value })} />
+        </Field>
+        <p className="styleHint">Separate messages with commas. They scroll across the page in a loop and pause on hover.</p>
+        <Field label="Speed ◇">
+          <div className="seg">
+            {(['slow', 'normal', 'fast'] as const).map((v) => (
+              <button type="button" key={v} className={(s.speed ?? 'normal') === v ? 'on' : ''} onClick={() => update({ speed: v })}>
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <p className="styleHint">Colours are under Style.</p>
       </>
     );
   }
@@ -917,6 +1255,9 @@ function Style({
           onChange={(e) => update({ background: e.target.value })}
         />
       </Field>
+      {current.type === 'usp' || current.type === 'marquee' ? (
+        <ColorField label="Text colour" value={s.textColor} fallback={current.type === 'marquee' ? '#fbf8f3' : '#1c1917'} onChange={(textColor) => update({ textColor })} />
+      ) : null}
       <Range label="Spacing top" min={0} max={120} value={s.spacingTop ?? 60} onChange={(spacingTop) => update({ spacingTop })} />
       <Range label="Spacing bottom" min={0} max={120} value={s.spacingBottom ?? 60} onChange={(spacingBottom) => update({ spacingBottom })} />
       <Range label="Corner radius" min={0} max={30} value={s.radius ?? 8} onChange={(radius) => update({ radius })} />
@@ -1068,6 +1409,7 @@ function Store({
   logoUrl,
   footerLinks,
   mobileColumns,
+  heroSlide,
 }: {
   sections: StudioSection[];
   select: (id: string) => void;
@@ -1079,7 +1421,9 @@ function Store({
   logoUrl: string;
   footerLinks: (s: StudioSettings) => Array<{ label: string }>;
   mobileColumns: 2 | 3;
+  heroSlide: number;
 }) {
+  const catalogId = sections.find((x) => x.enabled && x.type === 'products' && (x.settings.source ?? 'all') === 'all')?.id;
   return (
     <>
       {sections
@@ -1094,7 +1438,9 @@ function Store({
             {s.type === 'header' ? (
               <StudioHeader s={s.settings} logoUrl={logoUrl} />
             ) : null}
-            {s.type === 'hero' ? <StudioHero s={s.settings} /> : null}
+            {s.type === 'hero' ? (
+              <StudioHero s={s.settings} showSlide={Math.min(heroSlide, heroSlides(s.settings).length - 1)} />
+            ) : null}
             {s.type === 'categories' ? (
               <StudioCategoriesSection
                 s={s.settings}
@@ -1103,9 +1449,12 @@ function Store({
                 images={pages.categoryImages}
               />
             ) : null}
-            {s.type === 'products' ? (
+            {s.type === 'products' && (s.settings.source ?? 'all') === 'all' && s.id !== catalogId ? (
+              <p className="previewNote">Only the first “All products” section shows on the store. Pick another source for this one.</p>
+            ) : null}
+            {s.type === 'products' && ((s.settings.source ?? 'all') !== 'all' || s.id === catalogId) ? (
               <StudioProductsSection s={s.settings} mobileColumns={mobileColumns}>
-                {products.map((p) => (
+                {previewProducts(products, s.settings).map((p, i) => (
                   <StudioProductTile
                     key={p.id}
                     name={p.name}
@@ -1114,11 +1463,14 @@ function Store({
                     mrp={p.mrp}
                     image={p.image}
                     showPrice={s.settings.showPrice !== false}
+                    badges={previewBadges(s.settings, i)}
                     add={pages.showListingAdd ? <StudioAddButton /> : null}
                   />
                 ))}
               </StudioProductsSection>
             ) : null}
+            {s.type === 'usp' ? <StudioUspStrip s={s.settings} /> : null}
+            {s.type === 'marquee' ? <StudioMarquee s={s.settings} /> : null}
             {s.type === 'banner' ? <StudioBanner s={s.settings} /> : null}
             {s.type === 'testimonials' ? (
               <StudioTestimonials
@@ -1135,3 +1487,19 @@ function Store({
   );
 }
 
+/** Editor stand-in for a sourced section: the sample catalog filtered roughly like the store would. */
+function previewProducts(products: StudioProduct[], s: StudioSettings): StudioProduct[] {
+  const source = s.source ?? 'all';
+  let rows = products;
+  if (source === 'discounted') rows = products.filter((p) => p.mrp != null && p.mrp > p.price);
+  if (source === 'price_max') rows = products.filter((p) => p.price <= (s.priceMax ?? 499));
+  if (source === 'new') rows = [...products].reverse();
+  if (!rows.length) rows = products;
+  return source === 'all' ? rows : rows.slice(0, s.limit ?? 8);
+}
+
+function previewBadges(s: StudioSettings, index: number): StudioBadge[] {
+  if (s.source === 'bestsellers' && index < 3) return [{ label: 'Bestseller', tone: 'hot' }];
+  if (s.source === 'new') return [{ label: 'New', tone: 'new' }];
+  return [];
+}

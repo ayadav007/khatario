@@ -36,4 +36,22 @@ export function isStoreOfferItem(item: {
   return storeDiscountPercent(item.mrp, item.selling_price) > 0 && stock > 0;
 }
 
+/** Items added to the catalog in the last 30 days get a "New" badge. */
+export const NEW_ARRIVAL_DAYS = 30;
+/** At or below this many units (and above zero) a card says "Only N left". */
+export const LOW_STOCK_THRESHOLD = 5;
+
+export function isNewArrival(createdAt: string | null | undefined, now: number = Date.now()): boolean {
+  if (!createdAt) return false;
+  const t = Date.parse(createdAt);
+  if (!Number.isFinite(t)) return false;
+  return now - t >= 0 && now - t <= NEW_ARRIVAL_DAYS * 86_400_000;
+}
+
+export function lowStockCount(item: { current_stock?: unknown; has_variants?: boolean }): number | undefined {
+  if (item.has_variants) return undefined;
+  const stock = parseStoreMoney(item.current_stock) ?? 0;
+  return stock > 0 && stock <= LOW_STOCK_THRESHOLD ? Math.floor(stock) || undefined : undefined;
+}
+
 export { extraGalleryUrls };

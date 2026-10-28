@@ -1,9 +1,28 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { Heart, Search, ShoppingCart, Tag, User } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  BadgeCheck,
+  Banknote,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Gift,
+  Heart,
+  Leaf,
+  Phone,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  ShoppingCart,
+  Star,
+  Tag,
+  Truck,
+  User,
+  type LucideIcon,
+} from 'lucide-react';
 import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-theme';
-import type { StudioSettings } from '@/lib/store/studio-sections';
+import type { StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import './studio-theme.css';
 
@@ -181,20 +200,97 @@ export function StudioHeader({
   );
 }
 
-export function StudioHero({ s, onCta }: { s: StudioSettings; onCta?: () => void }) {
+/** The hero's own fields are slide one; `s.slides` holds the rest. */
+export function heroSlides(s: StudioSettings): StudioSlide[] {
+  return [
+    {
+      image: s.image ?? '',
+      heading: s.heading ?? '',
+      description: s.description ?? '',
+      buttonText: s.buttonText ?? '',
+      link: s.link ?? '',
+    },
+    ...(s.slides ?? []),
+  ];
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const on = () => setReduced(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return reduced;
+}
+
+export function StudioHero({
+  s,
+  onCta,
+  live = false,
+  showSlide,
+}: {
+  s: StudioSettings;
+  /** Called with the slide's link (empty when it has none). */
+  onCta?: (link: string) => void;
+  /** Storefront: autoplay runs. The editor preview stays on `showSlide`. */
+  live?: boolean;
+  showSlide?: number;
+}) {
   const height = s.height || 'medium';
   const alignItems = s.align === 'center' ? 'center' : s.align === 'right' ? 'flex-end' : 'flex-start';
   const shade = (s.overlay || 0) / 100;
   const benefits = splitList(s.benefits, '');
+  const slides = heroSlides(s);
+  const many = slides.length > 1;
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const reduced = usePrefersReducedMotion();
+  const touchX = useRef<number | null>(null);
+  const active = Math.min(index, slides.length - 1);
+  const slide = slides[active];
+  const interval = s.autoplay ?? 6;
+
+  useEffect(() => {
+    if (showSlide != null) setIndex(Math.max(0, Math.min(showSlide, slides.length - 1)));
+  }, [showSlide, slides.length]);
+
+  useEffect(() => {
+    if (!live || !many || paused || reduced || interval <= 0) return;
+    const t = window.setInterval(() => setIndex((i) => (i + 1) % slides.length), interval * 1000);
+    return () => window.clearInterval(t);
+  }, [live, many, paused, reduced, interval, slides.length]);
+
+  const go = (dir: 1 | -1) => setIndex((i) => (i + dir + slides.length) % slides.length);
+
   return (
-    <div className={`hero ${s.layout ?? 'image-text'} ${height}`} style={boxStyle(s)}>
-      <div className="heroCopy" style={{ textAlign: s.align, alignItems }}>
+    <div
+      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''}`}
+      style={boxStyle(s)}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={(e) => {
+        touchX.current = e.touches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(e) => {
+        const start = touchX.current;
+        touchX.current = null;
+        const end = e.changedTouches[0]?.clientX;
+        if (!many || start == null || end == null || Math.abs(end - start) < 40) return;
+        go(end < start ? 1 : -1);
+      }}
+      aria-roledescription={many ? 'carousel' : undefined}
+    >
+      <div className="heroCopy" style={{ textAlign: s.align, alignItems }} key={many ? `copy-${active}` : 'copy'}>
         {s.eyebrow ? <small className="eyebrow">{s.eyebrow}</small> : null}
-        <h1>{s.heading}</h1>
-        {s.description ? <p>{s.description}</p> : null}
-        {s.buttonText ? (
-          <button type="button" className="st-btn" onClick={onCta}>
-            {s.buttonText} →
+        <h1>{slide.heading}</h1>
+        {slide.description ? <p>{slide.description}</p> : null}
+        {slide.buttonText ? (
+          <button type="button" className="st-btn" onClick={() => onCta?.(slide.link)}>
+            {slide.buttonText} →
           </button>
         ) : null}
         {benefits.length ? (
@@ -205,14 +301,43 @@ export function StudioHero({ s, onCta }: { s: StudioSettings; onCta?: () => void
           </div>
         ) : null}
       </div>
-      <div
-        className="heroImg"
-        role="img"
-        aria-label=""
-        style={{
-          backgroundImage: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(s.image ?? '')})`,
-        }}
-      />
+      <div className="heroImg" role="img" aria-label="">
+        {slides.map((sl, i) => (
+          <div
+            key={i}
+            className={`heroSlideImg ${i === active ? 'on' : ''}`}
+            style={{
+              backgroundImage: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(sl.image || slides[0].image || '')})`,
+            }}
+          />
+        ))}
+      </div>
+      {many ? (
+        <>
+          <button type="button" className="heroArrow prev" onClick={() => go(-1)} aria-label="Previous slide">
+            <ChevronLeft />
+          </button>
+          <button type="button" className="heroArrow next" onClick={() => go(1)} aria-label="Next slide">
+            <ChevronRight />
+          </button>
+          <div className="heroDots">
+            {slides.map((_, i) => (
+              <button
+                type="button"
+                key={i}
+                className={i === active ? 'on' : ''}
+                onClick={() => setIndex(i)}
+                aria-label={`Slide ${i + 1} of ${slides.length}`}
+                aria-current={i === active}
+              >
+                {i === active && live && !paused && !reduced && interval > 0 ? (
+                  <i key={`p-${active}`} style={{ animationDuration: `${interval}s` }} />
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -331,15 +456,25 @@ export function StudioCategoriesSection({
   );
 }
 
+export interface StudioBadge {
+  label: string;
+  tone: 'sale' | 'new' | 'hot';
+}
+
 export function StudioProductTile({
   name,
   unit,
   price,
   mrp,
   image,
+  hoverImage,
   href,
   showPrice = true,
   discount,
+  badges = [],
+  rating = 0,
+  ratingCount = 0,
+  lowStock,
   outOfStock,
   fav,
   onFav,
@@ -350,10 +485,18 @@ export function StudioProductTile({
   price: number;
   mrp?: number | null;
   image?: string | null;
+  /** Second photo shown on hover (devices with a mouse). */
+  hoverImage?: string | null;
   href?: string;
   showPrice?: boolean;
   /** Percent; 0 hides the badge. */
   discount?: number;
+  /** Extra badges after the discount, e.g. New or Bestseller. */
+  badges?: StudioBadge[];
+  rating?: number;
+  ratingCount?: number;
+  /** Units left when stock is low; shows "Only N left". */
+  lowStock?: number;
   outOfStock?: boolean;
   fav?: boolean;
   onFav?: () => void;
@@ -361,19 +504,35 @@ export function StudioProductTile({
 }) {
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
   const [broken, setBroken] = useState(false);
+  const [altBroken, setAltBroken] = useState(false);
   useEffect(() => setBroken(false), [image]);
+  useEffect(() => setAltBroken(false), [hoverImage]);
+  const allBadges: StudioBadge[] = [...(off > 0 ? [{ label: `${off}% OFF`, tone: 'sale' as const }] : []), ...badges];
+  const showAlt = !!hoverImage && hoverImage !== image && !broken && !altBroken;
   return (
-    <article className="product">
+    <article className={`product ${showAlt ? 'hasAlt' : ''}`}>
       <div className="pimg">
         <a href={href} style={{ display: 'block', width: '100%', height: '100%', opacity: outOfStock ? 0.45 : 1 }}>
           {image && !broken ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt={name} loading="lazy" onError={() => setBroken(true)} />
+            <img className="main" src={image} alt={name} loading="lazy" onError={() => setBroken(true)} />
           ) : (
             <span className="ph">{name.charAt(0).toUpperCase()}</span>
           )}
+          {showAlt ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="alt" src={hoverImage!} alt="" loading="lazy" aria-hidden="true" onError={() => setAltBroken(true)} />
+          ) : null}
         </a>
-        {off > 0 ? <em>{off}% OFF</em> : null}
+        {allBadges.length ? (
+          <div className="badges">
+            {allBadges.slice(0, 2).map((b) => (
+              <em key={b.label} className={b.tone}>
+                {b.label}
+              </em>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           className={`fav ${fav ? 'on' : ''}`}
@@ -388,12 +547,20 @@ export function StudioProductTile({
         {name}
       </a>
       {unit ? <div className="punit">{unit}</div> : null}
-      {showPrice ? (
-        <div className="price">
-          {off > 0 && mrp ? <del>{rupees(mrp)}</del> : null}
-          {rupees(price)}
+      {ratingCount > 0 && rating > 0 ? (
+        <div className="prating" aria-label={`Rated ${rating} out of 5 by ${ratingCount} ${ratingCount === 1 ? 'customer' : 'customers'}`}>
+          <span className="star" aria-hidden="true">★</span>
+          <b>{rating.toFixed(1)}</b>
+          <small>({ratingCount})</small>
         </div>
       ) : null}
+      {showPrice ? (
+        <div className="price">
+          {rupees(price)}
+          {off > 0 && mrp ? <del>{rupees(mrp)}</del> : null}
+        </div>
+      ) : null}
+      {lowStock && !outOfStock ? <div className="plow">Only {lowStock} left</div> : null}
       {add ? <div className="addWrap">{add}</div> : null}
     </article>
   );
@@ -405,6 +572,52 @@ export function StudioAddButton({ label = 'Add', onClick, disabled }: { label?: 
     <button type="button" className="addBtn" onClick={onClick} disabled={disabled}>
       <ShoppingCart /> {label}
     </button>
+  );
+}
+
+/** Grid classes for a product section's card options. */
+export function productGridClass(s: StudioSettings): string {
+  return [
+    'productGrid',
+    s.display === 'carousel' ? 'carousel' : '',
+    s.cardStyle && s.cardStyle !== 'bordered' ? `card-${s.cardStyle}` : '',
+    s.imageRatio && s.imageRatio !== 'square' ? `ratio-${s.imageRatio}` : '',
+    s.showRating === false ? 'no-rating' : '',
+    s.showBadges === false ? 'no-badges' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function ProductRail({ className, style, children }: { className: string; style: CSSProperties; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: true, end: false });
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    setEdges({ start: el.scrollLeft <= 4, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 4 });
+  }, []);
+  useEffect(() => {
+    measure();
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, children]);
+  const page = (dir: 1 | -1) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.9, behavior: 'smooth' });
+  return (
+    <div className="productRail">
+      <button type="button" className="railBtn prev" onClick={() => page(-1)} disabled={edges.start} aria-label="Previous products">
+        <ChevronLeft />
+      </button>
+      <div ref={ref} className={className} style={style} onScroll={measure}>
+        {children}
+      </div>
+      <button type="button" className="railBtn next" onClick={() => page(1)} disabled={edges.end} aria-label="More products">
+        <ChevronRight />
+      </button>
+    </div>
   );
 }
 
@@ -427,21 +640,26 @@ export function StudioProductsSection({
   id?: string;
   children: ReactNode;
 }) {
+  const className = productGridClass(s);
+  const style = { '--columns': String(s.columns ?? 5), '--mcols': String(mobileColumns) } as CSSProperties;
   return (
     <section className="st-section" style={boxStyle(s)} id={id}>
       <StudioSectionHead
-        eyebrow={studioEyebrow('products', s.eyebrow)}
+        eyebrow={studioEyebrow('products', s.eyebrow, s.source)}
         title={title ?? s.title}
         count={count}
         action={action === undefined ? { label: 'View All' } : action}
       />
       {chips}
-      <div
-        className="productGrid"
-        style={{ '--columns': String(s.columns ?? 5), '--mcols': String(mobileColumns) } as CSSProperties}
-      >
-        {children}
-      </div>
+      {s.display === 'carousel' ? (
+        <ProductRail className={className} style={style}>
+          {children}
+        </ProductRail>
+      ) : (
+        <div className={className} style={style}>
+          {children}
+        </div>
+      )}
     </section>
   );
 }
@@ -504,6 +722,85 @@ export function StudioTestimonials({
         ))}
       </div>
     </section>
+  );
+}
+
+export const USP_ICONS: Record<StudioUsp['icon'], LucideIcon> = {
+  truck: Truck,
+  cash: Banknote,
+  return: RotateCcw,
+  shield: ShieldCheck,
+  clock: Clock,
+  leaf: Leaf,
+  star: Star,
+  gift: Gift,
+  phone: Phone,
+  badge: BadgeCheck,
+};
+
+export const DEFAULT_USPS: StudioUsp[] = [
+  { icon: 'truck', title: 'Fast delivery', text: 'Quick dispatch on every order' },
+  { icon: 'cash', title: 'Cash on delivery', text: 'Pay when it reaches you' },
+  { icon: 'return', title: 'Easy returns', text: 'Hassle-free replacements' },
+  { icon: 'shield', title: 'Secure payments', text: 'UPI, cards and wallets' },
+];
+
+/** Row of icon + short promise ("Free delivery", "Easy returns"). */
+export function StudioUspStrip({ s }: { s: StudioSettings }) {
+  const items = (s.usps ?? DEFAULT_USPS).filter((u) => u.title || u.text);
+  if (!items.length) return null;
+  return (
+    <section className="usp" style={boxStyle(s, s.textColor ? { color: s.textColor } : {})}>
+      {s.title ? <h2 className="uspTitle">{s.title}</h2> : null}
+      <div className="uspGrid" style={{ '--count': String(items.length) } as CSSProperties}>
+        {items.map((u, i) => {
+          const Icon = USP_ICONS[u.icon] ?? BadgeCheck;
+          return (
+            <div className="uspItem" key={`${u.icon}-${i}`}>
+              <span className="uspIcon">
+                <Icon />
+              </span>
+              <span>
+                {u.title ? <b>{u.title}</b> : null}
+                {u.text ? <small>{u.text}</small> : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const MARQUEE_SECONDS = { slow: 60, normal: 36, fast: 20 } as const;
+
+/** Endlessly scrolling line of short messages; pauses on hover and for reduced motion. */
+export function StudioMarquee({ s }: { s: StudioSettings }) {
+  const items = splitList(s.text, '');
+  if (!items.length) return null;
+  const run = (hidden: boolean) => (
+    <div className="marqueeRun" aria-hidden={hidden || undefined}>
+      {items.map((t, i) => (
+        <span key={i}>
+          {t}
+          <i aria-hidden="true">✦</i>
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <div
+      className="marquee"
+      style={boxStyle(s, {
+        ...(s.textColor ? { color: s.textColor } : {}),
+        '--marquee-duration': `${MARQUEE_SECONDS[s.speed ?? 'normal']}s`,
+      } as CSSProperties)}
+    >
+      <div className="marqueeTrack">
+        {run(false)}
+        {run(true)}
+      </div>
+    </div>
   );
 }
 

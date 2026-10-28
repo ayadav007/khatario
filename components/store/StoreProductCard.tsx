@@ -4,8 +4,8 @@ import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
 import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isStudioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
-import { storeDiscountPercent } from '@/lib/store/map-store-product';
-import { StudioAddButton, StudioProductTile } from './studio-theme/StudioSections';
+import { isNewArrival, lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
+import { StudioAddButton, StudioProductTile, type StudioBadge } from './studio-theme/StudioSections';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -29,6 +29,10 @@ export interface StoreProduct {
   rating_avg?: number;
   rating_count?: number;
   featured_in_store?: boolean;
+  /** ISO time the item was added; drives the "New" badge. */
+  created_at?: string | null;
+  /** Units sold on the store; only filled when the list was sorted by best sellers. */
+  sold_count?: number;
   seo_title?: string | null;
   seo_description?: string | null;
   seo_image_url?: string | null;
@@ -47,6 +51,8 @@ interface StoreProductCardProps {
   product: StoreProduct;
   onViewDetail?: (product: StoreProduct) => void;
   variant?: StoreProductCardVariant;
+  /** Studio: an extra badge from the section, e.g. "Bestseller". */
+  highlight?: string;
 }
 
 function ChowkAddControl({
@@ -124,7 +130,7 @@ function ChowkAddControl({
   );
 }
 
-export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
+export function StoreProductCard({ product, onViewDetail, variant, highlight }: StoreProductCardProps) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
@@ -217,15 +223,25 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         disabled={outOfStock}
       />
     );
+    const badges: StudioBadge[] = [
+      ...(highlight ? [{ label: highlight, tone: 'hot' as const }] : []),
+      ...(isNewArrival(product.created_at) ? [{ label: 'New', tone: 'new' as const }] : []),
+    ];
+    const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
     return (
       <StudioProductTile
         name={product.name}
         unit={product.has_variants ? `${product.variants.length} options` : product.unit}
         price={product.selling_price}
         mrp={product.mrp}
-        image={product.image_url}
+        image={gallery[0] ?? product.image_url}
+        hoverImage={gallery[1]}
         href={`/products/${product.id}`}
         discount={discount}
+        badges={badges}
+        rating={product.rating_avg}
+        ratingCount={product.rating_count}
+        lowStock={lowStockCount(product)}
         outOfStock={outOfStock}
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}

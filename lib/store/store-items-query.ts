@@ -6,8 +6,16 @@ export interface StoreItemsQueryInput {
   featuredOnly?: boolean;
   discountedOnly?: boolean;
   maxPrice?: number | null;
+  /** `name` (default) A-Z, `new` newest first, `bestsellers` most sold on the store first. */
+  sort?: StoreItemsSort;
   limit: number;
   offset: number;
+}
+
+export type StoreItemsSort = 'name' | 'new' | 'bestsellers';
+
+export function parseStoreItemsSort(raw: string | null | undefined): StoreItemsSort {
+  return raw === 'new' || raw === 'bestsellers' ? raw : 'name';
 }
 
 export interface StoreItemsQuery {
@@ -95,6 +103,25 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
   const offsetParam = paramIdx;
 
   const whereSql = conditions.join(' AND ');
+  const sort = input.sort ?? 'name';
+  // Units sold through the store (cancelled orders excluded); only joined when ranking by it.
+  const soldJoin =
+    sort === 'bestsellers'
+      ? `LEFT JOIN (
+          SELECT soi.item_id, SUM(soi.quantity) AS sold
+          FROM store_order_items soi
+          JOIN store_orders so ON so.id = soi.order_id
+          WHERE so.business_id = $1 AND so.status <> 'cancelled'
+          GROUP BY soi.item_id
+        ) sold ON sold.item_id = i.id`
+      : '';
+  const soldSelect = sort === 'bestsellers' ? 'COALESCE(sold.sold, 0)::text' : "'0'";
+  const orderSql =
+    sort === 'bestsellers'
+      ? 'COALESCE(sold.sold, 0) DESC, i.name ASC'
+      : sort === 'new'
+        ? 'i.created_at DESC NULLS LAST, i.name ASC'
+        : 'i.name ASC';
 
   const listSql = `
       SELECT
@@ -106,6 +133,8 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
         COALESCE(i.featured_in_store, false) AS featured_in_store,
         i.tax_rate::text,
         COALESCE(i.gst_included, false) AS gst_included,
+        i.created_at,
+        ${soldSelect} AS sold_count,
         COALESCE((
           SELECT AVG(r.rating)::text FROM store_item_ratings r
           WHERE r.item_id = i.id AND r.business_id = i.business_id
@@ -129,9 +158,10 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
       FROM items i
       LEFT JOIN categories c ON c.id = i.category_id
       LEFT JOIN item_variants iv ON iv.item_id = i.id
+      ${soldJoin}
       WHERE ${whereSql}
-      GROUP BY i.id, c.name
-      ORDER BY i.name ASC
+      GROUP BY i.id, c.name${sort === 'bestsellers' ? ', sold.sold' : ''}
+      ORDER BY ${orderSql}
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
 

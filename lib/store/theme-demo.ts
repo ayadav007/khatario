@@ -186,6 +186,7 @@ export function filterDemoCatalog(opts: {
   featuredOnly?: boolean;
   discountedOnly?: boolean;
   maxPrice?: number | null;
+  sort?: 'name' | 'new' | 'bestsellers';
 }) {
   const grocery = opts.pack === 'grocery';
   const all = grocery ? groceryDemoProducts() : apparelDemoProducts();
@@ -207,6 +208,11 @@ export function filterDemoCatalog(opts: {
   if (opts.search) {
     const q = opts.search.toLowerCase();
     items = items.filter((i) => i.name.toLowerCase().includes(q));
+  }
+  // Demo items have no dates or sales: "new" shows the end of the list, "bestsellers" the featured ones first.
+  if (opts.sort === 'new') items = [...items].reverse();
+  if (opts.sort === 'bestsellers') {
+    items = [...items].sort((a, b) => Number(!!b.featured_in_store) - Number(!!a.featured_in_store));
   }
   const total = items.length;
   const start = (opts.page - 1) * opts.limit;

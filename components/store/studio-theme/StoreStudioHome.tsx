@@ -4,17 +4,20 @@ import { Loader2 } from 'lucide-react';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { sectionEnabled, type StoreTheme } from '@/lib/store/store-theme';
 import type { StudioSection } from '@/lib/store/studio-sections';
-import type { StudioLinkTarget } from '@/lib/store/studio-layout';
+import { isCatalogSection, type StudioLinkTarget } from '@/lib/store/studio-layout';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { StoreProductShelves } from '../StoreProductShelves';
 import {
   StudioBanner,
   StudioCategoriesSection,
   StudioHero,
+  StudioMarquee,
   StudioProductsSection,
   StudioRichText,
   StudioTestimonials,
+  StudioUspStrip,
 } from './StudioSections';
+import { StudioSourcedProducts } from './StudioSourcedProducts';
 
 export interface StudioHomeCategory {
   id: string;
@@ -63,7 +66,8 @@ export function StoreStudioHome({
 }) {
   const browsing = Boolean(searchQuery || selectedCategory || offersOnly);
   const mobileColumns = theme.mobile_columns === 3 ? 3 : 2;
-  const productsSection = sections.find((s) => s.type === 'products');
+  // The first catalog section holds the full grid (#all-products); other product sections show a filtered row.
+  const productsSection = sections.find((s) => s.enabled && isCatalogSection(s));
   const productSettings = productsSection?.settings ?? { columns: 5 };
   const offersOn = sectionEnabled(theme, 'offers');
 
@@ -150,7 +154,14 @@ export function StoreStudioHome({
         const s = section.settings;
         switch (section.type) {
           case 'hero':
-            return <StudioHero key={section.id} s={s} onCta={scrollToProducts} />;
+            return (
+              <StudioHero
+                key={section.id}
+                s={s}
+                live
+                onCta={(link) => (link ? onNavigate({ kind: 'href', href: link }, link) : scrollToProducts())}
+              />
+            );
           case 'categories':
             if (categories.length === 0) return null;
             return (
@@ -174,6 +185,31 @@ export function StoreStudioHome({
               </div>
             );
           case 'products':
+            if (section.id !== productsSection?.id) {
+              const source = s.source ?? 'all';
+              const categoryId = s.categoryId;
+              return (
+                <StudioSourcedProducts
+                  key={section.id}
+                  s={s}
+                  mobileColumns={mobileColumns}
+                  onViewDetail={onViewDetail}
+                  action={{
+                    label: 'View All',
+                    onClick: () => {
+                      if (source === 'category' && categoryId) {
+                        onCategory(categoryId);
+                        scrollToProducts();
+                      } else if (source === 'discounted' && offersOn) {
+                        onNavigate({ kind: 'offers' }, 'Offers');
+                      } else {
+                        scrollToProducts();
+                      }
+                    },
+                  }}
+                />
+              );
+            }
             return (
               <div key={section.id}>
                 <StudioProductsSection
@@ -193,7 +229,13 @@ export function StoreStudioHome({
               <StudioBanner
                 key={section.id}
                 s={s}
-                onCta={() => (offersOn ? onNavigate({ kind: 'offers' }, 'Offers') : scrollToProducts())}
+                onCta={() =>
+                  s.link
+                    ? onNavigate({ kind: 'href', href: s.link }, s.link)
+                    : offersOn
+                      ? onNavigate({ kind: 'offers' }, 'Offers')
+                      : scrollToProducts()
+                }
               />
             );
           case 'testimonials':
@@ -201,12 +243,16 @@ export function StoreStudioHome({
             return <StudioTestimonials key={section.id} s={s} testimonials={theme.testimonials} />;
           case 'richtext':
             return <StudioRichText key={section.id} s={s} />;
+          case 'usp':
+            return <StudioUspStrip key={section.id} s={s} />;
+          case 'marquee':
+            return <StudioMarquee key={section.id} s={s} />;
           default:
             return null;
         }
       })}
 
-      {!productsSection?.enabled ? (
+      {!productsSection ? (
         <StudioProductsSection id="all-products" s={{ eyebrow: '', columns: 5 }} title="All products" action={null} mobileColumns={mobileColumns}>
           {grid}
         </StudioProductsSection>

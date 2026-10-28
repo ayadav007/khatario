@@ -7,7 +7,47 @@ export type StudioSectionType =
   | 'banner'
   | 'testimonials'
   | 'footer'
-  | 'richtext';
+  | 'richtext'
+  | 'usp'
+  | 'marquee';
+
+/** Where a product section gets its products. `all` is the full catalog with Load more. */
+export type StudioProductSource =
+  | 'all'
+  | 'featured'
+  | 'new'
+  | 'bestsellers'
+  | 'discounted'
+  | 'category'
+  | 'price_max';
+
+export const STUDIO_PRODUCT_SOURCES: StudioProductSource[] = [
+  'all',
+  'featured',
+  'new',
+  'bestsellers',
+  'discounted',
+  'category',
+  'price_max',
+];
+
+/** Extra hero slides after the first one, which keeps using the hero's own fields. */
+export interface StudioSlide {
+  image: string;
+  heading: string;
+  description: string;
+  buttonText: string;
+  link: string;
+}
+
+export const STUDIO_USP_ICONS = ['truck', 'cash', 'return', 'shield', 'clock', 'leaf', 'star', 'gift', 'phone', 'badge'] as const;
+export type StudioUspIcon = (typeof STUDIO_USP_ICONS)[number];
+
+export interface StudioUsp {
+  icon: StudioUspIcon;
+  title: string;
+  text: string;
+}
 
 export interface StudioSettings {
   text?: string;
@@ -64,6 +104,23 @@ export interface StudioSettings {
   textPadRight?: number;
   textPadBottom?: number;
   textPadLeft?: number;
+  /** Hero: slides shown after the first; autoplay interval in seconds (0 = manual). */
+  slides?: StudioSlide[];
+  autoplay?: number;
+  /** Product sections. */
+  source?: StudioProductSource;
+  categoryId?: string;
+  priceMax?: number;
+  limit?: number;
+  display?: 'grid' | 'carousel';
+  cardStyle?: 'bordered' | 'shadow' | 'minimal';
+  imageRatio?: 'square' | 'portrait' | 'landscape';
+  showRating?: boolean;
+  showBadges?: boolean;
+  /** USP strip. */
+  usps?: StudioUsp[];
+  /** Marquee. */
+  speed?: 'slow' | 'normal' | 'fast';
 }
 
 export interface StudioSection {
@@ -84,10 +141,15 @@ const SECTION_TYPES: StudioSectionType[] = [
   'testimonials',
   'footer',
   'richtext',
+  'usp',
+  'marquee',
 ];
 
-/** Only one of each of these may exist; richtext can repeat. */
-const SINGLETON_TYPES = new Set<StudioSectionType>(SECTION_TYPES.filter((t) => t !== 'richtext'));
+/** Section types a store can have more than once. */
+export const REPEATABLE_TYPES: StudioSectionType[] = ['products', 'banner', 'richtext', 'usp', 'marquee'];
+
+/** Only one of each of these may exist. */
+const SINGLETON_TYPES = new Set<StudioSectionType>(SECTION_TYPES.filter((t) => !REPEATABLE_TYPES.includes(t)));
 
 const MAX_SECTIONS = 24;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -102,7 +164,9 @@ type Rule =
   | { kind: 'hex' }
   | { kind: 'url' }
   | { kind: 'svg' }
-  | { kind: 'icon' };
+  | { kind: 'icon' }
+  | { kind: 'slides' }
+  | { kind: 'usps' };
 
 const RULES: Record<keyof StudioSettings, Rule> = {
   text: { kind: 'text', max: 2000 },
@@ -154,12 +218,60 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   textPadRight: { kind: 'num', min: 0, max: 120 },
   textPadBottom: { kind: 'num', min: 0, max: 120 },
   textPadLeft: { kind: 'num', min: 0, max: 120 },
+  slides: { kind: 'slides' },
+  autoplay: { kind: 'num', min: 0, max: 15 },
+  source: { kind: 'enum', values: STUDIO_PRODUCT_SOURCES },
+  categoryId: { kind: 'text', max: 64 },
+  priceMax: { kind: 'num', min: 1, max: 999999 },
+  limit: { kind: 'num', min: 2, max: 24 },
+  display: { kind: 'enum', values: ['grid', 'carousel'] },
+  cardStyle: { kind: 'enum', values: ['bordered', 'shadow', 'minimal'] },
+  imageRatio: { kind: 'enum', values: ['square', 'portrait', 'landscape'] },
+  showRating: { kind: 'bool' },
+  showBadges: { kind: 'bool' },
+  usps: { kind: 'usps' },
+  speed: { kind: 'enum', values: ['slow', 'normal', 'fast'] },
 };
 
 function cleanUrl(v: string): string | undefined {
   if (v.startsWith('data:image/') && !v.startsWith('data:image/svg')) return v.slice(0, 1_800_000);
   if (/^https?:\/\//i.test(v) || v.startsWith('/')) return v.slice(0, 2000);
   return undefined;
+}
+
+function cleanText(raw: unknown, max: number): string {
+  return typeof raw === 'string' ? raw.slice(0, max) : '';
+}
+
+function cleanSlides(raw: unknown): StudioSlide[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: StudioSlide[] = [];
+  for (const item of raw.slice(0, 5)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const image = typeof row.image === 'string' && row.image.trim() ? cleanUrl(row.image.trim()) ?? '' : '';
+    const link = typeof row.link === 'string' && row.link.trim() ? cleanUrl(row.link.trim()) ?? '' : '';
+    out.push({
+      image,
+      heading: cleanText(row.heading, 120),
+      description: cleanText(row.description, 400),
+      buttonText: cleanText(row.buttonText, 40),
+      link: link.startsWith('data:') ? '' : link,
+    });
+  }
+  return out;
+}
+
+function cleanUsps(raw: unknown): StudioUsp[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: StudioUsp[] = [];
+  for (const item of raw.slice(0, 6)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const icon = STUDIO_USP_ICONS.includes(row.icon as StudioUspIcon) ? (row.icon as StudioUspIcon) : 'badge';
+    out.push({ icon, title: cleanText(row.title, 60), text: cleanText(row.text, 120) });
+  }
+  return out;
 }
 
 function cleanValue(rule: Rule, raw: unknown): unknown {
@@ -184,6 +296,10 @@ function cleanValue(rule: Rule, raw: unknown): unknown {
       return typeof raw === 'string' && raw.startsWith('data:image/svg+xml') && raw.length < 20000 ? raw : undefined;
     case 'icon':
       return typeof raw === 'string' && ICON_NAME.test(raw) ? raw : undefined;
+    case 'slides':
+      return cleanSlides(raw);
+    case 'usps':
+      return cleanUsps(raw);
   }
 }
 
