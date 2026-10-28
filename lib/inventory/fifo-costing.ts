@@ -41,12 +41,12 @@ function goodsLinesSql(table: 'invoice_items' | 'credit_note_items', docCol: str
   // Credit-note lines for damaged returns never re-enter stock.
   const kept = table === 'credit_note_items' ? ' AND COALESCE(l.restocked, true)' : '';
   return `
-    SELECT l.${docCol} AS doc_id, l.item_id, l.${qtyCol}::numeric AS qty
+    SELECT l.${docCol} AS doc_id, l.item_id, (l.${qtyCol} * COALESCE(l.unit_factor, 1))::numeric AS qty
       FROM ${table} l
       JOIN items it ON it.id = l.item_id AND it.item_type = 'goods' AND NOT COALESCE(it.is_bundle, false)
      WHERE l.item_id = ANY($2::uuid[])${kept}
     UNION ALL
-    SELECT l.${docCol}, bi.item_id, (l.${qtyCol} * bi.quantity)::numeric
+    SELECT l.${docCol}, bi.item_id, (l.${qtyCol} * COALESCE(l.unit_factor, 1) * bi.quantity)::numeric
       FROM ${table} l
       JOIN items b ON b.id = l.item_id AND b.item_type = 'goods' AND COALESCE(b.is_bundle, false)
       JOIN bundle_items bi ON bi.bundle_id = b.id

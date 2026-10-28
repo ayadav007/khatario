@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
         COALESCE(ii.tax_rate, 0) as tax_rate,
         ii.hsn_sac,
         COUNT(DISTINCT ii.invoice_id) FILTER (WHERE i.status != 'cancelled') as invoice_count,
-        SUM(ii.quantity) as total_quantity,
+        SUM(ii.quantity * COALESCE(ii.unit_factor, 1)) as total_quantity,
         SUM(ii.taxable_value) as total_taxable_value,
         SUM(ii.tax_amount) as total_tax,
         SUM(ii.cgst_amount) as total_cgst,

@@ -26,6 +26,8 @@ import {
 import type { ComposerCharge, ComposerRow, PickerItem } from '@/components/invoices/composer/types';
 import type { Customer } from '@/types/database';
 import { usePartyPricing } from '@/lib/invoices/use-party-pricing';
+import { baseQtyLabel, useItemUnits, withSaleUnit } from '@/lib/invoices/use-item-units';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
 
 const CLASSIC_DESKTOP_FORM_KEY = 'salesOrderClassicDesktop';
 
@@ -208,6 +210,8 @@ export default function NewSalesOrderPage() {
     const p = getStateCode(placeOfSupply || '');
     return !!b && !!p && b === p;
   }, [business?.state, business?.state_code, placeOfSupply]);
+
+  useItemUnits(rows, setRows);
 
   // Customer price, price level, discounts and last rate, as on the invoice.
   const pricedRows = usePartyPricing({
@@ -955,6 +959,7 @@ export default function NewSalesOrderPage() {
                         price: Number(item.selling_price || 0),
                         taxPercent: Number(item.tax_rate || 0),
                         unit: item.unit || 'PCS',
+                        units: undefined,
                         variantId: undefined,
                         gstIncluded: undefined,
                         priceUserOverride: false,
@@ -972,6 +977,18 @@ export default function NewSalesOrderPage() {
                     onChange={(e) => patchRow(index, { quantity: Number(e.target.value) || 0 })}
                     disabled={readOnly}
                   />
+                  <div className="mt-1 flex items-center gap-2">
+                    <SaleUnitSelect
+                      unit={row.unit}
+                      units={row.units}
+                      disabled={readOnly}
+                      onChange={(unit) => {
+                        const next = withSaleUnit(row, unit);
+                        patchRow(index, { unit: next.unit, price: next.price, mrp: next.mrp, costPrice: next.costPrice, priceUserOverride: false });
+                      }}
+                    />
+                    {baseQtyLabel(row) ? <span className="text-[11px] text-gray-500">{baseQtyLabel(row)}</span> : null}
+                  </div>
                 </div>
                 <div className="min-w-0 lg:col-span-2">
                   <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">Price</label>

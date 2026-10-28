@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
         i.id,
         i.name,
         COALESCE(SUM(ii.quantity * ii.unit_price), 0)::text as total_revenue,
-        COALESCE(SUM(ii.quantity), 0)::text as total_qty
+        COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1)), 0)::text as total_qty
       FROM items i
       JOIN invoice_items ii ON ii.item_id = i.id
       JOIN invoices inv ON inv.id = ii.invoice_id

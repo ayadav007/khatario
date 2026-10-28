@@ -158,7 +158,7 @@ export async function buildSuggestedOrders(
     `
     SELECT i.id AS item_id, NULL::uuid AS variant_id, i.name, i.business_id AS buyer_id, s.linked_business_id AS vendor_id,
            ${ITEM_STOCK_SQL} AS current_stock, i.min_stock, i.reorder_qty, i.max_stock,
-           (SELECT COALESCE(SUM(ii.quantity), 0) FROM invoice_items ii JOIN invoices inv ON inv.id = ii.invoice_id
+           (SELECT COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1)), 0) FROM invoice_items ii JOIN invoices inv ON inv.id = ii.invoice_id
              WHERE ii.item_id = i.id AND inv.business_id = i.business_id AND inv.status = 'final'
                AND inv.invoice_date >= CURRENT_DATE - 30) AS sold_30
     FROM items i
@@ -184,7 +184,7 @@ export async function buildSuggestedOrders(
     UNION ALL
     SELECT i.id, v.id, i.name || ' – ' || v.variant_name, i.business_id, s.linked_business_id,
            v.current_stock, v.min_stock, v.reorder_qty, NULL,
-           (SELECT COALESCE(SUM(ii.quantity), 0) FROM invoice_items ii JOIN invoices inv ON inv.id = ii.invoice_id
+           (SELECT COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1)), 0) FROM invoice_items ii JOIN invoices inv ON inv.id = ii.invoice_id
              WHERE ii.variant_id = v.id AND inv.business_id = i.business_id AND inv.status = 'final'
                AND inv.invoice_date >= CURRENT_DATE - 30)
     FROM item_variants v

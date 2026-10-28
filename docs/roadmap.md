@@ -22,6 +22,7 @@
 - Assistant Phase 2 [[docs/BACKLOG.md]]
 
 ## Done
+- Sell in alternate units (BOX of 12) on invoices, orders, challans, POS and the phone form; migration 437, not committed yet [[docs/plan/SELL_IN_ALTERNATE_UNITS.md]]
 - Supplier Hub P0, P1 and Order list (Oct 2026) [[docs/SUPPLIER_HUB_BUILD_PLAN.md]]
 - Salary prefill fix for employees with a joining date (e93ac7f1)
 - QA test phones: no WhatsApp sends on staging, OTP shown on screen (eb3ef519)

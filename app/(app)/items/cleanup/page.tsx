@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useStockLookups } from '@/components/stock/useStockLookups';
 
-type UnitRow = { unit: string; factor_to_base: string; barcode: string };
+type UnitRow = { unit: string; factor_to_base: string; barcode: string; selling_price: string };
 
 /**
  * Two clean-ups that stop the register drifting from the shelf: alternate units (count in boxes,
@@ -31,7 +31,12 @@ export default function ItemCleanupPage() {
     if (!unitItem) return setUnits([]);
     fetch(`/api/items/${unitItem}/units`)
       .then((r) => r.json())
-      .then((d) => setUnits((d.units || []).map((u: any) => ({ unit: u.unit, factor_to_base: String(u.factor_to_base), barcode: u.barcode || '' }))))
+      .then((d) => setUnits((d.units || []).map((u: any) => ({
+              unit: u.unit,
+              factor_to_base: String(u.factor_to_base),
+              barcode: u.barcode || '',
+              selling_price: u.selling_price == null ? '' : String(u.selling_price),
+            }))))
       .catch(() => setUnits([]));
   }, [unitItem]);
 
@@ -50,7 +55,9 @@ export default function ItemCleanupPage() {
       const res = await fetch(`/api/items/${unitItem}/units`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ units: units.filter((u) => u.unit.trim()).map((u) => ({ ...u, factor_to_base: Number(u.factor_to_base) })) }),
+        body: JSON.stringify({ units: units
+            .filter((u) => u.unit.trim())
+            .map((u) => ({ ...u, factor_to_base: Number(u.factor_to_base), selling_price: u.selling_price.trim() === '' ? null : Number(u.selling_price) })) }),
       });
       const data = await res.json();
       if (!res.ok) return toast.error(data.error || 'Could not save the units');
@@ -103,8 +110,9 @@ export default function ItemCleanupPage() {
       <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
         <h2 className="font-semibold text-gray-900">Alternate units</h2>
         <p className="text-sm text-gray-600">
-          Stock stays in the item&apos;s own unit. A stock count can be entered in any of these, and a box barcode scanned during a count adds the
-          whole box.
+          Stock stays in the item&apos;s own unit. A bill can sell in any of these (stock goes down by the whole box), a stock count can be
+          entered in them, and a box barcode scanned at the counter or during a count adds the whole box. Leave the price empty to charge the
+          item&apos;s price × the box size.
         </p>
         <label className="block text-sm text-gray-700 max-w-md">
           Item
@@ -122,8 +130,18 @@ export default function ItemCleanupPage() {
                   <Input type="number" min={0} value={u.factor_to_base} onChange={(e) => setUnits((p) => p.map((x, j) => (j === i ? { ...x, factor_to_base: e.target.value } : x)))} />
                 </div>
                 <span className="col-span-1 text-sm text-gray-700">{base}</span>
-                <div className="col-span-4">
-                  <Input placeholder="Barcode on the box (optional)" value={u.barcode} onChange={(e) => setUnits((p) => p.map((x, j) => (j === i ? { ...x, barcode: e.target.value } : x)))} />
+                <div className="col-span-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Price (optional)"
+                    aria-label="Selling price of one unit"
+                    value={u.selling_price}
+                    onChange={(e) => setUnits((p) => p.map((x, j) => (j === i ? { ...x, selling_price: e.target.value } : x)))}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Input placeholder="Box barcode (optional)" value={u.barcode} onChange={(e) => setUnits((p) => p.map((x, j) => (j === i ? { ...x, barcode: e.target.value } : x)))} />
                 </div>
                 <button className="col-span-1 text-gray-400 hover:text-red-600" aria-label="Remove unit" onClick={() => setUnits((p) => p.filter((_, j) => j !== i))}>
                   <Trash2 className="w-4 h-4" />
@@ -131,7 +149,7 @@ export default function ItemCleanupPage() {
               </div>
             ))}
             <div className="flex justify-between">
-              <Button size="sm" variant="secondary" onClick={() => setUnits((p) => [...p, { unit: '', factor_to_base: '', barcode: '' }])}>
+              <Button size="sm" variant="secondary" onClick={() => setUnits((p) => [...p, { unit: '', factor_to_base: '', barcode: '', selling_price: '' }])}>
                 <Plus className="w-4 h-4 mr-1" />
                 Add unit
               </Button>

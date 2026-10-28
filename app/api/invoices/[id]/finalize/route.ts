@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { getFirstBundleStockPreflightFailure } from '@/lib/invoice-bundle-stock';
 import { allocateStockOnSale } from '@/lib/stock-valuation';
+import { baseQty } from '@/lib/items/item-units';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -124,7 +125,7 @@ export async function PATCH(
         businessId: inv.business_id,
         branchId: stockBranchId,
         bundleItemId: row.item_id,
-        lineQuantity: Number(row.quantity) || 0,
+        lineQuantity: baseQty(row),
         warehouseModeEnabled: warehouseModeFinalize,
         warehouseId: warehouseId || null,
       });
@@ -308,7 +309,7 @@ export async function PATCH(
         const trackBatch = itemData?.track_batch || false;
         const trackSerial = itemData?.track_serial || false;
         const valuationMethod = (itemData?.valuation_method || 'simple') as 'fifo' | 'lifo' | 'weighted_avg' | 'simple';
-        const quantity = Number(row.quantity) || 0;
+        const quantity = baseQty(row);
 
         if (itemData?.is_bundle) {
           if (row.variant_id) {

@@ -15,6 +15,8 @@ export type SourceLine = {
   hsn_sac?: string | null;
   quantity: number | string;
   unit?: string | null;
+  /** Factor saved on the source line (a sales order's box); re-read from the item when absent. */
+  unit_factor?: number | string | null;
   unit_price: number | string;
   discount_percent?: number | string | null;
   tax_rate?: number | string | null;
@@ -57,6 +59,7 @@ export async function convertLinesToInvoice(
     hsn_sac: l.hsn_sac || null,
     quantity: Number(l.quantity) || 0,
     unit: l.unit || undefined,
+    unit_factor: l.unit_factor == null ? undefined : Number(l.unit_factor) || undefined,
     unit_price: Number(l.unit_price) || 0,
     discount_percent: Number(l.discount_percent) || 0,
     tax_rate: Number(l.tax_rate) || 0,
@@ -78,5 +81,5 @@ export async function convertLinesToInvoice(
     channel: p.channel,
     sales_order_id: p.salesOrderId ?? null,
     charges: p.charges,
-  });
+  }, { keepUnitFactors: true });
 }

@@ -5,6 +5,8 @@ import { clsx } from 'clsx';
 import { AlertTriangle, Barcode, Plus, Trash2 } from 'lucide-react';
 import type { ComposerRow } from './types';
 import { GST_RATES, inr, Kbd, NumberInput, Switch } from './ui';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
+import { baseQtyLabel, withSaleUnit } from '@/lib/invoices/use-item-units';
 
 type Props = {
   rows: ComposerRow[];
@@ -171,10 +173,26 @@ export function ItemsTable({
                         disabled={readOnly}
                         className={clsx(cellInput, 'w-16 font-semibold')}
                       />
-                      <span className="w-10 truncate text-[11px] font-medium text-text-muted" title={row.unit}>
-                        {row.unit}
-                      </span>
+                      <SaleUnitSelect
+                        unit={row.unit}
+                        units={row.units}
+                        disabled={readOnly}
+                        className="w-16"
+                        onChange={(unit) => {
+                          const next = withSaleUnit(row, unit);
+                          patchRow(index, {
+                            unit: next.unit,
+                            price: next.price,
+                            mrp: next.mrp,
+                            costPrice: next.costPrice,
+                            priceUserOverride: false,
+                          });
+                        }}
+                      />
                     </div>
+                    {baseQtyLabel(row) && (
+                      <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{baseQtyLabel(row)}</p>
+                    )}
                   </td>
                   <td className="px-2 py-2">
                     <NumberInput

@@ -1,4 +1,5 @@
 ﻿import { resolveGstScheme, resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { computeChallanLines, type ChallanLineInput } from '@/lib/delivery-challans/challan-math';
 import {
   DELIVERY_CHALLAN_SERIES,
@@ -195,16 +196,22 @@ export async function writeChallan(
     challan = res.rows[0];
   }
 
+  // A line in boxes keeps the box's factor; stock leaves as qty × factor when the goods go out.
+  const saleUnits = await resolveSaleUnits(client as any, businessId, lines).catch((e) => {
+    if (e instanceof SaleUnitError) throw new ChallanInputError(e.message);
+    throw e;
+  });
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await client.query(
       `INSERT INTO delivery_challan_items (
          delivery_challan_id, item_id, item_name, description, hsn_sac, qty, unit, sort_order,
-         unit_price, tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, tax_amount, line_total
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         unit_price, tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, tax_amount, line_total, unit_factor
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
-        challan.id, l.item_id, l.item_name, l.description, l.hsn_sac, l.qty, l.unit, i,
+        challan.id, l.item_id, l.item_name, l.description, l.hsn_sac, l.qty, saleUnits[i].unit ?? l.unit, i,
         l.unit_price, l.tax_rate, l.taxable_value, l.cgst_amount, l.sgst_amount, l.igst_amount, l.tax_amount, l.line_total,
+        saleUnits[i].unit_factor,
       ]
     );
   }

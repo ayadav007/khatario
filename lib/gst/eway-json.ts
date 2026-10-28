@@ -151,8 +151,9 @@ function bill(p: {
         productName: cut(l.item_name, 100),
         productDesc: cut(l.description || l.item_name, 100),
         hsnCode: Number(String(l.hsn_sac || '').replace(/\D/g, '')) || 0,
-        quantity: Number(l.qty ?? l.quantity) || 0,
-        qtyUnit: cut(l.uqc || l.unit || 'OTH', 3).toUpperCase(),
+        // In the item's own unit: 5 BOX of 12 travels as 60 PCS under the item's UQC.
+        quantity: Math.round((Number(l.qty ?? l.quantity) || 0) * (Number(l.unit_factor) || 1) * 1000) / 1000,
+        qtyUnit: cut(l.uqc || ((Number(l.unit_factor) || 1) !== 1 ? l.item_unit : l.unit) || l.unit || 'OTH', 3).toUpperCase(),
         cgstRate: inter ? 0 : rate / 2,
         sgstRate: inter ? 0 : rate / 2,
         igstRate: inter ? rate : 0,
@@ -180,7 +181,7 @@ export async function ewayBulkJson(
     if (!c) throw new EwayBillInputError('Delivery challan not found', 404);
     const lines = (
       await db.query(
-        `SELECT dci.*, i.uqc FROM delivery_challan_items dci LEFT JOIN items i ON i.id = dci.item_id
+        `SELECT dci.*, i.uqc, i.unit AS item_unit FROM delivery_challan_items dci LEFT JOIN items i ON i.id = dci.item_id
           WHERE dci.delivery_challan_id = $1 ORDER BY dci.sort_order`,
         [sourceId]
       )
@@ -204,7 +205,7 @@ export async function ewayBulkJson(
   if (inv.status !== 'final') throw new EwayBillInputError('Finalise the invoice first', 409);
   const lines = (
     await db.query(
-      `SELECT ii.*, i.uqc FROM invoice_items ii LEFT JOIN items i ON i.id = ii.item_id
+      `SELECT ii.*, i.uqc, i.unit AS item_unit FROM invoice_items ii LEFT JOIN items i ON i.id = ii.item_id
         WHERE ii.invoice_id = $1 AND COALESCE(ii.hsn_sac, '') NOT LIKE '99%'`,
       [sourceId]
     )

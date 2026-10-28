@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -261,6 +262,17 @@ export async function PUT(
       ]
     );
 
+    let saleUnits;
+    try {
+      saleUnits = await resolveSaleUnits(client, tenant.businessId, items.map((item: any) => ({ ...item, item_name: item.item_name || item.name })));
+    } catch (e) {
+      if (e instanceof SaleUnitError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: e.message, code: e.code }, { status: e.statusCode });
+      }
+      throw e;
+    }
+
     await client.query(`DELETE FROM sales_order_items WHERE sales_order_id = $1`, [orderId]);
 
     for (let i = 0; i < items.length; i++) {
@@ -269,9 +281,9 @@ export async function PUT(
         `INSERT INTO sales_order_items (
           sales_order_id, item_id, item_name, description, hsn_sac, qty, unit, unit_price,
           discount_percent, discount_amount, tax_rate, tax_amount, taxable_value,
-          cgst_amount, sgst_amount, igst_amount, line_total, sort_order
+          cgst_amount, sgst_amount, igst_amount, line_total, sort_order, unit_factor
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
         [
           orderId,
           item.item_id || null,
@@ -279,7 +291,7 @@ export async function PUT(
           item.description || null,
           item.hsn_sac || null,
           item.qty || item.quantity,
-          item.unit || 'PCS',
+          saleUnits[i].unit || item.unit || 'PCS',
           item.unit_price || item.price,
           item.discount_percent || 0,
           item.discount_amount || 0,
@@ -291,6 +303,7 @@ export async function PUT(
           item.igst_amount || 0,
           item.line_total || item.total || 0,
           i,
+          saleUnits[i].unit_factor,
         ]
       );
     }
@@ -304,10 +317,10 @@ export async function PUT(
         salesOrderId: orderId,
         branchId,
         userId,
-        lines: items.map((item: any) => ({
+        lines: items.map((item: any, i: number) => ({
           item_id: item.item_id || null,
           variant_id: item.variant_id || null,
-          qty: Number(item.qty ?? item.quantity) || 0,
+          qty: (Number(item.qty ?? item.quantity) || 0) * saleUnits[i].unit_factor,
         })),
       });
     } else {

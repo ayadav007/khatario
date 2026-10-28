@@ -648,7 +648,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       context,
       title: _lines[index].name,
       scrollable: true,
-      builder: (_) => _LineEditor(line: _lines[index]),
+      builder: (_) => _LineEditor(line: _lines[index], api: widget.session.api),
     );
     if (result == null || !mounted) return;
     setState(() {
@@ -1586,9 +1586,12 @@ class _QtyStepper extends StatelessWidget {
 
 /// Edit one line: quantity, price, discount, GST rate, HSN. Pops `(line, removed)`.
 class _LineEditor extends StatefulWidget {
-  const _LineEditor({required this.line});
+  const _LineEditor({required this.line, this.api});
 
   final InvoiceLineDraft line;
+
+  /// Loads the item's units (BOX = 12 PCS) so the line can be sold in one of them.
+  final KhatarioApi? api;
 
   @override
   State<_LineEditor> createState() => _LineEditorState();
@@ -1600,6 +1603,38 @@ class _LineEditorState extends State<_LineEditor> {
   late final _discount = TextEditingController(text: widget.line.discountPercent == 0 ? '' : jsNumberString(widget.line.discountPercent));
   late final _hsn = TextEditingController(text: widget.line.hsn ?? '');
   late double _tax = widget.line.taxRate;
+  late String _unit = widget.line.unit;
+  List<SaleUnitOption> _units = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    final id = widget.line.itemId;
+    if (widget.api == null || id == null || id.isEmpty) return;
+    try {
+      final body = await widget.api!.getJson('/api/items/units?ids=$id');
+      if (mounted) setState(() => _units = saleUnitsFromJson(body, id));
+    } catch (_) {
+      // Without the list the line simply stays in its unit.
+    }
+  }
+
+  /// Another unit: the price moves with it (box price, or item price × factor).
+  void _pickUnit(String unit) {
+    final current = widget.line.copyWith(
+      unit: _unit,
+      unitPrice: double.tryParse(_price.text.trim()) ?? widget.line.unitPrice,
+    );
+    final next = lineInSaleUnit(current, _units, unit);
+    setState(() {
+      _unit = next.unit;
+      _price.text = jsNumberString(next.unitPrice);
+    });
+  }
 
   @override
   void dispose() {
@@ -1633,7 +1668,7 @@ class _LineEditorState extends State<_LineEditor> {
         name: l.name,
         quantity: qty!,
         unitPrice: price!,
-        unit: l.unit,
+        unit: _unit,
         discountPercent: discount!,
         taxRate: _tax,
         hsn: _hsn.text.trim().isEmpty ? null : _hsn.text.trim(),
@@ -1654,11 +1689,39 @@ class _LineEditorState extends State<_LineEditor> {
         children: [
           Row(
             children: [
-              Expanded(child: WebInput(label: 'Quantity (${widget.line.unit})', controller: _qty, keyboardType: decimal, autofocus: true)),
+              Expanded(child: WebInput(label: 'Quantity ($_unit)', controller: _qty, keyboardType: decimal, autofocus: true)),
               const SizedBox(width: AppSpace.md),
-              Expanded(child: WebInput(label: 'Price ($rupeeSign)', controller: _price, keyboardType: decimal)),
+              Expanded(child: WebInput(label: 'Price ($rupeeSign / $_unit)', controller: _price, keyboardType: decimal)),
             ],
           ),
+          if (_units.length > 1) ...[
+            const SizedBox(height: AppSpace.md),
+            Text('Sell in', style: AppText.label),
+            const SizedBox(height: AppSpace.sm),
+            KChipBar<String>(
+              value: _units.firstWhere((u) => u.unit.toUpperCase() == _unit.toUpperCase(), orElse: () => _units.first).unit,
+              padding: EdgeInsets.zero,
+              options: [
+                for (final u in _units) (u.unit, u.factor == 1 ? u.unit : '${u.unit} (${jsNumberString(u.factor)} ${_units.first.unit})'),
+              ],
+              onChanged: _pickUnit,
+            ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _qty,
+              builder: (_, v, _) {
+                final note = baseQtyNote(
+                  widget.line.copyWith(unit: _unit, quantity: double.tryParse(v.text.trim()) ?? 0),
+                  _units,
+                );
+                return note == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: AppSpace.xs),
+                        child: Text(note, style: AppText.caption.copyWith(fontSize: 12)),
+                      );
+              },
+            ),
+          ],
           const SizedBox(height: AppSpace.md),
           Row(
             children: [

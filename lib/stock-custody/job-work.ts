@@ -81,7 +81,7 @@ export async function jobWorkRegister(
             s.gstin AS job_worker_gstin, s.state AS job_worker_state,
             COALESCE(dc.job_work_goods, 'inputs') AS job_work_goods,
             dci.item_name, COALESCE(dci.hsn_sac, i.hsn_sac) AS hsn_sac, COALESCE(i.uqc, dci.unit) AS uqc,
-            dci.qty::float AS qty, COALESCE(dci.taxable_value, 0)::float AS taxable_value,
+            (dci.qty * COALESCE(dci.unit_factor, 1))::float AS qty, COALESCE(dci.taxable_value, 0)::float AS taxable_value,
             COALESCE(dci.tax_rate, 0)::float AS tax_rate, COALESCE(dci.igst_amount, 0)::float AS igst,
             COALESCE(dci.cgst_amount, 0)::float AS cgst, COALESCE(dci.sgst_amount, 0)::float AS sgst
        FROM delivery_challans dc
@@ -97,7 +97,8 @@ export async function jobWorkRegister(
     `SELECT dc.id AS challan_id, dc.challan_number, dc.challan_date::text, r.return_date::text,
             s.name AS job_worker, s.gstin AS job_worker_gstin,
             dci.item_name, COALESCE(dci.hsn_sac, i.hsn_sac) AS hsn_sac, COALESCE(i.uqc, dci.unit) AS uqc,
-            r.qty_returned::float AS qty_returned, r.qty_written_off::float AS qty_lost
+            (r.qty_returned * COALESCE(dci.unit_factor, 1))::float AS qty_returned,
+            (r.qty_written_off * COALESCE(dci.unit_factor, 1))::float AS qty_lost
        FROM delivery_challan_returns r
        JOIN delivery_challans dc ON dc.id = r.delivery_challan_id
        JOIN delivery_challan_items dci ON dci.id = r.challan_item_id
@@ -113,10 +114,10 @@ export async function jobWorkRegister(
   const open = await db.query(
     `SELECT dc.id AS challan_id, dc.challan_number, dc.challan_date::text, s.name AS job_worker,
             COALESCE(dc.job_work_goods, 'inputs') AS job_work_goods, dci.item_name,
-            (dci.qty - COALESCE((
+            ((dci.qty - COALESCE((
                SELECT SUM(r.qty_returned + r.qty_invoiced + r.qty_written_off) FROM delivery_challan_returns r
                 WHERE r.challan_item_id = dci.id AND r.return_date <= $2::date
-             ), 0))::float AS qty_open
+             ), 0)) * COALESCE(dci.unit_factor, 1))::float AS qty_open
        FROM delivery_challans dc
        JOIN delivery_challan_items dci ON dci.delivery_challan_id = dc.id AND dci.item_id IS NOT NULL
        LEFT JOIN suppliers s ON s.id = dc.supplier_id

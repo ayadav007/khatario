@@ -94,7 +94,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const warehouseModeEnabled = await isWarehouseModeEnabled(businessId);
 
     const lines = await client.query(
-      `SELECT cni.item_id, cni.qty, cni.location_id, i.item_type
+      `SELECT cni.item_id, cni.qty * COALESCE(cni.unit_factor, 1) AS qty, cni.location_id, i.item_type
          FROM credit_note_items cni
          LEFT JOIN items i ON i.id = cni.item_id
         WHERE cni.credit_note_id = $1`,

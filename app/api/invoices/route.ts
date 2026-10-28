@@ -14,6 +14,7 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches, getBranchVariantQuantityDb } from '@/lib/branch-variant-stock';
 import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
 import { allocateStockOnSale } from '@/lib/stock-valuation';
+import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import {
   deductBundleChildrenOnInvoice,
   getFirstBundleStockPreflightFailure,
@@ -508,6 +509,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A line sold in a box carries the box's factor from the item's own units; a client-sent
+    // factor is overwritten. Stock below moves quantity × unit_factor.
+    try {
+      const saleUnits = await resolveSaleUnits(client, business_id, items);
+      saleUnits.forEach((su, i) => {
+        items[i].unit = su.unit ?? items[i].unit;
+        items[i].unit_factor = su.unit_factor;
+      });
+    } catch (e) {
+      if (e instanceof SaleUnitError) return NextResponse.json({ error: e.message, code: e.code }, { status: e.statusCode });
+      throw e;
+    }
+
     // CRITICAL: Enforce access boundary - reject attendance-only employees
     const { checkEmployeeAccessBoundary } = await import('@/lib/access-boundary');
     const accessCheck = await checkEmployeeAccessBoundary(actorUserId, 'portal');
@@ -675,7 +689,7 @@ export async function POST(request: NextRequest) {
               businessId: business_id,
               branchId: finalBranchId,
               bundleItemId: item.item_id,
-              lineQuantity: parseFloat(String(item.quantity || '0')),
+              lineQuantity: baseQty(item),
               warehouseModeEnabled: true,
               warehouseId,
             });
@@ -753,7 +767,7 @@ export async function POST(request: NextRequest) {
                 [warehouseId, item.item_id]
               );
               const availableStock = parseFloat(stockCheck.rows[0]?.current_stock_qty || '0');
-              const requestedQuantity = parseFloat(String(item.quantity || '0'));
+              const requestedQuantity = baseQty(item);
 
               if (availableStock < requestedQuantity) {
                 const { getItemStockAcrossWarehouses } = await import('@/lib/warehouse-access');
@@ -828,7 +842,7 @@ export async function POST(request: NextRequest) {
               businessId: business_id,
               branchId: finalBranchId,
               bundleItemId: item.item_id,
-              lineQuantity: parseFloat(String(item.quantity || '0')),
+              lineQuantity: baseQty(item),
               warehouseModeEnabled: false,
               warehouseId: null,
             });
@@ -868,7 +882,7 @@ export async function POST(request: NextRequest) {
           } else {
             availableStock = await getBranchItemQuantityDb(business_id, finalBranchId, item.item_id);
           }
-          const requestedQuantity = parseFloat(String(item.quantity || '0'));
+          const requestedQuantity = baseQty(item);
           if (availableStock < requestedQuantity) {
             const healed = item.variant_id
               ? await tryReconcileVariantBranchStock(
@@ -1882,11 +1896,11 @@ export async function POST(request: NextRequest) {
           invoice_id, item_id, variant_id, item_name, description, hsn_sac,
           quantity, unit, unit_price, discount_percent, discount_amount,
           tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
-          line_total, sort_order
+          line_total, sort_order, unit_factor
         )
         VALUES ($1, $2, $3, $4, $5,
                 COALESCE(NULLIF(TRIM($6::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)),
-                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       `, [
         invoice.id,
         item.item_id || null,
@@ -1907,6 +1921,7 @@ export async function POST(request: NextRequest) {
         igst,
         lineTotal,
         i,
+        Number(item.unit_factor) || 1,
       ]);
       
 
@@ -1947,7 +1962,7 @@ export async function POST(request: NextRequest) {
           const trackBatch = itemData?.track_batch || false;
           const trackSerial = itemData?.track_serial || false;
           const valuationMethod = (itemData?.valuation_method || 'simple') as 'fifo' | 'lifo' | 'weighted_avg' | 'simple';
-          const quantity = Number(item.quantity) || 0;
+          const quantity = baseQty(item);
 
           // Bundle / combo: deduct component stock only (not the bundle SKU row)
           if (itemData?.is_bundle) {
@@ -2336,7 +2351,7 @@ export async function POST(request: NextRequest) {
             [item.item_id, business_id]
           );
           const row0 = itemData.rows[0];
-          const lineQty = Number(item.quantity) || 0;
+          const lineQty = baseQty(item);
           if (row0?.item_type === 'goods' && row0?.is_bundle) {
             const comp = await client.query(
               `SELECT bi.quantity::numeric AS comp_qty, i.purchase_price

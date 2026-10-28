@@ -53,11 +53,14 @@ const sameUnit = (a: unknown, b: unknown) =>
   String(a ?? '').trim().toUpperCase() === String(b ?? '').trim().toUpperCase();
 
 /**
- * Quantity in the item's base unit (pieces). A line sold in the case unit counts factor × qty;
- * any other unit is taken as already being pieces.
+ * Quantity in the item's base unit (pieces). A line saved with its unit's factor (5 BOX of 12)
+ * counts qty × that factor; an older line in the case unit counts factor × qty; any other unit is
+ * taken as already being pieces.
  */
 export function baseQuantity(l: PrintLine): number {
   const qty = num(l.quantity);
+  const saved = num(l.unit_factor);
+  if (saved > 0 && saved !== 1) return round3(qty * saved);
   return hasCase(l) && l.case_unit && sameUnit(l.unit, l.case_unit) ? qty * caseFactor(l) : qty;
 }
 

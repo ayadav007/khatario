@@ -4,7 +4,15 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isBelowCost, priceNote, pricingPatch, type PartyPricedRow, type ResolvedLinePrice } from '@/lib/invoices/party-price';
 
-export type PricedLine = PartyPricedRow & { itemId: string; variantId?: string; quantity: number };
+export type PricedLine = PartyPricedRow & {
+  itemId: string;
+  variantId?: string;
+  quantity: number;
+  /** Unit the line is sold in; a box is priced per box. */
+  unit?: string;
+  /** The item's units, once loaded (see use-item-units). More than one means it can change. */
+  units?: unknown[];
+};
 
 /**
  * Prices every line of a sales document for the selected customer on the document date, through
@@ -36,7 +44,7 @@ export function usePartyPricing<R extends PricedLine>(opts: {
       rows
         .map((r, i) =>
           r.itemId
-            ? `${i}:${r.itemId}:${r.variantId ?? ''}:${r.quantity}:${r.priceUserOverride ? '1' : '0'}:${r.discountUserOverride ? '1' : '0'}`
+            ? `${i}:${r.itemId}:${r.variantId ?? ''}:${r.quantity}:${r.unit ?? ''}:${r.priceUserOverride ? '1' : '0'}:${r.discountUserOverride ? '1' : '0'}`
             : ''
         )
         .filter(Boolean)
@@ -48,7 +56,13 @@ export function usePartyPricing<R extends PricedLine>(opts: {
     if (disabled) return;
     const pairs = rowsRef.current.map((row, idx) => ({ row, idx })).filter(({ row }) => !!row.itemId);
     if (pairs.length === 0) return;
-    if (!customerId && !pairs.some(({ row }) => row.partyPriceApplied || row.pricingDiscountApplied || row.lastSale)) return;
+    // A cash bill still asks when a line can change unit: a box has its own price or base × factor.
+    if (
+      !customerId &&
+      !pairs.some(({ row }) => row.partyPriceApplied || row.pricingDiscountApplied || row.lastSale || (row.units?.length ?? 0) > 1)
+    ) {
+      return;
+    }
 
     let cancelled = false;
     const custAtStart = customerId || null;
@@ -61,7 +75,12 @@ export function usePartyPricing<R extends PricedLine>(opts: {
           body: JSON.stringify({
             customer_id: custAtStart,
             date,
-            lines: pairs.map(({ row }) => ({ item_id: row.itemId, variant_id: row.variantId || null, qty: row.quantity })),
+            lines: pairs.map(({ row }) => ({
+              item_id: row.itemId,
+              variant_id: row.variantId || null,
+              qty: row.quantity,
+              unit: row.unit || null,
+            })),
           }),
         });
         if (!res.ok) return;
@@ -75,7 +94,15 @@ export function usePartyPricing<R extends PricedLine>(opts: {
           pairs.forEach(({ idx, row }, k) => {
             const r = resolved[k];
             const current = prev[idx];
-            if (!r || !current || String(current.itemId) !== String(row.itemId) || (current.variantId ?? '') !== (row.variantId ?? '')) return;
+            if (
+              !r ||
+              !current ||
+              String(current.itemId) !== String(row.itemId) ||
+              (current.variantId ?? '') !== (row.variantId ?? '') ||
+              (current.unit ?? '') !== (row.unit ?? '')
+            ) {
+              return;
+            }
             const patch = pricingPatch(current, r, pricesIncludeGst);
             if (!patch) return;
             const merged = { ...current, ...patch } as R;

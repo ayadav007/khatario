@@ -9,7 +9,12 @@ import type { PoolClient } from 'pg';
  * A discount % comes from the customer's item rule, else the customer's category discount, else
  * the level rate. Rules only count on the bill date when they have a date range. All prices are on
  * the item's own GST basis (`items.gst_included`); screens convert to the bill's basis.
+ *
+ * A line in an alternate unit (BOX = 12 PCS) is priced per box: the box's own selling price if it
+ * has one, else the item's price × 12; customer and level prices (per piece) × 12; quantity slabs
+ * count pieces (3 boxes meet a 36-piece slab); cost and MRP come back per box.
  */
+import { listItemUnits } from '@/lib/items/item-units';
 
 export interface PriceRule {
   price: number | null;
@@ -106,13 +111,19 @@ export interface PriceLineInput {
   itemId: string;
   variantId?: string | null;
   qty?: number;
+  /** Unit the line is sold in; the item's own unit when absent or not one of its alternates. */
+  unit?: string | null;
 }
 
 export interface PriceLineResult extends ResolvedPrice {
   itemId: string;
   variantId: string | null;
-  /** Selling price from the item master (variant's when the line is a variant). */
+  /** Selling price from the item master (variant's when the line is a variant), per `unit`. */
   catalogPrice: number | null;
+  /** The unit priced: an alternate unit's own spelling, or the item's own unit. */
+  unit: string | null;
+  /** Base units in one `unit` (1 for the item's own unit). Prices, cost and MRP are per `unit`. */
+  unitFactor: number;
   gstIncluded: boolean;
   taxRate: number;
   /** Purchase price, on the item's GST basis, for the below-cost warning. */
@@ -148,7 +159,7 @@ export async function resolvePrices(
   const items = new Map<string, any>();
   for (const r of (
     await db.query(
-      `SELECT id, selling_price, purchase_price, mrp, tax_rate, COALESCE(gst_included, false) AS gst_included, category_id
+      `SELECT id, unit, selling_price, purchase_price, mrp, tax_rate, COALESCE(gst_included, false) AS gst_included, category_id
          FROM items WHERE business_id = $1 AND id = ANY($2::uuid[])`,
       [businessId, itemIds]
     )
@@ -170,11 +181,15 @@ export async function resolvePrices(
     }
   }
 
+  const altUnits = lines.some((l) => l.unit) ? await listItemUnits(db, businessId, itemIds) : [];
+
   let partyRules: any[] = [];
   let levelRules: any[] = [];
   let levelName: string | null = null;
   const categoryDiscounts = new Map<string, any[]>();
-  const lastSales = new Map<string, LastRate>();
+  // Last sale per item:variant, kept per unit and overall; `perBase` is the price of one base unit.
+  type LastRow = LastRate & { perBase: number; at: string };
+  const lastSales = new Map<string, { overall: LastRow; byUnit: Map<string, LastRow> }>();
 
   if (customerId) {
     const cust = (
@@ -223,28 +238,36 @@ export async function resolvePrices(
       // Last rate charged to this customer per item (and variant), from final bills.
       for (const r of (
         await db.query(
-          `SELECT DISTINCT ON (ii.item_id, ii.variant_id)
+          `SELECT DISTINCT ON (ii.item_id, ii.variant_id, UPPER(COALESCE(ii.unit, '')))
                   ii.item_id, ii.variant_id, ii.unit_price::float AS unit_price, ii.tax_rate::float AS tax_rate,
+                  UPPER(COALESCE(ii.unit, '')) AS unit, COALESCE(ii.unit_factor, 1)::float AS unit_factor,
                   COALESCE(ii.discount_percent, 0)::float AS discount_percent,
                   COALESCE(inv.prices_include_gst, false) AS prices_include_gst,
-                  inv.invoice_date::text AS invoice_date, inv.invoice_number
+                  inv.invoice_date::text AS invoice_date, inv.created_at::text AS created_at, inv.invoice_number
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id
             WHERE inv.business_id = $1 AND inv.customer_id = $2 AND inv.status = 'final'
               AND COALESCE(inv.document_type, 'tax_invoice') <> 'proforma_invoice'
               AND ii.item_id = ANY($3::uuid[])
-            ORDER BY ii.item_id, ii.variant_id, inv.invoice_date DESC, inv.created_at DESC`,
+            ORDER BY ii.item_id, ii.variant_id, UPPER(COALESCE(ii.unit, '')), inv.invoice_date DESC, inv.created_at DESC`,
           [businessId, customerId, itemIds]
         )
       ).rows) {
         const rate = Number(r.tax_rate) || 0;
         const exclusive = r.prices_include_gst && rate > 0 ? r.unit_price / (1 + rate / 100) : r.unit_price;
-        lastSales.set(`${r.item_id}:${r.variant_id ?? ''}`, {
+        const row: LastRow = {
           exclusivePrice: Math.round(exclusive * 100) / 100,
+          perBase: exclusive / (Number(r.unit_factor) || 1),
+          at: `${String(r.invoice_date).slice(0, 10)} ${r.created_at ?? ''}`,
           discountPercent: Number(r.discount_percent) || 0,
           date: String(r.invoice_date).slice(0, 10),
           documentNumber: r.invoice_number ?? null,
-        });
+        };
+        const key = `${r.item_id}:${r.variant_id ?? ''}`;
+        const entry = lastSales.get(key) ?? { overall: row, byUnit: new Map<string, LastRow>() };
+        entry.byUnit.set(r.unit, row);
+        if (row.at > entry.overall.at) entry.overall = row;
+        lastSales.set(key, entry);
       }
     }
   }
@@ -253,8 +276,13 @@ export async function resolvePrices(
     const item = items.get(line.itemId);
     const variant = line.variantId ? variants.get(line.variantId) : null;
     const variantId = variant && variant.item_id === line.itemId ? String(variant.id) : null;
-    const catalogPrice = num(variant?.selling_price) ?? num(item?.selling_price);
-    const opts = { variantId, qty: line.qty ?? 1, date };
+    const sent = String(line.unit ?? '').trim().toUpperCase();
+    const alt = sent ? altUnits.find((u) => u.item_id === line.itemId && u.unit.toUpperCase() === sent) : undefined;
+    const factor = alt ? Number(alt.factor_to_base) : 1;
+    const perUnit = (v: number | null) => (v == null || factor === 1 ? v : Math.round(v * factor * 100) / 100);
+    const baseCatalog = num(variant?.selling_price) ?? num(item?.selling_price);
+    const catalogPrice = alt?.selling_price != null ? Number(alt.selling_price) : perUnit(baseCatalog);
+    const opts = { variantId, qty: (line.qty ?? 1) * factor, date };
     const partyRule = pickRule(partyRules.filter((r) => r.item_id === line.itemId), opts);
     const levelRule = pickRule(levelRules.filter((r) => r.item_id === line.itemId), opts);
     const catRule = item?.category_id ? pickRule(categoryDiscounts.get(item.category_id) ?? [], opts) : null;
@@ -265,16 +293,34 @@ export async function resolvePrices(
       levelName,
       categoryDiscount: catRule?.discount_percent ?? null,
     });
+    // Customer and level prices are per base unit.
+    if (resolved.priceSource !== 'catalog') resolved.price = perUnit(resolved.price);
+    const unitKey = alt ? alt.unit.toUpperCase() : String(item?.unit ?? '').toUpperCase();
+    const history = lastSales.get(`${line.itemId}:${variantId ?? ''}`) ?? lastSales.get(`${line.itemId}:`);
+    let lastSale: LastRate | null = null;
+    if (history) {
+      // The last rate in this same unit, else the latest in any unit converted to this one.
+      const same = history.byUnit.get(unitKey);
+      const pick = same ?? history.overall;
+      lastSale = {
+        exclusivePrice: same ? pick.exclusivePrice : Math.round(pick.perBase * factor * 100) / 100,
+        discountPercent: pick.discountPercent,
+        date: pick.date,
+        documentNumber: pick.documentNumber,
+      };
+    }
     return {
       ...resolved,
       itemId: line.itemId,
       variantId,
       catalogPrice,
+      unit: alt ? alt.unit : item?.unit ?? null,
+      unitFactor: factor,
       gstIncluded: !!item?.gst_included,
       taxRate: Number(item?.tax_rate) || 0,
-      costPrice: num(variant?.purchase_price) ?? num(item?.purchase_price),
-      mrp: num(item?.mrp),
-      lastSale: lastSales.get(`${line.itemId}:${variantId ?? ''}`) ?? lastSales.get(`${line.itemId}:`) ?? null,
+      costPrice: perUnit(num(variant?.purchase_price) ?? num(item?.purchase_price)),
+      mrp: perUnit(num(item?.mrp)),
+      lastSale,
     };
   });
 }
