@@ -45,6 +45,9 @@ export async function GET(
       pack_unit: string | null;
       document_number: string | null;
       reason_code: string | null;
+      repack_id: string | null;
+      repack_number: string | null;
+      repack_other_item: string | null;
     }>(
       `SELECT sm.id,
               sm.created_at AS movement_date,
@@ -68,7 +71,10 @@ export async function GET(
                 st.transfer_number,
                 ia.adjustment_number
               ) AS document_number,
-              ia.reason_code
+              ia.reason_code,
+              COALESCE(ia.repack_id, rc.id) AS repack_id,
+              COALESCE(rp.repack_number, rc.repack_number) AS repack_number,
+              ro.name AS repack_other_item
          FROM stock_movements sm
          JOIN items i ON i.id = sm.item_id AND i.business_id = sm.business_id
          LEFT JOIN invoices inv
@@ -92,6 +98,13 @@ export async function GET(
          LEFT JOIN inventory_adjustments ia
            ON sm.reference_type = 'adjustment'
           AND ia.id = sm.reference_id AND ia.business_id = sm.business_id
+         LEFT JOIN stock_repacks rp
+           ON rp.id = ia.repack_id AND rp.business_id = sm.business_id
+         LEFT JOIN items ro
+           ON ro.id = CASE WHEN rp.source_item_id = sm.item_id THEN rp.packed_item_id ELSE rp.source_item_id END
+         LEFT JOIN stock_repacks rc
+           ON sm.reference_type = 'repack_cancel'
+          AND rc.id = sm.reference_id AND rc.business_id = sm.business_id
         WHERE sm.business_id = $1 AND sm.item_id = $2
         ORDER BY sm.created_at DESC
         LIMIT 50`,
@@ -106,6 +119,9 @@ export async function GET(
         reasonCode: row.reason_code,
         documentNumber: row.document_number,
         referenceId: row.reference_id,
+        repackId: row.repack_id,
+        repackNumber: row.repack_number,
+        repackOtherItem: row.repack_other_item,
       });
       return {
         id: row.id,

@@ -14,20 +14,45 @@ const ADJUSTMENT_LABELS: Record<string, string> = {
   LANDED_COST: 'Landed cost',
   REVALUATION: 'Revaluation',
   WRITE_DOWN: 'Write down',
+  REPACK_OUT: 'Repacked out',
+  REPACK_IN: 'Repacked in',
 };
+
+const repackHref = (repackId: string) => `/inventory-adjustments/repacks/${repackId}`;
 
 export function stockMovementPresentation(input: {
   referenceType?: string | null;
   reasonCode?: string | null;
   documentNumber?: string | null;
   referenceId?: string | null;
+  /** Repack legs: the repack, its number and the item on the other side. */
+  repackId?: string | null;
+  repackNumber?: string | null;
+  repackOtherItem?: string | null;
 }): StockMovementPresentation {
   const type = String(input.referenceType || '').toLowerCase();
   const documentNumber = input.documentNumber?.trim() || null;
   const id = input.referenceId || null;
 
+  if (type === 'repack_cancel') {
+    return {
+      label: 'Repack cancelled',
+      documentNumber: input.repackNumber?.trim() || documentNumber,
+      href: id ? repackHref(id) : null,
+    };
+  }
+
   if (type === 'adjustment') {
     const reason = String(input.reasonCode || '').toUpperCase();
+    if (reason === 'REPACK_OUT' || reason === 'REPACK_IN') {
+      const other = input.repackOtherItem?.trim();
+      const base = reason === 'REPACK_OUT' ? 'Repacked into' : 'Repacked from';
+      return {
+        label: other ? `${base} ${other}` : reason === 'REPACK_OUT' ? 'Repacked out' : 'Repacked in',
+        documentNumber: input.repackNumber?.trim() || documentNumber,
+        href: input.repackId ? repackHref(input.repackId) : id ? `/inventory-adjustments/${id}` : null,
+      };
+    }
     return {
       label: ADJUSTMENT_LABELS[reason] || 'Adjustment',
       documentNumber,

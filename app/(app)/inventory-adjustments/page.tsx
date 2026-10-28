@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Plus, Search, Filter, ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { Plus, Search, Filter, ArrowUp, ArrowDown, Eye, PackageOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -30,6 +30,7 @@ interface Adjustment {
   total_value_before: number;
   total_value_after: number;
   reason_code: string;
+  repack_id?: string | null;
   reason_notes?: string;
   notes?: string;
   created_by_name?: string;
@@ -120,7 +121,9 @@ export default function InventoryAdjustmentsPage() {
     COST_CORRECTION: 'Cost Correction',
     LANDED_COST: 'Landed Cost',
     REVALUATION: 'Revaluation',
-    WRITE_DOWN: 'Write Down'
+    WRITE_DOWN: 'Write Down',
+    REPACK_OUT: 'Repacked out',
+    REPACK_IN: 'Repacked in'
   };
 
   const getReasonLabel = (code: string) => {
@@ -147,12 +150,20 @@ export default function InventoryAdjustmentsPage() {
           title="Adjustments"
           description="Manage quantity and value adjustments"
           actions={
-            <Link href="/inventory-adjustments/new">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                New Adjustment
-              </Button>
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/inventory-adjustments/repacks/new">
+                <Button variant="outline">
+                  <PackageOpen className="w-4 h-4 mr-2" />
+                  Repack
+                </Button>
+              </Link>
+              <Link href="/inventory-adjustments/new">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Adjustment
+                </Button>
+              </Link>
+            </div>
           }
         />
 
@@ -348,7 +359,13 @@ export default function InventoryAdjustmentsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => router.push(`/inventory-adjustments/${adj.id}`)}
+                            onClick={() =>
+                              router.push(
+                                adj.repack_id
+                                  ? `/inventory-adjustments/repacks/${adj.repack_id}`
+                                  : `/inventory-adjustments/${adj.id}`
+                              )
+                            }
                           >
                             <Eye className="w-4 h-4" />
                           </Button>

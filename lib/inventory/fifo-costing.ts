@@ -249,20 +249,24 @@ export async function loadCostMovements(
     item_id: string; doc_id: string; doc_number: string | null; d: string; s: string;
     adjustment_type: string; direction: string | null; quantity_change: string | null; value_change: string | null;
     purchase_id: string | null;
+    repack: boolean;
   }>(
     client,
     `SELECT ia.item_id, ia.id AS doc_id, ia.adjustment_number AS doc_number,
             ${day('ia.adjustment_date')} AS d, ${seq('ia.created_at')} AS s,
-            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change, ia.purchase_id
+            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change, ia.purchase_id,
+            ia.repack_id IS NOT NULL AS repack
        FROM inventory_adjustments ia
       WHERE ia.business_id = $1 AND ia.item_id = ANY($2::uuid[])
+        AND NOT EXISTS (
+              SELECT 1 FROM stock_repacks sr WHERE sr.id = ia.repack_id AND sr.status = 'cancelled')
         AND NOT EXISTS (
               SELECT 1 FROM ledger_entry_reversals r
                WHERE r.business_id = $1 AND r.voucher_type = 'stock_adjustment' AND r.voucher_id = ia.id)`,
     [businessId, ids]
   );
   for (const a of adjustments) {
-    const base = { docId: a.doc_id, docNumber: a.doc_number, date: a.d, seq: a.s };
+    const base = { docId: a.doc_id, docNumber: a.doc_number, date: a.d, seq: a.s, ...(a.repack ? { repack: true } : {}) };
     if (a.adjustment_type === 'VALUE') {
       push(a.item_id, {
         ...base,

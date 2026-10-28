@@ -334,6 +334,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (reason_code === 'REPACK_OUT' || reason_code === 'REPACK_IN') {
+      return NextResponse.json(
+        { error: 'Use Repack to move stock into packs', code: 'USE_REPACK' },
+        { status: 400 }
+      );
+    }
+
     if (adjustment_type !== 'QUANTITY' && adjustment_type !== 'VALUE') {
       return NextResponse.json(
         { error: 'adjustment_type must be QUANTITY or VALUE' },

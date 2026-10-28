@@ -96,7 +96,7 @@ export async function recostItems(
       let outward: boolean;
       if (m.kind === 'invoice') [voucherType, outward] = ['invoice', true];
       else if (m.kind === 'credit_note') [voucherType, outward] = ['credit_note', false];
-      else if (m.kind === 'adjustment_out') [voucherType, outward] = ['stock_adjustment', true];
+      else if (m.kind === 'adjustment_out' && !m.repack) [voucherType, outward] = ['stock_adjustment', true];
       else continue;
       const cost = replay.results.get(m.key)?.cost ?? 0;
       const key = `${voucherType}:${m.docId}`;

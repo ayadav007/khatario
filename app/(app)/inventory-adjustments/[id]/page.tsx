@@ -56,6 +56,11 @@ export default function AdjustmentDetailPage() {
       if (res.ok) {
         const data = await res.json();
         // Convert string numbers to actual numbers
+        if (data.adjustment?.repack_id) {
+          // A repack leg is read and undone as a whole repack.
+          router.replace(`/inventory-adjustments/repacks/${data.adjustment.repack_id}`);
+          return;
+        }
         if (data.adjustment) {
           const adj = data.adjustment;
           setAdjustment({
