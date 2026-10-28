@@ -1,5 +1,7 @@
 # Khatario agent notes
 
+Start every session at `docs/brain.md`: it links the project log (append an entry before you finish) and the roadmap board.
+
 ## Guardrails
 - Never run migrations against staging or production. Tests use only the disposable DB `kh_phase2_test`.
 - Commit, push or deploy only when asked. Stage files by name; never `git add .`, reset, stash or clean user changes.
