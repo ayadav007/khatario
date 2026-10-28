@@ -1682,6 +1682,8 @@ export async function createCreditNoteLedgerEntries(params: {
   cessTotal?: number;
   // PHASE-5: shared transaction client (see createInvoiceLedgerEntries for why).
   poolClient?: PoolClient;
+  /** Migration 443: a post-sale discount note is narrated as such; default is a sales return. */
+  noteType?: 'sales_return' | 'post_sale_discount';
 }): Promise<void> {
   const {
     businessId,
@@ -1697,6 +1699,7 @@ export async function createCreditNoteLedgerEntries(params: {
     cessTotal = 0,
     poolClient,
   } = params;
+  const noteLabel = params.noteType === 'post_sale_discount' ? 'Post-sale discount' : 'Sales return';
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1734,8 +1737,8 @@ export async function createCreditNoteLedgerEntries(params: {
     debit: salesDebit,
     credit: 0,
     narration: useGstSplit
-      ? `Sales return (taxable) - Credit Note ${creditNoteNumber}`
-      : `Sales return - Credit Note ${creditNoteNumber}`,
+      ? `${noteLabel} (taxable) - Credit Note ${creditNoteNumber}`
+      : `${noteLabel} - Credit Note ${creditNoteNumber}`,
     referenceNumber: creditNoteNumber,
     branchId: params.branchId,
     poolClient,

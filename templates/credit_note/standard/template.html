@@ -47,7 +47,7 @@
 <body>
   {{> copy-label}}
   <div class="document-title">CREDIT NOTE</div>
-  <div class="notice-box">This document reduces your tax liability.{{#if invoice.original_invoice_number}} Original Invoice: {{invoice.original_invoice_number}}{{/if}}</div>
+  <div class="notice-box">This document reduces your tax liability.{{#if invoice.original_invoice_number}} Original Invoice: {{invoice.original_invoice_number}}{{/if}}{{#if invoice.is_post_sale_discount}} Post-sale discount under s.15(3)(b) CGST Act on supplies from {{invoice.supply_period_from}} to {{invoice.supply_period_to}}. Please reverse the input tax credit on this amount.{{/if}}</div>
   
   <div data-kh-section="header" class="header">
     <div>
@@ -66,6 +66,7 @@
     {{#ifSetting 'show_invoice_number'}}<div><strong>Credit Note No:</strong><br>{{invoice.invoice_number}}</div>{{/ifSetting}}
     {{#ifSetting 'show_invoice_date'}}<div><strong>Date:</strong><br>{{invoice.invoice_date}}</div>{{/ifSetting}}
     {{#if invoice.original_invoice_number}}<div><strong>Original Invoice:</strong><br>{{invoice.original_invoice_number}}{{#if invoice.original_invoice_date}} dated {{invoice.original_invoice_date}}{{/if}}</div>{{/if}}
+    {{#if invoice.is_post_sale_discount}}<div><strong>Supplies covered:</strong><br>{{invoice.supply_period_from}} to {{invoice.supply_period_to}}</div>{{/if}}
     {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><strong>Place of Supply:</strong><br>{{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
   </div>
   

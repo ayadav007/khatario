@@ -364,6 +364,10 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       invoice_currency: invoice.invoice_currency || 'INR',
       exchange_rate: invoice.exchange_rate || null,
       shipping_bill_date: invoice.shipping_bill_date ? formatDate(invoice.shipping_bill_date) : null,
+      // Credit notes (migration 443): a post-sale discount covers a period instead of one invoice.
+      is_post_sale_discount: invoice.note_type === 'post_sale_discount',
+      supply_period_from: invoice.supply_period_from ? formatDate(invoice.supply_period_from) : null,
+      supply_period_to: invoice.supply_period_to ? formatDate(invoice.supply_period_to) : null,
       // Additional metadata fields
       delivery_note: invoice.delivery_note || '',
       payment_terms: invoice.payment_terms || '',

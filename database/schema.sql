@@ -116,6 +116,13 @@ CREATE TABLE IF NOT EXISTS customers (
     opening_balance DECIMAL(12,2) DEFAULT 0,
     opening_balance_type VARCHAR(10) DEFAULT 'debit' CHECK (opening_balance_type IN ('debit', 'credit')),
     credit_limit DECIMAL(12,2) DEFAULT 0,
+    -- Migration 444: store khata (order from the online store, pay on the settlement day)
+    khata_enabled BOOLEAN NOT NULL DEFAULT false,
+    khata_settlement_day SMALLINT CHECK (khata_settlement_day IS NULL OR khata_settlement_day BETWEEN 0 AND 28),
+    khata_over_limit_rule VARCHAR(10) CHECK (khata_over_limit_rule IS NULL OR khata_over_limit_rule IN ('block', 'warn', 'approval')),
+    khata_overdue_rule VARCHAR(10) CHECK (khata_overdue_rule IS NULL OR khata_overdue_rule IN ('block', 'warn', 'approval')),
+    khata_opened_at TIMESTAMP,
+    khata_requested_at TIMESTAMP,
     tags TEXT[],
     notes TEXT,
     is_active BOOLEAN DEFAULT true,
@@ -713,7 +720,11 @@ CREATE TABLE IF NOT EXISTS credit_notes (
     invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
     credit_note_number VARCHAR(100) NOT NULL,
     credit_note_date DATE NOT NULL,
-    original_invoice_date DATE,  -- Reference to original invoice date
+    original_invoice_date DATE,  -- Reference to original invoice date (post_sale_discount: supply_period_from)
+    -- Migration 443: sales_return (goods back, linked invoice) or post_sale_discount (s.15(3)(b), supply period, no invoice, no stock)
+    note_type VARCHAR(20) NOT NULL DEFAULT 'sales_return' CHECK (note_type IN ('sales_return', 'post_sale_discount')),
+    supply_period_from DATE,
+    supply_period_to DATE,
     reason VARCHAR(200),
     place_of_supply_state_code VARCHAR(2),
     subtotal DECIMAL(15, 2) NOT NULL DEFAULT 0,
