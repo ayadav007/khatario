@@ -179,8 +179,8 @@ export async function POST(request: NextRequest) {
       // Update existing balance
       await query(
         `UPDATE leave_balances
-         SET opening_balance = $1, earned_days = $2,
-             current_balance = $1 + $2 + carry_forward_days - used_days,
+         SET opening_balance = $1::numeric, earned_days = $2::numeric,
+             current_balance = $1::numeric + $2::numeric + carry_forward_days - used_days,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $3`,
         [opening_balance, earned_days, existing.id]
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
         `INSERT INTO leave_balances (
           employee_id, leave_type_id, year, opening_balance, earned_days, current_balance
         )
-        VALUES ($1, $2, $3, $4, $5, $4 + $5)
+        VALUES ($1, $2, $3, $4::numeric, $5::numeric, $4::numeric + $5::numeric)
         RETURNING *`,
         [employee_id, leave_type_id, year, opening_balance, earned_days]
       );

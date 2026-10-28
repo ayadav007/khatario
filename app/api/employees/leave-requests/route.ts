@@ -264,6 +264,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (String(start_date).slice(0, 10) > String(end_date).slice(0, 10)) {
+      return NextResponse.json(
+        { error: 'Start date must be on or before the end date', code: 'LEAVE_DATES_INVALID' },
+        { status: 400 }
+      );
+    }
+
     const totalDays = await calculateLeaveDaysWithSandwich(
       start_date,
       end_date,
