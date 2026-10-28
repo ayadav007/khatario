@@ -49,8 +49,12 @@ ALTER TABLE inventory_adjustments ADD COLUMN IF NOT EXISTS repack_id UUID REFERE
 CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_repack ON inventory_adjustments(repack_id) WHERE repack_id IS NOT NULL;
 
 ALTER TABLE inventory_adjustments DROP CONSTRAINT IF EXISTS inventory_adjustments_reason_code_check;
+-- Keep every reason migrations 414 and 416 added (transit, custody, production): dropping them failed on
+-- staging, where a transfer had been closed short as TRANSIT_LOSS.
 ALTER TABLE inventory_adjustments ADD CONSTRAINT inventory_adjustments_reason_code_check CHECK (reason_code IN (
   'STOCK_TAKE', 'DAMAGE', 'THEFT', 'EXPIRED', 'FREE_SAMPLE',
   'COST_CORRECTION', 'LANDED_COST', 'REVALUATION', 'WRITE_DOWN',
-  'REPACK_OUT', 'REPACK_IN'
+  'REPACK_OUT', 'REPACK_IN',
+  'PROCESS_LOSS', 'TRANSIT_LOSS', 'OWN_CONSUMPTION', 'CUSTODY_LOSS',
+  'PRODUCTION_ISSUE', 'PRODUCTION_RECEIPT', 'BY_PRODUCT'
 ));
