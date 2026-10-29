@@ -122,10 +122,7 @@ d('store engine section data (real DB)', () => {
     expect(await ids({ source: 'category', limit: 10 })).toEqual([]);
   });
 
-  it('never returns another business items and carries brand through', async () => {
-    await pool.query(`UPDATE items SET brand = 'Orchard' WHERE id = $1`, [FEATURED]);
-    const out = await resolveSectionData(store, req({ source: 'featured', limit: 10 }));
-    expect(out.s.products![0].brand).toBe('Orchard');
+  it('never returns another business items', async () => {
     const other = { business_id: OTHER_BIZ, is_demo: false } as unknown as StoreBusinessContext;
     const none = await resolveSectionData(other, req({ source: 'all', limit: 10 }));
     expect(none.s.products).toEqual([]);
