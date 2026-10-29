@@ -65,6 +65,8 @@ describe('sanitizeSettingValue', () => {
     expect(sanitizeSettingValue(t, 'data:image/svg+xml,<svg/>')).toBeUndefined();
     expect(sanitizeSettingValue(t, 'javascript:alert(1)')).toBeUndefined();
     expect(sanitizeSettingValue(t, '//evil.com/a.png')).toBeUndefined();
+    expect(sanitizeSettingValue(t, '/\t/evil.com')).toBeUndefined();
+    expect(sanitizeSettingValue(t, '/\n/evil.com')).toBeUndefined();
     expect(sanitizeSettingValue(t, 'http://x.com/a.png')).toBeUndefined();
   });
 
@@ -75,6 +77,8 @@ describe('sanitizeSettingValue', () => {
     }
     expect(sanitizeSettingValue(t, 'javascript:alert(1)')).toBeUndefined();
     expect(sanitizeSettingValue(t, '//evil.com')).toBeUndefined();
+    expect(sanitizeSettingValue(t, '/\t/evil.com')).toBeUndefined();
+    expect(sanitizeSettingValue(t, '/\n/evil.com')).toBeUndefined();
   });
 
   it('video_url allows only youtube and vimeo over https', () => {

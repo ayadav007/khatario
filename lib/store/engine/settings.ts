@@ -32,7 +32,8 @@ function parseHttps(value: string): URL | null {
 }
 
 function isRootRelative(value: string): boolean {
-  return value.startsWith('/') && !value.startsWith('//') && !value.includes('\\');
+  // No whitespace/control chars: browsers strip tab/newline, so "/\t/evil.com" would become "//evil.com".
+  return /^\/(?!\/)[^\s\\\x00-\x1f]*$/.test(value);
 }
 
 function sanitizeNumber(schema: SettingSchema, raw: unknown, round: boolean): number | undefined {
