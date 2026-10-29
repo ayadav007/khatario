@@ -15,7 +15,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
-import { isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
+import { assignToAgent, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
 import { addImportToLead, LeadError, openLead } from '@/lib/leads/core';
 import { normalizeLeadPhone } from '@/lib/leads/phone';
 
@@ -487,6 +487,11 @@ export async function deleteLeadSource(businessId: string, id: string): Promise<
   if (!res.rowCount) throw new LeadSourceError('Lead source not found', 404, 'NOT_FOUND');
 }
 
+/** Outside text goes into text columns: drop NUL and other control characters (keeps new lines and tabs). */
+function stripControl(s: string): string {
+  return s.replace(/[ --]/g, '');
+}
+
 export interface IncomingLead {
   externalId: string;
   name: string | null;
@@ -508,9 +513,9 @@ interface SourceForImport {
 
 /**
  * Puts an outside enquiry on the pipeline as a lead, with no chat: the chat links when the buyer messages
- * (leadForInboundMessage). Returns null when this enquiry was already imported. A number with an open lead
- * joins it: a Direct lead takes this source, a lead with a source keeps it, and the source's labels are
- * added either way. The source's stage and owner are best effort, so a deleted stage (first open stage
+ * (leadForInboundMessage), unless the number already has a 1:1 chat, which the lead takes at once. Returns null
+ * when this enquiry was already imported. A number with an open lead joins it: a Direct lead takes this
+ * source, a lead with a source keeps it, and the source's labels and enquiry text are added either way. The source's stage and owner are best effort, so a deleted stage (first open stage
  * instead) or an agent who lost inbox access (no owner instead) never drops the lead.
  */
 export async function importLead(src: SourceForImport, lead: IncomingLead): Promise<{ leadId: string; created: boolean } | null> {
@@ -526,6 +531,13 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
   const labelIds = src.label_ids ?? [];
   const sourceDetail = { lead_source_id: src.id, name: src.name, ...lead.detail, message: lead.message, label_ids: labelIds };
   try {
+    const chat = await queryOne<{ id: string }>(
+      `SELECT id::text AS id FROM whatsapp_conversations
+        WHERE business_id = $1 AND NOT COALESCE(is_group, false)
+          AND RIGHT(REGEXP_REPLACE(from_number, '[^0-9]', '', 'g'), 10) = RIGHT($2, 10)
+        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+      [src.business_id, lead.phone],
+    );
     let stageId = src.stage_id;
     let ownerId = src.assign_to;
     let opened: Awaited<ReturnType<typeof openLead>> | undefined;
@@ -534,6 +546,7 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
         opened = await openLead(src.business_id, {
           phone: lead.phone,
           name: lead.name,
+          conversationId: chat?.id,
           source,
           sourceDetail,
           stageId,
@@ -547,7 +560,16 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
         else throw err;
       }
     }
-    if (!opened.created) await addImportToLead(src.business_id, opened.lead.id, { source, sourceDetail, labelIds });
+    if (opened.created) {
+      // openLead links the chat; the owner takes it too (a failed assignment never drops the lead).
+      if (ownerId && opened.lead.conversation_id) {
+        await assignToAgent(src.business_id, opened.lead.conversation_id, ownerId).catch((err) =>
+          console.warn('[lead-sources] assignment failed:', err instanceof Error ? err.message : err),
+        );
+      }
+    } else {
+      await addImportToLead(src.business_id, opened.lead.id, { source, sourceDetail, labelIds, enquiry: `${src.name}: ${summary}` });
+    }
     await query(`UPDATE whatsapp_lead_imports SET lead_id = $2::uuid WHERE id = $1::uuid`, [claim.id, opened.lead.id]);
     return { leadId: opened.lead.id, created: opened.created };
   } catch (err) {
@@ -566,7 +588,7 @@ export function parseWebhookLead(body: unknown): IncomingLead {
   const pick = (...keys: string[]): string | null => {
     for (const k of keys) {
       const v = b[k];
-      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'string' && stripControl(v).trim()) return stripControl(v).trim();
       if (typeof v === 'number') return String(v);
     }
     return null;
@@ -642,7 +664,7 @@ export function parseIndiaMartResponse(json: unknown): { ok: boolean; leads: Inc
   if (code !== 200 || !Array.isArray(j.RESPONSE)) return { ok: false, leads: [], message: message || `IndiaMART returned code ${j.CODE ?? 'unknown'}` };
   const leads: IncomingLead[] = [];
   for (const r of j.RESPONSE as Array<Record<string, unknown>>) {
-    const s = (k: string) => (typeof r[k] === 'string' && (r[k] as string).trim() ? (r[k] as string).trim() : null);
+    const s = (k: string) => (typeof r[k] === 'string' && stripControl(r[k] as string).trim() ? stripControl(r[k] as string).trim() : null);
     const phone = normalizeLeadPhone(s('SENDER_MOBILE') || s('SENDER_PHONE') || s('SENDER_MOBILE_ALT'));
     const id = s('UNIQUE_QUERY_ID');
     if (!phone || !id) continue;
@@ -672,6 +694,8 @@ export interface IndiaMartRun {
   fetched: number;
   imported: number;
   duplicates: number;
+  /** Leads that could not be imported this run; they are retried because their claim is released. */
+  failed?: number;
   skipped?: string;
   error?: string;
 }
@@ -713,17 +737,26 @@ export async function syncIndiaMart(businessId: string, opts: { fetcher?: Fetche
   }
   let imported = 0;
   let duplicates = 0;
+  const failures: string[] = [];
   for (const lead of parsed.leads) {
-    const r = await importLead(src, lead);
-    if (r) imported++;
-    else duplicates++;
+    // One bad enquiry must not stop the rest; importLead releases its claim so a later pull can retry it.
+    try {
+      const r = await importLead(src, lead);
+      if (r) imported++;
+      else duplicates++;
+    } catch (err) {
+      failures.push(`${lead.externalId}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn('[lead-sources] IndiaMART lead failed:', failures[failures.length - 1]);
+    }
   }
-  const result = { fetched: parsed.leads.length, imported, duplicates, window: [start.toISOString(), end.toISOString()] };
+  const failed = failures.length;
+  const result = { fetched: parsed.leads.length, imported, duplicates, failed, window: [start.toISOString(), end.toISOString()] };
+  const lastError = failed ? `${failed} lead${failed === 1 ? '' : 's'} could not be imported (${failures.slice(0, 3).join('; ')})`.slice(0, 500) : null;
   await query(
-    `UPDATE whatsapp_lead_sources SET synced_until = $2, last_result = $3::jsonb, last_error = NULL WHERE id = $1::uuid`,
-    [src.id, end.toISOString(), JSON.stringify(result)],
+    `UPDATE whatsapp_lead_sources SET synced_until = $2, last_result = $3::jsonb, last_error = $4 WHERE id = $1::uuid`,
+    [src.id, end.toISOString(), JSON.stringify(result), lastError],
   );
-  return { business_id: businessId, fetched: parsed.leads.length, imported, duplicates };
+  return { business_id: businessId, fetched: parsed.leads.length, imported, duplicates, failed };
 }
 
 /** Cron: every enabled IndiaMART connection that is due. Errors are recorded per business. */

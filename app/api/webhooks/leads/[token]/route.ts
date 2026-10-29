@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/webhooks/leads/:token - a business's inbound lead webhook (Zapier, Make, JustDial, ad forms).
  * The token in the URL is the only credential and picks the business; nothing in the body can.
  * Body (JSON or form): phone (required), name, message, id (to drop repeats), email, city, product, source.
- * Each new lead becomes a WhatsApp chat on the pipeline.
+ * Each new lead goes on the pipeline; its chat links when the buyer messages (a number with an open lead joins it).
  */
 
 import { NextRequest, NextResponse } from 'next/server';

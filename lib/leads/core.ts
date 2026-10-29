@@ -5,7 +5,7 @@
  * Business identity always comes from the session; callers pass it in.
  */
 import { query, queryOne } from '@/lib/db';
-import { broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
+import { assignToAgent, broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
 import { normalizeLeadPhone } from './phone';
 import {
   ensureStages,
@@ -421,12 +421,13 @@ export async function closeLeadAsWentQuiet(businessId: string, leadId: string): 
 /**
  * An outside enquiry (IndiaMART, webhook) lands on a lead that is already open. A Direct lead (no source)
  * takes the enquiry's source; a lead with a source keeps it. Either way the enquiry's labels join the lead's
- * source_detail.label_ids and, when the lead has a chat, go onto it. The lead counts as active.
+ * source_detail.label_ids and, when the lead has a chat, go onto it, and the enquiry text is added to the
+ * lead's note. The lead counts as active.
  */
 export async function addImportToLead(
   businessId: string,
   leadId: string,
-  input: { source: LeadSourceKey; sourceDetail: Record<string, unknown>; labelIds: string[] },
+  input: { source: LeadSourceKey; sourceDetail: Record<string, unknown>; labelIds: string[]; enquiry: string },
 ): Promise<Lead> {
   await query(
     `UPDATE leads SET source = $3, source_detail = $4::jsonb, source_at = NOW(), updated_at = NOW()
@@ -434,15 +435,26 @@ export async function addImportToLead(
     [leadId, businessId, input.source, JSON.stringify(input.sourceDetail)],
   );
   if (input.labelIds.length) {
+    // A source_detail or label_ids of an unexpected shape counts as empty.
     await query(
       `UPDATE leads
           SET source_detail = jsonb_set(
-                COALESCE(source_detail, '{}'::jsonb), '{label_ids}',
+                CASE WHEN jsonb_typeof(source_detail) = 'object' THEN source_detail ELSE '{}'::jsonb END, '{label_ids}',
                 (SELECT COALESCE(jsonb_agg(DISTINCT x), '[]'::jsonb)
-                   FROM jsonb_array_elements_text(COALESCE(source_detail->'label_ids', '[]'::jsonb) || $3::jsonb) x)),
+                   FROM jsonb_array_elements_text(
+                     (CASE WHEN jsonb_typeof(source_detail->'label_ids') = 'array' THEN source_detail->'label_ids' ELSE '[]'::jsonb END)
+                     || $3::jsonb) x)),
               updated_at = NOW()
         WHERE id = $1::uuid AND business_id = $2`,
       [leadId, businessId, JSON.stringify(input.labelIds)],
+    );
+  }
+  const enquiry = cleanText(input.enquiry, 500);
+  if (enquiry) {
+    await query(
+      `UPDATE leads SET note = LEFT(CASE WHEN COALESCE(note, '') = '' THEN $3 ELSE note || chr(10) || $3 END, 1000), updated_at = NOW()
+        WHERE id = $1::uuid AND business_id = $2`,
+      [leadId, businessId, enquiry],
     );
   }
   await touchLead(businessId, leadId);
@@ -451,7 +463,7 @@ export async function addImportToLead(
   return lead;
 }
 
-/** Gives a lead with no chat its chat (same business, not a group). */
+/** Gives a lead with no chat its chat (same business, not a group), and the chat its owner if it has none. */
 export async function linkChatToLead(businessId: string, leadId: string, conversationId: string): Promise<void> {
   const linked = await queryOne<{ id: string }>(
     `UPDATE leads SET conversation_id = $3::uuid, updated_at = NOW()
@@ -463,7 +475,14 @@ export async function linkChatToLead(businessId: string, leadId: string, convers
   );
   if (!linked) return;
   const lead = await loadLead(businessId, leadId);
-  if (lead) await applyLeadToChat(businessId, lead, conversationId);
+  if (!lead) return;
+  await applyLeadToChat(businessId, lead, conversationId);
+  // The lead's owner takes the chat when nobody has it; a failed assignment never undoes the link.
+  if (lead.owner_id) {
+    await assignToAgent(businessId, conversationId, lead.owner_id).catch((err) =>
+      console.warn('[leads] owner assignment on link failed:', err instanceof Error ? err.message : err),
+    );
+  }
 }
 
 export async function touchLead(businessId: string, leadId: string): Promise<void> {

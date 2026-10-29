@@ -35,12 +35,15 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import { ensureStages, type PipelineStage } from '@/lib/whatsapp/pipeline';
+import * as core from '@/lib/leads/core';
 import { openLead } from '@/lib/leads/core';
 import {
   createEntryLink,
   createWebhookSource,
   importLead,
   listEntryLinks,
+  parseIndiaMartResponse,
+  parseWebhookLead,
   receiveWebhookLead,
   saveIndiaMartSource,
   syncIndiaMart,
@@ -48,6 +51,19 @@ import {
 } from '@/lib/whatsapp/lead-sources';
 import { storeIncomingMessage } from '@/lib/whatsapp-crm';
 import { cleanupBusinesses, seedBusiness, seedChat } from './fixtures/connect-leads';
+
+describe('imported text', () => {
+  test('control characters are stripped from IndiaMART and webhook text; new lines and tabs stay', () => {
+    const r = parseIndiaMartResponse({
+      CODE: 200,
+      RESPONSE: [{ UNIQUE_QUERY_ID: 'Q\u00001', SENDER_NAME: 'Ra\u0000vi\u0007', SENDER_MOBILE: '9876500001', QUERY_MESSAGE: 'Need\u0000 20<br>boxes\tnow\u001f', SUBJECT: '\u0000' }],
+    });
+    expect(r.leads[0]).toMatchObject({ externalId: 'Q1', name: 'Ravi', message: 'Need 20\nboxes\tnow' });
+    expect(r.leads[0].detail.subject).toBeNull();
+    const w = parseWebhookLead({ phone: '9876500002', name: 'Ki\u0000ran', message: 'a\u0000b\nc', id: 'x\u0000y' });
+    expect(w).toMatchObject({ name: 'Kiran', message: 'ab\nc', externalId: 'xy' });
+  });
+});
 
 const run = enabled ? describe : describe.skip;
 
@@ -250,6 +266,132 @@ run('connect leads from IndiaMART and webhooks (kh_phase2_test)', () => {
     const r = await importLead({ ...src, assign_to: noAccess }, incoming(p2));
     expect(r).toMatchObject({ created: true });
     expect((await leadsFor(p2))[0]).toMatchObject({ stage_name: 'Interested', owner_id: null, source: 'lead_api' });
+  });
+
+  test('a lead that fails to import does not stop the pull: the rest import, the failure is recorded and retried', async () => {
+    const good1 = phone();
+    const bad = phone();
+    const good2 = phone();
+    const fetcher = async () => ({
+      json: async () => ({
+        CODE: 200,
+        RESPONSE: [good1, bad, good2].map((p, i) => ({ UNIQUE_QUERY_ID: `IM-F${i}`, SENDER_NAME: 'Buyer', SENDER_MOBILE: p, QUERY_MESSAGE: 'Need boxes' })),
+      }),
+    });
+    const original = core.openLead;
+    const spy = jest.spyOn(core, 'openLead').mockImplementation((businessId, input) =>
+      input.phone === bad ? Promise.reject(new Error('forced failure')) : original(businessId, input),
+    );
+    let run1;
+    try {
+      run1 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T10:00:00Z') });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(run1).toMatchObject({ fetched: 3, imported: 2, duplicates: 0, failed: 1 });
+    expect(await leadsFor(good1)).toHaveLength(1);
+    expect(await leadsFor(good2)).toHaveLength(1);
+    expect(await leadsFor(bad)).toHaveLength(0);
+    const src = await queryOne<{ last_error: string; last_result: any; synced_until: Date }>(
+      `SELECT last_error, last_result, synced_until FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`,
+      [B],
+    );
+    expect(src!.last_error).toContain('IM-F1');
+    expect(src!.last_error).toContain('forced failure');
+    expect(src!.last_result).toMatchObject({ fetched: 3, imported: 2, failed: 1 });
+    expect(new Date(src!.synced_until).toISOString()).toBe('2026-10-27T10:00:00.000Z');
+    // No claim is left for the failed enquiry, so the next pull imports it (and the others are duplicates).
+    const claims = async () =>
+      (await queryRows<{ external_id: string }>(`SELECT external_id FROM whatsapp_lead_imports WHERE business_id = $1 AND external_id LIKE 'IM-F%'`, [B]))
+        .map((r) => r.external_id)
+        .sort();
+    expect(await claims()).toEqual(['IM-F0', 'IM-F2']);
+    const run2 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T10:10:00Z') });
+    expect(run2).toMatchObject({ fetched: 3, imported: 1, duplicates: 2, failed: 0 });
+    expect(await leadsFor(bad)).toHaveLength(1);
+    expect(await claims()).toEqual(['IM-F0', 'IM-F1', 'IM-F2']);
+    const cleared = await queryOne<{ last_error: string | null }>(`SELECT last_error FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`, [B]);
+    expect(cleared!.last_error).toBeNull();
+  });
+
+  test('a failure after the claim releases it, and a retry imports the enquiry once', async () => {
+    const { src } = await webhookSource('Claim');
+    const p = phone();
+    const lead = incoming(p, { externalId: 'CLAIM-1' });
+    const spy = jest.spyOn(core, 'openLead').mockRejectedValueOnce(new Error('database went away'));
+    try {
+      await expect(importLead(src, lead)).rejects.toThrow('database went away');
+    } finally {
+      spy.mockRestore();
+    }
+    const rows = () =>
+      queryRows<{ lead_id: string | null }>(`SELECT lead_id::text AS lead_id FROM whatsapp_lead_imports WHERE lead_source_id = $1 AND external_id = 'CLAIM-1'`, [src.id]);
+    expect(await rows()).toHaveLength(0);
+    expect(await leadsFor(p)).toHaveLength(0);
+
+    const retry = await importLead(src, lead);
+    expect(retry).toMatchObject({ created: true });
+    expect(await importLead(src, lead)).toBeNull();
+    expect(await leadsFor(p)).toHaveLength(1);
+    expect(await rows()).toEqual([{ lead_id: retry!.leadId }]);
+  });
+
+  test('the lead owner takes the chat when the buyer messages', async () => {
+    const { src } = await webhookSource('Owned', { assignTo: AGENT });
+    const p = phone();
+    await importLead(src, incoming(p));
+    expect((await leadsFor(p))[0]).toMatchObject({ owner_id: AGENT, conversation_id: null });
+    const { conversationId } = await storeIncomingMessage(B, `${p}@s.whatsapp.net`, '919999900000', 'Hello', `in-${randomUUID()}`);
+    expect((await leadsFor(p))[0].conversation_id).toBe(conversationId);
+    const chat = await queryOne<{ assigned_to: string | null; inbox_state: string }>(
+      `SELECT assigned_to::text AS assigned_to, inbox_state FROM whatsapp_conversations WHERE id = $1`,
+      [conversationId],
+    );
+    expect(chat).toEqual({ assigned_to: AGENT, inbox_state: 'intervened' });
+  });
+
+  test('an existing chat for the number links to the lead at import', async () => {
+    const { src } = await webhookSource('Known chat', { assignTo: AGENT, labelIds: [LABEL] });
+    const chat = await seedChat(B);
+    // The match is on the last 10 digits, whatever the country code.
+    const r = await importLead(src, incoming(chat.phone));
+    expect(r).toMatchObject({ created: true });
+    const [row] = await leadsFor(chat.phone);
+    expect(row.conversation_id).toBe(chat.id);
+    expect(await chatCount(chat.phone)).toBe(1);
+    expect(await labelsOn(chat.id)).toEqual([LABEL]);
+    const c = await queryOne<{ assigned_to: string | null }>(`SELECT assigned_to::text AS assigned_to FROM whatsapp_conversations WHERE id = $1`, [chat.id]);
+    expect(c!.assigned_to).toBe(AGENT);
+
+    // A group chat with that number is never linked.
+    const gp = phone();
+    await query(
+      `INSERT INTO whatsapp_conversations (id, business_id, from_number, to_number, conversation_id, is_group, last_message_at)
+       VALUES ($1, $2, $3, '919999900000', $3, true, NOW())`,
+      [randomUUID(), B, gp],
+    );
+    await importLead(src, incoming(gp));
+    expect((await leadsFor(gp))[0].conversation_id).toBeNull();
+  });
+
+  test('joining an open lead adds the enquiry to its note, and an odd label_ids shape counts as empty', async () => {
+    const { src } = await webhookSource('JustDial', { labelIds: [LABEL] });
+    const p = phone();
+    const { lead } = await openLead(B, { phone: p, note: 'Called twice', actor: { source: 'auto' } });
+    await importLead(src, incoming(p, { message: 'Need 20 boxes' }));
+    expect((await leadsFor(p))[0].note).toBe('Called twice\nJustDial: Need 20 boxes');
+
+    // The note stays inside its 1000-character limit.
+    for (let i = 0; i < 4; i++) await importLead(src, incoming(p, { message: 'x'.repeat(400) }));
+    expect((await leadsFor(p))[0].note!.length).toBeLessThanOrEqual(1000);
+
+    // label_ids that is not an array (or a source_detail that is not an object) is replaced, not an error.
+    await query(`UPDATE leads SET source_detail = '{"label_ids": "oops"}'::jsonb WHERE id = $1`, [lead.id]);
+    await importLead(src, incoming(p));
+    expect((await leadsFor(p))[0].source_detail.label_ids).toEqual([LABEL]);
+    await query(`UPDATE leads SET source_detail = '"scalar"'::jsonb WHERE id = $1`, [lead.id]);
+    await importLead(src, incoming(p));
+    expect((await leadsFor(p))[0].source_detail.label_ids).toEqual([LABEL]);
   });
 
   test('link stats count leads', async () => {

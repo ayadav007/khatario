@@ -1,7 +1,7 @@
 /**
  * Connect lead sources (all businesses): pull new IndiaMART buy-leads for every connected business
- * that has not been pulled in the last 5 minutes (IndiaMART's own limit). Each new lead becomes a
- * WhatsApp chat on the pipeline; a lead is never imported twice.
+ * that has not been pulled in the last 5 minutes (IndiaMART's own limit). Each new enquiry becomes a
+ * lead on the pipeline (its chat links when the buyer messages); an enquiry is never imported twice.
  *
  * Call: GET /api/cron/whatsapp-lead-sources (every 10 minutes)
  */
