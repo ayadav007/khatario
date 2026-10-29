@@ -122,6 +122,7 @@ async function recordStageEvent(
   from: PipelineStage | null,
   to: PipelineStage | null,
   actor: DealActor,
+  extra?: Record<string, unknown>,
 ): Promise<void> {
   await query(
     `INSERT INTO whatsapp_automation_events (conversation_id, lead_id, business_id, event_type, event_data)
@@ -130,7 +131,7 @@ async function recordStageEvent(
       lead.conversation_id,
       lead.id,
       businessId,
-      JSON.stringify({ from_stage: from?.name ?? null, to_stage: to?.name ?? null, source: actor.source, actor_name: await actorName(actor) }),
+      JSON.stringify({ from_stage: from?.name ?? null, to_stage: to?.name ?? null, source: actor.source, actor_name: await actorName(actor), ...extra }),
     ],
   ).catch((err) => console.warn('[leads] timeline event failed:', err instanceof Error ? err.message : err));
 }
@@ -300,6 +301,18 @@ export async function setLeadStage(
   actor: DealActor,
   lostReason?: string | null,
 ): Promise<Lead> {
+  return moveLead(businessId, leadId, stageId, actor, lostReason);
+}
+
+/** setLeadStage, with extra fields for the timeline entry (why an automatic move happened). */
+async function moveLead(
+  businessId: string,
+  leadId: string,
+  stageId: string | null,
+  actor: DealActor,
+  lostReason: string | null | undefined,
+  eventExtra?: Record<string, unknown>,
+): Promise<Lead> {
   const lead = await loadLead(businessId, leadId);
   if (!lead) throw new LeadError('Lead not found', 404, 'NOT_FOUND');
   const stages = await ensureStages(businessId);
@@ -338,7 +351,7 @@ export async function setLeadStage(
   }
 
   if (stageChanges) {
-    await recordStageEvent(businessId, lead, fromStage, toStage, actor);
+    await recordStageEvent(businessId, lead, fromStage, toStage, actor, eventExtra);
     await syncChat(businessId, lead.conversation_id, toStage);
   }
   return (await loadLead(businessId, leadId))!;
@@ -384,13 +397,13 @@ export async function patchLead(businessId: string, leadId: string, patch: LeadP
   return (await loadLead(businessId, leadId))!;
 }
 
-/** Closes a stale open lead in the first lost stage. */
+/** Closes a stale open lead in the first lost stage; the timeline says it went quiet. */
 export async function closeLeadAsWentQuiet(businessId: string, leadId: string): Promise<void> {
   const lead = await loadLead(businessId, leadId);
   if (!lead || lead.closed_at) return;
   const lost = (await ensureStages(businessId)).filter((s) => s.kind === 'lost').sort((a, b) => a.position - b.position)[0];
   if (!lost) return;
-  await setLeadStage(businessId, leadId, lost.id, { source: 'auto' }, WENT_QUIET_REASON);
+  await moveLead(businessId, leadId, lost.id, { source: 'auto' }, WENT_QUIET_REASON, { reason: 'went_quiet', quiet_days: QUIET_DAYS });
 }
 
 /** Gives a lead with no chat its chat (same business, not a group). */

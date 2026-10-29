@@ -26,15 +26,16 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { query, queryOne, closePool } from '@/lib/db';
 import { ensureStages, loadPipelineSummary } from '@/lib/whatsapp/pipeline';
+import { leadForInboundMessage } from '@/lib/leads/inbound';
 import {
   applyAdReferral,
-  attributeNewChat,
   createEntryLink,
   createWebhookSource,
   extractRefCode,
   indiaMartTime,
   LeadSourceError,
   linkMessage,
+  listEntryLinks,
   normalizeLeadPhone,
   openEntryLink,
   parseIndiaMartResponse,
@@ -94,9 +95,16 @@ run('Connect lead sources (kh_phase2_test)', () => {
     return id;
   }
 
+  /** An inbound message on a chat, as storeIncomingMessage runs it. */
+  async function receive(business: string, id: string, text: string) {
+    const row = await queryOne<{ p: string }>(`SELECT from_number AS p FROM whatsapp_conversations WHERE id = $1`, [id]);
+    return leadForInboundMessage(business, id, row!.p, text);
+  }
+
+  /** The chat with its open lead's source and stage (source lives on the lead since migration 447). */
   async function chat(id: string) {
     return queryOne<{ source: string | null; source_detail: any; stage_name: string | null; assigned_to: string | null; inbox_state: string }>(
-      `SELECT c.source, c.source_detail, s.name AS stage_name, c.assigned_to::text AS assigned_to, c.inbox_state
+      `SELECT l.source, l.source_detail, s.name AS stage_name, c.assigned_to::text AS assigned_to, c.inbox_state
          FROM whatsapp_conversations c
          LEFT JOIN leads l ON l.conversation_id = c.id AND l.closed_at IS NULL
          LEFT JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id
@@ -160,12 +168,17 @@ run('Connect lead sources (kh_phase2_test)', () => {
     expect(target).toBe(`https://wa.me/919999900000?text=${encodeURIComponent(`Price list please (ref ${link.code})`)}`);
 
     const c = await newChat();
-    await attributeNewChat(B, c, `Price list please (ref ${link.code})`);
+    await receive(B, c, `Price list please (ref ${link.code})`);
     expect(await chat(c)).toMatchObject({ source: 'link', stage_name: 'Interested', assigned_to: ASHA, inbox_state: 'intervened' });
+    const stats = async () => (await listEntryLinks(B)).find((l) => l.id === link.id)!;
+    expect(await stats()).toMatchObject({ chats: 1, won: 0 });
+    const won = stages.find((s) => s.kind === 'won')!;
+    await query(`UPDATE leads SET stage_id = $2, closed_at = NOW() WHERE conversation_id = $1`, [c, won.id]);
+    expect(await stats()).toMatchObject({ chats: 1, won: 1 });
 
     // Another business's chat quoting this code is not credited.
     const foreign = await newChat(OTHER);
-    await attributeNewChat(OTHER, foreign, `hi (ref ${link.code})`);
+    await receive(OTHER, foreign, `hi (ref ${link.code})`);
     expect((await chat(foreign))?.source).toBeNull();
 
     // Routing must use this business's own stage and agents.
@@ -189,7 +202,8 @@ run('Connect lead sources (kh_phase2_test)', () => {
     expect(again).toEqual({ conversationId: first.conversationId, duplicate: true });
 
     const row = await queryOne<{ business_id: string; from_number: string; whatsapp_display_name: string; source: string; inbox_state: string }>(
-      `SELECT business_id::text AS business_id, from_number, whatsapp_display_name, source, inbox_state FROM whatsapp_conversations WHERE id = $1`,
+      `SELECT c.business_id::text AS business_id, c.from_number, c.whatsapp_display_name, l.source, c.inbox_state
+         FROM whatsapp_conversations c LEFT JOIN leads l ON l.conversation_id = c.id AND l.closed_at IS NULL WHERE c.id = $1`,
       [first.conversationId],
     );
     expect(row).toEqual({ business_id: B, from_number: '919876511111', whatsapp_display_name: 'Kiran', source: 'lead_api', inbox_state: 'requesting' });
@@ -240,7 +254,7 @@ run('Connect lead sources (kh_phase2_test)', () => {
     expect(src?.last_error).toBe('Invalid key');
 
     const lead = await queryOne<{ source: string; source_detail: any }>(
-      `SELECT source, source_detail FROM whatsapp_conversations WHERE business_id = $1 AND from_number = '919876522222'`,
+      `SELECT source, source_detail FROM leads WHERE business_id = $1 AND contact_phone = '919876522222' AND closed_at IS NULL`,
       [B],
     );
     expect(lead).toMatchObject({ source: 'indiamart', source_detail: { query_id: 'IM-1', product: 'Boxes' } });

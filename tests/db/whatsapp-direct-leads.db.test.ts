@@ -1,5 +1,5 @@
 /**
- * Direct leads and lead summaries (migration 446): a new number's first message puts the chat on the
+ * Direct leads and lead summaries (migration 446): a new number's message opens a lead on the
  * pipeline, known numbers stay off it, and the lead summary is rewritten once the chat goes quiet
  * with bot and staff replies named in the transcript.
  * Opt-in, disposable DB only:
@@ -34,7 +34,8 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { query, queryOne, closePool } from '@/lib/db';
 import { ensureStages } from '@/lib/whatsapp/pipeline';
-import { addNewChatToPipeline, attributeNewChat, createEntryLink, getDirectChatSetting, isKnownNumber, setDirectChatSetting } from '@/lib/whatsapp/lead-sources';
+import { createEntryLink, getDirectChatSetting, isKnownNumber, setDirectChatSetting } from '@/lib/whatsapp/lead-sources';
+import { leadForInboundMessage } from '@/lib/leads/inbound';
 import { refreshLeadProfile, runDueLeadSummaries, scheduleLeadSummary, speakerFor } from '@/lib/whatsapp/lead-summary';
 
 describe('lead summary speakers', () => {
@@ -129,10 +130,11 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
   });
 
   test('a new number goes on the first open stage as a direct lead', async () => {
-    const c = await newChat();
-    expect(await addNewChatToPipeline(B, c, (await queryOne<{ p: string }>(`SELECT from_number AS p FROM whatsapp_conversations WHERE id = $1`, [c]))!.p)).toBe(true);
+    const p = phone();
+    const c = await newChat(B, p);
+    expect((await leadForInboundMessage(B, c, p, 'Hello')).action).toBe('opened');
     expect(await stageOf(c)).toBe('New');
-    const row = await queryOne<{ source: string | null }>(`SELECT source FROM whatsapp_conversations WHERE id = $1`, [c]);
+    const row = await queryOne<{ source: string | null }>(`SELECT source FROM leads WHERE conversation_id = $1`, [c]);
     expect(row?.source).toBeNull();
   });
 
@@ -150,7 +152,7 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
 
     for (const p of [custPhone, supPhone, `91${ravi!.phone}`]) {
       const c = await newChat(B, p);
-      expect(await addNewChatToPipeline(B, c, p)).toBe(false);
+      expect((await leadForInboundMessage(B, c, p, 'Hello')).action).toBe('none');
       expect(await stageOf(c)).toBeNull();
     }
   });
@@ -161,8 +163,10 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
     const link = await createEntryLink(B, RAVI, { name: 'Flyer', phone: '9999900000', stageId: followUp.id });
     const p = phone();
     const c = await newChat(B, p);
-    await attributeNewChat(B, c, `hello (ref ${link.code})`);
-    expect(await addNewChatToPipeline(B, c, p)).toBe(false);
+    expect((await leadForInboundMessage(B, c, p, `hello (ref ${link.code})`)).action).toBe('opened');
+    expect(await stageOf(c)).toBe('Follow up');
+    // A later plain message joins the link's lead instead of opening a Direct one.
+    expect((await leadForInboundMessage(B, c, p, 'any update?')).action).toBe('joined');
     expect(await stageOf(c)).toBe('Follow up');
   });
 
@@ -172,7 +176,7 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
     expect(await getDirectChatSetting(OFF)).toEqual({ enabled: false });
     const p = phone();
     const c = await newChat(OFF, p);
-    expect(await addNewChatToPipeline(OFF, c, p)).toBe(false);
+    expect((await leadForInboundMessage(OFF, c, p, 'Hello')).action).toBe('none');
     expect(await stageOf(c)).toBeNull();
     await expect(setDirectChatSetting(OFF, 'yes')).rejects.toThrow('enabled must be true or false');
   });

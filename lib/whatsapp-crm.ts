@@ -8,6 +8,7 @@ import { sendWhatsAppMessage } from './whatsapp';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
 import { scheduleLeadSummary } from './whatsapp/lead-summary';
+import { leadForInboundMessage, touchLeadForChat } from './leads/inbound';
 import { generatePaymentLinkForBusiness } from './services/payment-service';
 import { loadAgentSettings } from './ai-agent/settings';
 import { runAgentGate } from './ai-agent/gate';
@@ -387,13 +388,6 @@ export async function storeIncomingMessage(
       conversation = { id: newConv!.id, customer_id: customer?.id };
       // Fire-and-forget: cache profile picture for new conversation
       cacheProfilePicture(businessId, newConv!.id, conversationId, fromJid, isGroup);
-      // A tracked link / QR / website button puts "(ref CODE)" in the first message.
-      // Otherwise a new number still becomes a lead on the pipeline (customers, suppliers and staff don't).
-      if (!isGroup) {
-        const { addNewChatToPipeline, attributeNewChat } = await import('@/lib/whatsapp/lead-sources');
-        await attributeNewChat(businessId, newConv!.id, messageText).catch(() => undefined);
-        if (!customer) await addNewChatToPipeline(businessId, newConv!.id, normalizedFrom);
-      }
     } else {
       // Refresh profile picture in background if not updated recently (> 7 days)
       refreshProfilePictureIfStale(businessId, conversation.id, conversationId, fromJid, isGroup);
@@ -633,8 +627,13 @@ export async function storeIncomingMessage(
       console.error('[CRM] Error emitting WebSocket events:', err);
     }
 
-    // The lead summary is rewritten once the chat goes quiet (lib/whatsapp/lead-summary).
-    if (!isGroup) await scheduleLeadSummary(businessId, conversation.id);
+    if (!isGroup) {
+      // Joins the number's open lead, or opens one (tracked link or new number); see lib/leads/inbound.
+      // An ad that brought the message is credited after this, by applyAdReferral.
+      await leadForInboundMessage(businessId, conversation.id, normalizedFrom, messageText);
+      // The lead summary is rewritten once the chat goes quiet (lib/whatsapp/lead-summary).
+      await scheduleLeadSummary(businessId, conversation.id);
+    }
 
     return { conversationId: conversation.id, customerId: conversation.customer_id };
   } catch (error: any) {
@@ -845,7 +844,8 @@ export async function storeOutgoingMessage(
       console.error('[CRM] Error emitting WebSocket / SSE events (message stored):', err);
     }
 
-    // Bot and staff replies belong in the lead summary too.
+    // A reply keeps the chat's open lead active; bot and staff replies belong in the lead summary too.
+    await touchLeadForChat(businessId, conversationId);
     await scheduleLeadSummary(businessId, conversationId);
 
     return result?.id;

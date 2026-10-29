@@ -7,16 +7,16 @@
  * - IndiaMART: buy-leads pulled with the business's CRM key (cron, at most every 5 minutes).
  * - Inbound webhook: anything that can POST JSON (JustDial or Facebook Lead Ads via Zapier/Make).
  *
- * The source is first touch: it is written once and never overwritten. Each new lead lands on the
- * pipeline (the source's stage, else the first open stage) with the source's labels and agent.
+ * The source is first touch: it is set when the lead opens and never overwritten. Each new lead lands
+ * on the pipeline (the source's stage, else the first open stage) with the source's labels and agent.
+ * Inbound messages open leads in lib/leads/inbound.ts; this file finds the link a message came from.
  * Business identity always comes from the link code, token or session — never the request body.
  */
 import { createHash, randomBytes } from 'crypto';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
 import { assignToAgent, broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
-import { ensureStages } from '@/lib/whatsapp/pipeline';
-import { openLeadForChat, setChatDeal } from '@/lib/leads/chat-deal';
+import { openLead } from '@/lib/leads/core';
 import { normalizeLeadPhone } from '@/lib/leads/phone';
 
 export { normalizeLeadPhone };
@@ -55,45 +55,6 @@ export interface Routing {
   labelIds?: string[];
 }
 
-// ---------------------------------------------------------------- routing a new lead
-
-/** Puts a new lead on the board and applies the source's labels and agent. Never throws. */
-async function routeLead(businessId: string, conversationId: string, routing: Routing): Promise<void> {
-  try {
-    const stages = await ensureStages(businessId);
-    const stage = (routing.stageId && stages.find((s) => s.id === routing.stageId)) || stages.find((s) => s.kind === 'open');
-    if (stage && !(await openLeadForChat(businessId, conversationId))) {
-      await setChatDeal(businessId, conversationId, { stageId: stage.id }, { source: 'auto' });
-    }
-    for (const labelId of routing.labelIds ?? []) {
-      await query(
-        `INSERT INTO whatsapp_conversation_label_assignments (conversation_id, label_id)
-         SELECT $1::uuid, l.id FROM whatsapp_conversation_labels l WHERE l.id = $2::uuid AND l.business_id = $3
-         ON CONFLICT (conversation_id, label_id) DO NOTHING`,
-        [conversationId, labelId, businessId],
-      );
-    }
-    if (routing.assignTo) await assignToAgent(businessId, conversationId, routing.assignTo);
-  } catch (err) {
-    console.warn('[lead-sources] routing failed:', err instanceof Error ? err.message : err);
-  }
-}
-
-/** Writes the source if the chat has none yet. True when this call set it. */
-async function setSourceOnce(
-  businessId: string,
-  conversationId: string,
-  source: LeadSource,
-  detail: Record<string, unknown>,
-): Promise<boolean> {
-  const res = await query(
-    `UPDATE whatsapp_conversations SET source = $3, source_detail = $4::jsonb, source_at = NOW()
-      WHERE id = $1::uuid AND business_id = $2 AND source IS NULL AND NOT COALESCE(is_group, false)`,
-    [conversationId, businessId, source, JSON.stringify(detail)],
-  );
-  return (res.rowCount ?? 0) > 0;
-}
-
 // ---------------------------------------------------------------- inbound attribution
 
 export interface AdReferral {
@@ -105,7 +66,14 @@ export interface AdReferral {
   ctwaClid: string | null;
 }
 
-/** A Click-to-WhatsApp ad (or boosted post) opened this chat. */
+/** An ad that opened a lead counts only if the lead opened this recently (with the ad's message). */
+const AD_CREDIT_MINUTES = 10;
+
+/**
+ * A Click-to-WhatsApp ad (or boosted post) brought this message. Runs after the message is stored:
+ * the chat's phone gets a lead (the open one, else a new one), and the ad becomes its source only when
+ * the lead has none and opened in the last few minutes, i.e. this message opened it.
+ */
 export async function applyAdReferral(businessId: string, conversationId: string, ref: AdReferral): Promise<void> {
   const detail = {
     ad_id: ref.sourceId,
@@ -114,9 +82,26 @@ export async function applyAdReferral(businessId: string, conversationId: string
     headline: ref.headline ? ref.headline.slice(0, 200) : null,
     ctwa_clid: ref.ctwaClid,
   };
-  if (await setSourceOnce(businessId, conversationId, 'ctwa_ad', detail)) {
-    await routeLead(businessId, conversationId, {});
-  }
+  const chat = await queryOne<{ from_number: string; name: string | null; is_group: boolean | null }>(
+    `SELECT from_number, NULLIF(whatsapp_display_name, '') AS name, is_group FROM whatsapp_conversations WHERE id = $1::uuid AND business_id = $2`,
+    [conversationId, businessId],
+  );
+  if (!chat || chat.is_group) return;
+  const { lead, created } = await openLead(businessId, {
+    phone: chat.from_number,
+    name: chat.name,
+    conversationId,
+    source: 'ctwa_ad',
+    sourceDetail: detail,
+    actor: { source: 'auto' },
+  });
+  if (created) return;
+  await query(
+    `UPDATE leads SET source = 'ctwa_ad', source_detail = $3::jsonb, source_at = NOW(), updated_at = NOW()
+      WHERE id = $1::uuid AND business_id = $2 AND source IS NULL
+        AND opened_at >= NOW() - ($4::int * INTERVAL '1 minute')`,
+    [lead.id, businessId, JSON.stringify(detail), AD_CREDIT_MINUTES],
+  );
 }
 
 export function extractRefCode(text: string | null | undefined): string | null {
@@ -124,23 +109,20 @@ export function extractRefCode(text: string | null | undefined): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-/** First message of a new chat: if it carries one of this business's link codes, credit that link. */
-export async function attributeNewChat(businessId: string, conversationId: string, firstText: string | null | undefined): Promise<void> {
-  const code = extractRefCode(firstText);
-  if (!code) return;
-  try {
-    const link = await queryOne<{ id: string; name: string; stage_id: string | null; assign_to: string | null; label_ids: string[] }>(
-      `SELECT id::text AS id, name, stage_id::text AS stage_id, assign_to::text AS assign_to, label_ids::text[] AS label_ids
-         FROM whatsapp_entry_links WHERE code = $1 AND business_id = $2`,
-      [code, businessId],
-    );
-    if (!link) return;
-    if (await setSourceOnce(businessId, conversationId, 'link', { link_id: link.id, name: link.name, code })) {
-      await routeLead(businessId, conversationId, { stageId: link.stage_id, assignTo: link.assign_to, labelIds: link.label_ids });
-    }
-  } catch (err) {
-    console.warn('[lead-sources] link attribution failed:', err instanceof Error ? err.message : err);
-  }
+/** The link (and its routing) whose code a message carries, if it is one of this business's links. */
+export async function linkRoutingForText(
+  businessId: string,
+  text: string | null | undefined,
+): Promise<{ linkId: string; name: string; code: string; stageId: string | null; ownerId: string | null; labelIds: string[] } | null> {
+  const code = extractRefCode(text);
+  if (!code) return null;
+  const link = await queryOne<{ id: string; name: string; stage_id: string | null; assign_to: string | null; label_ids: string[] }>(
+    `SELECT id::text AS id, name, stage_id::text AS stage_id, assign_to::text AS assign_to, label_ids::text[] AS label_ids
+       FROM whatsapp_entry_links WHERE code = $1 AND business_id = $2`,
+    [code, businessId],
+  );
+  if (!link) return null;
+  return { linkId: link.id, name: link.name, code, stageId: link.stage_id, ownerId: link.assign_to, labelIds: link.label_ids ?? [] };
 }
 
 // ---------------------------------------------------------------- direct chats
@@ -181,29 +163,6 @@ export async function isKnownNumber(businessId: string, phone: string): Promise<
     [businessId, last10],
   );
   return !!row?.known;
-}
-
-/**
- * First message of a new 1:1 chat that no tracked source claimed: a new number goes on the first open
- * stage, like a lead from any other source. Customers, suppliers, staff and the owner stay off the
- * board. Runs after link attribution, and routeLead never moves a chat that already has a stage.
- */
-export async function addNewChatToPipeline(businessId: string, conversationId: string, phone: string): Promise<boolean> {
-  try {
-    if (!(await getDirectChatSetting(businessId)).enabled) return false;
-    if (await isKnownNumber(businessId, phone)) return false;
-    const chat = await queryOne<{ stage_id: string | null; customer_id: string | null; is_group: boolean | null }>(
-      `SELECT stage_id::text AS stage_id, customer_id::text AS customer_id, is_group FROM whatsapp_conversations
-        WHERE id = $1::uuid AND business_id = $2`,
-      [conversationId, businessId],
-    );
-    if (!chat || chat.stage_id || chat.customer_id || chat.is_group) return false;
-    await routeLead(businessId, conversationId, {});
-    return true;
-  } catch (err) {
-    console.warn('[lead-sources] direct chat routing failed:', err instanceof Error ? err.message : err);
-    return false;
-  }
 }
 
 // ---------------------------------------------------------------- entry links
@@ -296,9 +255,9 @@ export async function listEntryLinks(businessId: string, includeArchived = false
        FROM whatsapp_entry_links l
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS chats, COUNT(*) FILTER (WHERE s.kind = 'won') AS won
-           FROM whatsapp_conversations c
-           LEFT JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id
-          WHERE c.business_id = l.business_id AND c.source = 'link' AND c.source_detail->>'link_id' = l.id::text
+           FROM leads ld
+           LEFT JOIN whatsapp_pipeline_stages s ON s.id = ld.stage_id
+          WHERE ld.business_id = l.business_id AND ld.source = 'link' AND ld.source_detail->>'link_id' = l.id::text
        ) stats ON true
       WHERE l.business_id = $1 AND ($2 OR NOT l.archived)
       ORDER BY l.archived, l.created_at DESC`,
@@ -592,7 +551,6 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
   if (!conv) throw new Error('Could not create a chat for the lead');
 
   await query(`UPDATE whatsapp_lead_imports SET conversation_id = $2::uuid WHERE id = $1::uuid`, [claim.id, conv.id]);
-  await setSourceOnce(src.business_id, conv.id, source, { lead_source_id: src.id, name: src.name, ...lead.detail, message: lead.message });
   // The enquiry text, visible in the contact panel's custom fields.
   await query(
     `INSERT INTO whatsapp_conversation_custom_fields (conversation_id, business_id, field_key, field_value)
@@ -600,7 +558,23 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
      ON CONFLICT (conversation_id, field_key) DO UPDATE SET field_value = EXCLUDED.field_value`,
     [conv.id, src.business_id, `${source}_enquiry`, summary],
   ).catch(() => undefined);
-  await routeLead(src.business_id, conv.id, { stageId: src.stage_id, assignTo: src.assign_to, labelIds: src.label_ids });
+  // Opens the lead (or joins the open one) on the source's stage; Task 4 moves imports onto leads fully.
+  try {
+    const owner = src.assign_to && (await isEligibleInboxAgent(src.business_id, src.assign_to)) ? src.assign_to : null;
+    await openLead(src.business_id, {
+      phone: lead.phone,
+      name: lead.name,
+      conversationId: conv.id,
+      source,
+      sourceDetail: { lead_source_id: src.id, name: src.name, ...lead.detail, message: lead.message, label_ids: src.label_ids ?? [] },
+      stageId: src.stage_id,
+      ownerId: owner,
+      actor: { source: 'auto' },
+    });
+    if (owner) await assignToAgent(src.business_id, conv.id, owner);
+  } catch (err) {
+    console.warn('[lead-sources] routing failed:', err instanceof Error ? err.message : err);
+  }
   await broadcastOwnership(src.business_id, conv.id);
   return { conversationId: conv.id, created };
 }
