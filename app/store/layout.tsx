@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
-import { cache } from 'react';
 import { Fraunces, Inter, Nunito, Playfair_Display, Outfit, Cormorant_Garamond, Source_Serif_4 } from 'next/font/google';
 import { StoreApp } from '@/components/store/StoreApp';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { currentStore } from '@/lib/store/current-store';
 import { storeAccent, storeIconUrl } from '@/lib/store/pwa';
 
 const inter = Inter({
@@ -49,11 +48,6 @@ const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
   variable: '--font-store-source-serif',
   display: 'swap',
-});
-
-const currentStore = cache(async () => {
-  const subdomain = extractStoreSubdomain(headers().get('host'));
-  return subdomain ? resolveStoreBySubdomain(subdomain) : null;
 });
 
 export async function generateMetadata(): Promise<Metadata> {
