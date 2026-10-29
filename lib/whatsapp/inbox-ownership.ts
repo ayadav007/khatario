@@ -285,12 +285,14 @@ export async function notifyInboxUser(
   title: string,
   message: string,
   conversationId: string,
+  /** 'whatsapp_lead' when `conversationId` is really a lead id (a lead with no chat). */
+  referenceType: 'whatsapp_conversation' | 'whatsapp_lead' = 'whatsapp_conversation',
 ): Promise<void> {
   const ins = await queryOne<{ id: string }>(
     `INSERT INTO notifications (business_id, user_id, type, title, message, reference_type, reference_id, created_at)
-     VALUES ($1, $2, 'general', $3, $4, 'whatsapp_conversation', $5, CURRENT_TIMESTAMP)
+     VALUES ($1, $2, 'general', $3, $4, $6, $5, CURRENT_TIMESTAMP)
      RETURNING id`,
-    [businessId, userId, title, message, conversationId],
+    [businessId, userId, title, message, conversationId, referenceType],
   );
   const { getRedisConnection } = await import('@/lib/queue/redis');
   const redis = getRedisConnection();

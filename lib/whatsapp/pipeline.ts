@@ -3,7 +3,9 @@
  * (lib/leads/core.ts writes them). Business identity always comes from the session.
  */
 import { query, queryOne, queryRows } from '@/lib/db';
-import { visibilityClause, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
+import type { InboxViewer } from '@/lib/whatsapp/inbox-ownership';
+// visibility.ts imports neither lib/leads/core nor chat-deal, so this does not close a cycle with core.
+import { leadVisibilityClause } from '@/lib/leads/visibility';
 
 export const STAGE_KINDS = ['open', 'won', 'lost'] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
@@ -191,16 +193,16 @@ export async function reorderStages(businessId: string, order: unknown): Promise
   return listStages(businessId);
 }
 
-/** Deletes a stage after moving its chats to `moveToId` (or off the board when null). */
+/** Deletes a stage after moving its leads to `moveToId` (or off the board when null). */
 export async function deleteStage(businessId: string, stageId: string, moveToId: string | null): Promise<void> {
   const stages = await listStages(businessId);
   if (!stages.some((s) => s.id === stageId)) throw new PipelineError('Stage not found', 404, 'NOT_FOUND');
   if (stages.length <= 1) throw new PipelineError('Keep at least one stage', 400, 'LAST_STAGE');
   if (moveToId && (moveToId === stageId || !stages.some((s) => s.id === moveToId))) {
-    throw new PipelineError('Pick another stage to move these chats to', 400, 'BAD_TARGET');
+    throw new PipelineError('Pick another stage to move these leads to', 400, 'BAD_TARGET');
   }
   await query(
-    `UPDATE whatsapp_conversations SET stage_id = $3::uuid, stage_changed_at = NOW()
+    `UPDATE leads SET stage_id = $3::uuid, stage_changed_at = NOW(), updated_at = NOW()
       WHERE business_id = $1 AND stage_id = $2::uuid`,
     [businessId, stageId, moveToId],
   );
@@ -208,7 +210,11 @@ export async function deleteStage(businessId: string, stageId: string, moveToId:
 }
 
 export interface BoardCard {
+  /** The lead's id. */
   id: string;
+  /** The lead's chat, if it has one. */
+  conversation_id: string | null;
+  lead_type: 'new' | 'existing';
   stage_id: string;
   name: string;
   phone: string;
@@ -224,7 +230,7 @@ export interface BoardCard {
   lead_score: number | null;
   /** AI summary of the chat, rewritten a few minutes after it goes quiet. */
   summary: string | null;
-  /** The number is already one of the business's customers. */
+  /** The lead is linked to one of the business's customers. */
   is_customer: boolean;
   next_followup_at: string | null;
   source: string | null;
@@ -238,7 +244,7 @@ export interface BoardColumn extends PipelineStage {
 
 export interface BoardFilters {
   ownerId?: string | null;
-  /** A lead source key, or 'direct' for chats with none. */
+  /** A lead source key, or 'direct' for leads with none. */
   source?: string | null;
   labelId?: string | null;
   search?: string | null;
@@ -254,25 +260,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {}): Promise<BoardColumn[]> {
   const stages = await ensureStages(viewer.businessId);
   const params: unknown[] = [viewer.businessId];
-  const where: string[] = [
-    'c.business_id = $1',
-    'c.stage_id IS NOT NULL',
-    'NOT COALESCE(c.is_group, false)',
-    `COALESCE(c.status, 'active') <> 'blocked'`,
-  ];
-  const vis = visibilityClause(viewer, 'c', params.length + 1);
+  const where: string[] = ['l.business_id = $1', 'l.stage_id IS NOT NULL', `COALESCE(c.status, 'active') <> 'blocked'`];
+  const vis = leadVisibilityClause(viewer, 'l', 'c', params.length + 1);
   where.push(vis.sql);
   params.push(...vis.params);
 
   if (filters.ownerId && UUID_RE.test(filters.ownerId)) {
     params.push(filters.ownerId);
-    where.push(`(c.inbox_state = 'intervened' AND c.assigned_to = $${params.length}::uuid)`);
+    where.push(`l.owner_id = $${params.length}::uuid`);
   }
   if (filters.source === 'direct') {
-    where.push('c.source IS NULL');
+    where.push('l.source IS NULL');
   } else if (filters.source && /^[a-z_]{2,16}$/.test(filters.source)) {
     params.push(filters.source);
-    where.push(`c.source = $${params.length}`);
+    where.push(`l.source = $${params.length}`);
   }
   if (filters.labelId && UUID_RE.test(filters.labelId)) {
     params.push(filters.labelId);
@@ -284,24 +285,27 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
   if (search) {
     params.push(`%${search.replace(/[%_\\]/g, (m) => `\\${m}`)}%`);
     const p = `$${params.length}`;
-    where.push(`(c.whatsapp_display_name ILIKE ${p} OR c.from_number ILIKE ${p} OR cust.name ILIKE ${p})`);
+    where.push(
+      `(l.contact_name ILIKE ${p} OR c.whatsapp_display_name ILIKE ${p} OR l.contact_phone ILIKE ${p} OR cust.name ILIKE ${p})`,
+    );
   }
   const closedDays = Math.min(Math.max(Math.floor(filters.closedDays ?? 90), 1), 3650);
   params.push(closedDays);
-  where.push(`(s.kind = 'open' OR c.stage_changed_at >= NOW() - ($${params.length}::int * INTERVAL '1 day'))`);
+  where.push(`(s.kind = 'open' OR l.stage_changed_at >= NOW() - ($${params.length}::int * INTERVAL '1 day'))`);
 
   const base = `
-      FROM whatsapp_conversations c
-      JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id AND s.business_id = c.business_id
-      LEFT JOIN customers cust ON cust.id = c.customer_id AND cust.business_id = c.business_id
-      LEFT JOIN users u ON u.id = c.assigned_to
-      LEFT JOIN whatsapp_lead_profiles lp ON lp.conversation_id = c.id AND lp.business_id = c.business_id
+      FROM leads l
+      JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id AND s.business_id = l.business_id
+      LEFT JOIN whatsapp_conversations c ON c.id = l.conversation_id AND c.business_id = l.business_id
+      LEFT JOIN customers cust ON cust.id = l.customer_id AND cust.business_id = l.business_id
+      LEFT JOIN users u ON u.id = l.owner_id
+      LEFT JOIN whatsapp_lead_profiles lp ON lp.conversation_id = c.id AND lp.business_id = l.business_id
      WHERE ${where.join(' AND ')}`;
 
   const totals = await queryRows<{ stage_id: string; count: number; total_value: number }>(
-    `SELECT c.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(c.deal_value), 0)::float8 AS total_value
+    `SELECT l.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(l.deal_value), 0)::float8 AS total_value
      ${base}
-     GROUP BY c.stage_id`,
+     GROUP BY l.stage_id`,
     params,
   );
 
@@ -309,7 +313,7 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
   let stageFilter = '';
   if (filters.stageId && UUID_RE.test(filters.stageId)) {
     cardParams.push(filters.stageId);
-    stageFilter = `AND c.stage_id = $${cardParams.length}::uuid`;
+    stageFilter = `AND l.stage_id = $${cardParams.length}::uuid`;
   }
   const offset = Math.max(Math.floor(filters.offset ?? 0), 0);
   cardParams.push(offset, BOARD_CARDS_PER_STAGE);
@@ -318,17 +322,18 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
 
   const cards = await queryRows<BoardCard>(
     `SELECT * FROM (
-       SELECT c.id::text AS id, c.stage_id::text AS stage_id,
-              COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), c.from_number) AS name,
-              c.from_number AS phone, c.profile_picture_url, c.last_message_text, c.last_message_at,
-              c.deal_value::float8 AS deal_value, to_char(c.expected_close_on, 'YYYY-MM-DD') AS expected_close_on,
-              c.stage_changed_at,
-              CASE WHEN c.inbox_state = 'intervened' THEN c.assigned_to::text END AS owner_id,
-              CASE WHEN c.inbox_state = 'intervened' THEN u.name END AS owner_name,
+       SELECT l.id::text AS id, l.conversation_id::text AS conversation_id, l.lead_type, l.stage_id::text AS stage_id,
+              COALESCE(NULLIF(cust.name, ''), NULLIF(l.contact_name, ''), NULLIF(c.whatsapp_display_name, ''), l.contact_phone) AS name,
+              l.contact_phone AS phone, c.profile_picture_url, c.last_message_text, c.last_message_at,
+              l.deal_value::float8 AS deal_value, to_char(l.expected_close_on, 'YYYY-MM-DD') AS expected_close_on,
+              l.stage_changed_at,
+              l.owner_id::text AS owner_id, u.name AS owner_name,
               lp.lead_status AS temperature, lp.lead_score, NULLIF(lp.ai_summary, '') AS summary,
-              (c.customer_id IS NOT NULL) AS is_customer, c.source,
-              (SELECT MIN(f.due_at) FROM whatsapp_followups f WHERE f.conversation_id = c.id AND f.status = 'pending') AS next_followup_at,
-              ROW_NUMBER() OVER (PARTITION BY c.stage_id ORDER BY c.stage_changed_at DESC NULLS LAST, c.id) AS rn
+              (l.customer_id IS NOT NULL) AS is_customer, l.source,
+              (SELECT MIN(f.due_at) FROM whatsapp_followups f
+                WHERE f.status = 'pending'
+                  AND (f.lead_id = l.id OR (f.lead_id IS NULL AND f.conversation_id = l.conversation_id))) AS next_followup_at,
+              ROW_NUMBER() OVER (PARTITION BY l.stage_id ORDER BY l.stage_changed_at DESC NULLS LAST, l.id) AS rn
        ${base} ${stageFilter}
      ) ranked
      WHERE rn > ${pOffset} AND rn <= ${pOffset} + ${pLimit}
@@ -353,7 +358,7 @@ export interface PipelineSummary {
   win_rate: number | null;
   by_agent: Array<{ agent_id: string; agent_name: string; open: number; open_value: number; won: number; won_value: number }>;
   lost_reasons: Array<{ reason: string; count: number }>;
-  /** Chats that started in the window, by first-touch source ('direct' = none). */
+  /** Leads opened in the window, by first-touch source ('direct' = none). */
   by_source: Array<{ source: string; leads: number; on_board: number; won: number; won_value: number }>;
 }
 
@@ -361,27 +366,27 @@ export interface PipelineSummary {
 export async function loadPipelineSummary(businessId: string, days = 30): Promise<PipelineSummary> {
   const span = Math.min(Math.max(Math.floor(days), 1), 365);
   const stages = await ensureStages(businessId);
-  const from = `FROM whatsapp_conversations c
-      JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id AND s.business_id = c.business_id`;
-  const scope = `WHERE c.business_id = $1 AND NOT COALESCE(c.is_group, false)`;
+  const from = `FROM leads l
+      JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id AND s.business_id = l.business_id`;
+  const scope = `WHERE l.business_id = $1`;
   const base = `${from} ${scope}`;
-  const closedIn = `c.stage_changed_at >= NOW() - ($2::int * INTERVAL '1 day')`;
+  const closedIn = `l.stage_changed_at >= NOW() - ($2::int * INTERVAL '1 day')`;
 
   const [perStage, agents, reasons, sources] = await Promise.all([
     queryRows<{ stage_id: string; count: number; total_value: number }>(
-      `SELECT c.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(c.deal_value), 0)::float8 AS total_value
+      `SELECT l.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(l.deal_value), 0)::float8 AS total_value
        ${base} AND (s.kind = 'open' OR ${closedIn})
-       GROUP BY c.stage_id`,
+       GROUP BY l.stage_id`,
       [businessId, span],
     ),
     queryRows<PipelineSummary['by_agent'][number]>(
       `SELECT u.id::text AS agent_id, u.name AS agent_name,
               COUNT(*) FILTER (WHERE s.kind = 'open')::int AS open,
-              COALESCE(SUM(c.deal_value) FILTER (WHERE s.kind = 'open'), 0)::float8 AS open_value,
+              COALESCE(SUM(l.deal_value) FILTER (WHERE s.kind = 'open'), 0)::float8 AS open_value,
               COUNT(*) FILTER (WHERE s.kind = 'won' AND ${closedIn})::int AS won,
-              COALESCE(SUM(c.deal_value) FILTER (WHERE s.kind = 'won' AND ${closedIn}), 0)::float8 AS won_value
+              COALESCE(SUM(l.deal_value) FILTER (WHERE s.kind = 'won' AND ${closedIn}), 0)::float8 AS won_value
        ${from}
-       JOIN users u ON u.id = c.assigned_to
+       JOIN users u ON u.id = l.owner_id
        ${scope}
        GROUP BY u.id, u.name
        HAVING COUNT(*) FILTER (WHERE s.kind = 'open' OR ${closedIn}) > 0
@@ -390,20 +395,20 @@ export async function loadPipelineSummary(businessId: string, days = 30): Promis
       [businessId, span],
     ),
     queryRows<{ reason: string; count: number }>(
-      `SELECT lower(trim(c.lost_reason)) AS reason, COUNT(*)::int AS count
-       ${base} AND s.kind = 'lost' AND ${closedIn} AND NULLIF(trim(c.lost_reason), '') IS NOT NULL
+      `SELECT lower(trim(l.lost_reason)) AS reason, COUNT(*)::int AS count
+       ${base} AND s.kind = 'lost' AND ${closedIn} AND NULLIF(trim(l.lost_reason), '') IS NOT NULL
        GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
       [businessId, span],
     ),
     queryRows<PipelineSummary['by_source'][number]>(
-      `SELECT COALESCE(c.source, 'direct') AS source, COUNT(*)::int AS leads,
-              COUNT(c.stage_id)::int AS on_board,
+      `SELECT COALESCE(l.source, 'direct') AS source, COUNT(*)::int AS leads,
+              COUNT(l.stage_id)::int AS on_board,
               COUNT(*) FILTER (WHERE s.kind = 'won')::int AS won,
-              COALESCE(SUM(c.deal_value) FILTER (WHERE s.kind = 'won'), 0)::float8 AS won_value
-         FROM whatsapp_conversations c
-         LEFT JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id AND s.business_id = c.business_id
-        WHERE c.business_id = $1 AND NOT COALESCE(c.is_group, false)
-          AND COALESCE(c.source_at, c.created_at) >= NOW() - ($2::int * INTERVAL '1 day')
+              COALESCE(SUM(l.deal_value) FILTER (WHERE s.kind = 'won'), 0)::float8 AS won_value
+         FROM leads l
+         LEFT JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id AND s.business_id = l.business_id
+        WHERE l.business_id = $1
+          AND l.opened_at >= NOW() - ($2::int * INTERVAL '1 day')
         GROUP BY 1
         ORDER BY leads DESC`,
       [businessId, span],

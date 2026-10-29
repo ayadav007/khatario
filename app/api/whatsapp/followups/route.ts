@@ -1,10 +1,11 @@
 export const dynamic = 'force-dynamic';
 
 /**
- * GET  /api/whatsapp/followups?when=due|upcoming|any&due_before=<ISO end of today>&conversation_id=&agent=&all=1
+ * GET  /api/whatsapp/followups?when=due|upcoming|any&due_before=<ISO end of today>&conversation_id=&lead_id=&agent=&all=1
  *      Pending reminders plus { overdue, today } counts for the inbox badge.
  *      Agents get their own; supervisors may pass agent=<id> or all=1.
- * POST /api/whatsapp/followups { conversation_id, due_at, note?, assigned_to?, cancel_on_reply? }
+ * POST /api/whatsapp/followups { conversation_id | lead_id, due_at, note?, assigned_to?, cancel_on_reply? }
+ *      A lead with no chat takes lead_id; a chat takes conversation_id.
  */
 
 import { NextResponse } from 'next/server';
@@ -12,6 +13,7 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 import { getInboxViewer } from '@/lib/whatsapp/inbox-ownership';
 import { createFollowup, FollowupError, listFollowups } from '@/lib/whatsapp/followups';
+import { canViewLead } from '@/lib/leads/visibility';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,12 +28,19 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: 'read' }, async ({ 
       if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
       conversationId = found.id;
     }
+    let leadId: string | null = null;
+    const rawLead = sp.get('lead_id');
+    if (rawLead) {
+      if (!(await canViewLead(viewer, rawLead))) return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+      leadId = rawLead;
+    }
     const when = sp.get('when');
     const agent = sp.get('agent');
     const result = await listFollowups(viewer, {
       when: when === 'due' || when === 'upcoming' ? when : 'any',
       dueBefore: sp.get('due_before'),
       conversationId,
+      leadId,
       agentId: agent && UUID_RE.test(agent) ? agent : null,
       all: sp.get('all') === '1',
     });
@@ -47,13 +56,27 @@ export const POST = withWhatsAppPremiumApi(
   async ({ businessId, userId, body }) => {
     try {
       const b = (body ?? {}) as Record<string, unknown>;
-      if (typeof b.conversation_id !== 'string' || !b.conversation_id) {
-        return NextResponse.json({ error: 'conversation_id is required' }, { status: 400 });
+      const hasChat = typeof b.conversation_id === 'string' && b.conversation_id;
+      const hasLead = typeof b.lead_id === 'string' && b.lead_id;
+      if (!hasChat && !hasLead) {
+        return NextResponse.json({ error: 'conversation_id or lead_id is required' }, { status: 400 });
       }
-      const found = await resolveVisibleConversation({ businessId, userId }, b.conversation_id);
-      if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
-      const followup = await createFollowup(found.viewer, {
-        conversationId: found.id,
+      let target: { conversationId: string } | { leadId: string };
+      let viewer;
+      if (hasChat) {
+        const found = await resolveVisibleConversation({ businessId, userId }, b.conversation_id as string);
+        if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+        target = { conversationId: found.id };
+        viewer = found.viewer;
+      } else {
+        viewer = await getInboxViewer({ businessId, userId });
+        if (!(await canViewLead(viewer, b.lead_id as string))) {
+          return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+        }
+        target = { leadId: b.lead_id as string };
+      }
+      const followup = await createFollowup(viewer, {
+        ...target,
         dueAt: b.due_at,
         note: b.note,
         assignedTo: b.assigned_to,

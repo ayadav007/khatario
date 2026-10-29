@@ -21,6 +21,8 @@ describe('notificationHref', () => {
     expect(notificationHref({ type: 'general', reference_type: 'ai_agent' })).toBe('/settings/ai-agent');
     expect(notificationHref({ type: 'general', reference_type: 'whatsapp_session' })).toBe('/settings/whatsapp');
     expect(notificationHref({ type: 'general', reference_type: 'khata_customer', reference_id: id })).toBe(`/customers/${id}`);
+    expect(notificationHref({ type: 'general', reference_type: 'whatsapp_conversation', reference_id: id })).toBe(`/whatsapp/conversations?c=${id}`);
+    expect(notificationHref({ type: 'general', reference_type: 'whatsapp_lead', reference_id: id })).toBe(`/whatsapp/leads?lead=${id}`);
   });
 
   it('prefers an explicit action URL', () => {

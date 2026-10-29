@@ -39,6 +39,7 @@ import {
   updateStage,
 } from '@/lib/whatsapp/pipeline';
 import { setChatDeal, setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
+import { patchLead } from '@/lib/leads/core';
 import {
   createFollowup,
   FollowupError,
@@ -197,13 +198,16 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const stages = await ensureStages(B);
     const fu = stages.find((s) => s.name === 'Follow up')!;
     const won = stages.find((s) => s.kind === 'won')!;
-    const mine = await newChat({ state: 'intervened', owner: ASHA });
-    const ravis = await newChat({ state: 'intervened', owner: RAVI });
-    const oldWin = await newChat();
-    await setChatDeal(B, mine, { stageId: fu.id, dealValue: 1000 }, { source: 'flow' });
-    await setChatDeal(B, ravis, { stageId: fu.id, dealValue: 2000 }, { source: 'flow' });
-    await setChatDeal(B, oldWin, { stageId: won.id, dealValue: 500 }, { source: 'flow' });
-    await query(`UPDATE whatsapp_conversations SET stage_changed_at = NOW() - INTERVAL '200 days' WHERE id = $1`, [oldWin]);
+    const mineChat = await newChat({ state: 'intervened', owner: ASHA });
+    const ravisChat = await newChat({ state: 'intervened', owner: RAVI });
+    const oldWinChat = await newChat();
+    // Board cards are leads; the salesperson is the lead's owner, set here to match who holds the chat.
+    const mine = (await setChatDeal(B, mineChat, { stageId: fu.id, dealValue: 1000 }, { source: 'flow' })).lead_id!;
+    const ravis = (await setChatDeal(B, ravisChat, { stageId: fu.id, dealValue: 2000 }, { source: 'flow' })).lead_id!;
+    const oldWin = (await setChatDeal(B, oldWinChat, { stageId: won.id, dealValue: 500 }, { source: 'flow' })).lead_id!;
+    await patchLead(B, mine, { ownerId: ASHA }, { source: 'flow' });
+    await patchLead(B, ravis, { ownerId: RAVI }, { source: 'flow' });
+    await query(`UPDATE leads SET stage_changed_at = NOW() - INTERVAL '200 days' WHERE id = $1`, [oldWin]);
 
     const asha = await loadBoard(v(ASHA));
     const ashaFu = asha.find((c) => c.id === fu.id)!;
@@ -222,7 +226,7 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     expect(byRavi.find((c) => c.id === fu.id)!.cards.map((c) => c.id)).toEqual([ravis]);
   });
 
-  test('stage admin: open stages go before won/lost, reorder needs every stage, delete moves chats', async () => {
+  test('stage admin: open stages go before won/lost, reorder needs every stage, delete moves leads', async () => {
     const quoted = await createStage(B, { name: 'Quoted', color: 'teal' });
     let stages = await ensureStages(B);
     const names = stages.map((s) => s.name);
@@ -233,11 +237,11 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     expect(reversed[0].id).toBe(stages[stages.length - 1].id);
 
     const c = await newChat();
-    await setChatDeal(B, c, { stageId: quoted.id }, { source: 'flow' });
+    const quotedLead = (await setChatDeal(B, c, { stageId: quoted.id }, { source: 'flow' })).lead_id!;
     const target = stages.find((s) => s.name === 'Interested')!;
     expect(await code(deleteStage(B, quoted.id, quoted.id))).toBe('BAD_TARGET');
     await deleteStage(B, quoted.id, target.id);
-    const row = await queryOne<{ stage_id: string }>(`SELECT stage_id::text AS stage_id FROM whatsapp_conversations WHERE id = $1`, [c]);
+    const row = await queryOne<{ stage_id: string }>(`SELECT stage_id::text AS stage_id FROM leads WHERE id = $1`, [quotedLead]);
     expect(row?.stage_id).toBe(target.id);
     stages = await ensureStages(B);
     expect(stages.some((s) => s.id === quoted.id)).toBe(false);
@@ -333,7 +337,8 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const lost = stages.find((s) => s.kind === 'lost')!;
     const w = await newChat({ state: 'intervened', owner: RAVI });
     const l = await newChat();
-    await setChatDeal(B, w, { stageId: won.id, dealValue: 7000 }, { source: 'flow' });
+    const wonLead = (await setChatDeal(B, w, { stageId: won.id, dealValue: 7000 }, { source: 'flow' })).lead_id!;
+    await patchLead(B, wonLead, { ownerId: RAVI }, { source: 'flow' });
     await setChatDeal(B, l, { stageId: lost.id, lostReason: 'Too costly' }, { source: 'flow' });
     const sum = await loadPipelineSummary(B, 30);
     expect(sum.won.count).toBeGreaterThanOrEqual(2);

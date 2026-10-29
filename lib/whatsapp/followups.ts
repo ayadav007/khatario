@@ -1,10 +1,14 @@
 /**
- * Follow-up reminders on Connect chats ("remind me tomorrow at 10").
+ * Follow-up reminders on Connect chats and leads ("remind me tomorrow at 10"); a lead with no chat
+ * can have them too.
  * Agents set and see their own; supervisors can set one for any inbox agent and see everyone's.
  * The cron in app/api/cron/whatsapp-followups notifies the agent when one falls due.
  */
 import { query, queryOne, queryRows } from '@/lib/db';
 import { isEligibleInboxAgent, notifyInboxUser, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
+// chat-deal and core import pipeline and inbox-ownership, never this file.
+import { openLeadForChat } from '@/lib/leads/chat-deal';
+import { loadLead } from '@/lib/leads/core';
 
 const MAX_NOTE = 500;
 const MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
@@ -15,7 +19,9 @@ export type FollowupStatus = 'pending' | 'done' | 'cancelled';
 
 export interface FollowupRow {
   id: string;
-  conversation_id: string;
+  /** Null for a reminder on a lead that has no chat. */
+  conversation_id: string | null;
+  lead_id: string | null;
   assigned_to: string;
   assigned_name: string | null;
   created_by: string | null;
@@ -58,14 +64,16 @@ export function dueFollowupSql(alias: string, userParam: string, beforeParam: st
 }
 
 const ROW_SELECT = `
-  SELECT f.id::text AS id, f.conversation_id::text AS conversation_id, f.assigned_to::text AS assigned_to,
+  SELECT f.id::text AS id, f.conversation_id::text AS conversation_id, f.lead_id::text AS lead_id,
+         f.assigned_to::text AS assigned_to,
          au.name AS assigned_name, f.created_by::text AS created_by, f.due_at, f.note, f.status,
          f.cancel_on_reply, f.notified_at, f.completed_at,
-         COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), c.from_number) AS contact_name,
-         c.from_number AS contact_phone
+         COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), NULLIF(ld.contact_name, ''), c.from_number, ld.contact_phone) AS contact_name,
+         COALESCE(c.from_number, ld.contact_phone) AS contact_phone
     FROM whatsapp_followups f
-    JOIN whatsapp_conversations c ON c.id = f.conversation_id AND c.business_id = f.business_id
-    LEFT JOIN customers cust ON cust.id = c.customer_id AND cust.business_id = c.business_id
+    LEFT JOIN whatsapp_conversations c ON c.id = f.conversation_id AND c.business_id = f.business_id
+    LEFT JOIN leads ld ON ld.id = f.lead_id AND ld.business_id = f.business_id
+    LEFT JOIN customers cust ON cust.id = COALESCE(c.customer_id, ld.customer_id) AND cust.business_id = f.business_id
     LEFT JOIN users au ON au.id = f.assigned_to`;
 
 function parseDue(raw: unknown): Date {
@@ -87,11 +95,23 @@ async function loadRow(businessId: string, id: string): Promise<FollowupRow | nu
   return queryOne<FollowupRow>(`${ROW_SELECT} WHERE f.id = $1::uuid AND f.business_id = $2`, [id, businessId]);
 }
 
-/** The caller has already checked `conversationId` is a chat this viewer can see. */
+/**
+ * Sets a reminder on a chat or on a lead. The caller has already checked the chat or lead is visible to
+ * this viewer. With a chat the reminder also points at the chat's open lead (when it has one); with only
+ * a lead there is no chat to reply in, so cancel-on-reply is switched off.
+ */
 export async function createFollowup(
   viewer: InboxViewer,
-  input: { conversationId: string; dueAt: unknown; note?: unknown; assignedTo?: unknown; cancelOnReply?: unknown },
+  input: {
+    conversationId?: string | null;
+    leadId?: string | null;
+    dueAt: unknown;
+    note?: unknown;
+    assignedTo?: unknown;
+    cancelOnReply?: unknown;
+  },
 ): Promise<FollowupRow> {
+  if (!input.conversationId && !input.leadId) throw new FollowupError('Pick a chat or a lead', 400, 'TARGET_REQUIRED');
   const dueAt = parseDue(input.dueAt);
   const note = cleanNote(input.note);
   let assignee = viewer.userId;
@@ -102,11 +122,23 @@ export async function createFollowup(
     }
     assignee = input.assignedTo;
   }
+  let conversationId: string | null = null;
+  let leadId: string | null = null;
+  let cancelOnReply = false;
+  if (input.conversationId) {
+    conversationId = input.conversationId;
+    leadId = (await openLeadForChat(viewer.businessId, conversationId))?.id ?? null;
+    cancelOnReply = input.cancelOnReply === true;
+  } else {
+    const lead = await loadLead(viewer.businessId, input.leadId!);
+    if (!lead) throw new FollowupError('Lead not found', 404, 'NOT_FOUND');
+    leadId = lead.id;
+  }
   const row = await queryOne<{ id: string }>(
-    `INSERT INTO whatsapp_followups (business_id, conversation_id, assigned_to, created_by, due_at, note, cancel_on_reply)
-     VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7)
+    `INSERT INTO whatsapp_followups (business_id, conversation_id, lead_id, assigned_to, created_by, due_at, note, cancel_on_reply)
+     VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8)
      RETURNING id::text AS id`,
-    [viewer.businessId, input.conversationId, assignee, viewer.userId, dueAt.toISOString(), note, input.cancelOnReply === true],
+    [viewer.businessId, conversationId, leadId, assignee, viewer.userId, dueAt.toISOString(), note, cancelOnReply],
   );
   return (await loadRow(viewer.businessId, row!.id))!;
 }
@@ -116,6 +148,7 @@ export interface FollowupListQuery {
   agentId?: string | null;
   all?: boolean;
   conversationId?: string | null;
+  leadId?: string | null;
   /** 'due' = overdue plus everything up to `dueBefore`; 'upcoming' = after now. */
   when?: 'due' | 'upcoming' | 'any';
   /** End of the viewer's today, from the browser (so "today" follows their clock). */
@@ -159,6 +192,10 @@ export async function listFollowups(
   if (q.conversationId) {
     params.push(q.conversationId);
     where.push(`f.conversation_id = $${params.length}::uuid`);
+  }
+  if (q.leadId) {
+    params.push(q.leadId);
+    where.push(`f.lead_id = $${params.length}::uuid`);
   }
   const eod = endOfToday(q.dueBefore);
   if (q.when === 'due') {
@@ -246,7 +283,8 @@ export async function runDueFollowupReminders(limit = 200): Promise<FollowupRunR
   const due = await queryRows<{
     id: string;
     business_id: string;
-    conversation_id: string;
+    conversation_id: string | null;
+    lead_id: string | null;
     assigned_to: string;
     note: string | null;
     contact: string;
@@ -261,21 +299,26 @@ export async function runDueFollowupReminders(limit = 200): Promise<FollowupRunR
            LIMIT $1
            FOR UPDATE OF f2 SKIP LOCKED
         )
-        RETURNING f.id, f.business_id, f.conversation_id, f.assigned_to, f.note
+        RETURNING f.id, f.business_id, f.conversation_id, f.lead_id, f.assigned_to, f.note
      )
      SELECT cl.id::text AS id, cl.business_id::text AS business_id, cl.conversation_id::text AS conversation_id,
-            cl.assigned_to::text AS assigned_to, cl.note,
-            COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), c.from_number) AS contact
+            cl.lead_id::text AS lead_id, cl.assigned_to::text AS assigned_to, cl.note,
+            COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), NULLIF(ld.contact_name, ''), c.from_number, ld.contact_phone) AS contact
        FROM claimed cl
-       JOIN whatsapp_conversations c ON c.id = cl.conversation_id
-       LEFT JOIN customers cust ON cust.id = c.customer_id AND cust.business_id = c.business_id`,
+       LEFT JOIN whatsapp_conversations c ON c.id = cl.conversation_id
+       LEFT JOIN leads ld ON ld.id = cl.lead_id
+       LEFT JOIN customers cust ON cust.id = COALESCE(c.customer_id, ld.customer_id) AND cust.business_id = cl.business_id`,
     [limit],
   );
   let notified = 0;
   for (const r of due) {
     try {
       const message = r.note ? `${r.contact}: ${r.note}` : `Time to follow up with ${r.contact}.`;
-      await notifyInboxUser(r.business_id, r.assigned_to, 'WhatsApp follow-up due', message, r.conversation_id);
+      if (r.conversation_id) {
+        await notifyInboxUser(r.business_id, r.assigned_to, 'WhatsApp follow-up due', message, r.conversation_id);
+      } else if (r.lead_id) {
+        await notifyInboxUser(r.business_id, r.assigned_to, 'WhatsApp follow-up due', message, r.lead_id, 'whatsapp_lead');
+      }
       notified++;
     } catch (err) {
       console.warn('[followups] notify failed:', err instanceof Error ? err.message : err);

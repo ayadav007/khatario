@@ -47,5 +47,6 @@ export function notificationHref(n: NotificationRef): string | null {
   if (refType === 'khata_order') return '/settings/online-store/orders?khata=pending';
   if (type === 'gst_compliance') return '/reports/gst/compliance';
   if (refType === 'whatsapp_conversation' && id) return `/whatsapp/conversations?c=${id}`;
+  if (refType === 'whatsapp_lead' && id) return `/whatsapp/leads?lead=${id}`;
   return null;
 }
