@@ -8,7 +8,7 @@ const IFRAME_PREFIXES = [
   'https://www.google.com/maps/embed',
 ];
 
-const UNSAFE_STYLE_RE = /\|url\s*\(|expression\s*\(|@import|javascript:|behaviou?r\s*:|-moz-binding/i;
+const UNSAFE_STYLE_RE = /\\|url\s*\(|expression\s*\(|@import|javascript:|behaviou?r\s*:|-moz-binding/i;
 
 const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
