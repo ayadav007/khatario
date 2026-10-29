@@ -45,6 +45,19 @@ describe('sanitizeCustomHtml', () => {
     expect(sanitizeCustomHtml('<iframe src="https://www.youtube.com/watch?v=1"></iframe>')).not.toContain('<iframe');
   });
 
+  it('removes embeds that escape their path through dot segments or lookalike paths', () => {
+    for (const src of [
+      'https://www.youtube.com/embed/../../redirect?q=https://evil.com',
+      'https://www.google.com/maps/embed/../../url?q=https://evil.com',
+      'https://www.google.com/maps/embed/&#x2e;&#x2e;/&#x2e;&#x2e;/url?q=https://evil.com',
+      'https://www.youtube.com/embed/&#x2e;&#x2e;/&#x2e;&#x2e;/redirect?q=https://evil.com',
+      'https://www.google.com/maps/embedx',
+    ]) {
+      expect(sanitizeCustomHtml(`<iframe src="${src}"></iframe>`)).not.toContain('<iframe');
+    }
+    expect(sanitizeCustomHtml('<iframe src="https://www.youtube.com/embed/abc"></iframe>')).toContain('src="https://www.youtube.com/embed/abc"');
+  });
+
   it('removes foreign iframes entirely', () => {
     expect(sanitizeCustomHtml('<p>a</p><iframe src="https://evil.com"></iframe>')).toBe('<p>a</p>');
   });

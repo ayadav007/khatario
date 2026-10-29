@@ -2,11 +2,21 @@ import sanitizeHtml from 'sanitize-html';
 
 export const CUSTOM_HTML_MAX = 20000;
 
-const IFRAME_PREFIXES = [
-  'https://www.youtube.com/embed/',
-  'https://www.youtube-nocookie.com/embed/',
-  'https://www.google.com/maps/embed',
-];
+/** Returns the normalised embed URL, or '' when it is not an allowed embed. */
+function normaliseEmbedSrc(src: string): string {
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'https:' || url.port || url.username || url.password) return '';
+  const path = url.pathname;
+  const ok =
+    ((url.hostname === 'www.youtube.com' || url.hostname === 'www.youtube-nocookie.com') && path.startsWith('/embed/')) ||
+    (url.hostname === 'www.google.com' && (path === '/maps/embed' || path.startsWith('/maps/embed/')));
+  return ok ? url.href : '';
+}
 
 const UNSAFE_STYLE_RE = /\\|url\s*\(|expression\s*\(|@import|javascript:|behaviou?r\s*:|-moz-binding/i;
 
@@ -34,14 +44,14 @@ const OPTIONS: sanitizeHtml.IOptions = {
       if (tagName === 'iframe') {
         next.sandbox = 'allow-scripts allow-same-origin allow-presentation';
         next.loading = 'lazy';
+        next.src = normaliseEmbedSrc(next.src || '');
       }
       return { tagName, attribs: next };
     },
   },
   exclusiveFilter: (frame) => {
     if (frame.tag === 'iframe') {
-      const src = frame.attribs.src || '';
-      return !IFRAME_PREFIXES.some((p) => src.startsWith(p));
+      return !frame.attribs.src;
     }
     return false;
   },
