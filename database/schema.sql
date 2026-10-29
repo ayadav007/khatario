@@ -1084,3 +1084,79 @@ DROP TRIGGER IF EXISTS update_advance_payments_updated_at ON advance_payments;
 CREATE TRIGGER update_advance_payments_updated_at BEFORE UPDATE ON advance_payments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+
+-- =====================================================================
+-- Push notifications (migration 445): FCM device tokens for two audiences
+-- (business users, store customers), the push outbox and per-device delivery rows.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS push_devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    audience VARCHAR(16) NOT NULL CHECK (audience IN ('business', 'customer')),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES store_customers(id) ON DELETE CASCADE,
+    business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+    app_id VARCHAR(80) NOT NULL,
+    platform VARCHAR(16) NOT NULL DEFAULT 'android',
+    token TEXT NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    environment VARCHAR(16) NOT NULL DEFAULT 'production',
+    session_version INTEGER,
+    device_label VARCHAR(120),
+    app_version VARCHAR(40),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMPTZ,
+    revoked_reason VARCHAR(40),
+    CONSTRAINT uq_push_devices_token UNIQUE (token),
+    CONSTRAINT chk_push_devices_owner CHECK (
+        (audience = 'business' AND user_id IS NOT NULL AND customer_id IS NULL)
+        OR (audience = 'customer' AND customer_id IS NOT NULL AND business_id IS NOT NULL AND user_id IS NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices (user_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_push_devices_customer ON push_devices (customer_id, business_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_push_devices_token_hash ON push_devices (token_hash);
+
+CREATE TABLE IF NOT EXISTS push_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind VARCHAR(16) NOT NULL CHECK (kind IN ('notification', 'customer')),
+    audience VARCHAR(16) NOT NULL CHECK (audience IN ('business', 'customer')),
+    notification_id UUID REFERENCES notifications(id) ON DELETE CASCADE,
+    notification_seq BIGINT,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    user_id UUID,
+    customer_id UUID REFERENCES store_customers(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_at TIMESTAMPTZ,
+    last_error VARCHAR(200),
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMPTZ,
+    CONSTRAINT chk_push_jobs_target CHECK (
+        (audience = 'business' AND customer_id IS NULL)
+        OR (audience = 'customer' AND customer_id IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_push_jobs_notification_seq
+    ON push_jobs (notification_id, notification_seq) WHERE notification_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_push_jobs_pending ON push_jobs (next_attempt_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_push_jobs_business_created ON push_jobs (business_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS push_deliveries (
+    id BIGSERIAL PRIMARY KEY,
+    job_id UUID NOT NULL REFERENCES push_jobs(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES push_devices(id) ON DELETE SET NULL,
+    token_hash CHAR(64),
+    status VARCHAR(16) NOT NULL CHECK (status IN ('accepted', 'retry', 'invalid_token', 'failed')),
+    error_code VARCHAR(80),
+    provider_message_id VARCHAR(200),
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_job ON push_deliveries (job_id);
+-- Triggers trg_notifications_push_insert / trg_notifications_push_refire (function
+-- notifications_enqueue_push) are defined in database/migrations/445_push_notifications.sql.

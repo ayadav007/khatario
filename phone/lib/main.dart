@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'push/push_service.dart';
 import 'screens/login_screen.dart';
 import 'session.dart';
 import 'shell/app_shell.dart';
@@ -16,6 +17,9 @@ String signedOutNotice({required bool replaced}) {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Channel, foreground display and tap handling; Firebase itself only when the build has
+  // google-services.json. Never blocks startup.
+  PushService.instance.init().catchError((Object e) => debugPrint('[push] init failed: $e'));
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: KhatarioColors.background,
@@ -106,6 +110,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       _signedOutNote = null;
       _watchSignedInSession(api);
       setState(() => _session = session);
+      // Signed in: this phone receives this user's alerts (asks the Android 13 permission once).
+      PushService.instance.registerForSession(api).catchError((Object e) => debugPrint('[push] register failed: $e'));
     } catch (e) {
       final ended = e is ApiException && sessionWasEnded(e.status, e.code, e.message);
       if (ended && mounted && _session != null && _signedOutNote == null) {
@@ -127,6 +133,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     _api?.watchSession(null);
     try {
       final api = await _client();
+      // Drop this device's push token first, while the session cookie is still valid.
+      await PushService.instance.unregister(api);
       await api.postJson('/api/auth/logout', const {});
     } catch (_) {}
     await _api?.clearCookies();
@@ -152,6 +160,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       session: appSession,
       onSessionChanged: _loadSession,
       onSignOut: _signOut,
+      pushTaps: PushService.instance.pendingTap,
     );
   }
 }

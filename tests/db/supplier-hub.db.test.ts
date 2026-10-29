@@ -179,6 +179,10 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await query(migration('429_hub_backup_standing_variants.sql'));
     await query(migration('430_hub_listing_review_retire_requests.sql'));
     await query(migration('431_order_list.sql'));
+    await query(migration('433_party_item_price_variants.sql'));
+    await query(migration('434_price_levels_and_party_pricing.sql'));
+    await query(migration('435_item_schemes.sql'));
+    await query(migration('442_supply_order_line_pricing.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -1597,6 +1601,176 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
     await orderPATCH(call('PATCH', `/api/supply-orders/${o2.id}`, UB, B, { action: 'respond', lines: [{ id: line2.id, confirmed_qty: 3 }] }), octx);
     const draft = await (await invoiceDraftGET(call('GET', `/api/supply-orders/${o2.id}/invoice-draft`, UB, B), octx)).json();
     expect(draft.lines[0]).toMatchObject({ name: 'Cotton kurti (L)', selling_price: 430, quantity: 3 });
+  });
+
+  it('pricing: hub catalogue, orders and the bill draft use the billing price rules for the linked customer (F-017, F-018)', async () => {
+    const { resolvePrices } = await import('@/lib/pricing/resolve-price');
+    const { getPool } = await import('@/lib/db');
+    const [CAT, OIL, BIS, SOAP, SHIRT, SH_S, SH_M, LEVEL] = Array.from({ length: 8 }, () => randomUUID());
+    await query(`INSERT INTO categories (id, business_id, name) VALUES ($1, $2, $3)`, [CAT, B, `Soaps ${tag}`]);
+    for (const [id, name, unit, price, tax, cat, variants] of [
+      [OIL, 'Sunflower oil 15L', 'TIN', 2200, 5, null, false],
+      [BIS, 'Glucose biscuits', 'CTN', 500, 18, null, false],
+      [SOAP, 'Bath soap', 'PCS', 40, 18, CAT, false],
+      [SHIRT, 'Polo shirt', 'PCS', 300, 5, null, true],
+    ] as const) {
+      await query(
+        `INSERT INTO items (id, business_id, name, unit, item_type, is_active, selling_price, tax_rate, category_id, has_variants, current_stock)
+         VALUES ($1, $2, $3, $4, 'goods', true, $5, $6, $7, $8, 100)`,
+        [id, B, name, unit, price, tax, cat, variants]
+      );
+    }
+    for (const [id, label] of [[SH_S, 'S'], [SH_M, 'M']]) {
+      await query(`INSERT INTO item_variants (id, item_id, variant_name, selling_price, current_stock) VALUES ($1, $2, $3, 300, 50)`, [id, SHIRT, label]);
+    }
+    for (const id of [OIL, BIS, SOAP, SHIRT]) {
+      const made = await createListing(post('/api/suppliers/hub/published-listings', UB, B, { item_id: id, audience: 'linked_only' }));
+      expect(made.status).toBeLessThan(300);
+      if (id === SHIRT) {
+        const { listing } = await made.json();
+        const res = await patchListing(
+          new NextRequest(`http://localhost/api/suppliers/hub/published-listings/${listing.id}`, {
+            method: 'PATCH',
+            headers: headers(UB, B),
+            body: JSON.stringify({ options: 'S, M' }),
+          }),
+          { params: { id: listing.id } }
+        );
+        expect(res.status).toBe(200);
+      }
+    }
+    // B's rules for its customer A, set where billing reads them:
+    //   oil: customer price 2,100 less 5 %; shirt size M: customer price 250;
+    //   biscuits: A's price level at 25, and 20 from 10 cartons; soaps: 10 % category discount.
+    await query(
+      `INSERT INTO party_item_prices (business_id, party_id, item_id, price, discount_percent) VALUES ($1, $2, $3, 2100, 5)`,
+      [B, CUST_A_AT_B, OIL]
+    );
+    await query(
+      `INSERT INTO party_item_prices (business_id, party_id, item_id, variant_id, price) VALUES ($1, $2, $3, $4, 250)`,
+      [B, CUST_A_AT_B, SHIRT, SH_M]
+    );
+    await query(`INSERT INTO price_levels (id, business_id, name) VALUES ($1, $2, $3)`, [LEVEL, B, `Dealer ${tag}`]);
+    await query(
+      `INSERT INTO price_level_rates (business_id, price_level_id, item_id, min_qty, price) VALUES ($1, $2, $3, 0, 25), ($1, $2, $3, 10, 20)`,
+      [B, LEVEL, BIS]
+    );
+    await query(`UPDATE customers SET price_level_id = $1 WHERE id = $2`, [LEVEL, CUST_A_AT_B]);
+    await query(
+      `INSERT INTO party_category_discounts (business_id, party_id, category_id, discount_percent) VALUES ($1, $2, $3, 10)`,
+      [B, CUST_A_AT_B, CAT]
+    );
+    const billing = async (lines: { itemId: string; variantId?: string | null; qty: number }[]) =>
+      resolvePrices(getPool(), B, CUST_A_AT_B, lines, new Date().toISOString().slice(0, 10));
+
+    try {
+      // The catalogue shows A the prices B's bills would charge A.
+      const feed = await (await newArrivalsGET(call('GET', `/api/suppliers/hub/new-arrivals?supplier_id=${supplierRowId}`, UA, A))).json();
+      const shown = (id: string) => feed.catalog.find((l: { vendor_item_id: string }) => l.vendor_item_id === id);
+      expect([Number(shown(OIL).price), Number(shown(OIL).discount_percent), shown(OIL).my_price]).toEqual([2100, 5, true]);
+      expect([Number(shown(BIS).price), shown(BIS).my_price]).toEqual([25, true]);
+      expect(Number(shown(SOAP).discount_percent)).toBe(10);
+      const sizes = shown(SHIRT).options.map((o: { label: string; price: number | null }) => [o.label, o.price == null ? null : Number(o.price)]);
+      expect(sizes).toEqual([['S', null], ['M', 250]]);
+
+      // A orders from the catalogue: each line carries price, discount and B's size.
+      const opts = await query(
+        `SELECT o.id, o.label FROM supplier_listing_options o JOIN supplier_published_listings l ON l.id = o.listing_id
+          WHERE l.item_id = $1 ORDER BY o.sort_order`,
+        [SHIRT]
+      );
+      const optionM = opts.rows.find((o: { label: string }) => o.label === 'M').id;
+      const res = await ordersPOST(
+        post('/api/supply-orders', UA, A, {
+          supplier_id: supplierRowId,
+          from_catalog: true,
+          lines: [
+            { vendor_item_id: OIL, qty: 2 },
+            { vendor_item_id: BIS, qty: 12 },
+            { vendor_item_id: SOAP, qty: 5 },
+            { vendor_item_id: SHIRT, option_id: optionM, qty: 3 },
+          ],
+        })
+      );
+      expect(res.status).toBe(201);
+      const { order } = await res.json();
+      const rows = (
+        await query(
+          `SELECT vendor_item_id, vendor_variant_id, unit_price, discount_percent FROM supply_order_lines WHERE order_id = $1 ORDER BY sort_order`,
+          [order.id]
+        )
+      ).rows.map((l: any) => [
+        l.vendor_item_id,
+        l.vendor_variant_id,
+        l.unit_price == null ? null : Number(l.unit_price),
+        Number(l.discount_percent),
+      ]);
+      expect(rows).toEqual([
+        [OIL, null, 2100, 5],
+        [BIS, null, 20, 0],
+        [SOAP, null, null, 10],
+        [SHIRT, SH_M, 250, 0],
+      ]);
+
+      // Both sides see the discount on the order.
+      const asA = await (await orderGET(call('GET', `/api/supply-orders/${order.id}`, UA, A), { params: { id: order.id } })).json();
+      expect(asA.lines.map((l: any) => [Number(l.unit_price), Number(l.discount_percent)])[0]).toEqual([2100, 5]);
+
+      // The bill draft carries what billing A would charge, line by line.
+      const octx = { params: { id: order.id } };
+      const lines = (await query(`SELECT id, qty FROM supply_order_lines WHERE order_id = $1`, [order.id])).rows;
+      expect(
+        (await orderPATCH(call('PATCH', `/api/supply-orders/${order.id}`, UB, B, {
+          action: 'respond',
+          lines: lines.map((l: any) => ({ id: l.id, confirmed_qty: Number(l.qty) })),
+        }), octx)).status
+      ).toBe(200);
+      const draft = await (await invoiceDraftGET(call('GET', `/api/supply-orders/${order.id}/invoice-draft`, UB, B), octx)).json();
+      const truth = await billing([
+        { itemId: OIL, qty: 2 },
+        { itemId: BIS, qty: 12 },
+        { itemId: SOAP, qty: 5 },
+        { itemId: SHIRT, variantId: SH_M, qty: 3 },
+      ]);
+      expect(
+        draft.lines.map((l: any) => [l.item_id, l.variant_id ?? null, l.selling_price, l.discount_percent])
+      ).toEqual(truth.map((t) => [t.itemId, t.variantId, t.price, t.discountPercent ?? 0]));
+
+      // B drafts an order itself: changing the quantity moves it onto the level's slab.
+      const own = await ordersPOST(
+        post('/api/supply-orders', UB, B, { customer_id: CUST_A_AT_B, lines: [{ vendor_item_id: BIS, qty: 5 }] })
+      );
+      expect(own.status).toBe(201);
+      const { order: drafted } = await own.json();
+      const dline = await queryOne(`SELECT id, unit_price FROM supply_order_lines WHERE order_id = $1`, [drafted.id]);
+      expect(Number(dline.unit_price)).toBe(25);
+      expect(
+        (await orderPATCH(call('PATCH', `/api/supply-orders/${drafted.id}`, UB, B, { action: 'update', lines: [{ id: dline.id, qty: 10 }] }), {
+          params: { id: drafted.id },
+        })).status
+      ).toBe(200);
+      expect(Number((await queryOne(`SELECT unit_price FROM supply_order_lines WHERE id = $1`, [dline.id])).unit_price)).toBe(20);
+      await query(`DELETE FROM supply_orders WHERE id = ANY($1::uuid[])`, [[order.id, drafted.id]]);
+
+      // Without the party pricing plan B's bills ignore customer rules, and so does the hub.
+      const { assertFeatureAccess, FeatureAccessDeniedError } = await import('@/lib/subscription/feature-access');
+      (assertFeatureAccess as jest.Mock).mockImplementation(async (biz: string, key: string) => {
+        if (key === 'party_pricing') throw new FeatureAccessDeniedError(key, biz, 'FEATURE_NOT_ENABLED');
+      });
+      try {
+        const plain = await (await newArrivalsGET(call('GET', `/api/suppliers/hub/new-arrivals?supplier_id=${supplierRowId}`, UA, A))).json();
+        const oil = plain.catalog.find((l: { vendor_item_id: string }) => l.vendor_item_id === OIL);
+        expect([oil.price, Number(oil.discount_percent), oil.my_price]).toEqual([null, 0, false]);
+      } finally {
+        (assertFeatureAccess as jest.Mock).mockReset();
+        (assertFeatureAccess as jest.Mock).mockResolvedValue(undefined);
+      }
+    } finally {
+      await query(`UPDATE customers SET price_level_id = NULL WHERE id = $1`, [CUST_A_AT_B]);
+      await query(`DELETE FROM party_category_discounts WHERE party_id = $1`, [CUST_A_AT_B]);
+      await query(`DELETE FROM party_item_prices WHERE party_id = $1 AND item_id = ANY($2::uuid[])`, [CUST_A_AT_B, [OIL, SHIRT]]);
+      await query(`DELETE FROM supplier_published_listings WHERE item_id = ANY($1::uuid[])`, [[OIL, BIS, SOAP, SHIRT]]);
+    }
   });
 
   it("money: the buyer's payment and debit note reach the supplier to record", async () => {

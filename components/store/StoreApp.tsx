@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { StoreProvider } from '@/lib/store/store-context';
+import { StorePushRegistration } from '@/components/store/StorePushRegistration';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
 import { StoreThemeEffects } from '@/components/store/StoreThemeEffects';
 import { StorePromoSheet } from '@/components/store/StorePromoSheet';

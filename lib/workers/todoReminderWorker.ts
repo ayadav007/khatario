@@ -13,6 +13,7 @@ import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
 import { logTodoReminder } from '../todo-reminders/reminderLog';
 import { sweepDueTodoReminders } from '../todo-reminders/sweepDueTodoReminders';
 import { processTodoReminderJob } from '../todo-reminders/processReminderJob';
+import { startPushDispatchLoop } from '../push/dispatch-loop';
 
 /**
  * Delayed BullMQ jobs are lost if Redis is flushed, restarts, or was down when the todo was
@@ -48,6 +49,17 @@ async function startWorker() {
 
   startDueReminderSweep();
   console.log(`[Todo Reminder Worker] DB sweep running every ${SWEEP_INTERVAL_MS / 1000}s`);
+
+  // Push outbox (migration 445): sends every notification row and customer message through FCM.
+  // Lives here because this process is already long-running with database access; the cron
+  // route /api/cron/dispatch-push covers the time this process is down.
+  if (process.env.PUSH_DISPATCH_DISABLED !== '1') {
+    const push = startPushDispatchLoop({ intervalMs: 10_000 });
+    const stopPush = () => void push.stop();
+    process.once('SIGTERM', stopPush);
+    process.once('SIGINT', stopPush);
+    console.log('[Todo Reminder Worker] Push dispatcher running (LISTEN push_jobs, poll 10s)');
+  }
 
   const redisConnection = getRedisConnection();
 

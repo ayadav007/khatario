@@ -165,7 +165,7 @@ export class NotificationStreamHub implements ConnectionHost {
     if (this.subscriberStarted) return;
     this.subscriberStarted = true;
     const sub = this.deps.createSubscriber();
-    if (!sub) return; // no Redis configured: connections poll on their heartbeat
+    if (!sub) return; // no Redis configured: connections rely on the heartbeat poll alone
     this.subscriber = sub;
 
     sub.on('message', (channel, message) => {

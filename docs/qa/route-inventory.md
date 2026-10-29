@@ -1,4 +1,4 @@
-# Route inventory
+# Route inventorypartial — notification audit 2026-10-29: handler called from Jest (`notification-popup-dismiss-route.test.ts`, `notification-access.db.test.ts`), session identity and scope PASS. Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (`notification-routes-auth.test.ts`). Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (`notification-routes-auth.test.ts`). Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (`notification-popup-dismiss-route.test.ts`). Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (`notification-routes-auth.test.ts`). Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (limits, 503, revoked session) and stream engine PASS on `kh_phase2_test` (`notification-stream.db.test.ts`). Not called live |partial — notification audit 2026-10-29: handler PASS from Jest (`check-reminders-route.test.ts`). Not called live |
 
 Generated from the filesystem on 2026-10-19. This is a source inventory, not a test run.
 
@@ -1425,3 +1425,6 @@ Methods are those exported from the handler file. `UNKNOWN` means no `GET`/`POST
 | A0945 | GET | `/media/marketing/[file]` | dynamic-template | Other | business user session | — | not executed |
 | A0946 | GET | `/store/pwa-icon/[size]` | dynamic-template | Online store | public storefront | — | not executed |
 | A0947 | GET | `/store/site.webmanifest` | static | Online store | public storefront | — | not executed |
+| A0948 | POST,DELETE | `/api/push/devices` | static | Other API | business user session (middleware); handler must authorize | — | partial — push implementation 2026-10-29: handler PASS from Jest (`tests/security/push-devices-route.test.ts`: no session 401, revoked 401, body audience/user ignored). Not called live |
+| A0949 | POST,DELETE | `/api/public/store/[subdomain]/push/devices` | dynamic-template | Online store | public storefront (store customer cookie checked in handler) | — | partial — push implementation 2026-10-29: handler PASS from Jest (same file: cookie of another shop 401, unknown store 404). Not called live |
+| A0950 | GET,POST | `/api/cron/dispatch-push` | static | Cron | middleware-public (cron secret expected in handler) | — | not executed (dispatcher itself PASS in `tests/db/push-dispatch.db.test.ts`) |

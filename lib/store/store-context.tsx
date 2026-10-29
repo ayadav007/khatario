@@ -239,6 +239,13 @@ export function StoreProvider({
   }, [refreshCustomer]);
 
   const signOutCustomer = useCallback(async () => {
+    try {
+      // Android app: drop this device's push token for this shop while the store cookie is still valid.
+      const { unregisterCapacitorPush } = await import('@/lib/push/client/capacitor-push');
+      await unregisterCapacitorPush({ kind: 'customer', subdomain });
+    } catch {
+      /* non-blocking */
+    }
     await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/account`, {
       method: 'POST',
       credentials: 'include',

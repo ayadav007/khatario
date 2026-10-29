@@ -1,28 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BUYER_PRICE_JOIN } from '@/lib/pricing/buyer-price-sql';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { LISTING_OPTIONS_SQL } from '@/lib/supplier-catalog';
+import { execFor } from '@/lib/supplier-hub-links';
+import { hubPricesFor, vendorVariantByName } from '@/lib/supplier-hub-pricing';
 
 export const dynamic = 'force-dynamic';
 
 const LISTING_SQL = `
-  SELECT l.id AS listing_id, l.item_id AS vendor_item_id, l.collection_id,
+  SELECT l.id AS listing_id, l.item_id AS vendor_item_id, l.collection_id, l.supplier_business_id,
          COALESCE(NULLIF(l.display_name, ''), i.name) AS name, i.unit,
          COALESCE(l.image_url, i.image_url) AS image_url,
-         COALESCE(bp.price, l.price) AS price, (bp.price IS NOT NULL) AS my_price,
+         l.price,
          l.moq, l.order_multiple, l.pack_label, l.lead_time_text,
          bi.id AS my_item_id, bi.name AS my_item_name,
          ${LISTING_OPTIONS_SQL} AS options
   FROM supplier_published_listings l
   JOIN items i ON i.id = l.item_id AND i.business_id = l.supplier_business_id AND i.deleted_at IS NULL
-  ${BUYER_PRICE_JOIN('l.supplier_business_id', '$1::uuid', 'l.item_id')}
   LEFT JOIN supplier_item_links sil
     ON sil.vendor_item_id = l.item_id AND sil.vendor_business_id = l.supplier_business_id AND sil.buyer_business_id = $1
   LEFT JOIN items bi ON bi.id = sil.buyer_item_id AND bi.deleted_at IS NULL
   WHERE l.is_active = true
 `;
+
+/**
+ * Each listing (and each of its sizes) at the price this buyer would be billed: the supplier's
+ * customer price or price level for the buyer, else the published price, with the buyer's
+ * discount (lib/supplier-hub-pricing). Quantity slabs are read at the minimum order.
+ */
+async function priceListings(buyerBusinessId: string, rows: any[]) {
+  const exec = execFor();
+  const byVendor = new Map<string, any[]>();
+  for (const r of rows) {
+    if (!byVendor.has(r.supplier_business_id)) byVendor.set(r.supplier_business_id, []);
+    byVendor.get(r.supplier_business_id)!.push(r);
+  }
+  for (const [vendor, list] of byVendor) {
+    const inputs: Array<{ row: any; option?: any; vendorItemId: string; vendorVariantId: string | null; qty: number; publishedPrice: number | null }> = [];
+    for (const r of list) {
+      const qty = Math.max(Number(r.moq) || 0, 1);
+      const published = r.price != null ? Number(r.price) : null;
+      inputs.push({ row: r, vendorItemId: r.vendor_item_id, vendorVariantId: null, qty, publishedPrice: published });
+      for (const o of Array.isArray(r.options) ? r.options : []) {
+        const variant = await vendorVariantByName(exec, r.vendor_item_id, o.label);
+        inputs.push({
+          row: r,
+          option: o,
+          vendorItemId: r.vendor_item_id,
+          vendorVariantId: variant,
+          qty,
+          publishedPrice: o.price != null ? Number(o.price) : null,
+        });
+      }
+    }
+    const prices = await hubPricesFor(exec, vendor, buyerBusinessId, inputs);
+    inputs.forEach((input, i) => {
+      const p = prices[i];
+      const target = input.option ?? input.row;
+      target.price = p.price;
+      target.my_price = p.fromRule;
+      target.discount_percent = p.discountPercent;
+    });
+  }
+  for (const r of rows) delete r.supplier_business_id;
+}
 
 /**
  * GET /api/suppliers/hub/new-arrivals?supplier_id=
@@ -85,6 +127,7 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
+    await priceListings(auth.businessId, [...listings, ...catalog]);
     const supplierOf = new Map(suppliers.map((s) => [s.business_id, s]));
     return NextResponse.json({
       suppliers,

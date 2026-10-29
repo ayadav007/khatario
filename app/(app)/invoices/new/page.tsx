@@ -2914,12 +2914,14 @@ function NewInvoiceContent() {
             const price = storedPriceToBillUnit(Number(line.selling_price) || 0, !!line.gst_included, taxRate, pricesIncludeGst);
             return calculateRow({
               itemId: line.item_id,
+              ...(line.variant_id ? { variantId: line.variant_id, variantName: line.variant_name || undefined } : {}),
               name: line.name,
               quantity: Number(line.quantity) || 1,
               freeQty: 0,
               unit: line.unit || 'PCS',
               price,
-              discountPercent: 0,
+              // The buyer's discount from the order (customer, category or level rule).
+              discountPercent: Number(line.discount_percent) || 0,
               discountAmount: 0,
               taxPercent: taxRate,
               taxAmount: 0,

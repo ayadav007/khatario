@@ -24,7 +24,7 @@ export type CloseReason =
   | 'shutdown';
 
 export interface ConnectionHost {
-  /** Redis hints are flowing (subscriber and publisher ready); otherwise heartbeats poll. */
+  /** Redis hints are flowing (subscriber and publisher ready). Diagnostic only: heartbeats always poll. */
   hintsHealthy(): boolean;
   unregister(conn: StreamConnection): void;
   random(): number;
@@ -161,9 +161,17 @@ export class StreamConnection {
     }
   }
 
+  /**
+   * Every heartbeat also pulls. Only todo reminders, invoice views and inbox assignments
+   * publish a Redis hint; every other producer (payment reminders, Supplier Hub, low stock,
+   * GST, store, khata, subscription) just inserts the row, so hints alone would leave those
+   * rows undelivered until the next reconnect. The pull reads from `floor` with two index
+   * lookups and sends nothing when there is nothing new, so the cost is bounded by the
+   * stream limits. Hints still deliver their rows within HINT_COALESCE_MS.
+   */
   private heartbeat(): void {
     if (!this.write(formatComment('ping'))) return;
-    if (this.phase === 'live' && !this.opts.host.hintsHealthy()) void this.pull();
+    if (this.phase === 'live') void this.pull();
   }
 
   private async reauthorize(): Promise<void> {

@@ -31,7 +31,12 @@ type Line = {
   vendor_current_stock?: string | null;
   /** Per supplier unit: the supplier's price, or for the buyer the catalog / list price (null if hidden). */
   unit_price?: number | null;
+  /** The buyer's discount % on unit_price, from the supplier's price rules */
+  discount_percent?: number | null;
 };
+
+/** Line value after the buyer's discount. */
+const lineValue = (qty: number, l: Line) => qty * Number(l.unit_price) * (1 - (Number(l.discount_percent) || 0) / 100);
 
 type Detail = {
   role: 'buyer' | 'vendor';
@@ -176,7 +181,7 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
     return l.confirmed_qty ?? askedQty(l);
   };
   const priced = lines.filter((l) => l.unit_price != null && !edits[l.id]?.remove);
-  const total = priced.reduce((sum, l) => sum + lineQty(l) * Number(l.unit_price), 0);
+  const total = priced.reduce((sum, l) => sum + lineValue(lineQty(l), l), 0);
   const allPriced = priced.length === lines.filter((l) => !edits[l.id]?.remove).length;
 
   return (
@@ -275,8 +280,9 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
                 {l.unit_price != null && (
                   <p className="text-right text-xs text-text-secondary">
                     {inr(Number(l.unit_price))} / {(role === 'vendor' || l.factor !== 1 ? l.vendor_unit : l.buyer_unit) || 'unit'}
+                    {Number(l.discount_percent) > 0 ? ` less ${Number(l.discount_percent)}%` : ''}
                     {' · '}
-                    <span className="font-medium text-text-primary">{inr(lineQty(l) * Number(l.unit_price))}</span>
+                    <span className="font-medium text-text-primary">{inr(lineValue(lineQty(l), l))}</span>
                   </p>
                 )}
 

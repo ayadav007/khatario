@@ -83,7 +83,7 @@ class _FakeApi extends KhatarioApi {
   }
 
   @override
-  Future<Map<String, dynamic>> deleteJson(String path) async {
+  Future<Map<String, dynamic>> deleteJson(String path, {Map<String, dynamic>? body}) async {
     deletes.add(path);
     return {'success': true};
   }

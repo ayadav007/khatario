@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { PageHeader } from '@/components/layout/PageHeader';
+import { PushPermissionNotice } from '@/components/notifications/PushPermissionNotice';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -138,6 +139,7 @@ export default function NotificationsPage() {
     
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
+        <PushPermissionNotice />
         <PageHeader
   title="Notifications"
   subtitle={<>{unreadNotificationCount > 0 

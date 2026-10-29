@@ -9,6 +9,7 @@ import type { PoolClient } from 'pg';
 import { execFor } from './supplier-hub-links';
 import { queueHubWhatsApp } from './supplier-hub-whatsapp';
 import { prepareLines, type NewLine } from './supply-orders';
+import { priceOrderLines } from './supplier-hub-pricing';
 
 export class StandingOrderError extends Error {
   status: number;
@@ -199,6 +200,8 @@ export async function runDueStandingOrders(now = new Date()): Promise<number> {
          FROM supply_standing_order_lines WHERE standing_order_id = $2`,
       [order.id, so.id]
     );
+    // Priced on the day it is made, like a bill dated today for this customer.
+    await priceOrderLines(exec, order.id);
     created++;
     await tell(
       exec,

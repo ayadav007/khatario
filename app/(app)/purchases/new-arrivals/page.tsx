@@ -22,8 +22,12 @@ type Listing = {
   my_item_name: string | null;
   /** True when the price is the supplier's own price for you */
   my_price?: boolean;
-  options?: Array<{ id: string; label: string; price: string | number | null }>;
+  /** Your discount % on that price, from the supplier's price rules for you */
+  discount_percent?: number | null;
+  options?: Array<{ id: string; label: string; price: string | number | null; my_price?: boolean; discount_percent?: number | null }>;
 };
+
+const lessText = (d: number | null | undefined) => (Number(d) > 0 ? ` less ${Number(d)}%` : '');
 
 type Collection = {
   id: string;
@@ -150,6 +154,7 @@ export default function NewArrivalsPage() {
           <p className="truncate font-medium text-text-primary">{l.name}</p>
           <p className="text-xs text-text-secondary">
             {l.price != null ? `${money(l.price)} per ${l.unit || 'unit'}` : 'Price on request'}
+            {l.price != null ? lessText(l.discount_percent) : ''}
             {l.my_price ? ' · your price' : ''}
             {l.pack_label ? ` · ${l.pack_label}` : ''}
           </p>
@@ -165,7 +170,7 @@ export default function NewArrivalsPage() {
                 return (
                   <label key={o.id} className="flex items-center gap-1.5 text-xs text-text-secondary">
                     <span className="font-medium text-text-primary">{o.label}</span>
-                    {o.price != null && !l.my_price ? money(o.price) : null}
+                    {o.price != null && (o.my_price || !l.my_price) ? `${money(o.price)}${lessText(o.discount_percent)}` : null}
                     <input
                       type="number"
                       min={0}

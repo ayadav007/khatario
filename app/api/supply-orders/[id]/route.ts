@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const lines = await db.queryRows(
       `
-      SELECT l.id, l.item_name, l.option_label, l.qty, l.confirmed_qty, l.buyer_units_per_vendor_unit AS factor,
+      SELECT l.id, l.item_name, l.option_label, l.qty, l.confirmed_qty, l.buyer_units_per_vendor_unit AS factor, l.discount_percent,
              l.buyer_item_id, l.vendor_item_id,
              ${role === 'vendor' ? 'l.buyer_stock_at_suggestion,' : ''}
              bi.name AS buyer_item_name, bi.unit AS buyer_unit,
@@ -85,6 +85,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         confirmed_qty: l.confirmed_qty == null ? null : Number(l.confirmed_qty),
         factor: Number(l.factor),
         unit_price: l.unit_price == null ? null : Number(l.unit_price),
+        discount_percent: l.discount_percent == null ? 0 : Number(l.discount_percent),
         buyer_qty: Math.round(Number(l.qty) * Number(l.factor) * 1000) / 1000,
         // The supplier sees the buyer's item only by the line's name.
         buyer_item_id: role === 'buyer' ? l.buyer_item_id : null,

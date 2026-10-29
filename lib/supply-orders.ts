@@ -16,6 +16,7 @@
 
 import type { PoolClient } from 'pg';
 import { BUYER_PRICE_JOIN } from '@/lib/pricing/buyer-price-sql';
+import { hubPricesFor, hubPricingDate, priceOrderLines } from './supplier-hub-pricing';
 import { execFor, type Exec } from './supplier-hub-links';
 import { saveItemLink } from './supplier-item-links';
 import { queueHubWhatsApp } from './supplier-hub-whatsapp';
@@ -264,6 +265,7 @@ export async function buildSuggestedOrders(
       );
       lines++;
     }
+    await priceOrderLines(exec, order.id);
     await exec(`UPDATE supply_orders SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [order.id]);
     orders++;
     await notify(
@@ -337,13 +339,11 @@ export async function prepareLines(
     if (vendorItemId) {
       const theirs = (
         await exec(
-          `SELECT i.name, l.id AS listing_id, l.display_name, l.is_active AS listed, l.audience, l.moq, l.order_multiple,
-                  l.price, bp.price AS buyer_price
+          `SELECT i.name, l.id AS listing_id, l.display_name, l.is_active AS listed, l.audience, l.moq, l.order_multiple, l.price
              FROM items i
-             ${BUYER_PRICE_JOIN('i.business_id', '$3::uuid', 'i.id')}
              LEFT JOIN supplier_published_listings l ON l.item_id = i.id AND l.supplier_business_id = i.business_id
             WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
-          [vendorItemId, vendor, buyer]
+          [vendorItemId, vendor]
         )
       ).rows[0];
       if (!theirs) throw new SupplyOrderInputError("An item on this order is not one of the supplier's items");
@@ -362,7 +362,8 @@ export async function prepareLines(
         }
       }
       if (!name) name = theirs.display_name || theirs.name;
-      // The supplier's price for this buyer wins; then the option's price, then the catalogue price.
+      // The published price (the option's, then the listing's); priceOrderLines then applies the
+      // supplier's billing rules for this buyer (customer price, level, discounts) over it.
       if (line.option_id) {
         const opt = theirs.listing_id
           ? (
@@ -376,8 +377,7 @@ export async function prepareLines(
         optionLabel = opt.label;
         if (opt.price != null) price = Number(opt.price);
       }
-      if (theirs.buyer_price != null) price = Number(theirs.buyer_price);
-      else if (price == null && theirs.listed && theirs.price != null) price = Number(theirs.price);
+      if (price == null && theirs.listed && theirs.price != null) price = Number(theirs.price);
     }
     if (!buyerItemId && !vendorItemId) throw new SupplyOrderInputError('Each line needs an item');
 
@@ -479,6 +479,7 @@ export async function createSupplyOrder(
       [order.id, l.buyerItemId, l.vendorItemId, l.name, l.qty, l.factor, sort++, l.price, l.optionLabel]
     );
   }
+  await priceOrderLines(exec, order.id);
   if (status === 'pending') {
     await notify(exec, vendor, `New order from ${await businessName(exec, buyer)}`, `${lines.length} item${lines.length === 1 ? '' : 's'}. Confirm the quantities you can supply.`, order.id);
   } else if (status === 'proposed') {
@@ -616,6 +617,13 @@ export async function transitionSupplyOrder(
   const need = (ok: boolean, msg: string) => {
     if (!ok) throw new SupplyOrderInputError(msg, 409, 'INVALID_STATE');
   };
+  // Lines whose supplier item or quantity changed: priced again before the order is agreed.
+  const repriced = new Set<string>();
+  const reprice = async () => {
+    const ids = [...repriced].filter((id) => !lines.find((l: any) => l.id === id)?._removed);
+    repriced.clear();
+    await priceOrderLines(exec, order.id, ids);
+  };
   const setStatus = async (next: SupplyOrderStatus, extra = '') => {
     await exec(`UPDATE supply_orders SET status = $2, updated_at = CURRENT_TIMESTAMP ${extra} WHERE id = $1`, [order.id, next]);
   };
@@ -646,8 +654,9 @@ export async function transitionSupplyOrder(
           await exec(`UPDATE supply_order_lines SET qty = $2, buyer_units_per_vendor_unit = $3 WHERE id = $1`, [l.id, l.qty, factor]);
         }
       }
-      await exec(`UPDATE supply_order_lines SET vendor_item_id = $2 WHERE id = $1`, [l.id, e.vendor_item_id]);
+      await exec(`UPDATE supply_order_lines SET vendor_item_id = $2, vendor_variant_id = NULL WHERE id = $1`, [l.id, e.vendor_item_id]);
       l.vendor_item_id = e.vendor_item_id;
+      repriced.add(l.id);
       if (l.buyer_item_id) {
         await saveItemLink(
           {
@@ -679,6 +688,7 @@ export async function transitionSupplyOrder(
         const q = Number(e.qty);
         if (!(q > 0)) throw new SupplyOrderInputError(`Quantity for ${l.item_name} must be more than zero`);
         await exec(`UPDATE supply_order_lines SET qty = $2 WHERE id = $1`, [l.id, round3(q)]);
+        if (Math.abs(round3(q) - Number(l.qty)) > 1e-9) repriced.add(l.id);
         l.qty = round3(q);
       }
     }
@@ -702,9 +712,10 @@ export async function transitionSupplyOrder(
     for (const { line, qty } of rest) {
       await exec(
         `INSERT INTO supply_order_lines (
-           order_id, buyer_item_id, vendor_item_id, item_name, qty, buyer_units_per_vendor_unit, sort_order, unit_price, option_label
+           order_id, buyer_item_id, vendor_item_id, item_name, qty, buyer_units_per_vendor_unit, sort_order, unit_price, option_label,
+           discount_percent, vendor_variant_id, buyer_variant_id
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           bo.id,
           line.buyer_item_id,
@@ -715,6 +726,9 @@ export async function transitionSupplyOrder(
           sort++,
           line.unit_price,
           line.option_label,
+          line.discount_percent,
+          line.vendor_variant_id,
+          line.buyer_variant_id,
         ]
       );
     }
@@ -726,6 +740,7 @@ export async function transitionSupplyOrder(
       need(role === 'vendor' && status === 'draft', 'Only a draft can be edited by the supplier');
       await applyQtyEdits();
       await applyVendorItems();
+      await reprice();
       await exec(`UPDATE supply_orders SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [order.id]);
       return status;
     }
@@ -733,6 +748,7 @@ export async function transitionSupplyOrder(
       need(role === 'vendor' && status === 'draft', 'Only the supplier can send a draft');
       await applyQtyEdits();
       await applyVendorItems();
+      await reprice();
       await setStatus('proposed');
       const count = lines.filter((l: any) => !l._removed).length;
       await notify(exec, buyer, `Order proposed by ${actorName}`, `${count} item${count === 1 ? '' : 's'} ready to confirm.`, order.id);
@@ -741,6 +757,7 @@ export async function transitionSupplyOrder(
     case 'confirm': {
       need(role === 'buyer' && status === 'proposed', 'Only the buyer can confirm a proposed order');
       await applyQtyEdits();
+      await reprice();
       await exec(`UPDATE supply_order_lines SET confirmed_qty = qty WHERE order_id = $1`, [order.id]);
       await setStatus('confirmed', ', confirmed_at = CURRENT_TIMESTAMP');
       await notify(exec, vendor, `${actorName} confirmed the order`, 'You can raise the bill now.', order.id);
@@ -749,6 +766,7 @@ export async function transitionSupplyOrder(
     case 'respond': {
       need(role === 'vendor' && status === 'pending', 'Only the supplier can answer a pending order');
       await applyVendorItems();
+      await reprice();
       let full = 0;
       let none = 0;
       const rest: Array<{ line: any; qty: number }> = [];
@@ -894,6 +912,7 @@ async function routeToBackups(
         [bo.id, l.buyerItemId, l.vendorItemId, l.name, l.qty, l.factor, sort++, l.price]
       );
     }
+    await priceOrderLines(exec, bo.id);
     for (const s of items) sent.add(s.line.id);
     await notify(exec, vendorId, `New order from ${buyerName}`, `${lines.length} item${lines.length === 1 ? '' : 's'}. Confirm the quantities you can supply.`, bo.id);
     await notify(
@@ -927,6 +946,8 @@ export async function settleOrdersForRequest(
   );
   if (outcome === 'accepted') {
     for (const o of moved.rows) {
+      // Now a customer of the supplier: its customer price, level and discounts apply.
+      await priceOrderLines(exec, o.id);
       await notify(
         exec,
         o.vendor_business_id,
@@ -1006,17 +1027,33 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
     await exec(
       `SELECT l.id, l.item_name, COALESCE(l.confirmed_qty, l.qty) AS qty, l.vendor_item_id,
               COALESCE(l.option_label, bv.variant_name) AS option_label,
-              i.name, i.unit, COALESCE(l.unit_price, bp.price, i.selling_price) AS selling_price,
-              i.tax_rate, i.hsn_sac, COALESCE(i.gst_included, false) AS gst_included
+              l.unit_price, l.discount_percent, vv.id AS variant_id, vv.variant_name,
+              i.name, i.unit, i.tax_rate, i.hsn_sac, COALESCE(i.gst_included, false) AS gst_included
          FROM supply_order_lines l
          LEFT JOIN items i ON i.id = l.vendor_item_id AND i.business_id = $2
          LEFT JOIN item_variants bv ON bv.id = l.buyer_variant_id
-         ${BUYER_PRICE_JOIN('$2::uuid', '$3::uuid', 'l.vendor_item_id')}
+         LEFT JOIN item_variants vv ON vv.id = l.vendor_variant_id AND vv.item_id = l.vendor_item_id
         WHERE l.order_id = $1 AND COALESCE(l.confirmed_qty, l.qty) > 0
         ORDER BY l.sort_order`,
-      [orderId, vendorBusinessId, order.buyer_business_id]
+      [orderId, vendorBusinessId]
     )
   ).rows;
+  // The agreed price and discount on each line; a line without a price (or one priced before
+  // lines kept a discount) gets what a bill to this buyer would charge, from the same rules.
+  const priced = lines.filter((l: any) => l.vendor_item_id);
+  const rules = await hubPricesFor(
+    exec,
+    vendorBusinessId,
+    order.buyer_business_id,
+    priced.map((l: any) => ({ vendorItemId: l.vendor_item_id, vendorVariantId: l.variant_id, qty: Number(l.qty) || 1 })),
+    hubPricingDate()
+  );
+  const ruleFor = new Map(priced.map((l: any, i: number) => [l.id, rules[i]]));
+  for (const l of lines as any[]) {
+    const rule = ruleFor.get(l.id);
+    l.selling_price = l.unit_price != null ? Number(l.unit_price) : rule?.billPrice ?? null;
+    l.discount = l.discount_percent != null ? Number(l.discount_percent) : rule?.discountPercent ?? 0;
+  }
   const missing = lines.filter((l: any) => !l.vendor_item_id || !l.name);
   if (missing.length) {
     throw new SupplyOrderInputError(`Pick your item for: ${missing.map((l: any) => l.item_name).join(', ')}`, 409, 'ITEMS_UNMAPPED');
@@ -1070,10 +1107,13 @@ export async function invoiceDraftForOrder(orderId: string, vendorBusinessId: st
     warnings,
     lines: lines.map((l: any) => ({
       item_id: l.vendor_item_id,
+      variant_id: l.variant_id ?? null,
+      variant_name: l.variant_name ?? null,
       name: l.option_label ? `${l.name} (${l.option_label})` : l.name,
       quantity: Number(l.qty),
       unit: l.unit || 'PCS',
       selling_price: Number(l.selling_price) || 0,
+      discount_percent: Number(l.discount) || 0,
       tax_rate: Number(l.tax_rate) || 0,
       hsn_sac: l.hsn_sac || '',
       gst_included: !!l.gst_included,

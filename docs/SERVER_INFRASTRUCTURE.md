@@ -164,6 +164,7 @@ npm run cap:android:production:install   # only after https://khatario.com serve
 | Redis | Shared process; production uses logical DB 1 so BullMQ queues do not mix |
 | OCR | Optional `:4000` — not running as of 2026-09-26; camera extract uses Google Vision + Groq |
 | Todo reminders | PM2 `todo-reminder-worker` (`pm2 start npm --name todo-reminder-worker -- run worker:todo`, then `pm2 save`). Delivers BullMQ jobs at the exact time and sweeps the DB every 30s for anything due that the queue missed. Without it no todo reminder is ever delivered. Production clone: set `PM2_WORKER_NAME` to a separate name |
+| Push notifications (FCM) | The same `todo-reminder-worker` process runs the push dispatcher (`lib/push/dispatch-loop.ts`: LISTEN on `push_jobs`, 10 s poll). It needs `FIREBASE_SERVICE_ACCOUNT_JSON` (raw or base64 service-account JSON) or `GOOGLE_APPLICATION_CREDENTIALS` in `.env.production`, then `pm2 restart todo-reminder-worker --update-env`. Without a credential every job is marked `failed: fcm_not_configured` and the in-app bell keeps working. Set `PUSH_DISPATCH_DISABLED=1` to turn the loop off. Firebase Console steps: `docs/qa/notification-audit/09-firebase-setup.md` |
 | WhatsApp workers | Tenant Baileys inbox — see `docs/WHATSAPP_INTEGRATION.md`. Not in PM2 yet |
 | Platform Meta Cloud API | Save credentials in `/admin` → WhatsApp templates (encrypted in DB). Tenant Cloud API: Settings → WhatsApp. `META_WA_*` env is optional fallback only |
 | Razorpay | Add `PLATFORM_RAZORPAY_*` to the **production** env; webhook `https://khatario.com/api/webhooks/platform-billing/razorpay` |
@@ -196,6 +197,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron-staging.log 2>&1
 30 5 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/standing-orders >> /var/log/khatario-cron-staging.log 2>&1
 0 4 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/khata-statements >> /var/log/khatario-cron-staging.log 2>&1
+*/2 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/dispatch-push >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
@@ -213,6 +215,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron.log 2>&1
 35 5 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/standing-orders >> /var/log/khatario-cron.log 2>&1
 5 4 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/khata-statements >> /var/log/khatario-cron.log 2>&1
+*/2 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/dispatch-push >> /var/log/khatario-cron.log 2>&1
 ```
 
 `/api/cron/check-low-stock` drives the Supplier Hub reorder loop. It alerts each supplier when a connected buyer who shares stock has an item at or below its reorder level, and builds or tops up one suggested order per buyer and supplier. Stock changes also queue the alert part a few seconds after they are saved; suggested orders are built only here, and this run also catches any alert the queue missed. An item already alerted or already on an open order is skipped, so repeated runs never notify twice. Without this entry, suggested orders are only built when a supplier opens Buyers low on stock.

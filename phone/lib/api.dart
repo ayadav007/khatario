@@ -88,8 +88,8 @@ class KhatarioApi {
     return _map(res);
   }
 
-  Future<Map<String, dynamic>> deleteJson(String path) async {
-    final res = await dio.delete<dynamic>(path, data: const <String, dynamic>{});
+  Future<Map<String, dynamic>> deleteJson(String path, {Map<String, dynamic>? body}) async {
+    final res = await dio.delete<dynamic>(path, data: body ?? const <String, dynamic>{});
     return _map(res);
   }
 

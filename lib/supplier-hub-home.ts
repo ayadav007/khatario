@@ -173,7 +173,7 @@ async function orderTotals(exec: ReturnType<typeof execFor>, orderIds: string[],
   const price = side === 'buyer' ? BUYER_LINE_PRICE_SQL : 'COALESCE(l.unit_price, bp.price, vi.selling_price)';
   const { rows } = await exec(
     `SELECT l.order_id,
-            SUM(COALESCE(l.confirmed_qty, l.qty) * ${price})::float8 AS total,
+            SUM(COALESCE(l.confirmed_qty, l.qty) * ${price} * (1 - COALESCE(l.discount_percent, 0) / 100))::float8 AS total,
             BOOL_AND(${price} IS NOT NULL) AS priced,
             COUNT(*) FILTER (WHERE l.vendor_item_id IS NULL)::int AS unmatched
        FROM supply_order_lines l
