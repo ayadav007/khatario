@@ -1,6 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
+import { sanitizeCustomHtml } from './html';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -16,6 +17,11 @@ const RICHTEXT_OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemes: ['https', 'http', 'mailto', 'tel'],
   allowProtocolRelative: false,
 };
+
+/** `#abc`, `#aabbcc` or `#aabbccdd`. */
+export function isHexColor(value: string): boolean {
+  return COLOR_RE.test(value);
+}
 
 function clipText(raw: unknown, max: number): string | undefined {
   if (typeof raw !== 'string') return undefined;
@@ -81,7 +87,7 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
     case 'radio':
       return typeof raw === 'string' && schema.options?.some((o) => o.value === raw) ? raw : undefined;
     case 'color':
-      return typeof raw === 'string' && (raw === '' || COLOR_RE.test(raw)) ? raw : undefined;
+      return typeof raw === 'string' && (raw === '' || isHexColor(raw)) ? raw : undefined;
     case 'color_scheme':
       return typeof raw === 'string' && SCHEME_ID_RE.test(raw) ? raw : undefined;
     case 'image': {
@@ -119,8 +125,7 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
     case 'font':
       return typeof raw === 'string' && FONTS.includes(raw) ? raw : undefined;
     case 'html':
-      // Task 2 wires sanitizeCustomHtml here.
-      return '';
+      return typeof raw === 'string' ? sanitizeCustomHtml(raw) : undefined;
     default:
       return undefined;
   }
