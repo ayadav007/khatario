@@ -841,6 +841,7 @@ export default function CustomersPage() {
                 onClose={() => setSelectedCustomerId(null)}
                 onSendReminder={(c) => handleSendReminder(c.id)}
                 sendingReminder={sendingReminder === selectedCustomerId}
+                onCustomerChanged={() => void refreshCustomers()}
               />
             ) : null
           }
