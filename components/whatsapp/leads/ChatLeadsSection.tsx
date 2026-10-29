@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -9,28 +9,49 @@ import { ConvertLeadDialog } from './ConvertLeadDialog';
 import { LeadDrawer, NewEnquiryButton } from './LeadDrawer';
 import { leadsApi, phoneTail, sourceLabel } from './leadLabels';
 
-/** This number's leads in the chat's contact panel, newest first; each opens the lead drawer. */
-export function ChatLeadsSection({ phone }: { phone: string }) {
+/**
+ * This number's leads in the chat's contact panel, newest first; each opens the lead drawer.
+ * onChanged runs after an action here changed a lead, with the customer now linked to the number's
+ * leads (if any), so the panel can refresh its deal section and New lead / Existing customer badge.
+ */
+export function ChatLeadsSection({ phone, onChanged }: { phone: string; onChanged?: (customerId: string | null) => void }) {
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [convertOpen, setConvertOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tail = phoneTail(phone);
+  // Bumped per load and per chat, so a slow answer for the previous chat never lands here.
+  const loadSeq = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<LeadRow[] | null> => {
+    const seq = ++loadSeq.current;
     if (tail.length < 10) {
       setLeads([]);
-      return;
+      return [];
     }
     const { ok, data } = await leadsApi<{ rows: LeadRow[] }>(`/api/whatsapp/leads?search=${encodeURIComponent(tail)}&status=all`);
+    if (seq !== loadSeq.current) return null;
     // Search is a substring match; keep only this number's leads (last 10 digits).
-    setLeads(ok ? (data.rows || []).filter((r) => phoneTail(r.phone) === tail) : []);
+    const rows = ok ? (data.rows || []).filter((r) => phoneTail(r.phone) === tail) : [];
+    setLeads(rows);
+    return rows;
   }, [tail]);
+
+  const reloadAfterChange = useCallback(async () => {
+    const rows = await load();
+    if (rows) onChanged?.(rows.find((r) => r.customer_id)?.customer_id ?? null);
+  }, [load, onChanged]);
 
   useEffect(() => {
     setLeads(null);
     setError(null);
+    setOpenId(null);
+    setConvertOpen(false);
     void load();
+    return () => {
+      // A chat switch: whatever is still loading belongs to the old number.
+      loadSeq.current++;
+    };
   }, [load]);
 
   if (!leads || leads.length === 0) return null;
@@ -63,7 +84,7 @@ export function ChatLeadsSection({ phone }: { phone: string }) {
           <NewEnquiryButton
             lead={open}
             onCreated={(id) => {
-              void load();
+              void reloadAfterChange();
               setOpenId(id);
             }}
             onError={setError}
@@ -86,12 +107,12 @@ export function ChatLeadsSection({ phone }: { phone: string }) {
           onClose={() => setConvertOpen(false)}
           onConverted={() => {
             setConvertOpen(false);
-            void load();
+            void reloadAfterChange();
           }}
         />
       )}
 
-      <LeadDrawer leadId={openId} onClose={() => setOpenId(null)} onChanged={() => void load()} onOpenLead={setOpenId} />
+      <LeadDrawer leadId={openId} onClose={() => setOpenId(null)} onChanged={() => void reloadAfterChange()} onOpenLead={setOpenId} />
     </div>
   );
 }

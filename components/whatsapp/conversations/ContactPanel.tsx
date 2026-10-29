@@ -98,6 +98,15 @@ export function ContactPanel({
   const [blocking, setBlocking] = useState(false);
   // AI hot/warm/cold, or the agent's manual pick until the profile is reloaded.
   const [temperature, setTemperature] = useState<string>(leadProfile?.lead_status || '');
+  // A lead action in the Leads section (stage, convert, new enquiry) remounts the deal section and may
+  // link a customer before the contact prop is reloaded.
+  const [dealKey, setDealKey] = useState(0);
+  const [leadCustomerId, setLeadCustomerId] = useState<string | null>(null);
+  useEffect(() => {
+    setDealKey(0);
+    setLeadCustomerId(null);
+  }, [conversationId]);
+  const isCustomer = !!(contact?.customer?.id || leadCustomerId);
   useEffect(() => {
     setTemperature(leadProfile?.lead_status || '');
   }, [conversationId, leadProfile?.lead_status]);
@@ -293,10 +302,10 @@ export function ContactPanel({
                 </p>
                 <span
                   className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    contact?.customer?.id ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'
+                    isCustomer ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'
                   }`}
                 >
-                  {contact?.customer?.id ? 'Existing customer' : 'New lead'}
+                  {isCustomer ? 'Existing customer' : 'New lead'}
                 </span>
                 {contact?.customer?.email && (
                   <p className="text-sm text-gray-500">{contact.customer.email}</p>
@@ -446,8 +455,16 @@ export function ContactPanel({
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <h3 className="text-sm font-bold text-gray-900 mb-4">Lead Management</h3>
           <div className="space-y-4">
-            <DealSection conversationId={conversationId} isGroup={!!(chatStatus?.is_group || ownership?.is_group)} />
-            {contact?.phone && !(chatStatus?.is_group || ownership?.is_group) && <ChatLeadsSection phone={contact.phone} />}
+            <DealSection key={dealKey} conversationId={conversationId} isGroup={!!(chatStatus?.is_group || ownership?.is_group)} />
+            {contact?.phone && !(chatStatus?.is_group || ownership?.is_group) && (
+              <ChatLeadsSection
+                phone={contact.phone}
+                onChanged={(customerId) => {
+                  setDealKey((k) => k + 1);
+                  setLeadCustomerId(customerId);
+                }}
+              />
+            )}
 
             {/* Lead Status (AI-based with manual override) */}
             <div>

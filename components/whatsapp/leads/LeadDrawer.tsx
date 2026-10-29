@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, isPast } from 'date-fns';
@@ -137,9 +137,13 @@ export function LeadDrawer({
   const [messageOpen, setMessageOpen] = useState(false);
 
   useEffect(() => setId(leadId), [leadId]);
+  // The lead on screen; an answer for one the drawer has since left is dropped.
+  const shownId = useRef<string | null>(leadId);
+  shownId.current = id;
 
   const load = useCallback(async (leadToLoad: string) => {
     const { ok, status, data } = await leadsApi<{ lead: LeadDetail }>(`/api/whatsapp/leads/${encodeURIComponent(leadToLoad)}`);
+    if (shownId.current !== leadToLoad) return;
     if (!ok) {
       setLead(null);
       setNotFound(status === 404);
@@ -156,11 +160,14 @@ export function LeadDrawer({
   }, []);
 
   useEffect(() => {
+    // A new lead, or the drawer closing (Escape too), drops the dialogs opened for the last one.
+    setRemindOpen(false);
+    setConvertOpen(false);
+    setMessageOpen(false);
     if (!id) return;
     setLead(null);
     setNotFound(false);
     setError(null);
-    setRemindOpen(false);
     void load(id);
   }, [id, load]);
 
@@ -365,7 +372,8 @@ export function LeadDrawer({
                     placeholder="e.g. Price too high"
                     onChange={(e) => setLostReason(e.target.value)}
                     onBlur={() => {
-                      if ((lostReason.trim() || null) !== (lead.lost_reason || null)) void save({ lost_reason: lostReason });
+                      const reason = lostReason.trim();
+                      if ((reason || null) !== (lead.lost_reason || null)) void save({ lost_reason: reason });
                     }}
                   />
                 </div>
@@ -494,7 +502,7 @@ export function LeadDrawer({
         )}
       </SlideOverPanel>
 
-      {lead && convertOpen && (
+      {id && lead && convertOpen && (
         <ConvertLeadDialog
           leadId={lead.id}
           name={lead.name}
@@ -508,7 +516,7 @@ export function LeadDrawer({
         />
       )}
 
-      {lead && messageOpen && (
+      {id && lead && messageOpen && (
         // The modal sits at z-50; this wrapper lifts it above the panel (z-70).
         <div className="relative z-[80]">
           <NewConversationModal

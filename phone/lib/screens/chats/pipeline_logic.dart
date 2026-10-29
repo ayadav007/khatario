@@ -8,6 +8,9 @@ const sourceLabels = <String, String>{
   'link': 'Link / QR',
   'indiamart': 'IndiaMART',
   'lead_api': 'Lead webhook',
+  'call': 'Call',
+  'walk_in': 'Walk-in',
+  'manual': 'Manual',
 };
 
 /// "WhatsApp ad · Diwali sale", "IndiaMART · Cartons", or "Direct".
@@ -56,11 +59,13 @@ class PipelineStage {
       );
 }
 
+/// One lead on the board. [id] is the lead's id; [conversationId] is its chat, null when it has none yet.
 class DealCard {
   const DealCard({
     required this.id,
     required this.stageId,
     required this.name,
+    this.conversationId,
     this.lastMessage,
     this.dealValue,
     this.ownerName,
@@ -71,6 +76,7 @@ class DealCard {
   final String id;
   final String stageId;
   final String name;
+  final String? conversationId;
   final String? lastMessage;
   final num? dealValue;
   final String? ownerName;
@@ -81,6 +87,7 @@ class DealCard {
         id: j['id']?.toString() ?? '',
         stageId: j['stage_id']?.toString() ?? '',
         name: j['name']?.toString() ?? '',
+        conversationId: (j['conversation_id']?.toString() ?? '').isEmpty ? null : j['conversation_id'].toString(),
         lastMessage: j['last_message_text']?.toString(),
         dealValue: _num(j['deal_value']),
         ownerName: j['owner_name']?.toString(),

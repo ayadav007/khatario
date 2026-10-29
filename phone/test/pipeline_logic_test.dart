@@ -14,6 +14,7 @@ void main() {
           'cards': [
             {
               'id': 'c1',
+              'conversation_id': 'conv1',
               'stage_id': 's1',
               'name': 'Priya Traders',
               'deal_value': 42000,
@@ -21,6 +22,7 @@ void main() {
               'source': 'indiamart',
               'next_followup_at': '2026-10-20T04:30:00Z',
             },
+            {'id': 'c2', 'conversation_id': null, 'stage_id': 's1', 'name': 'Walk-in Ravi', 'source': 'walk_in'},
           ],
         },
         {'id': 's2', 'name': 'Won', 'kind': 'won', 'count': '0', 'total_value': '0', 'cards': []},
@@ -29,8 +31,12 @@ void main() {
     expect(stages.map((s) => s.name).toList(), ['Interested', 'Won']);
     expect(stages.first.count, 2);
     expect(stages.last.count, 0);
-    final card = stages.first.cards.single;
+    final card = stages.first.cards.first;
+    expect(card.conversationId, 'conv1');
     expect(card.meta(DateTime(2026, 10, 26)), '₹42,000 · IndiaMART · Asha · Follow-up overdue');
+    final noChat = stages.first.cards.last;
+    expect(noChat.conversationId, isNull);
+    expect(noChat.meta(DateTime(2026, 10, 26)), 'Walk-in');
   });
 
   test('lead source descriptions match the website', () {

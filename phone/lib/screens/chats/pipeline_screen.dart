@@ -8,7 +8,7 @@ import '../../ui/kit.dart';
 import 'chat_thread_screen.dart';
 import 'pipeline_logic.dart';
 
-/// The website pipeline board as a phone list: pick a stage, see its chats, move one with a long press.
+/// The website pipeline board as a phone list: pick a stage, see its leads, move one with a long press.
 class PipelineScreen extends StatefulWidget {
   const PipelineScreen({super.key, required this.session});
 
@@ -66,7 +66,8 @@ class _PipelineScreenState extends State<PipelineScreen> {
       if (reason == null) return;
     }
     try {
-      await widget.session.api.patchJson('/api/whatsapp/conversations/${Uri.encodeComponent(card.id)}/deal', {
+      // Cards are leads (some have no chat yet), so the move goes to the lead.
+      await widget.session.api.patchJson('/api/whatsapp/leads/${Uri.encodeComponent(card.id)}', {
         'stage_id': picked,
         'lost_reason': ?reason,
       });
@@ -114,7 +115,7 @@ class _PipelineScreenState extends State<PipelineScreen> {
                           ? ListView(children: const [
                               KEmptyState(
                                 icon: LucideIcons.kanban,
-                                title: 'No chats in this stage',
+                                title: 'No leads in this stage',
                                 body: 'Set a stage from a chat: tap the deal icon at the top of the chat.',
                               ),
                             ])
@@ -127,16 +128,24 @@ class _PipelineScreenState extends State<PipelineScreen> {
                                       for (final card in stage.cards)
                                         KListRow(
                                           title: card.name,
-                                          subtitle: [card.meta(now), if ((card.lastMessage ?? '').isNotEmpty) card.lastMessage!]
-                                              .where((s) => s.isNotEmpty)
-                                              .join('\n'),
+                                          subtitle: [
+                                            if (card.conversationId == null) 'No chat yet',
+                                            card.meta(now),
+                                            if ((card.lastMessage ?? '').isNotEmpty) card.lastMessage!,
+                                          ].where((s) => s.isNotEmpty).join(card.conversationId == null ? ' · ' : '\n'),
                                           leading: KAvatar(name: card.name),
-                                          trailing: Icon(LucideIcons.chevronRight, size: 18, color: AppColors.ink3),
-                                          onTap: () => Navigator.of(context)
-                                              .push(MaterialPageRoute(
-                                                builder: (_) => ChatThreadScreen(session: widget.session, conversationId: card.id, title: card.name),
-                                              ))
-                                              .then((_) => _load()),
+                                          trailing: card.conversationId == null
+                                              ? null
+                                              : Icon(LucideIcons.chevronRight, size: 18, color: AppColors.ink3),
+                                          // A lead with no chat yet has nothing to open; it can still be moved.
+                                          onTap: card.conversationId == null
+                                              ? null
+                                              : () => Navigator.of(context)
+                                                  .push(MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        ChatThreadScreen(session: widget.session, conversationId: card.conversationId!, title: card.name),
+                                                  ))
+                                                  .then((_) => _load()),
                                           onLongPress: () => _move(card),
                                         ),
                                     ],
@@ -150,7 +159,7 @@ class _PipelineScreenState extends State<PipelineScreen> {
                                   ),
                                 Padding(
                                   padding: const EdgeInsets.only(top: AppSpace.md),
-                                  child: Text('Long-press a chat to move it to another stage.', textAlign: TextAlign.center, style: AppText.caption),
+                                  child: Text('Long-press a lead to move it to another stage.', textAlign: TextAlign.center, style: AppText.caption),
                                 ),
                               ],
                             ),
