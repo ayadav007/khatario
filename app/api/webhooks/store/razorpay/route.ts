@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const refs = unverifiedProviderRefs(parsed);
   const order = await findStoreOrderForRazorpay(refs);
   if (!order) {
-    return NextResponse.json({ ok: true, ignored: true });
+    return handleKhataNotice(request, rawBody, parsed, refs);
   }
 
   const cfg = await getBusinessPaymentProviderConfig(order.business_id, 'razorpay');
@@ -96,6 +96,48 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[store razorpay webhook]', err);
     return NextResponse.json({ error: 'Fulfilment failed' }, { status: 500 });
+  }
+}
+
+/** Khata payment links from the store's "My khata" page use the same Razorpay account. */
+async function handleKhataNotice(
+  request: NextRequest,
+  rawBody: string,
+  parsed: Record<string, unknown>,
+  refs: { paymentRef: string; providerPaymentId: string },
+) {
+  const { findKhataPayment, applyKhataGatewayPayment, markKhataPaymentFailed } = await import('@/lib/khata/online-pay');
+  const row = await findKhataPayment('razorpay', refs);
+  if (!row) return NextResponse.json({ ok: true, ignored: true });
+  const cfg = await getBusinessPaymentProviderConfig(row.business_id, 'razorpay');
+  if (!cfg) return NextResponse.json({ error: 'Unknown store payment config' }, { status: 400 });
+  const headers: Record<string, string> = {};
+  request.headers.forEach((v, k) => {
+    headers[k.toLowerCase()] = v;
+  });
+  const verified = await new RazorpayPaymentProvider(cfg).verifyWebhook({
+    rawBody,
+    headers,
+    webhookSecret: cfg.clientSecret,
+  });
+  if (!verified.verified) return NextResponse.json({ ok: false, verified: false }, { status: 401 });
+  if (verified.status === 'failed') {
+    await markKhataPaymentFailed(row.id, row.business_id);
+    return NextResponse.json({ ok: true, outcome: 'failed' });
+  }
+  if (verified.status !== 'success') return NextResponse.json({ ok: true, verified: true, ignored: true });
+  try {
+    const result = await applyKhataGatewayPayment({
+      khataPaymentId: row.id,
+      businessId: row.business_id,
+      amount: verified.amount,
+      providerPaymentId: verified.providerPaymentId,
+      payload: parsed,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[store razorpay khata webhook]', err);
+    return NextResponse.json({ error: 'Khata settlement failed' }, { status: 500 });
   }
 }
 

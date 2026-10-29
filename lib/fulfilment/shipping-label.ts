@@ -12,6 +12,8 @@ export interface ShippingLabelData {
   awb: string | null;
   paid: boolean;
   codAmount: number;
+  /** On the customer's khata: nothing to collect. */
+  khata?: boolean;
   itemCount: number;
   boxes: number;
 }
@@ -29,8 +31,11 @@ export function escapeHtml(s: string): string {
 
 const inr = (n: number) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-export function paymentBanner(d: Pick<ShippingLabelData, 'paid' | 'codAmount'>): { text: string; tone: 'cod' | 'prepaid' | 'unpaid' } {
+export function paymentBanner(
+  d: Pick<ShippingLabelData, 'paid' | 'codAmount' | 'khata'>,
+): { text: string; tone: 'cod' | 'prepaid' | 'unpaid' } {
   if (d.codAmount > 0) return { text: `CASH ON DELIVERY · COLLECT ${inr(d.codAmount)}`, tone: 'cod' };
+  if (d.khata) return { text: 'KHATA · DO NOT COLLECT CASH', tone: 'prepaid' };
   if (d.paid) return { text: 'PREPAID · DO NOT COLLECT CASH', tone: 'prepaid' };
   return { text: 'PAYMENT PENDING · CHECK WITH SHOP', tone: 'unpaid' };
 }

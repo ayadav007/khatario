@@ -39,6 +39,8 @@ interface NotifyRow {
   order_number: string | null;
   amount: string | null;
   paid: boolean | null;
+  khata: boolean | null;
+  khata_due: string | null;
 }
 
 const money = (n: number) => (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -54,8 +56,9 @@ export function buildFulfilmentMessage(
     NotifyRow,
     | 'status' | 'buyer_name' | 'partner_name' | 'awb' | 'tracking_url' | 'rider_name' | 'rider_phone'
     | 'pickup_code' | 'failure_reason' | 'business_name' | 'shop_address'
-  > & { orderNumber: string; orderLink: string; billLink: string | null; refundNote: string },
+  > & { orderNumber: string; orderLink: string; billLink: string | null; refundNote: string; khataNote?: string },
 ): string {
+  const khata = row.khataNote ? ` ${row.khataNote}` : '';
   const hi = row.buyer_name ? `Hi ${row.buyer_name.trim().split(/\s+/)[0]}, your` : 'Your';
   const n = row.orderNumber;
   switch (row.status) {
@@ -66,14 +69,14 @@ export function buildFulfilmentMessage(
     case 'ready_for_pickup':
       return `${hi} order ${n} is ready to collect${row.shop_address ? ` from ${row.shop_address}` : ''}.${
         row.pickup_code ? ` Show pickup code ${row.pickup_code} at the counter.` : ''
-      }`;
+      }${khata}`;
     case 'shipped': {
       const via = [row.partner_name, row.awb ? `tracking no. ${row.awb}` : null].filter(Boolean).join(', ');
       return `${hi} order ${n} is on its way${via ? ` (${via})` : ''}. Track it here: ${row.orderLink}`;
     }
     case 'out_for_delivery': {
       const rider = [row.rider_name, row.rider_phone].filter(Boolean).join(' ');
-      return `${hi} order ${n} is out for delivery today.${rider ? ` Delivery partner: ${rider}.` : ''} Track: ${row.orderLink}`;
+      return `${hi} order ${n} is out for delivery today.${rider ? ` Delivery partner: ${rider}.` : ''}${khata} Track: ${row.orderLink}`;
     }
     case 'delivered':
       return `${hi} order ${n} has been delivered.${row.billLink ? ` Your bill: ${row.billLink}` : ''} Thank you for shopping with ${row.business_name}.`;
@@ -100,7 +103,9 @@ export async function notifyFulfilmentStatus(businessId: string, fulfilmentId: s
             COALESCE(so.order_number, s.order_number, i.invoice_number) AS order_number,
             COALESCE(so.grand_total, s.grand_total, i.grand_total)::text AS amount,
             COALESCE(so.payment_status = 'paid', FALSE) OR COALESCE(s.payment_status = 'paid', FALSE)
-              OR COALESCE(i.payment_status = 'paid', FALSE) AS paid
+              OR COALESCE(i.payment_status = 'paid', FALSE) AS paid,
+            COALESCE(so.payment_provider = 'khata', FALSE) AS khata,
+            so.khata_due_date::text AS khata_due
        FROM order_fulfilments f
        JOIN businesses b ON b.id = f.business_id
        LEFT JOIN store_orders so ON so.id = f.store_order_id AND so.business_id = f.business_id
@@ -136,7 +141,16 @@ export async function notifyFulfilmentStatus(businessId: string, fulfilmentId: s
       ? `Your refund of ₹${money(amount)} will reach you in 5-7 working days.`
       : '';
 
-  const text = buildFulfilmentMessage({ ...row, orderNumber, orderLink, billLink, refundNote });
+  let khataNote = '';
+  if (row.khata && (row.status === 'ready_for_pickup' || row.status === 'out_for_delivery')) {
+    const { getKhataSettings } = await import('@/lib/khata/service');
+    const { khataPayBy, khataShortDate } = await import('@/lib/khata/cycle');
+    const grace = (await getKhataSettings(businessId)).graceDays;
+    const payBy = row.khata_due ? khataShortDate(khataPayBy(row.khata_due, grace)) : null;
+    const where = row.status === 'ready_for_pickup' ? 'pickup' : 'delivery';
+    khataNote = `Nothing to pay at ${where}: ₹${money(amount)} is added to your khata${payBy ? `, due ${payBy}` : ''}.`;
+  }
+  const text = buildFulfilmentMessage({ ...row, orderNumber, orderLink, billLink, refundNote, khataNote });
   const { notifyBusinessEvent } = await import('@/lib/whatsapp/tenant-send');
   const res = await notifyBusinessEvent({
     businessId,

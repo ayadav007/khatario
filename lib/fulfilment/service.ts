@@ -265,12 +265,17 @@ export async function fulfilmentPaymentState(
   client: PoolClient,
   row: Pick<FulfilmentRow, 'business_id' | 'store_order_id' | 'sales_order_id' | 'invoice_id' | 'cod_amount'>,
 ): Promise<{ paid: boolean; codAmount: number }> {
-  const res = await client.query<{ paid: boolean; cod: boolean }>(
+  const res = await client.query<{ paid: boolean; settled: boolean; cod: boolean }>(
     `SELECT
        COALESCE(so.payment_status = 'paid', FALSE)
          OR COALESCE(s.payment_status = 'paid', FALSE)
          OR COALESCE(i.payment_status = 'paid', FALSE) AS paid,
-       COALESCE(so.payment_status = 'cod', FALSE) AS cod
+       -- Khata store orders are settled on the customer's khata: dispatchable, nothing to collect.
+       COALESCE(so.payment_status = 'cod' AND so.payment_provider = 'khata', FALSE)
+         OR COALESCE(so.payment_status = 'paid', FALSE)
+         OR COALESCE(s.payment_status = 'paid', FALSE)
+         OR COALESCE(i.payment_status = 'paid', FALSE) AS settled,
+       COALESCE(so.payment_status = 'cod' AND COALESCE(so.payment_provider, '') <> 'khata', FALSE) AS cod
      FROM (SELECT 1) one
      LEFT JOIN store_orders so ON so.id = $2 AND so.business_id = $1
      LEFT JOIN sales_orders s ON s.id = $3 AND s.business_id = $1
@@ -279,7 +284,7 @@ export async function fulfilmentPaymentState(
   );
   const r = res.rows[0];
   const cod = Number(row.cod_amount) || 0;
-  return { paid: Boolean(r?.paid), codAmount: cod > 0 ? cod : r?.cod ? 1 : 0 };
+  return { paid: Boolean(r?.paid) || Boolean(r?.settled), codAmount: cod > 0 ? cod : r?.cod ? 1 : 0 };
 }
 
 export interface TransitionFulfilmentInput {
@@ -539,9 +544,12 @@ export async function syncStoreOrderFulfilment(
     storeStatusToFulfilment(order.status, { deliveryMode: order.delivery_mode, dispatchMode: order.dispatch_mode });
   if (!target) return null;
   const method = storeDispatchToMethod(order.delivery_mode, order.dispatch_mode);
-  // Direct UPI is settled like COD in the books but the buyer paid at checkout: nothing to collect at the door.
+  // Direct UPI is settled like COD in the books but the buyer paid at checkout, and a khata order is
+  // on the customer's khata: nothing to collect at the door for either.
   const codAmount =
-    order.payment_status === 'cod' && order.payment_provider !== 'upi' ? Number(order.grand_total) || 0 : 0;
+    order.payment_status === 'cod' && order.payment_provider !== 'upi' && order.payment_provider !== 'khata'
+      ? Number(order.grand_total) || 0
+      : 0;
 
   const { row, created } = await ensureFulfilment(client, {
     businessId: input.businessId,

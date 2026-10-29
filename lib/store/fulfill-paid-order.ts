@@ -373,6 +373,32 @@ async function storeOrderCustomerId(
   return created.rows[0].id;
 }
 
+/** The khata customer on a khata order; it must still exist in this business. */
+async function khataOrderCustomerId(
+  client: import('pg').PoolClient,
+  businessId: string,
+  customerId: string | null,
+): Promise<string> {
+  if (!customerId) {
+    throw new StoreInvoiceError('Khata order has no khata customer', 'KHATA_CUSTOMER_MISSING');
+  }
+  const found = await client.query<{ id: string }>(
+    `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    [customerId, businessId],
+  );
+  if (!found.rows[0]) {
+    throw new StoreInvoiceError('The khata customer was removed', 'KHATA_CUSTOMER_MISSING');
+  }
+  return found.rows[0].id;
+}
+
+function ymd(v: Date | string): string {
+  if (v instanceof Date) {
+    return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`;
+  }
+  return String(v).slice(0, 10);
+}
+
 const storeInvoiceRetryAfter = new Map<string, number>();
 
 /**
@@ -391,7 +417,9 @@ export async function accountOutstandingStoreOrders(
       WHERE business_id = $1
         AND status <> 'cancelled'
         AND (
-          (invoice_id IS NULL AND payment_status IN ('paid', 'cod'))
+          (invoice_id IS NULL AND payment_status IN ('paid', 'cod')
+            -- A khata order waiting for the business's approval is billed only once approved.
+            AND COALESCE(khata_approval, '') NOT IN ('pending', 'rejected'))
           OR (payment_status = 'paid' AND invoice_id IS NOT NULL AND receipt_payment_id IS NULL)
         )
       ORDER BY created_at ASC
@@ -458,6 +486,9 @@ export async function createInvoiceForStoreOrder(
           customer_email: string | null;
           customer_pincode: string | null;
           created_at: Date | string;
+          khata_customer_id: string | null;
+          khata_due_date: Date | string | null;
+          khata_approval: string | null;
         }
       | undefined;
     if (!o) {
@@ -470,6 +501,15 @@ export async function createInvoiceForStoreOrder(
     }
     if (o.status === 'cancelled') {
       throw new StoreInvoiceError('A cancelled store order cannot be invoiced', 'ORDER_CANCELLED');
+    }
+    const isKhata = o.payment_provider === 'khata';
+    if (isKhata && (o.khata_approval === 'pending' || o.khata_approval === 'rejected')) {
+      throw new StoreInvoiceError(
+        o.khata_approval === 'pending'
+          ? 'Approve this khata order before it is billed'
+          : 'A rejected khata order cannot be billed',
+        'KHATA_APPROVAL_PENDING',
+      );
     }
 
     const grand = parseFloat(String(o.grand_total)) || 0;
@@ -552,13 +592,18 @@ export async function createInvoiceForStoreOrder(
     }
 
     const branchId = o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
-    const customerId = await storeOrderCustomerId(client, businessId, branchId, o);
+    // A khata order goes on the khata customer's ledger, never a phone match.
+    const customerId = isKhata
+      ? await khataOrderCustomerId(client, businessId, o.khata_customer_id)
+      : await storeOrderCustomerId(client, businessId, branchId, o);
     const locationId = await storeInvoiceWarehouseId(client, businessId, branchId);
 
     // The sale date in India, not the UTC day (an order at 00:30 IST is that day's sale).
     const invoiceDate = todayIst(new Date(o.created_at));
-    const payLabel =
-      o.payment_provider === 'upi'
+    const khataDue = isKhata && o.khata_due_date ? ymd(o.khata_due_date) : null;
+    const payLabel = isKhata
+      ? `Khata${khataDue ? `, due ${khataDue}` : ''}`
+      : o.payment_provider === 'upi'
         ? 'UPI'
         : o.payment_status === 'cod'
           ? 'COD'
@@ -573,6 +618,7 @@ export async function createInvoiceForStoreOrder(
         branch_id: branchId,
         customer_id: customerId,
         invoice_date: invoiceDate,
+        ...(khataDue ? { due_date: khataDue } : {}),
         status: 'final',
         document_type: 'tax_invoice',
         prices_include_gst: plan.pricesIncludeGst,

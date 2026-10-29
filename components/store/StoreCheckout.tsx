@@ -17,7 +17,8 @@ type UpiLinks = ReturnType<typeof upiAppLinks>;
 interface StoreCheckoutProps {
   open: boolean;
   onClose: () => void;
-  onOrderPlaced: (orderNumber: string, grandTotal: number) => void;
+  /** `note`: extra line for the confirmation, e.g. the khata pay-by date. */
+  onOrderPlaced: (orderNumber: string, grandTotal: number, note?: string) => void;
   /** In-page checkout (`/checkout`) — no second full-screen overlay. */
   embedded?: boolean;
 }
@@ -41,7 +42,7 @@ export function StoreCheckout({
   const [deliveryMode, setDeliveryMode] = useState<'delivery' | 'pickup'>('delivery');
   const [notes, setNotes] = useState('');
   const [coupon, setCoupon] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online' | 'upi'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online' | 'upi' | 'khata'>('cod');
   const [upiPay, setUpiPay] = useState<{
     orderNumber: string;
     grandTotal: number;
@@ -78,9 +79,16 @@ export function StoreCheckout({
   // Direct UPI is offered only when there is no gateway, which confirms payment by itself.
   const directUpi = !!store?.upi_pay_enabled && !store?.online_pay_enabled;
 
+  const khata = customer?.khata?.status === 'open' ? customer.khata : null;
+
   useEffect(() => {
     if (store?.store_allow_cod === false) setPaymentMethod(directUpi ? 'upi' : 'online');
   }, [store?.store_allow_cod, directUpi]);
+
+  // A customer with an open khata usually orders on it.
+  useEffect(() => {
+    if (khata) setPaymentMethod('khata');
+  }, [khata]);
 
   useEffect(() => {
     if (!store) return;
@@ -163,6 +171,10 @@ export function StoreCheckout({
         if (!res.ok) {
           setError(data.error || 'Failed to place order');
           if (data.code === 'OUT_OF_STOCK' && Array.isArray(data.shortfall)) setShortfall(data.shortfall);
+          if (data.code === 'KHATA_NOT_OPEN') {
+            setPaymentMethod('cod');
+            void refreshCustomer();
+          }
           return;
         }
 
@@ -185,14 +197,21 @@ export function StoreCheckout({
           return;
         }
         clearCart();
-        onOrderPlaced(data.order_number, data.grand_total);
+        let note: string | undefined;
+        if (paymentMethod === 'khata' && data.khata) {
+          note = data.khata.awaiting_approval
+            ? `${store.name} will confirm your khata order shortly. We will message you on WhatsApp.`
+            : `Added to your khata. Pay by ${data.khata.pay_by_label}. Nothing to pay at ${deliveryMode === 'pickup' ? 'pickup' : 'delivery'}.`;
+          void refreshCustomer();
+        }
+        onOrderPlaced(data.order_number, data.grand_total, note);
       } catch {
         setError('Something went wrong. Please try again.');
       } finally {
         setSubmitting(false);
       }
     },
-    [store, cart, selectedBranchId, name, phone, email, address, pincode, deliveryMode, notes, coupon, paymentMethod, clearCart, onOrderPlaced],
+    [store, cart, selectedBranchId, name, phone, email, address, pincode, deliveryMode, notes, coupon, paymentMethod, clearCart, onOrderPlaced, refreshCustomer],
   );
 
   const handleSubmit = useCallback(
@@ -469,10 +488,27 @@ export function StoreCheckout({
               />
             </div>
 
-            {store.store_allow_cod !== false || store.online_pay_enabled || directUpi ? (
+            {store.store_allow_cod !== false || store.online_pay_enabled || directUpi || khata ? (
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Payment</label>
                 <div className="grid grid-cols-2 gap-2">
+                  {khata ? (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('khata')}
+                      className={clsx(
+                        'col-span-2 rounded-lg border px-3 py-2 text-left text-sm',
+                        paymentMethod === 'khata' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
+                      )}
+                    >
+                      <span className="font-medium">Add to my khata</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">
+                        {khata.pay_by_label ? `Pay by ${khata.pay_by_label}` : khata.settlement_day_label}
+                        {khata.available != null ? ` · ₹${khata.available.toLocaleString('en-IN')} left on your limit` : ''}
+                        {khata.overdue_amount > 0 ? ` · ₹${khata.overdue_amount.toLocaleString('en-IN')} overdue` : ''}
+                      </span>
+                    </button>
+                  ) : null}
                   {store.store_allow_cod !== false ? (
                     <button
                       type="button"
@@ -647,6 +683,8 @@ export function StoreCheckout({
 }
 
 interface OrderConfirmationProps {
+  /** Extra line under the total, e.g. the khata pay-by date. */
+  note?: string;
   orderNumber: string;
   grandTotal: number;
   storeName: string;
@@ -660,6 +698,7 @@ export function OrderConfirmation({
   storeName,
   storePhone,
   onClose,
+  note,
 }: OrderConfirmationProps) {
   const whatsappMessage = encodeURIComponent(
     `Hi ${storeName}, I just placed order ${orderNumber} (₹${grandTotal.toLocaleString('en-IN')}) on your store. Please confirm.`,
@@ -680,9 +719,13 @@ export function OrderConfirmation({
         <p className="mt-2 text-lg font-bold text-gray-900">
           &#x20B9;{grandTotal.toLocaleString('en-IN')}
         </p>
-        <p className="mt-3 text-xs text-gray-400">
-          The store will confirm your order shortly.
-        </p>
+        {note ? (
+          <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">{note}</p>
+        ) : (
+          <p className="mt-3 text-xs text-gray-400">
+            The store will confirm your order shortly.
+          </p>
+        )}
 
         {storePhone ? (
           <a

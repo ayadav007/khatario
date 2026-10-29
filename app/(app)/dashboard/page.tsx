@@ -26,6 +26,7 @@ import {
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
+import { KhataDashboardCard } from '@/components/dashboard/KhataDashboardCard';
 import {
   DashboardFinancialSnapshot,
   type DashboardKpiClickType,
@@ -409,6 +410,8 @@ function DashboardPage() {
             <PayablesCard total={payablesTotal} aging={payablesAging} />
           </div>
         ) : null}
+
+        {!hideBody && data ? <KhataDashboardCard /> : null}
 
         {/* Pending Actions Button - Sticky in top-right */}
         {!hideBody && data ? <PendingActionsButton data={data} /> : null}

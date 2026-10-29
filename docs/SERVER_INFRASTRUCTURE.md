@@ -195,6 +195,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 20 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron-staging.log 2>&1
 30 5 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/standing-orders >> /var/log/khatario-cron-staging.log 2>&1
+0 4 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/khata-statements >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
@@ -211,6 +212,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 25 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron.log 2>&1
 35 5 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/standing-orders >> /var/log/khatario-cron.log 2>&1
+5 4 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/khata-statements >> /var/log/khatario-cron.log 2>&1
 ```
 
 `/api/cron/check-low-stock` drives the Supplier Hub reorder loop. It alerts each supplier when a connected buyer who shares stock has an item at or below its reorder level, and builds or tops up one suggested order per buyer and supplier. Stock changes also queue the alert part a few seconds after they are saved; suggested orders are built only here, and this run also catches any alert the queue missed. An item already alerted or already on an open order is skipped, so repeated runs never notify twice. Without this entry, suggested orders are only built when a supplier opens Buyers low on stock.

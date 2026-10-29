@@ -94,6 +94,7 @@ export function StoreCatalogView() {
   const [orderConfirm, setOrderConfirm] = useState<{
     orderNumber: string;
     grandTotal: number;
+    note?: string;
   } | null>(null);
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
 
@@ -584,9 +585,9 @@ export function StoreCatalogView() {
       <StoreCheckout
         open={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
-        onOrderPlaced={(orderNumber, grandTotal) => {
+        onOrderPlaced={(orderNumber, grandTotal, note) => {
           setCheckoutOpen(false);
-          setOrderConfirm({ orderNumber, grandTotal });
+          setOrderConfirm({ orderNumber, grandTotal, note });
         }}
       />
 
@@ -594,6 +595,7 @@ export function StoreCatalogView() {
         <OrderConfirmation
           orderNumber={orderConfirm.orderNumber}
           grandTotal={orderConfirm.grandTotal}
+          note={orderConfirm.note}
           storeName={store?.name ?? ''}
           storePhone={store?.phone ?? null}
           onClose={() => setOrderConfirm(null)}

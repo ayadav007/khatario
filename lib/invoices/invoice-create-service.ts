@@ -524,6 +524,13 @@ export async function createInvoiceInTransaction(
     document_type
   );
 
+  // A khata customer's bill without a due date is due on their next settlement date.
+  let dueDate: string | null = body.due_date || null;
+  if (!dueDate && body.customer_id && balanceAmount > 0.005) {
+    const { khataDueDateForCustomer } = await import('@/lib/khata/service');
+    dueDate = await khataDueDateForCustomer(business_id, body.customer_id, String(body.invoice_date), client);
+  }
+
   const invoiceRes = await client.query(
     `
     INSERT INTO invoices (
@@ -545,7 +552,7 @@ export async function createInvoiceInTransaction(
       body.customer_id || null,
       invoiceNumber,
       body.invoice_date,
-      body.due_date || null,
+      dueDate,
       status,
       paymentStatus,
       totals.subtotal,

@@ -16,6 +16,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import LeadProfileCard from '@/components/customers/LeadProfileCard';
 import { CustomerPortalAccessCard } from '@/components/customers/CustomerPortalAccessCard';
+import { CustomerKhataCard } from '@/components/customers/CustomerKhataCard';
 import { HubCustomerLinkCard } from '@/components/suppliers/HubCustomerLinkCard';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
@@ -150,6 +151,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     documents: 'History',
   };
 
+  /** Bumped when the khata card records a payment or changes the khata, to refresh the figures. */
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     const fetchCustomerData = async () => {
       if (!user?.id) return;
@@ -174,7 +178,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     };
 
     fetchCustomerData();
-  }, [params.id, user?.id]);
+  }, [params.id, user?.id, reloadKey]);
 
   // Fetch lead profile if customer has phone number
   useEffect(() => {
@@ -434,6 +438,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             </Button>
           </div>
         </Card>
+
+        <CustomerKhataCard customerId={customer.id} onChanged={() => setReloadKey((k) => k + 1)} />
 
         {/* Lead Profile Card */}
         {leadProfile && (

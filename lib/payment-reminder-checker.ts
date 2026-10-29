@@ -143,6 +143,8 @@ export async function checkAndSendPaymentDueReminders(
          AND i.payment_status IN ('unpaid', 'partially_paid')
          AND DATE(COALESCE(i.due_date, i.invoice_date)) BETWEEN $2::date AND $3::date
          AND (c.phone IS NOT NULL AND c.phone != '')
+         -- Khata customers get one statement per settlement day instead (lib/khata/statements.ts).
+         AND COALESCE(c.khata_enabled, false) = false
          AND NOT EXISTS (
            SELECT 1 FROM whatsapp_messages wm
            WHERE wm.reference_id = i.id
@@ -231,6 +233,8 @@ export async function checkAndSendOverdueReminders(
          AND i.payment_status IN ('unpaid', 'partially_paid')
          AND DATE(COALESCE(i.due_date, i.invoice_date)) < $2::date
          AND (c.phone IS NOT NULL AND c.phone != '')
+         -- Khata customers get one statement per settlement day instead (lib/khata/statements.ts).
+         AND COALESCE(c.khata_enabled, false) = false
        ORDER BY COALESCE(i.due_date, i.invoice_date), i.id`,
       [businessId, localToday]
     );

@@ -85,6 +85,7 @@ import { searchCustomersForBilling, listCatalogCustomersLocal, OFFLINE_CATALOG_E
 import { isAppOffline } from '@/lib/network/offline-state';
 import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
 import { getInvoiceProfileContext } from '@/lib/business-profile-requirements';
+import { khataStatementDateFor } from '@/lib/khata/cycle';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
@@ -2743,11 +2744,21 @@ function NewInvoiceContent() {
 
   useEffect(() => {
     if (savedInvoiceId) return;
+    if (!invoiceDate || dueDateUserEditedRef.current) return;
+    // A store khata customer's bill is due on their next settlement day.
+    const khata = selectedCustomer as { khata_enabled?: boolean; khata_settlement_day?: number | null } | null | undefined;
+    if (khata?.khata_enabled && khata.khata_settlement_day != null) {
+      try {
+        setDueDate(khataStatementDateFor(invoiceDate, Number(khata.khata_settlement_day)));
+        return;
+      } catch {
+        // fall through to credit days
+      }
+    }
     const raw = selectedCustomer?.credit_days;
     const days =
       raw != null && String(raw).trim() !== '' ? Number(raw) : NaN;
-    if (!invoiceDate || !Number.isFinite(days) || days <= 0) return;
-    if (dueDateUserEditedRef.current) return;
+    if (!Number.isFinite(days) || days <= 0) return;
     const base = parseISO(`${invoiceDate}T12:00:00`);
     if (Number.isNaN(base.getTime())) return;
     setDueDate(format(addDays(base, days), 'yyyy-MM-dd'));

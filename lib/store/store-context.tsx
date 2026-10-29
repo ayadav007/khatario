@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
 import { sanitizeStoreTheme } from './store-theme';
+import type { StoreKhataStatus } from '@/lib/khata/store-view';
 
 export interface StoreCartItem {
   itemId: string;
@@ -26,6 +27,8 @@ export type StoreShopper = {
   email: string | null;
   last_address?: string | null;
   last_pincode?: string | null;
+  /** Store khata with this shop (none, asked for, or open with its balance and pay-by date). */
+  khata?: StoreKhataStatus;
 };
 
 interface StoreContextValue {

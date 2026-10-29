@@ -5,6 +5,7 @@
 ## Now
 - Staging QA run: apply migration 432 (HR monthly limits, needs owner approval), then attendance, payroll and payslips [[docs/qa/staging-scenario-results.md]]
 - Orders and delivery: close the fulfilment gaps [[docs/plan/ORDERS_FULFILMENT_GAPS.md]]
+- Store khata: built, checked in the browser on the test DB and committed; next migration 444 on staging (owner approval) and the khata-statements cron line at deploy [[docs/plan/STORE_KHATA.md]]
 
 ## Next
 - Template designer and gallery redesign: phases A–C built, owner review, then commit [[docs/plan/TEMPLATE_DESIGNER_REDESIGN.md]]
@@ -14,7 +15,6 @@
 - Phone app: move screens from prototype to live data [[docs/plan/PHONE_APP.md]]
 - Printing makeover: thermal, label and A4 printing on every platform [[docs/plan/PRINTING_MAKEOVER.md]]
 - Staff attendance check-in: face recognition pass
-- Store khata: opt-in customers order on credit from the store and settle on their own day each month; migration 444 [[docs/plan/STORE_KHATA.md]]
 
 ## Later
 - QA: purchase and purchase-return browser pass on staging [[docs/qa/phase-3q-browser-functional-results.md]]

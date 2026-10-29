@@ -11,6 +11,7 @@ import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor'
 import { StoreAppearanceStudio } from '@/components/store/admin/StoreAppearanceStudio';
 import { StoreLivePreview } from '@/components/store/admin/StoreLivePreview';
 import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager';
+import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { storeHostSuffix } from '@/lib/store/subdomain';
 import {
@@ -807,6 +808,9 @@ export default function OnlineStoreSettingsPage() {
               </Card>
               <Card className="p-5">
                 {business?.id ? <StoreCouponManager businessId={business.id} /> : null}
+              </Card>
+              <Card className="p-5">
+                <StoreKhataSettings />
               </Card>
               <Card className="p-5">
                 <h3 className="text-sm font-semibold text-gray-900">Delivery zones</h3>

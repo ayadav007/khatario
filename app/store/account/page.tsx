@@ -9,12 +9,15 @@ import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { OrderTimeline, type TimelineEvent } from '@/components/orders/OrderTimeline';
 import { StoreOrderReturn } from '@/components/store/StoreOrderReturn';
 import { FULFILMENT_STATUS_LABEL, isFulfilmentStatus } from '@/lib/fulfilment/rules';
+import { StoreKhataCard } from '@/components/store/StoreKhataCard';
 
 type AccountOrder = {
   id: string;
   order_number: string;
   status: string;
   payment_status: string;
+  /** Khata orders: "On khata, due 5 Nov" instead of the raw payment status. */
+  payment_label?: string | null;
   grand_total: number;
   delivery_mode?: string | null;
   tracking_url?: string | null;
@@ -76,6 +79,13 @@ export default function StoreAccountPage() {
               Sign out
             </button>
           </div>
+          <StoreKhataCard
+            subdomain={store.store_subdomain}
+            storeName={store.name}
+            khata={customer.khata}
+            accent={accent}
+            onChanged={refreshCustomer}
+          />
           {orders.length === 0 ? (
             <p className="text-sm text-gray-500">No orders yet.</p>
           ) : (
@@ -88,7 +98,7 @@ export default function StoreAccountPage() {
                   </div>
                   <p className="text-sm text-gray-500">
                     {isFulfilmentStatus(o.delivery_status) ? FULFILMENT_STATUS_LABEL[o.delivery_status] : o.status} ·{' '}
-                    {o.payment_status.replace(/_/g, ' ')}
+                    {o.payment_label ?? o.payment_status.replace(/_/g, ' ')}
                   </p>
                   {o.pickup_code ? (
                     <p className="mt-2 text-sm">

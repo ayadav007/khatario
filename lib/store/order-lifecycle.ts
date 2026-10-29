@@ -27,7 +27,7 @@ export type StoreOrderLifecycleResult =
   | {
       ok: false;
       status: 404 | 409;
-      code: 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'PAYMENT_REQUIRED';
+      code: 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'PAYMENT_REQUIRED' | 'KHATA_APPROVAL_PENDING';
       error: string;
       from?: StoreOrderStatus;
     };
@@ -100,8 +100,9 @@ export async function transitionStoreOrderInTransaction(
     payment_status: string;
     shipment_id: string | null;
     invoice_id: string | null;
+    khata_approval: string | null;
   }>(
-    `SELECT status, payment_status, shipment_id, invoice_id
+    `SELECT status, payment_status, shipment_id, invoice_id, khata_approval
        FROM store_orders
       WHERE id = $1 AND business_id = $2
       FOR UPDATE`,
@@ -117,6 +118,15 @@ export async function transitionStoreOrderInTransaction(
       status: 409,
       code: 'INVALID_TRANSITION',
       error: `Cannot change a ${order.status} order to ${input.to}`,
+      from: order.status,
+    };
+  }
+  if (order.khata_approval === 'pending' && input.to !== 'cancelled') {
+    return {
+      ok: false,
+      status: 409,
+      code: 'KHATA_APPROVAL_PENDING',
+      error: 'Approve or reject this khata order first',
       from: order.status,
     };
   }

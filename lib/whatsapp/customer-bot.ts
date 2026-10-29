@@ -88,7 +88,11 @@ export function formatOrderStatus(o: BotOrderRow, trackLink?: string | null): st
   const paid =
     o.payment_status === 'paid'
       ? 'paid'
-      : o.payment_status === 'cod' || cod > 0
+      : o.payment_status === 'khata'
+        ? 'on your khata'
+        : o.payment_status === 'khata_pending'
+          ? 'on khata, waiting for the shop to confirm'
+          : o.payment_status === 'cod' || cod > 0
         ? o.cod_collected_at ? 'paid in cash' : 'cash on delivery'
         : o.payment_status === 'partial'
           ? 'part paid'

@@ -84,7 +84,9 @@ export default function CustomersPage() {
   const searchParams = useSearchParams();
   const partyTab: PartyKind = searchParams.get('tab') === 'suppliers' ? 'suppliers' : 'customers';
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance'>('all');
+  const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance' | 'khata' | 'khata-requests'>(
+    () => (searchParams.get('filter') === 'khata-requests' ? 'khata-requests' : searchParams.get('filter') === 'khata' ? 'khata' : 'all'),
+  );
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -132,6 +134,9 @@ export default function CustomersPage() {
     }
     const balanceFilter = (c: Customer) => {
       const balance = Number(c.current_balance ?? c.opening_balance ?? 0);
+      const k = c as Customer & { khata_enabled?: boolean; khata_requested_at?: string | null };
+      if (filter === 'khata') return k.khata_enabled === true;
+      if (filter === 'khata-requests') return !k.khata_enabled && Boolean(k.khata_requested_at);
       return (
         filter === 'all' ||
         (filter === 'with-balance' && !isPartyBalanceSettled(balance)) ||
@@ -155,6 +160,8 @@ export default function CustomersPage() {
       const balance = partyBalance(s.current_balance, s.opening_balance);
       return (
         filter === 'all' ||
+        filter === 'khata' ||
+        filter === 'khata-requests' ||
         (filter === 'with-balance' && !isPartyBalanceSettled(balance)) ||
         (filter === 'zero-balance' && isPartyBalanceSettled(balance))
       );
@@ -283,6 +290,22 @@ export default function CustomersPage() {
             >
               Zero Balance
             </button>
+            {partyTab === 'customers' ? (
+              <>
+                <button
+                  onClick={() => setFilter('khata')}
+                  className={`chip ${filter === 'khata' ? 'bg-primary-500 text-white border-primary-500' : ''}`}
+                >
+                  Khata
+                </button>
+                <button
+                  onClick={() => setFilter('khata-requests')}
+                  className={`chip ${filter === 'khata-requests' ? 'bg-primary-500 text-white border-primary-500' : ''}`}
+                >
+                  Khata requests
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -745,6 +768,12 @@ export default function CustomersPage() {
                       { id: 'all', label: partyTab === 'suppliers' ? 'All Suppliers' : 'All Customers' },
                       { id: 'with-balance', label: 'With Balance' },
                       { id: 'zero-balance', label: 'Zero Balance' },
+                      ...(partyTab === 'customers'
+                        ? [
+                            { id: 'khata', label: 'Khata' },
+                            { id: 'khata-requests', label: 'Khata requests' },
+                          ]
+                        : []),
                     ].map((f) => (
                       <button
                         key={f.id}
