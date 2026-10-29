@@ -46,13 +46,15 @@ async function fetchMyBusinesses(): Promise<MyBusinessOption[]> {
 export interface BusinessSwitcherProps {
   /** Wider touch row on small screens (matches branch strip). */
   mobile?: boolean;
+  /** Row inside the desktop profile menu: list opens inline, and a single business still shows with its role. */
+  inMenu?: boolean;
 }
 
 /**
  * Lists businesses from GET /api/businesses/my and switches tenant via POST /api/businesses/switch.
- * Hidden when the user has at most one membership.
+ * Hidden when the user has at most one membership (in the profile menu it shows as a plain row instead).
  */
-export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
+export function BusinessSwitcher({ mobile, inMenu }: BusinessSwitcherProps) {
   const { business, isPrimaryAdmin } = useAuth();
   const { enabledFeatureIds } = useLayoutData();
   const canAddBusiness =
@@ -85,13 +87,15 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
   }, []);
 
   useEffect(() => {
+    // Inline list in the profile menu: collapsing on mousedown would shift the row being clicked.
+    if (inMenu) return;
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (rootRef.current && !rootRef.current.contains(t)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
+  }, [inMenu]);
 
   const activeId = business?.id ?? null;
 
@@ -161,12 +165,23 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
     [adding, draft.businessName, draft.businessType, draft.industry],
   );
 
-  if (listLoading || (items.length <= 1 && !canAddBusiness)) {
-    return null;
-  }
-
   const current = activeId ? items.find((b) => b.id === activeId) : undefined;
   const label = current?.name ?? business?.name ?? 'Business';
+
+  if (listLoading || (items.length <= 1 && !canAddBusiness)) {
+    if (!inMenu) return null;
+    return (
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Briefcase className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-text-primary">{label}</span>
+          {current?.role ? (
+            <span className="block truncate text-xs text-text-muted">{formatRoleLabel(current.role)}</span>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
 
   const inner = (
     <div className="relative w-full" ref={rootRef}>
@@ -175,7 +190,9 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
         disabled={switching}
         onClick={() => !switching && setOpen((v) => !v)}
         className={
-          mobile
+          inMenu
+            ? 'flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-slate-100/80 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60'
+            : mobile
             ? 'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-slate-100/50 dark:hover:bg-slate-800/80 disabled:cursor-not-allowed disabled:opacity-60'
             : 'flex max-w-[14rem] items-center gap-2 rounded-lg border border-border px-3 py-1.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/80 disabled:cursor-not-allowed disabled:opacity-60'
         }
@@ -213,7 +230,9 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
       {open && !switching && (
         <div
           className={
-            mobile
+            inMenu
+              ? 'mt-1 max-h-72 overflow-y-auto rounded-md border border-border bg-background/60 dark:bg-slate-900/40'
+              : mobile
               ? 'absolute left-0 right-0 top-full z-[60] mt-2 max-h-96 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg'
               : 'absolute left-0 top-full z-[60] mt-2 w-72 max-h-96 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg lg:left-auto lg:right-0'
           }

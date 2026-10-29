@@ -1,79 +1,50 @@
 'use client';
 
-import { Crown, TrendingUp, Sparkles, Zap } from 'lucide-react';
+import { Crown, TrendingUp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 
-interface SubscriptionBadgeProps {
-  businessId: string;
-}
-
-export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
+/** Current plan with an Upgrade action, for the desktop profile menu. */
+export function SubscriptionMenuRow({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const { subscription, loading } = useLayoutData();
 
   if (loading || !subscription) return null;
 
   const nestedPlan = subscription.plan as { code?: string; display_name?: string } | undefined;
-  const planCode = (
-    subscription.plan_name ||
-    subscription.plan_id ||
-    nestedPlan?.code ||
-    'free'
-  ).toLowerCase();
   const planDisplayName =
     subscription.plan_display_name ||
     nestedPlan?.display_name ||
     subscription.plan_name ||
     'Free';
-
-  const showTrialBadge =
-    (subscription?.show_trial_badge === true ||
-      (subscription?.status === 'trial' &&
-        subscription?.show_trial_badge !== false)) &&
+  const isTrial =
+    (subscription.show_trial_badge === true ||
+      (subscription.status === 'trial' && subscription.show_trial_badge !== false)) &&
     !/\btrial\b/i.test(planDisplayName);
 
-  const planConfig: Record<
-    string,
-    {
-      icon: React.ReactNode;
-      colorClass: string;
-    }
-  > = {
-    free: {
-      icon: null,
-      colorClass: 'bg-gray-100 text-gray-800 border-gray-300',
-    },
-    trial: {
-      icon: <Sparkles className="w-3.5 h-3.5" />,
-      colorClass: 'bg-slate-100 text-slate-800 border-slate-300',
-    },
-    growth: {
-      icon: <Zap className="w-3.5 h-3.5" />,
-      colorClass: 'bg-primary-600 text-white border-primary-600',
-    },
-    business: {
-      icon: <Crown className="w-3.5 h-3.5" />,
-      colorClass: 'bg-gradient-to-r from-purple-600 to-primary-600 text-white border-purple-600',
-    },
+  const go = () => {
+    onNavigate?.();
+    router.push('/settings/subscription');
   };
 
-  const config = planConfig[planCode] || planConfig.free;
-
   return (
-    <button
-      onClick={() => router.push('/settings/subscription')}
-      className={`flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition hover:scale-105 shadow-sm ${config.colorClass}`}
-      title="Click to view subscription details"
-    >
-      {config.icon}
-      <span>{planDisplayName}</span>
-      {showTrialBadge && planCode !== 'free' && (
-        <span className="ml-1 opacity-90">(Trial)</span>
-      )}
-      {planCode !== 'business' && planCode !== 'billing_business' && planCode !== 'free' && (
-        <TrendingUp className="w-3.5 h-3.5 ml-1 opacity-80" />
-      )}
-    </button>
+    <div className="flex items-center gap-2 px-3 py-2">
+      <Crown className="h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-text-primary">
+          {planDisplayName}
+          {isTrial && <span className="ml-1 text-xs font-normal text-text-muted">(Trial)</span>}
+        </span>
+        <span className="block text-xs text-text-muted">Current plan</span>
+      </span>
+      <button
+        type="button"
+        onClick={go}
+        className="flex shrink-0 items-center gap-1 rounded-full bg-gradient-to-r from-purple-600 to-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
+      >
+        <TrendingUp className="h-3.5 w-3.5" aria-hidden />
+        Upgrade
+      </button>
+    </div>
   );
 }
