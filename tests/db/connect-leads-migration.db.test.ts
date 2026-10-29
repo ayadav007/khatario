@@ -156,6 +156,39 @@ run('connect leads migration (kh_phase2_test)', () => {
     expect(closed?.stage_id).toBe(stageIds['New']);
   });
 
+  test('backfill normalises phones like normalizeLeadPhone, skips non-phones and shortens long names', async () => {
+    const formats: Array<[string, string]> = [
+      ['09876543210', '919876543210'],
+      ['+91 98765 43211', '919876543211'],
+      ['00919876543212', '919876543212'],
+      ['9876543213', '919876543213'],
+    ];
+    const longName = 'N'.repeat(200);
+    const seeded: Array<{ id: string; key: string }> = [];
+    for (const [raw, key] of formats) {
+      const chat = await seedChat(businessId, { phone: raw, name: raw === '09876543210' ? longName : undefined });
+      seeded.push({ id: chat.id, key });
+    }
+    const tooLong = await seedChat(businessId, { phone: '1234567890123456' });
+    for (const id of [...seeded.map((s) => s.id), tooLong.id]) {
+      await query(`UPDATE whatsapp_conversations SET stage_id = $2 WHERE id = $1`, [id, stageIds['New']]);
+    }
+
+    await runMigration();
+
+    for (const { id, key } of seeded) {
+      const lead = await queryOne<{ contact_phone: string }>(`SELECT contact_phone FROM leads WHERE conversation_id = $1`, [id]);
+      expect(lead?.contact_phone).toBe(key);
+    }
+    const named = await queryOne<{ contact_name: string }>(`SELECT contact_name FROM leads WHERE conversation_id = $1`, [seeded[0].id]);
+    expect(named?.contact_name).toBe(longName.slice(0, 120));
+    expect(await queryOne(`SELECT 1 FROM leads WHERE conversation_id = $1`, [tooLong.id])).toBeNull();
+
+    const before = await leadsOf();
+    await runMigration();
+    expect(await leadsOf()).toBe(before);
+  });
+
   test('one open lead per phone', async () => {
     const insert = (closed: string) =>
       query(`INSERT INTO leads (business_id, contact_phone, closed_at) VALUES ($1, $2, ${closed})`, [businessId, chatA.phone]);

@@ -96,7 +96,7 @@ INSERT INTO leads (
   source, source_detail, source_at, opened_at, closed_at, last_activity_at
 )
 SELECT
-  r.business_id, r.phone, r.whatsapp_display_name, r.id, r.customer_id,
+  r.business_id, r.phone, left(r.whatsapp_display_name, 120), r.id, r.customer_id,
   CASE WHEN r.customer_id IS NOT NULL THEN 'existing' ELSE 'new' END,
   r.stage_id, r.deal_value, r.expected_close_on, r.lost_reason, r.stage_changed_at, r.assigned_to,
   r.source, r.source_detail, r.source_at,
@@ -120,11 +120,18 @@ FROM (
     FROM whatsapp_conversations c
     JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id
    CROSS JOIN LATERAL (
-     SELECT CASE WHEN length(x.digits) = 10 THEN '91' || x.digits ELSE left(x.digits, 20) END AS phone
-       FROM (SELECT regexp_replace(c.from_number, '\D', '', 'g') AS digits) x
+     -- Same steps as normalizeLeadPhone in lib/whatsapp/lead-sources.ts.
+     SELECT CASE WHEN length(z.d) = 10 THEN '91' || z.d ELSE z.d END AS phone
+       FROM (
+         SELECT CASE WHEN length(y.d) = 11 AND y.d LIKE '0%' THEN substr(y.d, 2) ELSE y.d END AS d
+           FROM (
+             SELECT CASE WHEN x.d LIKE '00%' THEN substr(x.d, 3) ELSE x.d END AS d
+               FROM (SELECT regexp_replace(c.from_number, '\D', '', 'g') AS d) x
+           ) y
+       ) z
    ) d
    WHERE NOT COALESCE(c.is_group, false)
-     AND d.phone <> ''
+     AND length(d.phone) BETWEEN 11 AND 15
      AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id)
 ) r;
 
