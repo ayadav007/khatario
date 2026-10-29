@@ -106,7 +106,12 @@ export default function CustomersPage() {
     setSelectedSupplierId(null);
   };
 
-  const { data: allCustomers, loading } = useEntityList<Customer>({
+  const {
+    data: allCustomers,
+    loading,
+    error: customersError,
+    refresh: refreshCustomers,
+  } = useEntityList<Customer>({
     apiUrl: '/api/customers',
     businessId: business?.id ?? null,
     userId: user?.id ?? null,
@@ -179,6 +184,15 @@ export default function CustomersPage() {
   }, [filteredSuppliers, page]);
 
   const listLoading = partyTab === 'suppliers' ? suppliersLoading : loading;
+  const customersLoadFailed = partyTab === 'customers' && Boolean(customersError) && allCustomers.length === 0;
+  const loadFailedNotice = (
+    <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-text-secondary">
+      <p>Couldn&apos;t load your customers. Check your connection and try again.</p>
+      <Button size="sm" variant="secondary" onClick={() => void refreshCustomers()}>
+        Retry
+      </Button>
+    </div>
+  );
   const filteredCount = partyTab === 'suppliers' ? filteredSuppliers.length : filteredCustomers.length;
   const totalPages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
 
@@ -386,6 +400,8 @@ export default function CustomersPage() {
               );
             })
           )
+        ) : customersLoadFailed ? (
+          loadFailedNotice
         ) : paginatedCustomers.length === 0 ? (
           <div className="p-8 text-center text-sm text-text-secondary">No customers</div>
         ) : (
@@ -592,7 +608,7 @@ export default function CustomersPage() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="text-center py-12 text-text-secondary">
-                      No customers found.
+                      {customersLoadFailed ? loadFailedNotice : 'No customers found.'}
                     </td>
                   </tr>
                 )}
@@ -682,7 +698,11 @@ export default function CustomersPage() {
                 );
               })
             ) : (
-              <div className="px-4 py-10 text-center text-sm text-text-secondary">No customers found.</div>
+              customersLoadFailed ? (
+                loadFailedNotice
+              ) : (
+                <div className="px-4 py-10 text-center text-sm text-text-secondary">No customers found.</div>
+              )
             )}
           </div>
         </>
