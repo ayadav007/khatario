@@ -418,6 +418,39 @@ export async function closeLeadAsWentQuiet(businessId: string, leadId: string): 
   });
 }
 
+/**
+ * An outside enquiry (IndiaMART, webhook) lands on a lead that is already open. A Direct lead (no source)
+ * takes the enquiry's source; a lead with a source keeps it. Either way the enquiry's labels join the lead's
+ * source_detail.label_ids and, when the lead has a chat, go onto it. The lead counts as active.
+ */
+export async function addImportToLead(
+  businessId: string,
+  leadId: string,
+  input: { source: LeadSourceKey; sourceDetail: Record<string, unknown>; labelIds: string[] },
+): Promise<Lead> {
+  await query(
+    `UPDATE leads SET source = $3, source_detail = $4::jsonb, source_at = NOW(), updated_at = NOW()
+      WHERE id = $1::uuid AND business_id = $2 AND source IS NULL`,
+    [leadId, businessId, input.source, JSON.stringify(input.sourceDetail)],
+  );
+  if (input.labelIds.length) {
+    await query(
+      `UPDATE leads
+          SET source_detail = jsonb_set(
+                COALESCE(source_detail, '{}'::jsonb), '{label_ids}',
+                (SELECT COALESCE(jsonb_agg(DISTINCT x), '[]'::jsonb)
+                   FROM jsonb_array_elements_text(COALESCE(source_detail->'label_ids', '[]'::jsonb) || $3::jsonb) x)),
+              updated_at = NOW()
+        WHERE id = $1::uuid AND business_id = $2`,
+      [leadId, businessId, JSON.stringify(input.labelIds)],
+    );
+  }
+  await touchLead(businessId, leadId);
+  const lead = (await loadLead(businessId, leadId))!;
+  if (lead.conversation_id) await applyLeadToChat(businessId, lead, lead.conversation_id);
+  return lead;
+}
+
 /** Gives a lead with no chat its chat (same business, not a group). */
 export async function linkChatToLead(businessId: string, leadId: string, conversationId: string): Promise<void> {
   const linked = await queryOne<{ id: string }>(

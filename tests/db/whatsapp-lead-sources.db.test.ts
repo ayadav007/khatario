@@ -84,9 +84,9 @@ run('Connect lead sources (kh_phase2_test)', () => {
   const tag = B.slice(0, 6);
   let seq = 0;
 
-  async function newChat(business = B): Promise<string> {
+  async function newChat(business = B, fromNumber?: string): Promise<string> {
     const id = randomUUID();
-    const phone = `91${String(Date.now()).slice(-6)}${String(++seq).padStart(4, '0')}`;
+    const phone = fromNumber ?? `91${String(Date.now()).slice(-6)}${String(++seq).padStart(4, '0')}`;
     await query(
       `INSERT INTO whatsapp_conversations (id, business_id, from_number, to_number, conversation_id, last_message_at, last_message_direction)
        VALUES ($1, $2, $3, '919999900000', $3, NOW(), 'incoming')`,
@@ -191,7 +191,7 @@ run('Connect lead sources (kh_phase2_test)', () => {
     expect(counts).toEqual({ clicks: 0, qr_scans: 1 });
   });
 
-  test('webhook: token picks the business, repeats are dropped, a later message joins the same chat', async () => {
+  test('webhook: token picks the business, repeats are dropped, a later message links the chat', async () => {
     const { token } = await createWebhookSource(B, ASHA, { name: 'JustDial' });
     await expect(receiveWebhookLead('x'.repeat(30), { phone: '9876511111' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(receiveWebhookLead(token, { name: 'No phone' })).rejects.toMatchObject({ code: 'PHONE_REQUIRED' });
@@ -199,23 +199,25 @@ run('Connect lead sources (kh_phase2_test)', () => {
     const first = await receiveWebhookLead(token, { mobile: '98765 11111', full_name: 'Kiran', requirement: 'Need 50 kg', id: 'JD-1', business_id: OTHER });
     expect(first.duplicate).toBe(false);
     const again = await receiveWebhookLead(token, { phone: '9876511111', id: 'JD-1' });
-    expect(again).toEqual({ conversationId: first.conversationId, duplicate: true });
+    expect(again).toEqual({ leadId: first.leadId, duplicate: true });
 
-    const row = await queryOne<{ business_id: string; from_number: string; whatsapp_display_name: string; source: string; inbox_state: string }>(
-      `SELECT c.business_id::text AS business_id, c.from_number, c.whatsapp_display_name, l.source, c.inbox_state
-         FROM whatsapp_conversations c LEFT JOIN leads l ON l.conversation_id = c.id AND l.closed_at IS NULL WHERE c.id = $1`,
-      [first.conversationId],
+    // The lead belongs to the token's business, has no chat yet, and keeps the enquiry text as its note.
+    const row = await queryOne<{ business_id: string; contact_phone: string; contact_name: string; source: string; conversation_id: string | null; note: string }>(
+      `SELECT business_id::text AS business_id, contact_phone, contact_name, source, conversation_id::text AS conversation_id, note
+         FROM leads WHERE id = $1`,
+      [first.leadId],
     );
-    expect(row).toEqual({ business_id: B, from_number: '919876511111', whatsapp_display_name: 'Kiran', source: 'lead_api', inbox_state: 'requesting' });
-    const field = await queryOne<{ field_value: string }>(
-      `SELECT field_value FROM whatsapp_conversation_custom_fields WHERE conversation_id = $1 AND field_key = 'lead_api_enquiry'`,
-      [first.conversationId],
-    );
-    expect(field?.field_value).toBe('Need 50 kg');
+    expect(row).toEqual({ business_id: B, contact_phone: '919876511111', contact_name: 'Kiran', source: 'lead_api', conversation_id: null, note: 'Need 50 kg' });
 
-    // A second lead for an existing chat keeps that chat (and its first-touch source).
+    // A second enquiry from the same number joins the open lead (and keeps its first-touch source).
     const second = await receiveWebhookLead(token, { phone: '+919876511111', message: 'Any update?', id: 'JD-2' });
-    expect(second.conversationId).toBe(first.conversationId);
+    expect(second).toEqual({ leadId: first.leadId, duplicate: false });
+
+    // The buyer's first message gives that lead its chat.
+    const c = await newChat(B, '919876511111');
+    await receive(B, c, 'Hello');
+    const linked = await queryOne<{ conversation_id: string | null }>(`SELECT conversation_id::text AS conversation_id FROM leads WHERE id = $1`, [first.leadId]);
+    expect(linked?.conversation_id).toBe(c);
   });
 
   test('IndiaMART: pulls a window, imports once, records errors and honours the 5-minute limit', async () => {

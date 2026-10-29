@@ -15,8 +15,8 @@
 import { createHash, randomBytes } from 'crypto';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
-import { assignToAgent, broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
-import { openLead } from '@/lib/leads/core';
+import { isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
+import { addImportToLead, LeadError, openLead } from '@/lib/leads/core';
 import { normalizeLeadPhone } from '@/lib/leads/phone';
 
 export { normalizeLeadPhone };
@@ -492,7 +492,7 @@ export interface IncomingLead {
   name: string | null;
   phone: string;
   message: string | null;
-  /** Shown on the chat and kept in source_detail. */
+  /** Kept in the lead's source_detail. */
   detail: Record<string, string | null>;
 }
 
@@ -507,10 +507,13 @@ interface SourceForImport {
 }
 
 /**
- * Creates (or reuses) the WhatsApp chat for an outside lead and puts it on the board.
- * Returns null when this lead was already imported. Later messages from the same number join this chat.
+ * Puts an outside enquiry on the pipeline as a lead, with no chat: the chat links when the buyer messages
+ * (leadForInboundMessage). Returns null when this enquiry was already imported. A number with an open lead
+ * joins it: a Direct lead takes this source, a lead with a source keeps it, and the source's labels are
+ * added either way. The source's stage and owner are best effort, so a deleted stage (first open stage
+ * instead) or an agent who lost inbox access (no owner instead) never drops the lead.
  */
-export async function importLead(src: SourceForImport, lead: IncomingLead): Promise<{ conversationId: string; created: boolean } | null> {
+export async function importLead(src: SourceForImport, lead: IncomingLead): Promise<{ leadId: string; created: boolean } | null> {
   const claim = await queryOne<{ id: string }>(
     `INSERT INTO whatsapp_lead_imports (business_id, lead_source_id, external_id)
      VALUES ($1, $2::uuid, $3) ON CONFLICT (lead_source_id, external_id) DO NOTHING RETURNING id::text AS id`,
@@ -520,63 +523,38 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
 
   const source: LeadSource = src.kind === 'indiamart' ? 'indiamart' : 'lead_api';
   const summary = (lead.message || lead.detail.subject || lead.detail.product || `New lead from ${src.name}`)!.slice(0, 500);
-  let conv = await queryOne<{ id: string }>(
-    `SELECT id::text AS id FROM whatsapp_conversations
-      WHERE business_id = $1 AND NOT COALESCE(is_group, false)
-        AND (conversation_id = $2 OR REGEXP_REPLACE(from_number, '[^0-9]', '', 'g') = $2
-             OR RIGHT(REGEXP_REPLACE(from_number, '[^0-9]', '', 'g'), 10) = RIGHT($2, 10))
-      ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-    [src.business_id, lead.phone],
-  );
-  let created = false;
-  if (!conv) {
-    const bizPhone = (await suggestedBusinessPhone(src.business_id)) || '';
-    conv = await queryOne<{ id: string }>(
-      `INSERT INTO whatsapp_conversations
-         (business_id, from_number, to_number, conversation_id, last_message_text, last_message_at, last_message_direction,
-          status, inbox_state, requested_at, unread_count, whatsapp_display_name)
-       VALUES ($1, $2, $3, $2, $4, NOW(), 'incoming', 'active', 'requesting', NOW(), 1, $5)
-       ON CONFLICT DO NOTHING
-       RETURNING id::text AS id`,
-      [src.business_id, lead.phone, bizPhone, `${src.name}: ${summary}`, lead.name ? lead.name.slice(0, 120) : null],
-    );
-    created = !!conv;
-    if (!conv) {
-      conv = await queryOne<{ id: string }>(
-        `SELECT id::text AS id FROM whatsapp_conversations WHERE business_id = $1 AND conversation_id = $2`,
-        [src.business_id, lead.phone],
-      );
-    }
-  }
-  if (!conv) throw new Error('Could not create a chat for the lead');
-
-  await query(`UPDATE whatsapp_lead_imports SET conversation_id = $2::uuid WHERE id = $1::uuid`, [claim.id, conv.id]);
-  // The enquiry text, visible in the contact panel's custom fields.
-  await query(
-    `INSERT INTO whatsapp_conversation_custom_fields (conversation_id, business_id, field_key, field_value)
-     VALUES ($1::uuid, $2, $3, $4)
-     ON CONFLICT (conversation_id, field_key) DO UPDATE SET field_value = EXCLUDED.field_value`,
-    [conv.id, src.business_id, `${source}_enquiry`, summary],
-  ).catch(() => undefined);
-  // Opens the lead (or joins the open one) on the source's stage; Task 4 moves imports onto leads fully.
+  const labelIds = src.label_ids ?? [];
+  const sourceDetail = { lead_source_id: src.id, name: src.name, ...lead.detail, message: lead.message, label_ids: labelIds };
   try {
-    const owner = src.assign_to && (await isEligibleInboxAgent(src.business_id, src.assign_to)) ? src.assign_to : null;
-    await openLead(src.business_id, {
-      phone: lead.phone,
-      name: lead.name,
-      conversationId: conv.id,
-      source,
-      sourceDetail: { lead_source_id: src.id, name: src.name, ...lead.detail, message: lead.message, label_ids: src.label_ids ?? [] },
-      stageId: src.stage_id,
-      ownerId: owner,
-      actor: { source: 'auto' },
-    });
-    if (owner) await assignToAgent(src.business_id, conv.id, owner);
+    let stageId = src.stage_id;
+    let ownerId = src.assign_to;
+    let opened: Awaited<ReturnType<typeof openLead>> | undefined;
+    while (!opened) {
+      try {
+        opened = await openLead(src.business_id, {
+          phone: lead.phone,
+          name: lead.name,
+          source,
+          sourceDetail,
+          stageId,
+          ownerId,
+          note: summary,
+          actor: { source: 'auto' },
+        });
+      } catch (err) {
+        if (err instanceof LeadError && err.code === 'STAGE_NOT_FOUND' && stageId) stageId = null;
+        else if (err instanceof LeadError && err.code === 'BAD_OWNER' && ownerId) ownerId = null;
+        else throw err;
+      }
+    }
+    if (!opened.created) await addImportToLead(src.business_id, opened.lead.id, { source, sourceDetail, labelIds });
+    await query(`UPDATE whatsapp_lead_imports SET lead_id = $2::uuid WHERE id = $1::uuid`, [claim.id, opened.lead.id]);
+    return { leadId: opened.lead.id, created: opened.created };
   } catch (err) {
-    console.warn('[lead-sources] routing failed:', err instanceof Error ? err.message : err);
+    // Release the claim so the next pull or retry can import this enquiry.
+    await query(`DELETE FROM whatsapp_lead_imports WHERE id = $1::uuid`, [claim.id]).catch(() => undefined);
+    throw err;
   }
-  await broadcastOwnership(src.business_id, conv.id);
-  return { conversationId: conv.id, created };
 }
 
 const IMPORT_COLUMNS = `id::text AS id, business_id::text AS business_id, kind, name, stage_id::text AS stage_id,
@@ -614,7 +592,7 @@ export function parseWebhookLead(body: unknown): IncomingLead {
 }
 
 /** Public webhook: token in the URL picks the business. */
-export async function receiveWebhookLead(token: string, body: unknown): Promise<{ conversationId: string; duplicate: boolean }> {
+export async function receiveWebhookLead(token: string, body: unknown): Promise<{ leadId: string; duplicate: boolean }> {
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) throw new LeadSourceError('Unknown webhook', 404, 'NOT_FOUND');
   const src = await queryOne<SourceForImport & { enabled: boolean }>(
     `SELECT ${IMPORT_COLUMNS}, enabled FROM whatsapp_lead_sources WHERE token_hash = $1 AND kind = 'webhook'`,
@@ -629,13 +607,13 @@ export async function receiveWebhookLead(token: string, body: unknown): Promise<
     [src.id, JSON.stringify({ received: 1, duplicate: !result })],
   );
   if (!result) {
-    const prior = await queryOne<{ conversation_id: string | null }>(
-      `SELECT conversation_id::text AS conversation_id FROM whatsapp_lead_imports WHERE lead_source_id = $1::uuid AND external_id = $2`,
+    const prior = await queryOne<{ lead_id: string | null }>(
+      `SELECT lead_id::text AS lead_id FROM whatsapp_lead_imports WHERE lead_source_id = $1::uuid AND external_id = $2`,
       [src.id, lead.externalId.slice(0, 120)],
     );
-    return { conversationId: prior?.conversation_id ?? '', duplicate: true };
+    return { leadId: prior?.lead_id ?? '', duplicate: true };
   }
-  return { conversationId: result.conversationId, duplicate: false };
+  return { leadId: result.leadId, duplicate: false };
 }
 
 // ---------------------------------------------------------------- IndiaMART pull
