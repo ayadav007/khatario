@@ -69,9 +69,11 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
     return id;
   }
 
+  /** Stage of the chat's open lead (migration 447 moved the pipeline onto leads). */
   async function stageOf(id: string): Promise<string | null> {
     const row = await queryOne<{ name: string | null }>(
-      `SELECT s.name FROM whatsapp_conversations c LEFT JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id WHERE c.id = $1`,
+      `SELECT s.name FROM leads l LEFT JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id
+        WHERE l.conversation_id = $1 AND l.closed_at IS NULL`,
       [id],
     );
     return row?.name ?? null;
@@ -112,6 +114,7 @@ run('direct leads and lead summaries (kh_phase2_test)', () => {
       await query(`DELETE FROM whatsapp_lead_profiles WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
       await query(`DELETE FROM whatsapp_conversation_messages WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
       await query(`DELETE FROM whatsapp_entry_links WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
+      await query(`DELETE FROM leads WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
       await query(`DELETE FROM whatsapp_conversations WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
       await query(`DELETE FROM whatsapp_pipeline_stages WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);
       await query(`DELETE FROM ai_provider_config WHERE business_id = ANY($1::uuid[])`, [[B, OFF]]);

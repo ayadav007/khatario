@@ -97,7 +97,10 @@ run('Connect lead sources (kh_phase2_test)', () => {
   async function chat(id: string) {
     return queryOne<{ source: string | null; source_detail: any; stage_name: string | null; assigned_to: string | null; inbox_state: string }>(
       `SELECT c.source, c.source_detail, s.name AS stage_name, c.assigned_to::text AS assigned_to, c.inbox_state
-         FROM whatsapp_conversations c LEFT JOIN whatsapp_pipeline_stages s ON s.id = c.stage_id WHERE c.id = $1`,
+         FROM whatsapp_conversations c
+         LEFT JOIN leads l ON l.conversation_id = c.id AND l.closed_at IS NULL
+         LEFT JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id
+        WHERE c.id = $1`,
       [id],
     );
   }
@@ -125,6 +128,7 @@ run('Connect lead sources (kh_phase2_test)', () => {
     try {
       await query(`DELETE FROM whatsapp_lead_sources WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM whatsapp_entry_links WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
+      await query(`DELETE FROM leads WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM notifications WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]).catch(() => undefined);
       await query(`DELETE FROM whatsapp_conversations WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM whatsapp_pipeline_stages WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);

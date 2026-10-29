@@ -1,9 +1,9 @@
 /**
- * Connect sales pipeline: per-business stages and the deal on each chat (stage, value, close date).
- * A chat joins the board the first time it gets a stage. Business identity always comes from the session.
+ * Connect sales pipeline: per-business stages, the board and the dashboard. Deals live on leads
+ * (lib/leads/core.ts writes them). Business identity always comes from the session.
  */
 import { query, queryOne, queryRows } from '@/lib/db';
-import { broadcastOwnership, visibilityClause, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
+import { visibilityClause, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
 
 export const STAGE_KINDS = ['open', 'won', 'lost'] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
@@ -33,7 +33,7 @@ export interface DealPatch {
   lostReason?: string | null;
 }
 
-/** Who moved the deal; shown in the chat timeline. */
+/** Who moved the deal; shown in the timeline. */
 export type DealActor = { source: 'agent'; userId: string } | { source: 'flow' | 'ai' | 'auto' };
 
 export interface DealView {
@@ -205,133 +205,6 @@ export async function deleteStage(businessId: string, stageId: string, moveToId:
     [businessId, stageId, moveToId],
   );
   await query(`DELETE FROM whatsapp_pipeline_stages WHERE id = $1::uuid AND business_id = $2`, [stageId, businessId]);
-}
-
-function legacyStatusFor(stage: PipelineStage): LegacyLeadStatus {
-  if (stage.legacy_key) return stage.legacy_key;
-  if (stage.kind === 'won') return 'converted';
-  if (stage.kind === 'lost') return 'lost';
-  return 'interested';
-}
-
-function parseDealValue(raw: number | null): number | null {
-  if (raw === null) return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > 999_999_999_999) throw new PipelineError('Enter a deal value of 0 or more', 400, 'BAD_VALUE');
-  return Math.round(n * 100) / 100;
-}
-
-function parseCloseDate(raw: string | null): string | null {
-  if (raw === null || raw === '') return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(`${raw}T00:00:00Z`))) {
-    throw new PipelineError('Expected close date must look like 2026-11-30', 400, 'BAD_DATE');
-  }
-  return raw;
-}
-
-export async function loadDeal(businessId: string, conversationId: string): Promise<DealView | null> {
-  return queryOne<DealView>(
-    `SELECT stage_id::text AS stage_id, deal_value::float8 AS deal_value,
-            to_char(expected_close_on, 'YYYY-MM-DD') AS expected_close_on, lost_reason, stage_changed_at,
-            source, source_detail
-       FROM whatsapp_conversations WHERE id = $1::uuid AND business_id = $2`,
-    [conversationId, businessId],
-  );
-}
-
-/**
- * Updates the deal on one chat. The caller has already checked the chat is visible to the actor.
- * A stage change also writes the old lead_status, records a timeline event and refreshes open inboxes.
- */
-export async function setDeal(
-  businessId: string,
-  conversationId: string,
-  patch: DealPatch,
-  actor: DealActor,
-): Promise<DealView> {
-  const current = await queryOne<{ stage_id: string | null; is_group: boolean | null }>(
-    `SELECT stage_id::text AS stage_id, is_group FROM whatsapp_conversations WHERE id = $1::uuid AND business_id = $2`,
-    [conversationId, businessId],
-  );
-  if (!current) throw new PipelineError('Conversation not found', 404, 'NOT_FOUND');
-  if (current.is_group) throw new PipelineError('Group chats cannot go on the pipeline', 400, 'GROUP_CHAT');
-
-  const sets: string[] = [];
-  const values: unknown[] = [conversationId, businessId];
-  const set = (col: string, v: unknown, cast = '') => {
-    values.push(v);
-    sets.push(`${col} = $${values.length}${cast}`);
-  };
-
-  let fromStage: PipelineStage | null = null;
-  let toStage: PipelineStage | null = null;
-  const stageChanges = patch.stageId !== undefined && (patch.stageId || null) !== current.stage_id;
-  if (stageChanges) {
-    const stages = await ensureStages(businessId);
-    fromStage = stages.find((s) => s.id === current.stage_id) ?? null;
-    if (patch.stageId) {
-      toStage = stages.find((s) => s.id === patch.stageId) ?? null;
-      if (!toStage) throw new PipelineError('Stage not found', 404, 'STAGE_NOT_FOUND');
-      set('lead_status', legacyStatusFor(toStage));
-    }
-    set('stage_id', toStage?.id ?? null, '::uuid');
-    sets.push('stage_changed_at = NOW()');
-    // Moving out of a lost stage clears the reason unless a new one is sent.
-    if (toStage?.kind !== 'lost' && patch.lostReason === undefined) sets.push('lost_reason = NULL');
-  }
-  if (patch.dealValue !== undefined) set('deal_value', parseDealValue(patch.dealValue));
-  if (patch.expectedCloseOn !== undefined) set('expected_close_on', parseCloseDate(patch.expectedCloseOn), '::date');
-  if (patch.lostReason !== undefined) {
-    const reason = typeof patch.lostReason === 'string' ? patch.lostReason.trim().slice(0, 200) : '';
-    set('lost_reason', reason || null);
-  }
-
-  if (sets.length) {
-    await query(
-      `UPDATE whatsapp_conversations SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1::uuid AND business_id = $2`,
-      values,
-    );
-  }
-
-  if (stageChanges) {
-    const actorName =
-      actor.source === 'agent'
-        ? (await queryOne<{ name: string | null }>('SELECT name FROM users WHERE id = $1::uuid', [actor.userId]).catch(() => null))?.name ?? null
-        : null;
-    await query(
-      `INSERT INTO whatsapp_automation_events (conversation_id, business_id, event_type, event_data)
-       VALUES ($1, $2, 'stage_changed', $3::jsonb)`,
-      [
-        conversationId,
-        businessId,
-        JSON.stringify({
-          from_stage: fromStage?.name ?? null,
-          to_stage: toStage?.name ?? null,
-          source: actor.source,
-          actor_name: actorName,
-        }),
-      ],
-    ).catch((err) => console.warn('[pipeline] timeline event failed:', err instanceof Error ? err.message : err));
-    await broadcastOwnership(businessId, conversationId);
-  }
-
-  return (await loadDeal(businessId, conversationId))!;
-}
-
-/** Moves a chat to the stage that replaced an old lead_status value (AI agent "when qualified"). */
-export async function setStageByLegacyKey(
-  businessId: string,
-  conversationId: string,
-  key: LegacyLeadStatus,
-  actor: DealActor,
-): Promise<void> {
-  const stages = await ensureStages(businessId);
-  const stage =
-    stages.find((s) => s.legacy_key === key) ??
-    (key === 'converted' ? stages.find((s) => s.kind === 'won') : key === 'lost' ? stages.find((s) => s.kind === 'lost') : stages.find((s) => s.kind === 'open'));
-  if (!stage) return;
-  await setDeal(businessId, conversationId, { stageId: stage.id }, actor);
 }
 
 export interface BoardCard {

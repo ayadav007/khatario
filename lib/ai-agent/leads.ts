@@ -1,7 +1,7 @@
 import { query, queryRows } from '@/lib/db';
 import type { AgentSettings } from './types';
 import { performHandoff } from './conversation';
-import { setStageByLegacyKey } from '@/lib/whatsapp/pipeline';
+import { setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
 
 export interface LeadApplyResult {
   saved: string[];
@@ -84,7 +84,7 @@ export async function applyLeadAnswers(
   try {
     if (q.labels.length) await addLabels(businessId, conversationId, q.labels);
     // The stage that replaced this lead status; puts the qualified chat on the pipeline board.
-    if (q.leadStatus) await setStageByLegacyKey(businessId, conversationId, q.leadStatus, { source: 'ai' });
+    if (q.leadStatus) await setChatStageByLegacyKey(businessId, conversationId, q.leadStatus, { source: 'ai' });
     if (q.handoff) {
       await performHandoff(businessId, conversationId, settings, {
         assignTo: q.assignTo || undefined,

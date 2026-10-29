@@ -15,7 +15,8 @@ import { createHash, randomBytes } from 'crypto';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
 import { assignToAgent, broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
-import { ensureStages, setDeal } from '@/lib/whatsapp/pipeline';
+import { ensureStages } from '@/lib/whatsapp/pipeline';
+import { openLeadForChat, setChatDeal } from '@/lib/leads/chat-deal';
 
 export const LEAD_SOURCES = ['ctwa_ad', 'link', 'indiamart', 'lead_api'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
@@ -58,12 +59,8 @@ async function routeLead(businessId: string, conversationId: string, routing: Ro
   try {
     const stages = await ensureStages(businessId);
     const stage = (routing.stageId && stages.find((s) => s.id === routing.stageId)) || stages.find((s) => s.kind === 'open');
-    const current = await queryOne<{ stage_id: string | null }>(
-      `SELECT stage_id::text AS stage_id FROM whatsapp_conversations WHERE id = $1::uuid AND business_id = $2`,
-      [conversationId, businessId],
-    );
-    if (stage && current && !current.stage_id) {
-      await setDeal(businessId, conversationId, { stageId: stage.id }, { source: 'auto' });
+    if (stage && !(await openLeadForChat(businessId, conversationId))) {
+      await setChatDeal(businessId, conversationId, { stageId: stage.id }, { source: 'auto' });
     }
     for (const labelId of routing.labelIds ?? []) {
       await query(

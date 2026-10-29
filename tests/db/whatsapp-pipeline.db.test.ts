@@ -1,9 +1,9 @@
 /**
- * Connect pipeline and follow-ups (migration 418): stages, deals on chats, board visibility,
+ * Connect pipeline and follow-ups (migration 418): stages, deals on a chat's lead, board visibility,
  * the flow "set stage" action and follow-up reminders. Opt-in, disposable DB only:
  *   INBOX_DB_TEST=1 npx jest tests/db/whatsapp-pipeline.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 362 and 418 must be applied there.
+ * to kh_phase2_test; migrations 362, 418 and 447 must be applied there.
  */
 import { randomUUID } from 'crypto';
 import { config as loadEnv } from 'dotenv';
@@ -36,10 +36,9 @@ import {
   loadPipelineSummary,
   PipelineError,
   reorderStages,
-  setDeal,
-  setStageByLegacyKey,
   updateStage,
 } from '@/lib/whatsapp/pipeline';
+import { setChatDeal, setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
 import {
   createFollowup,
   FollowupError,
@@ -75,6 +74,15 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
       [id, over.business ?? B, phone, over.group ?? false, over.state ?? 'active', over.owner ?? null, `Lead ${seq}`],
     );
     return id;
+  }
+
+  /** The chat's newest lead (open or closed), where its stage now lives. */
+  async function leadOf(conversationId: string) {
+    return queryOne<{ stage_id: string | null; closed: boolean }>(
+      `SELECT stage_id::text AS stage_id, closed_at IS NOT NULL AS closed FROM leads
+        WHERE business_id = $1 AND conversation_id = $2 ORDER BY opened_at DESC, created_at DESC LIMIT 1`,
+      [B, conversationId],
+    );
   }
 
   async function code(p: Promise<unknown>): Promise<string> {
@@ -121,6 +129,7 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
   afterAll(async () => {
     try {
       await query(`DELETE FROM notifications WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]).catch(() => undefined);
+      await query(`DELETE FROM leads WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM whatsapp_conversations WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM whatsapp_pipeline_stages WHERE business_id = ANY($1::uuid[])`, [[B, OTHER]]);
       await query(`DELETE FROM users WHERE business_id = $1`, [B]);
@@ -145,8 +154,9 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const stages = await ensureStages(B);
     const interested = stages.find((s) => s.name === 'Interested')!;
     const c = await newChat();
-    const deal = await setDeal(B, c, { stageId: interested.id, dealValue: 12500.456, expectedCloseOn: '2026-12-01' }, { source: 'agent', userId: ASHA });
+    const deal = await setChatDeal(B, c, { stageId: interested.id, dealValue: 12500.456, expectedCloseOn: '2026-12-01' }, { source: 'agent', userId: ASHA });
     expect(deal).toMatchObject({ stage_id: interested.id, deal_value: 12500.46, expected_close_on: '2026-12-01' });
+    expect((await leadOf(c))?.stage_id).toBe(interested.id);
     const row = await queryOne<{ lead_status: string }>(`SELECT lead_status FROM whatsapp_conversations WHERE id = $1`, [c]);
     expect(row?.lead_status).toBe('interested');
     const ev = await queryOne<{ event_data: any }>(
@@ -158,22 +168,28 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
 
     // Lost keeps the reason; moving on clears it.
     const lost = stages.find((s) => s.kind === 'lost')!;
-    expect((await setDeal(B, c, { stageId: lost.id, lostReason: '  Price  ' }, { source: 'agent', userId: ASHA })).lost_reason).toBe('Price');
-    expect((await setDeal(B, c, { stageId: interested.id }, { source: 'agent', userId: ASHA })).lost_reason).toBeNull();
+    expect((await setChatDeal(B, c, { stageId: lost.id, lostReason: '  Price  ' }, { source: 'agent', userId: ASHA })).lost_reason).toBe('Price');
+    expect(await leadOf(c)).toEqual({ stage_id: lost.id, closed: true });
+    // The lost lead is closed, so picking a stage again opens a fresh lead for the chat.
+    const reopened = await setChatDeal(B, c, { stageId: interested.id }, { source: 'agent', userId: ASHA });
+    expect(reopened.lost_reason).toBeNull();
+    expect(reopened.lead_id).not.toBe(deal.lead_id);
   });
 
   test('rejects another business’s stage, group chats and bad values', async () => {
     const otherStages = await ensureStages(OTHER);
     const c = await newChat();
-    expect(await code(setDeal(B, c, { stageId: otherStages[0].id }, { source: 'flow' }))).toBe('STAGE_NOT_FOUND');
+    expect(await code(setChatDeal(B, c, { stageId: otherStages[0].id }, { source: 'flow' }))).toBe('STAGE_NOT_FOUND');
     const g = await newChat({ group: true });
     const stages = await ensureStages(B);
-    expect(await code(setDeal(B, g, { stageId: stages[0].id }, { source: 'flow' }))).toBe('GROUP_CHAT');
-    expect(await code(setDeal(B, c, { dealValue: -5 }, { source: 'flow' }))).toBe('BAD_VALUE');
-    expect(await code(setDeal(B, c, { expectedCloseOn: '01/12/2026' }, { source: 'flow' }))).toBe('BAD_DATE');
+    expect(await code(setChatDeal(B, g, { stageId: stages[0].id }, { source: 'flow' }))).toBe('GROUP_CHAT');
+    expect(await code(setChatDeal(B, c, { dealValue: -5 }, { source: 'flow' }))).toBe('BAD_VALUE');
+    expect(await code(setChatDeal(B, c, { expectedCloseOn: '01/12/2026' }, { source: 'flow' }))).toBe('BAD_DATE');
+    // A value alone cannot put a chat on the pipeline.
+    expect(await code(setChatDeal(B, c, { dealValue: 5 }, { source: 'flow' }))).toBe('NO_LEAD');
     // A chat in another business is not found.
     const foreign = await newChat({ business: OTHER });
-    expect(await code(setDeal(B, foreign, { dealValue: 1 }, { source: 'flow' }))).toBe('NOT_FOUND');
+    expect(await code(setChatDeal(B, foreign, { dealValue: 1 }, { source: 'flow' }))).toBe('NOT_FOUND');
   });
 
   test('board: agents only see chats they could open; totals and won window', async () => {
@@ -183,9 +199,9 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const mine = await newChat({ state: 'intervened', owner: ASHA });
     const ravis = await newChat({ state: 'intervened', owner: RAVI });
     const oldWin = await newChat();
-    await setDeal(B, mine, { stageId: fu.id, dealValue: 1000 }, { source: 'flow' });
-    await setDeal(B, ravis, { stageId: fu.id, dealValue: 2000 }, { source: 'flow' });
-    await setDeal(B, oldWin, { stageId: won.id, dealValue: 500 }, { source: 'flow' });
+    await setChatDeal(B, mine, { stageId: fu.id, dealValue: 1000 }, { source: 'flow' });
+    await setChatDeal(B, ravis, { stageId: fu.id, dealValue: 2000 }, { source: 'flow' });
+    await setChatDeal(B, oldWin, { stageId: won.id, dealValue: 500 }, { source: 'flow' });
     await query(`UPDATE whatsapp_conversations SET stage_changed_at = NOW() - INTERVAL '200 days' WHERE id = $1`, [oldWin]);
 
     const asha = await loadBoard(v(ASHA));
@@ -216,7 +232,7 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     expect(reversed[0].id).toBe(stages[stages.length - 1].id);
 
     const c = await newChat();
-    await setDeal(B, c, { stageId: quoted.id }, { source: 'flow' });
+    await setChatDeal(B, c, { stageId: quoted.id }, { source: 'flow' });
     const target = stages.find((s) => s.name === 'Interested')!;
     expect(await code(deleteStage(B, quoted.id, quoted.id))).toBe('BAD_TARGET');
     await deleteStage(B, quoted.id, target.id);
@@ -231,20 +247,16 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const interested = stages.find((s) => s.legacy_key === 'interested')!;
     await updateStage(B, interested.id, { name: 'Hot enquiry' });
     const c = await newChat();
-    await setStageByLegacyKey(B, c, 'interested', { source: 'ai' });
-    expect((await queryOne<{ stage_id: string }>(`SELECT stage_id::text AS stage_id FROM whatsapp_conversations WHERE id = $1`, [c]))?.stage_id).toBe(
-      interested.id,
-    );
+    await setChatStageByLegacyKey(B, c, 'interested', { source: 'ai' });
+    expect((await leadOf(c))?.stage_id).toBe(interested.id);
 
     const won = stages.find((s) => s.kind === 'won')!;
     await runFlowActions(B, c, [
       { id: 'a1', type: 'action', position: { x: 0, y: 0 }, data: { kind: 'set_stage', stageId: won.id, labelIds: [], catalogBody: '', catalogFooter: '' } },
     ]);
-    const after = await queryOne<{ stage_id: string; lead_status: string }>(
-      `SELECT stage_id::text AS stage_id, lead_status FROM whatsapp_conversations WHERE id = $1`,
-      [c],
-    );
-    expect(after).toEqual({ stage_id: won.id, lead_status: 'converted' });
+    const after = await queryOne<{ lead_status: string }>(`SELECT lead_status FROM whatsapp_conversations WHERE id = $1`, [c]);
+    expect(after?.lead_status).toBe('converted');
+    expect(await leadOf(c)).toEqual({ stage_id: won.id, closed: true });
     const last = await queryOne<{ event_data: any }>(
       `SELECT event_data FROM whatsapp_automation_events WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [c],
@@ -320,8 +332,8 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const lost = stages.find((s) => s.kind === 'lost')!;
     const w = await newChat({ state: 'intervened', owner: RAVI });
     const l = await newChat();
-    await setDeal(B, w, { stageId: won.id, dealValue: 7000 }, { source: 'flow' });
-    await setDeal(B, l, { stageId: lost.id, lostReason: 'Too costly' }, { source: 'flow' });
+    await setChatDeal(B, w, { stageId: won.id, dealValue: 7000 }, { source: 'flow' });
+    await setChatDeal(B, l, { stageId: lost.id, lostReason: 'Too costly' }, { source: 'flow' });
     const sum = await loadPipelineSummary(B, 30);
     expect(sum.won.count).toBeGreaterThanOrEqual(2);
     expect(sum.won.value).toBeGreaterThanOrEqual(7000);
