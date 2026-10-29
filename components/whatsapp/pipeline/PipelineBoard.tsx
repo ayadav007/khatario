@@ -328,7 +328,11 @@ function DealCard({
       <div className="flex items-start gap-2">
         <Link href={`/whatsapp/conversations?c=${card.id}`} className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-text-primary hover:underline">{card.name}</p>
-          {card.last_message_text && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{card.last_message_text}</p>}
+          {card.summary ? (
+            <p className="mt-0.5 line-clamp-3 text-xs text-text-secondary" title={card.summary}>{card.summary}</p>
+          ) : (
+            card.last_message_text && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{card.last_message_text}</p>
+          )}
         </Link>
         {card.deal_value !== null && (
           <span className="shrink-0 text-xs font-semibold text-text-primary">{formatDealValue(card.deal_value)}</span>
@@ -339,6 +343,9 @@ function DealCard({
           <span className={`rounded-full px-1.5 py-0.5 font-medium ${SOURCE_STYLE[card.source] || 'bg-gray-100 text-gray-600'}`}>
             {SOURCE_LABEL[card.source] || card.source}
           </span>
+        )}
+        {card.is_customer && (
+          <span className="rounded-full bg-orange-50 px-1.5 py-0.5 font-medium text-orange-700">Existing customer</span>
         )}
         {card.temperature && TEMPERATURE_STYLE[card.temperature] && (
           <span className={`rounded-full px-1.5 py-0.5 font-medium capitalize ${TEMPERATURE_STYLE[card.temperature]}`}>{card.temperature}</span>

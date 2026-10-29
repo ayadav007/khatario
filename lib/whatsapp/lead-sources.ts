@@ -143,6 +143,69 @@ export async function attributeNewChat(businessId: string, conversationId: strin
   }
 }
 
+// ---------------------------------------------------------------- direct chats
+
+/** Whether a new chat from an unknown number goes on the pipeline. No settings row counts as on. */
+export async function getDirectChatSetting(businessId: string): Promise<{ enabled: boolean }> {
+  const row = await queryOne<{ enabled: boolean }>(
+    `SELECT whatsapp_add_new_chats_to_pipeline AS enabled FROM business_settings WHERE business_id = $1`,
+    [businessId],
+  );
+  return { enabled: row ? row.enabled !== false : true };
+}
+
+export async function setDirectChatSetting(businessId: string, enabled: unknown): Promise<{ enabled: boolean }> {
+  if (typeof enabled !== 'boolean') throw new LeadSourceError('enabled must be true or false', 400, 'INVALID_ENABLED');
+  await query(
+    `INSERT INTO business_settings (business_id, whatsapp_add_new_chats_to_pipeline) VALUES ($1, $2)
+     ON CONFLICT (business_id) DO UPDATE SET whatsapp_add_new_chats_to_pipeline = EXCLUDED.whatsapp_add_new_chats_to_pipeline`,
+    [businessId, enabled],
+  );
+  return { enabled };
+}
+
+/**
+ * True when the number already belongs to this business: a customer, a supplier, a staff member or
+ * the owner's linked phone. Matched on the last 10 digits, since stored phones mix +91, 0 and bare forms.
+ */
+export async function isKnownNumber(businessId: string, phone: string): Promise<boolean> {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 10) return false;
+  const last10 = digits.slice(-10);
+  const row = await queryOne<{ known: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM customers WHERE business_id = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $2)
+         OR EXISTS (SELECT 1 FROM suppliers WHERE business_id = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $2)
+         OR EXISTS (SELECT 1 FROM users WHERE business_id = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $2)
+         OR EXISTS (SELECT 1 FROM owner_whatsapp_links WHERE business_id = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(linked_phone, ''), '\\D', '', 'g'), 10) = $2)
+         AS known`,
+    [businessId, last10],
+  );
+  return !!row?.known;
+}
+
+/**
+ * First message of a new 1:1 chat that no tracked source claimed: a new number goes on the first open
+ * stage, like a lead from any other source. Customers, suppliers, staff and the owner stay off the
+ * board. Runs after link attribution, and routeLead never moves a chat that already has a stage.
+ */
+export async function addNewChatToPipeline(businessId: string, conversationId: string, phone: string): Promise<boolean> {
+  try {
+    if (!(await getDirectChatSetting(businessId)).enabled) return false;
+    if (await isKnownNumber(businessId, phone)) return false;
+    const chat = await queryOne<{ stage_id: string | null; customer_id: string | null; is_group: boolean | null }>(
+      `SELECT stage_id::text AS stage_id, customer_id::text AS customer_id, is_group FROM whatsapp_conversations
+        WHERE id = $1::uuid AND business_id = $2`,
+      [conversationId, businessId],
+    );
+    if (!chat || chat.stage_id || chat.customer_id || chat.is_group) return false;
+    await routeLead(businessId, conversationId, {});
+    return true;
+  } catch (err) {
+    console.warn('[lead-sources] direct chat routing failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------- entry links
 
 export interface EntryLink {

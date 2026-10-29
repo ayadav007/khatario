@@ -349,6 +349,10 @@ export interface BoardCard {
   owner_name: string | null;
   temperature: string | null;
   lead_score: number | null;
+  /** AI summary of the chat, rewritten a few minutes after it goes quiet. */
+  summary: string | null;
+  /** The number is already one of the business's customers. */
+  is_customer: boolean;
   next_followup_at: string | null;
   source: string | null;
 }
@@ -448,7 +452,8 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
               c.stage_changed_at,
               CASE WHEN c.inbox_state = 'intervened' THEN c.assigned_to::text END AS owner_id,
               CASE WHEN c.inbox_state = 'intervened' THEN u.name END AS owner_name,
-              lp.lead_status AS temperature, lp.lead_score, c.source,
+              lp.lead_status AS temperature, lp.lead_score, NULLIF(lp.ai_summary, '') AS summary,
+              (c.customer_id IS NOT NULL) AS is_customer, c.source,
               (SELECT MIN(f.due_at) FROM whatsapp_followups f WHERE f.conversation_id = c.id AND f.status = 'pending') AS next_followup_at,
               ROW_NUMBER() OVER (PARTITION BY c.stage_id ORDER BY c.stage_changed_at DESC NULLS LAST, c.id) AS rn
        ${base} ${stageFilter}

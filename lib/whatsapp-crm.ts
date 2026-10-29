@@ -7,7 +7,7 @@ import * as db from '@/lib/db';
 import { sendWhatsAppMessage } from './whatsapp';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
-import { LeadAnalyzer } from './services/lead-analyzer';
+import { scheduleLeadSummary } from './whatsapp/lead-summary';
 import { generatePaymentLinkForBusiness } from './services/payment-service';
 import { loadAgentSettings } from './ai-agent/settings';
 import { runAgentGate } from './ai-agent/gate';
@@ -388,9 +388,11 @@ export async function storeIncomingMessage(
       // Fire-and-forget: cache profile picture for new conversation
       cacheProfilePicture(businessId, newConv!.id, conversationId, fromJid, isGroup);
       // A tracked link / QR / website button puts "(ref CODE)" in the first message.
+      // Otherwise a new number still becomes a lead on the pipeline (customers, suppliers and staff don't).
       if (!isGroup) {
-        const { attributeNewChat } = await import('@/lib/whatsapp/lead-sources');
+        const { addNewChatToPipeline, attributeNewChat } = await import('@/lib/whatsapp/lead-sources');
         await attributeNewChat(businessId, newConv!.id, messageText).catch(() => undefined);
+        if (!customer) await addNewChatToPipeline(businessId, newConv!.id, normalizedFrom);
       }
     } else {
       // Refresh profile picture in background if not updated recently (> 7 days)
@@ -631,6 +633,9 @@ export async function storeIncomingMessage(
       console.error('[CRM] Error emitting WebSocket events:', err);
     }
 
+    // The lead summary is rewritten once the chat goes quiet (lib/whatsapp/lead-summary).
+    if (!isGroup) await scheduleLeadSummary(businessId, conversation.id);
+
     return { conversationId: conversation.id, customerId: conversation.customer_id };
   } catch (error: any) {
     console.error('[CRM] Error storing incoming message:', error);
@@ -839,6 +844,9 @@ export async function storeOutgoingMessage(
     } catch (err) {
       console.error('[CRM] Error emitting WebSocket / SSE events (message stored):', err);
     }
+
+    // Bot and staff replies belong in the lead summary too.
+    await scheduleLeadSummary(businessId, conversationId);
 
     return result?.id;
   } catch (error: any) {
@@ -2097,10 +2105,6 @@ export async function processIncomingMessage(
       }
     }
 
-    // Throttled internally (every 3rd message or on strong signals) and gated by lead_analyzer_enabled.
-    if (!isGroup && conversationId && messageText.trim()) {
-      void analyzeAndUpdateLeadProfile(businessId, conversationId, normalizedFrom, customerId ?? undefined, messageText);
-    }
 
     // Get current conversation state (individual chats only)
     const currentState = await getConversationState(businessId, normalizedFrom);
@@ -4067,277 +4071,5 @@ export async function processIncomingMessage(
       response: undefined, // Don't send error message to users
       shouldStore: true // Still store the incoming message in database
     };
-  }
-}
-
-/**
- * Detect critical signals in message that require immediate recalculation
- */
-function detectCriticalSignals(message: string, existingProfile?: { lead_score?: number; lead_status?: string }): boolean {
-  if (!message) return false;
-  
-  const messageLower = message.toLowerCase().trim();
-  
-  // Negative signals that should trigger immediate recalculation
-  const negativeSignals = [
-    /\b(not interested|no interest|not interested anymore|lost interest)\b/i,
-    /\b(no thanks|no thank you|not needed|don't need|don't want)\b/i,
-    /\b(cancel|canceled|cancelled|cancellation)\b/i,
-    /\b(declined|rejected|refused)\b/i,
-    /\b(too expensive|too costly|can't afford|out of budget)\b/i,
-    /\b(bought from|purchased from|ordered from) (another|other|competitor)\b/i,
-    /\b(changed mind|not anymore|changed decision)\b/i,
-    /\b(stop|don't contact|remove me|unsubscribe)\b/i,
-    /\b(wrong number|wrong person|not for me)\b/i
-  ];
-  
-  // Positive signals that might increase score
-  // Enhanced patterns to catch purchase intent: "I want 5 bottles", "I would like to purchase", etc.
-  const positiveSignals = [
-    /\b(want to buy|ready to buy|place order|make purchase|would like to purchase|like to buy|want.*purchase)\b/i,
-    /\b(want.*\d+|want.*bottles?|want.*pieces?|want.*units?|want.*items?)\b/i, // "I want 5 bottles", "want 3 pieces"
-    /\b(interested|very interested|definitely interested)\b/i,
-    /\b(urgent|asap|immediately|right away|today)\b/i,
-    /\b(price is good|good price|acceptable price|agree|deal|total price|final price)\b/i,
-    /\b(confirm|confirmed|yes.*purchase|yes.*buy|yes.*order|proceed|go ahead)\b/i,
-    /\b(payment|pay now|send invoice|bill me|give me.*price|calculate.*price|total.*price)\b/i,
-    /\b(delivery address|send to|shipping address|when.*deliver|how.*deliver)\b/i,
-    /\b(how much.*total|what.*total|give.*total|calculate.*total)\b/i // "give me the total price"
-  ];
-  
-  // Check for negative signals
-  const hasNegativeSignal = negativeSignals.some(pattern => pattern.test(messageLower));
-  
-  // Check for strong positive signals (only if previous score was low)
-  const hasPositiveSignal = positiveSignals.some(pattern => pattern.test(messageLower));
-  const previousScoreLow = existingProfile?.lead_score && existingProfile.lead_score < 50;
-  
-  // Trigger immediate recalculation if:
-  // 1. Negative signal detected (ALWAYS)
-  // 2. Strong positive signal detected AND previous score was low
-  if (hasNegativeSignal) {
-    console.log('[CRM] 🚨 Negative signal detected - will recalculate immediately');
-    return true;
-  }
-  
-  if (hasPositiveSignal && previousScoreLow) {
-    console.log('[CRM] ✅ Positive signal detected with low previous score - will recalculate immediately');
-    return true;
-  }
-  
-  return false;
-}
-
-/**
- * Analyze conversation and update lead profile
- * Called in background after incoming messages or AI agent responds
- */
-async function analyzeAndUpdateLeadProfile(
-  businessId: string,
-  conversationId: string,
-  phone: string,
-  customerId?: string,
-  latestMessage?: string // Latest incoming message to detect signals
-): Promise<void> {
-  try {
-    console.log('[CRM] 🔍 Analyzing lead profile for conversation:', conversationId);
-    
-    // First check: Skip group chats - lead scoring only applies to individual customer conversations
-    const conversationCheck = await queryOne<{ is_group: boolean }>(
-      `SELECT is_group FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
-      [conversationId, businessId]
-    );
-
-    if (conversationCheck?.is_group === true) {
-      console.log('[CRM] ⏭️ Skipping lead analysis for group chat (conversation_id:', conversationId, ')');
-      return;
-    }
-    
-    // Check if lead analyzer is enabled
-    const config = await queryOne<{ lead_analyzer_enabled: boolean }>(
-      `SELECT lead_analyzer_enabled FROM ai_provider_config WHERE business_id = $1`,
-      [businessId]
-    );
-
-    if (!config || !config.lead_analyzer_enabled) {
-      console.log('[CRM] Lead analyzer disabled, skipping');
-      return;
-    }
-
-    // Get current message count from conversation (more accurate than profile)
-    const messageCountResult = await queryOne<{ count: number }>(
-      `SELECT COUNT(*)::int as count 
-       FROM whatsapp_conversation_messages 
-       WHERE business_id = $1 AND conversation_id = $2`,
-      [businessId, conversationId]
-    );
-    const currentMessageCount = messageCountResult?.count || 0;
-
-    // Check if profile exists and get latest score
-    const existing = await queryOne<{ id: string; total_messages: number; lead_score: number; lead_status: string }>(
-      `SELECT id, total_messages, lead_score, lead_status FROM whatsapp_lead_profiles 
-       WHERE business_id = $1 AND conversation_id = $2`,
-      [businessId, conversationId]
-    );
-
-    // Check for critical signals that require IMMEDIATE recalculation
-    const shouldRecalculateImmediately = latestMessage && existing ? detectCriticalSignals(latestMessage, existing) : false;
-
-    // Only analyze every 3-5 messages to avoid excessive API calls, UNLESS there are critical signals
-    // For new conversations (first message), always analyze
-    // For critical signals (negative/positive), always analyze immediately
-    // Otherwise, analyze every 3 messages (more frequent than before for better tracking)
-    const shouldAnalyze = 
-      currentMessageCount === 0 || // First message
-      shouldRecalculateImmediately || // Critical signal detected
-      currentMessageCount % 3 === 0; // Every 3 messages (was 5)
-
-    if (!shouldAnalyze) {
-      console.log('[CRM] Skipping analysis - not at analysis interval and no critical signals detected', {
-        currentMessageCount,
-        isMultipleOf3: currentMessageCount % 3 === 0,
-        hasCriticalSignal: shouldRecalculateImmediately
-      });
-      return;
-    }
-
-    if (shouldRecalculateImmediately) {
-      console.log('[CRM] 🚨 Critical signal detected - forcing immediate recalculation:', {
-        message: latestMessage?.substring(0, 100),
-        previousScore: existing?.lead_score,
-        previousStatus: existing?.lead_status
-      });
-    }
-
-    // Get MOST RECENT conversation messages for analysis (prioritize latest context)
-    // Get last 100 messages to focus on recent purchase intent and conversations
-    // Order by DESC to get most recent first, then reverse for chronological analysis
-    const messages = await queryRows<any>(
-      `SELECT direction, message_text, created_at, message_id
-       FROM whatsapp_conversation_messages
-       WHERE business_id = $1 AND conversation_id = $2
-       ORDER BY created_at DESC, message_id DESC
-       LIMIT 100`,
-      [businessId, conversationId]
-    );
-
-    // Reverse to get chronological order (oldest to newest) for proper conversation flow
-    const messagesChronological = messages.reverse();
-
-    if (messagesChronological.length < 3) {
-      console.log('[CRM] Not enough messages for analysis');
-      return;
-    }
-
-    // Get business info
-    const businessInfo = await queryOne<{ name: string; industry?: string }>(
-      `SELECT name, industry FROM businesses WHERE id = $1`,
-      [businessId]
-    );
-
-    // Format messages for analyzer (use chronological order for proper context)
-    const formattedMessages = messagesChronological.map((msg: any) => ({
-      role: msg.direction === 'outgoing' ? 'assistant' : 'user' as 'user' | 'assistant',
-      content: msg.message_text || '',
-      timestamp: msg.created_at
-    }));
-
-    // Analyze with AI
-    const analyzer = new LeadAnalyzer();
-    const analysis = await analyzer.analyzeLead(businessId, {
-      messages: formattedMessages,
-      companyInfo: businessInfo || undefined
-    });
-
-    if (!analysis) {
-      console.log('[CRM] Lead analysis returned null, skipping update');
-      return;
-    }
-
-    // Calculate conversation stats from actual database counts (more accurate)
-    const stats = await queryOne<{ user_messages: number; business_messages: number }>(
-      `SELECT 
-        COUNT(*) FILTER (WHERE direction = 'incoming')::int as user_messages,
-        COUNT(*) FILTER (WHERE direction = 'outgoing')::int as business_messages
-       FROM whatsapp_conversation_messages
-       WHERE business_id = $1 AND conversation_id = $2`,
-      [businessId, conversationId]
-    );
-    const userMessages = stats?.user_messages || 0;
-    const businessMessages = stats?.business_messages || 0;
-    const responseRate = userMessages > 0 ? (businessMessages / userMessages) * 100 : 0;
-
-    // Update or insert lead profile
-    if (existing) {
-      await queryRows(
-        `UPDATE whatsapp_lead_profiles SET
-          lead_score = $3,
-          lead_status = $4,
-          interest_level = $5,
-          behavior_tags = $6,
-          sentiment = $7,
-          key_topics = $8,
-          purchase_intent = $9,
-          urgency_level = $10,
-          ai_summary = $11,
-          ai_insights = $12,
-          total_messages = $13,
-          response_rate = $14,
-          last_analyzed_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-         WHERE business_id = $1 AND conversation_id = $2`,
-        [
-          businessId,
-          conversationId,
-          analysis.leadScore,
-          analysis.leadStatus,
-          analysis.interestLevel,
-          JSON.stringify(analysis.behaviorTags),
-          analysis.sentiment,
-          JSON.stringify(analysis.keyTopics),
-          analysis.purchaseIntent,
-          analysis.urgencyLevel,
-          analysis.aiSummary,
-          JSON.stringify(analysis.insights),
-          currentMessageCount, // Use actual total count, not limited messages.length
-          responseRate.toFixed(2)
-        ]
-      );
-    } else {
-      await queryRows(
-        `INSERT INTO whatsapp_lead_profiles (
-          business_id, conversation_id, customer_id, phone,
-          lead_score, lead_status, interest_level, behavior_tags, sentiment,
-          key_topics, purchase_intent, urgency_level, ai_summary, ai_insights,
-          total_messages, response_rate, last_analyzed_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)`,
-        [
-          businessId,
-          conversationId,
-          customerId || null,
-          phone,
-          analysis.leadScore,
-          analysis.leadStatus,
-          analysis.interestLevel,
-          JSON.stringify(analysis.behaviorTags),
-          analysis.sentiment,
-          JSON.stringify(analysis.keyTopics),
-          analysis.purchaseIntent,
-          analysis.urgencyLevel,
-          analysis.aiSummary,
-          JSON.stringify(analysis.insights),
-          currentMessageCount, // Use actual total count, not limited messages.length
-          responseRate.toFixed(2)
-        ]
-      );
-    }
-
-    console.log('[CRM] ✅ Lead profile updated:', {
-      score: analysis.leadScore,
-      status: analysis.leadStatus,
-      sentiment: analysis.sentiment
-    });
-  } catch (error) {
-    console.error('[CRM] Error in analyzeAndUpdateLeadProfile:', error);
   }
 }

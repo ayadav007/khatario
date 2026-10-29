@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Archive, Check, Code2, Copy, Download, Link2, Loader2, Megaphone, Plug, RefreshCw, Trash2, Webhook } from 'lucide-react';
+import { Archive, Check, Code2, Copy, Download, Link2, Loader2, Megaphone, MessageCircle, Plug, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -60,6 +60,7 @@ export function LeadSourcesPage() {
         description="Know where every WhatsApp lead came from, and send each one to the right stage and person."
         showActionsOnMobile
       />
+      <DirectChatsCard notify={notify} />
       <AdsCard />
       <LinksSection pickers={pickers} notify={notify} />
       <IndiaMartSection pickers={pickers} notify={notify} />
@@ -130,6 +131,48 @@ function SectionTitle({ icon: Icon, title, text }: { icon: typeof Link2; title: 
         <p className="text-sm text-text-secondary">{text}</p>
       </div>
     </div>
+  );
+}
+
+function DirectChatsCard({ notify }: { notify: Notify }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api('/api/whatsapp/lead-sources').then(({ data }) => setEnabled(data.direct?.enabled ?? true));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    try {
+      const { ok, data } = await api('/api/whatsapp/lead-sources', { method: 'POST', body: JSON.stringify({ kind: 'direct', enabled: next }) });
+      if (!ok) return notify(data.error || 'Could not update', 'error');
+      setEnabled(data.direct.enabled);
+      notify(next ? 'New numbers now go on the pipeline' : 'New numbers stay off the pipeline');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card padding="md">
+      <SectionTitle
+        icon={MessageCircle}
+        title="New numbers"
+        text="When a number you don't know messages you for the first time, the chat goes on the pipeline's first stage as a “Direct” lead. Customers, suppliers and your staff stay off the board."
+      />
+      {enabled === null ? (
+        <Loader2 className="h-4 w-4 animate-spin text-text-muted" />
+      ) : (
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input type="checkbox" checked={enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} className="h-4 w-4" />
+          Add every new number to the pipeline
+        </label>
+      )}
+      <p className="mt-2 text-xs text-text-muted">
+        Each lead gets an AI summary of the chat, covering what your bot and your staff told them, a few minutes after the chat goes quiet. Summaries need an AI provider in Settings → WhatsApp → AI agent.
+      </p>
+    </Card>
   );
 }
 

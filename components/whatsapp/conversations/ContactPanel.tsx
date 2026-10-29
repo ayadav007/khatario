@@ -290,6 +290,13 @@ export function ContactPanel({
                 <p className="font-medium text-gray-900">
                   {contact?.customer?.name || formatPhoneNumber(contact?.phone || '')}
                 </p>
+                <span
+                  className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    contact?.customer?.id ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {contact?.customer?.id ? 'Existing customer' : 'New lead'}
+                </span>
                 {contact?.customer?.email && (
                   <p className="text-sm text-gray-500">{contact.customer.email}</p>
                 )}
@@ -299,6 +306,17 @@ export function ContactPanel({
             {/* Lead Profile Mini View */}
             {leadProfile && (
               <div className="mt-3 pt-3 border-t border-gray-200">
+                {leadProfile.ai_summary && (
+                  <div className="mb-3">
+                    <span className="text-xs font-medium text-gray-600 block mb-1">Summary</span>
+                    <p className="text-sm text-gray-800 whitespace-pre-line">{leadProfile.ai_summary}</p>
+                    {leadProfile.last_analyzed_at && (
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        Updated {new Date(leadProfile.last_analyzed_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-gray-600">Lead Score</span>
                   <span className={`text-sm font-bold ${
