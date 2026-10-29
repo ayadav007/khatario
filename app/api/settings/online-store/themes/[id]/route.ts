@@ -51,9 +51,12 @@ export async function PUT(request: NextRequest, { params }: Ctx) {
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
+  const { data, updated_at: updatedAt } = body;
+  if (!data || typeof data !== 'object' || Array.isArray(data) || typeof updatedAt !== 'string') {
+    return NextResponse.json({ error: 'data (object) and updated_at (string) are required' }, { status: 400 });
+  }
   try {
-    const updatedAt = typeof body.updated_at === 'string' ? body.updated_at : null;
-    return repoJson(await saveTheme(tenant.businessId, tenant.userId, params.id, body.data, updatedAt), 'theme');
+    return repoJson(await saveTheme(tenant.businessId, tenant.userId, params.id, data, updatedAt), 'theme');
   } catch (error) {
     console.error('themes/[id] PUT:', error);
     return NextResponse.json({ error: 'Failed to save theme' }, { status: 500 });

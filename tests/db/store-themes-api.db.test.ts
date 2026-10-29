@@ -122,8 +122,17 @@ d('Theme API (real DB)', () => {
     draftUpdatedAt = saved.updated_at;
   });
 
+  it('PUT without a data object or without updated_at is 400 and changes nothing', async () => {
+    const before = (await (await idRoute.GET(req(`/${draftId}`, 'GET'), ctx(draftId))).json()).theme;
+    for (const body of [{ updated_at: before.updated_at }, { data: before.data }, { data: [], updated_at: before.updated_at }, { data: null, updated_at: before.updated_at }]) {
+      expect((await idRoute.PUT(req(`/${draftId}`, 'PUT', body), ctx(draftId))).status).toBe(400);
+    }
+    const after = (await (await idRoute.GET(req(`/${draftId}`, 'GET'), ctx(draftId))).json()).theme;
+    expect(after).toEqual(before);
+  });
+
   it('PUT on the live theme is 409', async () => {
-    const res = await idRoute.PUT(req(`/${liveId}`, 'PUT', { data: {}, updated_at: null }), ctx(liveId));
+    const res = await idRoute.PUT(req(`/${liveId}`, 'PUT', { data: {}, updated_at: 'x' }), ctx(liveId));
     expect(res.status).toBe(409);
   });
 
@@ -174,7 +183,7 @@ d('Theme API (real DB)', () => {
   it('a user without settings update permission gets 403 on PUT', async () => {
     state.allowed = false;
     try {
-      const res = await idRoute.PUT(req(`/${draftId}`, 'PUT', { data: {}, updated_at: null }), ctx(draftId));
+      const res = await idRoute.PUT(req(`/${draftId}`, 'PUT', { data: {}, updated_at: 'x' }), ctx(draftId));
       expect(res.status).toBe(403);
     } finally {
       state.allowed = true;
