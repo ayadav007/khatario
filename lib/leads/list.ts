@@ -5,10 +5,11 @@
  */
 import { query, queryOne, queryRows } from '@/lib/db';
 import { csvSafeText } from '@/lib/csv-safe';
-import type { InboxViewer } from '@/lib/whatsapp/inbox-ownership';
+import { visibilityClause, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
 import { listFollowups, type FollowupRow } from '@/lib/whatsapp/followups';
 import { ensureStages } from '@/lib/whatsapp/pipeline';
-import { LeadError, findOpenLead, loadLead, openLead, setLeadStage, type Lead, type LeadSourceKey } from './core';
+import { LeadError, findOpenLead, loadLead, openLead, setLeadStage, type Lead, type LeadPatch, type LeadSourceKey } from './core';
+import { normalizeLeadPhone } from './phone';
 import { canViewLead, leadVisibilityClause } from './visibility';
 
 export const LEADS_PAGE_SIZE = 50;
@@ -120,19 +121,26 @@ function listWhere(viewer: InboxViewer, filters: LeadFilters, params: unknown[])
   const from = validDate(filters.openedFrom);
   if (from) {
     params.push(from);
-    where.push(`l.opened_at >= $${params.length}::date`);
+    where.push(`(l.opened_at AT TIME ZONE 'Asia/Kolkata')::date >= $${params.length}::date`);
   }
   const to = validDate(filters.openedTo);
   if (to) {
     params.push(to);
-    where.push(`l.opened_at < ($${params.length}::date + 1)`);
+    where.push(`(l.opened_at AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`);
   }
   const search = filters.search?.trim();
   if (search) {
     params.push(`%${search.replace(/[%_\\]/g, (m) => `\\${m}`)}%`);
     const p = `$${params.length}`;
+    // A phone typed as "98765 10004" or "+91 98765-10004" still finds the lead.
+    const digits = search.replace(/\D/g, '');
+    let phoneMatch = '';
+    if (digits.length >= 4) {
+      params.push(`%${digits}%`);
+      phoneMatch = ` OR l.contact_phone LIKE $${params.length}`;
+    }
     where.push(
-      `(l.contact_name ILIKE ${p} OR c.whatsapp_display_name ILIKE ${p} OR l.contact_phone ILIKE ${p} OR cust.name ILIKE ${p})`,
+      `(l.contact_name ILIKE ${p} OR c.whatsapp_display_name ILIKE ${p} OR l.contact_phone ILIKE ${p} OR cust.name ILIKE ${p}${phoneMatch})`,
     );
   }
   if (filters.status === 'open') where.push('l.closed_at IS NULL');
@@ -211,7 +219,7 @@ export async function loadLeadDetail(viewer: InboxViewer, leadId: string): Promi
     queryRows<LeadDetail['other_leads'][number]>(
       `SELECT l.id::text AS id, l.opened_at, l.closed_at, s.name AS stage_name
        ${FROM_SQL}
-       WHERE l.business_id = $1 AND l.contact_phone = $2 AND l.id <> $3::uuid AND ${otherVis.sql}
+       WHERE l.business_id = $1 AND RIGHT(l.contact_phone, 10) = RIGHT($2, 10) AND l.id <> $3::uuid AND ${otherVis.sql}
        ORDER BY l.opened_at DESC, l.id
        LIMIT 50`,
       [viewer.businessId, base.phone, leadId, ...otherVis.params],
@@ -242,11 +250,27 @@ export async function createManualLead(
   const phone = typeof input.phone === 'string' || typeof input.phone === 'number' ? String(input.phone) : '';
 
   const open = await findOpenLead(viewer.businessId, phone);
-  if (open) return { lead: open, existing: true };
+  if (open) return existingLead(viewer, open);
+
+  // The number's newest 1:1 chat that the viewer may see goes on the lead, as an imported lead does.
+  let conversationId: string | null = null;
+  const normalised = normalizeLeadPhone(phone);
+  if (normalised) {
+    const vis = visibilityClause(viewer, 'c', 3);
+    const chat = await queryOne<{ id: string }>(
+      `SELECT c.id::text AS id FROM whatsapp_conversations c
+        WHERE c.business_id = $1 AND NOT COALESCE(c.is_group, false)
+          AND RIGHT(REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g'), 10) = RIGHT($2, 10) AND ${vis.sql}
+        ORDER BY c.last_message_at DESC NULLS LAST LIMIT 1`,
+      [viewer.businessId, normalised, ...vis.params],
+    );
+    conversationId = chat?.id ?? null;
+  }
 
   const { lead, created } = await openLead(viewer.businessId, {
     phone,
     name,
+    conversationId,
     source: input.source as LeadSourceKey,
     note: typeof input.note === 'string' ? input.note : null,
     stageId: idOrNull(input.stageId),
@@ -254,7 +278,13 @@ export async function createManualLead(
     createdBy: viewer.userId,
     actor: { source: 'agent', userId: viewer.userId },
   });
-  return { lead, existing: !created };
+  return created ? { lead, existing: false } : existingLead(viewer, lead);
+}
+
+/** The open lead a manual add ran into; an agent who cannot see it learns only that the number is taken. */
+async function existingLead(viewer: InboxViewer, lead: Lead): Promise<{ lead: Lead; existing: true }> {
+  if (!(await canViewLead(viewer, lead.id))) throw new LeadError('This number already has an open lead', 409, 'LEAD_OPEN');
+  return { lead, existing: true };
 }
 
 /**
@@ -280,25 +310,52 @@ export async function startNewEnquiry(viewer: InboxViewer, leadId: string, confi
     await setLeadStage(businessId, open.id, lost.id, actor, NEW_ENQUIRY_REASON);
   }
 
-  const { lead: fresh, created } = await openLead(businessId, {
-    phone: lead.contact_phone,
-    name: lead.contact_name,
-    conversationId: lead.conversation_id,
-    source: null,
-    createdBy: viewer.userId,
-    actor,
-  });
-  // Someone opened one for this number between the close and now.
-  if (!created) throw new LeadError('This number already has an open lead', 409, 'LEAD_OPEN');
-  if (lead.customer_id && !fresh.customer_id) {
-    await query(`UPDATE leads SET customer_id = $3::uuid, updated_at = NOW() WHERE id = $1::uuid AND business_id = $2`, [
-      fresh.id,
-      businessId,
-      lead.customer_id,
-    ]);
-    return (await loadLead(businessId, fresh.id))!;
+  try {
+    const { lead: fresh, created } = await openLead(businessId, {
+      phone: lead.contact_phone,
+      name: lead.contact_name,
+      conversationId: lead.conversation_id,
+      source: null,
+      createdBy: viewer.userId,
+      actor,
+    });
+    // Someone opened one for this number between the close and now.
+    if (!created) throw new LeadError('This number already has an open lead', 409, 'LEAD_OPEN');
+    if (lead.customer_id && !fresh.customer_id) {
+      // A live customer linked to the lead makes the new enquiry an 'existing' one too.
+      await query(
+        `UPDATE leads SET customer_id = $3::uuid, lead_type = 'existing', updated_at = NOW()
+          WHERE id = $1::uuid AND business_id = $2
+            AND EXISTS (SELECT 1 FROM customers WHERE id = $3::uuid AND business_id = $2 AND deleted_at IS NULL)`,
+        [fresh.id, businessId, lead.customer_id],
+      );
+      return (await loadLead(businessId, fresh.id))!;
+    }
+    return fresh;
+  } catch (err) {
+    // The old lead was closed for this enquiry; put it back so the number is not left without one.
+    if (open) {
+      await setLeadStage(businessId, open.id, open.stage_id, actor).catch((e) =>
+        console.warn('[leads] could not reopen the lead after a failed new enquiry:', e instanceof Error ? e.message : e),
+      );
+    }
+    throw err;
   }
-  return fresh;
+}
+
+/** Body of PATCH /api/whatsapp/leads/:id as a LeadPatch; anything but a JSON object is a 400. */
+export function parseLeadPatchBody(body: unknown): LeadPatch {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LeadError('Send a JSON object', 400, 'BAD_BODY');
+  const b = body as Record<string, unknown>;
+  const patch: LeadPatch = {};
+  if ('stage_id' in b) patch.stageId = typeof b.stage_id === 'string' && b.stage_id ? b.stage_id : null;
+  if ('deal_value' in b) patch.dealValue = b.deal_value === '' || b.deal_value === null ? null : Number(b.deal_value);
+  if ('expected_close_on' in b) patch.expectedCloseOn = typeof b.expected_close_on === 'string' ? b.expected_close_on : null;
+  if ('lost_reason' in b) patch.lostReason = typeof b.lost_reason === 'string' ? b.lost_reason : null;
+  if ('owner_id' in b) patch.ownerId = typeof b.owner_id === 'string' && b.owner_id ? b.owner_id : null;
+  if ('contact_name' in b) patch.contactName = typeof b.contact_name === 'string' ? b.contact_name : null;
+  if ('note' in b) patch.note = typeof b.note === 'string' ? b.note : null;
+  return patch;
 }
 
 // ---------------------------------------------------------------- export

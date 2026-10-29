@@ -32,6 +32,7 @@ import {
   listLeads,
   loadLeadDetail,
   leadsCsv,
+  parseLeadPatchBody,
   startNewEnquiry,
   type LeadRow,
 } from '@/lib/leads/list';
@@ -286,6 +287,128 @@ run('connect leads list (kh_phase2_test)', () => {
     expect(csv).toContain(`'@cmd`);
     expect(csv).toContain('Walk-in');
     expect(csv).toContain('Direct');
+  });
+
+  test('manual add does not reveal an open lead the agent cannot see', async () => {
+    const chat = await seedChat(B, { phone: '919876560101', name: 'Secret Buyer' });
+    await query(`UPDATE whatsapp_conversations SET inbox_state = 'intervened', assigned_to = $2 WHERE id = $1`, [chat.id, SUP]);
+    const { lead: hidden } = await openLead(B, { phone: chat.phone, name: 'Secret Buyer', conversationId: chat.id, actor: auto });
+
+    let thrown: unknown;
+    try {
+      await createManualLead(agent, { name: 'Probe', phone: '98765 60101', source: 'call' });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(LeadError);
+    expect((thrown as LeadError).status).toBe(409);
+    expect((thrown as LeadError).code).toBe('LEAD_OPEN');
+    expect(JSON.stringify({ message: (thrown as LeadError).message, ...(thrown as object) })).not.toContain(hidden.id);
+    expect((thrown as LeadError).message).not.toContain('Secret');
+    // A supervisor gets the lead.
+    expect((await createManualLead(supervisor, { name: 'Probe', phone: '919876560101', source: 'call' })).lead.id).toBe(hidden.id);
+    await query(`DELETE FROM leads WHERE id = $1`, [hidden.id]);
+  });
+
+  test("manual add links the number's newest visible 1:1 chat", async () => {
+    const older = await seedChat(B, { phone: '919876560201', name: 'Older' });
+    await query(`UPDATE whatsapp_conversations SET last_message_at = NOW() - INTERVAL '2 days' WHERE id = $1`, [older.id]);
+    const newest = await seedChat(B, { phone: '+919876560201', name: 'Newest' });
+    const group = await seedChat(B, { phone: '91 98765 60201', name: 'Group' });
+    await query(`UPDATE whatsapp_conversations SET is_group = true, last_message_at = NOW() + INTERVAL '1 day' WHERE id = $1`, [group.id]);
+
+    const made = await createManualLead(supervisor, { name: 'Walk In', phone: '98765 60201', source: 'walk_in' });
+    expect(made.existing).toBe(false);
+    expect(made.lead.conversation_id).toBe(newest.id);
+    expect(made.lead.contact_phone).toBe('919876560201');
+
+    // A chat the agent cannot see is not attached by an agent's add.
+    const hiddenChat = await seedChat(B, { phone: '919876560202', name: 'Hidden' });
+    await query(`UPDATE whatsapp_conversations SET inbox_state = 'intervened', assigned_to = $2 WHERE id = $1`, [hiddenChat.id, SUP]);
+    const byAgent = await createManualLead(agent, { name: 'Agent Add', phone: '919876560202', source: 'call' });
+    expect(byAgent.lead.conversation_id).toBeNull();
+    await query(`DELETE FROM leads WHERE id = ANY($1::uuid[])`, [[made.lead.id, byAgent.lead.id]]);
+  });
+
+  test('a failed new enquiry puts the closed lead back', async () => {
+    const chat = await seedChat(B, { phone: '919876560301', name: 'Rollback' });
+    const { lead } = await openLead(B, { phone: chat.phone, conversationId: chat.id, stageId: stage('Interested').id, actor: auto });
+    // openLead refuses a group chat, after the old lead was closed.
+    await query(`UPDATE whatsapp_conversations SET is_group = true WHERE id = $1`, [chat.id]);
+    expect(await code(startNewEnquiry(supervisor, lead.id, true))).toBe('GROUP_CHAT');
+    const after = (await loadLead(B, lead.id))!;
+    expect(after.closed_at).toBeNull();
+    expect(after.stage_id).toBe(stage('Interested').id);
+    expect(after.lost_reason).toBeNull();
+    expect((await findOpenLead(B, chat.phone))!.id).toBe(lead.id);
+    await query(`DELETE FROM leads WHERE id = $1`, [lead.id]);
+  });
+
+  test('a customer copied onto a new enquiry makes it existing; a deleted customer is not copied', async () => {
+    for (const deleted of [false, true]) {
+      const phone = deleted ? '919876560402' : '919876560401';
+      const cust = await queryOne<{ id: string }>(
+        `INSERT INTO customers (business_id, name, phone, deleted_at) VALUES ($1, $2, $3, ${deleted ? 'NOW()' : 'NULL'}) RETURNING id::text AS id`,
+        [B, deleted ? 'Gone Customer' : 'Live Customer', deleted ? '90000 99998' : '90000 99999'],
+      );
+      const { lead } = await openLead(B, { phone, actor: auto });
+      expect(lead.lead_type).toBe('new');
+      await query(`UPDATE leads SET customer_id = $2 WHERE id = $1`, [lead.id, cust!.id]);
+      const fresh = await startNewEnquiry(supervisor, lead.id, true);
+      if (deleted) {
+        expect(fresh.customer_id).toBeNull();
+        expect(fresh.lead_type).toBe('new');
+      } else {
+        expect(fresh.customer_id).toBe(cust!.id);
+        expect(fresh.lead_type).toBe('existing');
+      }
+      await query(`DELETE FROM leads WHERE contact_phone = $1 AND business_id = $2`, [phone, B]);
+    }
+  });
+
+  test('opened-date filters use India dates', async () => {
+    const { lead } = await openLead(B, { phone: '919876560501', name: 'Late Night', actor: auto });
+    // 23:00 UTC on 10 June is 04:30 on 11 June in India.
+    await query(`UPDATE leads SET opened_at = '2026-06-10T23:00:00Z' WHERE id = $1`, [lead.id]);
+    expect(idsOf((await listLeads(supervisor, { openedFrom: '2026-06-11', openedTo: '2026-06-11' })).rows)).toEqual([lead.id]);
+    expect((await listLeads(supervisor, { openedFrom: '2026-06-10', openedTo: '2026-06-10' })).total).toBe(0);
+    await query(`DELETE FROM leads WHERE id = $1`, [lead.id]);
+  });
+
+  test('search finds a phone typed with spaces or a plus', async () => {
+    expect(idsOf((await listLeads(supervisor, { search: '98765 10004' })).rows)).toEqual([ids.delta]);
+    expect(idsOf((await listLeads(supervisor, { search: '+91 98765-10004' })).rows)).toEqual([ids.delta]);
+  });
+
+  test('other_leads matches the last 10 digits', async () => {
+    const { lead: current } = await openLead(B, { phone: '919876570001', actor: auto });
+    const { lead: closed } = await openLead(B, { phone: '919876570002', stageId: stage('Lost').id, actor: auto });
+    // Same last 10 digits, different country prefix.
+    await query(`UPDATE leads SET contact_phone = '449876570001' WHERE id = $1`, [closed.id]);
+    const detail = (await loadLeadDetail(supervisor, current.id))!;
+    expect(detail.other_leads.map((o) => o.id)).toEqual([closed.id]);
+    await query(`DELETE FROM leads WHERE id = ANY($1::uuid[])`, [[current.id, closed.id]]);
+  });
+
+  test('PATCH bodies that are not JSON objects are refused', () => {
+    for (const bad of ['text', 5, [1], null, undefined]) {
+      let thrown: unknown;
+      try {
+        parseLeadPatchBody(bad);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(LeadError);
+      expect((thrown as LeadError).status).toBe(400);
+      expect((thrown as LeadError).code).toBe('BAD_BODY');
+    }
+    expect(parseLeadPatchBody({})).toEqual({});
+    expect(parseLeadPatchBody({ stage_id: 'x', deal_value: '12.5', owner_id: '', note: 'hi' })).toEqual({
+      stageId: 'x',
+      dealValue: 12.5,
+      ownerId: null,
+      note: 'hi',
+    });
   });
 
   test("another business's lead is invisible", async () => {
