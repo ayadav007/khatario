@@ -1,6 +1,7 @@
 /**
- * The deal panel on a chat, read from and written to the chat's open lead. A chat with no open lead
- * shows an empty deal; picking a stage opens a lead for the chat's phone. Groups never get leads.
+ * The deal panel on a chat, read from and written to the chat's lead: its open lead, else its newest
+ * lead even when won or lost, so a reason or value typed after closing still lands. A chat that never
+ * had a lead shows an empty deal; picking a stage opens one for the chat's phone. Groups never get leads.
  */
 import { queryOne } from '@/lib/db';
 import { ensureStages, PipelineError, type DealActor, type DealPatch, type DealView, type LegacyLeadStatus } from '@/lib/whatsapp/pipeline';
@@ -54,17 +55,31 @@ export async function openLeadForChat(businessId: string, conversationId: string
   return findOpenLead(businessId, chat.from_number);
 }
 
+/** The lead the chat's deal panel works on: the open one, else the chat's newest (closed) lead. */
+async function dealLeadForChat(businessId: string, conversationId: string): Promise<Lead | null> {
+  const open = await openLeadForChat(businessId, conversationId);
+  if (open) return open;
+  const newest = await queryOne<{ id: string }>(
+    `SELECT id::text AS id FROM leads
+      WHERE business_id = $1 AND conversation_id = $2::uuid
+      ORDER BY opened_at DESC, created_at DESC LIMIT 1`,
+    [businessId, conversationId],
+  );
+  return newest ? loadLead(businessId, newest.id) : null;
+}
+
 export async function loadChatDeal(businessId: string, conversationId: string): Promise<ChatDeal | null> {
   const chat = await loadChat(businessId, conversationId);
   if (!chat) return null;
   if (chat.is_group) return { ...NO_DEAL };
-  const lead = await openLeadForChat(businessId, conversationId);
+  const lead = await dealLeadForChat(businessId, conversationId);
   return lead ? dealOf(lead) : { ...NO_DEAL };
 }
 
 /**
- * Updates the deal on a chat's open lead. The caller has already checked the chat is visible to the
- * actor. With no open lead, a stage opens one for the chat's phone; anything else is refused.
+ * Updates the deal on the chat's lead (open, else newest). The caller has already checked the chat is
+ * visible to the actor. A stage on a closed lead reopens it (409 while another lead for the phone is
+ * open). A chat that never had a lead needs a stage, which opens one for its phone.
  * Returns the lead it changed, even when that move closed it.
  */
 export async function setChatDeal(businessId: string, conversationId: string, patch: DealPatch, actor: DealActor): Promise<ChatDeal> {
@@ -76,7 +91,7 @@ export async function setChatDeal(businessId: string, conversationId: string, pa
   if (patch.expectedCloseOn !== undefined) parseCloseDate(patch.expectedCloseOn);
 
   try {
-    let lead = await openLeadForChat(businessId, conversationId);
+    let lead = await dealLeadForChat(businessId, conversationId);
     let rest: DealPatch = patch;
     if (!lead) {
       if (!patch.stageId) throw new PipelineError('Put this chat on the pipeline first', 400, 'NO_LEAD');

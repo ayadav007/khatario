@@ -6,7 +6,7 @@
  */
 import { query, queryOne } from '@/lib/db';
 import { broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
-import { normalizeLeadPhone } from '@/lib/whatsapp/lead-sources';
+import { normalizeLeadPhone } from './phone';
 import {
   ensureStages,
   PipelineError,
@@ -68,6 +68,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function isUniqueViolation(err: unknown): boolean {
   return (err as { code?: string })?.code === '23505';
 }
+
+const alreadyOpen = () => new LeadError('This number already has an open lead; close that one first', 409, 'LEAD_ALREADY_OPEN');
 
 // ---------------------------------------------------------------- deal values (moved from pipeline.ts)
 
@@ -201,6 +203,8 @@ export interface OpenLeadInput {
  * Opens a lead for a phone, or returns the open one (created: false). Two calls at once cannot both
  * create: the insert leans on the one-open-lead-per-phone index. A new lead lands on the given stage,
  * else the first open stage; a customer with the same last 10 digits makes it an 'existing' lead.
+ * A won or lost stage still goes through the open insert, so it joins an open lead like any other,
+ * and only a lead created here is then closed.
  */
 export async function openLead(businessId: string, input: OpenLeadInput): Promise<{ lead: Lead; created: boolean }> {
   const phone = normalizeLeadPhone(input.phone);
@@ -239,9 +243,9 @@ export async function openLead(businessId: string, input: OpenLeadInput): Promis
   const inserted = await queryOne<{ id: string }>(
     `INSERT INTO leads (
        business_id, contact_phone, contact_name, conversation_id, customer_id, lead_type, stage_id, stage_changed_at,
-       owner_id, source, source_detail, source_at, note, closed_at, created_by
+       owner_id, source, source_detail, source_at, note, created_by
      ) VALUES ($1, $2, $3, $4::uuid, $5::uuid, $6, $7::uuid, NOW(), $8::uuid, $9, $10::jsonb,
-               CASE WHEN $14 THEN NOW() END, $11, CASE WHEN $12 THEN NOW() END, $13::uuid)
+               CASE WHEN $13 THEN NOW() END, $11, $12::uuid)
      ON CONFLICT (business_id, contact_phone) WHERE closed_at IS NULL DO NOTHING
      RETURNING id::text AS id`,
     [
@@ -256,7 +260,6 @@ export async function openLead(businessId: string, input: OpenLeadInput): Promis
       source,
       input.sourceDetail ? JSON.stringify(input.sourceDetail) : null,
       cleanText(input.note, 1000),
-      !!stage && stage.kind !== 'open',
       input.createdBy ?? null,
       !!source,
     ],
@@ -273,6 +276,9 @@ export async function openLead(businessId: string, input: OpenLeadInput): Promis
     return { lead: open, created: false };
   }
 
+  if (stage && stage.kind !== 'open') {
+    await query(`UPDATE leads SET closed_at = NOW() WHERE id = $1::uuid AND business_id = $2`, [inserted.id, businessId]);
+  }
   const lead = (await loadLead(businessId, inserted.id))!;
   if (conversationId) await applyLeadToChat(businessId, lead, conversationId);
   await recordStageEvent(businessId, lead, null, stage, input.actor);
@@ -283,8 +289,9 @@ export async function openLead(businessId: string, input: OpenLeadInput): Promis
 // ---------------------------------------------------------------- changing a lead
 
 /**
- * Moves a lead to a stage (null = open with no stage). A won or lost stage closes the lead; an open
- * stage reopens it, which fails while another lead for the phone is open.
+ * Moves a lead to a stage (null = open with no stage). A won or lost stage closes the lead (keeping
+ * when it first closed on a won -> lost move); an open stage reopens it, which fails while another
+ * lead for the phone is open.
  */
 export async function setLeadStage(
   businessId: string,
@@ -307,9 +314,15 @@ export async function setLeadStage(
   };
   const sets: string[] = [];
   const stageChanges = (toStage?.id ?? null) !== lead.stage_id;
+  const closes = !!toStage && toStage.kind !== 'open';
+  if (stageChanges && lead.closed_at && !closes) {
+    // Checked here so the usual case never reaches the unique index; the index still settles races.
+    const open = await findOpenLead(businessId, lead.contact_phone);
+    if (open && open.id !== lead.id) throw alreadyOpen();
+  }
   if (stageChanges) {
     sets.push(set('stage_id = $?::uuid', toStage?.id ?? null), 'stage_changed_at = NOW()');
-    sets.push(toStage && toStage.kind !== 'open' ? 'closed_at = NOW()' : 'closed_at = NULL');
+    sets.push(closes ? 'closed_at = COALESCE(closed_at, NOW())' : 'closed_at = NULL');
     // Moving out of a lost stage clears the reason unless a new one is sent.
     if (toStage?.kind !== 'lost' && lostReason === undefined) sets.push('lost_reason = NULL');
   }
@@ -320,9 +333,7 @@ export async function setLeadStage(
   try {
     await query(`UPDATE leads SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1::uuid AND business_id = $2`, values);
   } catch (err) {
-    if (isUniqueViolation(err)) {
-      throw new LeadError('This number already has an open lead; close that one first', 409, 'LEAD_ALREADY_OPEN');
-    }
+    if (isUniqueViolation(err)) throw alreadyOpen();
     throw err;
   }
 

@@ -170,10 +170,11 @@ run('Connect pipeline and follow-ups (kh_phase2_test)', () => {
     const lost = stages.find((s) => s.kind === 'lost')!;
     expect((await setChatDeal(B, c, { stageId: lost.id, lostReason: '  Price  ' }, { source: 'agent', userId: ASHA })).lost_reason).toBe('Price');
     expect(await leadOf(c)).toEqual({ stage_id: lost.id, closed: true });
-    // The lost lead is closed, so picking a stage again opens a fresh lead for the chat.
+    // Picking an open stage again reopens the same lead.
     const reopened = await setChatDeal(B, c, { stageId: interested.id }, { source: 'agent', userId: ASHA });
     expect(reopened.lost_reason).toBeNull();
-    expect(reopened.lead_id).not.toBe(deal.lead_id);
+    expect(reopened.lead_id).toBe(deal.lead_id);
+    expect(await leadOf(c)).toEqual({ stage_id: interested.id, closed: false });
   });
 
   test('rejects another business’s stage, group chats and bad values', async () => {

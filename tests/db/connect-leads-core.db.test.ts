@@ -37,6 +37,7 @@ run('connect leads core (kh_phase2_test)', () => {
   let B: string;
   let OTHER: string;
   let otherAgent: string;
+  let AGENT: string;
   let stages: PipelineStage[];
   const stage = (name: string) => stages.find((s) => s.name === name)!;
 
@@ -55,7 +56,9 @@ run('connect leads core (kh_phase2_test)', () => {
     if (db?.db !== TEST_DB) throw new Error(`Refusing to run against ${db?.db}`);
     const t = await queryOne<{ n: number }>(`SELECT COUNT(*)::int AS n FROM information_schema.tables WHERE table_name = 'leads'`);
     if (!t?.n) throw new Error('Apply migration 447 to kh_phase2_test first');
-    B = (await seedBusiness('core')).businessId;
+    const seeded = await seedBusiness('core');
+    B = seeded.businessId;
+    AGENT = seeded.agentId;
     const other = await seedBusiness('core-other');
     OTHER = other.businessId;
     otherAgent = other.agentId;
@@ -106,9 +109,39 @@ run('connect leads core (kh_phase2_test)', () => {
     expect(l2.created).toBe(true);
     expect(l2.lead.id).not.toBe(l1.id);
 
-    const err = await setLeadStage(B, l1.id, stage('Interested').id, auto).catch((e) => e);
-    expect(err).toBeInstanceOf(LeadError);
-    expect(err).toMatchObject({ status: 409, code: 'LEAD_ALREADY_OPEN' });
+    // Refused before the update, so the unique index is never hit (lib/db logs every DB error).
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const err = await setLeadStage(B, l1.id, stage('Interested').id, auto).catch((e) => e);
+      expect(err).toBeInstanceOf(LeadError);
+      expect(err).toMatchObject({ status: 409, code: 'LEAD_ALREADY_OPEN' });
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  test('won -> lost keeps when the lead first closed', async () => {
+    const { lead } = await openLead(B, { phone: '919876500010', actor: auto });
+    await setLeadStage(B, lead.id, stage('Won').id, auto);
+    await query(`UPDATE leads SET closed_at = NOW() - INTERVAL '3 days' WHERE id = $1`, [lead.id]);
+    const before = (await loadLead(B, lead.id))!.closed_at;
+    const lost = await setLeadStage(B, lead.id, stage('Lost').id, auto);
+    expect(lost.stage_id).toBe(stage('Lost').id);
+    expect(new Date(lost.closed_at!).getTime()).toBe(new Date(before!).getTime());
+  });
+
+  test('openLead with a won stage joins an open lead, else creates one closed', async () => {
+    const open = await openLead(B, { phone: '919876500011', actor: auto });
+    const joined = await openLead(B, { phone: '919876500011', stageId: stage('Won').id, actor: auto });
+    expect(joined.created).toBe(false);
+    expect(joined.lead.id).toBe(open.lead.id);
+    expect(joined.lead.closed_at).toBeNull();
+
+    const fresh = await openLead(B, { phone: '919876500012', stageId: stage('Won').id, actor: auto });
+    expect(fresh.created).toBe(true);
+    expect(fresh.lead.stage_id).toBe(stage('Won').id);
+    expect(fresh.lead.closed_at).not.toBeNull();
   });
 
   test('stage event carries lead_id and works with no chat', async () => {
@@ -131,6 +164,27 @@ run('connect leads core (kh_phase2_test)', () => {
     expect(deal.lead_id).toBeTruthy();
     const loaded = await loadChatDeal(B, chat.id);
     expect(loaded).toMatchObject({ lead_id: deal.lead_id, stage_id: stage('Interested').id });
+  });
+
+  test('the deal panel keeps working on a chat whose lead closed', async () => {
+    const agent: DealActor = { source: 'agent', userId: AGENT };
+    // Pick Lost first, then the reason is saved on its own (as DealSection does on blur).
+    const lostChat = await seedChat(B, { phone: '919876500013' });
+    const lost = await setChatDeal(B, lostChat.id, { stageId: stage('Lost').id }, agent);
+    const reason = await setChatDeal(B, lostChat.id, { lostReason: 'Price' }, agent);
+    expect(reason).toMatchObject({ lead_id: lost.lead_id, lost_reason: 'Price' });
+    expect(await loadChatDeal(B, lostChat.id)).toMatchObject({ lead_id: lost.lead_id, stage_id: stage('Lost').id, lost_reason: 'Price' });
+
+    // After Won, the value can still be edited.
+    const wonChat = await seedChat(B, { phone: '919876500014' });
+    const won = await setChatDeal(B, wonChat.id, { stageId: stage('Won').id }, agent);
+    const valued = await setChatDeal(B, wonChat.id, { dealValue: 900, expectedCloseOn: '2026-11-30' }, agent);
+    expect(valued).toMatchObject({ lead_id: won.lead_id, deal_value: 900, expected_close_on: '2026-11-30' });
+
+    // Moving the lost lead back to an open stage reopens it.
+    const back = await setChatDeal(B, lostChat.id, { stageId: stage('Interested').id }, agent);
+    expect(back).toMatchObject({ lead_id: lost.lead_id, stage_id: stage('Interested').id, lost_reason: null });
+    expect((await loadLead(B, lost.lead_id!))?.closed_at).toBeNull();
   });
 
   test('closeLeadAsWentQuiet', async () => {

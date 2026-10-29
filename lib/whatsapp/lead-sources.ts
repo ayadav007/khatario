@@ -17,6 +17,9 @@ import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
 import { assignToAgent, broadcastOwnership, isEligibleInboxAgent } from '@/lib/whatsapp/inbox-ownership';
 import { ensureStages } from '@/lib/whatsapp/pipeline';
 import { openLeadForChat, setChatDeal } from '@/lib/leads/chat-deal';
+import { normalizeLeadPhone } from '@/lib/leads/phone';
+
+export { normalizeLeadPhone };
 
 export const LEAD_SOURCES = ['ctwa_ad', 'link', 'indiamart', 'lead_api'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
@@ -231,16 +234,6 @@ function newCode(): string {
   let out = '';
   for (let i = 0; i < CODE_LEN; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
   return out;
-}
-
-/** Digits with country code; a bare 10-digit Indian mobile gets 91. Null when it can't be a phone. */
-export function normalizeLeadPhone(raw: unknown): string | null {
-  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
-  let d = String(raw).replace(/\D/g, '');
-  if (d.startsWith('00')) d = d.slice(2);
-  if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
-  if (d.length === 10) d = `91${d}`;
-  return d.length >= 11 && d.length <= 15 ? d : null;
 }
 
 /** The text a link pre-fills, ending in the reference code we match on. */
