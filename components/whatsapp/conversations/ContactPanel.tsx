@@ -11,6 +11,7 @@ import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { Toast } from '@/components/ui/Toast';
 import { LinkedOrdersCard } from './LinkedOrdersCard';
 import { DealSection } from '../pipeline/DealSection';
+import { ChatLeadsSection } from '../leads/ChatLeadsSection';
 import type { OwnershipView } from './inbox';
 
 interface ContactInfo {
@@ -446,6 +447,7 @@ export function ContactPanel({
           <h3 className="text-sm font-bold text-gray-900 mb-4">Lead Management</h3>
           <div className="space-y-4">
             <DealSection conversationId={conversationId} isGroup={!!(chatStatus?.is_group || ownership?.is_group)} />
+            {contact?.phone && !(chatStatus?.is_group || ownership?.is_group) && <ChatLeadsSection phone={contact.phone} />}
 
             {/* Lead Status (AI-based with manual override) */}
             <div>

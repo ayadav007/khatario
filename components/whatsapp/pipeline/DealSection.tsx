@@ -247,7 +247,7 @@ export function DealSection({ conversationId, isGroup }: { conversationId: strin
         </ul>
         {remindOpen && (
           <ReminderForm
-            conversationId={conversationId}
+            target={{ conversation_id: conversationId }}
             onDone={async (err) => {
               if (err) {
                 setError(err);
@@ -266,12 +266,13 @@ export function DealSection({ conversationId, isGroup }: { conversationId: strin
   );
 }
 
-function ReminderForm({
-  conversationId,
+/** Quick "remind me" form for a chat, or for a lead (which may have no chat). */
+export function ReminderForm({
+  target,
   onDone,
   onCancel,
 }: {
-  conversationId: string;
+  target: { conversation_id: string } | { lead_id: string };
   onDone: (error?: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
@@ -292,7 +293,7 @@ function ReminderForm({
       const res = await fetch('/api/whatsapp/followups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_id: conversationId, due_at: due.toISOString(), note, cancel_on_reply: cancelOnReply }),
+        body: JSON.stringify({ ...target, due_at: due.toISOString(), note, cancel_on_reply: cancelOnReply }),
       });
       const data = await res.json().catch(() => ({}));
       await onDone(res.ok ? undefined : data.error || 'Could not set the reminder');

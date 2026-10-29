@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { formatDistanceToNowStrict, isPast } from 'date-fns';
 import { AlarmClock, Loader2, Search, Settings2, User } from 'lucide-react';
@@ -8,17 +8,13 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { Button } from '@/components/ui/Button';
 import { Toast } from '@/components/ui/Toast';
 import type { BoardCard, BoardColumn } from '@/lib/whatsapp/pipeline';
-import { formatDealValue, SOURCE_LABEL, SOURCE_STYLE, STAGE_DOT, type StageOption } from './stageStyle';
+import { LeadDrawer } from '@/components/whatsapp/leads/LeadDrawer';
+import { LEAD_SOURCE_LABEL, sourceLabel, sourceStyle, TEMPERATURE_STYLE } from '@/components/whatsapp/leads/leadLabels';
+import { formatDealValue, STAGE_DOT, type StageOption } from './stageStyle';
 import { StageManager } from './StageManager';
 
 type Agent = { id: string; name: string; can_receive?: boolean };
 type LabelRow = { id: string; name: string };
-
-const TEMPERATURE_STYLE: Record<string, string> = {
-  hot: 'bg-red-50 text-red-700',
-  warm: 'bg-amber-50 text-amber-700',
-  cold: 'bg-slate-100 text-slate-600',
-};
 
 export function PipelineBoard() {
   const [columns, setColumns] = useState<BoardColumn[] | null>(null);
@@ -36,6 +32,7 @@ export function PipelineBoard() {
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [lostPrompt, setLostPrompt] = useState<{ card: BoardCard; toStageId: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   const dragCard = useRef<BoardCard | null>(null);
 
   useEffect(() => {
@@ -107,8 +104,7 @@ export function PipelineBoard() {
   }
 
   async function move(card: BoardCard, toStageId: string, lostReason?: string) {
-    // The move route works on a chat; a lead with no chat cannot be moved from here until Task 8's lead PATCH.
-    if (card.stage_id === toStageId || !columns || !card.conversation_id) return;
+    if (card.stage_id === toStageId || !columns) return;
     const before = columns;
     // Optimistic: move the card and its value between columns.
     setColumns(
@@ -123,7 +119,7 @@ export function PipelineBoard() {
         return c;
       }),
     );
-    const res = await fetch(`/api/whatsapp/conversations/${card.conversation_id}/deal`, {
+    const res = await fetch(`/api/whatsapp/leads/${card.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(lostReason !== undefined ? { stage_id: toStageId, lost_reason: lostReason } : { stage_id: toStageId }),
@@ -131,12 +127,12 @@ export function PipelineBoard() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setColumns(before);
-      setToast({ message: data.error || 'Could not move the chat', type: 'error' });
+      // e.g. 409 when a closed lead is reopened while the number has another open lead.
+      setToast({ message: data.error || 'Could not move the lead', type: 'error' });
     }
   }
 
   function requestMove(card: BoardCard, toStageId: string) {
-    if (!card.conversation_id) return;
     const target = columns?.find((c) => c.id === toStageId);
     if (target?.kind === 'lost') setLostPrompt({ card, toStageId });
     else void move(card, toStageId);
@@ -158,7 +154,7 @@ export function PipelineBoard() {
     <div className="flex h-full min-h-0 flex-col p-4 md:p-6">
       <ListPageHeader
         title="Pipeline"
-        description="Every lead on WhatsApp by stage. Drag a card to move it; open it to chat."
+        description="Every lead by stage. Drag a card to move it; open it to chat or see the lead."
         showActionsOnMobile
         actions={
           <Button variant="secondary" size="sm" onClick={() => setManageOpen(true)}>
@@ -195,7 +191,7 @@ export function PipelineBoard() {
         </select>
         <select className={field} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Lead source">
           <option value="">All sources</option>
-          {Object.entries(SOURCE_LABEL).map(([key, text]) => (
+          {Object.entries(LEAD_SOURCE_LABEL).map(([key, text]) => (
             <option key={key} value={key}>{text}</option>
           ))}
         </select>
@@ -247,7 +243,7 @@ export function PipelineBoard() {
                 <p className="mt-0.5 text-xs text-text-muted">{formatDealValue(col.total_value)}</p>
               </header>
               <div className="flex min-h-[80px] flex-1 flex-col gap-2 overflow-y-auto p-2">
-                {col.cards.length === 0 && <p className="px-1 py-6 text-center text-xs text-text-muted">No chats here</p>}
+                {col.cards.length === 0 && <p className="px-1 py-6 text-center text-xs text-text-muted">No leads here</p>}
                 {col.cards.map((card) => (
                   <DealCard
                     key={card.id}
@@ -260,6 +256,7 @@ export function PipelineBoard() {
                       setDragOver(null);
                     }}
                     onMove={(toStageId) => requestMove(card, toStageId)}
+                    onOpenLead={() => setDrawerLeadId(card.id)}
                   />
                 ))}
                 {col.cards.length < col.count && (
@@ -296,18 +293,10 @@ export function PipelineBoard() {
         onError={(message) => setToast({ message, type: 'error' })}
       />
 
+      <LeadDrawer leadId={drawerLeadId} onClose={() => setDrawerLeadId(null)} onChanged={() => void load()} onOpenLead={setDrawerLeadId} />
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
-  );
-}
-
-/** The card's name and preview: a link to the chat, or plain text for a lead with no chat. */
-function CardBody({ conversationId, className, children }: { conversationId: string | null; className: string; children: ReactNode }) {
-  if (!conversationId) return <div className={className}>{children}</div>;
-  return (
-    <Link href={`/whatsapp/conversations?c=${conversationId}`} className={`${className} hover:underline`}>
-      {children}
-    </Link>
   );
 }
 
@@ -317,18 +306,21 @@ function DealCard({
   onDragStart,
   onDragEnd,
   onMove,
+  onOpenLead,
 }: {
   card: BoardCard;
   stages: StageOption[];
   onDragStart: () => void;
   onDragEnd: () => void;
   onMove: (stageId: string) => void;
+  /** Opens the lead drawer; used by cards with no chat to link to. */
+  onOpenLead: () => void;
 }) {
   const due = card.next_followup_at ? new Date(card.next_followup_at) : null;
   const overdue = due ? isPast(due) : false;
   return (
     <article
-      draggable={!!card.conversation_id}
+      draggable
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', card.id);
@@ -338,24 +330,36 @@ function DealCard({
       className="cursor-grab rounded-lg border border-border bg-white p-2.5 shadow-sm active:cursor-grabbing dark:border-border-dark dark:bg-surface-dark"
     >
       <div className="flex items-start gap-2">
-        <CardBody conversationId={card.conversation_id} className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text-primary">{card.name}</p>
-          {!card.conversation_id && <p className="mt-0.5 text-xs text-text-muted">No chat yet</p>}
-          {card.summary ? (
-            <p className="mt-0.5 line-clamp-3 text-xs text-text-secondary" title={card.summary}>{card.summary}</p>
-          ) : (
-            card.last_message_text && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{card.last_message_text}</p>
-          )}
-        </CardBody>
+        {card.conversation_id ? (
+          // Only the name underlines on hover, not the whole preview.
+          <Link href={`/whatsapp/conversations?c=${card.conversation_id}`} className="group min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-text-primary group-hover:underline">{card.name}</p>
+            {card.summary ? (
+              <p className="mt-0.5 line-clamp-3 text-xs text-text-secondary" title={card.summary}>{card.summary}</p>
+            ) : (
+              card.last_message_text && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{card.last_message_text}</p>
+            )}
+          </Link>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              className="block max-w-full truncate text-left text-sm font-medium text-text-primary hover:underline"
+              onClick={onOpenLead}
+            >
+              {card.name}
+            </button>
+            <p className="mt-0.5 text-xs text-text-muted">No chat yet</p>
+            {card.summary && <p className="mt-0.5 line-clamp-3 text-xs text-text-secondary" title={card.summary}>{card.summary}</p>}
+          </div>
+        )}
         {card.deal_value !== null && (
           <span className="shrink-0 text-xs font-semibold text-text-primary">{formatDealValue(card.deal_value)}</span>
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.source && (
-          <span className={`rounded-full px-1.5 py-0.5 font-medium ${SOURCE_STYLE[card.source] || 'bg-gray-100 text-gray-600'}`}>
-            {SOURCE_LABEL[card.source] || card.source}
-          </span>
+          <span className={`rounded-full px-1.5 py-0.5 font-medium ${sourceStyle(card.source)}`}>{sourceLabel(card.source)}</span>
         )}
         {card.is_customer && (
           <span className="rounded-full bg-orange-50 px-1.5 py-0.5 font-medium text-orange-700">Existing customer</span>
@@ -384,7 +388,6 @@ function DealCard({
       <select
         className="mt-2 w-full rounded-md border border-border bg-white px-2 py-1 text-xs text-text-secondary md:hidden dark:border-border-dark dark:bg-surface-dark"
         value={card.stage_id}
-        disabled={!card.conversation_id}
         onChange={(e) => onMove(e.target.value)}
         aria-label={`Move ${card.name}`}
       >

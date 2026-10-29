@@ -101,6 +101,8 @@ export default function NotificationsPage() {
       router.push('/reports/gst/compliance');
     } else if (notification.reference_type === 'whatsapp_conversation' && notification.reference_id) {
       router.push(`/whatsapp/conversations?c=${encodeURIComponent(notification.reference_id)}`);
+    } else if (notification.reference_type === 'whatsapp_lead' && notification.reference_id) {
+      router.push(`/whatsapp/leads?lead=${encodeURIComponent(notification.reference_id)}`);
     }
   };
 
