@@ -37,6 +37,7 @@ import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import { ensureStages, type PipelineStage } from '@/lib/whatsapp/pipeline';
 import * as core from '@/lib/leads/core';
 import { openLead } from '@/lib/leads/core';
+import { leadForInboundMessage } from '@/lib/leads/inbound';
 import {
   createEntryLink,
   createWebhookSource,
@@ -268,23 +269,56 @@ run('connect leads from IndiaMART and webhooks (kh_phase2_test)', () => {
     expect((await leadsFor(p2))[0]).toMatchObject({ stage_name: 'Interested', owner_id: null, source: 'lead_api' });
   });
 
-  test('a lead that fails to import does not stop the pull: the rest import, the failure is recorded and retried', async () => {
+  /** A fake IndiaMART that, like the real one, answers only for leads inside the requested window. */
+  const windowedFetcher = (rows: Array<{ id: string; phone: string; at: string }>, seen: string[] = []) => async (url: string) => {
+    const q = new URL(url).searchParams;
+    const from = Date.parse(`${q.get('start_time')!.replace(/-/g, ' ')} +0530`);
+    const to = Date.parse(`${q.get('end_time')!.replace(/-/g, ' ')} +0530`);
+    seen.push(q.get('start_time')!);
+    return {
+      json: async () => ({
+        CODE: 200,
+        RESPONSE: rows
+          .filter((r) => {
+            const t = Date.parse(`${r.at.replace(' ', 'T')}+05:30`);
+            return t >= from && t <= to;
+          })
+          .map((r) => ({ UNIQUE_QUERY_ID: r.id, SENDER_NAME: 'Buyer', SENDER_MOBILE: r.phone, QUERY_MESSAGE: 'Need boxes', QUERY_TIME: r.at })),
+      }),
+    };
+  };
+  const syncedUntil = async () =>
+    (await queryOne<{ t: Date }>(`SELECT synced_until AS t FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`, [B]))!.t.toISOString();
+  const sourceRow = () =>
+    queryOne<{ last_error: string | null; last_result: any }>(`SELECT last_error, last_result FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`, [B]);
+  const claimsLike = async (prefix: string) =>
+    (await queryRows<{ external_id: string }>(`SELECT external_id FROM whatsapp_lead_imports WHERE business_id = $1 AND external_id LIKE $2`, [B, `${prefix}%`]))
+      .map((r) => r.external_id)
+      .sort();
+  /** Makes openLead fail for the given phone only. */
+  const failFor = (bad: string) => {
+    const original = core.openLead;
+    return jest.spyOn(core, 'openLead').mockImplementation((businessId, input) =>
+      input.phone === bad ? Promise.reject(new Error('forced failure')) : original(businessId, input),
+    );
+  };
+
+  test('a lead that fails to import does not stop the pull: the rest import, and the next pull starts at the failed lead', async () => {
+    // Times are IST; the first test left the window at 2026-10-26 10:00Z (15:30 IST).
     const good1 = phone();
     const bad = phone();
     const good2 = phone();
-    const fetcher = async () => ({
-      json: async () => ({
-        CODE: 200,
-        RESPONSE: [good1, bad, good2].map((p, i) => ({ UNIQUE_QUERY_ID: `IM-F${i}`, SENDER_NAME: 'Buyer', SENDER_MOBILE: p, QUERY_MESSAGE: 'Need boxes' })),
-      }),
-    });
-    const original = core.openLead;
-    const spy = jest.spyOn(core, 'openLead').mockImplementation((businessId, input) =>
-      input.phone === bad ? Promise.reject(new Error('forced failure')) : original(businessId, input),
-    );
+    const rows = [
+      { id: 'IM-F0', phone: good1, at: '2026-10-27 16:00:00' },
+      { id: 'IM-F1', phone: bad, at: '2026-10-27 16:10:00' },
+      { id: 'IM-F2', phone: good2, at: '2026-10-27 16:20:00' },
+    ];
+    const starts: string[] = [];
+    const fetcher = windowedFetcher(rows, starts);
+    const spy = failFor(bad);
     let run1;
     try {
-      run1 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T10:00:00Z') });
+      run1 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T11:00:00Z') });
     } finally {
       spy.mockRestore();
     }
@@ -292,26 +326,57 @@ run('connect leads from IndiaMART and webhooks (kh_phase2_test)', () => {
     expect(await leadsFor(good1)).toHaveLength(1);
     expect(await leadsFor(good2)).toHaveLength(1);
     expect(await leadsFor(bad)).toHaveLength(0);
-    const src = await queryOne<{ last_error: string; last_result: any; synced_until: Date }>(
-      `SELECT last_error, last_result, synced_until FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`,
-      [B],
-    );
+    const src = await sourceRow();
     expect(src!.last_error).toContain('IM-F1');
     expect(src!.last_error).toContain('forced failure');
-    expect(src!.last_result).toMatchObject({ fetched: 3, imported: 2, failed: 1 });
-    expect(new Date(src!.synced_until).toISOString()).toBe('2026-10-27T10:00:00.000Z');
-    // No claim is left for the failed enquiry, so the next pull imports it (and the others are duplicates).
-    const claims = async () =>
-      (await queryRows<{ external_id: string }>(`SELECT external_id FROM whatsapp_lead_imports WHERE business_id = $1 AND external_id LIKE 'IM-F%'`, [B]))
-        .map((r) => r.external_id)
-        .sort();
-    expect(await claims()).toEqual(['IM-F0', 'IM-F2']);
-    const run2 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T10:10:00Z') });
-    expect(run2).toMatchObject({ fetched: 3, imported: 1, duplicates: 2, failed: 0 });
+    expect(src!.last_result).toMatchObject({ fetched: 3, imported: 2, failed: 1, failed_ids: ['IM-F1'] });
+    // The window is held one second before the failed lead (16:10:00 IST = 10:40:00Z), not moved to "now".
+    expect(await syncedUntil()).toBe('2026-10-27T10:39:59.000Z');
+    // No claim is left for the failed enquiry.
+    expect(await claimsLike('IM-F')).toEqual(['IM-F0', 'IM-F2']);
+
+    // The next pull asks from there, gets the failed lead and the one after it, skips the imported one by its claim and imports the failed one.
+    const run2 = await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T11:10:00Z') });
+    expect(starts).toEqual(['26-Oct-2026 15:30:00', '27-Oct-2026 16:09:59']);
+    expect(run2).toMatchObject({ fetched: 2, imported: 1, duplicates: 1, failed: 0 });
     expect(await leadsFor(bad)).toHaveLength(1);
-    expect(await claims()).toEqual(['IM-F0', 'IM-F1', 'IM-F2']);
-    const cleared = await queryOne<{ last_error: string | null }>(`SELECT last_error FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`, [B]);
-    expect(cleared!.last_error).toBeNull();
+    expect(await claimsLike('IM-F')).toEqual(['IM-F0', 'IM-F1', 'IM-F2']);
+    expect((await sourceRow())!.last_error).toBeNull();
+    expect(await syncedUntil()).toBe('2026-10-27T11:10:00.000Z');
+  });
+
+  test('a lead that fails twice in a row is given up on: the window moves on and last_error names it', async () => {
+    const bad = phone();
+    const good = phone();
+    const rows = [
+      { id: 'IM-G0', phone: bad, at: '2026-10-27 17:00:00' },
+      { id: 'IM-G1', phone: good, at: '2026-10-27 17:10:00' },
+    ];
+    const starts: string[] = [];
+    const fetcher = windowedFetcher(rows, starts);
+    const spy = failFor(bad);
+    try {
+      expect(await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T12:00:00Z') })).toMatchObject({ fetched: 2, imported: 1, failed: 1 });
+      expect(await syncedUntil()).toBe('2026-10-27T11:29:59.000Z');
+      expect((await sourceRow())!.last_error).toContain('will retry');
+
+      // Second run: the same id fails again, so the window advances to the end of the pull.
+      expect(await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T12:10:00Z') })).toMatchObject({ fetched: 2, imported: 0, duplicates: 1, failed: 1 });
+      expect(starts[1]).toBe('27-Oct-2026 16:59:59');
+      expect(await syncedUntil()).toBe('2026-10-27T12:10:00.000Z');
+      const after = await sourceRow();
+      expect(after!.last_error).toContain('IM-G0');
+      expect(after!.last_error).toContain('given up');
+      expect(after!.last_result.failed_ids).toEqual(['IM-G0']);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await leadsFor(bad)).toHaveLength(0);
+
+    // The next pull has nothing in its window; with no failures the error is cleared.
+    expect(await syncIndiaMart(B, { fetcher, now: new Date('2026-10-27T12:20:00Z') })).toMatchObject({ fetched: 0, failed: 0 });
+    expect(starts[2]).toBe('27-Oct-2026 17:40:00');
+    expect((await sourceRow())!.last_error).toBeNull();
   });
 
   test('a failure after the claim releases it, and a retry imports the enquiry once', async () => {
@@ -374,6 +439,35 @@ run('connect leads from IndiaMART and webhooks (kh_phase2_test)', () => {
     expect((await leadsFor(gp))[0].conversation_id).toBeNull();
   });
 
+  test('only a live message hands the chat to the lead owner; history sync and manual links do not', async () => {
+    const { src } = await webhookSource('Owned too', { assignTo: AGENT });
+    const chatOwner = (id: string) =>
+      queryOne<{ assigned_to: string | null }>(`SELECT assigned_to::text AS assigned_to FROM whatsapp_conversations WHERE id = $1`, [id]).then((r) => r!.assigned_to);
+
+    // An old message (history sync) gives the lead its chat but leaves the chat unassigned.
+    const old = phone();
+    await importLead(src, incoming(old));
+    const oldChat = await seedChat(B, { phone: old });
+    const replay = await leadForInboundMessage(B, oldChat.id, old, 'Old hello', { sentAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) });
+    expect(replay.action).toBe('none');
+    expect((await leadsFor(old))[0].conversation_id).toBe(oldChat.id);
+    expect(await chatOwner(oldChat.id)).toBeNull();
+
+    // A manual link (chat-deal path) does not assign either.
+    const manual = phone();
+    const { lead } = await openLead(B, { phone: manual, ownerId: AGENT, actor: { source: 'auto' } });
+    const manualChat = await seedChat(B, { phone: manual });
+    await core.linkChatToLead(B, lead.id, manualChat.id);
+    expect(await chatOwner(manualChat.id)).toBeNull();
+
+    // A live message does.
+    const live = phone();
+    await importLead(src, incoming(live));
+    const liveChat = await seedChat(B, { phone: live });
+    expect((await leadForInboundMessage(B, liveChat.id, live, 'Hello now')).action).toBe('joined');
+    expect(await chatOwner(liveChat.id)).toBe(AGENT);
+  });
+
   test('joining an open lead adds the enquiry to its note, and an odd label_ids shape counts as empty', async () => {
     const { src } = await webhookSource('JustDial', { labelIds: [LABEL] });
     const p = phone();
@@ -381,9 +475,13 @@ run('connect leads from IndiaMART and webhooks (kh_phase2_test)', () => {
     await importLead(src, incoming(p, { message: 'Need 20 boxes' }));
     expect((await leadsFor(p))[0].note).toBe('Called twice\nJustDial: Need 20 boxes');
 
-    // The note stays inside its 1000-character limit.
-    for (let i = 0; i < 4; i++) await importLead(src, incoming(p, { message: 'x'.repeat(400) }));
-    expect((await leadsFor(p))[0].note!.length).toBeLessThanOrEqual(1000);
+    // The note stays inside its 1000-character limit and keeps the newest enquiry, dropping the oldest text.
+    for (let i = 0; i < 4; i++) await importLead(src, incoming(p, { message: `enquiry ${i} ${'x'.repeat(400)}` }));
+    const note = (await leadsFor(p))[0].note!;
+    expect(note.length).toBeLessThanOrEqual(1000);
+    expect(note).toContain('JustDial: enquiry 3 ');
+    expect(note).not.toContain('Called twice');
+    expect(note.startsWith('JustDial: enquiry')).toBe(true);
 
     // label_ids that is not an array (or a source_detail that is not an object) is replaced, not an error.
     await query(`UPDATE leads SET source_detail = '{"label_ids": "oops"}'::jsonb WHERE id = $1`, [lead.id]);

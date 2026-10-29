@@ -489,7 +489,7 @@ export async function deleteLeadSource(businessId: string, id: string): Promise<
 
 /** Outside text goes into text columns: drop NUL and other control characters (keeps new lines and tabs). */
 function stripControl(s: string): string {
-  return s.replace(/[ --]/g, '');
+  return s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '');
 }
 
 export interface IncomingLead {
@@ -512,11 +512,13 @@ interface SourceForImport {
 }
 
 /**
- * Puts an outside enquiry on the pipeline as a lead, with no chat: the chat links when the buyer messages
- * (leadForInboundMessage), unless the number already has a 1:1 chat, which the lead takes at once. Returns null
- * when this enquiry was already imported. A number with an open lead joins it: a Direct lead takes this
- * source, a lead with a source keeps it, and the source's labels and enquiry text are added either way. The source's stage and owner are best effort, so a deleted stage (first open stage
- * instead) or an agent who lost inbox access (no owner instead) never drops the lead.
+ * Puts an outside enquiry on the pipeline as a lead. Returns null when this enquiry was already imported.
+ * The lead has no chat: it links when the buyer messages (leadForInboundMessage), unless the number
+ * already has a 1:1 chat, which the lead takes at once and hands to the lead's owner.
+ * A number with an open lead joins it: a Direct lead takes this source, a lead with a source keeps it,
+ * and the source's labels and the enquiry text are added either way.
+ * The source's stage and owner are best effort: a deleted stage falls back to the first open stage and
+ * an agent who lost inbox access to no owner, so neither drops the lead.
  */
 export async function importLead(src: SourceForImport, lead: IncomingLead): Promise<{ leadId: string; created: boolean } | null> {
   const claim = await queryOne<{ id: string }>(
@@ -560,15 +562,14 @@ export async function importLead(src: SourceForImport, lead: IncomingLead): Prom
         else throw err;
       }
     }
-    if (opened.created) {
-      // openLead links the chat; the owner takes it too (a failed assignment never drops the lead).
-      if (ownerId && opened.lead.conversation_id) {
-        await assignToAgent(src.business_id, opened.lead.conversation_id, ownerId).catch((err) =>
-          console.warn('[lead-sources] assignment failed:', err instanceof Error ? err.message : err),
-        );
-      }
-    } else {
+    if (!opened.created) {
       await addImportToLead(src.business_id, opened.lead.id, { source, sourceDetail, labelIds, enquiry: `${src.name}: ${summary}` });
+    }
+    // The chat we just linked goes to the lead's owner (a failed assignment never drops the lead).
+    if (chat && opened.lead.conversation_id === chat.id && opened.lead.owner_id) {
+      await assignToAgent(src.business_id, chat.id, opened.lead.owner_id).catch((err) =>
+        console.warn('[lead-sources] assignment failed:', err instanceof Error ? err.message : err),
+      );
     }
     await query(`UPDATE whatsapp_lead_imports SET lead_id = $2::uuid WHERE id = $1::uuid`, [claim.id, opened.lead.id]);
     return { leadId: opened.lead.id, created: opened.created };
@@ -694,19 +695,36 @@ export interface IndiaMartRun {
   fetched: number;
   imported: number;
   duplicates: number;
-  /** Leads that could not be imported this run; they are retried because their claim is released. */
+  /** Leads that could not be imported this run (see syncIndiaMart for how and when they are retried). */
   failed?: number;
   skipped?: string;
   error?: string;
 }
 
+/** IndiaMART's QUERY_TIME ("2026-10-26 14:05:00", IST) or its CRM-API time format, as a Date; null when unreadable. */
+export function parseIndiaMartQueryTime(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw.trim());
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5], +iso[6]) - 330 * 60 * 1000);
+  const dmy = /^(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2})/.exec(raw.trim());
+  const month = dmy ? MONTHS.findIndex((m) => m.toLowerCase() === dmy[2].toLowerCase()) : -1;
+  if (dmy && month >= 0) return new Date(Date.UTC(+dmy[3], month, +dmy[1], +dmy[4], +dmy[5], +dmy[6]) - 330 * 60 * 1000);
+  return null;
+}
+
 type Fetcher = (url: string) => Promise<{ json: () => Promise<unknown> }>;
 
-/** One pull for one business (cron or "Sync now"); respects IndiaMART's 5-minute limit. */
+/**
+ * One pull for one business (cron or "Sync now"); respects IndiaMART's 5-minute limit.
+ * A lead that cannot be imported does not stop the others. The next pull starts at that lead's query time
+ * (one second earlier) so it is fetched again; leads already imported are skipped by their claims.
+ * A lead that fails in two runs in a row is given up on, so one bad enquiry cannot hold the window forever:
+ * last_error keeps naming it until a run has no failures.
+ */
 export async function syncIndiaMart(businessId: string, opts: { fetcher?: Fetcher; now?: Date } = {}): Promise<IndiaMartRun> {
   const now = opts.now ?? new Date();
-  const src = await queryOne<SourceForImport & { encrypted_key: string | null; enabled: boolean; synced_until: Date | null; last_run_at: Date | null }>(
-    `SELECT ${IMPORT_COLUMNS}, encrypted_key, enabled, synced_until, last_run_at
+  const src = await queryOne<SourceForImport & { encrypted_key: string | null; enabled: boolean; synced_until: Date | null; last_run_at: Date | null; last_result: Record<string, unknown> | null }>(
+    `SELECT ${IMPORT_COLUMNS}, encrypted_key, enabled, synced_until, last_run_at, last_result
        FROM whatsapp_lead_sources WHERE business_id = $1 AND kind = 'indiamart'`,
     [businessId],
   );
@@ -738,6 +756,8 @@ export async function syncIndiaMart(businessId: string, opts: { fetcher?: Fetche
   let imported = 0;
   let duplicates = 0;
   const failures: string[] = [];
+  const failedIds: string[] = [];
+  const failedTimes: Array<Date | null> = [];
   for (const lead of parsed.leads) {
     // One bad enquiry must not stop the rest; importLead releases its claim so a later pull can retry it.
     try {
@@ -745,16 +765,35 @@ export async function syncIndiaMart(businessId: string, opts: { fetcher?: Fetche
       if (r) imported++;
       else duplicates++;
     } catch (err) {
+      failedIds.push(lead.externalId);
+      failedTimes.push(parseIndiaMartQueryTime(lead.detail.query_time));
       failures.push(`${lead.externalId}: ${err instanceof Error ? err.message : String(err)}`);
       console.warn('[lead-sources] IndiaMART lead failed:', failures[failures.length - 1]);
     }
   }
   const failed = failures.length;
-  const result = { fetched: parsed.leads.length, imported, duplicates, failed, window: [start.toISOString(), end.toISOString()] };
-  const lastError = failed ? `${failed} lead${failed === 1 ? '' : 's'} could not be imported (${failures.slice(0, 3).join('; ')})`.slice(0, 500) : null;
+  const previous = Array.isArray(src.last_result?.failed_ids) ? (src.last_result!.failed_ids as unknown[]) : [];
+  const secondStrike = failed > 0 && failedIds.every((id) => previous.includes(id));
+  // Hold the window at the earliest failed lead (an unreadable time holds it where it started).
+  let syncedUntil = end;
+  if (failed && !secondStrike) {
+    const earliest = Math.min(...failedTimes.map((t) => (t ? t.getTime() - 1000 : start.getTime())));
+    syncedUntil = new Date(Math.min(Math.max(earliest, start.getTime()), end.getTime()));
+  }
+  const result = {
+    fetched: parsed.leads.length,
+    imported,
+    duplicates,
+    failed,
+    failed_ids: failedIds.slice(0, 200),
+    window: [start.toISOString(), end.toISOString()],
+  };
+  const lastError = failed
+    ? `${failed} lead${failed === 1 ? '' : 's'} could not be imported, ${secondStrike ? 'given up after two tries' : 'will retry'} (${failures.slice(0, 3).join('; ')})`.slice(0, 500)
+    : null;
   await query(
     `UPDATE whatsapp_lead_sources SET synced_until = $2, last_result = $3::jsonb, last_error = $4 WHERE id = $1::uuid`,
-    [src.id, end.toISOString(), JSON.stringify(result), lastError],
+    [src.id, syncedUntil.toISOString(), JSON.stringify(result), lastError],
   );
   return { business_id: businessId, fetched: parsed.leads.length, imported, duplicates, failed };
 }

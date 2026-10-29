@@ -451,9 +451,17 @@ export async function addImportToLead(
   }
   const enquiry = cleanText(input.enquiry, 500);
   if (enquiry) {
+    // A note over 1000 characters loses its oldest text: cut after the first line break in the newest 1000.
     await query(
-      `UPDATE leads SET note = LEFT(CASE WHEN COALESCE(note, '') = '' THEN $3 ELSE note || chr(10) || $3 END, 1000), updated_at = NOW()
-        WHERE id = $1::uuid AND business_id = $2`,
+      `UPDATE leads l
+          SET note = CASE WHEN length(c.n) <= 1000 THEN c.n
+                          WHEN position(chr(10) IN RIGHT(c.n, 1000)) > 0
+                          THEN substring(RIGHT(c.n, 1000) FROM position(chr(10) IN RIGHT(c.n, 1000)) + 1)
+                          ELSE RIGHT(c.n, 1000) END,
+              updated_at = NOW()
+         FROM (SELECT id, CASE WHEN COALESCE(note, '') = '' THEN $3 ELSE note || chr(10) || $3 END AS n
+                 FROM leads WHERE id = $1::uuid AND business_id = $2 FOR UPDATE) c
+        WHERE l.id = c.id`,
       [leadId, businessId, enquiry],
     );
   }
@@ -463,8 +471,17 @@ export async function addImportToLead(
   return lead;
 }
 
-/** Gives a lead with no chat its chat (same business, not a group), and the chat its owner if it has none. */
-export async function linkChatToLead(businessId: string, leadId: string, conversationId: string): Promise<void> {
+/**
+ * Gives a lead with no chat its chat (same business, not a group). With assignOwner, a chat nobody has
+ * also goes to the lead's owner: only a live message from the customer asks for that, never a history
+ * sync, a manual link or a join through openLead.
+ */
+export async function linkChatToLead(
+  businessId: string,
+  leadId: string,
+  conversationId: string,
+  opts: { assignOwner?: boolean } = {},
+): Promise<void> {
   const linked = await queryOne<{ id: string }>(
     `UPDATE leads SET conversation_id = $3::uuid, updated_at = NOW()
       WHERE id = $1::uuid AND business_id = $2 AND conversation_id IS NULL
@@ -477,8 +494,8 @@ export async function linkChatToLead(businessId: string, leadId: string, convers
   const lead = await loadLead(businessId, leadId);
   if (!lead) return;
   await applyLeadToChat(businessId, lead, conversationId);
-  // The lead's owner takes the chat when nobody has it; a failed assignment never undoes the link.
-  if (lead.owner_id) {
+  // A failed assignment never undoes the link.
+  if (opts.assignOwner && lead.owner_id) {
     await assignToAgent(businessId, conversationId, lead.owner_id).catch((err) =>
       console.warn('[leads] owner assignment on link failed:', err instanceof Error ? err.message : err),
     );

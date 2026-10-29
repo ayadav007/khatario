@@ -63,7 +63,7 @@ export async function leadForInboundMessage(
     let wentQuiet = false;
     if (open) {
       if (Date.now() - new Date(open.last_activity_at).getTime() < QUIET_DAYS * DAY_MS) {
-        await joinLead(businessId, open, conversationId);
+        await joinLead(businessId, open, conversationId, true);
         return { leadId: open.id, action: 'joined' };
       }
       await closeLeadAsWentQuiet(businessId, open.id);
@@ -100,7 +100,7 @@ export async function leadForInboundMessage(
 
     // Another message opened the lead a moment earlier: this one joins it.
     if (!opened.created) {
-      await joinLead(businessId, opened.lead, conversationId);
+      await joinLead(businessId, opened.lead, conversationId, true);
       return { leadId: opened.lead.id, action: 'joined' };
     }
     return { leadId: opened.lead.id, action: wentQuiet ? 'reopened_after_quiet' : 'opened' };
@@ -150,7 +150,8 @@ async function openLinkLead(businessId: string, conversationId: string, input: O
   return opened;
 }
 
-async function joinLead(businessId: string, lead: Lead, conversationId: string): Promise<void> {
-  if (!lead.conversation_id) await linkChatToLead(businessId, lead.id, conversationId);
+/** assignOwner: only a live customer message hands an unowned chat to the lead's owner. */
+async function joinLead(businessId: string, lead: Lead, conversationId: string, assignOwner = false): Promise<void> {
+  if (!lead.conversation_id) await linkChatToLead(businessId, lead.id, conversationId, { assignOwner });
   await touchLead(businessId, lead.id);
 }
