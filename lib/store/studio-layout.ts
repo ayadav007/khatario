@@ -146,42 +146,65 @@ export function themeToStudioSections(theme: StoreTheme, ctx: StudioContext): St
   ];
 }
 
-/** Quick's starting layout: the same sections, arranged like a quick-delivery app home. */
-function quickStartSections(base: StudioSection[]): StudioSection[] {
-  const by = (type: StudioSection['type']) => base.find((s) => s.type === type)!;
-  const hero = by('hero');
-  const banner = by('banner');
-  return [
-    by('announcement'),
-    { ...by('header'), settings: { ...by('header').settings, deliveryEta: '' } },
-    { ...hero, settings: { ...hero.settings, layout: 'full', height: 'small', overlay: 35, align: 'left' } },
-    { ...by('categories'), settings: { title: 'Shop by category', columns: 8 } },
-    {
-      id: 'quick-bestsellers',
-      type: 'products',
-      name: 'Bestsellers',
-      enabled: true,
-      settings: { title: 'Bestsellers', source: 'bestsellers', limit: 12, columns: 6, display: 'carousel', showPrice: true },
-    },
-    {
-      id: 'quick-deals',
-      type: 'products',
-      name: 'Top Deals',
-      enabled: true,
-      settings: { title: 'Top deals', source: 'discounted', limit: 12, columns: 6, display: 'carousel', showPrice: true },
-    },
-    { ...banner, enabled: banner.enabled },
-    { id: 'quick-usp', type: 'usp', name: 'Trust Badges', enabled: true, settings: {} },
-    { ...by('products'), settings: { ...by('products').settings, title: 'All products', columns: 6 } },
-    by('footer'),
+const QUICK_RAILS: StudioSection[] = [
+  {
+    id: 'quick-bestsellers',
+    type: 'products',
+    name: 'Bestsellers',
+    enabled: true,
+    settings: { title: 'Bestsellers', source: 'bestsellers', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+  },
+  {
+    id: 'quick-deals',
+    type: 'products',
+    name: 'Top Deals',
+    enabled: true,
+    settings: { title: 'Top deals', source: 'discounted', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+  },
+];
+
+/**
+ * Rearranges a section list into Quick's app-style home while keeping the merchant's own content:
+ * a full-width hero card, 8-up category icons, Bestsellers and Top deals rails (unless the store
+ * already has product rows), trust badges, and the full catalog last. Other sections keep their order.
+ */
+export function toQuickLayout(sections: StudioSection[]): StudioSection[] {
+  const isCatalog = (s: StudioSection) => s.type === 'products' && (s.settings.source ?? 'all') === 'all';
+  const isRow = (s: StudioSection) => s.type === 'products' && !isCatalog(s);
+  const rows = sections.filter(isRow);
+  const usp = sections.filter((s) => s.type === 'usp');
+  const catalog = sections.filter(isCatalog);
+  // Product rows and trust badges sit right under the categories, like a quick-delivery app home.
+  const lifted: StudioSection[] = [
+    ...(rows.length ? rows : QUICK_RAILS),
+    ...(usp.length ? usp : [{ id: 'quick-usp', type: 'usp' as const, name: 'Trust Badges', enabled: true, settings: {} }]),
   ];
+  const out: StudioSection[] = [];
+  let liftAt = -1;
+  for (const s of sections) {
+    if (isRow(s) || isCatalog(s) || s.type === 'usp') continue;
+    if (s.type === 'hero') {
+      out.push({ ...s, settings: { ...s.settings, layout: 'full', height: 'small', overlay: s.settings.overlay ?? 35 } });
+      liftAt = out.length;
+    } else if (s.type === 'categories') {
+      out.push({ ...s, settings: { ...s.settings, columns: 8, title: s.settings.title || 'Shop by category' } });
+      liftAt = out.length;
+    } else {
+      out.push(s);
+    }
+  }
+  out.splice(liftAt >= 0 ? liftAt : Math.min(2, out.length), 0, ...lifted);
+  // The full catalog goes last, just above the footer.
+  const footerAt = out.findIndex((s) => s.type === 'footer');
+  out.splice(footerAt >= 0 ? footerAt : out.length, 0, ...catalog.map((c) => ({ ...c, settings: { ...c.settings, columns: 6 } })));
+  return out;
 }
 
 /** The saved Studio layout, or one derived from the theme for stores that never opened Studio. */
 export function resolveStudioSections(theme: StoreTheme, ctx: StudioContext): StudioSection[] {
   if (theme.studio_sections.length > 0) return theme.studio_sections;
   const base = themeToStudioSections(theme, ctx);
-  return theme.pack === 'quick' ? quickStartSections(base) : base;
+  return theme.pack === 'quick' ? toQuickLayout(base) : base;
 }
 
 /** Colour tokens for Studio sections, so every surface stays readable in light, dim and dark. */

@@ -34,6 +34,7 @@ import {
   newStudioSection,
   splitList,
   studioVars,
+  toQuickLayout,
 } from '@/lib/store/studio-layout';
 import {
   STUDIO_PRODUCT_SOURCES,
@@ -315,7 +316,15 @@ export function ThemeStudio({
                     </span>
                   </div>
                   {editing ? null : (
-                    <button type="button" className="customise" onClick={() => onChooseTheme(t.preset)}>
+                    <button
+                      type="button"
+                      className="customise"
+                      onClick={() => {
+                        onChooseTheme(t.preset);
+                        // Quick needs its own page shape to look like Quick; the merchant's content is kept and Undo restores it.
+                        if (t.pack === 'quick') setSections(toQuickLayout(sections));
+                      }}
+                    >
                       Customise
                     </button>
                   )}

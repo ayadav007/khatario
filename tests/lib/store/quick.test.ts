@@ -1,6 +1,6 @@
 import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress } from '@/lib/store/quick';
 import { applyStorePreset, sanitizeStoreTheme, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
-import { resolveStudioSections, type StudioContext } from '@/lib/store/studio-layout';
+import { resolveStudioSections, toQuickLayout, type StudioContext } from '@/lib/store/studio-layout';
 import { sanitizeStudioSections } from '@/lib/store/studio-sections';
 import { filterDemoCatalog, themeDemoStore } from '@/lib/store/theme-demo';
 
@@ -25,11 +25,40 @@ describe('Quick pack', () => {
   it('starts with an app-style home: rails for bestsellers and deals, then the catalog', () => {
     const sections = resolveStudioSections(sanitizeStoreTheme({ preset: 'quick' }), ctx);
     expect(sections.map((s) => s.type)).toEqual([
-      'announcement', 'header', 'hero', 'categories', 'products', 'products', 'banner', 'usp', 'products', 'footer',
+      'announcement', 'header', 'hero', 'categories', 'products', 'products', 'usp', 'banner', 'testimonials', 'products', 'footer',
     ]);
     const rails = sections.filter((s) => s.type === 'products');
     expect(rails.map((s) => s.settings.source ?? 'all')).toEqual(['bestsellers', 'discounted', 'all']);
     expect(sanitizeStudioSections(sections)).toHaveLength(sections.length);
+  });
+
+  it('rearranges an existing Studio layout into Quick, keeping the merchant content', () => {
+    const studio = resolveStudioSections(sanitizeStoreTheme({ preset: 'studio' }), ctx);
+    studio.find((s) => s.type === 'hero')!.settings.heading = 'Diwali specials';
+    const quick = toQuickLayout(studio);
+    const hero = quick.find((s) => s.type === 'hero')!;
+    expect(hero.settings).toMatchObject({ heading: 'Diwali specials', layout: 'full', height: 'small' });
+    expect(quick.find((s) => s.type === 'categories')!.settings.columns).toBe(8);
+    const products = quick.filter((s) => s.type === 'products').map((s) => s.settings.source ?? 'all');
+    expect(products).toEqual(['bestsellers', 'discounted', 'all']);
+    expect(quick[quick.length - 2].type).toBe('products');
+    expect(quick[quick.length - 1].type).toBe('footer');
+    // Running it again changes nothing and never duplicates rows or badges.
+    expect(toQuickLayout(quick).map((s) => s.id)).toEqual(quick.map((s) => s.id));
+  });
+
+  it('does not add rails when the store already has product rows', () => {
+    const studio = resolveStudioSections(sanitizeStoreTheme({ preset: 'studio' }), ctx);
+    // Added above the footer, where Studio's Add Section puts it.
+    const withRow = [
+      ...studio.slice(0, -1),
+      { id: 'mine', type: 'products' as const, name: 'Mine', enabled: true, settings: { source: 'new' as const } },
+      studio[studio.length - 1],
+    ];
+    const out = toQuickLayout(withRow);
+    expect(out.filter((s) => s.type === 'products').map((s) => s.id)).toEqual(['mine', 'products']);
+    // The existing row moves up under the categories.
+    expect(out.findIndex((s) => s.id === 'mine')).toBe(out.findIndex((s) => s.type === 'categories') + 1);
   });
 
   it('keeps a saved layout instead of the starting one', () => {
