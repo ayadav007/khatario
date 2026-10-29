@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { formatDistanceToNowStrict, isPast } from 'date-fns';
 import { AlarmClock, Loader2, Search, Settings2, User } from 'lucide-react';
@@ -107,7 +107,8 @@ export function PipelineBoard() {
   }
 
   async function move(card: BoardCard, toStageId: string, lostReason?: string) {
-    if (card.stage_id === toStageId || !columns) return;
+    // The move route works on a chat; a lead with no chat cannot be moved from here until Task 8's lead PATCH.
+    if (card.stage_id === toStageId || !columns || !card.conversation_id) return;
     const before = columns;
     // Optimistic: move the card and its value between columns.
     setColumns(
@@ -122,7 +123,7 @@ export function PipelineBoard() {
         return c;
       }),
     );
-    const res = await fetch(`/api/whatsapp/conversations/${card.id}/deal`, {
+    const res = await fetch(`/api/whatsapp/conversations/${card.conversation_id}/deal`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(lostReason !== undefined ? { stage_id: toStageId, lost_reason: lostReason } : { stage_id: toStageId }),
@@ -135,6 +136,7 @@ export function PipelineBoard() {
   }
 
   function requestMove(card: BoardCard, toStageId: string) {
+    if (!card.conversation_id) return;
     const target = columns?.find((c) => c.id === toStageId);
     if (target?.kind === 'lost') setLostPrompt({ card, toStageId });
     else void move(card, toStageId);
@@ -299,6 +301,16 @@ export function PipelineBoard() {
   );
 }
 
+/** The card's name and preview: a link to the chat, or plain text for a lead with no chat. */
+function CardBody({ conversationId, className, children }: { conversationId: string | null; className: string; children: ReactNode }) {
+  if (!conversationId) return <div className={className}>{children}</div>;
+  return (
+    <Link href={`/whatsapp/conversations?c=${conversationId}`} className={`${className} hover:underline`}>
+      {children}
+    </Link>
+  );
+}
+
 function DealCard({
   card,
   stages,
@@ -316,7 +328,7 @@ function DealCard({
   const overdue = due ? isPast(due) : false;
   return (
     <article
-      draggable
+      draggable={!!card.conversation_id}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', card.id);
@@ -326,14 +338,15 @@ function DealCard({
       className="cursor-grab rounded-lg border border-border bg-white p-2.5 shadow-sm active:cursor-grabbing dark:border-border-dark dark:bg-surface-dark"
     >
       <div className="flex items-start gap-2">
-        <Link href={`/whatsapp/conversations?c=${card.id}`} className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text-primary hover:underline">{card.name}</p>
+        <CardBody conversationId={card.conversation_id} className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-text-primary">{card.name}</p>
+          {!card.conversation_id && <p className="mt-0.5 text-xs text-text-muted">No chat yet</p>}
           {card.summary ? (
             <p className="mt-0.5 line-clamp-3 text-xs text-text-secondary" title={card.summary}>{card.summary}</p>
           ) : (
             card.last_message_text && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{card.last_message_text}</p>
           )}
-        </Link>
+        </CardBody>
         {card.deal_value !== null && (
           <span className="shrink-0 text-xs font-semibold text-text-primary">{formatDealValue(card.deal_value)}</span>
         )}
@@ -371,6 +384,7 @@ function DealCard({
       <select
         className="mt-2 w-full rounded-md border border-border bg-white px-2 py-1 text-xs text-text-secondary md:hidden dark:border-border-dark dark:bg-surface-dark"
         value={card.stage_id}
+        disabled={!card.conversation_id}
         onChange={(e) => onMove(e.target.value)}
         aria-label={`Move ${card.name}`}
       >

@@ -4,8 +4,10 @@ export const dynamic = 'force-dynamic';
  * GET  /api/whatsapp/followups?when=due|upcoming|any&due_before=<ISO end of today>&conversation_id=&lead_id=&agent=&all=1
  *      Pending reminders plus { overdue, today } counts for the inbox badge.
  *      Agents get their own; supervisors may pass agent=<id> or all=1.
+ *      The { overdue, today } counts cover chat reminders only (they feed the inbox badge).
  * POST /api/whatsapp/followups { conversation_id | lead_id, due_at, note?, assigned_to?, cancel_on_reply? }
- *      A lead with no chat takes lead_id; a chat takes conversation_id.
+ *      conversation_id wins when both are sent. lead_id may be any lead the viewer can see; a lead with a
+ *      chat sets a chat reminder, a lead with no chat sets one with no chat (cancel_on_reply ignored).
  */
 
 import { NextResponse } from 'next/server';

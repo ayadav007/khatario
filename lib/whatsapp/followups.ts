@@ -68,7 +68,7 @@ const ROW_SELECT = `
          f.assigned_to::text AS assigned_to,
          au.name AS assigned_name, f.created_by::text AS created_by, f.due_at, f.note, f.status,
          f.cancel_on_reply, f.notified_at, f.completed_at,
-         COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), NULLIF(ld.contact_name, ''), c.from_number, ld.contact_phone) AS contact_name,
+         COALESCE(NULLIF(cust.name, ''), NULLIF(ld.contact_name, ''), NULLIF(c.whatsapp_display_name, ''), c.from_number, ld.contact_phone) AS contact_name,
          COALESCE(c.from_number, ld.contact_phone) AS contact_phone
     FROM whatsapp_followups f
     LEFT JOIN whatsapp_conversations c ON c.id = f.conversation_id AND c.business_id = f.business_id
@@ -97,8 +97,9 @@ async function loadRow(businessId: string, id: string): Promise<FollowupRow | nu
 
 /**
  * Sets a reminder on a chat or on a lead. The caller has already checked the chat or lead is visible to
- * this viewer. With a chat the reminder also points at the chat's open lead (when it has one); with only
- * a lead there is no chat to reply in, so cancel-on-reply is switched off.
+ * this viewer. With a chat the reminder also points at the chat's open lead (when it has one). With only
+ * a lead it uses the lead's chat when it has one; a lead with no chat gets a reminder with no chat, and
+ * cancel-on-reply is switched off since there is nothing to reply in.
  */
 export async function createFollowup(
   viewer: InboxViewer,
@@ -133,6 +134,11 @@ export async function createFollowup(
     const lead = await loadLead(viewer.businessId, input.leadId!);
     if (!lead) throw new FollowupError('Lead not found', 404, 'NOT_FOUND');
     leadId = lead.id;
+    // A lead that has a chat gets a chat reminder; only a lead with no chat has no reply to cancel on.
+    if (lead.conversation_id) {
+      conversationId = lead.conversation_id;
+      cancelOnReply = input.cancelOnReply === true;
+    }
   }
   const row = await queryOne<{ id: string }>(
     `INSERT INTO whatsapp_followups (business_id, conversation_id, lead_id, assigned_to, created_by, due_at, note, cancel_on_reply)
@@ -188,7 +194,8 @@ export async function listFollowups(
   const params: unknown[] = [viewer.businessId];
   const where = scopeWhere(viewer, q, params);
   const countParams = [...params];
-  const countWhere = [...where];
+  // The inbox badge counts chat reminders only, matching dueFollowupSql; lead-only ones show on the Leads page.
+  const countWhere = [...where, 'f.conversation_id IS NOT NULL'];
   if (q.conversationId) {
     params.push(q.conversationId);
     where.push(`f.conversation_id = $${params.length}::uuid`);
@@ -303,7 +310,7 @@ export async function runDueFollowupReminders(limit = 200): Promise<FollowupRunR
      )
      SELECT cl.id::text AS id, cl.business_id::text AS business_id, cl.conversation_id::text AS conversation_id,
             cl.lead_id::text AS lead_id, cl.assigned_to::text AS assigned_to, cl.note,
-            COALESCE(NULLIF(cust.name, ''), NULLIF(c.whatsapp_display_name, ''), NULLIF(ld.contact_name, ''), c.from_number, ld.contact_phone) AS contact
+            COALESCE(NULLIF(cust.name, ''), NULLIF(ld.contact_name, ''), NULLIF(c.whatsapp_display_name, ''), c.from_number, ld.contact_phone) AS contact
        FROM claimed cl
        LEFT JOIN whatsapp_conversations c ON c.id = cl.conversation_id
        LEFT JOIN leads ld ON ld.id = cl.lead_id

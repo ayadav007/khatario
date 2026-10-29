@@ -201,11 +201,28 @@ export async function deleteStage(businessId: string, stageId: string, moveToId:
   if (moveToId && (moveToId === stageId || !stages.some((s) => s.id === moveToId))) {
     throw new PipelineError('Pick another stage to move these leads to', 400, 'BAD_TARGET');
   }
-  await query(
-    `UPDATE leads SET stage_id = $3::uuid, stage_changed_at = NOW(), updated_at = NOW()
-      WHERE business_id = $1 AND stage_id = $2::uuid`,
-    [businessId, stageId, moveToId],
-  );
+  const target = moveToId ? stages.find((s) => s.id === moveToId)! : null;
+  if (target && target.kind !== 'open') {
+    // Moving into Won or Lost closes the leads that are still open.
+    await query(
+      `UPDATE leads SET stage_id = $3::uuid, stage_changed_at = NOW(), closed_at = COALESCE(closed_at, NOW()), updated_at = NOW()
+        WHERE business_id = $1 AND stage_id = $2::uuid`,
+      [businessId, stageId, moveToId],
+    );
+  } else if (target) {
+    // Open leads move; closed ones never reopen, they leave the board and stay in history.
+    await query(
+      `UPDATE leads SET stage_id = CASE WHEN closed_at IS NULL THEN $3::uuid END, stage_changed_at = NOW(), updated_at = NOW()
+        WHERE business_id = $1 AND stage_id = $2::uuid`,
+      [businessId, stageId, moveToId],
+    );
+  } else {
+    await query(
+      `UPDATE leads SET stage_id = NULL, stage_changed_at = NOW(), updated_at = NOW()
+        WHERE business_id = $1 AND stage_id = $2::uuid`,
+      [businessId, stageId],
+    );
+  }
   await query(`DELETE FROM whatsapp_pipeline_stages WHERE id = $1::uuid AND business_id = $2`, [stageId, businessId]);
 }
 
@@ -291,7 +308,10 @@ export async function loadBoard(viewer: InboxViewer, filters: BoardFilters = {})
   }
   const closedDays = Math.min(Math.max(Math.floor(filters.closedDays ?? 90), 1), 3650);
   params.push(closedDays);
-  where.push(`(s.kind = 'open' OR l.stage_changed_at >= NOW() - ($${params.length}::int * INTERVAL '1 day'))`);
+  // Open columns hold open leads only; won and lost columns show what closed within the window.
+  where.push(
+    `((s.kind = 'open' AND l.closed_at IS NULL) OR (s.kind <> 'open' AND l.stage_changed_at >= NOW() - ($${params.length}::int * INTERVAL '1 day')))`,
+  );
 
   const base = `
       FROM leads l
@@ -371,25 +391,26 @@ export async function loadPipelineSummary(businessId: string, days = 30): Promis
   const scope = `WHERE l.business_id = $1`;
   const base = `${from} ${scope}`;
   const closedIn = `l.stage_changed_at >= NOW() - ($2::int * INTERVAL '1 day')`;
+  const isOpen = `(s.kind = 'open' AND l.closed_at IS NULL)`;
 
   const [perStage, agents, reasons, sources] = await Promise.all([
     queryRows<{ stage_id: string; count: number; total_value: number }>(
       `SELECT l.stage_id::text AS stage_id, COUNT(*)::int AS count, COALESCE(SUM(l.deal_value), 0)::float8 AS total_value
-       ${base} AND (s.kind = 'open' OR ${closedIn})
+       ${base} AND (${isOpen} OR (s.kind <> 'open' AND ${closedIn}))
        GROUP BY l.stage_id`,
       [businessId, span],
     ),
     queryRows<PipelineSummary['by_agent'][number]>(
       `SELECT u.id::text AS agent_id, u.name AS agent_name,
-              COUNT(*) FILTER (WHERE s.kind = 'open')::int AS open,
-              COALESCE(SUM(l.deal_value) FILTER (WHERE s.kind = 'open'), 0)::float8 AS open_value,
+              COUNT(*) FILTER (WHERE ${isOpen})::int AS open,
+              COALESCE(SUM(l.deal_value) FILTER (WHERE ${isOpen}), 0)::float8 AS open_value,
               COUNT(*) FILTER (WHERE s.kind = 'won' AND ${closedIn})::int AS won,
               COALESCE(SUM(l.deal_value) FILTER (WHERE s.kind = 'won' AND ${closedIn}), 0)::float8 AS won_value
        ${from}
        JOIN users u ON u.id = l.owner_id
        ${scope}
        GROUP BY u.id, u.name
-       HAVING COUNT(*) FILTER (WHERE s.kind = 'open' OR ${closedIn}) > 0
+       HAVING COUNT(*) FILTER (WHERE ${isOpen} OR (s.kind <> 'open' AND ${closedIn})) > 0
        ORDER BY won_value DESC, open_value DESC, u.name
        LIMIT 20`,
       [businessId, span],

@@ -23,7 +23,7 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import type { InboxViewer } from '@/lib/whatsapp/inbox-ownership';
-import { deleteStage, ensureStages, loadBoard, loadPipelineSummary, type PipelineStage } from '@/lib/whatsapp/pipeline';
+import { createStage, deleteStage, ensureStages, loadBoard, loadPipelineSummary, type PipelineStage } from '@/lib/whatsapp/pipeline';
 import { openLead, patchLead } from '@/lib/leads/core';
 import { setChatDeal } from '@/lib/leads/chat-deal';
 import { createFollowup, listFollowups, runDueFollowupReminders } from '@/lib/whatsapp/followups';
@@ -137,6 +137,38 @@ run('connect leads on the board, dashboard and follow-ups (kh_phase2_test)', () 
     stages = await ensureStages(B);
   });
 
+  test('deleting a stage into Won closes its open leads; into an open stage closed leads leave the board', async () => {
+    await query(`DELETE FROM leads WHERE business_id = $1`, [B]);
+    const won = stages.find((s) => s.kind === 'won')!;
+    const interested = stage('Interested');
+    // Open stage into Won: the leads close.
+    const temp = await createStage(B, { name: 'Temp one' });
+    const a = await openLead(B, { phone: phone(), stageId: temp.id, actor: auto });
+    await deleteStage(B, temp.id, won.id);
+    const closedA = await queryOne<{ stage_id: string; closed: boolean }>(
+      `SELECT stage_id::text AS stage_id, closed_at IS NOT NULL AS closed FROM leads WHERE id = $1`,
+      [a.lead.id],
+    );
+    expect(closedA).toEqual({ stage_id: won.id, closed: true });
+
+    // Won stage into an open stage: open leads move, closed ones come off the board but stay closed.
+    const winStage = await createStage(B, { name: 'Temp won', kind: 'won' });
+    const w = await openLead(B, { phone: phone(), stageId: interested.id, actor: auto });
+    await patchLead(B, w.lead.id, { stageId: winStage.id }, auto);
+    await deleteStage(B, winStage.id, interested.id);
+    const gone = await queryOne<{ stage_id: string | null; closed: boolean }>(
+      `SELECT stage_id::text AS stage_id, closed_at IS NOT NULL AS closed FROM leads WHERE id = $1`,
+      [w.lead.id],
+    );
+    expect(gone).toEqual({ stage_id: null, closed: true });
+    const board = await loadBoard(supView());
+    expect(board.flatMap((c) => c.cards.map((x) => x.id))).not.toContain(w.lead.id);
+    // A closed lead parked in an open stage never shows in the open column.
+    await query(`UPDATE leads SET stage_id = $2 WHERE id = $1`, [w.lead.id, interested.id]);
+    expect((await cardsIn(supView(), 'Interested')).map((c) => c.id)).not.toContain(w.lead.id);
+    stages = await ensureStages(B);
+  });
+
   test('dashboard counts leads by source and owner', async () => {
     await query(`DELETE FROM leads WHERE business_id = $1`, [B]);
     const won = stages.find((s) => s.kind === 'won')!;
@@ -183,5 +215,21 @@ run('connect leads on the board, dashboard and follow-ups (kh_phase2_test)', () 
     const deal = await setChatDeal(B, chat.id, { stageId: stage('Interested').id }, auto);
     const withLead = await createFollowup(supView(), { conversationId: chat.id, dueAt: new Date(Date.now() + 3600_000).toISOString(), cancelOnReply: true });
     expect(withLead).toMatchObject({ conversation_id: chat.id, lead_id: deal.lead_id, cancel_on_reply: true });
+  });
+  test('a follow-up on a lead with a chat is a chat reminder; inbox counts skip no-chat reminders', async () => {
+    const chat = await seedChat(B, { name: 'Has chat' });
+    const deal = await setChatDeal(B, chat.id, { stageId: stage('Interested').id }, auto);
+    const due = new Date(Date.now() + 3600_000).toISOString();
+    const viaLead = await createFollowup(supView(), { leadId: deal.lead_id!, dueAt: due, cancelOnReply: true });
+    expect(viaLead).toMatchObject({ conversation_id: chat.id, lead_id: deal.lead_id, cancel_on_reply: true });
+
+    const noChat = await openLead(B, { phone: phone(), actor: auto });
+    await createFollowup(supView(), { leadId: noChat.lead.id, dueAt: due });
+    const eod = new Date(Date.now() + 2 * 3600_000).toISOString();
+    const withBoth = await listFollowups(supView(), { all: true, dueBefore: eod });
+    const noChatRows = withBoth.followups.filter((f) => f.conversation_id === null).length;
+    expect(noChatRows).toBeGreaterThan(0);
+    // today counts only the chat reminders in the list.
+    expect(withBoth.counts.today).toBe(withBoth.followups.length - noChatRows);
   });
 });
