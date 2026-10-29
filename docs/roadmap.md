@@ -8,7 +8,7 @@
 - Store khata: built, checked in the browser on the test DB and committed; next migration 444 on staging (owner approval) and the khata-statements cron line at deploy [[docs/plan/STORE_KHATA.md]]
 
 ## Next
-- Connect leads: leads table with the pipeline on leads, repeat enquiries, no-chat leads and convert to customer (sub-project 1 spec approved, plan ready to build), then lead score rework and template broadcast by segment [[docs/plan/CONNECT_LEADS.md]]
+- Connect leads: sub-project 1 (leads table, pipeline on leads, repeat enquiries, no-chat leads, convert to customer, Leads page) built and committed on main (migration 447 on the test DB only); next: migration 447 on staging (owner approval), then sub-project 2 lead score and 3 template broadcast by segment [[docs/plan/CONNECT_LEADS.md]]
 - Template designer and gallery redesign: phases A–C built, owner review, then commit [[docs/plan/TEMPLATE_DESIGNER_REDESIGN.md]]
 - Distributor invoice template: phase 2 (licences, salesman, scheme discount, free qty, batch and MRP on lines; migration 435) [[docs/plan/DISTRIBUTOR_INVOICE_TEMPLATE.md]]
 - Warehouse mode: transit loss on a transfer leaves item and branch stock one too high (F-018) [[docs/qa/staging-scenario-results.md]]

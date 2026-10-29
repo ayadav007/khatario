@@ -306,6 +306,10 @@ In Meta App Dashboard subscribe to **`message_template_status_update`**. After `
 
 OTP still falls back to Baileys when `PLATFORM_WHATSAPP_BUSINESS_ID` is set and no **approved** Cloud API template exists for `signup_otp` / `demo_booking_otp`. Email remains the primary path for subscription notices.
 
+### Migration 447 (Connect leads)
+
+`447_connect_leads.sql` creates the `leads` table, backfills one lead per pipeline chat, and adds AFTER INSERT/UPDATE triggers on `invoices` and `sales_orders` (`leads_auto_won`: a final invoice or confirmed order wins the customer's open leads; errors are swallowed so a document never fails). Run it in a quiet window: a re-apply on the test DB once hit a transient deadlock with another session. Apply to staging only with owner approval.
+
 ### Platform admin PWA and push (staging and production)
 
 The merchant app and the operator console are different installs.

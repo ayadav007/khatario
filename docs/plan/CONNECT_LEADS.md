@@ -1,6 +1,24 @@
 # Connect leads: a leads table, a lead score you can trust, and broadcast by segment
 
-Status: design agreed 2026-10-29; sub-project 1 spec approved by the owner, implementation plan in [CONNECT_LEADS_1_PLAN.md](CONNECT_LEADS_1_PLAN.md). Nothing built.
+Status: design agreed 2026-10-29; sub-project 1 (leads table) built and committed on `main` (plan: [CONNECT_LEADS_1_PLAN.md](CONNECT_LEADS_1_PLAN.md)). Migration 447 is applied to `kh_phase2_test` only; staging is pending owner approval. Sub-projects 2 and 3 not started.
+
+## As built (sub-project 1)
+
+- **Modules** (`lib/leads/`): `core.ts` is the only writer of leads (open, move, close, reopen, patch, link chat); `inbound.ts` (repeat rule on live messages, outbound touch), `chat-deal.ts` (the chat's deal panel on its lead), `list.ts` (list, detail, CSV), `convert.ts`, `visibility.ts`, `timeline.ts`, `phone.ts`. Imports and tracked links in `lib/whatsapp/lead-sources.ts` now open leads; `lib/whatsapp/pipeline.ts` reads leads.
+- **APIs** (`app/api/whatsapp/leads`): list and manual add, `[id]` detail and PATCH, `[id]/convert`, `[id]/new-enquiry`, `export` (CSV).
+- **Screens**: the Leads page (`/whatsapp/leads`, `components/whatsapp/leads/*`) with filters kept in the URL, a drawer per lead, manual add and export; a Leads section in the chat panel; the board and the phone pipeline move cards through the lead PATCH.
+- **Trigger**: migration 447 also adds `leads_auto_won` on `invoices` and `sales_orders` (AFTER INSERT/UPDATE). It swallows its own errors and uses `FOR UPDATE SKIP LOCKED`, so a document never fails and never waits on a lead another write holds.
+
+Where the build changed behaviour from the spec above:
+
+- **Deal panel (R9, R11):** the chat's deal panel edits the chat's open lead, else its newest lead; only an agent reopens a closed lead. Flows, the AI agent and automatic moves open a new lead instead, so they never rewrite a past win or loss.
+- **Stage delete (R13):** a closed lead never sits in an open column; deleting a stage moves closed leads only into won/lost, otherwise their stage becomes empty (history stays in the list).
+- **Broadcasts and history sync (R15, R16):** only staff and bot replies keep a lead from going quiet (campaign sends do not); a message older than 24 hours only links the chat and never opens or closes a lead, so a QR reconnect does not create leads.
+- **Imports (R18, R24):** an import joining an open lead sets the source only if the lead is Direct, always adds the source's labels and appends the enquiry to the note. A failed IndiaMART lead holds the pull window until retried; it is given up after two failures and named in `last_error`.
+- **Owner assignment (R19, R25):** a linked chat takes the lead's owner only from a live inbound message or an import, not from history sync or a staff deal edit.
+- **Manual leads (R27, R29):** a manual lead links the number's newest non-group chat, but only one the viewer can see.
+- **Link codes:** a code from a number that already has an open lead just joins it (no link source, no link credit).
+- **Auto-won:** a final invoice or confirmed sales order for the linked customer wins their open leads. Cancelling the invoice later does not reopen the lead, and linking a customer does not look back for an earlier invoice (owner may want either).
 
 ## Why
 
