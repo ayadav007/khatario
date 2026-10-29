@@ -26,7 +26,7 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import { ensureStages, PipelineError, type DealActor, type PipelineStage } from '@/lib/whatsapp/pipeline';
 import { closeLeadAsWentQuiet, LeadError, loadLead, openLead, setLeadStage } from '@/lib/leads/core';
-import { loadChatDeal, setChatDeal } from '@/lib/leads/chat-deal';
+import { loadChatDeal, setChatDeal, setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
 import { cleanupBusinesses, seedBusiness, seedChat } from './fixtures/connect-leads';
 
 const run = enabled ? describe : describe.skip;
@@ -185,6 +185,25 @@ run('connect leads core (kh_phase2_test)', () => {
     const back = await setChatDeal(B, lostChat.id, { stageId: stage('Interested').id }, agent);
     expect(back).toMatchObject({ lead_id: lost.lead_id, stage_id: stage('Interested').id, lost_reason: null });
     expect((await loadLead(B, lost.lead_id!))?.closed_at).toBeNull();
+  });
+
+  test('automated moves open a new lead instead of rewriting a won one', async () => {
+    const chat = await seedChat(B, { phone: '919876500015' });
+    const won = await setChatDeal(B, chat.id, { stageId: stage('Won').id, dealValue: 500 }, { source: 'agent', userId: AGENT });
+
+    // A value alone from a flow does not touch the won lead.
+    expect(await code(setChatDeal(B, chat.id, { dealValue: 1 }, { source: 'flow' }))).toBe('NO_LEAD');
+
+    await setChatStageByLegacyKey(B, chat.id, 'interested', { source: 'ai' });
+    const fresh = await loadChatDeal(B, chat.id);
+    expect(fresh?.lead_id).not.toBe(won.lead_id);
+    expect(fresh?.stage_id).toBe(stage('Interested').id);
+    const freshLead = await loadLead(B, fresh!.lead_id!);
+    expect(freshLead).toMatchObject({ conversation_id: chat.id, closed_at: null });
+
+    const old = await loadLead(B, won.lead_id!);
+    expect(old).toMatchObject({ stage_id: stage('Won').id, deal_value: 500 });
+    expect(old?.closed_at).not.toBeNull();
   });
 
   test('closeLeadAsWentQuiet', async () => {

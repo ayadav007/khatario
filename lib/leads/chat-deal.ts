@@ -78,8 +78,10 @@ export async function loadChatDeal(businessId: string, conversationId: string): 
 
 /**
  * Updates the deal on the chat's lead (open, else newest). The caller has already checked the chat is
- * visible to the actor. A stage on a closed lead reopens it (409 while another lead for the phone is
- * open). A chat that never had a lead needs a stage, which opens one for its phone.
+ * visible to the actor. Only an agent works on a closed lead: a stage reopens it (409 while another
+ * lead for the phone is open). Flows, the AI agent and automatic moves never rewrite a past win or
+ * loss; with no open lead their stage opens a new lead. Without an open (or, for an agent, any) lead
+ * the patch needs a stage, which opens one for the chat's phone.
  * Returns the lead it changed, even when that move closed it.
  */
 export async function setChatDeal(businessId: string, conversationId: string, patch: DealPatch, actor: DealActor): Promise<ChatDeal> {
@@ -91,7 +93,8 @@ export async function setChatDeal(businessId: string, conversationId: string, pa
   if (patch.expectedCloseOn !== undefined) parseCloseDate(patch.expectedCloseOn);
 
   try {
-    let lead = await dealLeadForChat(businessId, conversationId);
+    let lead =
+      actor.source === 'agent' ? await dealLeadForChat(businessId, conversationId) : await openLeadForChat(businessId, conversationId);
     let rest: DealPatch = patch;
     if (!lead) {
       if (!patch.stageId) throw new PipelineError('Put this chat on the pipeline first', 400, 'NO_LEAD');
