@@ -33,7 +33,8 @@ export async function findCustomerForLead(businessId: string, leadId: string): P
 
 /**
  * Links a lead to one of the business's customers (and the lead's chat, when it has none). `lead_type`
- * stays as it was when the lead opened.
+ * stays as it was when the lead opened. Relinking a lead to another customer overwrites its customer
+ * (and bumps updated_at), while the chat keeps the first customer it was given.
  */
 export async function linkLeadToCustomer(viewer: InboxViewer, leadId: string, customerId: string): Promise<Lead> {
   const { businessId } = viewer;
@@ -47,7 +48,7 @@ export async function linkLeadToCustomer(viewer: InboxViewer, leadId: string, cu
   if (!customer) throw new LeadError('Customer not found', 404, 'CUSTOMER_NOT_FOUND');
 
   const updated = await queryOne<{ conversation_id: string | null }>(
-    `UPDATE leads SET customer_id = $3::uuid WHERE id = $1::uuid AND business_id = $2 RETURNING conversation_id::text AS conversation_id`,
+    `UPDATE leads SET customer_id = $3::uuid, updated_at = NOW() WHERE id = $1::uuid AND business_id = $2 RETURNING conversation_id::text AS conversation_id`,
     [leadId, businessId, customer.id],
   );
   if (!updated) throw new LeadError('Lead not found', 404, 'NOT_FOUND');

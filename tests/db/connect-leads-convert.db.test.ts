@@ -243,8 +243,8 @@ run('connect leads convert and auto-won (kh_phase2_test)', () => {
     const cust = await customer(B, '98765 00060');
     const l = await lead('919876500060');
     await linkLeadToCustomer(supervisor, l.id, cust);
-    const won = await queryRows<{ id: string }>(`SELECT id::text AS id FROM whatsapp_pipeline_stages WHERE business_id = $1 AND kind = 'won'`, [B]);
-    const wonIds = won.map((s) => s.id);
+    const wonStages = stages.filter((s) => s.kind === 'won');
+    const wonIds = wonStages.map((s) => s.id);
     // Take every won stage away (leads parked on one move to New first).
     await query(`UPDATE leads SET stage_id = $2 WHERE business_id = $1 AND stage_id = ANY($3::uuid[])`, [B, stage('New').id, wonIds]);
     await query(`DELETE FROM whatsapp_pipeline_stages WHERE id = ANY($1::uuid[])`, [wonIds]);
@@ -254,7 +254,15 @@ run('connect leads convert and auto-won (kh_phase2_test)', () => {
       expect(same.closed_at).toBeNull();
       expect(same.stage_id).toBe(l.stage_id);
     } finally {
+      // ensureStages does not recreate a missing stage, so put the deleted ones back as they were.
+      for (const s of wonStages) {
+        await query(
+          `INSERT INTO whatsapp_pipeline_stages (id, business_id, name, color, position, kind, legacy_key) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [s.id, B, s.name, s.color, s.position, s.kind, s.legacy_key],
+        );
+      }
       stages = await ensureStages(B);
+      expect(stages.some((s) => s.kind === 'won')).toBe(true);
     }
   });
 
@@ -264,13 +272,20 @@ run('connect leads convert and auto-won (kh_phase2_test)', () => {
     await linkLeadToCustomer(supervisor, l.id, cust);
     // A trigger that fails only for this business, so other sessions on the test DB are untouched.
     await query(`CREATE OR REPLACE FUNCTION tmp_leads_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'boom'; END; $$ LANGUAGE plpgsql`);
+    await query(`DROP TRIGGER IF EXISTS tmp_leads_fail ON leads`);
     await query(`CREATE TRIGGER tmp_leads_fail BEFORE UPDATE ON leads FOR EACH ROW WHEN (OLD.business_id = '${B}'::uuid) EXECUTE FUNCTION tmp_leads_fail()`);
+    let failedNumber: string;
     try {
-      await expect(invoice(cust)).resolves.toBeTruthy();
+      failedNumber = await invoice(cust);
       expect((await loadLead(B, l.id))!.closed_at).toBeNull();
     } finally {
       await query(`DROP TRIGGER IF EXISTS tmp_leads_fail ON leads`);
       await query(`DROP FUNCTION IF EXISTS tmp_leads_fail()`);
     }
+    // The trigger did reach the lead update: once the failure is gone, the next qualifying invoice wins the lead.
+    const next = await invoice(cust);
+    expect((await loadLead(B, l.id))!.stage_id).toBe(stage('Won').id);
+    expect((await wonEvents(l.id)).map((e) => e.event_data.reference)).toEqual([next]);
+    expect(failedNumber).not.toBe(next);
   });
 });

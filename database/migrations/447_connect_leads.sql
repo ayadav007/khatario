@@ -161,8 +161,11 @@ UPDATE whatsapp_lead_imports i
 -- Auto-won: a final invoice or a confirmed sales order for a customer wins that customer's open
 -- leads. A trigger rather than app code because invoices and sales orders are inserted from many
 -- places. Only leads opened on or before the document date (India date) move, to the business's
--- first won stage by position; no won stage means nothing happens. The body swallows its own errors
--- so a lead problem can never fail an invoice or an order.
+-- first won stage by position; no won stage means nothing happens. The cheap guards run before the
+-- error-swallowing block so writes that cannot win a lead never open a subtransaction; the block
+-- swallows its own errors so a lead problem can never fail an invoice or an order. Leads another
+-- session holds locked are skipped rather than waited for (a statement_timeout cancel is not caught
+-- by WHEN OTHERS).
 CREATE OR REPLACE FUNCTION leads_auto_won() RETURNS trigger AS $$
 DECLARE
   v_reference text;
@@ -171,30 +174,30 @@ DECLARE
   v_won_name text;
   v_lead record;
 BEGIN
+  IF NEW.customer_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+  -- A save that touches neither status nor customer changes nothing for leads.
+  IF TG_OP = 'UPDATE' AND NEW.status IS NOT DISTINCT FROM OLD.status AND NEW.customer_id IS NOT DISTINCT FROM OLD.customer_id THEN
+    RETURN NULL;
+  END IF;
+
+  IF TG_TABLE_NAME = 'invoices' THEN
+    IF NEW.status IS DISTINCT FROM 'final' OR NEW.deleted_at IS NOT NULL
+       OR COALESCE(NEW.document_type, 'tax_invoice') IN ('proforma_invoice', 'estimate', 'quotation', 'delivery_challan') THEN
+      RETURN NULL;
+    END IF;
+    v_reference := NEW.invoice_number;
+    v_date := NEW.invoice_date;
+  ELSE
+    IF NEW.status IN ('draft', 'cancelled') THEN
+      RETURN NULL;
+    END IF;
+    v_reference := NEW.order_number;
+    v_date := NEW.order_date;
+  END IF;
+
   BEGIN
-    IF NEW.customer_id IS NULL THEN
-      RETURN NULL;
-    END IF;
-    -- A save that touches neither status nor customer changes nothing for leads.
-    IF TG_OP = 'UPDATE' AND NEW.status IS NOT DISTINCT FROM OLD.status AND NEW.customer_id IS NOT DISTINCT FROM OLD.customer_id THEN
-      RETURN NULL;
-    END IF;
-
-    IF TG_TABLE_NAME = 'invoices' THEN
-      IF NEW.status IS DISTINCT FROM 'final' OR NEW.deleted_at IS NOT NULL
-         OR COALESCE(NEW.document_type, 'tax_invoice') IN ('proforma_invoice', 'estimate', 'quotation', 'delivery_challan') THEN
-        RETURN NULL;
-      END IF;
-      v_reference := NEW.invoice_number;
-      v_date := NEW.invoice_date;
-    ELSE
-      IF NEW.status IN ('draft', 'cancelled') THEN
-        RETURN NULL;
-      END IF;
-      v_reference := NEW.order_number;
-      v_date := NEW.order_date;
-    END IF;
-
     SELECT id, name INTO v_won_id, v_won_name
       FROM whatsapp_pipeline_stages
      WHERE business_id = NEW.business_id AND kind = 'won'
@@ -213,7 +216,7 @@ BEGIN
          AND l.closed_at IS NULL
          AND (l.opened_at AT TIME ZONE 'Asia/Kolkata')::date <= v_date
        ORDER BY l.opened_at
-         FOR UPDATE OF l
+         FOR UPDATE OF l SKIP LOCKED
     LOOP
       UPDATE leads
          SET stage_id = v_won_id, stage_changed_at = NOW(), closed_at = NOW(), last_activity_at = NOW(), updated_at = NOW()
@@ -227,6 +230,7 @@ BEGIN
       );
 
       IF v_lead.conversation_id IS NOT NULL THEN
+        -- 'converted' mirrors legacyStatusFor() for a won stage in lib/leads/core.ts.
         UPDATE whatsapp_conversations
            SET lead_status = 'converted', updated_at = CURRENT_TIMESTAMP
          WHERE id = v_lead.conversation_id AND business_id = NEW.business_id;
