@@ -4,7 +4,7 @@
  * with bot and staff replies named in the transcript.
  * Opt-in, disposable DB only:
  *   INBOX_DB_TEST=1 npx jest tests/db/whatsapp-direct-leads.db.test.ts --runInBand
- * Migrations 418, 419 and 446 must be applied to kh_phase2_test.
+ * Migrations 418, 419, 446 and 447 must be applied to kh_phase2_test.
  */
 import { randomUUID } from 'crypto';
 import { config as loadEnv } from 'dotenv';

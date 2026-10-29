@@ -304,14 +304,17 @@ export async function setLeadStage(
   return moveLead(businessId, leadId, stageId, actor, lostReason);
 }
 
-/** setLeadStage, with extra fields for the timeline entry (why an automatic move happened). */
+/**
+ * setLeadStage, plus: extra fields for the timeline entry (why an automatic move happened), and
+ * onlyIfOpen, which moves the lead only while it is still open so two closes at once record one event.
+ */
 async function moveLead(
   businessId: string,
   leadId: string,
   stageId: string | null,
   actor: DealActor,
   lostReason: string | null | undefined,
-  eventExtra?: Record<string, unknown>,
+  opts: { eventExtra?: Record<string, unknown>; onlyIfOpen?: boolean } = {},
 ): Promise<Lead> {
   const lead = await loadLead(businessId, leadId);
   if (!lead) throw new LeadError('Lead not found', 404, 'NOT_FOUND');
@@ -343,15 +346,21 @@ async function moveLead(
   if (!sets.length) return lead;
   if (actor.source === 'agent') sets.push('last_activity_at = NOW()');
 
+  let changed: boolean;
   try {
-    await query(`UPDATE leads SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1::uuid AND business_id = $2`, values);
+    const res = await query(
+      `UPDATE leads SET ${sets.join(', ')}, updated_at = NOW()
+        WHERE id = $1::uuid AND business_id = $2${opts.onlyIfOpen ? ' AND closed_at IS NULL' : ''}`,
+      values,
+    );
+    changed = (res.rowCount ?? 0) > 0;
   } catch (err) {
     if (isUniqueViolation(err)) throw alreadyOpen();
     throw err;
   }
 
-  if (stageChanges) {
-    await recordStageEvent(businessId, lead, fromStage, toStage, actor, eventExtra);
+  if (stageChanges && changed) {
+    await recordStageEvent(businessId, lead, fromStage, toStage, actor, opts.eventExtra);
     await syncChat(businessId, lead.conversation_id, toStage);
   }
   return (await loadLead(businessId, leadId))!;
@@ -403,7 +412,10 @@ export async function closeLeadAsWentQuiet(businessId: string, leadId: string): 
   if (!lead || lead.closed_at) return;
   const lost = (await ensureStages(businessId)).filter((s) => s.kind === 'lost').sort((a, b) => a.position - b.position)[0];
   if (!lost) return;
-  await moveLead(businessId, leadId, lost.id, { source: 'auto' }, WENT_QUIET_REASON, { reason: 'went_quiet', quiet_days: QUIET_DAYS });
+  await moveLead(businessId, leadId, lost.id, { source: 'auto' }, WENT_QUIET_REASON, {
+    eventExtra: { reason: 'went_quiet', quiet_days: QUIET_DAYS },
+    onlyIfOpen: true,
+  });
 }
 
 /** Gives a lead with no chat its chat (same business, not a group). */

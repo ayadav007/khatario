@@ -457,7 +457,7 @@ export async function storeIncomingMessage(
       process.env.WHATSAPP_SKIP_CONVERSATION_MESSAGE_MIRROR === 'true' ||
       process.env.WHATSAPP_SKIP_CONVERSATION_MESSAGE_MIRROR === '1';
 
-    let messageResult: { rows: { created_at?: Date }[] };
+    let messageResult: { rows: { created_at?: Date; inserted?: boolean }[] };
 
     if (skipConversationMessageMirror) {
       messageResult = {
@@ -478,7 +478,7 @@ export async function storeIncomingMessage(
             THEN to_timestamp($11::double precision) ELSE NULL END)
          ON CONFLICT (message_id) DO UPDATE SET
            sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_conversation_messages.sender_name)
-         RETURNING created_at, source_timestamp`,
+         RETURNING created_at, source_timestamp, (xmax = 0) AS inserted`,
         [
           businessId,
           conversation.id,
@@ -629,8 +629,12 @@ export async function storeIncomingMessage(
 
     if (!isGroup) {
       // Joins the number's open lead, or opens one (tracked link or new number); see lib/leads/inbound.
-      // An ad that brought the message is credited after this, by applyAdReferral.
-      await leadForInboundMessage(businessId, conversation.id, normalizedFrom, messageText);
+      // An ad that brought the message is credited after this, by applyAdReferral. History sync and
+      // re-delivered messages (the row already existed) only link the chat to its open lead.
+      await leadForInboundMessage(businessId, conversation.id, normalizedFrom, messageText, {
+        sentAt: sourceTimestampSec != null && sourceTimestampSec > 0 ? new Date(sourceTimestampSec * 1000) : null,
+        duplicate: messageResult.rows[0]?.inserted === false,
+      });
       // The lead summary is rewritten once the chat goes quiet (lib/whatsapp/lead-summary).
       await scheduleLeadSummary(businessId, conversation.id);
     }
@@ -844,8 +848,8 @@ export async function storeOutgoingMessage(
       console.error('[CRM] Error emitting WebSocket / SSE events (message stored):', err);
     }
 
-    // A reply keeps the chat's open lead active; bot and staff replies belong in the lead summary too.
-    await touchLeadForChat(businessId, conversationId);
+    // A staff or bot reply keeps the chat's open lead active and belongs in the lead summary too.
+    await touchLeadForChat(businessId, conversationId, sender?.sentBy);
     await scheduleLeadSummary(businessId, conversationId);
 
     return result?.id;
