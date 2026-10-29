@@ -157,3 +157,94 @@ UPDATE whatsapp_lead_imports i
   ) x
  WHERE x.conversation_id = i.conversation_id
    AND i.lead_id IS NULL;
+
+-- Auto-won: a final invoice or a confirmed sales order for a customer wins that customer's open
+-- leads. A trigger rather than app code because invoices and sales orders are inserted from many
+-- places. Only leads opened on or before the document date (India date) move, to the business's
+-- first won stage by position; no won stage means nothing happens. The body swallows its own errors
+-- so a lead problem can never fail an invoice or an order.
+CREATE OR REPLACE FUNCTION leads_auto_won() RETURNS trigger AS $$
+DECLARE
+  v_reference text;
+  v_date date;
+  v_won_id uuid;
+  v_won_name text;
+  v_lead record;
+BEGIN
+  BEGIN
+    IF NEW.customer_id IS NULL THEN
+      RETURN NULL;
+    END IF;
+    -- A save that touches neither status nor customer changes nothing for leads.
+    IF TG_OP = 'UPDATE' AND NEW.status IS NOT DISTINCT FROM OLD.status AND NEW.customer_id IS NOT DISTINCT FROM OLD.customer_id THEN
+      RETURN NULL;
+    END IF;
+
+    IF TG_TABLE_NAME = 'invoices' THEN
+      IF NEW.status IS DISTINCT FROM 'final' OR NEW.deleted_at IS NOT NULL
+         OR COALESCE(NEW.document_type, 'tax_invoice') IN ('proforma_invoice', 'estimate', 'quotation', 'delivery_challan') THEN
+        RETURN NULL;
+      END IF;
+      v_reference := NEW.invoice_number;
+      v_date := NEW.invoice_date;
+    ELSE
+      IF NEW.status IN ('draft', 'cancelled') THEN
+        RETURN NULL;
+      END IF;
+      v_reference := NEW.order_number;
+      v_date := NEW.order_date;
+    END IF;
+
+    SELECT id, name INTO v_won_id, v_won_name
+      FROM whatsapp_pipeline_stages
+     WHERE business_id = NEW.business_id AND kind = 'won'
+     ORDER BY position, id
+     LIMIT 1;
+    IF v_won_id IS NULL THEN
+      RETURN NULL;
+    END IF;
+
+    FOR v_lead IN
+      SELECT l.id, l.conversation_id, s.name AS from_name
+        FROM leads l
+        LEFT JOIN whatsapp_pipeline_stages s ON s.id = l.stage_id
+       WHERE l.business_id = NEW.business_id
+         AND l.customer_id = NEW.customer_id
+         AND l.closed_at IS NULL
+         AND (l.opened_at AT TIME ZONE 'Asia/Kolkata')::date <= v_date
+       ORDER BY l.opened_at
+         FOR UPDATE OF l
+    LOOP
+      UPDATE leads
+         SET stage_id = v_won_id, stage_changed_at = NOW(), closed_at = NOW(), last_activity_at = NOW(), updated_at = NOW()
+       WHERE id = v_lead.id;
+
+      INSERT INTO whatsapp_automation_events (conversation_id, lead_id, business_id, event_type, event_data)
+      VALUES (
+        v_lead.conversation_id, v_lead.id, NEW.business_id, 'stage_changed',
+        jsonb_build_object('from_stage', v_lead.from_name, 'to_stage', v_won_name, 'source', 'auto',
+                           'reference', v_reference, 'lead_id', v_lead.id)
+      );
+
+      IF v_lead.conversation_id IS NOT NULL THEN
+        UPDATE whatsapp_conversations
+           SET lead_status = 'converted', updated_at = CURRENT_TIMESTAMP
+         WHERE id = v_lead.conversation_id AND business_id = NEW.business_id;
+      END IF;
+    END LOOP;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'leads_auto_won: %', SQLERRM;
+  END;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS invoices_leads_auto_won ON invoices;
+CREATE TRIGGER invoices_leads_auto_won
+  AFTER INSERT OR UPDATE OF status, customer_id ON invoices
+  FOR EACH ROW EXECUTE FUNCTION leads_auto_won();
+
+DROP TRIGGER IF EXISTS sales_orders_leads_auto_won ON sales_orders;
+CREATE TRIGGER sales_orders_leads_auto_won
+  AFTER INSERT OR UPDATE OF status, customer_id ON sales_orders
+  FOR EACH ROW EXECUTE FUNCTION leads_auto_won();
