@@ -7,7 +7,6 @@ import type { Block, Section } from './types';
 type Raw = Record<string, unknown>;
 
 const MAX_EXTRA_SLIDES = 5;
-const BULLET = ' • ';
 
 /** Stored settings over the section schema's defaults (stored themes do not carry defaults). */
 function settingsOf(section: Section): Raw {
@@ -100,9 +99,9 @@ export function multicolumnSettings(section: Section): StudioSettings {
 export function marqueeSettings(section: Section): StudioSettings {
   const s = settingsOf(section);
   const text = blocksOf(section, 'item')
-    .map((b) => str(b.text).trim())
+    .map((b) => str(b.text).replace(/,/g, ' ').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
-    .join(BULLET);
+    .join(', ');
   // Engine speed is seconds per loop (lower = faster); Studio has three steps.
   const secs = num(s.speed) ?? 30;
   const speed: StudioSettings['speed'] = secs <= 24 ? 'fast' : secs >= 48 ? 'slow' : 'normal';

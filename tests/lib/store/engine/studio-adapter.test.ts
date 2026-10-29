@@ -53,7 +53,7 @@ describe('studio adapter', () => {
       ['c', 'item', { text: 'Three' }, true],
     ]);
     s.block_order = ['b', 'ghost', 'a', 'c'];
-    expect(marqueeSettings(s).text).toBe('Two • One');
+    expect(marqueeSettings(s).text).toBe('Two, One');
   });
 
   it('marquee joins in order and maps speed', () => {
@@ -61,8 +61,18 @@ describe('studio adapter', () => {
       ['a', 'item', { text: 'A' }],
       ['b', 'item', { text: 'B' }],
     ]);
-    expect(marqueeSettings(s)).toMatchObject({ text: 'A • B', speed: 'fast' });
+    expect(marqueeSettings(s)).toMatchObject({ text: 'A, B', speed: 'fast' });
     expect(marqueeSettings(sec('marquee', {})).speed).toBe('normal');
+    expect(marqueeSettings(sec('marquee', { speed: 60 })).speed).toBe('slow');
+  });
+
+  it('marquee strips commas inside items and skips empty ones', () => {
+    const s = sec('marquee', {}, [
+      ['a', 'item', { text: 'Free delivery, today' }],
+      ['b', 'item', { text: ' , ' }],
+      ['c', 'item', { text: 'New' }],
+    ]);
+    expect(marqueeSettings(s).text).toBe('Free delivery today, New');
   });
 
   it('multicolumn builds usps from enabled columns', () => {
