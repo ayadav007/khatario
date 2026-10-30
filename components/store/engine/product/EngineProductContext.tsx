@@ -48,6 +48,11 @@ export function useEngineProduct(): EngineProductState {
   return ctx;
 }
 
+/** Like `useEngineProduct`, but null outside the provider (sections that render nothing without a product). */
+export function useOptionalEngineProduct(): EngineProductState | null {
+  return useContext(EngineProductContext);
+}
+
 /**
  * Loads the product in the browser (D16) and holds the variant, rating and cart state the
  * `main-product` blocks share, with the classic product page's rules. While loading it shows a

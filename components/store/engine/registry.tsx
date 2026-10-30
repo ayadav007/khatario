@@ -16,6 +16,9 @@ import { CategoryGrid } from './sections/CategoryGrid';
 import { Testimonials } from './sections/Testimonials';
 import { CustomHtml } from './sections/CustomHtml';
 import { MainProduct } from './sections/MainProduct';
+import { RelatedProducts } from './sections/RelatedProducts';
+import { RecentlyViewed } from './sections/RecentlyViewed';
+import { ProductReviews } from './sections/ProductReviews';
 
 /** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
 export interface EngineRoute {
@@ -53,4 +56,7 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   testimonials: Testimonials,
   'custom-html': CustomHtml,
   'main-product': MainProduct,
+  'related-products': RelatedProducts,
+  'recently-viewed': RecentlyViewed,
+  'product-reviews': ProductReviews,
 };

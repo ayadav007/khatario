@@ -1,6 +1,12 @@
 import { presetTheme, type PresetContext } from '@/lib/store/engine/presets';
 import { sanitizeThemeData, ID_RE } from '@/lib/store/engine/sanitize';
 
+// The product template's section ids are fresh per call (newId), so determinism is checked on its section types.
+function stable(p: ReturnType<typeof presetTheme>) {
+  const t = p.templates.product;
+  return { ...p, templates: { ...p.templates, product: t.order.map((id) => t.sections[id]) } };
+}
+
 const ctx: PresetContext = {
   businessName: 'Rose Mart',
   tagline: 'Fresh finds, fast delivery',
@@ -30,7 +36,7 @@ describe.each(['studio', 'blank'] as const)('%s preset', (name) => {
   });
 
   it('is deterministic', () => {
-    expect(presetTheme(name, ctx)).toEqual(presetTheme(name, ctx));
+    expect(stable(presetTheme(name, ctx))).toEqual(stable(presetTheme(name, ctx)));
   });
 
   it('applies the accent to scheme 1', () => {
@@ -56,5 +62,5 @@ describe('blank home', () => {
 });
 
 it('quick, grocery and khatario fall back to studio', () => {
-  for (const k of ['quick', 'grocery', 'khatario'] as const) expect(presetTheme(k, ctx)).toEqual(presetTheme('studio', ctx));
+  for (const k of ['quick', 'grocery', 'khatario'] as const) expect(stable(presetTheme(k, ctx))).toEqual(stable(presetTheme('studio', ctx)));
 });

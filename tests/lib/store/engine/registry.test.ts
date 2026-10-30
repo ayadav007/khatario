@@ -12,8 +12,8 @@ function allSettingLists(): Array<{ where: string; settings: SettingSchema[] }> 
 }
 
 describe('section registry', () => {
-  it('registers 15 section types keyed by their own type', () => {
-    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(15);
+  it('registers 18 section types keyed by their own type', () => {
+    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(18);
     for (const [key, schema] of Object.entries(SECTION_SCHEMAS)) expect(schema.type).toBe(key);
   });
 

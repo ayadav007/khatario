@@ -1,6 +1,7 @@
 import type { ThemeData } from '../types';
 import type { PresetContext } from './index';
 import { block, presetSettings, section, template } from './shared';
+import { defaultTemplate } from './templates';
 
 // Copied from components/store/studio-theme/StudioSections.tsx DEFAULT_USPS.
 const USPS = [
@@ -48,7 +49,7 @@ export function studioPreset(ctx: PresetContext): ThemeData {
         section('featured-products', { source: 'all', heading: 'All products', limit: 24 }),
         section('testimonials', {}),
       ]),
-      product: template([]),
+      product: defaultTemplate('product'),
       catalog: template([]),
     },
   };
