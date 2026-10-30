@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { ensureInterBranchInvoiceForTransfer } from '@/lib/inter-branch-utils';
-import { ensureTransferChallan } from '@/lib/stock-transfers/transfer-challan';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 
@@ -127,13 +125,7 @@ export async function POST(
       WHERE id = $3
     `, [userId, approval_notes || null, params.id]);
 
-    await ensureInterBranchInvoiceForTransfer(client, params.id, {
-      ewayBillNumber: body.eway_bill_number,
-      ewayBillDate: body.eway_bill_date,
-      createdBy: userId,
-    });
-    // Same GSTIN (no invoice was made): the goods travel under a delivery challan.
-    await ensureTransferChallan(client, params.id, { ewayBillNumber: body.eway_bill_number, createdBy: userId });
+    // Invoice / challan are raised at dispatch for the quantity actually sent.
 
     await client.query('COMMIT');
 

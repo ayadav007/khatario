@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
-import { ensureTransferChallan } from '@/lib/stock-transfers/transfer-challan';
+import { isEwayBillRequired } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
 import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
@@ -214,10 +213,6 @@ export async function POST(request: NextRequest) {
     try {
       await client.query('BEGIN');
 
-      // Check if this is an inter-branch transfer
-      const transferInfo = await isInterBranchTransfer(from_location_id, to_location_id);
-      const isInterBranch = transferInfo.isInterBranch && transferInfo.hasDifferentGstin;
-
       // Determine initial status based on user's approval permission
       // If user has approve permission, create as 'pending' (auto-approved)
       // Otherwise, create as 'draft' (needs approval)
@@ -288,21 +283,8 @@ export async function POST(request: NextRequest) {
         ]);
       }
 
-      if (isInterBranch && initialStatus === 'pending') {
-        const invoiceId = await ensureInterBranchInvoiceForTransfer(client, transfer.id, {
-          ewayBillNumber: body.eway_bill_number,
-          ewayBillDate: body.eway_bill_date,
-          createdBy: created_by,
-        });
-        if (invoiceId) transfer.inter_branch_invoice_id = invoiceId;
-      } else if (initialStatus === 'pending') {
-        // Same GSTIN: no invoice, but the goods travel under a delivery challan.
-        transfer.delivery_challan_id = await ensureTransferChallan(client, transfer.id, {
-          ewayBillNumber: body.eway_bill_number,
-          createdBy: created_by,
-        });
-      }
-
+      // The inter-branch invoice (between GSTINs) or delivery challan (same GSTIN) is raised at
+      // dispatch, for the quantity actually sent.
       await client.query('COMMIT');
       // Any movement over the limit needs an e-way bill, within the state too; the form warns on it.
       const ewayBillRequired = isEwayBillRequired(transferValue);

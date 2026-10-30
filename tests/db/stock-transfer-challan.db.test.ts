@@ -60,8 +60,8 @@ d('stock transfer challan within one GSTIN (real DB)', () => {
       [transferId, businessId, `ST-${tag}`, fromWh, toWh]
     );
     await pool.query(
-      `INSERT INTO stock_transfer_items (transfer_id, item_id, qty, unit, quantity_requested, cost_snapshot)
-       VALUES ($1, $2, 15, 'PCS', 15, 4200)`,
+      `INSERT INTO stock_transfer_items (transfer_id, item_id, qty, unit, quantity_requested, quantity_dispatched, cost_snapshot)
+       VALUES ($1, $2, 15, 'PCS', 15, 15, 4200)`,
       [transferId, itemId]
     );
   });

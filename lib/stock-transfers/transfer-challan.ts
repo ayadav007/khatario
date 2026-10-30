@@ -31,11 +31,11 @@ export async function ensureTransferChallan(
   if (info.isInterBranch && info.hasDifferentGstin) return null;
 
   const rows = await client.query(
-    `SELECT sti.item_id, COALESCE(sti.quantity_requested, sti.qty) AS qty, sti.unit, sti.cost_snapshot,
+    `SELECT sti.item_id, sti.quantity_dispatched AS qty, sti.unit, sti.cost_snapshot,
             i.name, i.hsn_sac, i.purchase_price
        FROM stock_transfer_items sti
        JOIN items i ON i.id = sti.item_id
-      WHERE sti.transfer_id = $1`,
+      WHERE sti.transfer_id = $1 AND COALESCE(sti.quantity_dispatched, 0) > 0`,
     [transferId]
   );
   if (rows.rows.length === 0) return null;

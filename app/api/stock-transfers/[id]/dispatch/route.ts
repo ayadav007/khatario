@@ -3,6 +3,8 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { ensureInterBranchInvoiceForTransfer, issueInterBranchShortCreditNote } from '@/lib/inter-branch-utils';
+import { ensureTransferChallan } from '@/lib/stock-transfers/transfer-challan';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +22,15 @@ export async function PATCH(
   try {
     const body = await request.json();
     const { dispatch_date, notes } = body;
+    // Optional per-item quantities actually sent (default: everything requested). Less than
+    // requested is allowed; the invoice or challan covers only what left the godown.
+    const sendQty = new Map<string, number>(
+      Array.isArray(body.items)
+        ? body.items
+            .filter((i: any) => i && typeof i.item_id === 'string')
+            .map((i: any) => [i.item_id, Math.max(0, Number(i.qty ?? i.quantity) || 0)] as [string, number])
+        : []
+    );
 
     const userId = getUserIdFromRequest(request);
     if (!userId) {
@@ -95,9 +106,25 @@ export async function PATCH(
 
     const transferItems = transferItemsResult.rows;
 
+    const qtyFor = (item: any) => {
+      const requested = parseFloat(item.quantity_requested || item.qty || '0');
+      return sendQty.has(item.item_id) ? Math.min(requested, sendQty.get(item.item_id)!) : requested;
+    };
+    if (!transferItems.some((item: any) => qtyFor(item) > 0)) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Enter a quantity to dispatch for at least one item.' }, { status: 400 });
+    }
+
     // Validate stock availability and deduct stock from source warehouse
     for (const item of transferItems) {
-      const requestedQty = parseFloat(item.quantity_requested || item.qty || '0');
+      const requestedQty = qtyFor(item);
+      if (requestedQty <= 0) {
+        await client.query(
+          `UPDATE stock_transfer_items SET quantity_dispatched = 0 WHERE transfer_id = $1 AND item_id = $2`,
+          [params.id, item.item_id]
+        );
+        continue;
+      }
       
       // Lock and check stock availability
       const stockCheck = await client.query(`
@@ -167,6 +194,36 @@ export async function PATCH(
           END
       WHERE id = $2
     `, [notes || null, params.id]);
+
+    // Documents are issued when the goods are removed (s.31(1)(a)), for what was dispatched:
+    // a tax invoice between GSTINs, a delivery challan within one GSTIN.
+    const docs = await client.query(`SELECT inter_branch_invoice_id, transfer_number FROM stock_transfers WHERE id = $1`, [params.id]);
+    const existingInvoiceId: string | null = docs.rows[0]?.inter_branch_invoice_id ?? null;
+    if (existingInvoiceId) {
+      // Raised at approval under the old flow for the requested quantity: credit what was not sent.
+      const unsent = transferItems
+        .map((item: any) => ({ itemId: item.item_id, qty: parseFloat(item.quantity_requested || item.qty || '0') - qtyFor(item) }))
+        .filter((l: { qty: number }) => l.qty > 0.0005);
+      if (unsent.length > 0) {
+        await issueInterBranchShortCreditNote(client, {
+          businessId: transfer.business_id,
+          invoiceId: existingInvoiceId,
+          transferNumber: docs.rows[0].transfer_number,
+          date: String(dispatch_date || new Date().toISOString()).slice(0, 10),
+          lines: unsent,
+          userId,
+          reason: `Not dispatched on inter-branch transfer ${docs.rows[0].transfer_number}`,
+        });
+      }
+    } else {
+      await ensureInterBranchInvoiceForTransfer(client, params.id, {
+        ewayBillNumber: body.eway_bill_number,
+        ewayBillDate: body.eway_bill_date,
+        createdBy: userId,
+        invoiceDate: dispatch_date ? String(dispatch_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      });
+    }
+    await ensureTransferChallan(client, params.id, { ewayBillNumber: body.eway_bill_number, createdBy: userId });
 
     await client.query('COMMIT');
 
