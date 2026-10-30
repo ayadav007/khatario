@@ -89,3 +89,6 @@ export function videoEmbedUrl(url: string): string | null {
   }
   return null;
 }
+
+/** Sandbox for every embedded video iframe; the same value custom HTML iframes are forced to (html.ts). */
+export const EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';

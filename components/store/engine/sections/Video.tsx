@@ -1,4 +1,4 @@
-import { videoEmbedUrl } from '@/lib/store/engine/shared';
+import { EMBED_SANDBOX, videoEmbedUrl } from '@/lib/store/engine/shared';
 import type { EngineSectionProps } from '../registry';
 import { EngineVideoCover } from './EngineVideoCover';
 import { str, withDefaults } from './shared';
@@ -20,6 +20,7 @@ export function Video({ section }: EngineSectionProps) {
           <iframe
             src={embed}
             title={heading || 'Video'}
+            sandbox={EMBED_SANDBOX}
             loading="lazy"
             allow="encrypted-media; picture-in-picture; fullscreen"
             allowFullScreen

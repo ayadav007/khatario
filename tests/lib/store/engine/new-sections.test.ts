@@ -107,3 +107,17 @@ describe('contact page starter', () => {
     expect(tpl.sections[tpl.order[1]].block_order.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('video embed sandbox', () => {
+  it('uses the same sandbox as custom HTML iframes and puts it on the video iframe', () => {
+    const { EMBED_SANDBOX } = require('@/lib/store/engine/shared');
+    const { sanitizeCustomHtml } = require('@/lib/store/engine/html');
+    const out = sanitizeCustomHtml('<iframe src="https://www.youtube.com/embed/abc123def45"></iframe>');
+    expect(out).toContain(`sandbox="${EMBED_SANDBOX}"`);
+    // The components are TSX (not transformed here), so check their source carries the shared constant.
+    const fs = require('fs');
+    for (const f of ['Video', 'EngineVideoCover']) {
+      expect(fs.readFileSync(`components/store/engine/sections/${f}.tsx`, 'utf8')).toContain('sandbox={EMBED_SANDBOX}');
+    }
+  });
+});
