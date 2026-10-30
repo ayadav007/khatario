@@ -156,7 +156,7 @@ function bill(p: {
     toAddr2: p.to.addr2,
     toPlace: p.to.place,
     toPincode: p.to.pincode,
-    actToStateCode: p.to.state,
+    actToStateCode: p.to.actState ?? p.to.state,
     toStateCode: p.to.state,
     transactionType: 1,
     otherValue: 0,
@@ -218,15 +218,19 @@ export async function ewayBulkJson(
         [sourceId]
       )
     ).rows;
-    const to = c.supplier_id
-      ? await party(db, businessId, 'supplier', c.supplier_id)
-      : await party(db, businessId, 'customer', c.customer_id, c.shipping_address);
+    const from = await seller(db, businessId, c.branch_id, c.warehouse_id);
+    // A stock transfer on one GSTIN ships to ourselves: same GSTIN, the destination godown's address.
+    const to = c.stock_transfer_id
+      ? { ...(await seller(db, businessId, c.branch_id, c.to_warehouse_id)), state: from.state }
+      : c.supplier_id
+        ? await party(db, businessId, 'supplier', c.supplier_id)
+        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address);
     return {
       version: '1.0.0621',
       billLists: [
         bill({
           docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
-          from: await seller(db, businessId, c.branch_id, c.warehouse_id), to, lines, distanceKm: opts.distanceKm,
+          from, to, lines, distanceKm: opts.distanceKm,
           vehicle: c.vehicle_number, transporterGstin: c.transporter_gstin, transporterName: c.transporter_name,
         }),
       ],

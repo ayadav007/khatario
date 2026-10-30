@@ -150,6 +150,12 @@ export async function PATCH(
     }
 
     await client.query(
+      `UPDATE delivery_challans SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+        WHERE stock_transfer_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+      [params.id, transfer.business_id]
+    );
+
+    await client.query(
       `UPDATE stock_transfers
           SET status = 'cancelled',
               updated_at = CURRENT_TIMESTAMP,

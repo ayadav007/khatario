@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
+import { ensureTransferChallan } from '@/lib/stock-transfers/transfer-challan';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
 import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
@@ -294,6 +295,12 @@ export async function POST(request: NextRequest) {
           createdBy: created_by,
         });
         if (invoiceId) transfer.inter_branch_invoice_id = invoiceId;
+      } else if (initialStatus === 'pending') {
+        // Same GSTIN: no invoice, but the goods travel under a delivery challan.
+        transfer.delivery_challan_id = await ensureTransferChallan(client, transfer.id, {
+          ewayBillNumber: body.eway_bill_number,
+          createdBy: created_by,
+        });
       }
 
       await client.query('COMMIT');

@@ -3,6 +3,7 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { ensureInterBranchInvoiceForTransfer } from '@/lib/inter-branch-utils';
+import { ensureTransferChallan } from '@/lib/stock-transfers/transfer-challan';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 
@@ -131,6 +132,8 @@ export async function POST(
       ewayBillDate: body.eway_bill_date,
       createdBy: userId,
     });
+    // Same GSTIN (no invoice was made): the goods travel under a delivery challan.
+    await ensureTransferChallan(client, params.id, { ewayBillNumber: body.eway_bill_number, createdBy: userId });
 
     await client.query('COMMIT');
 
