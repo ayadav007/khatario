@@ -1,13 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Device } from './PreviewPane';
+import { ProductPicker } from './fields/pickers';
 
 interface Props {
   themeName: string;
+  templateKey: string;
+  templateOptions: Array<{ key: string; label: string }>;
+  onTemplate(key: string): void;
+  /** The product the Product template is previewed with; shown only on that template once one is known. */
+  previewProduct: { id: string; name: string | null } | null;
+  onPreviewProduct(id: string): void;
+  readOnly: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onUndo(): void;
@@ -63,12 +71,21 @@ export function TopBar(props: Props) {
 
       <select
         aria-label="Page"
-        className="ml-2 h-8 rounded-md border border-gray-300 bg-white px-2 text-sm"
-        value="home"
-        onChange={() => undefined}
+        className="ml-2 h-8 max-w-[12rem] rounded-md border border-gray-300 bg-white px-2 text-sm"
+        value={props.templateKey}
+        disabled={props.readOnly}
+        onChange={(e) => props.onTemplate(e.target.value)}
       >
-        <option value="home">Home</option>
+        {props.templateOptions.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.label}
+          </option>
+        ))}
       </select>
+
+      {props.templateKey === 'product' && props.previewProduct && (
+        <PreviewProduct product={props.previewProduct} onPick={props.onPreviewProduct} />
+      )}
 
       <div className="ml-auto flex items-center gap-1">
         <button type="button" className={iconBtn} onClick={onUndo} disabled={!canUndo} title="Undo" aria-label="Undo">
@@ -160,5 +177,64 @@ export function TopBar(props: Props) {
         </div>
       )}
     </header>
+  );
+}
+
+/** D20: "Preview with:" and the product the Product template is shown with (editor state, not the theme). */
+function PreviewProduct({ product, onPick }: { product: { id: string; name: string | null }; onPick(id: string): void }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={boxRef} className="relative flex items-center gap-1.5 text-sm">
+      <span className="text-gray-500">Preview with:</span>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex h-8 max-w-[14rem] items-center gap-1 rounded-md border border-gray-300 bg-white px-2 text-gray-800 hover:bg-gray-50"
+      >
+        <span className="truncate">{product.name ?? 'Loading…'}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Preview product"
+          className="absolute left-0 top-full z-20 mt-1 w-72 rounded-md border border-gray-200 bg-white p-3 shadow-lg"
+        >
+          <ProductPicker
+            id="studio2-preview-product"
+            value={[product.id]}
+            max={1}
+            disabled={false}
+            onChange={(ids) => {
+              // Removing the chip leaves the current product; a pick replaces it.
+              if (ids[0] && ids[0] !== product.id) {
+                onPick(ids[0]);
+                setOpen(false);
+              }
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }

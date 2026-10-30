@@ -4,10 +4,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
-import type { GroupKey, OpError, OpResult, SectionRef } from '@/lib/store/engine/editor/ops';
+import { getGroup, type GroupKey, type OpError, type OpResult, type SectionRef } from '@/lib/store/engine/editor/ops';
 import { canRedo, canUndo, createHistory, record, redo, undo, type History } from '@/lib/store/engine/editor/history';
 import { SaveQueue, backupKey, type SaveStatus } from '@/lib/store/engine/editor/save-queue';
-import { BRIDGE_SOURCE, type EditorToPreview, type PreviewToEditor } from '@/lib/store/engine/editor/bridge';
+import { BRIDGE_SOURCE, resolveAddIndex, type EditorToPreview, type PreviewToEditor } from '@/lib/store/engine/editor/bridge';
+import { showsClassicPage, templateOptions } from '@/lib/store/engine/editor/tree';
+import { previewPath } from '@/lib/store/engine/preview-path';
 import {
   isEditableTarget,
   pruneSelection,
@@ -21,7 +23,16 @@ import {
   type PendingScroll,
   type Selection,
 } from '@/lib/store/engine/editor/shell';
-import { editorPath, fetchCategories, openWorkingDraft, previewLink, publishTheme, putTheme } from './api';
+import {
+  editorPath,
+  fetchCategories,
+  fetchItem,
+  openWorkingDraft,
+  previewLink,
+  publishTheme,
+  putTheme,
+  searchItems,
+} from './api';
 import { TopBar } from './TopBar';
 import { PreviewPane, type Device } from './PreviewPane';
 import { SectionTree } from './SectionTree';
@@ -32,7 +43,8 @@ export type { Selection };
 
 export interface Studio2Api {
   theme: ThemeData;
-  templateKey: 'home';
+  /** The template open in the tree and the preview: home, product, catalog or page.<handle>. */
+  templateKey: string;
   selection: Selection;
   apply(fn: (t: ThemeData) => OpResult | ThemeData, opts: { mergeKey: string | null; immediate: boolean }): OpError | null;
   /** `afterSave`: the section is new, so scroll again once the preview shows the save that adds it. */
@@ -57,7 +69,10 @@ export function useStudio2(): Studio2Api {
   return api;
 }
 
-const TEMPLATE_KEY = 'home' as const;
+const NO_PRODUCTS_TEXT = 'Add a product to preview the product page';
+
+/** D20: the product the Product template is previewed with. undefined: not looked up yet; null: the store has none. */
+type PreviewProduct = { id: string; name: string | null } | null | undefined;
 
 function isOpResult(r: OpResult | ThemeData): r is OpResult {
   return typeof (r as OpResult).ok === 'boolean';
@@ -97,6 +112,18 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const statusRef = useRef<SaveStatus>('saved');
   const [device, setDevice] = useState<Device>('desktop');
   const [backupChoice, setBackupChoice] = useState<ThemeData | null>(staleBackup);
+  // The template in the tree, and the one the frame shows: it follows once pending edits are saved.
+  const [templateKey, setTemplateKey] = useState('home');
+  const templateKeyRef = useRef('home');
+  const [frameKey, setFrameKey] = useState('home');
+  const frameKeyRef = useRef('home');
+  frameKeyRef.current = frameKey;
+  const switchSeqRef = useRef(0);
+  const [previewProduct, setPreviewProduct] = useState<PreviewProduct>(undefined);
+  const [productError, setProductError] = useState<string | null>(null);
+  // Bumped to reload the frame. classicRef: the saved theme renders the framed page classic (D15).
+  const [frameNonce, setFrameNonce] = useState(0);
+  const classicRef = useRef(false);
 
   const queueRef = useRef<SaveQueue | null>(null);
   const postRef = useRef<((msg: EditorToPreview) => void) | null>(null);
@@ -131,7 +158,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       try {
         const next = await openWorkingDraft(businessId);
         queueRef.current?.dispose();
-        if (carry && next.id !== row.id) carryBackup(row.id, next.id, historyRef.current.present);
+        if (carry && next.id !== row.id) carryBackup(businessId, row.id, next.id, historyRef.current.present);
         router.replace(editorPath(next.id));
       } catch {
         setLeave('failed');
@@ -144,7 +171,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 
   // Save queue, one per theme.
   useEffect(() => {
-    const queue = new SaveQueue(row.id, row.updated_at, {
+    const queue = new SaveQueue(businessId, row.id, row.updated_at, {
       put: (id, data, updatedAt) => putTheme(businessId, id, data, updatedAt),
       storage: safeStorage(),
       onStatus: (s, message) => {
@@ -152,9 +179,15 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
         setStatus({ status: s, message });
         if (s === 'locked') void goToWorkingDraftRef.current(true);
       },
-      onSaved: () => {
+      onSaved: (saved) => {
         revRef.current += 1;
-        postRef.current?.({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
+        // A product or catalog page switches between the classic and the engine layout (D15) only on a
+        // full load, and the classic page has no bridge to refresh: reload the frame instead.
+        const classic = showsClassicPage(saved.data, frameKeyRef.current);
+        const reload = classic || classicRef.current;
+        classicRef.current = classic;
+        if (reload) setFrameNonce((n) => n + 1);
+        else postRef.current?.({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
       },
     });
     queueRef.current = queue;
@@ -195,8 +228,9 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       const ref = selectionRef(sel);
       // Any later selection replaces a scroll still waiting for its save.
       pendingScrollRef.current = opts?.scroll && opts.afterSave && ref ? { ref, afterRev: revRef.current } : null;
-      post({ source: BRIDGE_SOURCE, type: 'select', ref });
-      if (opts?.scroll && ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref });
+      const template = templateKeyRef.current;
+      post({ source: BRIDGE_SOURCE, type: 'select', template, ref });
+      if (opts?.scroll && ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', template, ref });
     },
     [post],
   );
@@ -204,9 +238,9 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   // Undo, redo or a remove can take away what is selected.
   useEffect(() => {
     const cur = selectionRefState.current;
-    const next = pruneSelection(history.present, TEMPLATE_KEY, cur);
+    const next = pruneSelection(history.present, templateKey, cur);
     if (next !== cur) select(next);
-  }, [history.present, select]);
+  }, [history.present, templateKey, select]);
 
   const apply = useCallback<Studio2Api['apply']>(
     (fn, opts) => {
@@ -280,12 +314,62 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const openAddSection = useCallback((group: GroupKey, index: number) => setAddSectionTarget({ group, index }), []);
   const closeAddSection = useCallback(() => setAddSectionTarget(null), []);
 
+  // Another template: nothing stays selected, pending edits are saved, then the frame loads that page.
+  // Undo history is whole-theme, so it carries over and a switch is not an entry in it.
+  const switchTemplate = useCallback(
+    async (key: string) => {
+      if (key === templateKeyRef.current) return;
+      templateKeyRef.current = key;
+      setTemplateKey(key);
+      select(null);
+      setHovered(null);
+      setAddSectionTarget(null);
+      const seq = ++switchSeqRef.current;
+      await queueRef.current?.flush();
+      if (seq !== switchSeqRef.current) return;
+      classicRef.current = showsClassicPage(historyRef.current.present, key);
+      setFrameKey(key);
+    },
+    [select],
+  );
+
+  // D20: the Product template previews with the first product until the merchant picks another.
+  useEffect(() => {
+    if (templateKey !== 'product' || previewProduct !== undefined) return;
+    let cancelled = false;
+    setProductError(null);
+    searchItems('')
+      .then((items) => {
+        if (!cancelled) setPreviewProduct(items[0] ? { id: items[0].id, name: items[0].name } : null);
+      })
+      .catch((e) => {
+        if (!cancelled) setProductError(e instanceof Error && e.message ? e.message : 'Failed to load products');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [templateKey, previewProduct]);
+
+  const pickPreviewProduct = useCallback((id: string) => {
+    setPreviewProduct({ id, name: null });
+    fetchItem(id)
+      .then((item) => setPreviewProduct((p) => (p?.id === id ? { id, name: item?.name ?? 'Removed product' } : p)))
+      .catch(() => setPreviewProduct((p) => (p?.id === id ? { id, name: 'Product' } : p)));
+  }, []);
+
+  const framePath = previewPath(frameKey, { productId: previewProduct?.id });
+  const frameEmptyText =
+    frameKey === 'product' && framePath === null ? (previewProduct === null ? NO_PRODUCTS_TEXT : productError) : null;
+
   const onPreviewMessage = useCallback(
     (msg: PreviewToEditor) => {
+      // D21: a frame still showing another template (a switch in progress) is not the one being edited.
+      if (msg.type !== 'hover' && msg.template !== templateKeyRef.current) return;
+      const template = templateKeyRef.current;
       switch (msg.type) {
         case 'ready':
           // A fresh frame (or one that finished an older refresh) learns the selection, and catches up.
-          post({ source: BRIDGE_SOURCE, type: 'select', ref: selectionRef(selectionRefState.current) });
+          post({ source: BRIDGE_SOURCE, type: 'select', template, ref: selectionRef(selectionRefState.current) });
           // A reloaded frame (rev null) may have missed a refresh sent while it was loading.
           if (revRef.current > 0 && (msg.rev === null || msg.rev < revRef.current)) {
             post({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
@@ -293,15 +377,15 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
           // A reloaded frame (token renewal) starts at the top: bring the selection back into view.
           if (msg.rev === null) {
             const ref = selectionRef(selectionRefState.current);
-            if (ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref });
+            if (ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', template, ref });
           }
           {
             // A section added or duplicated before its save was in the frame: scroll to it now.
             const r = resolvePendingScroll(pendingScrollRef.current, msg.rev);
             pendingScrollRef.current = r.pending;
             if (r.resend) {
-              post({ source: BRIDGE_SOURCE, type: 'select', ref: r.resend });
-              post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref: r.resend });
+              post({ source: BRIDGE_SOURCE, type: 'select', template, ref: r.resend });
+              post({ source: BRIDGE_SOURCE, type: 'scroll-to', template, ref: r.resend });
             }
           }
           break;
@@ -315,9 +399,12 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
         case 'hover':
           setHovered(msg.ref);
           break;
-        case 'add-at':
-          openAddSection('template', msg.index);
+        case 'add-at': {
+          // Resolved against the editor's own order: the frame may not show the latest save yet.
+          const order = getGroup(historyRef.current.present, template, 'template').order;
+          openAddSection('template', resolveAddIndex(order, msg.after));
           break;
+        }
       }
     },
     [post, openAddSection],
@@ -325,13 +412,13 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 
   const copyPreview = useCallback(async () => {
     try {
-      const url = await previewLink(businessId, row.id, 'share');
+      const url = await previewLink(businessId, row.id, 'share', framePath ?? '/');
       await navigator.clipboard.writeText(url);
       toast.success('Preview link copied');
     } catch (e) {
       toast.error(e instanceof Error && e.message ? e.message : 'Could not copy the preview link');
     }
-  }, [businessId, row.id, toast]);
+  }, [businessId, row.id, toast, framePath]);
 
   const publish = useCallback(async () => {
     const queue = queueRef.current;
@@ -369,17 +456,17 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 
   const discardBackup = useCallback(() => {
     try {
-      safeStorage()?.removeItem(backupKey(row.id));
+      safeStorage()?.removeItem(backupKey(businessId, row.id));
     } catch {
       /* ignore */
     }
     setBackupChoice(null);
-  }, [row.id]);
+  }, [businessId, row.id]);
 
   const api = useMemo<Studio2Api>(
     () => ({
       theme: history.present,
-      templateKey: TEMPLATE_KEY,
+      templateKey,
       selection,
       apply,
       select,
@@ -391,7 +478,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       closeAddSection,
       readOnly: leave !== 'idle',
     }),
-    [history.present, selection, apply, select, hover, openAddSection, categories, hovered, addSectionTarget, closeAddSection, leave],
+    [history.present, templateKey, selection, apply, select, hover, openAddSection, categories, hovered, addSectionTarget, closeAddSection, leave],
   );
 
   const s = status.status;
@@ -401,6 +488,12 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       <div className="fixed inset-0 z-[90] flex flex-col bg-white text-gray-900">
         <TopBar
           themeName={row.name}
+          templateKey={templateKey}
+          templateOptions={templateOptions(history.present)}
+          onTemplate={(key) => void switchTemplate(key)}
+          previewProduct={previewProduct ?? null}
+          onPreviewProduct={pickPreviewProduct}
+          readOnly={leave !== 'idle'}
           canUndo={canUndo(history)}
           canRedo={canRedo(history)}
           onUndo={doUndo}
@@ -449,6 +542,9 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
             themeId={row.id}
             businessId={businessId}
             device={device}
+            path={framePath}
+            emptyText={frameEmptyText}
+            reloadKey={frameNonce}
             postRef={postRef}
             onMessage={onPreviewMessage}
           />
@@ -463,12 +559,12 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 }
 
 /** Moves edits the server refused to the next draft's backup slot; its base never matches, so the merchant chooses. */
-function carryBackup(fromId: string, toId: string, data: ThemeData): void {
+function carryBackup(businessId: string, fromId: string, toId: string, data: ThemeData): void {
   const storage = safeStorage();
   if (!storage) return;
   try {
-    storage.setItem(backupKey(toId), JSON.stringify({ data, base: '' }));
-    storage.removeItem(backupKey(fromId));
+    storage.setItem(backupKey(businessId, toId), JSON.stringify({ data, base: '' }));
+    storage.removeItem(backupKey(businessId, fromId));
   } catch {
     /* storage unavailable or full */
   }

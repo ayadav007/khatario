@@ -20,12 +20,18 @@ interface Props {
   themeId: string;
   businessId: string;
   device: Device;
+  /** Storefront path of the template being edited; null while there is nothing to show. */
+  path: string | null;
+  /** Shown instead of the frame when `path` is null (a spinner when this is null too). */
+  emptyText: string | null;
+  /** Changing it reloads the frame (the page switched between the classic and the engine layout). */
+  reloadKey: number;
   /** Set by the pane: posts a message to the preview, or does nothing before it is framed. */
   postRef: MutableRefObject<((msg: EditorToPreview) => void) | null>;
   onMessage(msg: PreviewToEditor): void;
 }
 
-export function PreviewPane({ themeId, businessId, device, postRef, onMessage }: Props) {
+export function PreviewPane({ themeId, businessId, device, path, emptyText, reloadKey, postRef, onMessage }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const originRef = useRef<string | null>(null);
   const onMessageRef = useRef(onMessage);
@@ -33,12 +39,15 @@ export function PreviewPane({ themeId, businessId, device, postRef, onMessage }:
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch the editor link now and again every 100 minutes.
+  // Fetch the editor link for this page now and again every 100 minutes.
   useEffect(() => {
+    setSrc(null);
+    setError(null);
+    if (path === null) return;
     let cancelled = false;
     const load = async () => {
       try {
-        const url = await previewLink(businessId, themeId, 'editor');
+        const url = await previewLink(businessId, themeId, 'editor', path);
         const next = editorFrameSrc(url);
         const origin = storeOriginFromPreviewUrl(url);
         if (!next || !origin) throw new Error('Failed to create preview link');
@@ -56,7 +65,7 @@ export function PreviewPane({ themeId, businessId, device, postRef, onMessage }:
       cancelled = true;
       clearInterval(timer);
     };
-  }, [businessId, themeId]);
+  }, [businessId, themeId, path]);
 
   const post = useCallback((msg: EditorToPreview) => {
     const win = iframeRef.current?.contentWindow;
@@ -93,7 +102,9 @@ export function PreviewPane({ themeId, businessId, device, postRef, onMessage }:
         }
       >
         {src ? (
-          <iframe ref={iframeRef} src={src} title="Store preview" className="h-full w-full border-0" />
+          <iframe key={reloadKey} ref={iframeRef} src={src} title="Store preview" className="h-full w-full border-0" />
+        ) : path === null && emptyText ? (
+          <div className="flex h-full items-center justify-center p-6 text-center text-sm text-gray-600">{emptyText}</div>
         ) : error ? (
           <div className="flex h-full items-center justify-center p-6 text-center text-sm text-red-600">{error}</div>
         ) : (

@@ -1,21 +1,25 @@
 // Client-safe: postMessage protocol between the Studio 2 editor and the storefront preview iframe.
-import { ENGINE_LIMITS, ID_RE } from '../shared';
+import { CORE_TEMPLATES, ID_RE, pageHandle } from '../shared';
 import { extractStoreSubdomain } from '../../subdomain';
 import type { GroupKey, SectionRef } from './ops';
 
 export const BRIDGE_SOURCE = 'kh-studio';
 
+// `template` is the template key the sender is showing or editing; each side drops messages for another one.
 export type EditorToPreview =
-  | { source: 'kh-studio'; type: 'select'; ref: SectionRef | null }
+  | { source: 'kh-studio'; type: 'select'; template: string; ref: SectionRef | null }
   | { source: 'kh-studio'; type: 'hover'; ref: SectionRef | null }
-  | { source: 'kh-studio'; type: 'scroll-to'; ref: SectionRef }
+  | { source: 'kh-studio'; type: 'scroll-to'; template: string; ref: SectionRef }
   | { source: 'kh-studio'; type: 'refresh'; rev: number };
 
 export type PreviewToEditor =
-  | { source: 'kh-studio'; type: 'ready'; rev: number | null }
+  | { source: 'kh-studio'; type: 'ready'; template: string; rev: number | null }
   | { source: 'kh-studio'; type: 'hover'; ref: SectionRef | null }
-  | { source: 'kh-studio'; type: 'select'; ref: SectionRef }
-  | { source: 'kh-studio'; type: 'add-at'; index: number }; // index in the current template
+  | { source: 'kh-studio'; type: 'select'; template: string; ref: SectionRef }
+  // `after`: the section just above the "+" (null at the top); the editor resolves it against its own order.
+  | { source: 'kh-studio'; type: 'add-at'; template: string; after: string | null };
+
+const TEMPLATE_KEY_MAX = 80;
 
 const GROUPS: readonly string[] = ['header', 'footer', 'template'];
 
@@ -33,12 +37,21 @@ function parseRef(v: unknown): SectionRef | null {
   return { group: group as GroupKey, id };
 }
 
-function isNonNegInt(v: unknown, max: number): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && !Object.is(v, -0) && v >= 0 && v <= max;
+function isRev(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && !Object.is(v, -0) && v >= 0 && v <= Number.MAX_SAFE_INTEGER;
 }
 
-function isRev(v: unknown): v is number {
-  return isNonNegInt(v, Number.MAX_SAFE_INTEGER);
+/** A core template key or a valid `page.<handle>` key. */
+function isTemplateKey(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > TEMPLATE_KEY_MAX) return false;
+  return (CORE_TEMPLATES as readonly string[]).includes(v) || pageHandle(v) !== null;
+}
+
+/** Where an `add-at` inserts in `order`: the top for null, after `after`, or the end when it is gone. */
+export function resolveAddIndex(order: readonly string[], after: string | null): number {
+  if (after === null) return 0;
+  const i = order.indexOf(after);
+  return i < 0 ? order.length : i + 1;
 }
 
 /** `null` is a valid ref (returned as `{ ok: true, ref: null }`); anything else must parse as a SectionRef. */
@@ -51,14 +64,17 @@ function parseNullableRef(v: unknown): { ok: true; ref: SectionRef | null } | nu
 export function parseEditorMessage(data: unknown): EditorToPreview | null {
   if (!isPlainObject(data) || data.source !== BRIDGE_SOURCE) return null;
   switch (data.type) {
-    case 'select':
+    case 'select': {
+      const r = parseNullableRef(data.ref);
+      return r && isTemplateKey(data.template) ? { source: BRIDGE_SOURCE, type: 'select', template: data.template, ref: r.ref } : null;
+    }
     case 'hover': {
       const r = parseNullableRef(data.ref);
-      return r ? { source: BRIDGE_SOURCE, type: data.type, ref: r.ref } : null;
+      return r ? { source: BRIDGE_SOURCE, type: 'hover', ref: r.ref } : null;
     }
     case 'scroll-to': {
       const ref = parseRef(data.ref);
-      return ref ? { source: BRIDGE_SOURCE, type: 'scroll-to', ref } : null;
+      return ref && isTemplateKey(data.template) ? { source: BRIDGE_SOURCE, type: 'scroll-to', template: data.template, ref } : null;
     }
     case 'refresh':
       return isRev(data.rev) ? { source: BRIDGE_SOURCE, type: 'refresh', rev: data.rev } : null;
@@ -86,21 +102,26 @@ export function acceptEditorMessage(
 export function parsePreviewMessage(data: unknown): PreviewToEditor | null {
   if (!isPlainObject(data) || data.source !== BRIDGE_SOURCE) return null;
   switch (data.type) {
-    case 'ready':
-      if (data.rev === null) return { source: BRIDGE_SOURCE, type: 'ready', rev: null };
-      return isRev(data.rev) ? { source: BRIDGE_SOURCE, type: 'ready', rev: data.rev } : null;
+    case 'ready': {
+      const { template, rev } = data;
+      if (!isTemplateKey(template)) return null;
+      if (rev === null) return { source: BRIDGE_SOURCE, type: 'ready', template, rev: null };
+      return isRev(rev) ? { source: BRIDGE_SOURCE, type: 'ready', template, rev } : null;
+    }
     case 'hover': {
       const r = parseNullableRef(data.ref);
       return r ? { source: BRIDGE_SOURCE, type: 'hover', ref: r.ref } : null;
     }
     case 'select': {
       const ref = parseRef(data.ref);
-      return ref ? { source: BRIDGE_SOURCE, type: 'select', ref } : null;
+      return ref && isTemplateKey(data.template) ? { source: BRIDGE_SOURCE, type: 'select', template: data.template, ref } : null;
     }
     case 'add-at': {
-      const { index } = data;
-      if (!isNonNegInt(index, ENGINE_LIMITS.sectionsPerTemplate)) return null;
-      return { source: BRIDGE_SOURCE, type: 'add-at', index };
+      const { template, after } = data;
+      // The pre-M3 shape carried an index; a frame still sending it is out of date.
+      if ('index' in data || !isTemplateKey(template)) return null;
+      if (after !== null && (typeof after !== 'string' || !ID_RE.test(after))) return null;
+      return { source: BRIDGE_SOURCE, type: 'add-at', template, after };
     }
     default:
       return null;

@@ -6,7 +6,11 @@ import {
   dragMove,
   groupRows,
   isEditableSection,
+  isEmptyClassicTemplate,
   sectionLabel,
+  showsClassicPage,
+  templateOptions,
+  templateTitle,
 } from '@/lib/store/engine/editor/tree';
 import { OP_ERROR_TEXT } from '@/lib/store/engine/editor/ops';
 import { getSectionSchema, sectionsForTemplate } from '@/lib/store/engine/registry';
@@ -178,5 +182,57 @@ describe('editor tree helpers', () => {
     for (const c of addSectionCards(full, 'home', 'template').flatMap((g) => g.cards)) {
       expect(c.reason).toBe('section_limit');
     }
+  });
+});
+
+describe('template switcher', () => {
+  const withPages = (): ThemeData => {
+    const t = theme();
+    return {
+      ...t,
+      templates: {
+        ...t.templates,
+        product: { order: [], sections: {} },
+        catalog: { order: [], sections: {} },
+        'page.sale': { title: 'Sale', order: [], sections: {} },
+        'page.zz-about': { title: 'About us', order: [], sections: {} },
+        'page.faq': { order: [], sections: {} },
+        'page.cart': { title: 'Reserved', order: [], sections: {} },
+      },
+    };
+  };
+
+  it('lists Home, Product, Catalog, then pages sorted by title (or handle)', () => {
+    expect(templateOptions(withPages())).toEqual([
+      { key: 'home', label: 'Home' },
+      { key: 'product', label: 'Product' },
+      { key: 'catalog', label: 'Catalog' },
+      { key: 'page.zz-about', label: 'About us' },
+      { key: 'page.faq', label: 'faq' },
+      { key: 'page.sale', label: 'Sale' },
+    ]);
+  });
+
+  it('titles the template group', () => {
+    const t = withPages();
+    expect(templateTitle(t, 'home')).toBe('Home');
+    expect(templateTitle(t, 'product')).toBe('Product');
+    expect(templateTitle(t, 'catalog')).toBe('Catalog');
+    expect(templateTitle(t, 'page.sale')).toBe('Sale');
+    expect(templateTitle(t, 'page.faq')).toBe('faq');
+  });
+
+  it('knows when product or catalog shows the classic page, and when it is empty', () => {
+    const t = withPages();
+    expect(isEmptyClassicTemplate(t, 'product')).toBe(true);
+    expect(isEmptyClassicTemplate(t, 'home')).toBe(false);
+    expect(isEmptyClassicTemplate(t, 'page.sale')).toBe(false);
+    expect(showsClassicPage(t, 'catalog')).toBe(true);
+    const hidden: ThemeData = { ...t, templates: { ...t.templates, catalog: { order: ['m'], sections: { m: sec('main-catalog', { disabled: true }) } } } };
+    expect(isEmptyClassicTemplate(hidden, 'catalog')).toBe(false);
+    expect(showsClassicPage(hidden, 'catalog')).toBe(true);
+    const shown: ThemeData = { ...t, templates: { ...t.templates, catalog: { order: ['m'], sections: { m: sec('main-catalog') } } } };
+    expect(showsClassicPage(shown, 'catalog')).toBe(false);
+    expect(showsClassicPage(t, 'home')).toBe(false);
   });
 });

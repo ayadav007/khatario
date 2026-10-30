@@ -1,7 +1,8 @@
 import { presetTheme } from '@/lib/store/engine/presets';
+import { defaultTemplate } from '@/lib/store/engine/presets/templates';
 import type { ThemeData } from '@/lib/store/engine/types';
 import {
-  addBlock, addSection, canAddBlock, canAddSection, duplicateBlock, duplicateSection, getGroup, moveBlock,
+  addBlock, addSection, canAddBlock, canAddSection, duplicateBlock, duplicateSection, fillTemplate, getGroup, moveBlock,
   moveSection, removeBlock, removeSection, setBlockSetting, setSectionSetting, setThemeSetting, templateKind,
   toggleBlock, toggleSection, updateSection,
 } from '@/lib/store/engine/editor/ops';
@@ -266,5 +267,42 @@ describe('editor ops', () => {
     while (getGroup(t, 'home', 'footer').sections[ref.id].block_order.length < 4) t = ok(addBlock(t, 'home', ref, 'link_column', 0, mk));
     const bid = getGroup(t, 'home', 'footer').sections[ref.id].block_order[0];
     expect(duplicateBlock(t, 'home', ref, bid, mk)).toEqual({ ok: false, reason: 'block_limit' });
+  });
+});
+
+describe('fillTemplate', () => {
+  const emptied = (key: 'product' | 'catalog'): ThemeData => {
+    const t = fixture();
+    return { ...t, templates: { ...t.templates, [key]: { order: [], sections: {} } } };
+  };
+
+  it('fills an empty product template with fresh ids unique across the theme', () => {
+    const t = emptied('product');
+    const used = getGroup(t, 'home', 'template').order[0];
+    const tpl = defaultTemplate('product');
+    // A clash with a section already in the theme gets a new id.
+    const clash = { order: [used, ...tpl.order.slice(1)], sections: { [used]: tpl.sections[tpl.order[0]], ...tpl.sections } };
+    delete clash.sections[tpl.order[0]];
+    const next = ok(fillTemplate(t, 'product', clash));
+    const g = getGroup(next, 'product', 'template');
+    expect(g.order).toHaveLength(tpl.order.length);
+    expect(g.order).not.toContain(used);
+    expect(g.order.map((id) => g.sections[id].type)).toEqual(tpl.order.map((id) => tpl.sections[id].type));
+    expect(new Set(g.order).size).toBe(g.order.length);
+    expect(getGroup(next, 'home', 'template')).toEqual(getGroup(t, 'home', 'template'));
+  });
+
+  it('fills an empty catalog template', () => {
+    const next = ok(fillTemplate(emptied('catalog'), 'catalog', defaultTemplate('catalog')));
+    const g = getGroup(next, 'catalog', 'template');
+    expect(g.order.map((id) => g.sections[id].type)).toEqual(['catalog-banner', 'main-catalog']);
+  });
+
+  it('refuses a template that already has sections, or is missing', () => {
+    const t = fixture();
+    expect(getGroup(t, 'product', 'template').order.length).toBeGreaterThan(0);
+    expect(fillTemplate(t, 'product', defaultTemplate('product'))).toEqual({ ok: false, reason: 'not_found' });
+    const { catalog: _gone, ...rest } = t.templates;
+    expect(fillTemplate({ ...t, templates: rest }, 'catalog', defaultTemplate('catalog'))).toEqual({ ok: false, reason: 'not_found' });
   });
 });

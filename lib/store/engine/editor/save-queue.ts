@@ -21,18 +21,49 @@ export interface SaveQueueDeps {
   onSaved(theme: ThemeRow): void;
 }
 
-export function backupKey(themeId: string): string {
-  return 'kh-theme-unsaved:' + themeId;
+const BACKUP_PREFIX = 'kh-theme-unsaved:';
+/** Pre-M3 keys had no business: `kh-theme-unsaved:<themeId>`. */
+const LEGACY_BACKUP_RE = /^kh-theme-unsaved:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Unsaved-change backups are kept per business, so one business never sweeps another's (N3). */
+export function backupKey(businessId: string, themeId: string): string {
+  return `${BACKUP_PREFIX}${businessId}:${themeId}`;
+}
+
+/**
+ * Drops this business's backups for other themes (ones that went live, or were left after a lock) and
+ * any legacy business-less key. Other businesses' backups stay.
+ */
+export function sweepOtherBackups(
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem'> | null,
+  businessId: string,
+  keepThemeId: string,
+): void {
+  if (!storage) return;
+  try {
+    const prefix = backupKey(businessId, '');
+    const keep = backupKey(businessId, keepThemeId);
+    const stale: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (!k || k === keep) continue;
+      if (k.startsWith(prefix) || LEGACY_BACKUP_RE.test(k)) stale.push(k);
+    }
+    stale.forEach((k) => storage.removeItem(k));
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function readBackup(
   storage: BackupStorage | null,
+  businessId: string,
   themeId: string,
   serverUpdatedAt: string,
 ): { data: ThemeData; stale: boolean } | null {
   if (!storage) return null;
   try {
-    const raw = storage.getItem(backupKey(themeId));
+    const raw = storage.getItem(backupKey(businessId, themeId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || !parsed.data || typeof parsed.base !== 'string') {
@@ -59,6 +90,7 @@ export class SaveQueue {
   private waiters: Array<() => void> = [];
 
   constructor(
+    private readonly businessId: string,
     private readonly themeId: string,
     updatedAt: string,
     private readonly deps: SaveQueueDeps,
@@ -210,7 +242,7 @@ export class SaveQueue {
   private writeBackup(data: ThemeData): void {
     try {
       this.deps.storage?.setItem(
-        backupKey(this.themeId),
+        backupKey(this.businessId, this.themeId),
         JSON.stringify({ data, base: this.serverUpdatedAt }),
       );
     } catch {
@@ -220,7 +252,7 @@ export class SaveQueue {
 
   private removeBackup(): void {
     try {
-      this.deps.storage?.removeItem(backupKey(this.themeId));
+      this.deps.storage?.removeItem(backupKey(this.businessId, this.themeId));
     } catch {
       /* ignore */
     }

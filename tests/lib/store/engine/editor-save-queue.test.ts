@@ -4,6 +4,7 @@ import {
   SaveQueue,
   backupKey,
   readBackup,
+  sweepOtherBackups,
   type PutResult,
   type SaveStatus,
 } from '@/lib/store/engine/editor/save-queue';
@@ -32,7 +33,7 @@ function setup(putImpl: jest.Mock) {
   const storage = memStorage();
   const statuses: Array<[SaveStatus, string | undefined]> = [];
   const onSaved = jest.fn();
-  const q = new SaveQueue('t1', 'v0', {
+  const q = new SaveQueue('b1', 't1', 'v0', {
     put: putImpl,
     storage,
     onStatus: (s, m) => statuses.push([s, m]),
@@ -48,7 +49,7 @@ describe('SaveQueue', () => {
   it('exposes constants and key', () => {
     expect(AUTOSAVE_MS).toBe(1000);
     expect(RETRY_MS).toBe(5000);
-    expect(backupKey('x')).toBe('kh-theme-unsaved:x');
+    expect(backupKey('b1', 't1')).toBe('kh-theme-unsaved:b1:t1');
   });
 
   it('debounces 1000 ms and saves the latest data once', async () => {
@@ -150,7 +151,7 @@ describe('SaveQueue', () => {
     jest.advanceTimersByTime(10000);
     await tick();
     expect(put).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(storage.m.get('kh-theme-unsaved:t1') as string)).toEqual({
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string)).toEqual({
       data: d(2),
       base: 'v0',
     });
@@ -190,23 +191,23 @@ describe('SaveQueue', () => {
     q.schedule(d(1), true);
     await tick();
     expect(statuses[statuses.length - 1][0]).toBe('offline');
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(true);
     jest.advanceTimersByTime(RETRY_MS);
     await tick();
     expect(put).toHaveBeenCalledTimes(2);
     expect(put).toHaveBeenLastCalledWith('t1', d(1), 'v0');
     expect(statuses[statuses.length - 1][0]).toBe('saved');
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(false);
   });
 
   it('clears the backup after a clean save', async () => {
     const put = jest.fn().mockResolvedValue(ok('v1'));
     const { q, storage } = setup(put);
     q.schedule(d(1));
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(true);
     jest.advanceTimersByTime(AUTOSAVE_MS);
     await tick();
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(false);
   });
 
   it('flush saves pending data now and resolves when idle', async () => {
@@ -243,10 +244,10 @@ describe('SaveQueue', () => {
     q.schedule(d(1));
     void q.flush();
     q.dispose();
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(true);
     release(ok('v1'));
     await tick();
-    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+    expect(storage.m.has('kh-theme-unsaved:b1:t1')).toBe(false);
     expect(onSaved).not.toHaveBeenCalled();
   });
 
@@ -261,7 +262,7 @@ describe('SaveQueue', () => {
     release(ok('v1'));
     await tick();
     expect(put).toHaveBeenCalledTimes(1);
-    expect(readBackup(storage, 't1', 'v1')).toEqual({ data: d(2), stale: false });
+    expect(readBackup(storage, 'b1', 't1', 'v1')).toEqual({ data: d(2), stale: false });
   });
 
   it('a failed save after dispose keeps the backup', async () => {
@@ -273,7 +274,7 @@ describe('SaveQueue', () => {
     q.dispose();
     fail(new Error('net'));
     await tick();
-    expect(readBackup(storage, 't1', 'v0')).toEqual({ data: d(1), stale: false });
+    expect(readBackup(storage, 'b1', 't1', 'v0')).toEqual({ data: d(1), stale: false });
   });
 
   it('does not stack retry timers across repeated network failures', async () => {
@@ -308,7 +309,7 @@ describe('SaveQueue', () => {
     q.schedule(d(2));
     fail(new Error('net'));
     await tick();
-    expect(JSON.parse(storage.m.get('kh-theme-unsaved:t1') as string).data).toEqual(d(2));
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string).data).toEqual(d(2));
     jest.advanceTimersByTime(RETRY_MS);
     await tick();
     expect(put).toHaveBeenLastCalledWith('t1', d(2), 'v0');
@@ -333,7 +334,7 @@ describe('SaveQueue', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const put = jest.fn().mockResolvedValueOnce(ok('v1')).mockResolvedValueOnce(ok('v2'));
     const statuses: SaveStatus[] = [];
-    const q = new SaveQueue('t1', 'v0', {
+    const q = new SaveQueue('b1', 't1', 'v0', {
       put,
       storage: null,
       onStatus: (s) => statuses.push(s),
@@ -368,25 +369,64 @@ describe('SaveQueue', () => {
       throw new Error('x');
     };
     const bad = { getItem: boom, setItem: boom, removeItem: boom };
-    const q = new SaveQueue('t1', 'v0', { put, storage: bad, onStatus: () => {}, onSaved: () => {} });
+    const q = new SaveQueue('b1', 't1', 'v0', { put, storage: bad, onStatus: () => {}, onSaved: () => {} });
     q.schedule(d(1), true);
     await tick();
     expect(put).toHaveBeenCalledTimes(1);
-    expect(readBackup(bad, 't1', 'v0')).toBeNull();
-    expect(readBackup(null, 't1', 'v0')).toBeNull();
+    expect(readBackup(bad, 'b1', 't1', 'v0')).toBeNull();
+    expect(readBackup(null, 'b1', 't1', 'v0')).toBeNull();
   });
 });
 
 describe('readBackup', () => {
   it('marks a backup stale when the server moved on', () => {
-    const s = memStorage({ 'kh-theme-unsaved:t1': JSON.stringify({ data: d(1), base: 'v0' }) });
-    expect(readBackup(s, 't1', 'v0')).toEqual({ data: d(1), stale: false });
-    expect(readBackup(s, 't1', 'v9')).toEqual({ data: d(1), stale: true });
+    const s = memStorage({ 'kh-theme-unsaved:b1:t1': JSON.stringify({ data: d(1), base: 'v0' }) });
+    expect(readBackup(s, 'b1', 't1', 'v0')).toEqual({ data: d(1), stale: false });
+    expect(readBackup(s, 'b1', 't1', 'v9')).toEqual({ data: d(1), stale: true });
   });
 
   it('ignores corrupt JSON and wrong shapes', () => {
-    expect(readBackup(memStorage({ 'kh-theme-unsaved:t1': '{nope' }), 't1', 'v0')).toBeNull();
-    expect(readBackup(memStorage({ 'kh-theme-unsaved:t1': '{"data":{}}' }), 't1', 'v0')).toBeNull();
-    expect(readBackup(memStorage(), 't1', 'v0')).toBeNull();
+    expect(readBackup(memStorage({ 'kh-theme-unsaved:b1:t1': '{nope' }), 'b1', 't1', 'v0')).toBeNull();
+    expect(readBackup(memStorage({ 'kh-theme-unsaved:b1:t1': '{"data":{}}' }), 'b1', 't1', 'v0')).toBeNull();
+    expect(readBackup(memStorage(), 'b1', 't1', 'v0')).toBeNull();
+  });
+});
+
+describe('sweepOtherBackups', () => {
+  function listStorage(seed: Record<string, string>) {
+    const s = memStorage(seed);
+    return {
+      ...s,
+      get length() {
+        return s.m.size;
+      },
+      key: (i: number) => Array.from(s.m.keys())[i] ?? null,
+    };
+  }
+  const uuid = '0f8b2c4e-1d2a-4b3c-9e8f-123456789abc';
+
+  it("drops this business's other backups and legacy keys, keeping the open theme and other businesses", () => {
+    const s = listStorage({
+      'kh-theme-unsaved:b1:t1': 'keep',
+      'kh-theme-unsaved:b1:t2': 'drop',
+      'kh-theme-unsaved:b2:t3': 'other business',
+      [`kh-theme-unsaved:${uuid}`]: 'legacy',
+      'kh-theme-unsaved:not-a-uuid': 'unknown',
+      'something-else': 'x',
+    });
+    sweepOtherBackups(s, 'b1', 't1');
+    expect(Array.from(s.m.keys()).sort()).toEqual(
+      ['kh-theme-unsaved:b1:t1', 'kh-theme-unsaved:b2:t3', 'kh-theme-unsaved:not-a-uuid', 'something-else'].sort(),
+    );
+  });
+
+  it('copes with missing or failing storage', () => {
+    expect(() => sweepOtherBackups(null, 'b1', 't1')).not.toThrow();
+    const boom = () => {
+      throw new Error('denied');
+    };
+    expect(() =>
+      sweepOtherBackups({ length: 1, key: boom, removeItem: boom } as unknown as Storage, 'b1', 't1'),
+    ).not.toThrow();
   });
 });

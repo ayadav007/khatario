@@ -344,6 +344,32 @@ export function setBlockSetting(theme: ThemeData, templateKey: string, ref: Sect
   return mapBlock(theme, templateKey, ref, blockId, (b) => ({ ...b, settings: { ...b.settings, [key]: value } }));
 }
 
+/**
+ * D15: fills an empty product or catalog template with `template` (its default layout). Section ids are
+ * made fresh against the whole theme (D12). `not_found` unless the template exists and has no sections.
+ */
+export function fillTemplate(
+  theme: ThemeData,
+  key: 'product' | 'catalog',
+  template: Template,
+  makeId: MakeId = newId,
+): OpResult {
+  const g = findGroup(theme, key, 'template');
+  if (!g || g.order.length > 0 || Object.keys(g.sections).length > 0) return fail('not_found');
+  const used = allSectionIds(theme);
+  const order: string[] = [];
+  const sections: Record<string, Section> = {};
+  for (const oldId of template.order) {
+    if (!hasOwn(template.sections, oldId) || order.length >= ENGINE_LIMITS.sectionsPerTemplate) continue;
+    const section = clone(template.sections[oldId]);
+    const id = uniqueId(makeId, section.type, used);
+    used.add(id);
+    order.push(id);
+    sections[id] = section;
+  }
+  return { ok: true, theme: withGroup(theme, key, 'template', { order, sections }) };
+}
+
 export function setThemeSetting(theme: ThemeData, key: string, value: unknown): ThemeData {
   if (key.startsWith('social.')) {
     const sub = key.slice('social.'.length);

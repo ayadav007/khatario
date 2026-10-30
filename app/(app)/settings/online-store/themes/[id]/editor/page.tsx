@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
-import { backupKey, readBackup } from '@/lib/store/engine/editor/save-queue';
+import { backupKey, readBackup, sweepOtherBackups } from '@/lib/store/engine/editor/save-queue';
 import { Studio2Editor } from '@/components/store/studio2/Studio2Editor';
 import { editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
 
@@ -40,29 +40,12 @@ function localStore(): Storage | null {
   }
 }
 
-/** Drops unsaved-change backups left for other themes (ones that went live, or were left after a lock). */
-function sweepOtherBackups(storage: Storage | null, keepId: string): void {
-  if (!storage) return;
-  try {
-    const prefix = backupKey('');
-    const keep = backupKey(keepId);
-    const stale: string[] = [];
-    for (let i = 0; i < storage.length; i++) {
-      const k = storage.key(i);
-      if (k && k.startsWith(prefix) && k !== keep) stale.push(k);
-    }
-    stale.forEach((k) => storage.removeItem(k));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
 /** The stored backup, unless it is exactly what the server already has (a save that landed after leaving). */
-function usefulBackup(storage: Storage | null, theme: ThemeRow): { data: ThemeData; stale: boolean } | null {
-  const backup = readBackup(storage, theme.id, theme.updated_at);
+function usefulBackup(storage: Storage | null, businessId: string, theme: ThemeRow): { data: ThemeData; stale: boolean } | null {
+  const backup = readBackup(storage, businessId, theme.id, theme.updated_at);
   if (backup && JSON.stringify(backup.data) === JSON.stringify(theme.data)) {
     try {
-      storage?.removeItem(backupKey(theme.id));
+      storage?.removeItem(backupKey(businessId, theme.id));
     } catch {
       /* ignore */
     }
@@ -77,8 +60,9 @@ export default function Studio2EditorPage() {
   const router = useRouter();
   const { business, user } = useAuth();
   const { canModify, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
-  // Same rule as the theme routes (settings:update): without it nothing would save.
-  const canEdit = permissionsLoading ? null : canModify('settings') || isPrimaryAdmin;
+  // Same rule as the theme routes (settings:update): without it nothing would save. No user yet means
+  // permissions are still loading too (N1), not that they are missing.
+  const canEdit = permissionsLoading || !user ? null : canModify('settings') || isPrimaryAdmin;
   const narrow = useNarrow();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +82,8 @@ export default function Studio2EditorPage() {
           return;
         }
         const storage = localStore();
-        sweepOtherBackups(storage, theme.id);
-        const backup = usefulBackup(storage, theme);
+        sweepOtherBackups(storage, business.id, theme.id);
+        const backup = usefulBackup(storage, business.id, theme);
         setLoaded({
           theme,
           initialData: backup && !backup.stale ? backup.data : theme.data,

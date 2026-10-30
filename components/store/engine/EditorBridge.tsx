@@ -9,7 +9,7 @@ import {
   type PreviewToEditor,
 } from '@/lib/store/engine/editor/bridge';
 import type { GroupKey, SectionRef } from '@/lib/store/engine/editor/ops';
-import { insertionPoints, type InsertionPoint } from '@/lib/store/engine/editor/overlay';
+import { insertionPoints } from '@/lib/store/engine/editor/overlay';
 import { ID_RE } from '@/lib/store/engine/shared';
 
 const ACCENT = 'var(--primary, #2563eb)';
@@ -18,7 +18,9 @@ const READY_EVERY_MS = 500;
 const UI_ATTR = 'data-kh-editor-ui';
 
 type Box = { key: string; ref: SectionRef; name: string; top: number; left: number; width: number; height: number };
-type Layout = { boxes: Box[]; adds: InsertionPoint[]; addX: number };
+/** A "+" in the preview; `after` is the section just above it (null for the top of the template). */
+type AddPoint = { after: string | null; y: number };
+type Layout = { boxes: Box[]; adds: AddPoint[]; addX: number };
 
 const GROUPS: readonly GroupKey[] = ['header', 'template', 'footer'];
 
@@ -41,7 +43,7 @@ function sameLayout(a: Layout, b: Layout): boolean {
     }
   }
   for (let i = 0; i < a.adds.length; i++) {
-    if (a.adds[i].index !== b.adds[i].index || a.adds[i].y !== b.adds[i].y) return false;
+    if (a.adds[i].after !== b.adds[i].after || a.adds[i].y !== b.adds[i].y) return false;
   }
   return true;
 }
@@ -57,6 +59,8 @@ function sectionEl(ref: SectionRef): HTMLElement | null {
  * Messages are accepted only from the app origins for this store host and only from `window.parent`.
  */
 export function EditorBridge({ templateKey }: { templateKey: string }) {
+  const templateRef = useRef(templateKey);
+  templateRef.current = templateKey;
   const router = useRouter();
   const layerRef = useRef<HTMLDivElement>(null);
   const originsRef = useRef<string[]>([]);
@@ -92,7 +96,7 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
       const root = layer.closest('.eng-root');
       const rootRect = (root ?? document.documentElement).getBoundingClientRect();
       const boxes: Box[] = [];
-      const template: { index: number; top: number; bottom: number }[] = [];
+      const template: { id: string; index: number; top: number; bottom: number }[] = [];
       for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-section-id]'))) {
         const ref = refOf(el);
         if (!ref) continue;
@@ -110,14 +114,16 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
         });
         const index = Number(el.getAttribute('data-section-index'));
         if (ref.group === 'template' && Number.isInteger(index) && index >= 0) {
-          template.push({ index, top, bottom: top + r.height });
+          template.push({ id: ref.id, index, top, bottom: top + r.height });
         }
       }
       const main = layer.closest('main');
       const emptyTop = main ? main.getBoundingClientRect().top - origin.top : 0;
+      // insertionPoints returns one point above the first section, one between each pair and one below
+      // the last, in page order: point k sits under the k-th rendered template section.
       const next: Layout = {
         boxes,
-        adds: insertionPoints(template, emptyTop),
+        adds: insertionPoints(template, emptyTop).map((p, k) => ({ after: k === 0 ? null : template[k - 1].id, y: p.y })),
         addX: rootRect.left + rootRect.width / 2 - origin.left,
       };
       // Scroll and resize fire often; only re-render the overlay when something moved.
@@ -148,9 +154,9 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
     const framed = window.parent !== window;
     let readyTimer: ReturnType<typeof setInterval> | null = null;
     if (framed && originsRef.current.length > 0) {
-      post({ source: BRIDGE_SOURCE, type: 'ready', rev: null });
+      post({ source: BRIDGE_SOURCE, type: 'ready', template: templateRef.current, rev: null });
       readyTimer = setInterval(() => {
-        if (!parentOriginRef.current) post({ source: BRIDGE_SOURCE, type: 'ready', rev: null });
+        if (!parentOriginRef.current) post({ source: BRIDGE_SOURCE, type: 'ready', template: templateRef.current, rev: null });
       }, READY_EVERY_MS);
     }
 
@@ -168,6 +174,8 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
       }
       switch (msg.type) {
         case 'select':
+          // Sent for another template (the editor switched while this frame was still up): not ours.
+          if (msg.template !== templateRef.current) break;
           setSelected(msg.ref);
           break;
         case 'hover':
@@ -175,6 +183,7 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
           setHovered(msg.ref);
           break;
         case 'scroll-to':
+          if (msg.template !== templateRef.current) break;
           sectionEl(msg.ref)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
           break;
         case 'refresh':
@@ -204,7 +213,7 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
     pendingRev.current = null;
     window.scrollTo(0, savedScrollY.current);
     measure();
-    post({ source: BRIDGE_SOURCE, type: 'ready', rev });
+    post({ source: BRIDGE_SOURCE, type: 'ready', template: templateRef.current, rev });
   }, [refreshing, refreshCount, measure, post]);
 
   // Clicks select sections and never navigate; hover outlines.
@@ -219,7 +228,7 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
       const ref = sec ? refOf(sec) : null;
       if (!ref) return;
       setSelected(ref);
-      post({ source: BRIDGE_SOURCE, type: 'select', ref });
+      post({ source: BRIDGE_SOURCE, type: 'select', template: templateRef.current, ref });
     };
     const onSubmit = (e: Event) => e.preventDefault();
     const setHover = (ref: SectionRef | null) => {
@@ -308,12 +317,12 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
         })}
       {layout.adds.map((p) => (
         <button
-          key={`add-${p.index}`}
+          key={`add-${p.after ?? ''}`}
           type="button"
           {...{ [UI_ATTR]: '' }}
           aria-label="Add section here"
           title="Add section here"
-          onClick={() => post({ source: BRIDGE_SOURCE, type: 'add-at', index: p.index })}
+          onClick={() => post({ source: BRIDGE_SOURCE, type: 'add-at', template: templateRef.current, after: p.after })}
           style={{
             position: 'absolute',
             top: p.y - 12,

@@ -1,15 +1,51 @@
 // Pure helpers that shape the Studio 2 section tree and the Add section modal.
-// Client-safe: imports only types, schema-types, registry and ops.
+// Client-safe: imports only types, schema-types, registry, shared and ops.
 import type { Block, Section, ThemeData } from '../types';
 import type { SectionSchema } from '../schema-types';
 import { getSectionSchema, sectionsForTemplate } from '../registry';
+import { pageHandle } from '../shared';
 import { OP_ERROR_TEXT, canAddBlock, canAddSection, getGroup, templateKind, type GroupKey, type OpError, type SectionRef } from './ops';
 
+/** The template group's title here is Home's; the tree shows `templateTitle` for the open template. */
 export const TREE_GROUPS: { group: GroupKey; title: string }[] = [
   { group: 'header', title: 'Header' },
   { group: 'template', title: 'Home' },
   { group: 'footer', title: 'Footer' },
 ];
+
+const CORE_TITLES: Record<string, string> = { home: 'Home', product: 'Product', catalog: 'Catalog' };
+
+/** The name of a template: Home, Product, Catalog, or a custom page's title (its handle when untitled). */
+export function templateTitle(theme: ThemeData, key: string): string {
+  if (hasOwn(CORE_TITLES, key)) return CORE_TITLES[key];
+  const handle = pageHandle(key);
+  if (!handle) return key;
+  const title = hasOwn(theme.templates, key) ? theme.templates[key].title?.trim() : '';
+  return title || handle;
+}
+
+/** The page switcher: Home, Product, Catalog, then custom pages sorted by title. */
+export function templateOptions(theme: ThemeData): Array<{ key: string; label: string }> {
+  const pages = Object.keys(theme.templates)
+    .filter((key) => pageHandle(key) !== null)
+    .map((key) => ({ key, label: templateTitle(theme, key) }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || a.key.localeCompare(b.key));
+  return [...Object.keys(CORE_TITLES).map((key) => ({ key, label: CORE_TITLES[key] })), ...pages];
+}
+
+/** D15: a product or catalog template with no sections at all; the editor offers its default layout. */
+export function isEmptyClassicTemplate(theme: ThemeData, key: string): boolean {
+  if (key !== 'product' && key !== 'catalog') return false;
+  const t = hasOwn(theme.templates, key) ? theme.templates[key] : null;
+  return !!t && t.order.length === 0;
+}
+
+/** D15: the storefront shows the classic page for a product or catalog template with no enabled section. */
+export function showsClassicPage(theme: ThemeData, key: string): boolean {
+  if (key !== 'product' && key !== 'catalog') return false;
+  const t = hasOwn(theme.templates, key) ? theme.templates[key] : null;
+  return !t?.order.some((id) => hasOwn(t.sections, id) && !t.sections[id].disabled);
+}
 
 export interface BlockRow {
   id: string;

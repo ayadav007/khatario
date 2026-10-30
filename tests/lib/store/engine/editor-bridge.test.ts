@@ -3,65 +3,94 @@ import {
   parseEditorMessage,
   parsePreviewMessage,
   appOriginsForStoreHost,
+  resolveAddIndex,
   storeOriginFromPreviewUrl,
 } from '@/lib/store/engine/editor/bridge';
 
 const S = 'kh-studio';
 const ref = { group: 'template', id: 'hero-1' };
+const template = 'home';
 
 describe('bridge parsers', () => {
   it('parses each valid message type', () => {
     expect(BRIDGE_SOURCE).toBe(S);
-    expect(parseEditorMessage({ source: S, type: 'select', ref })).toEqual({ source: S, type: 'select', ref });
-    expect(parseEditorMessage({ source: S, type: 'select', ref: null })).toEqual({ source: S, type: 'select', ref: null });
+    expect(parseEditorMessage({ source: S, type: 'select', template, ref })).toEqual({ source: S, type: 'select', template, ref });
+    expect(parseEditorMessage({ source: S, type: 'select', template, ref: null })).toEqual({ source: S, type: 'select', template, ref: null });
     expect(parseEditorMessage({ source: S, type: 'hover', ref: null })).toEqual({ source: S, type: 'hover', ref: null });
-    expect(parseEditorMessage({ source: S, type: 'scroll-to', ref })).toEqual({ source: S, type: 'scroll-to', ref });
+    expect(parseEditorMessage({ source: S, type: 'scroll-to', template, ref })).toEqual({ source: S, type: 'scroll-to', template, ref });
     expect(parseEditorMessage({ source: S, type: 'refresh', rev: 3 })).toEqual({ source: S, type: 'refresh', rev: 3 });
-    expect(parsePreviewMessage({ source: S, type: 'ready', rev: null })).toEqual({ source: S, type: 'ready', rev: null });
-    expect(parsePreviewMessage({ source: S, type: 'ready', rev: 0 })).toEqual({ source: S, type: 'ready', rev: 0 });
+    expect(parsePreviewMessage({ source: S, type: 'ready', template, rev: null })).toEqual({ source: S, type: 'ready', template, rev: null });
+    expect(parsePreviewMessage({ source: S, type: 'ready', template, rev: 0 })).toEqual({ source: S, type: 'ready', template, rev: 0 });
     expect(parsePreviewMessage({ source: S, type: 'hover', ref: null })).toEqual({ source: S, type: 'hover', ref: null });
-    expect(parsePreviewMessage({ source: S, type: 'select', ref })).toEqual({ source: S, type: 'select', ref });
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 25 })).toEqual({ source: S, type: 'add-at', index: 25 });
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 0 })).toEqual({ source: S, type: 'add-at', index: 0 });
+    expect(parsePreviewMessage({ source: S, type: 'select', template, ref })).toEqual({ source: S, type: 'select', template, ref });
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, after: 'hero-1' })).toEqual({
+      source: S,
+      type: 'add-at',
+      template,
+      after: 'hero-1',
+    });
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template: 'page.sale', after: null })).toEqual({
+      source: S,
+      type: 'add-at',
+      template: 'page.sale',
+      after: null,
+    });
   });
 
   it('drops unknown keys and returns a fresh object', () => {
-    const input = { source: S, type: 'select', ref: { ...ref, extra: 1 }, junk: true };
+    const input = { source: S, type: 'select', template, ref: { ...ref, extra: 1 }, junk: true };
     const out = parseEditorMessage(input);
-    expect(out).toEqual({ source: S, type: 'select', ref });
+    expect(out).toEqual({ source: S, type: 'select', template, ref });
     expect(out).not.toBe(input);
   });
 
-  it('rejects wrong source, type, ids and index', () => {
+  it('rejects wrong source, type, ids and after', () => {
     expect(parseEditorMessage(null)).toBeNull();
     expect(parseEditorMessage('x')).toBeNull();
     expect(parseEditorMessage([])).toBeNull();
-    expect(parseEditorMessage({ source: 'other', type: 'select', ref })).toBeNull();
-    expect(parseEditorMessage({ source: S, type: 'nope', ref })).toBeNull();
-    expect(parseEditorMessage({ source: S, type: 'select', ref: { group: 'template', id: 'Bad Id' } })).toBeNull();
-    expect(parseEditorMessage({ source: S, type: 'select', ref: { group: 'sidebar', id: 'a' } })).toBeNull();
-    expect(parseEditorMessage({ source: S, type: 'select' })).toBeNull();
-    expect(parseEditorMessage({ source: S, type: 'scroll-to', ref: null })).toBeNull();
+    expect(parseEditorMessage({ source: 'other', type: 'select', template, ref })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'nope', template, ref })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'select', template, ref: { group: 'template', id: 'Bad Id' } })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'select', template, ref: { group: 'sidebar', id: 'a' } })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'select', template })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'scroll-to', template, ref: null })).toBeNull();
     expect(parseEditorMessage({ source: S, type: 'refresh', rev: -1 })).toBeNull();
     expect(parseEditorMessage({ source: S, type: 'refresh', rev: 1.5 })).toBeNull();
     expect(parseEditorMessage({ source: S, type: 'refresh', rev: '1' })).toBeNull();
     // preview-only types are not editor messages
-    expect(parseEditorMessage({ source: S, type: 'add-at', index: 1 })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'add-at', template, after: null })).toBeNull();
 
-    expect(parsePreviewMessage({ source: S, type: 'select', ref: null })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: -1 })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 26 })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 1.5 })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'add-at' })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'ready', rev: -2 })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'ready', rev: 1.2 })).toBeNull();
-    expect(parsePreviewMessage({ source: S, type: 'ready' })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'select', template, ref: null })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, after: 'Bad Id' })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, after: 3 })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'ready', template, rev: -2 })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'ready', template, rev: 1.2 })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'ready', template })).toBeNull();
     expect(parsePreviewMessage({ source: S, type: 'refresh', rev: 1 })).toBeNull();
-    expect(parsePreviewMessage({ source: 'x', type: 'ready', rev: null })).toBeNull();
+    expect(parsePreviewMessage({ source: 'x', type: 'ready', template, rev: null })).toBeNull();
+  });
+
+  it('requires a valid template on ready, select, add-at and scroll-to', () => {
+    for (const t of [undefined, null, '', 'HOME', 'page.', 'page.Bad', 'page.cart', 'pages.sale', 'x'.repeat(81), 7]) {
+      expect(parsePreviewMessage({ source: S, type: 'ready', template: t, rev: null })).toBeNull();
+      expect(parsePreviewMessage({ source: S, type: 'select', template: t, ref })).toBeNull();
+      expect(parsePreviewMessage({ source: S, type: 'add-at', template: t, after: null })).toBeNull();
+      expect(parseEditorMessage({ source: S, type: 'select', template: t, ref })).toBeNull();
+      expect(parseEditorMessage({ source: S, type: 'scroll-to', template: t, ref })).toBeNull();
+    }
+    for (const t of ['home', 'product', 'catalog', 'page.sale', 'page.about-us']) {
+      expect(parsePreviewMessage({ source: S, type: 'ready', template: t, rev: null })).not.toBeNull();
+    }
+  });
+
+  it('rejects the old add-at index field', () => {
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, index: 1 })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, after: null, index: 1 })).toBeNull();
   });
 
   it('rejects non-plain objects', () => {
-    class M { source = S; type = 'ready'; rev = null; }
+    class M { source = S; type = 'ready'; template = 'home'; rev = null; }
     expect(parsePreviewMessage(new M())).toBeNull();
   });
 });
@@ -74,18 +103,28 @@ describe('bridge parser hardening', () => {
     expect(parsePreviewMessage([S, 'ready'])).toBeNull();
     expect(parseEditorMessage([{ source: S, type: 'refresh', rev: 1 }])).toBeNull();
   });
-  it('validates index strictly', () => {
-    for (const index of [NaN, Infinity, -Infinity, '3', 26, -0, -1, 1.5, null, undefined]) {
-      expect(parsePreviewMessage({ source: S, type: 'add-at', index })).toBeNull();
+  it('validates after strictly', () => {
+    for (const after of [undefined, 0, '', 'A', 'x'.repeat(33), {}, []]) {
+      expect(parsePreviewMessage({ source: S, type: 'add-at', template, after })).toBeNull();
     }
-    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 25 })).not.toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'add-at', template, after: 'x'.repeat(32) })).not.toBeNull();
   });
   it('validates rev strictly', () => {
     for (const rev of [-0, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 1e300, '1']) {
       expect(parseEditorMessage({ source: S, type: 'refresh', rev })).toBeNull();
-      expect(parsePreviewMessage({ source: S, type: 'ready', rev })).toBeNull();
+      expect(parsePreviewMessage({ source: S, type: 'ready', template, rev })).toBeNull();
     }
     expect(parseEditorMessage({ source: S, type: 'refresh', rev: Number.MAX_SAFE_INTEGER })).not.toBeNull();
+  });
+});
+
+describe('resolveAddIndex', () => {
+  it('inserts at the top, after the named section, or at the end when it is gone', () => {
+    expect(resolveAddIndex(['a', 'b'], 'a')).toBe(1);
+    expect(resolveAddIndex(['a', 'b'], 'b')).toBe(2);
+    expect(resolveAddIndex(['a', 'b'], null)).toBe(0);
+    expect(resolveAddIndex(['a'], 'gone')).toBe(1);
+    expect(resolveAddIndex([], null)).toBe(0);
   });
 });
 

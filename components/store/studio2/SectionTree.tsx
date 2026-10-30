@@ -20,6 +20,7 @@ import {
   addBlock,
   duplicateBlock,
   duplicateSection,
+  fillTemplate,
   getGroup,
   moveBlock,
   moveSection,
@@ -33,8 +34,18 @@ import {
   type OpResult,
   type SectionRef,
 } from '@/lib/store/engine/editor/ops';
-import { TREE_GROUPS, addBlockOptions, dragMove, groupRows, type BlockRow, type SectionRow } from '@/lib/store/engine/editor/tree';
+import {
+  TREE_GROUPS,
+  addBlockOptions,
+  dragMove,
+  groupRows,
+  isEmptyClassicTemplate,
+  templateTitle,
+  type BlockRow,
+  type SectionRow,
+} from '@/lib/store/engine/editor/tree';
 import { getSectionSchema } from '@/lib/store/engine/registry';
+import { defaultTemplate } from '@/lib/store/engine/presets/templates';
 import type { ThemeData } from '@/lib/store/engine/types';
 import { useStudio2 } from './Studio2Editor';
 
@@ -82,7 +93,7 @@ function useEdit() {
 }
 
 export function SectionTree() {
-  const { select, selection } = useStudio2();
+  const { select, selection, theme, templateKey } = useStudio2();
   return (
     <nav aria-label="Sections" className="py-2 text-sm">
       <div className="px-2">
@@ -98,9 +109,15 @@ export function SectionTree() {
           Theme settings
         </button>
       </div>
-      {TREE_GROUPS.map((g) => (
-        <GroupTree key={g.group} group={g.group} title={g.title} />
-      ))}
+      {TREE_GROUPS.map((g) =>
+        g.group !== 'template' ? (
+          <GroupTree key={g.group} group={g.group} title={g.title} />
+        ) : isEmptyClassicTemplate(theme, templateKey) ? (
+          <ClassicLayoutCard key={g.group} title={templateTitle(theme, templateKey)} />
+        ) : (
+          <GroupTree key={g.group} group={g.group} title={templateTitle(theme, templateKey)} />
+        ),
+      )}
     </nav>
   );
 }
@@ -139,6 +156,29 @@ function GroupTree({ group, title }: { group: GroupKey; title: string }) {
         <Plus className="h-4 w-4" aria-hidden />
         Add section
       </button>
+    </section>
+  );
+}
+
+/** D15: an empty Product or Catalog template renders the classic page; offer the default layout instead. */
+function ClassicLayoutCard({ title }: { title: string }) {
+  const { templateKey, readOnly } = useStudio2();
+  const edit = useEdit();
+  const key = templateKey === 'catalog' ? 'catalog' : 'product';
+  return (
+    <section className="mt-3 border-t border-gray-100 px-2 pt-3" aria-label={title}>
+      <h3 className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+      <div className="mx-2 my-3 flex flex-col items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center">
+        <p className="text-sm text-gray-700">This page uses the classic layout.</p>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => edit.run((t) => fillTemplate(t, key, defaultTemplate(key)))}
+          className="inline-flex h-8 items-center rounded-md bg-gray-900 px-3 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Use the default layout
+        </button>
+      </div>
     </section>
   );
 }
