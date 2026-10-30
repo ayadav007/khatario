@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { isUuid } from '@/lib/store/review-http';
 import { parseCatalogQuery } from '@/lib/store/query-params';
 import { buildStoreFacetsQuery, shapeFacets, type StoreFacetRows } from '@/lib/store/store-facets-query';
@@ -20,9 +20,7 @@ export async function GET(
 ) {
   try {
     const { searchParams } = request.nextUrl;
-    const store = await resolveStoreBySubdomain(params.subdomain, {
-      allowOffline: Boolean(searchParams.get('td')),
-    });
+    const store = await storeForPublicApi(params.subdomain, searchParams);
     if (!store) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }

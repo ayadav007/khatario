@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: { subdomain: string; id: string } },
 ) {
   try {
-    const { store, customerId } = await storeAndShopper(request, params.subdomain);
+    const { store, customerId } = await storeAndShopper(request, params.subdomain, { enginePreview: true });
     if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     if (store.is_demo) return NextResponse.json({ ...EMPTY, can_review: { ok: false, reason: 'sign_in' } });
     if (!isUuid(params.id)) return NextResponse.json({ error: 'Product not found' }, { status: 404 });

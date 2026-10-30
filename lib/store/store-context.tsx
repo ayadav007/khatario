@@ -96,7 +96,7 @@ export function storeDraftToken(): string | null {
 export function withStoreDraft(params: URLSearchParams): URLSearchParams {
   const td = storeDraftToken();
   if (td) params.set('td', td);
-  return params;
+  return withEnginePreview(params);
 }
 
 /**

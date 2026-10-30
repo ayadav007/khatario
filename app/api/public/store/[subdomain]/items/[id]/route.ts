@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +9,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { subdomain: string; id: string } },
 ) {
-  const td = request.nextUrl.searchParams.get('td');
-  const store = await resolveStoreBySubdomain(params.subdomain, { allowOffline: Boolean(td) });
+  const store = await storeForPublicApi(params.subdomain, request.nextUrl.searchParams);
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
 
   if (store.is_demo) {

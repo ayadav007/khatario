@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveStoreBySubdomain, type StoreBusinessContext } from '@/lib/store/resolve-store';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
 import { ReviewError } from '@/lib/store/reviews';
 import { isReviewPhotoUrl } from '@/lib/store/review-media';
 
+/** Only the engine preview params: a review read must not take the `td` offline path. */
+function enginePreviewParams(sp: URLSearchParams): URLSearchParams {
+  const out = new URLSearchParams();
+  for (const k of ['preview_theme', 'pt']) {
+    const v = sp.get(k);
+    if (v) out.set(k, v);
+  }
+  return out;
+}
+
 /** Store plus the signed-in shopper of that store (null when absent or from another store). */
-export async function storeAndShopper(request: NextRequest, subdomain: string) {
-  const store = await resolveStoreBySubdomain(subdomain);
+export async function storeAndShopper(request: NextRequest, subdomain: string, opts?: { enginePreview?: boolean }) {
+  // Only reads may pass `enginePreview`; writes (reviews, photos) always need a launched store.
+  const store = opts?.enginePreview
+    ? await storeForPublicApi(subdomain, enginePreviewParams(request.nextUrl.searchParams))
+    : await resolveStoreBySubdomain(subdomain);
   const session = store ? readStoreCustomer(request.cookies.get(STORE_CUSTOMER_COOKIE)?.value) : null;
   const customerId = store && session && session.businessId === store.business_id ? session.customerId : null;
   return { store: store as StoreBusinessContext | null, customerId };
