@@ -475,7 +475,7 @@ export async function createInterBranchInvoice(
 export async function ensureInterBranchInvoiceForTransfer(
   client: PoolClient,
   transferId: string,
-  opts: { ewayBillNumber?: string; ewayBillDate?: string; createdBy?: string | null } = {}
+  opts: { ewayBillNumber?: string; ewayBillDate?: string; createdBy?: string | null; invoiceDate?: string | null } = {}
 ): Promise<string | null> {
   const t = await client.query(
     `SELECT id, business_id, transfer_number, transfer_date, from_location_id, to_location_id,
@@ -493,11 +493,11 @@ export async function ensureInterBranchInvoiceForTransfer(
   }
 
   const rows = await client.query(
-    `SELECT sti.item_id, COALESCE(sti.quantity_requested, sti.qty) AS qty, sti.unit, sti.cost_snapshot,
+    `SELECT sti.item_id, sti.quantity_dispatched AS qty, sti.unit, sti.cost_snapshot,
             i.name, i.hsn_sac, i.tax_rate, i.purchase_price
        FROM stock_transfer_items sti
        JOIN items i ON i.id = sti.item_id
-      WHERE sti.transfer_id = $1`,
+      WHERE sti.transfer_id = $1 AND COALESCE(sti.quantity_dispatched, 0) > 0`,
     [transferId]
   );
   if (rows.rows.length === 0) return null;
@@ -528,7 +528,8 @@ export async function ensureInterBranchInvoiceForTransfer(
     toBranchId: info.toWarehouse.branch.id,
     transferId,
     transferNumber: transfer.transfer_number,
-    transferDate: transfer.transfer_date,
+    // Issued when the goods leave (dispatch date), not when the transfer was requested.
+    transferDate: opts.invoiceDate || transfer.transfer_date,
     items,
     notes: transfer.notes || undefined,
     ewayBillNumber: opts.ewayBillNumber,
@@ -650,6 +651,8 @@ export async function issueInterBranchShortCreditNote(
     date: string;
     lines: Array<{ itemId: string; qty: number }>;
     userId?: string | null;
+    /** Defaults to goods short on arrival; also used for goods invoiced but never dispatched. */
+    reason?: string;
   }
 ): Promise<string | null> {
   const inv = (
@@ -700,7 +703,7 @@ export async function issueInterBranchShortCreditNote(
   const number = await nextCreditNoteNumber(client, p.businessId, inv.branch_id);
   await assertCreditNoteNumberFree(client, p.businessId, inv.branch_id, number);
 
-  const reason = `Short on inter-branch transfer ${p.transferNumber}`;
+  const reason = p.reason ?? `Short on inter-branch transfer ${p.transferNumber}`;
   const cn = (
     await client.query(
       `INSERT INTO credit_notes (
