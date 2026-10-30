@@ -257,7 +257,8 @@ export function updateSection(
     const out: Section = { ...s };
     for (const key of ['label', 'color_scheme', 'css_class', 'custom_css'] as const) {
       if (!(key in patch)) continue;
-      const v = patch[key];
+      const raw = patch[key];
+      const v = key === 'label' && typeof raw === 'string' ? raw.trim() : raw;
       if (v === undefined || v === '') delete out[key];
       else out[key] = v;
     }

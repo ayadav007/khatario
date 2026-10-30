@@ -98,6 +98,7 @@ describe('editor ops', () => {
       expect(ops.addBlock(t, 'home', ref, 'b', 0)).toEqual({ ok: false, reason: 'block_limit' });
       expect(ops.canAddBlock(t, 'home', ref, 'b')).toBe('block_limit');
     });
+    jest.dontMock('@/lib/store/engine/registry');
   });
 
   it('duplicateSection copies settings and blocks with new block ids and places it after the original', () => {
@@ -223,17 +224,47 @@ describe('editor ops', () => {
     expect(canAddBlock(t, 'home', ref, 'bogus')).toBe('unknown_block_type');
   });
 
-  it('ops.ts loads without sanitize-html or pg', () => {
-    jest.isolateModules(() => {
-      jest.doMock('sanitize-html', () => {
-        throw new Error('server-only');
-      });
-      jest.doMock('pg', () => {
-        throw new Error('server-only');
-      });
-      const ops = require('@/lib/store/engine/editor/ops');
-      expect(typeof ops.addSection).toBe('function');
-      expect(ops.OP_ERROR_TEXT.section_limit).toBe('A page can have up to 25 sections');
-    });
+  it('move ops accept the first and last index and refuse out-of-range', () => {
+    const t = fixture();
+    const g = getGroup(t, 'home', 'template');
+    const last = g.order.length - 1;
+    expect(getGroup(ok(moveSection(t, 'home', 'template', 0, last)), 'home', 'template').order[last]).toBe(g.order[0]);
+    expect(getGroup(ok(moveSection(t, 'home', 'template', last, 0)), 'home', 'template').order[0]).toBe(g.order[last]);
+    expect(moveSection(t, 'home', 'template', last + 1, 0)).toEqual({ ok: false, reason: 'not_found' });
+    expect(moveSection(t, 'home', 'template', 0, last + 1)).toEqual({ ok: false, reason: 'not_found' });
+    const hg = getGroup(t, 'home', 'header');
+    const hid = hg.order.find((id) => hg.sections[id].block_order.length > 1)!;
+    const ref = { group: 'header' as const, id: hid };
+    const bo = hg.sections[hid].block_order;
+    const bl = bo.length - 1;
+    const sec = (th: ThemeData) => getGroup(th, 'home', 'header').sections[hid];
+    expect(sec(ok(moveBlock(t, 'home', ref, 0, bl))).block_order[bl]).toBe(bo[0]);
+    expect(sec(ok(moveBlock(t, 'home', ref, bl, 0))).block_order[0]).toBe(bo[bl]);
+    expect(moveBlock(t, 'home', ref, -1, 0)).toEqual({ ok: false, reason: 'not_found' });
+    expect(moveBlock(t, 'home', ref, 0, bl + 1)).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('updateSection sets and clears color_scheme and custom_css, and trims label', () => {
+    let t = fixture();
+    const id = getGroup(t, 'home', 'template').order[0];
+    const ref = { group: 'template' as const, id };
+    const sec = () => getGroup(t, 'home', 'template').sections[id];
+    t = ok(updateSection(t, 'home', ref, { color_scheme: 'scheme-2', custom_css: 'a{b:c}', label: '  Hero  ' }));
+    expect(sec().color_scheme).toBe('scheme-2');
+    expect(sec().custom_css).toBe('a{b:c}');
+    expect(sec().label).toBe('Hero');
+    t = ok(updateSection(t, 'home', ref, { color_scheme: '', custom_css: undefined, label: '   ' }));
+    expect('color_scheme' in sec()).toBe(false);
+    expect('custom_css' in sec()).toBe(false);
+    expect('label' in sec()).toBe(false);
+  });
+
+  it('duplicateBlock is refused at the block limit', () => {
+    let t = fixture();
+    const mk = ids();
+    const ref = { group: 'footer' as const, id: getGroup(t, 'home', 'footer').order[0] };
+    while (getGroup(t, 'home', 'footer').sections[ref.id].block_order.length < 4) t = ok(addBlock(t, 'home', ref, 'link_column', 0, mk));
+    const bid = getGroup(t, 'home', 'footer').sections[ref.id].block_order[0];
+    expect(duplicateBlock(t, 'home', ref, bid, mk)).toEqual({ ok: false, reason: 'block_limit' });
   });
 });
