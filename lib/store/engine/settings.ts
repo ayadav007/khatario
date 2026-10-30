@@ -2,6 +2,9 @@ import sanitizeHtml from 'sanitize-html';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
+import { defaultSettings } from './shared';
+
+export { defaultSettings };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -129,15 +132,6 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
     default:
       return undefined;
   }
-}
-
-export function defaultSettings(schemas: SettingSchema[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const s of schemas) {
-    if (s.type === 'header' || s.default === undefined) continue;
-    out[s.id] = s.default;
-  }
-  return out;
 }
 
 /** Keeps only keys declared in `schemas`; invalid values are dropped, `header` ids are never stored. */

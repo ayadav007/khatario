@@ -14,6 +14,7 @@ export interface Section {
   blocks: Record<string, Block>;
   block_order: string[];
   disabled?: boolean;
+  label?: string;
   color_scheme?: string;
   css_class?: string;
   custom_css?: string;

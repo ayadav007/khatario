@@ -1,33 +1,18 @@
 import type { ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData, ThemeSettings, Block } from './types';
 import type { SettingSchema } from './schema-types';
+import { ENGINE_LIMITS, ID_RE, newId } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
 import { sanitizeColorSchemes } from './color-schemes';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
 
-export const ENGINE_LIMITS = {
-  sectionsPerTemplate: 25,
-  blocksPerSection: 50,
-  customPages: 30,
-  themeBytes: 524288,
-  themesPerBusiness: 20,
-  versionsKept: 30,
-};
+export { ENGINE_LIMITS, ID_RE, newId };
 
-export const ID_RE = /^[a-z0-9_-]{1,32}$/;
 export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 export const RESERVED_PAGE_HANDLES = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
 
 const THEME_CSS_MAX = 8000;
 const CARD_STYLES = ['plain', 'bordered', 'shadow'] as const;
-const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
-
-export function newId(prefix?: string): string {
-  let suffix = '';
-  for (let i = 0; i < 6; i++) suffix += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
-  const cleaned = (prefix ?? 'id').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  return `${cleaned || 'id'}-${suffix}`.slice(0, 32);
-}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -85,6 +70,10 @@ export function sanitizeSection(raw: unknown, kind: TemplateKind, schemeIds?: Re
   if (typeof raw.color_scheme === 'string' && ID_RE.test(raw.color_scheme) && (!schemeIds || schemeIds.has(raw.color_scheme))) {
     section.color_scheme = raw.color_scheme;
   }
+  if (typeof raw.label === 'string') {
+    const label = raw.label.trim().slice(0, 40);
+    if (label) section.label = label;
+  }
   const cls = sanitizeCssClass(raw.css_class);
   if (cls) section.css_class = cls;
   if (typeof raw.custom_css === 'string') {
@@ -135,12 +124,17 @@ function sanitizePageTemplate(raw: unknown, kind: TemplateKind, schemeIds: Reado
 
 const FONT_SCHEMA: SettingSchema = { id: 'font', type: 'font', label: 'Font' };
 const URL_SCHEMA: SettingSchema = { id: 'url', type: 'url', label: 'URL' };
+const IMAGE_SCHEMA: SettingSchema = { id: 'image', type: 'image', label: 'Image' };
 
 function sanitizeThemeSettings(raw: unknown): ThemeSettings {
   const r = isObject(raw) ? raw : {};
   const social = isObject(r.social) ? r.social : {};
   const url = (v: unknown): string => {
     const s = sanitizeSettingValue(URL_SCHEMA, v);
+    return typeof s === 'string' ? s : '';
+  };
+  const image = (v: unknown): string => {
+    const s = sanitizeSettingValue(IMAGE_SCHEMA, v);
     return typeof s === 'string' ? s : '';
   };
   const radius = typeof r.button_radius === 'number' && Number.isFinite(r.button_radius) ? Math.min(32, Math.max(0, Math.round(r.button_radius))) : 10;
@@ -151,8 +145,8 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
     button_radius: radius,
     card_style: (CARD_STYLES as readonly unknown[]).includes(r.card_style) ? (r.card_style as ThemeSettings['card_style']) : 'bordered',
     phone_kit: typeof r.phone_kit === 'boolean' ? r.phone_kit : true,
-    logo_url: url(r.logo_url),
-    favicon_url: url(r.favicon_url),
+    logo_url: image(r.logo_url),
+    favicon_url: image(r.favicon_url),
     custom_css: typeof r.custom_css === 'string' ? r.custom_css.slice(0, THEME_CSS_MAX).replace(/</g, '') : '',
     social: {
       instagram: url(social.instagram),
@@ -185,12 +179,19 @@ export function sanitizeThemeData(raw: unknown): ThemeData {
     templates[key] = sanitizePageTemplate(rawTemplates[key], 'page', schemeIds, true);
     pages++;
   }
-  return {
-    settings,
-    header_group: sanitizeTemplate(r.header_group, 'header', schemeIds),
-    footer_group: sanitizeTemplate(r.footer_group, 'footer', schemeIds),
-    templates,
+  const header_group = sanitizeTemplate(r.header_group, 'header', schemeIds);
+  const footer_group = sanitizeTemplate(r.footer_group, 'footer', schemeIds);
+  // D12: a section id is unique across the header group, the footer group and each template (templates may share ids with each other).
+  // The groups win over templates, so the brief's example holds (a home section `footer` is dropped). Header wins over footer.
+  const dropIds = (t: Template, taken: ReadonlySet<string>) => {
+    const kept = t.order.filter((id) => !taken.has(id));
+    for (const id of t.order) if (taken.has(id)) delete t.sections[id];
+    t.order = kept;
   };
+  dropIds(footer_group, new Set(header_group.order));
+  const groupIds = new Set<string>([...header_group.order, ...footer_group.order]);
+  for (const t of Object.values(templates)) dropIds(t, groupIds);
+  return { settings, header_group, footer_group, templates };
 }
 
 export function themeTooLarge(data: ThemeData): boolean {

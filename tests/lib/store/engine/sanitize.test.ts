@@ -194,7 +194,7 @@ describe('sanitizeThemeData', () => {
       settings: { font_heading: 'fraunces', button_radius: 4, social: { instagram: 'https://instagram.com/a' } },
       header_group: groups.header,
       footer_group: groups.footer,
-      templates: { home: groups.home, 'page.about-us': { title: 'About', order: [], sections: {} } },
+      templates: { home: groups.home, 'page.sale-us': { title: 'About', order: [], sections: {} } },
     };
     const once = sanitizeThemeData(raw);
     expect(once.templates.home.order.length).toBeGreaterThan(5);
@@ -239,5 +239,65 @@ describe('newId', () => {
     expect(newId()).toMatch(/^id-[a-z0-9]{6}$/);
     expect(ID_RE.test(newId('x'.repeat(60)))).toBe(true);
     expect(newId('x'.repeat(60))).toHaveLength(32);
+  });
+});
+
+describe('section label', () => {
+  it('sanitizeSection keeps a trimmed label up to 40 chars and drops empty or non-string labels', () => {
+    expect(sanitizeSection({ ...sec('rich-text'), label: '  My intro  ' }, 'home')?.label).toBe('My intro');
+    expect(sanitizeSection({ ...sec('rich-text'), label: 'x'.repeat(60) }, 'home')?.label).toBe('x'.repeat(40));
+    expect(sanitizeSection({ ...sec('rich-text'), label: '   ' }, 'home')).not.toHaveProperty('label');
+    expect(sanitizeSection({ ...sec('rich-text'), label: 5 }, 'home')).not.toHaveProperty('label');
+    expect(sanitizeSection(sec('rich-text'), 'home')).not.toHaveProperty('label');
+  });
+});
+
+describe('ids unique across groups (D12)', () => {
+  const rt = (title: string) => sec('rich-text', { settings: { content: title } });
+  it('sanitizeThemeData drops a section whose id repeats an earlier group id', () => {
+    const data = sanitizeThemeData({
+      header_group: { order: ['header'], sections: { header: sec('header') } },
+      footer_group: { order: ['footer'], sections: { footer: sec('footer') } },
+      templates: {
+        home: { order: ['header', 'a', 'footer'], sections: { header: rt('h'), a: rt('a'), footer: rt('f') } },
+      },
+    });
+    expect(data.header_group.order).toEqual(['header']);
+    expect(data.header_group.sections.header.type).toBe('header');
+    expect(data.footer_group.order).toEqual(['footer']);
+    expect(data.footer_group.sections.footer.type).toBe('footer');
+    expect(data.templates.home.order).toEqual(['a']);
+    expect(Object.keys(data.templates.home.sections)).toEqual(['a']);
+  });
+
+  it('keeps the same id across different templates', () => {
+    const data = sanitizeThemeData({
+      templates: {
+        home: { order: ['a'], sections: { a: rt('1') } },
+        'page.sale': { order: ['a'], sections: { a: rt('2') } },
+      },
+    });
+    expect(data.templates.home.order).toEqual(['a']);
+    expect(data.templates['page.sale'].order).toEqual(['a']);
+  });
+
+  it('the footer group keeps its id over a template section', () => {
+    const data = sanitizeThemeData({
+      footer_group: { order: ['x'], sections: { x: sec('footer') } },
+      templates: { home: { order: ['x'], sections: { x: rt('1') } } },
+    });
+    expect(data.templates.home.order).toEqual([]);
+    expect(data.footer_group.order).toEqual(['x']);
+  });
+});
+
+describe('theme settings image rule', () => {
+  it('logo_url and favicon_url use the image rule', () => {
+    const s = sanitizeThemeData({ settings: { logo_url: '#x', favicon_url: '#y' } }).settings;
+    expect(s.logo_url).toBe('');
+    expect(s.favicon_url).toBe('');
+    const ok = sanitizeThemeData({ settings: { logo_url: '/uploads/a.png', favicon_url: 'https://x.com/f.ico' } }).settings;
+    expect(ok.logo_url).toBe('/uploads/a.png');
+    expect(ok.favicon_url).toBe('https://x.com/f.ico');
   });
 });
