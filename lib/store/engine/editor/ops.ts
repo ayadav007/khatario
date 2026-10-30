@@ -1,6 +1,6 @@
 // Pure editor operations on a ThemeData. Client-safe: imports only shared, types, schema-types and registry.
 // No value coercion here: the server sanitises on save.
-import type { Block, PageTemplate, Section, Template, TemplateKind, ThemeData } from '../types';
+import type { Block, ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData } from '../types';
 import type { SectionSchema } from '../schema-types';
 import { getSectionSchema } from '../registry';
 import { ENGINE_LIMITS, ID_RE, defaultSettings, newId } from '../shared';
@@ -350,4 +350,19 @@ export function setThemeSetting(theme: ThemeData, key: string, value: unknown): 
     return { ...theme, settings: { ...theme.settings, social: { ...theme.settings.social, [sub]: value } } };
   }
   return { ...theme, settings: { ...theme.settings, [key]: value } };
+}
+
+/** A new color_schemes array with one colour of one scheme changed; the same theme when the scheme is gone. */
+export function setSchemeColor(
+  theme: ThemeData,
+  schemeId: string,
+  field: Exclude<keyof ColorScheme, 'id' | 'name'>,
+  hex: string,
+): ThemeData {
+  const schemes = theme.settings.color_schemes;
+  if (!schemes.some((s) => s.id === schemeId)) return theme;
+  return {
+    ...theme,
+    settings: { ...theme.settings, color_schemes: schemes.map((s) => (s.id === schemeId ? { ...s, [field]: hex } : s)) },
+  };
 }

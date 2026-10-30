@@ -97,3 +97,29 @@ export async function fetchCategories(businessId: string, userId: string): Promi
 export function editorPath(id: string): string {
   return `/settings/online-store/themes/${encodeURIComponent(id)}/editor`;
 }
+
+export interface ItemSummary {
+  id: string;
+  name: string;
+}
+
+function itemOf(v: unknown): ItemSummary | null {
+  const r = v as { id?: unknown; name?: unknown } | null;
+  return r && typeof r.id === 'string' && typeof r.name === 'string' ? { id: r.id, name: r.name } : null;
+}
+
+/** Products for the product pickers (the business comes from the session). */
+export async function searchItems(search: string, signal?: AbortSignal): Promise<ItemSummary[]> {
+  const res = await fetch(`/api/items?search=${encodeURIComponent(search)}&limit=20`, { credentials: 'include', signal });
+  const body = await readJson(res);
+  if (!res.ok) throw new Error(errorOf(body, 'Failed to search products'));
+  const rows = Array.isArray(body.items) ? body.items : [];
+  return rows.map(itemOf).filter((i): i is ItemSummary => !!i);
+}
+
+/** One product's name, for a picked chip; null when it is gone. */
+export async function fetchItem(id: string): Promise<ItemSummary | null> {
+  const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { credentials: 'include' });
+  if (!res.ok) return null;
+  return itemOf((await readJson(res)).item);
+}

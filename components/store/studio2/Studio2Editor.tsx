@@ -26,6 +26,7 @@ import { TopBar } from './TopBar';
 import { PreviewPane, type Device } from './PreviewPane';
 import { SectionTree } from './SectionTree';
 import { AddSectionModal } from './AddSectionModal';
+import { SettingsPanel } from './SettingsPanel';
 
 export type { Selection };
 
@@ -436,7 +437,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
             onMessage={onPreviewMessage}
           />
           <aside className="w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-white">
-            <SettingsPlaceholder />
+            <SettingsPanel />
           </aside>
         </div>
       </div>
@@ -469,15 +470,5 @@ function BannerButton({ onClick, children }: { onClick(): void; children: ReactN
     >
       {children}
     </button>
-  );
-}
-
-// Placeholder: Task 10 builds the settings panel.
-function SettingsPlaceholder() {
-  const { selection } = useStudio2();
-  return (
-    <div className="p-4 text-sm text-gray-500">
-      {selection ? 'Settings for the selected item appear here.' : 'Select a section to edit it.'}
-    </div>
   );
 }
