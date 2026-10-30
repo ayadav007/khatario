@@ -9,7 +9,7 @@
  */
 import { queryOne } from '@/lib/db';
 import { assignToAgent } from '@/lib/whatsapp/inbox-ownership';
-import { getDirectChatSetting, isKnownNumber, linkRoutingForText } from '@/lib/whatsapp/lead-sources';
+import { getDirectChatSetting, linkRoutingForText } from '@/lib/whatsapp/lead-sources';
 import { openLeadForChat } from './chat-deal';
 import {
   closeLeadAsWentQuiet,
@@ -22,6 +22,7 @@ import {
   type Lead,
   type OpenLeadInput,
 } from './core';
+import { isKnownNumberCached } from './known-number';
 import { normalizeLeadPhone } from './phone';
 
 export type InboundLeadAction = 'joined' | 'opened' | 'reopened_after_quiet' | 'none';
@@ -41,7 +42,7 @@ const NONE = { leadId: null, action: 'none' } as const;
 /**
  * Applies the repeat rule for one inbound message on a 1:1 chat. A few indexed queries in the usual
  * case (open lead found and active); the non-join path checks the cheapest reasons first and runs
- * isKnownNumber last.
+ * the known-number lookup last (cached for ten minutes when the number is known).
  */
 export async function leadForInboundMessage(
   businessId: string,
@@ -94,7 +95,7 @@ export async function leadForInboundMessage(
       // A chat tied to a customer is not a new enquiry, whatever phone that customer has on file.
       if (chat.customer_id) return { ...NONE };
       if (!(await getDirectChatSetting(businessId)).enabled) return { ...NONE };
-      if (await isKnownNumber(businessId, phone)) return { ...NONE };
+      if (await isKnownNumberCached(businessId, phone)) return { ...NONE };
       opened = await openLead(businessId, { phone, name: chat.name, conversationId, actor: { source: 'auto' } });
     }
 
@@ -121,7 +122,7 @@ export async function touchLeadForChat(
 ): Promise<void> {
   if (sentBy !== 'staff' && sentBy !== 'bot') return;
   try {
-    const lead = await openLeadForChat(businessId, conversationId);
+    const lead = await openLeadForChat(businessId, conversationId, 'any_chat');
     if (lead) await joinLead(businessId, lead, conversationId);
   } catch (err) {
     console.warn('[leads] outbound message touch failed:', err instanceof Error ? err.message : err);

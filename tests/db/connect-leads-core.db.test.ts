@@ -26,7 +26,7 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import { ensureStages, PipelineError, type DealActor, type PipelineStage } from '@/lib/whatsapp/pipeline';
 import { closeLeadAsWentQuiet, LeadError, loadLead, openLead, setLeadStage } from '@/lib/leads/core';
-import { loadChatDeal, setChatDeal, setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
+import { loadChatDeal, openLeadForChat, setChatDeal, setChatStageByLegacyKey } from '@/lib/leads/chat-deal';
 import { cleanupBusinesses, seedBusiness, seedChat } from './fixtures/connect-leads';
 
 const run = enabled ? describe : describe.skip;
@@ -185,6 +185,29 @@ run('connect leads core (kh_phase2_test)', () => {
     const back = await setChatDeal(B, lostChat.id, { stageId: stage('Interested').id }, agent);
     expect(back).toMatchObject({ lead_id: lost.lead_id, stage_id: stage('Interested').id, lost_reason: null });
     expect((await loadLead(B, lost.lead_id!))?.closed_at).toBeNull();
+  });
+
+  test("the deal panel on a second chat for a number does not read or edit the first chat's lead", async () => {
+    const agent: DealActor = { source: 'agent', userId: AGENT };
+    const chatA = await seedChat(B, { phone: '919876500090' });
+    const onA = await setChatDeal(B, chatA.id, { stageId: stage('Interested').id }, agent);
+    // Same number, another chat row (stored in another format).
+    const chatB = await seedChat(B, { phone: '+91 98765 00090' });
+
+    expect(await loadChatDeal(B, chatB.id)).toMatchObject({ lead_id: null, stage_id: null });
+    expect(await code(setChatDeal(B, chatB.id, { dealValue: 5 }, agent))).toBe('NO_LEAD');
+    expect(await code(setChatDeal(B, chatB.id, { stageId: stage('Follow up').id }, agent))).toBe('LEAD_ALREADY_OPEN');
+    const a = (await loadLead(B, onA.lead_id!))!;
+    expect(a).toMatchObject({ conversation_id: chatA.id, stage_id: stage('Interested').id, deal_value: null });
+
+    // Messages, touches and reminders still find the number's open lead from either chat.
+    expect((await openLeadForChat(B, chatB.id, 'any_chat'))?.id).toBe(onA.lead_id);
+    expect(await openLeadForChat(B, chatB.id, 'this_chat')).toBeNull();
+
+    // A lead with no chat yet is still the second chat's deal.
+    const loose = await openLead(B, { phone: '919876500091', actor: auto });
+    const chatC = await seedChat(B, { phone: '919876500091' });
+    expect((await loadChatDeal(B, chatC.id))?.lead_id).toBe(loose.lead.id);
   });
 
   test('automated moves open a new lead instead of rewriting a won one', async () => {

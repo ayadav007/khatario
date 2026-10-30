@@ -9,8 +9,10 @@
 --   conversation_id becomes nullable, with a check that a chat or a lead is set.
 -- * Backfill: every chat on the board (stage_id set, not a group) becomes a lead carrying its
 --   deal and source. Chats in a won or lost stage start closed. If two chats share a phone and are
---   both open, the most recently active one stays open and the other is closed as it is, so the
---   one-open-lead-per-phone index holds.
+--   both open, the most recently active one stays open and the other is closed and taken off the
+--   board (stage cleared, still in history), so the one-open-lead-per-phone index holds and no
+--   open column shows a closed lead. Last activity is the later of the last message and the last
+--   stage move, so a lead staff moved recently does not count as quiet.
 -- * The old pipeline columns on whatsapp_conversations stay one release for rollback and are no
 --   longer written once the code moves over; a later migration drops them.
 
@@ -89,7 +91,9 @@ BEGIN
 END $$;
 
 -- Backfill: one lead per chat on the board. Won and lost chats start closed. Of several open chats
--- on one phone only the most recently active stays open; the rest close as they are (no stage change).
+-- on one phone only the most recently active stays open; the rest close off the board (stage cleared).
+-- The chat's timestamps are a mix of timestamp and timestamptz, so each is cast to timestamptz
+-- (GREATEST ignores NULLs and is NULL only when both are).
 INSERT INTO leads (
   business_id, contact_phone, contact_name, conversation_id, customer_id, lead_type,
   stage_id, deal_value, expected_close_on, lost_reason, stage_changed_at, owner_id,
@@ -98,18 +102,16 @@ INSERT INTO leads (
 SELECT
   r.business_id, r.phone, left(r.whatsapp_display_name, 120), r.id, r.customer_id,
   CASE WHEN r.customer_id IS NOT NULL THEN 'existing' ELSE 'new' END,
-  r.stage_id, r.deal_value, r.expected_close_on, r.lost_reason, r.stage_changed_at, r.assigned_to,
+  CASE WHEN x.duplicate THEN NULL ELSE r.stage_id END,
+  r.deal_value, r.expected_close_on, r.lost_reason, r.stage_changed_at, r.assigned_to,
   r.source, r.source_detail, r.source_at,
   COALESCE(r.source_at, r.created_at, NOW()),
   CASE
     WHEN r.stage_kind <> 'open' THEN COALESCE(r.stage_changed_at, r.updated_at, NOW())
-    WHEN r.rn > 1 THEN NOW()
-    WHEN EXISTS (
-      SELECT 1 FROM leads o WHERE o.business_id = r.business_id AND o.contact_phone = r.phone AND o.closed_at IS NULL
-    ) THEN NOW()
+    WHEN x.duplicate THEN NOW()
     ELSE NULL
   END,
-  COALESCE(r.last_message_at, r.updated_at, NOW())
+  COALESCE(GREATEST(r.last_message_at::timestamptz, r.stage_changed_at::timestamptz), r.updated_at::timestamptz, NOW())
 FROM (
   SELECT c.*, s.kind AS stage_kind,
          d.phone,
@@ -133,7 +135,16 @@ FROM (
    WHERE NOT COALESCE(c.is_group, false)
      AND length(d.phone) BETWEEN 11 AND 15
      AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id)
-) r;
+) r
+CROSS JOIN LATERAL (
+  -- An open chat that loses to a more recent chat on its phone, or whose phone already has an open lead.
+  SELECT r.stage_kind = 'open' AND (
+    r.rn > 1
+    OR EXISTS (
+      SELECT 1 FROM leads o WHERE o.business_id = r.business_id AND o.contact_phone = r.phone AND o.closed_at IS NULL
+    )
+  ) AS duplicate
+) x;
 
 -- Reminders and imports follow their chat to its lead: the open one, else the newest.
 UPDATE whatsapp_followups f
@@ -183,8 +194,9 @@ BEGIN
   END IF;
 
   IF TG_TABLE_NAME = 'invoices' THEN
+    -- Only real sales invoices; the same exclusion list as migrations 355 and 444.
     IF NEW.status IS DISTINCT FROM 'final' OR NEW.deleted_at IS NOT NULL
-       OR COALESCE(NEW.document_type, 'tax_invoice') IN ('proforma_invoice', 'estimate', 'quotation', 'delivery_challan') THEN
+       OR COALESCE(NEW.document_type, 'tax_invoice') IN ('proforma_invoice', 'estimate', 'quotation', 'credit_note', 'debit_note', 'delivery_challan') THEN
       RETURN NULL;
     END IF;
     v_reference := NEW.invoice_number;

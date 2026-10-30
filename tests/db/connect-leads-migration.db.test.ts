@@ -149,11 +149,43 @@ run('connect leads migration (kh_phase2_test)', () => {
       [businessId, phone],
     );
     expect(open.map((r) => r.conversation_id)).toEqual([twin.id]);
-    const closed = await queryOne<{ stage_id: string }>(
+    // The closed duplicate leaves the board (no open column holds a closed lead) but stays in history.
+    const closed = await queryOne<{ stage_id: string | null }>(
       `SELECT stage_id FROM leads WHERE conversation_id = $1 AND closed_at IS NOT NULL`,
       [older.id],
     );
-    expect(closed?.stage_id).toBe(stageIds['New']);
+    expect(closed).not.toBeNull();
+    expect(closed!.stage_id).toBeNull();
+  });
+
+  test('last activity counts a staff stage move as well as the last message', async () => {
+    const chat = await seedChat(businessId);
+    await query(
+      `UPDATE whatsapp_conversations
+          SET stage_id = $2, last_message_at = NOW() - interval '40 days', stage_changed_at = NOW() - interval '5 days'
+        WHERE id = $1`,
+      [chat.id, stageIds['Interested']],
+    );
+    // Neither set: falls back to the chat's updated_at (inserted directly, since an UPDATE resets it).
+    const quiet = { id: randomUUID() };
+    const quietPhone = `9188${String(Date.now()).slice(-8)}`;
+    await query(
+      `INSERT INTO whatsapp_conversations (id, business_id, from_number, to_number, conversation_id, stage_id, last_message_at, updated_at)
+       VALUES ($1, $2, $3, '919999900000', $4, $5, NULL, NOW() - interval '12 days')`,
+      [quiet.id, businessId, quietPhone, `${quietPhone}@s.whatsapp.net`, stageIds['Interested']],
+    );
+
+    await runMigration();
+
+    const ageDays = async (conversationId: string) =>
+      Number(
+        (await queryOne<{ days: string }>(
+          `SELECT EXTRACT(EPOCH FROM (NOW() - last_activity_at)) / 86400 AS days FROM leads WHERE conversation_id = $1`,
+          [conversationId],
+        ))!.days,
+      );
+    expect(await ageDays(chat.id)).toBeCloseTo(5, 1);
+    expect(await ageDays(quiet.id)).toBeCloseTo(12, 1);
   });
 
   test('backfill normalises phones like normalizeLeadPhone, skips non-phones and shortens long names', async () => {

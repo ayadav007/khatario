@@ -169,10 +169,32 @@ export async function updateStage(
       values,
     );
     if (!row) throw new PipelineError('Stage not found', 404, 'NOT_FOUND');
+    if (input.kind !== undefined) await syncLeadsWithStageKind(businessId, row);
     return row;
   } catch (err) {
     if (isUniqueViolation(err)) throw new PipelineError('A stage with this name already exists', 409, 'DUPLICATE');
     throw err;
+  }
+}
+
+/**
+ * Keeps a stage's leads in step with its kind, as deleteStage does: a stage that becomes Won or
+ * Lost closes the leads still open in it; a stage that becomes open takes its closed leads off the
+ * board (they never reopen, they stay in history) and leaves its open leads where they are.
+ */
+async function syncLeadsWithStageKind(businessId: string, stage: PipelineStage): Promise<void> {
+  if (stage.kind !== 'open') {
+    await query(
+      `UPDATE leads SET closed_at = NOW(), updated_at = NOW()
+        WHERE business_id = $1 AND stage_id = $2::uuid AND closed_at IS NULL`,
+      [businessId, stage.id],
+    );
+  } else {
+    await query(
+      `UPDATE leads SET stage_id = NULL, stage_changed_at = NOW(), updated_at = NOW()
+        WHERE business_id = $1 AND stage_id = $2::uuid AND closed_at IS NOT NULL`,
+      [businessId, stage.id],
+    );
   }
 }
 

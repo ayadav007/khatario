@@ -225,6 +225,17 @@ run('connect leads convert and auto-won (kh_phase2_test)', () => {
     expect((await wonEvents(l.id)).map((e) => e.event_data.reference)).toEqual([number]);
   });
 
+  test('a final credit note or debit note does not win it', async () => {
+    const cust = await customer(B, '98765 00045');
+    const l = await lead('919876500045');
+    await linkLeadToCustomer(supervisor, l.id, cust);
+    await invoice(cust, { type: 'credit_note' });
+    await invoice(cust, { type: 'debit_note' });
+    const same = (await loadLead(B, l.id))!;
+    expect(same.closed_at).toBeNull();
+    expect(await wonEvents(l.id)).toEqual([]);
+  });
+
   test('a confirmed sales order wins it; a draft does not', async () => {
     const cust = await customer(B, '98765 00050');
     const l = await lead('919876500050');

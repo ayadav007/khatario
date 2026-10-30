@@ -23,7 +23,7 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { query, queryOne, queryRows, closePool } from '@/lib/db';
 import type { InboxViewer } from '@/lib/whatsapp/inbox-ownership';
-import { createStage, deleteStage, ensureStages, loadBoard, loadPipelineSummary, type PipelineStage } from '@/lib/whatsapp/pipeline';
+import { createStage, deleteStage, ensureStages, loadBoard, loadPipelineSummary, updateStage, type PipelineStage } from '@/lib/whatsapp/pipeline';
 import { openLead, patchLead } from '@/lib/leads/core';
 import { setChatDeal } from '@/lib/leads/chat-deal';
 import { createFollowup, listFollowups, runDueFollowupReminders } from '@/lib/whatsapp/followups';
@@ -166,6 +166,38 @@ run('connect leads on the board, dashboard and follow-ups (kh_phase2_test)', () 
     // A closed lead parked in an open stage never shows in the open column.
     await query(`UPDATE leads SET stage_id = $2 WHERE id = $1`, [w.lead.id, interested.id]);
     expect((await cardsIn(supView(), 'Interested')).map((c) => c.id)).not.toContain(w.lead.id);
+    stages = await ensureStages(B);
+  });
+
+  test('changing a stage to Won or Lost closes its leads; changing it back to open leaves closed leads off the board', async () => {
+    await query(`DELETE FROM leads WHERE business_id = $1`, [B]);
+    const leadRow = (id: string) =>
+      queryOne<{ stage_id: string | null; closed: boolean; closed_at: string | null }>(
+        `SELECT stage_id::text AS stage_id, closed_at IS NOT NULL AS closed, closed_at::text AS closed_at FROM leads WHERE id = $1`,
+        [id],
+      );
+    // Open stage turned into Won: its open leads close; a lead already closed keeps its closed_at.
+    const temp = await createStage(B, { name: 'Temp kind' });
+    const a = await openLead(B, { phone: phone(), stageId: temp.id, actor: auto });
+    const pre = await openLead(B, { phone: phone(), stageId: temp.id, actor: auto });
+    await query(`UPDATE leads SET closed_at = NOW() - INTERVAL '3 days' WHERE id = $1`, [pre.lead.id]);
+    const preClosedAt = (await leadRow(pre.lead.id))!.closed_at;
+    await updateStage(B, temp.id, { kind: 'won' });
+    expect(await leadRow(a.lead.id)).toMatchObject({ stage_id: temp.id, closed: true });
+    expect(await leadRow(pre.lead.id)).toMatchObject({ stage_id: temp.id, closed_at: preClosedAt });
+
+    // Won turned back into open: closed leads never reopen, they leave the board; open leads stay.
+    const b = await openLead(B, { phone: phone(), actor: auto });
+    await query(`UPDATE leads SET stage_id = $2 WHERE id = $1`, [b.lead.id, temp.id]);
+    await updateStage(B, temp.id, { kind: 'open' });
+    expect(await leadRow(a.lead.id)).toMatchObject({ stage_id: null, closed: true });
+    expect(await leadRow(pre.lead.id)).toMatchObject({ stage_id: null, closed: true });
+    expect(await leadRow(b.lead.id)).toMatchObject({ stage_id: temp.id, closed: false });
+
+    // A rename alone touches no leads.
+    await updateStage(B, temp.id, { name: 'Temp kind two' });
+    expect(await leadRow(b.lead.id)).toMatchObject({ stage_id: temp.id, closed: false });
+    await deleteStage(B, temp.id, null);
     stages = await ensureStages(B);
   });
 

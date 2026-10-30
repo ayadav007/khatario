@@ -128,7 +128,7 @@ export async function createFollowup(
   let cancelOnReply = false;
   if (input.conversationId) {
     conversationId = input.conversationId;
-    leadId = (await openLeadForChat(viewer.businessId, conversationId))?.id ?? null;
+    leadId = (await openLeadForChat(viewer.businessId, conversationId, 'any_chat'))?.id ?? null;
     cancelOnReply = input.cancelOnReply === true;
   } else {
     const lead = await loadLead(viewer.businessId, input.leadId!);

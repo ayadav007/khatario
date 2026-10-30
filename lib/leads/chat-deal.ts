@@ -41,8 +41,16 @@ async function loadChat(businessId: string, conversationId: string) {
   );
 }
 
-/** The chat's open lead: the one linked to it, else the open lead for its phone. */
-export async function openLeadForChat(businessId: string, conversationId: string): Promise<Lead | null> {
+/**
+ * Which open lead for the chat's phone counts when none is linked to the chat. 'any_chat' (inbound
+ * messages, staff and bot touches, reminders, automated moves): the number's open lead wherever it is
+ * linked. 'this_chat' (the agent's deal panel): only one with no chat yet, so a second chat for the
+ * same number never shows or edits a lead that lives on another chat.
+ */
+export type PhoneLeadScope = 'any_chat' | 'this_chat';
+
+/** The chat's open lead: the one linked to it, else the open lead for its phone (see PhoneLeadScope). */
+export async function openLeadForChat(businessId: string, conversationId: string, scope: PhoneLeadScope): Promise<Lead | null> {
   const linked = await queryOne<{ id: string }>(
     `SELECT id::text AS id FROM leads
       WHERE business_id = $1 AND conversation_id = $2::uuid AND closed_at IS NULL
@@ -52,12 +60,14 @@ export async function openLeadForChat(businessId: string, conversationId: string
   if (linked) return loadLead(businessId, linked.id);
   const chat = await loadChat(businessId, conversationId);
   if (!chat || chat.is_group) return null;
-  return findOpenLead(businessId, chat.from_number);
+  const byPhone = await findOpenLead(businessId, chat.from_number);
+  if (byPhone && scope === 'this_chat' && byPhone.conversation_id && byPhone.conversation_id !== conversationId) return null;
+  return byPhone;
 }
 
 /** The lead the chat's deal panel works on: the open one, else the chat's newest (closed) lead. */
 async function dealLeadForChat(businessId: string, conversationId: string): Promise<Lead | null> {
-  const open = await openLeadForChat(businessId, conversationId);
+  const open = await openLeadForChat(businessId, conversationId, 'this_chat');
   if (open) return open;
   const newest = await queryOne<{ id: string }>(
     `SELECT id::text AS id FROM leads
@@ -80,8 +90,9 @@ export async function loadChatDeal(businessId: string, conversationId: string): 
  * Updates the deal on the chat's lead (open, else newest). The caller has already checked the chat is
  * visible to the actor. Only an agent works on a closed lead: a stage reopens it (409 while another
  * lead for the phone is open). Flows, the AI agent and automatic moves never rewrite a past win or
- * loss; with no open lead their stage opens a new lead. Without an open (or, for an agent, any) lead
- * the patch needs a stage, which opens one for the chat's phone.
+ * loss; with no open lead their stage opens a new lead. An agent never reaches the number's open lead
+ * when it lives on another chat (409). Without an open (or, for an agent, any) lead the patch needs a
+ * stage, which opens one for the chat's phone.
  * Returns the lead it changed, even when that move closed it.
  */
 export async function setChatDeal(businessId: string, conversationId: string, patch: DealPatch, actor: DealActor): Promise<ChatDeal> {
@@ -94,7 +105,9 @@ export async function setChatDeal(businessId: string, conversationId: string, pa
 
   try {
     let lead =
-      actor.source === 'agent' ? await dealLeadForChat(businessId, conversationId) : await openLeadForChat(businessId, conversationId);
+      actor.source === 'agent'
+        ? await dealLeadForChat(businessId, conversationId)
+        : await openLeadForChat(businessId, conversationId, 'any_chat');
     let rest: DealPatch = patch;
     if (!lead) {
       if (!patch.stageId) throw new PipelineError('Put this chat on the pipeline first', 400, 'NO_LEAD');
@@ -106,6 +119,10 @@ export async function setChatDeal(businessId: string, conversationId: string, pa
         createdBy: actor.source === 'agent' ? actor.userId : null,
         actor,
       });
+      // An agent's panel never moves a lead that lives on another chat for the same number.
+      if (actor.source === 'agent' && opened.lead.conversation_id && opened.lead.conversation_id !== conversationId) {
+        throw new PipelineError('This number has an open lead on another chat; work on it there', 409, 'LEAD_ALREADY_OPEN');
+      }
       lead = opened.lead;
       // A lead opened just now already sits on the stage; one we joined still needs the move.
       if (opened.created) rest = { ...patch, stageId: undefined };
