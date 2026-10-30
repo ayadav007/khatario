@@ -192,6 +192,92 @@ describe('SaveQueue', () => {
     expect(put).toHaveBeenCalledTimes(1);
   });
 
+  it('does not stack retry timers across repeated network failures', async () => {
+    const put = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('net'))
+      .mockRejectedValueOnce(new Error('net'))
+      .mockResolvedValue(ok('v1'));
+    const { q } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(1), true);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(RETRY_MS);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(3);
+    jest.advanceTimersByTime(RETRY_MS * 3);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps an edit made during a failing PUT and saves it on retry', async () => {
+    let fail!: (e: Error) => void;
+    const put = jest
+      .fn()
+      .mockImplementationOnce(() => new Promise<PutResult>((_, rej) => (fail = rej)))
+      .mockResolvedValueOnce(ok('v1'));
+    const { q, storage } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    fail(new Error('net'));
+    await tick();
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:t1') as string).data).toEqual(d(2));
+    jest.advanceTimersByTime(RETRY_MS);
+    await tick();
+    expect(put).toHaveBeenLastCalledWith('t1', d(2), 'v0');
+  });
+
+  it('reports error for a 200 with a null body or no theme', async () => {
+    const put = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 200, body: null })
+      .mockResolvedValueOnce({ status: 200, body: {} });
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1]).toEqual(['error', 'Unexpected response from the server']);
+    q.retry();
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(statuses[statuses.length - 1][0]).toBe('error');
+  });
+
+  it('survives a throwing onSaved', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const put = jest.fn().mockResolvedValueOnce(ok('v1')).mockResolvedValueOnce(ok('v2'));
+    const statuses: SaveStatus[] = [];
+    const q = new SaveQueue('t1', 'v0', {
+      put,
+      storage: null,
+      onStatus: (s) => statuses.push(s),
+      onSaved: () => {
+        throw new Error('boom');
+      },
+    });
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1]).toBe('saved');
+    q.schedule(d(2), true);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenLastCalledWith('t1', d(2), 'v1');
+    spy.mockRestore();
+  });
+
+  it('keeps the original message when scheduling after a stop', async () => {
+    const put = jest
+      .fn()
+      .mockResolvedValue({ status: 409, body: { error: 'changed elsewhere', code: 'conflict' } });
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    expect(statuses.filter((s) => s[0] === 'conflict')).toEqual([['conflict', 'changed elsewhere']]);
+  });
+
   it('works when storage throws or is null', async () => {
     const put = jest.fn().mockResolvedValue(ok('v1'));
     const boom = () => {

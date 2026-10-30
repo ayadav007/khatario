@@ -68,7 +68,7 @@ export class SaveQueue {
     if (this.disposed) return;
     this.writeBackup(data);
     if (this.stopped) {
-      this.setStatus(this.stopped);
+      this.setStatus(this.stopped, this.message);
       return;
     }
     this.queued = data;
@@ -124,10 +124,15 @@ export class SaveQueue {
     this.inFlight = false;
     if (this.disposed) return;
 
-    if (res.status === 200 && res.body.theme) {
-      const theme = res.body.theme;
+    const body = res?.body ?? {};
+    if (res?.status === 200 && body.theme) {
+      const theme = body.theme;
       this.serverUpdatedAt = theme.updated_at;
-      this.deps.onSaved(theme);
+      try {
+        this.deps.onSaved(theme);
+      } catch (err) {
+        console.error('save-queue: onSaved threw', err);
+      }
       if (this.queued) {
         this.writeBackup(this.queued); // re-base on the new updated_at
         await this.run();
@@ -139,16 +144,19 @@ export class SaveQueue {
       return;
     }
 
-    const code = res.body.code;
-    if (res.status === 409 && code === 'conflict') {
+    const code = body.code;
+    if (res?.status === 200) {
+      if (!this.queued) this.queued = data;
+      this.setStatus('error', 'Unexpected response from the server');
+    } else if (res?.status === 409 && code === 'conflict') {
       this.stopped = 'conflict';
-      this.setStatus('conflict', res.body.error);
+      this.setStatus('conflict', body.error);
     } else if (res.status === 409 && code === 'live_locked') {
       this.stopped = 'locked';
-      this.setStatus('locked', res.body.error);
+      this.setStatus('locked', body.error);
     } else {
       if (!this.queued) this.queued = data;
-      this.setStatus('error', res.body.error);
+      this.setStatus('error', body.error);
     }
     this.release();
   }
