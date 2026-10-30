@@ -186,7 +186,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           typeof body.supplier_id === 'string' && body.supplier_id.trim()
             ? body.supplier_id.trim()
             : next.supplier_id;
-        const supply = await loadExpenseSupplyStates(businessId, lookupSupplierId, next.supplier_gstin ?? null);
+        const supply = await loadExpenseSupplyStates(
+          businessId,
+          lookupSupplierId,
+          next.supplier_gstin ?? null,
+          old.branch_id
+        );
         lineBill = await buildExpenseBillFromLines({
           businessId,
           lines: body.lines,

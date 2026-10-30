@@ -5,6 +5,7 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { refreshCreditNoteRefundStatus } from '@/lib/credit-notes/customer-credit';
+import { registrationBranchIds } from '@/lib/gst/registration';
 
 /**
  * Credit note posting, shared by POST /api/credit-notes and order returns.
@@ -81,19 +82,50 @@ export type CreateCreditNoteInput = {
   notes?: string | null;
 };
 
-/** Next `CN-001` style number for the business. */
-export async function nextCreditNoteNumber(client: Pick<PoolClient, 'query'>, businessId: string): Promise<string> {
+/**
+ * Next `CN-001` style number. Rule 53: credit notes run in one consecutive series per GSTIN, so with
+ * a branch the series covers every branch filing under that branch's GSTIN.
+ */
+export async function nextCreditNoteNumber(
+  client: Pick<PoolClient, 'query'>,
+  businessId: string,
+  branchId?: string | null,
+): Promise<string> {
+  const branchIds = branchId ? await registrationBranchIds(client as any, businessId, branchId) : null;
   const maxRes = await client.query<{ max_used: string | null }>(
     `SELECT MAX(SUBSTRING(credit_note_number FROM '(\\d+)$')::bigint) AS max_used
        FROM credit_notes
-      WHERE business_id = $1 AND credit_note_number ~ '\\d+$'`,
-    [businessId],
+      WHERE business_id = $1 AND credit_note_number ~ '\\d+$'
+        AND ($2::uuid[] IS NULL OR branch_id = ANY($2::uuid[]))`,
+    [businessId, branchIds],
   );
   const next = Number(maxRes.rows[0]?.max_used || 0) + 1;
   return `CN-${String(next).padStart(3, '0')}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/** Throws when the number is already used by any branch on the same GSTIN. Call under the number lock. */
+export async function assertCreditNoteNumberFree(
+  client: Pick<PoolClient, 'query'>,
+  businessId: string,
+  branchId: string,
+  creditNoteNumber: string,
+): Promise<void> {
+  const branchIds = await registrationBranchIds(client as any, businessId, branchId);
+  const dup = await client.query(
+    `SELECT 1 FROM credit_notes
+      WHERE business_id = $1 AND branch_id = ANY($2::uuid[]) AND UPPER(TRIM(credit_note_number)) = UPPER(TRIM($3))
+      LIMIT 1`,
+    [businessId, branchIds, creditNoteNumber],
+  );
+  if (dup.rows.length > 0) {
+    throw new CreditNoteCreateError(
+      409,
+      'DUPLICATE_CREDIT_NOTE_NUMBER',
+      `Credit note number ${creditNoteNumber} is already used on this GSTIN. Use the next number in the series.`,
+    );
+  }
+}
+
 export async function createCreditNoteInTransaction(client: PoolClient, input: CreateCreditNoteInput): Promise<any> {
   const business_id = input.businessId;
   const finalBranchId = input.branchId;
@@ -101,6 +133,9 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
   const invoice_id = input.invoiceId || null;
   const credit_note_number = input.creditNoteNumber;
   const credit_note_date = input.creditNoteDate;
+
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`credit-note-number:${business_id}`]);
+  await assertCreditNoteNumberFree(client, business_id, finalBranchId, credit_note_number);
 
   const businessRes = await client.query('SELECT state_code FROM businesses WHERE id = $1', [business_id]);
   if (businessRes.rows.length === 0) {

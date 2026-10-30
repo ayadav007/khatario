@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
@@ -120,18 +120,26 @@ export default function NewCreditNotePage() {
     }
   }, [business?.id]);
 
+  // Credit notes run in one series per GSTIN, so the suggestion follows the invoice's branch.
+  const suggestedNumber = useRef('');
   useEffect(() => {
     if (!business?.id || !user?.id) return;
-    fetch(`/api/credit-notes?business_id=${business.id}&user_id=${user.id}&next_number=1`)
+    const invoiceParam = formData.invoice_id ? `&invoice_id=${encodeURIComponent(formData.invoice_id)}` : '';
+    fetch(`/api/credit-notes?business_id=${business.id}&user_id=${user.id}&next_number=1${invoiceParam}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         const next = data?.next_credit_note_number;
         if (typeof next === 'string') {
-          setFormData((prev) => (prev.credit_note_number ? prev : { ...prev, credit_note_number: next }));
+          setFormData((prev) =>
+            prev.credit_note_number && prev.credit_note_number !== suggestedNumber.current
+              ? prev
+              : { ...prev, credit_note_number: next }
+          );
+          suggestedNumber.current = next;
         }
       })
       .catch((err) => console.error('Error fetching next credit note number:', err));
-  }, [business?.id, user?.id]);
+  }, [business?.id, user?.id, formData.invoice_id]);
 
   // Pre-select customer and invoice from URL params
   useEffect(() => {

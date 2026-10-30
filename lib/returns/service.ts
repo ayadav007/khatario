@@ -430,7 +430,7 @@ export async function receiveReturn(client: PoolClient, input: ReceiveReturnInpu
 
   const creditNoteNumber = await (async () => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`credit-note-number:${input.businessId}`]);
-    return nextCreditNoteNumber(client, input.businessId);
+    return nextCreditNoteNumber(client, input.businessId, resolvedBranch);
   })();
 
   let creditNote: { id: string; grand_total: string };
