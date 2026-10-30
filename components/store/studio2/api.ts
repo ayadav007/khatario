@@ -106,9 +106,13 @@ function itemOf(v: unknown): ItemSummary | null {
   return r && typeof r.id === 'string' && typeof r.name === 'string' ? { id: r.id, name: r.name } : null;
 }
 
-/** Products for the product pickers (the business comes from the session). */
-export async function searchItems(search: string, signal?: AbortSignal): Promise<ItemSummary[]> {
-  const res = await fetch(`/api/items?search=${encodeURIComponent(search)}&limit=20`, { credentials: 'include', signal });
+/**
+ * Products for the product pickers (the business comes from the session). `storeOnly`: only items the
+ * online store sells, so a preview never lands on a product the storefront cannot show.
+ */
+export async function searchItems(search: string, signal?: AbortSignal, opts?: { storeOnly?: boolean }): Promise<ItemSummary[]> {
+  const storeOnly = opts?.storeOnly ? '&store_only=1' : '';
+  const res = await fetch(`/api/items?search=${encodeURIComponent(search)}&limit=20${storeOnly}`, { credentials: 'include', signal });
   const body = await readJson(res);
   if (!res.ok) throw new Error(errorOf(body, 'Failed to search products'));
   const rows = Array.isArray(body.items) ? body.items : [];

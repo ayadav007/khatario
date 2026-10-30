@@ -228,6 +228,32 @@ describe('soft-delete item list, permission, and deleted-records report', () => 
     expect(ids).not.toContain(INACTIVE);
   });
 
+  test('GET /api/items?store_only=1 lists only items the online store sells', async () => {
+    const SHOWN = randomUUID();
+    const FEATURED = randomUUID();
+    const OFFLINE = randomUUID();
+    await pool.query(
+      `INSERT INTO items (id, business_id, name, item_type, unit, selling_price, is_active, show_in_store, featured_in_store)
+       VALUES ($1, $4, $5, 'goods', 'PCS', 10, true, true, false),
+              ($2, $4, $6, 'goods', 'PCS', 10, true, false, true),
+              ($3, $4, $7, 'goods', 'PCS', 10, true, false, false)`,
+      [SHOWN, FEATURED, OFFLINE, B, `StoreQA-${tag} shown`, `StoreQA-${tag} featured`, `StoreQA-${tag} offline`],
+    );
+    session(OWNER);
+    const list = async (qs: string) => {
+      const res = await call(
+        await listItems(new NextRequest(`http://localhost/api/items?search=${encodeURIComponent(`StoreQA-${tag}`)}${qs}`, { headers: headerBag.current })),
+      );
+      expect(res.status).toBe(200);
+      return { ids: (res.json.items as { id: string }[]).map((r) => r.id).sort(), total: res.json.pagination.total };
+    };
+    // Without the param nothing changes: every matching item is listed.
+    expect(await list('')).toEqual({ ids: [SHOWN, FEATURED, OFFLINE].sort(), total: 3 });
+    expect(await list('&store_only=1')).toEqual({ ids: [SHOWN, FEATURED].sort(), total: 2 });
+    // Only the exact opt-in value filters.
+    expect((await list('&store_only=true')).total).toBe(3);
+  });
+
   test('a user without items delete permission is rejected and the item is unchanged', async () => {
     const deniedItem = (global as unknown as { __deniedItem: string }).__deniedItem;
     const before = await itemRow(deniedItem);

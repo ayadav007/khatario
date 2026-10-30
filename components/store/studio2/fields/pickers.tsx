@@ -126,6 +126,7 @@ export function ProductPicker({
   max,
   disabled,
   onChange,
+  storeOnly = false,
 }: {
   id: string;
   /** Picked ids, in order. A single `product` setting passes max 1. */
@@ -133,6 +134,8 @@ export function ProductPicker({
   max: number;
   disabled: boolean;
   onChange(ids: string[]): void;
+  /** Search only items the online store sells. */
+  storeOnly?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ItemSummary[]>([]);
@@ -152,7 +155,7 @@ export function ProductPicker({
     const ctl = new AbortController();
     setLoading(true);
     const t = setTimeout(() => {
-      searchItems(q, ctl.signal)
+      searchItems(q, ctl.signal, { storeOnly })
         .then((items) => {
           rememberItems(items);
           setResults(items);
@@ -168,7 +171,7 @@ export function ProductPicker({
       clearTimeout(t);
       ctl.abort();
     };
-  }, [query]);
+  }, [query, storeOnly]);
 
   const pick = (item: ItemSummary) => {
     if (max === 1) onChange([item.id]);

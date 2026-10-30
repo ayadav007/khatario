@@ -333,12 +333,12 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
     [select],
   );
 
-  // D20: the Product template previews with the first product until the merchant picks another.
+  // D20: the Product template previews with the first product the store sells until the merchant picks another.
   useEffect(() => {
     if (templateKey !== 'product' || previewProduct !== undefined) return;
     let cancelled = false;
     setProductError(null);
-    searchItems('')
+    searchItems('', undefined, { storeOnly: true })
       .then((items) => {
         if (!cancelled) setPreviewProduct(items[0] ? { id: items[0].id, name: items[0].name } : null);
       })

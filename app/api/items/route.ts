@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = (page - 1) * limit;
     const updatedAfter = searchParams.get('updated_after');
+    // Opt-in: only items the online store sells (the same rule as saving an item: show or featured).
+    const storeOnly = searchParams.get('store_only') === '1';
 
     // AUTHORIZATION: Check read permission
     try {
@@ -142,6 +144,11 @@ export async function GET(request: NextRequest) {
       params.push(updatedAfter);
     }
 
+    if (storeOnly) {
+      const tableRef = accessibleBranchIds.length > 0 ? 'i' : 'items';
+      sql += ` AND (${tableRef}.show_in_store = true OR ${tableRef}.featured_in_store = true)`;
+    }
+
     // Total row count: must NOT reuse the data SELECT (it contains $2 for branch UUID[] in a
     // subquery). Slice-based COUNT dropped that clause but still passed 2 params → PG bind error.
     const hasBranchScope = accessibleBranchIds.length > 0;
@@ -164,6 +171,9 @@ export async function GET(request: NextRequest) {
     if (updatedAfter) {
       countSql += ` AND ${countRef}.updated_at >= $${c}::timestamptz`;
       countParams.push(updatedAfter);
+    }
+    if (storeOnly) {
+      countSql += ` AND (${countRef}.show_in_store = true OR ${countRef}.featured_in_store = true)`;
     }
     const countResult = await queryOne<{ total: number }>(countSql, countParams);
     const total = countResult?.total || 0;

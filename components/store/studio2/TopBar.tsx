@@ -225,6 +225,7 @@ function PreviewProduct({ product, onPick }: { product: { id: string; name: stri
             value={[product.id]}
             max={1}
             disabled={false}
+            storeOnly
             onChange={(ids) => {
               // Removing the chip leaves the current product; a pick replaces it.
               if (ids[0] && ids[0] !== product.id) {

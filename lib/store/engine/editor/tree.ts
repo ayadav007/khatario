@@ -33,11 +33,11 @@ export function templateOptions(theme: ThemeData): Array<{ key: string; label: s
   return [...Object.keys(CORE_TITLES).map((key) => ({ key, label: CORE_TITLES[key] })), ...pages];
 }
 
-/** D15: a product or catalog template with no sections at all; the editor offers its default layout. */
+/** D15: a product or catalog template with no sections at all (as fillTemplate requires); the editor offers its default layout. */
 export function isEmptyClassicTemplate(theme: ThemeData, key: string): boolean {
   if (key !== 'product' && key !== 'catalog') return false;
   const t = hasOwn(theme.templates, key) ? theme.templates[key] : null;
-  return !!t && t.order.length === 0;
+  return !!t && t.order.length === 0 && Object.keys(t.sections).length === 0;
 }
 
 /** D15: the storefront shows the classic page for a product or catalog template with no enabled section. */

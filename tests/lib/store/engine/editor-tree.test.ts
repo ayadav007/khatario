@@ -230,6 +230,8 @@ describe('template switcher', () => {
     expect(showsClassicPage(t, 'catalog')).toBe(true);
     const hidden: ThemeData = { ...t, templates: { ...t.templates, catalog: { order: ['m'], sections: { m: sec('main-catalog', { disabled: true }) } } } };
     expect(isEmptyClassicTemplate(hidden, 'catalog')).toBe(false);
+    const orphans: ThemeData = { ...t, templates: { ...t.templates, catalog: { order: [], sections: { m: sec('main-catalog') } } } };
+    expect(isEmptyClassicTemplate(orphans, 'catalog')).toBe(false);
     expect(showsClassicPage(hidden, 'catalog')).toBe(true);
     const shown: ThemeData = { ...t, templates: { ...t.templates, catalog: { order: ['m'], sections: { m: sec('main-catalog') } } } };
     expect(showsClassicPage(shown, 'catalog')).toBe(false);
