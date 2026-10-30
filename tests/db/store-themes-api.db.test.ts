@@ -178,6 +178,22 @@ d('Theme API (real DB)', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('preview link honours path', async () => {
+    const ok = await linkRoute.POST(
+      req(`/${draftId}/preview-link`, 'POST', { kind: 'share', path: '/catalog' }, { host: 'localhost:3000' }),
+      ctx(draftId),
+    );
+    expect(ok.status).toBe(200);
+    const u = new URL((await ok.json()).url);
+    expect(u.pathname).toBe('/catalog');
+    expect(u.searchParams.get('preview_theme')).toBe(draftId);
+    const bad = await linkRoute.POST(
+      req(`/${draftId}/preview-link`, 'POST', { kind: 'share', path: 'https://evil.com' }),
+      ctx(draftId),
+    );
+    expect(bad.status).toBe(400);
+  });
+
   it('publish swaps roles', async () => {
     const res = await publishRoute.POST(req(`/${draftId}/publish`, 'POST', {}), ctx(draftId));
     expect(res.status).toBe(200);

@@ -1,15 +1,12 @@
 import type { ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData, ThemeSettings, Block } from './types';
 import type { SettingSchema } from './schema-types';
-import { ENGINE_LIMITS, ID_RE, newId } from './shared';
+import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
 import { sanitizeColorSchemes } from './color-schemes';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
 
-export { ENGINE_LIMITS, ID_RE, newId };
-
-export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
-export const RESERVED_PAGE_HANDLES = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
+export { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES };
 
 const THEME_CSS_MAX = 8000;
 const CARD_STYLES = ['plain', 'bordered', 'shadow'] as const;

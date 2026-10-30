@@ -70,12 +70,12 @@ export async function openWorkingDraft(businessId: string): Promise<ThemeRow> {
   return theme;
 }
 
-export async function previewLink(businessId: string, id: string, kind: 'editor' | 'share'): Promise<string> {
+export async function previewLink(businessId: string, id: string, kind: 'editor' | 'share', path = '/'): Promise<string> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/preview-link`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ business_id: businessId, kind }),
+    body: JSON.stringify({ business_id: businessId, kind, path }),
   });
   const body = await readJson(res);
   if (!res.ok || typeof body.url !== 'string') throw new Error(errorOf(body, 'Failed to create preview link'));

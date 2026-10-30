@@ -4,6 +4,7 @@ import { queryOne } from '@/lib/db';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { getTheme } from '@/lib/store/engine/themes-repo';
 import { PREVIEW_TTL, signThemePreview } from '@/lib/store/engine/preview-token';
+import { isPreviewPath } from '@/lib/store/engine/preview-path';
 import { isUuid, notFound } from '@/lib/store/engine/route-utils';
 import { storeHostSuffix, storePublicHostname } from '@/lib/store/subdomain';
 
@@ -25,6 +26,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (body.kind !== 'editor' && body.kind !== 'share') {
     return NextResponse.json({ error: 'kind must be editor or share' }, { status: 400 });
   }
+  const path = body.path === undefined ? '/' : body.path;
+  if (typeof path !== 'string' || !isPreviewPath(path)) {
+    return NextResponse.json({ error: 'Invalid preview path' }, { status: 400 });
+  }
   try {
     const theme = await getTheme(tenant.businessId, params.id);
     if (!theme) return notFound();
@@ -42,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const ttl = PREVIEW_TTL[body.kind];
     const token = signThemePreview(tenant.businessId, theme.id, ttl);
-    const url = `${proto}://${storePublicHostname(subdomain, appHostname)}${port}/?preview_theme=${theme.id}&pt=${encodeURIComponent(token)}`;
+    const url = `${proto}://${storePublicHostname(subdomain, appHostname)}${port}${path}?preview_theme=${theme.id}&pt=${encodeURIComponent(token)}`;
     return NextResponse.json({ url, expires_at: new Date(Date.now() + ttl).toISOString() });
   } catch (error) {
     console.error('themes/[id]/preview-link POST:', error);

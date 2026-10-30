@@ -12,6 +12,23 @@ export const ENGINE_LIMITS = {
 
 export const ID_RE = /^[a-z0-9_-]{1,32}$/;
 
+export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
+export const RESERVED_PAGE_HANDLES: readonly string[] = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
+
+/** Templates every theme carries; custom pages are keyed `page.<handle>`. */
+export const CORE_TEMPLATES = ['home', 'product', 'catalog'] as const;
+
+export function pageKey(handle: string): string {
+  return `page.${handle}`;
+}
+
+/** The handle of a `page.<handle>` template key, or null for any other key or an invalid/reserved handle. */
+export function pageHandle(key: string): string | null {
+  if (!key.startsWith('page.')) return null;
+  const handle = key.slice(5);
+  return PAGE_HANDLE_RE.test(handle) && !RESERVED_PAGE_HANDLES.includes(handle) ? handle : null;
+}
+
 /** Hosts a `video_url` setting may point at (https only); the server drops anything else. */
 export const VIDEO_HOSTS: readonly string[] = [
   'youtube.com',
