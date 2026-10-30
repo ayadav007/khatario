@@ -1002,3 +1002,10 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
     - the hub focus trap;
     - the mobile settings sheet.
   - `graphify` is not installed here, so `graphify update .` was not run.
+
+
+## 2026-10-30: Branch GST audit, groups 1 and 2 fixed
+- **Asked:** check whether branches comply with GST and keep the books right (research the rules first), then "yes start the fix"; read gstreconciliation.in's HO/branch ISD and cross-charge guide for ISD scope and transfer valuation.
+- **Decided:** audit against R1–R9 (state-wise registration, distinct persons s.25(4), Sch I para 2 + Rule 28, Rule 55 challans, Rule 46/49/53 series per GSTIN, ISD mandatory from 1 Apr 2025, composition/AATO per PAN, s.35 records, ITC to the bill-to GSTIN). Fixed group 1 (branch safety) and group 2 (wrong tax state, note numbering). Registration lock rather than a per-document GSTIN snapshot: smaller, and a new registration is a new branch. Note numbers: per-branch unique index in the DB plus a per-GSTIN check in code (same pattern as invoices, migration 319), because a per-GSTIN key cannot be indexed.
+- **Shipped:** branch `fix/branch-gst-safety`: 1ecd5926, 56686836. Migration `449_note_series_per_gstin.sql` (local test DB only). Tests: `tests/security/branch-update-route.test.ts` (10 pass, 7 new; mock reset fixed), `tests/db/branch-gst-safety.db.test.ts` (6 pass). Unit/API/security: 7 failures in 6 suites, same on main. 22 related DB suites: 65 failures, identical on main (local DB lacks plan seed data). `tsc` clean.
+- **Open:** gstreconciliation.in blocked by the session's network policy, so ISD/cross-charge and transfer valuation not started. Remaining audit items: GSTR-9, GSTR-2B and bill-to GSTIN per registration, GST set-off per GSTIN, filed-period lock and compliance engine per GSTIN, QRMP due day per state, transfer short-close/cancel accounting, payments against inter-branch invoices, consolidation eliminations, downgrade gate, challan branch access, branch delete pre-check. Existing inter-branch invoices already raised on a shopper are not repaired.
