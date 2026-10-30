@@ -70,4 +70,5 @@ export interface ThemeRow {
   preset: ThemePreset;
   data: ThemeData;
   updated_at: string;
+  is_working: boolean;
 }

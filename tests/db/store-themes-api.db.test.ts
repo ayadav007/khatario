@@ -39,6 +39,7 @@ import { verifyThemePreview } from '@/lib/store/engine/preview-token';
 import * as listRoute from '@/app/api/settings/online-store/themes/route';
 import * as idRoute from '@/app/api/settings/online-store/themes/[id]/route';
 import * as publishRoute from '@/app/api/settings/online-store/themes/[id]/publish/route';
+import * as workingRoute from '@/app/api/settings/online-store/themes/working-draft/route';
 import * as linkRoute from '@/app/api/settings/online-store/themes/[id]/preview-link/route';
 
 const BASE = 'http://localhost:3000/api/settings/online-store/themes';
@@ -134,6 +135,18 @@ d('Theme API (real DB)', () => {
   it('PUT on the live theme is 409', async () => {
     const res = await idRoute.PUT(req(`/${liveId}`, 'PUT', { data: {}, updated_at: 'x' }), ctx(liveId));
     expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('live_locked');
+  });
+
+  it('POST working-draft returns the same draft twice', async () => {
+    const a = await workingRoute.POST(req('/working-draft', 'POST', {}));
+    expect(a.status).toBe(200);
+    const first = (await a.json()).theme;
+    expect(first.is_working).toBe(true);
+    expect(first.role).toBe('draft');
+    const second = (await (await workingRoute.POST(req('/working-draft', 'POST', {}))).json()).theme;
+    expect(second.id).toBe(first.id);
+    expect(second.business_id).toBe(BIZ);
   });
 
   it('PUT of 700 KB is 413 before parsing', async () => {

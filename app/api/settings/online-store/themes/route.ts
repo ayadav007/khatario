@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
-import { queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { createTheme, listThemes } from '@/lib/store/engine/themes-repo';
+import { presetContextFor } from '@/lib/store/engine/preset-context';
 import { isUuid, repoJson } from '@/lib/store/engine/route-utils';
 import type { ThemePreset } from '@/lib/store/engine/types';
 
@@ -48,34 +48,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const row = await queryOne<{
-      name: string | null;
-      tagline: string | null;
-      accent: string | null;
-      logo_url: string | null;
-      hero_url: string | null;
-    }>(
-      `SELECT b.name,
-              bs.store_tagline AS tagline,
-              bs.store_theme->>'accent' AS accent,
-              bs.store_theme->>'logo_url' AS logo_url,
-              bs.store_hero_image_url AS hero_url
-         FROM businesses b
-         LEFT JOIN business_settings bs ON bs.business_id = b.id
-        WHERE b.id = $1`,
-      [tenant.businessId],
-    );
     const result = await createTheme(tenant.businessId, tenant.userId, {
       name,
       preset: preset as ThemePreset,
       duplicateOf: typeof body.duplicate_of === 'string' ? body.duplicate_of : undefined,
-      ctx: {
-        businessName: row?.name ?? '',
-        tagline: row?.tagline ?? '',
-        accent: row?.accent || undefined,
-        logoUrl: row?.logo_url || undefined,
-        heroUrl: row?.hero_url || undefined,
-      },
+      ctx: await presetContextFor(tenant.businessId),
     });
     return repoJson(result, 'theme', 201);
   } catch (error) {

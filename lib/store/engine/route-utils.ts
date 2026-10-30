@@ -15,7 +15,7 @@ const FAILURES = {
 
 export function repoFailure(code: keyof typeof FAILURES): NextResponse {
   const f = FAILURES[code];
-  return NextResponse.json({ error: f.error }, { status: f.status });
+  return NextResponse.json({ error: f.error, code }, { status: f.status });
 }
 
 /** JSON `{ <key>: value }` on success, mapped error response otherwise. */

@@ -17,6 +17,7 @@ import {
   createTheme,
   deleteTheme,
   getLiveTheme,
+  getOrCreateWorkingDraft,
   getTheme,
   listThemes,
   publishTheme,
@@ -35,6 +36,9 @@ d('Store themes repository (real DB)', () => {
   const BIZ = randomUUID();
   const OTHER = randomUUID();
   const FULL = randomUUID();
+  const WD = randomUUID();
+  const WD_EMPTY = randomUUID();
+  const WD_FULL = randomUUID();
   const USER = randomUUID();
 
   function ok<T>(r: { ok: true; value: T } | { ok: false; code: string }): T {
@@ -44,7 +48,7 @@ d('Store themes repository (real DB)', () => {
 
   beforeAll(async () => {
     pool = getPool();
-    for (const id of [BIZ, OTHER, FULL]) {
+    for (const id of [BIZ, OTHER, FULL, WD, WD_EMPTY, WD_FULL]) {
       await pool.query(
         `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Theme test', '29AAAPA1234A1Z5', '29', 'regular')`,
         [id],
@@ -54,8 +58,8 @@ d('Store themes repository (real DB)', () => {
 
   afterAll(async () => {
     if (!pool) return;
-    await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [[BIZ, OTHER, FULL]]);
-    await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [[BIZ, OTHER, FULL]]);
+    await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [[BIZ, OTHER, FULL, WD, WD_EMPTY, WD_FULL]]);
+    await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [[BIZ, OTHER, FULL, WD, WD_EMPTY, WD_FULL]]);
     await closePool();
   });
 
@@ -181,5 +185,65 @@ d('Store themes repository (real DB)', () => {
   it('stops at 20 themes per business', async () => {
     for (let i = 0; i < 20; i++) ok(await createTheme(FULL, USER, { name: `T${i}`, preset: 'blank', ctx }));
     expect(await createTheme(FULL, USER, { name: 'T21', preset: 'blank', ctx })).toEqual({ ok: false, code: 'limit' });
+  });
+
+  describe('working draft', () => {
+    it('is created once and reused', async () => {
+      ok(await createTheme(WD, USER, { name: 'Main', preset: 'studio', ctx }));
+      const a = ok(await getOrCreateWorkingDraft(WD, USER));
+      const b = ok(await getOrCreateWorkingDraft(WD, USER));
+      expect(b.id).toBe(a.id);
+      expect(a.is_working).toBe(true);
+      expect(a.role).toBe('draft');
+      expect(a.name).toBe('Main (editing)');
+      const n = await pool.query(`SELECT count(*)::int AS n FROM store_themes WHERE business_id = $1 AND is_working`, [WD]);
+      expect(n.rows[0].n).toBe(1);
+      expect((await listThemes(WD)).find((t) => t.id === a.id)?.is_working).toBe(true);
+    });
+
+    it('copies the live data', async () => {
+      const liveRow = (await getLiveTheme(WD))!;
+      const w = ok(await getOrCreateWorkingDraft(WD, USER));
+      expect(w.data).toEqual(liveRow.data);
+    });
+
+    it('creates a live Studio theme when there is none', async () => {
+      const w = ok(await getOrCreateWorkingDraft(WD_EMPTY, USER));
+      const rows = await pool.query(`SELECT id, role, preset, is_working FROM store_themes WHERE business_id = $1`, [WD_EMPTY]);
+      expect(rows.rows).toHaveLength(2);
+      const liveRows = rows.rows.filter((r) => r.role === 'live');
+      expect(liveRows).toHaveLength(1);
+      expect(liveRows[0].preset).toBe('studio');
+      expect(liveRows[0].is_working).toBe(false);
+      expect(rows.rows.filter((r) => r.is_working).map((r) => r.id)).toEqual([w.id]);
+    });
+
+    it('publish clears the working flag and a new working draft copies the new live', async () => {
+      const w = ok(await getOrCreateWorkingDraft(WD, USER));
+      const pub = ok(await publishTheme(WD, USER, w.id));
+      expect(pub.role).toBe('live');
+      expect(pub.is_working).toBe(false);
+      const next = ok(await getOrCreateWorkingDraft(WD, USER));
+      expect(next.id).not.toBe(w.id);
+      expect(next.is_working).toBe(true);
+      expect(next.data).toEqual((await getLiveTheme(WD))!.data);
+    });
+
+    it('two concurrent calls produce one draft', async () => {
+      const biz = randomUUID();
+      await pool.query(`INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Theme test', '29AAAPA1234A1Z5', '29', 'regular')`, [biz]);
+      try {
+        const [x, y] = await Promise.all([getOrCreateWorkingDraft(biz, USER), getOrCreateWorkingDraft(biz, USER)]);
+        expect(ok(x).id).toBe(ok(y).id);
+      } finally {
+        await pool.query(`DELETE FROM store_themes WHERE business_id = $1`, [biz]);
+        await pool.query(`DELETE FROM businesses WHERE id = $1`, [biz]);
+      }
+    });
+
+    it('fails with limit at 20 themes', async () => {
+      for (let i = 0; i < 20; i++) ok(await createTheme(WD_FULL, USER, { name: `T${i}`, preset: 'blank', ctx }));
+      expect(await getOrCreateWorkingDraft(WD_FULL, USER)).toEqual({ ok: false, code: 'limit' });
+    });
   });
 });

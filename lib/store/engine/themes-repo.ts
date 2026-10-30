@@ -3,6 +3,7 @@ import { getPool, queryOne, queryRows } from '@/lib/db';
 import type { ThemeData, ThemePreset, ThemeRow } from './types';
 import { ENGINE_LIMITS, sanitizeThemeData, themeTooLarge } from './sanitize';
 import { presetTheme, type PresetContext } from './presets';
+import { presetContextFor } from './preset-context';
 
 export type RepoResult<T> =
   | { ok: true; value: T }
@@ -12,7 +13,7 @@ const NAME_MAX = 60;
 
 // Microsecond ISO string so an optimistic-lock token survives the round trip through the browser.
 const UPDATED_AT = `to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
-const META_COLS = `id, business_id, name, role, preset, ${UPDATED_AT} AS updated_at`;
+const META_COLS = `id, business_id, name, role, preset, is_working, ${UPDATED_AT} AS updated_at`;
 const ROW_COLS = `${META_COLS}, data`;
 
 const fail = <T>(code: Extract<RepoResult<T>, { ok: false }>['code']): RepoResult<T> => ({ ok: false, code });
@@ -58,9 +59,24 @@ export async function createTheme(
   input: { name: string; preset?: ThemePreset; duplicateOf?: string; ctx: PresetContext },
 ): Promise<RepoResult<ThemeRow>> {
   return inTransaction(async (client) => {
-    // Serialise creates per business so the 20-theme limit and "first theme is live" cannot race.
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`store_themes:${businessId}`]);
+    await lockBusinessThemes(client, businessId);
+    return createThemeLocked(client, businessId, userId, input);
+  });
+}
 
+// Serialise creates per business so the 20-theme limit and "first theme is live" cannot race.
+async function lockBusinessThemes(client: PoolClient, businessId: string): Promise<void> {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`store_themes:${businessId}`]);
+}
+
+/** Caller holds the business advisory lock inside a transaction. */
+async function createThemeLocked(
+  client: PoolClient,
+  businessId: string,
+  userId: string,
+  input: { name: string; preset?: ThemePreset; duplicateOf?: string; ctx: PresetContext },
+): Promise<RepoResult<ThemeRow>> {
+  {
     let preset: ThemePreset = input.preset ?? 'studio';
     let data: ThemeData;
     let name = input.name.trim();
@@ -90,7 +106,54 @@ export async function createTheme(
     );
     if (res.rows.length === 0) return fail<ThemeRow>('limit');
     return good(res.rows[0] as ThemeRow);
+  }
+}
+
+async function insertWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
+  return inTransaction(async (client) => {
+    await lockBusinessThemes(client, businessId);
+
+    const existing = await client.query(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND is_working`, [businessId]);
+    if (existing.rows.length > 0) return good(existing.rows[0] as ThemeRow);
+
+    let live: { name: string; preset: ThemePreset; data: ThemeData } | undefined = (
+      await client.query(`SELECT name, preset, data FROM store_themes WHERE business_id = $1 AND role = 'live'`, [businessId])
+    ).rows[0];
+    if (!live) {
+      const created = await createThemeLocked(client, businessId, userId, {
+        name: 'Main',
+        preset: 'studio',
+        ctx: await presetContextFor(businessId),
+      });
+      if (!created.ok) return created;
+      live = created.value;
+    }
+
+    const name = `${live.name} (editing)`.slice(0, NAME_MAX);
+    const res = await client.query(
+      `INSERT INTO store_themes (business_id, name, role, preset, data, updated_by, is_working)
+       SELECT $1, $2, 'draft', $3, $4::jsonb, $5, true
+       WHERE (SELECT count(*) FROM store_themes WHERE business_id = $1) < $6
+       RETURNING ${ROW_COLS}`,
+      [businessId, name, live.preset, JSON.stringify(live.data), userId, ENGINE_LIMITS.themesPerBusiness],
+    );
+    if (res.rows.length === 0) return fail<ThemeRow>('limit');
+    return good(res.rows[0] as ThemeRow);
   });
+}
+
+/** The draft the Studio edits: reuse it, or copy the live theme into a new one (creating a live Studio theme first if none). */
+export async function getOrCreateWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
+  try {
+    return await insertWorkingDraft(businessId, userId);
+  } catch (err) {
+    // The advisory lock should prevent this; if another writer still won the unique index, return their draft.
+    if ((err as { code?: string }).code === '23505') {
+      const existing = await queryOne<ThemeRow>(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND is_working`, [businessId]);
+      if (existing) return good(existing);
+    }
+    throw err;
+  }
 }
 
 export async function saveTheme(
@@ -156,7 +219,7 @@ export async function publishTheme(businessId: string, userId: string, id: strin
       [businessId],
     );
     const published = await client.query(
-      `UPDATE store_themes SET role = 'live', updated_by = $3, updated_at = NOW()
+      `UPDATE store_themes SET role = 'live', is_working = false, updated_by = $3, updated_at = NOW()
        WHERE business_id = $1 AND id = $2 RETURNING ${ROW_COLS}`,
       [businessId, id, userId],
     );
