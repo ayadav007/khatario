@@ -4,7 +4,7 @@ import type { SettingSchema } from './schema-types';
 export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'font_heading', type: 'font', label: 'Heading font', default: 'outfit' },
   { id: 'font_body', type: 'font', label: 'Body font', default: 'inter' },
-  { id: 'button_radius', type: 'range', label: 'Button corner radius', min: 0, max: 24, step: 1, default: 10 },
+  { id: 'button_radius', type: 'range', label: 'Button corner radius', min: 0, max: 32, step: 1, default: 10 },
   {
     id: 'card_style',
     type: 'select',

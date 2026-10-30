@@ -60,7 +60,7 @@ describe('THEME_SETTINGS_SCHEMA', () => {
     const by = Object.fromEntries(THEME_SETTINGS_SCHEMA.map((s) => [s.id, s]));
     expect(by.font_heading.type).toBe('font');
     expect(by.font_body.type).toBe('font');
-    expect(by.button_radius).toMatchObject({ type: 'range', min: 0, max: 24 });
+    expect(by.button_radius).toMatchObject({ type: 'range', min: 0, max: 32 });
     expect(by.card_style.options?.map((o) => o.value)).toEqual(['plain', 'bordered', 'shadow']);
     expect(by.phone_kit.type).toBe('checkbox');
     expect(by.logo_url.type).toBe('image');

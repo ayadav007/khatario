@@ -83,14 +83,14 @@ export function sanitizeSection(raw: unknown, kind: TemplateKind, schemeIds?: Re
   return section;
 }
 
-export function sanitizeTemplate(raw: unknown, kind: TemplateKind, schemeIds?: ReadonlySet<string>): Template {
+export function sanitizeTemplate(raw: unknown, kind: TemplateKind, schemeIds?: ReadonlySet<string>, taken?: ReadonlySet<string>): Template {
   const out: Template = { order: [], sections: {} };
   if (!isObject(raw)) return out;
   const input = isObject(raw.sections) ? raw.sections : {};
   const perType: Record<string, number> = {};
   for (const id of Array.isArray(raw.order) ? raw.order : []) {
     if (out.order.length >= ENGINE_LIMITS.sectionsPerTemplate) break;
-    if (!validId(id) || !has(input, id) || has(out.sections, id)) continue;
+    if (!validId(id) || !has(input, id) || has(out.sections, id) || taken?.has(id)) continue;
     const section = sanitizeSection(input[id], kind, schemeIds);
     if (!section) continue;
     const limit = getSectionSchema(section.type)?.limit;
@@ -109,8 +109,8 @@ function clip(raw: unknown, max: number): string | undefined {
   return v || undefined;
 }
 
-function sanitizePageTemplate(raw: unknown, kind: TemplateKind, schemeIds: ReadonlySet<string>, isPage: boolean): PageTemplate {
-  const out: PageTemplate = sanitizeTemplate(raw, kind, schemeIds);
+function sanitizePageTemplate(raw: unknown, kind: TemplateKind, schemeIds: ReadonlySet<string>, isPage: boolean, taken: ReadonlySet<string>): PageTemplate {
+  const out: PageTemplate = sanitizeTemplate(raw, kind, schemeIds, taken);
   if (isPage && isObject(raw)) {
     const title = clip(raw.title, 100);
     const seoTitle = clip(raw.seo_title, 120);
@@ -167,30 +167,23 @@ export function sanitizeThemeData(raw: unknown): ThemeData {
   const r = isObject(raw) ? raw : {};
   const settings = sanitizeThemeSettings(r.settings);
   const schemeIds: ReadonlySet<string> = new Set<string>(settings.color_schemes.map((s: ColorScheme) => s.id));
+  // D12: a section id is unique across the header group, the footer group and each template (templates may share ids with each other).
+  // Groups win over templates; the header wins over the footer. Duplicates are skipped before limits are counted.
+  const header_group = sanitizeTemplate(r.header_group, 'header', schemeIds);
+  const footer_group = sanitizeTemplate(r.footer_group, 'footer', schemeIds, new Set(header_group.order));
+  const groupIds: ReadonlySet<string> = new Set<string>([...header_group.order, ...footer_group.order]);
   const rawTemplates = isObject(r.templates) ? r.templates : {};
   const templates: Record<string, PageTemplate> = {};
   for (const key of ['home', 'product', 'catalog'] as const) {
-    templates[key] = sanitizePageTemplate(has(rawTemplates, key) ? rawTemplates[key] : undefined, key, schemeIds, false);
+    templates[key] = sanitizePageTemplate(has(rawTemplates, key) ? rawTemplates[key] : undefined, key, schemeIds, false, groupIds);
   }
   let pages = 0;
   for (const key of Object.keys(rawTemplates)) {
     if (pages >= ENGINE_LIMITS.customPages) break;
     if (!isValidPageKey(key)) continue;
-    templates[key] = sanitizePageTemplate(rawTemplates[key], 'page', schemeIds, true);
+    templates[key] = sanitizePageTemplate(rawTemplates[key], 'page', schemeIds, true, groupIds);
     pages++;
   }
-  const header_group = sanitizeTemplate(r.header_group, 'header', schemeIds);
-  const footer_group = sanitizeTemplate(r.footer_group, 'footer', schemeIds);
-  // D12: a section id is unique across the header group, the footer group and each template (templates may share ids with each other).
-  // The groups win over templates, so the brief's example holds (a home section `footer` is dropped). Header wins over footer.
-  const dropIds = (t: Template, taken: ReadonlySet<string>) => {
-    const kept = t.order.filter((id) => !taken.has(id));
-    for (const id of t.order) if (taken.has(id)) delete t.sections[id];
-    t.order = kept;
-  };
-  dropIds(footer_group, new Set(header_group.order));
-  const groupIds = new Set<string>([...header_group.order, ...footer_group.order]);
-  for (const t of Object.values(templates)) dropIds(t, groupIds);
   return { settings, header_group, footer_group, templates };
 }
 

@@ -194,7 +194,7 @@ describe('sanitizeThemeData', () => {
       settings: { font_heading: 'fraunces', button_radius: 4, social: { instagram: 'https://instagram.com/a' } },
       header_group: groups.header,
       footer_group: groups.footer,
-      templates: { home: groups.home, 'page.sale-us': { title: 'About', order: [], sections: {} } },
+      templates: { home: groups.home, 'page.about-us': { title: 'About', order: [], sections: {} } },
     };
     const once = sanitizeThemeData(raw);
     expect(once.templates.home.order.length).toBeGreaterThan(5);
@@ -299,5 +299,16 @@ describe('theme settings image rule', () => {
     const ok = sanitizeThemeData({ settings: { logo_url: '/uploads/a.png', favicon_url: 'https://x.com/f.ico' } }).settings;
     expect(ok.logo_url).toBe('/uploads/a.png');
     expect(ok.favicon_url).toBe('https://x.com/f.ico');
+  });
+});
+
+describe('duplicate ids and per-type limits', () => {
+  it('a dropped duplicate does not use up its type limit', () => {
+    // footer is a limit-1 type; its first copy repeats the header id and is dropped, the second is kept.
+    const data = sanitizeThemeData({
+      header_group: { order: ['dup'], sections: { dup: sec('header') } },
+      footer_group: { order: ['dup', 'ok'], sections: { dup: sec('footer'), ok: sec('footer') } },
+    });
+    expect(data.footer_group.order).toEqual(['ok']);
   });
 });
