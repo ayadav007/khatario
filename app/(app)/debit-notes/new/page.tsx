@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
@@ -75,16 +75,7 @@ export default function NewDebitNotePage() {
     if (!business?.id) return;
     const fetchData = async () => {
       try {
-        const [custRes, numRes] = await Promise.all([
-          fetch(`/api/customers?business_id=${business.id}&user_id=${user?.id}`),
-          fetch(`/api/debit-notes?business_id=${business.id}&user_id=${user?.id}&next_number=1`)
-        ]);
-        if (numRes.ok) {
-          const data = await numRes.json();
-          if (data.next_debit_note_number) {
-            setDebitNoteNumber((prev) => prev || data.next_debit_note_number);
-          }
-        }
+        const custRes = await fetch(`/api/customers?business_id=${business.id}&user_id=${user?.id}`);
         if (custRes.ok) {
           const data = await custRes.json();
           setCustomers(data.customers || []);
@@ -95,6 +86,23 @@ export default function NewDebitNotePage() {
     };
     fetchData();
   }, [business?.id]);
+
+  // Debit notes run in one series per GSTIN, so the suggestion follows the linked invoice's branch.
+  const suggestedNumber = useRef('');
+  useEffect(() => {
+    if (!business?.id) return;
+    const invoiceParam = invoiceId ? `&invoice_id=${encodeURIComponent(invoiceId)}` : '';
+    fetch(`/api/debit-notes?business_id=${business.id}&user_id=${user?.id}&next_number=1${invoiceParam}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const next = data?.next_debit_note_number;
+        if (typeof next === 'string') {
+          setDebitNoteNumber((prev) => (prev && prev !== suggestedNumber.current ? prev : next));
+          suggestedNumber.current = next;
+        }
+      })
+      .catch((err) => console.error('Fetch error', err));
+  }, [business?.id, invoiceId]);
 
   useEffect(() => {
     if (!business?.id || !customerId) {

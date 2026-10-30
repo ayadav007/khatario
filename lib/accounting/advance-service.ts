@@ -16,6 +16,7 @@ import { listCashBankAccounts } from './contra';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 import { isAllowedGstRate } from '@/lib/gst/rates';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
 
 export class AdvanceError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -67,8 +68,10 @@ export async function createAdvance(
   ).rows[0];
   if (!party) throw new AdvanceError(404, 'PARTY_NOT_FOUND', p.type === 'received' ? 'Customer not found' : 'Supplier not found');
 
-  const biz = (await client.query(`SELECT gstin, state_code FROM businesses WHERE id = $1`, [p.businessId])).rows[0];
-  const selfState = stateOf(biz?.gstin) || (biz?.state_code ? String(biz.state_code).padStart(2, '0') : null);
+  // The voucher is issued under the branch's registration: a branch with its own GSTIN is a
+  // distinct person, so its state decides CGST+SGST vs IGST on the advance.
+  const reg = await resolveSupplierRegistration(client as any, p.businessId, p.branchId ?? null);
+  const selfState = stateOf(reg.gstin) || (reg.stateCode ? String(reg.stateCode).padStart(2, '0') : null);
   const pos =
     (p.placeOfSupply && /^\d{2}$/.test(p.placeOfSupply) ? p.placeOfSupply : null) ||
     stateOf(party.gstin) ||
