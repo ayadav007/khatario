@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sameRegistration } from '@/lib/gst/registration';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -31,7 +32,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (searchParams.get('next_number') === '1') {
-      return NextResponse.json({ next_credit_note_number: await nextCreditNoteNumber(getPool(), businessId) });
+      // The series is per GSTIN: suggest the next number for the branch the note will be issued from.
+      const { resolveBranchId } = await import('@/lib/branch-helpers');
+      let branchParam = searchParams.get('branch_id') || undefined;
+      const invoiceParam = searchParams.get('invoice_id');
+      if (!branchParam && invoiceParam && /^[0-9a-f-]{36}$/i.test(invoiceParam)) {
+        const inv = await getPool().query<{ branch_id: string | null }>(
+          'SELECT branch_id FROM invoices WHERE id = $1 AND business_id = $2',
+          [invoiceParam, businessId]
+        );
+        branchParam = inv.rows[0]?.branch_id ?? undefined;
+      }
+      const branchId = await resolveBranchId({ businessId, branchId: branchParam }).catch(() => null);
+      return NextResponse.json({ next_credit_note_number: await nextCreditNoteNumber(getPool(), businessId, branchId) });
     }
 
     const page = parseInt(searchParams.get('page') || '1');
@@ -209,6 +222,24 @@ export async function POST(request: NextRequest) {
         );
       }
       throw error;
+    }
+
+    // A note adjusts the tax of its invoice, so it must be issued under the invoice's GSTIN (s.34).
+    if (invoice_id) {
+      const inv = await client.query<{ branch_id: string | null }>(
+        'SELECT branch_id FROM invoices WHERE id = $1 AND business_id = $2',
+        [invoice_id, business_id]
+      );
+      const invoiceBranch = inv.rows[0]?.branch_id;
+      if (invoiceBranch && !(await sameRegistration(client, business_id, invoiceBranch, finalBranchId))) {
+        return NextResponse.json(
+          {
+            error: 'This note must be issued by a branch on the same GSTIN as the original invoice.',
+            code: 'NOTE_REGISTRATION_MISMATCH',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     try {
