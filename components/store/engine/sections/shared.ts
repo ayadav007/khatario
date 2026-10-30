@@ -1,7 +1,7 @@
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import { defaultSettings, sanitizeSettingValue } from '@/lib/store/engine/settings';
-import type { Section } from '@/lib/store/engine/types';
+import type { Block, Section } from '@/lib/store/engine/types';
 
 // Server only: the settings module pulls in the HTML sanitisers.
 
@@ -27,4 +27,17 @@ export function richtextHtml(sectionType: string, settingId: string, raw: unknow
   if (!schema) return '';
   const html = sanitizeSettingValue(schema, raw);
   return typeof html === 'string' ? html : '';
+}
+
+/** A block's settings over its schema's defaults, with every richtext setting re-sanitised at render. */
+export function blockSettings(sectionType: string, block: Block): Record<string, unknown> | null {
+  const schema = getSectionSchema(sectionType)?.blocks?.find((b) => b.type === block.type);
+  if (!schema) return null;
+  const out: Record<string, unknown> = { ...defaultSettings(schema.settings), ...(block.settings ?? {}) };
+  for (const s of schema.settings) {
+    if (s.type !== 'richtext') continue;
+    const html = sanitizeSettingValue(s, out[s.id]);
+    out[s.id] = typeof html === 'string' ? html : '';
+  }
+  return out;
 }

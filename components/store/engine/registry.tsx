@@ -15,6 +15,14 @@ import { ProductGrid } from './sections/ProductGrid';
 import { CategoryGrid } from './sections/CategoryGrid';
 import { Testimonials } from './sections/Testimonials';
 import { CustomHtml } from './sections/CustomHtml';
+import { MainProduct } from './sections/MainProduct';
+
+/** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
+export interface EngineRoute {
+  productId?: string;
+  categoryId?: string;
+  categoryName?: string;
+}
 
 export interface EngineSectionProps {
   id: string;
@@ -22,6 +30,7 @@ export interface EngineSectionProps {
   data?: SectionData;
   store: StoreBusinessContext;
   theme: ThemeData;
+  route?: EngineRoute;
 }
 
 /**
@@ -43,4 +52,5 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   'category-grid': CategoryGrid,
   testimonials: Testimonials,
   'custom-html': CustomHtml,
+  'main-product': MainProduct,
 };

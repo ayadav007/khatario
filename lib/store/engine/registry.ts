@@ -14,6 +14,7 @@ import { productRail } from './sections/product-rail';
 import { categoryGrid } from './sections/category-grid';
 import { testimonials } from './sections/testimonials';
 import { customHtml } from './sections/custom-html';
+import { mainProduct } from './sections/main-product';
 
 /** Appended to every non-group section. Colour scheme, CSS class and custom CSS live on the Section itself. */
 export const COMMON_SETTINGS: SettingSchema[] = [
@@ -44,6 +45,7 @@ const ALL: SectionSchema[] = [
   categoryGrid,
   testimonials,
   customHtml,
+  mainProduct,
 ].map(withCommon);
 
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = Object.fromEntries(ALL.map((s) => [s.type, s]));

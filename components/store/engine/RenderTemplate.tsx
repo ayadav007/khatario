@@ -7,7 +7,8 @@ import { engineRootStyle } from '@/lib/store/engine/render-helpers';
 import { EditorBridge } from './EditorBridge';
 import { EngineShell } from './EngineShell';
 import { SectionFrame } from './SectionFrame';
-import { SECTION_COMPONENTS } from './registry';
+import { SECTION_COMPONENTS, type EngineRoute } from './registry';
+import { EngineProductProvider } from './product/EngineProductContext';
 
 const EMPTY: Template = { order: [], sections: {} };
 
@@ -18,6 +19,7 @@ function renderGroup(
   theme: ThemeData,
   data: Record<string, SectionData>,
   editor: boolean,
+  route: EngineRoute | undefined,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   const order = group?.order ?? [];
@@ -50,7 +52,7 @@ function renderGroup(
     }
     out.push(
       <SectionFrame key={id} id={id} section={section} theme={theme} group={groupKey} index={index} editor={editor}>
-        <Component id={id} section={section} data={sectionData} store={store} theme={theme} />
+        <Component id={id} section={section} data={sectionData} store={store} theme={theme} route={route} />
       </SectionFrame>,
     );
   }
@@ -65,6 +67,7 @@ export function RenderTemplate({
   data,
   preview,
   editor,
+  route,
 }: {
   store: StoreBusinessContext;
   theme: ThemeRow;
@@ -73,8 +76,11 @@ export function RenderTemplate({
   preview: boolean;
   /** Studio 2 editor mode (only ever true for a verified preview). */
   editor: boolean;
+  /** What the URL names; a product id wraps the template in the product provider. */
+  route?: EngineRoute;
 }) {
   const themeData = theme.data;
+  const templateGroup = renderGroup('template', themeData.templates[templateKey], store, themeData, data, editor, route);
   // The client shell only reads settings, so the templates are not sent to the browser twice.
   const shellTheme: ThemeRow = {
     ...theme,
@@ -87,10 +93,16 @@ export function RenderTemplate({
       preview={preview}
       editor={editor}
       rootStyle={engineRootStyle(themeData.settings)}
-      header={renderGroup('header', themeData.header_group, store, themeData, data, editor)}
-      footer={renderGroup('footer', themeData.footer_group, store, themeData, data, editor)}
+      header={renderGroup('header', themeData.header_group, store, themeData, data, editor, route)}
+      footer={renderGroup('footer', themeData.footer_group, store, themeData, data, editor, route)}
     >
-      {renderGroup('template', themeData.templates[templateKey], store, themeData, data, editor)}
+      {route?.productId ? (
+        <EngineProductProvider subdomain={store.store_subdomain} productId={route.productId}>
+          {templateGroup}
+        </EngineProductProvider>
+      ) : (
+        templateGroup
+      )}
       {editor ? <EditorBridge templateKey={templateKey} /> : null}
     </EngineShell>
   );
