@@ -17,6 +17,7 @@ import { getPool, closePool } from '@/lib/db';
 import { createTheme } from '@/lib/store/engine/themes-repo';
 import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { loadEngineTheme } from '@/lib/store/engine/load-theme';
+import { loadEnginePage } from '@/lib/store/engine/page-loader';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { resolveOfflineStoreForPreview } from '@/lib/store/preview-store';
 import { THEME_DEMO_SLUGS, themeDemoStore } from '@/lib/store/theme-demo';
@@ -189,6 +190,31 @@ d('Storefront theme loading (real DB)', () => {
     expect((await resolveOfflineStoreForPreview(SUB, gone.id, pt))?.business_id).toBe(BIZ);
     await pool.query(`DELETE FROM store_themes WHERE business_id = $1 AND id = $2`, [BIZ, gone.id]);
     expect(await resolveOfflineStoreForPreview(SUB, gone.id, pt)).toBeNull();
+  });
+
+  it('custom page loads by handle', async () => {
+    await setFlag(BIZ, true);
+    const sale = {
+      order: ['intro'],
+      sections: { intro: { type: 'rich-text', settings: { heading: 'Big Sale' } } },
+      title: 'Sale',
+      seo_title: 'Big Sale',
+    };
+    // Written straight to the row: `page.cart` is reserved, so the sanitiser must drop it on read.
+    await pool.query(
+      `UPDATE store_themes SET data = jsonb_set(jsonb_set(data, '{templates,page.sale}', $3::jsonb), '{templates,page.cart}', $3::jsonb)
+       WHERE business_id = $1 AND id = $2`,
+      [BIZ, live.id, JSON.stringify(sale)],
+    );
+    const store = storeOf(BIZ);
+    const found = await loadEnginePage(store, {}, 'page.sale');
+    expect(found?.template?.title).toBe('Sale');
+    expect(found?.template?.seo_title).toBe('Big Sale');
+    expect(found?.template?.order).toEqual(['intro']);
+    expect((await loadEnginePage(store, {}, 'page.missing'))?.template).toBeNull();
+    const reserved = await loadEnginePage(store, {}, 'page.cart');
+    expect(reserved).not.toBeNull();
+    expect(reserved?.template).toBeNull();
   });
 
   it('never resolves a demo store through the preview path', async () => {
