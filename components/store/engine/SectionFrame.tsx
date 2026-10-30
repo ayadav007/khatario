@@ -2,7 +2,7 @@ import { Suspense, type CSSProperties, type ReactNode } from 'react';
 import type { Section, ThemeData } from '@/lib/store/engine/types';
 import type { GroupKey } from '@/lib/store/engine/editor/ops';
 import { getSectionSchema } from '@/lib/store/engine/registry';
-import { sectionFrameStyle } from '@/lib/store/engine/render-helpers';
+import { sectionFrameClass, sectionFrameStyle } from '@/lib/store/engine/render-helpers';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { SectionBoundary, SectionFailedCard } from './SectionBoundary';
 
@@ -51,7 +51,7 @@ export function SectionFrame({
       data-section-id={id}
       data-section-group={group}
       {...(editor ? { 'data-section-index': index, 'data-section-name': section.label || typeName } : {})}
-      className={['eng-sec', sanitizeCssClass(section.css_class)].filter(Boolean).join(' ')}
+      className={[sectionFrameClass(section.settings), sanitizeCssClass(section.css_class)].filter(Boolean).join(' ')}
       style={sectionFrameStyle(theme.settings, section) as CSSProperties}
     >
       {/* Scoped and brace-balanced by scopeSectionCss, with every `<` removed. */}

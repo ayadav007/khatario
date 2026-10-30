@@ -69,12 +69,8 @@ describe('THEME_SETTINGS_SCHEMA', () => {
     for (const k of ['instagram', 'whatsapp', 'facebook', 'youtube']) expect(by[`social.${k}`].type).toBe('text');
   });
 
-  it('hides the settings not wired until M3', () => {
-    expect(EDITOR_HIDDEN_SETTINGS).toEqual({
-      theme: ['card_style'],
-      common: ['full_width'],
-      sections: { footer: ['show_payment_icons'] },
-    });
+  it('hides nothing now that M3 wired every setting', () => {
+    expect(EDITOR_HIDDEN_SETTINGS).toEqual({ theme: [], common: [], sections: {} });
   });
 
   it('sanity: registry and sanitize still load', () => {

@@ -3,6 +3,7 @@ import {
   engineCategoryStyle,
   engineRootStyle,
   pickCategories,
+  sectionFrameClass,
   sectionFrameStyle,
 } from '@/lib/store/engine/render-helpers';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
@@ -143,5 +144,14 @@ describe('engineCategoryStyle', () => {
     expect(engineCategoryStyle('cards', false)).toBe('icon');
     expect(engineCategoryStyle('tiles', false)).toBe('letter');
     expect(engineCategoryStyle('circles', false)).toBe('letter');
+  });
+});
+
+describe('sectionFrameClass', () => {
+  it('adds the full-width modifier only when full_width is true', () => {
+    expect(sectionFrameClass({ full_width: true })).toBe('eng-sec eng-sec--full');
+    expect(sectionFrameClass({ full_width: false })).toBe('eng-sec');
+    expect(sectionFrameClass({ full_width: 'true' })).toBe('eng-sec');
+    expect(sectionFrameClass({})).toBe('eng-sec');
   });
 });

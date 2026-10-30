@@ -132,21 +132,21 @@ describe('visibleSettings', () => {
     }
   });
 
-  it('hides the theme card_style', () => {
+  it('shows the theme card_style now that it is wired', () => {
     const form = ids(visibleSettings(THEME_SETTINGS_SCHEMA, { kind: 'theme' }));
-    expect(form).not.toContain('card_style');
+    expect(form).toContain('card_style');
     expect(form).toContain('button_radius');
   });
 
-  it('hides the footer show_payment_icons', () => {
+  it('shows the footer show_payment_icons now that it is wired', () => {
     const form = ids(visibleSettings(getSectionSchema('footer')!.settings, { kind: 'section', type: 'footer' }));
-    expect(form).not.toContain('show_payment_icons');
+    expect(form).toContain('show_payment_icons');
     expect(form.length).toBeGreaterThan(0);
   });
 
-  it('hides full_width from COMMON_SETTINGS on every section', () => {
+  it('shows full_width from COMMON_SETTINGS on every section now that it is wired', () => {
     for (const type of ['rich-text', 'featured-products', 'custom-html']) {
-      expect(ids(visibleSettings(getSectionSchema(type)!.settings, { kind: 'section', type }))).not.toContain('full_width');
+      expect(ids(visibleSettings(getSectionSchema(type)!.settings, { kind: 'section', type }))).toContain('full_width');
     }
   });
 

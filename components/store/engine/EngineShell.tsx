@@ -31,6 +31,15 @@ const THEME_RULES =
   '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   // Image with text uses an h2 in the hero markup (the page's h1 belongs to the slideshow).
   '.st-root.eng-root .heroCopy .eng-heroTitle{font-size:clamp(24px,5cqi,40px);line-height:1.1;margin:12px 0;font-weight:700;overflow-wrap:anywhere}' +
+  // Full width (eng-sec--full): the section's content drops its side gutter and centred width caps.
+  '.st-root.eng-root .eng-sec--full :is(.eng-html,.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding-left:0;padding-right:0}' +
+  '.st-root.eng-root .eng-sec--full :is(.eng-faq,.eng-video-frame,.rich p){max-width:none}' +
+  // Product cards follow the theme's card style (data-card on the root); "bordered" is the card's own look.
+  '.st-root.eng-root[data-card="plain"] main article.g-surface{border-color:transparent;box-shadow:none}' +
+  '.st-root.eng-root[data-card="shadow"] main article.g-surface{border-color:transparent;box-shadow:0 6px 18px rgba(0,0,0,.08)}' +
+  // Footer payment icons: small text badges under the footer.
+  '.st-root.eng-root .eng-pay{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:12px 16px 20px}' +
+  '.st-root.eng-root .eng-pay li{list-style:none;border:1px solid rgba(0,0,0,.15);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;letter-spacing:.3px;opacity:.75}' +
   // A section that rendered nothing (an empty row, a hidden failure) takes no space; separate rules so
   // a browser without :has still applies :empty.
   '.st-root.eng-root .eng-sec:empty{display:none}' +
@@ -156,6 +165,7 @@ export function EngineShell({
         className={`st-root store-studio st-cq eng-root${kit ? ' phone-kit' : ''}${editor ? ' eng-editor' : ''}`}
         style={{ minHeight: '100vh', ...rootStyle } as CSSProperties}
         data-store={subdomain}
+        data-card={settings.card_style}
       >
         <style dangerouslySetInnerHTML={{ __html: THEME_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}

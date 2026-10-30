@@ -40,6 +40,11 @@ export function engineRootStyle(settings: ThemeSettings): Style {
   };
 }
 
+/** The section wrapper's classes: `eng-sec`, plus `eng-sec--full` when the merchant chose full width. */
+export function sectionFrameClass(settings: Record<string, unknown>): string {
+  return settings.full_width === true ? 'eng-sec eng-sec--full' : 'eng-sec';
+}
+
 /**
  * A section's own style: its colour scheme as `--c-*` variables (scheme 1 when unset or unknown),
  * repainted with the scheme when one was chosen, plus its top/bottom spacing.
