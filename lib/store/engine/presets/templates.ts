@@ -67,10 +67,16 @@ export const PAGE_STARTERS: Record<'blank' | 'about' | 'sale' | 'contact', { lab
         sec('product-rail', { source: 'discounted', heading: 'On offer now', limit: 8 }),
       ]),
   },
-  // Task 7 adds an faq section here.
   contact: {
     label: 'Contact',
     build: () =>
-      tpl([sec('rich-text', { heading: 'Get in touch', content: '<p>Call or message us and we will get back to you.</p>', align: 'center' })]),
+      tpl([
+        sec('rich-text', { heading: 'Get in touch', content: '<p>Call or message us and we will get back to you.</p>', align: 'center' }),
+        sec('faq', { heading: 'Frequently asked questions' }, [
+          blk('question', { question: 'How long does delivery take?', answer: '<p>Most orders arrive in 2 to 4 days.</p>' }),
+          blk('question', { question: 'Can I return an item?', answer: '<p>Yes. Message us within 7 days of delivery.</p>' }),
+          blk('question', { question: 'How can I track my order?', answer: '<p>We share tracking details by message once your order ships.</p>' }),
+        ]),
+      ]),
   },
 };

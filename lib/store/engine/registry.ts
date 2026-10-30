@@ -20,6 +20,13 @@ import { recentlyViewed } from './sections/recently-viewed';
 import { productReviews } from './sections/product-reviews';
 import { catalogBanner } from './sections/catalog-banner';
 import { mainCatalog } from './sections/main-catalog';
+import { collectionList } from './sections/collection-list';
+import { logoList } from './sections/logo-list';
+import { video } from './sections/video';
+import { faq } from './sections/faq';
+import { newsletter } from './sections/newsletter';
+import { countdown } from './sections/countdown';
+import { spacer } from './sections/spacer';
 
 /** Appended to every non-group section. Colour scheme, CSS class and custom CSS live on the Section itself. */
 export const COMMON_SETTINGS: SettingSchema[] = [
@@ -56,6 +63,13 @@ const ALL: SectionSchema[] = [
   productReviews,
   catalogBanner,
   mainCatalog,
+  collectionList,
+  logoList,
+  video,
+  faq,
+  newsletter,
+  countdown,
+  spacer,
 ].map(withCommon);
 
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = Object.fromEntries(ALL.map((s) => [s.type, s]));

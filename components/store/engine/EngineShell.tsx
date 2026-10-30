@@ -40,6 +40,33 @@ const THEME_RULES =
   '.st-root.eng-root .eng-html :is(img,iframe,video,table){max-width:100%}' +
   '.st-root.eng-root .eng-html :is(img,video){height:auto}' +
   '@container store (max-width: 640px){.st-root.eng-root .eng-html{padding:0 16px}}' +
+  // Collection list, logo list, video, FAQ, newsletter and countdown share one padded, centred block.
+  '.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding:0 30px;overflow-wrap:anywhere}' +
+  '.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown)>h2{margin:0 0 16px;text-align:center}' +
+  '.st-root.eng-root .eng-collections-grid{display:grid;grid-template-columns:repeat(var(--eng-cols,4),minmax(0,1fr));gap:14px}' +
+  '.st-root.eng-root .eng-collection{display:block;text-decoration:none;color:inherit}' +
+  '.st-root.eng-root .eng-collection-img{display:block;aspect-ratio:1/1;background:#eee center/cover no-repeat;border-radius:var(--btn-radius,10px)}' +
+  '.st-root.eng-root .eng-collection-title{display:block;margin-top:8px;font-weight:600;text-align:center}' +
+  '.st-root.eng-root .eng-logos ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:20px 32px}' +
+  '.st-root.eng-root .eng-logos img{display:block;max-height:48px;max-width:140px;width:auto;height:auto;object-fit:contain}' +
+  '.st-root.eng-root .eng-video-frame{position:relative;aspect-ratio:16/9;max-width:960px;margin:0 auto;background:#000;border-radius:var(--btn-radius,10px);overflow:hidden}' +
+  '.st-root.eng-root .eng-video-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
+  '.st-root.eng-root .eng-video-cover{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000 center/cover no-repeat;cursor:pointer;color:#fff;font-size:44px}' +
+  '.st-root.eng-root .eng-faq{max-width:760px;margin:0 auto}' +
+  '.st-root.eng-root .eng-faq details{border-bottom:1px solid rgba(0,0,0,.12);padding:12px 0}' +
+  '.st-root.eng-root .eng-faq summary{cursor:pointer;font-weight:600}' +
+  '.st-root.eng-root .eng-faq details>div{margin-top:8px}' +
+  '.st-root.eng-root .eng-news{text-align:center}' +
+  '.st-root.eng-root .eng-news>p{margin:0 0 14px}' +
+  '.st-root.eng-root .eng-news-form{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:480px;margin:0 auto}' +
+  '.st-root.eng-root .eng-news-form input{flex:1 1 220px;min-width:0;padding:10px 12px;border:1px solid rgba(0,0,0,.25);border-radius:var(--btn-radius,10px);font:inherit}' +
+  '.st-root.eng-root .eng-news-error{flex-basis:100%;margin:0;color:#b91c1c;font-size:14px}' +
+  '.st-root.eng-root .eng-countdown{text-align:center}' +
+  '.st-root.eng-root .eng-countdown-boxes{display:flex;justify-content:center;gap:12px;margin-bottom:14px}' +
+  '.st-root.eng-root .eng-countdown-boxes>div{min-width:64px;padding:10px 6px;border-radius:var(--btn-radius,10px);background:rgba(0,0,0,.06)}' +
+  '.st-root.eng-root .eng-countdown-boxes b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}' +
+  '.st-root.eng-root .eng-countdown-boxes span{font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
+  '@container store (max-width: 640px){.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding:0 16px}.st-root.eng-root .eng-collections-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
   // Editor mode: an empty section stays visible and clickable, with a placeholder naming its type.
   // Prefixed with the root classes to outrank the display:none rules above; separate rules as above.
   '.st-root.eng-root.eng-editor .eng-sec:empty{display:block;min-height:48px}' +

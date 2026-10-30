@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { sanitizeContactForm } from '@/lib/store/store-theme';
-import { validateEnquiry } from '@/lib/store/enquiry';
+import { NEWSLETTER_TOPIC, validateEnquiry } from '@/lib/store/enquiry';
 import { notifyStoreMerchantEnquiry } from '@/lib/store/notify-merchant';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
@@ -26,11 +26,13 @@ export async function POST(
   }
 
   const form = sanitizeContactForm(store.store_theme?.contact_form);
-  if (!form.enabled) {
+  const body = await request.json().catch(() => null);
+  // The newsletter section works whether or not the contact form is switched on.
+  const isNewsletter = body && typeof body === 'object' && (body as Record<string, unknown>).topic === NEWSLETTER_TOPIC;
+  if (!form.enabled && !isNewsletter) {
     return NextResponse.json({ error: 'This store is not accepting messages' }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => null);
   const result = validateEnquiry(body, form);
   // Typos are not counted against the limit; only real sends and spam are.
   if (!result.ok && !result.spam) {

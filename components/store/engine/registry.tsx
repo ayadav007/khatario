@@ -21,6 +21,13 @@ import { RecentlyViewed } from './sections/RecentlyViewed';
 import { ProductReviews } from './sections/ProductReviews';
 import { CatalogBanner } from './sections/CatalogBanner';
 import { MainCatalog } from './sections/MainCatalog';
+import { CollectionList } from './sections/CollectionList';
+import { LogoList } from './sections/LogoList';
+import { Video } from './sections/Video';
+import { Faq } from './sections/Faq';
+import { Newsletter } from './sections/Newsletter';
+import { Countdown } from './sections/Countdown';
+import { Spacer } from './sections/Spacer';
 
 /** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
 export interface EngineRoute {
@@ -63,4 +70,11 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   'product-reviews': ProductReviews,
   'catalog-banner': CatalogBanner,
   'main-catalog': MainCatalog,
+  'collection-list': CollectionList,
+  'logo-list': LogoList,
+  video: Video,
+  faq: Faq,
+  newsletter: Newsletter,
+  countdown: Countdown,
+  spacer: Spacer,
 };

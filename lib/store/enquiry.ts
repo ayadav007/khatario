@@ -36,10 +36,32 @@ function checkField(
   return valid ? null : `Enter a valid ${label.toLowerCase()}`;
 }
 
+/** Topic of the storefront newsletter signup section (D19). */
+export const NEWSLETTER_TOPIC = 'newsletter';
+
 export function validateEnquiry(body: unknown, form: StoreContactForm): EnquiryValidation {
   const src = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   if (text(src[ENQUIRY_HONEYPOT_FIELD], 200)) {
     return { ok: false, error: 'Rejected', spam: true };
+  }
+
+  // A newsletter signup is just an email: no name, phone, topic list or contact-form field modes.
+  if (text(src.topic, 40) === NEWSLETTER_TOPIC) {
+    const email = text(src.email, 255).toLowerCase();
+    const emailError = checkField('required', email, EMAIL_RE.test(email), 'Email');
+    if (emailError) return { ok: false, error: emailError };
+    const path = text(src.source_path, 200);
+    return {
+      ok: true,
+      value: {
+        name: 'Newsletter subscriber',
+        phone: null,
+        email,
+        topic: NEWSLETTER_TOPIC,
+        message: 'Newsletter signup',
+        source_path: path.startsWith('/') ? path : null,
+      },
+    };
   }
 
   const name = text(src.name, 120);

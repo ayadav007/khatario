@@ -182,6 +182,40 @@ export function EngineCategoryGrid({
   );
 }
 
+/** Collection list tiles: real category links, followed through the router so preview params stay. */
+export function EngineCollectionList({
+  heading,
+  columns,
+  tiles,
+}: {
+  heading: string;
+  columns: number;
+  tiles: { categoryId: string; title: string; image: string }[];
+}) {
+  const go = useCatalogNav();
+  return (
+    <div className="eng-collections">
+      {heading ? <h2>{heading}</h2> : null}
+      <div className="eng-collections-grid" style={{ ['--eng-cols' as string]: String(columns) }}>
+        {tiles.map((t) => (
+          <a
+            key={t.categoryId}
+            className="eng-collection"
+            href={engineCatalogHref('', { categoryId: t.categoryId })}
+            onClick={(e) => {
+              e.preventDefault();
+              go({ categoryId: t.categoryId });
+            }}
+          >
+            <span className="eng-collection-img" style={t.image ? { backgroundImage: `url(${JSON.stringify(t.image)})` } : undefined} />
+            <span className="eng-collection-title">{t.title}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** How many top sellers get the "Bestseller" badge (as StudioSourcedProducts). */
 const BESTSELLER_BADGES = 3;
 

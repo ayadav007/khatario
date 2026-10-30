@@ -57,3 +57,35 @@ export function defaultSettings(schemas: SettingSchema[]): Record<string, unknow
   }
   return out;
 }
+
+const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_HOSTS = ['youtube.com', 'www.youtube.com', 'youtu.be', 'www.youtu.be'];
+const VIMEO_HOSTS = ['vimeo.com', 'www.vimeo.com', 'player.vimeo.com'];
+
+/**
+ * The privacy-friendly embed address for a YouTube or Vimeo link, or null when the link is not https,
+ * not one of those hosts, or has no valid video id.
+ */
+export function videoEmbedUrl(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(String(url).trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:') return null;
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (YOUTUBE_HOSTS.includes(host)) {
+    let id: string | undefined;
+    if (host.endsWith('youtu.be')) id = parts[0];
+    else if (parts[0] === 'watch') id = u.searchParams.get('v') ?? undefined;
+    else if (parts[0] === 'embed' || parts[0] === 'shorts') id = parts[1];
+    return id && YOUTUBE_ID_RE.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+  }
+  if (VIMEO_HOSTS.includes(host)) {
+    const id = host === 'player.vimeo.com' ? (parts[0] === 'video' ? parts[1] : undefined) : parts[0];
+    return id && /^\d{1,12}$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
+  }
+  return null;
+}
