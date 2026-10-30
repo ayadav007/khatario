@@ -286,6 +286,20 @@ d('store reviews (real DB)', () => {
     });
   });
 
+  test('a published photo review edited with the same photos stays published; a new photo makes it pending', async () => {
+    const s = await shopper('Kavya');
+    await order(s, ITEM, 'delivered');
+    const r = await createReview(B, s, { item_id: ITEM, rating: 4, body: 'Nice mug with photos', photos: ['/u/p1.jpg', '/u/p2.jpg'] });
+    await moderateReview(B, r.id, 'publish');
+    // Same set in a different order: no re-approval, rating row kept with the new rating.
+    const same = await updateReview(B, s, r.id, { rating: 5, body: 'Even nicer after a week', photos: ['/u/p2.jpg', '/u/p1.jpg'] });
+    expect(same.status).toBe('published');
+    expect(Number((await ratingRow(s))[0].rating)).toBe(5);
+    const added = await updateReview(B, s, r.id, { rating: 5, body: 'Added one more photo', photos: ['/u/p1.jpg', '/u/p2.jpg', '/u/p3.jpg'] });
+    expect(added.status).toBe('pending');
+    expect(await ratingRow(s)).toHaveLength(0);
+  });
+
   test('author cannot edit after 30 days', async () => {
     const s = await shopper();
     await order(s, ITEM, 'delivered');
@@ -434,6 +448,13 @@ d('store reviews (real DB)', () => {
 
       const dup = await postReview(pubReq(reviewsUrl, 'POST', { item_id: ITEM, rating: 4, body: 'Second try here ok' }, s), { params: sub });
       expect(dup.status).toBe(409);
+    });
+
+    test('POST with a non-uuid item_id is 400, not a database error', async () => {
+      const s = await buyer();
+      const res = await postReview(pubReq(reviewsUrl, 'POST', { item_id: 'not-a-uuid', rating: 5, body: 'Lovely mug indeed' }, s), { params: sub });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'item_id is not valid' });
     });
 
     test('POST with a photo that did not come from our upload route is 400', async () => {

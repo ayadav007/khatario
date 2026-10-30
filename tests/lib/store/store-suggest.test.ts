@@ -24,6 +24,7 @@ describe('store suggest', () => {
     expect(q.products.sql).toContain('i.show_in_store = true');
     expect(q.products.sql).toContain('LIMIT 6');
     expect(q.categories.sql).toContain('LIMIT 3');
+    expect(q.categories.sql).toContain('c.business_id = $1');
     expect(q.categories.sql).toContain('i.deleted_at IS NULL');
   });
 

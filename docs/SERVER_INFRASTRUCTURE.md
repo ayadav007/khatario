@@ -191,6 +191,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 30 */3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron-staging.log 2>&1
+*/15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron-staging.log 2>&1
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron-staging.log 2>&1
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron-staging.log 2>&1
 20 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron-staging.log 2>&1
@@ -209,6 +210,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 30 */3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron.log 2>&1
+*/15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron.log 2>&1
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron.log 2>&1
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron.log 2>&1
 25 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron.log 2>&1
@@ -235,6 +237,23 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 `/api/cron/stuck-parcels` tells the buyer once when a shipped parcel has not moved for the shop's "delay notice" days (Orders & delivery > Buyer updates, default 3, 0 = off). Each parcel is claimed before the message goes, so repeated runs never message twice.
 
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
+
+**Online store shopping features (migrations 448/449).** Review photos are stored in `storage/store-reviews` inside the app folder (gitignored; override with `STORE_REVIEW_MEDIA_DIR`). Keep that folder across deploys and include it in backups: shoppers' photos cannot be re-created. The photo upload route needs its own body limit in each vhost, next to `location /` and with the same proxy lines (production upstream shown; staging uses its own `proxy_pass`):
+
+```nginx
+location ~ ^/api/public/store/[^/]+/reviews/photos$ {
+    client_max_body_size 3m;
+    proxy_pass http://khatario_prod;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+}
+```
+
+Migrations 448 and 449 must run in the same deploy as the code: the product detail route and checkout read and write their columns. `scripts/deploy-vps.sh` runs `db:migrate:pending`; never hot-reload this code without it. `/api/cron/abandoned-carts` (crontab above) sends cart reminders only for businesses that switched them on (default off); a business that sends through the Cloud API also needs an approved Meta template for the `store_cart_reminder` event before WhatsApp reminders can go out from its number (push reminders do not need it).
 
 `/api/cron/owner-daily-summary` sends the owner's evening summary (Settings > WhatsApp > Owner updates) from the business's own WhatsApp number once the owner's chosen time has passed in Indian time, whatever the server time zone. Each business gets at most one per day (`owner_whatsapp_links.last_summary_sent_on`), so the 15-minute schedule is safe to repeat.
 

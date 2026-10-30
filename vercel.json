@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/marketing-insights",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/abandoned-carts",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

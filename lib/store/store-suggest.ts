@@ -37,7 +37,8 @@ export function buildSuggestQuery(
   const categorySql = `
       SELECT c.id, c.name
       FROM categories c
-      WHERE c.name ILIKE $2 ESCAPE '\\'
+      WHERE c.business_id = $1
+        AND c.name ILIKE $2 ESCAPE '\\'
         AND EXISTS (SELECT 1 FROM items i WHERE i.category_id = c.id AND i.business_id = $1 AND ${VISIBLE})
       ORDER BY c.name
       LIMIT 3`;

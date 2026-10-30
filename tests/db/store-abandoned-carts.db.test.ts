@@ -320,13 +320,32 @@ d('store abandoned carts (real DB)', () => {
     await pool.query(`UPDATE store_carts SET reminded_at = now(), reminder_via = 'push' WHERE id = $1`, [cart]);
     const c = await pool.connect();
     try {
-      await markRecovered(c, B, s, await order(s, '0 hours'));
+      await markRecovered(c, B, s, await order(s, '5 minutes'));
     } finally {
       c.release();
     }
     await saveCart(B, s, lines(1));
     const row = await cartRow(cart);
     expect(row).toMatchObject({ status: 'open', reminded_at: null, reminder_via: null, recovered_order_id: null });
+  });
+
+  test('a non-empty save within 2 minutes of the recovering order keeps the cart recovered', async () => {
+    const s = await shopper();
+    const cart = await abandoned(B, s, '1 hour');
+    const before = await cartRow(cart);
+    const orderId = await order(s, '30 seconds');
+    const c = await pool.connect();
+    try {
+      await markRecovered(c, B, s, orderId);
+    } finally {
+      c.release();
+    }
+    // The late debounced PUT from the old cart: ok, but ignored.
+    await expect(saveCart(B, s, lines(3))).resolves.toBeUndefined();
+    const row = await cartRow(cart);
+    expect(row).toMatchObject({ status: 'recovered', recovered_order_id: orderId });
+    expect(row.items).toEqual(before.items);
+    expect(await readCart(B, s)).toEqual([]);
   });
 
   test('sendCartReminder falls back to WhatsApp when the shopper has no device', async () => {

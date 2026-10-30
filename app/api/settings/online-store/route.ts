@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
            (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
            (store_shiprocket_webhook_token_hash IS NOT NULL) AS shiprocket_webhook_configured,
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
-           store_promo_sheet
+           store_promo_sheet,
+           COALESCE(store_cart_reminder_enabled, false) AS store_cart_reminder_enabled,
+           COALESCE(store_cart_reminder_hours, 3) AS store_cart_reminder_hours
          FROM business_settings
          WHERE business_id = $1`,
         [businessId],
@@ -89,6 +91,8 @@ export async function GET(request: NextRequest) {
       store_promo_sheet: sanitizeStorePromoSheet(
         (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
       ),
+      store_cart_reminder_enabled: (row as { store_cart_reminder_enabled?: boolean })?.store_cart_reminder_enabled === true,
+      store_cart_reminder_hours: Number((row as { store_cart_reminder_hours?: number })?.store_cart_reminder_hours ?? 3),
       logo_url: logoRow?.logo_url ?? null,
       categories,
     });
@@ -114,6 +118,7 @@ export async function PATCH(request: NextRequest) {
     store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
     store_promo_sheet, store_shiprocket_webhook_token, store_return_window_days,
+    store_cart_reminder_enabled, store_cart_reminder_hours,
   } = body;
 
   if (
@@ -270,6 +275,16 @@ export async function PATCH(request: NextRequest) {
     idx++;
     sets.push(`store_promo_sheet = $${idx}`);
     params.push(JSON.stringify(sanitizeStorePromoSheet(store_promo_sheet)));
+  }
+  if (store_cart_reminder_enabled !== undefined) {
+    idx++;
+    sets.push(`store_cart_reminder_enabled = $${idx}`);
+    params.push(Boolean(store_cart_reminder_enabled));
+  }
+  if (store_cart_reminder_hours !== undefined) {
+    idx++;
+    sets.push(`store_cart_reminder_hours = $${idx}`);
+    params.push(Math.min(72, Math.max(1, Math.round(Number(store_cart_reminder_hours)) || 1)));
   }
 
   if (sets.length === 0) {

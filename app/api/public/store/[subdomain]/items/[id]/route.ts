@@ -40,7 +40,7 @@ export async function GET(
               WHERE r.item_id = i.id AND r.business_id = i.business_id
             ), '0') AS rating_count
      FROM items i
-     LEFT JOIN categories c ON c.id = i.category_id
+     LEFT JOIN categories c ON c.id = i.category_id AND c.business_id = i.business_id
      WHERE i.id = $1 AND i.business_id = $2 AND i.show_in_store = true
        AND (i.is_active IS NULL OR i.is_active = true) AND i.deleted_at IS NULL`,
     [params.id, store.business_id],

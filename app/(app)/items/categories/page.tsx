@@ -111,7 +111,7 @@ export default function ItemCategoriesPage() {
     }
     setChartSaving(true);
     try {
-      // size_chart must always be sent: a request with only { id } clears the chart.
+      // size_chart must always be sent (null clears the chart); a request with only { id } is a 400.
       const response = await fetch('/api/categories', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

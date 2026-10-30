@@ -160,8 +160,12 @@ export async function PATCH(request: NextRequest) {
       throw error;
     }
 
+    // A missing key would silently wipe the chart; only an explicit null clears it.
+    if (!Object.prototype.hasOwnProperty.call(body, 'size_chart')) {
+      return NextResponse.json({ error: 'size_chart is required' }, { status: 400 });
+    }
     const { validateProductExtras } = await import('@/lib/store/product-extras');
-    const extras = validateProductExtras({ size_chart: body.size_chart ?? null });
+    const extras = validateProductExtras({ size_chart: body.size_chart });
     if (!extras.ok) return NextResponse.json({ error: extras.error }, { status: 400 });
     const chart = extras.value.size_chart ?? null;
 

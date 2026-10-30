@@ -206,6 +206,8 @@ d('store product page APIs (real DB)', () => {
     expect(items[0]).toHaveProperty('images');
     const limited = await (await getRelated(pub(SHIRT, '/related?limit=1'), ctx(SHIRT))).json();
     expect(limited.items).toHaveLength(1);
+    // A non-uuid branch_id is dropped rather than reaching a uuid column.
+    expect((await getRelated(pub(SHIRT, '/related?branch_id=not-a-uuid'), ctx(SHIRT))).status).toBe(200);
   });
 
   test('related is 404 for an unknown item or store', async () => {
@@ -253,7 +255,14 @@ d('store product page APIs (real DB)', () => {
     expect(bad.status).toBe(400);
     const foreign = await patchCategory(admin('/api/categories', 'PATCH', { id: OTHER_CAT, size_chart: OWN_CHART }));
     expect(foreign.status).toBe(404);
+    const missing = await patchCategory(admin('/api/categories', 'PATCH', { id: CAT_MUGS }));
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: 'size_chart is required' });
+    const kept = (await pool.query(`SELECT size_chart FROM categories WHERE id = $1`, [CAT_MUGS])).rows[0];
+    expect(kept.size_chart).toEqual(OWN_CHART);
     const cleared = await patchCategory(admin('/api/categories', 'PATCH', { id: CAT_MUGS, size_chart: null }));
     expect(cleared.status).toBe(200);
+    const gone = (await pool.query(`SELECT size_chart FROM categories WHERE id = $1`, [CAT_MUGS])).rows[0];
+    expect(gone.size_chart).toBeNull();
   });
 });

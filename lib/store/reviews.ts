@@ -245,15 +245,23 @@ export async function updateReview(
   const clean = cleanInput(input);
   return inTx(async (c) => {
     const cur = await c.query(
-      `SELECT id, item_id, status, created_at < now() - ($4 || ' days')::interval AS expired
+      `SELECT id, item_id, status, photos, created_at < now() - ($4 || ' days')::interval AS expired
          FROM store_item_reviews WHERE id = $1 AND business_id = $2 AND customer_id = $3 FOR UPDATE`,
       [reviewId, businessId, customerId, String(EDIT_WINDOW_DAYS)],
     );
     if (!cur.rows.length) throw new ReviewError('not_found', 'Review not found');
     const row = cur.rows[0];
     if (row.expired) throw new ReviewError('edit_window_closed', `Reviews can be edited for ${EDIT_WINDOW_DAYS} days`);
-    // A review the merchant hid stays hidden; otherwise the photo rule decides again.
-    const status: ReviewStatus = row.status === 'hidden' ? 'hidden' : reviewStatusFor(clean.photos);
+    // A review the merchant hid stays hidden; a published one keeping exactly the same photos stays
+    // published (nothing new to approve); otherwise the photo rule decides again.
+    const before = new Set<string>(Array.isArray(row.photos) ? row.photos.map(String) : []);
+    const samePhotos = before.size === new Set(clean.photos).size && clean.photos.every((p) => before.has(p));
+    const status: ReviewStatus =
+      row.status === 'hidden'
+        ? 'hidden'
+        : row.status === 'published' && samePhotos
+          ? 'published'
+          : reviewStatusFor(clean.photos);
     await c.query(
       `UPDATE store_item_reviews
           SET rating = $2, title = $3, body = $4, photos = $5::jsonb, status = $6, updated_at = now()

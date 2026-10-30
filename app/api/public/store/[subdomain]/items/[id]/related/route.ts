@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { isUuid } from '@/lib/store/review-http';
 import { buildRelatedQuery } from '@/lib/store/related-products';
 import { mapStoreItemRow } from '@/lib/store/map-store-product';
 
@@ -24,7 +25,8 @@ export async function GET(
     const { searchParams } = request.nextUrl;
     const limitRaw = parseInt(searchParams.get('limit') ?? '8', 10);
     const limit = Math.min(24, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 8));
-    const branchId = searchParams.get('branch_id');
+    const rawBranch = searchParams.get('branch_id');
+    const branchId = isUuid(rawBranch) ? rawBranch : null;
 
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.id)) {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });

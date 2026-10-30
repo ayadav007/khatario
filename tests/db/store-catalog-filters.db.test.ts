@@ -202,6 +202,14 @@ d('store catalog filters (real DB)', () => {
     expect(short).toEqual({ products: [], categories: [] });
   });
 
+  test('a non-uuid branch_id is dropped, not a database error', async () => {
+    const r = await items('branch_id=not-a-uuid');
+    expect(r.status).toBe(200);
+    expect(r.json.items).toHaveLength(4);
+    const f = await getFacets(req('items/facets', 'branch_id=not-a-uuid'), ctx);
+    expect(f.status).toBe(200);
+  });
+
   test('unknown store is a 404', async () => {
     const res = await getFacets(req('items/facets'), { params: { subdomain: `nope-${tag}` } });
     expect(res.status).toBe(404);

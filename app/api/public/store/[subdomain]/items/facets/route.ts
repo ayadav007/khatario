@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { isUuid } from '@/lib/store/review-http';
 import { parseCatalogQuery } from '@/lib/store/query-params';
 import { buildStoreFacetsQuery, shapeFacets, type StoreFacetRows } from '@/lib/store/store-facets-query';
 
@@ -32,7 +33,7 @@ export async function GET(
     const queries = buildStoreFacetsQuery({
       ...parsed,
       businessId: store.business_id,
-      branchId: searchParams.get('branch_id'),
+      branchId: isUuid(searchParams.get('branch_id')) ? searchParams.get('branch_id') : null,
       limit: 0,
       offset: 0,
     });

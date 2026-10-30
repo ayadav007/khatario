@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star } from 'lucide-react';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -46,6 +46,8 @@ interface StoreSettings {
   store_shiprocket_email?: string | null;
   shiprocket_webhook_configured?: boolean;
   store_promo_sheet?: StorePromoSheetConfig | null;
+  store_cart_reminder_enabled?: boolean;
+  store_cart_reminder_hours?: number;
   logo_url?: string | null;
   categories?: Array<{ id: string; name: string }>;
 }
@@ -117,6 +119,8 @@ export default function OnlineStoreSettingsPage() {
   const [returnDays, setReturnDays] = useState('7');
   const [deliveryProvider, setDeliveryProvider] = useState('self');
   const [hideBadge, setHideBadge] = useState(false);
+  const [cartReminderOn, setCartReminderOn] = useState(false);
+  const [cartReminderHours, setCartReminderHours] = useState('3');
   const [shipEmail, setShipEmail] = useState('');
   const [shipPassword, setShipPassword] = useState('');
   const [shipWebhookToken, setShipWebhookToken] = useState('');
@@ -180,6 +184,8 @@ export default function OnlineStoreSettingsPage() {
         setTheme(nextTheme);
         setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
+        setCartReminderOn(data.store_cart_reminder_enabled === true);
+        setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
         setShipEmail(data.store_shiprocket_email ?? '');
         setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
         setShipWebhookToken('');
@@ -234,6 +240,8 @@ export default function OnlineStoreSettingsPage() {
           store_delivery_provider: deliveryProvider,
           store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
+          store_cart_reminder_enabled: cartReminderOn,
+          store_cart_reminder_hours: Math.min(72, Math.max(1, Math.round(Number(cartReminderHours)) || 3)),
           store_shiprocket_email: shipEmail || null,
           store_shiprocket_password: shipPassword || undefined,
           store_shiprocket_webhook_token: shipWebhookToken || undefined,
@@ -275,6 +283,8 @@ export default function OnlineStoreSettingsPage() {
     deliveryProvider,
     theme,
     hideBadge,
+    cartReminderOn,
+    cartReminderHours,
     shipEmail,
     shipPassword,
     shipWebhookToken,
@@ -410,6 +420,13 @@ export default function OnlineStoreSettingsPage() {
                 {pendingBadgeText(pendingReviews)}
               </span>
             ) : null}
+          </Link>
+          <Link
+            href="/settings/online-store/abandoned-carts"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <ShoppingCart className="h-3.5 w-3.5" />
+            Abandoned carts
           </Link>
           <button
             type="button"
@@ -776,6 +793,31 @@ export default function OnlineStoreSettingsPage() {
                   />
                   <span className="mt-1 block">Buyers can ask for a return from their account. 0 turns online returns off.</span>
                 </label>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>
+                      Remind shoppers about carts they leave
+                      <span className="block text-xs text-gray-500">
+                        One reminder per cart, by app notification if they have your app, else WhatsApp.
+                      </span>
+                    </span>
+                    <Toggle on={cartReminderOn} onToggle={() => setCartReminderOn((v) => !v)} />
+                  </label>
+                  {cartReminderOn ? (
+                    <label className="flex items-center gap-2 text-xs text-gray-500">
+                      after
+                      <input
+                        type="number"
+                        min="1"
+                        max="72"
+                        className="w-20 rounded-lg border px-3 py-2 text-sm"
+                        value={cartReminderHours}
+                        onChange={(e) => setCartReminderHours(e.target.value)}
+                      />
+                      hours
+                    </label>
+                  ) : null}
+                </div>
                 <label className="block text-xs text-gray-500">
                   Delivery partner
                   <select

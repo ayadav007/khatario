@@ -47,6 +47,10 @@ export function useCatalogData(
   const [page, setPage] = useState(1);
   // Bumped on every new filter set so late answers (and late "load more" pages) are ignored.
   const generation = useRef(0);
+  // Set synchronously so a double click cannot fetch the same page twice before a re-render.
+  const loadingMore = useRef(false);
+  // Bumped by retry() to run the first-page fetch again.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!subdomain) return;
@@ -88,10 +92,13 @@ export function useCatalogData(
       });
 
     return () => ctrl.abort();
-  }, [subdomain, apiParams, branchId]);
+  }, [subdomain, apiParams, branchId, reload]);
+
+  const retry = useCallback(() => setReload((n) => n + 1), []);
 
   const loadMore = useCallback(async () => {
-    if (!subdomain || loading || items.length >= total) return;
+    if (!subdomain || loading || loadingMore.current || items.length >= total) return;
+    loadingMore.current = true;
     const gen = generation.current;
     const next = page + 1;
     setLoading(true);
@@ -106,10 +113,11 @@ export function useCatalogData(
     } catch {
       /* ignore: the button stays for another try */
     } finally {
+      loadingMore.current = false;
       if (gen === generation.current) setLoading(false);
     }
   }, [subdomain, apiParams, branchId, loading, items.length, total, page]);
 
   // A held-off fetch (no subdomain yet) counts as loading too.
-  return { items, total, categories, facets, loading: loading || !subdomain, error, loadMore, hasMore: items.length < total };
+  return { items, total, categories, facets, loading: loading || !subdomain, error, retry, loadMore, hasMore: items.length < total };
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { StoreFacets } from '@/lib/store/store-facets-query';
 import { clearCatalogFilters, type CatalogFilterValue } from './catalog-filters';
 import { createPendingFilters } from './pending-filters';
+import { useOverlay } from '@/components/store/features/product/useOverlay';
 
 const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const PRICE_DEBOUNCE_MS = 400;
@@ -78,6 +79,10 @@ export function CatalogFilterPanel({ facets, value, onChange, layout, open, onCl
     // Re-stage only when the sheet opens, not on every parent update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSheet, open]);
+
+  // Sheet: Escape closes, body scroll is locked (shared counter) and focus moves to Close.
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useOverlay(isSheet && !!open, () => onClose?.(), closeBtnRef);
 
   const [side, setSide] = useState<CatalogFilterValue>(value);
   const onChangeRef = useRef(onChange);
@@ -221,6 +226,7 @@ export function CatalogFilterPanel({ facets, value, onChange, layout, open, onCl
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-1">
           <h2 className="text-base font-semibold text-gray-900">Filters</h2>
           <button
+            ref={closeBtnRef}
             type="button"
             onClick={onClose}
             aria-label="Close"

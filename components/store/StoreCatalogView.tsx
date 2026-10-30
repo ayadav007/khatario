@@ -604,6 +604,18 @@ function StoreCatalogBody() {
                           <div key={i} className="aspect-square animate-pulse rounded-[1.35rem] bg-white" />
                         ))}
                       </div>
+                    ) : catalog.error ? (
+                      <div role="alert" className="flex items-center gap-3 py-10 text-[13px]">
+                        <span style={{ opacity: 0.6 }}>Couldn&apos;t load products.</span>
+                        <button
+                          type="button"
+                          onClick={catalog.retry}
+                          className="rounded-full bg-white px-4 py-1.5 font-medium shadow-sm"
+                          style={{ color: ink }}
+                        >
+                          Retry
+                        </button>
+                      </div>
                     ) : items.length === 0 ? (
                       <p className="py-10 text-[13px]" style={{ opacity: 0.5 }}>
                         {searchQuery
@@ -623,7 +635,7 @@ function StoreCatalogBody() {
                       </div>
                     )}
 
-                    {hasMore ? (
+                    {hasMore && !catalog.error ? (
                       <div className="mt-8">
                         <button
                           type="button"

@@ -9,14 +9,11 @@ import { storePublicHostname } from '@/lib/store/subdomain';
  * signed-in shopper's cart, one reminder when it is left behind, and recovery when they order.
  */
 
-export type CartLine = {
-  item_id: string;
-  variant_id: string | null;
-  quantity: number;
-  price: number;
-  name: string;
-  image_url: string | null;
-};
+import { cartReminderMessage, canRemindManually, type CartLine } from '@/lib/store/abandoned-cart-format';
+
+// Pure helpers live in a client-safe module; re-exported so existing imports keep working.
+export { cartReminderMessage, canRemindManually };
+export type { CartLine };
 
 export type DueCart = {
   id: string;
@@ -37,7 +34,6 @@ export const CART_MAX_QUANTITY = 999;
 const CART_MAX_PRICE = 10_000_000;
 /** NUMERIC(12,2) holds below 1e10. */
 const CART_MAX_SUBTOTAL = 1e10;
-const MANUAL_GAP_MS = 24 * 3600_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CART_ERROR_TEXT = {
@@ -72,31 +68,11 @@ export function cartSubtotal(lines: CartLine[]): number {
   return Math.round(total * 100) / 100;
 }
 
-/** Template values: up to three item names plus "and N more", and the total in Indian format. */
-export function cartReminderMessage(
-  lines: CartLine[],
-  store: { name: string },
-  total: number,
-): { item_names: string; total: string } {
-  void store;
-  const names = lines.map((l) => (typeof l.name === 'string' ? l.name.trim() : '')).filter(Boolean);
-  const head = names.slice(0, 3).join(', ');
-  const rest = names.length - 3;
-  return {
-    item_names: rest > 0 ? `${head} and ${rest} more` : head,
-    total: total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-  };
-}
-
 /** Push text: "Rice is still…" for one line, "Rice, Ghee are still…" / "… and 2 more are still…" for more. */
 export function cartPushBody(lines: CartLine[], storeName: string, total: number): string {
   const msg = cartReminderMessage(lines, { name: storeName }, total);
   const verb = lines.length === 1 ? 'is' : 'are';
   return `${msg.item_names} ${verb} still in your cart at ${storeName}. Total ₹${msg.total}.`;
-}
-
-export function canRemindManually(remindedAt: Date | null, now: Date): boolean {
-  return !remindedAt || now.getTime() - remindedAt.getTime() >= MANUAL_GAP_MS;
 }
 
 function appBaseUrl(): string {
@@ -146,7 +122,8 @@ function validLines(lines: CartLine[]): CartLine[] {
  * Upserts the shopper's cart from already-priced lines. Empty → `cleared` (a `recovered` cart stays
  * recovered, so clearing the storefront after checkout keeps the recovery). Non-empty → `open` with
  * a fresh `updated_at`; `reminded_at` is kept on an open cart and reset when a recovered or cleared
- * cart is reopened, so each new abandoned cart can get its own reminder.
+ * cart is reopened, so each new abandoned cart can get its own reminder. A non-empty save within
+ * 2 minutes of the recovering order is ignored (a late debounced PUT from the old cart).
  */
 export async function saveCart(businessId: string, customerId: string, lines: CartLine[]): Promise<void> {
   const clean = validLines(lines);
@@ -165,7 +142,11 @@ export async function saveCart(businessId: string, customerId: string, lines: Ca
                            THEN NULL ELSE store_carts.reminder_via END,
        recovered_order_id = CASE WHEN EXCLUDED.status = 'open' AND store_carts.status <> 'open'
                                  THEN NULL ELSE store_carts.recovered_order_id END,
-       updated_at = now()`,
+       updated_at = now()
+     -- A debounced save that lands just after checkout must not reopen the recovered cart.
+     WHERE NOT (EXCLUDED.status = 'open' AND store_carts.status = 'recovered' AND EXISTS (
+       SELECT 1 FROM store_orders o
+        WHERE o.id = store_carts.recovered_order_id AND o.created_at > now() - interval '2 minutes'))`,
     [businessId, customerId, JSON.stringify(clean), cartSubtotal(clean), status],
   );
 }
@@ -267,7 +248,7 @@ export async function claimDueCarts(limit = 50): Promise<DueCart[]> {
 async function claimManual(
   cartId: string,
   businessId: string,
-): Promise<{ cart: DueCart } | { error: 'not_found' | 'too_soon' | 'empty' }> {
+): Promise<{ cart: DueCart } | { error: 'not_found' | 'store_disabled' | 'too_soon' | 'empty' }> {
   const c = await getPool().connect();
   try {
     await c.query('BEGIN');
@@ -283,8 +264,9 @@ async function claimManual(
       [cartId, businessId],
     );
     const row = r.rows[0];
-    let error: 'not_found' | 'too_soon' | 'empty' | null = null;
-    if (!row || !row.store_subdomain || !row.store_enabled) error = 'not_found';
+    let error: 'not_found' | 'store_disabled' | 'too_soon' | 'empty' | null = null;
+    if (!row) error = 'not_found';
+    else if (!row.store_subdomain || !row.store_enabled) error = 'store_disabled';
     else if (row.status !== 'open' || !Array.isArray(row.items) || row.items.length === 0) error = 'empty';
     else if (!canRemindManually(row.reminded_at ? new Date(row.reminded_at) : null, new Date())) error = 'too_soon';
     if (error) {
@@ -382,4 +364,53 @@ export async function purgeStaleCarts(): Promise<number> {
     `DELETE FROM store_carts WHERE status IN ('open', 'cleared') AND updated_at < now() - interval '30 days'`,
   );
   return r.rowCount ?? 0;
+}
+
+export type OpenCartRow = {
+  id: string;
+  customer_name: string | null;
+  phone: string;
+  item_count: number;
+  subtotal: number;
+  updated_at: string;
+  reminded_at: string | null;
+  reminder_via: string | null;
+  lines: CartLine[];
+};
+
+/** Open carts for the admin page: this business only, newest activity first. */
+export async function listOpenCarts(businessId: string, limit = 100): Promise<OpenCartRow[]> {
+  const r = await query<{
+    id: string;
+    items: CartLine[];
+    subtotal: string;
+    updated_at: Date;
+    reminded_at: Date | null;
+    reminder_via: string | null;
+    customer_name: string | null;
+    phone: string;
+  }>(
+    `SELECT c.id, c.items, c.subtotal::text, c.updated_at, c.reminded_at, c.reminder_via,
+            sc.name AS customer_name, sc.phone
+       FROM store_carts c
+       JOIN store_customers sc ON sc.id = c.customer_id AND sc.business_id = c.business_id
+      WHERE c.business_id = $1 AND c.status = 'open' AND c.items <> '[]'::jsonb
+      ORDER BY c.updated_at DESC
+      LIMIT $2`,
+    [businessId, Math.min(Math.max(1, Math.floor(limit)), 100)],
+  );
+  return r.rows.map((row) => {
+    const lines = Array.isArray(row.items) ? row.items : [];
+    return {
+      id: row.id,
+      customer_name: row.customer_name?.trim() || null,
+      phone: row.phone,
+      item_count: lines.reduce((n, l) => n + (Number(l.quantity) || 0), 0),
+      subtotal: Number(row.subtotal),
+      updated_at: new Date(row.updated_at).toISOString(),
+      reminded_at: row.reminded_at ? new Date(row.reminded_at).toISOString() : null,
+      reminder_via: row.reminder_via,
+      lines,
+    };
+  });
 }

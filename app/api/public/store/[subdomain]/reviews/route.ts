@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createReview } from '@/lib/store/reviews';
-import { storeAndShopper, reviewErrorResponse, parseReviewBody } from '@/lib/store/review-http';
+import { storeAndShopper, reviewErrorResponse, parseReviewBody, isUuid } from '@/lib/store/review-http';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +13,7 @@ export async function POST(request: NextRequest, { params }: { params: { subdoma
     const body = await request.json().catch(() => ({}));
     const itemId = String(body?.item_id ?? '').trim();
     if (!itemId) return NextResponse.json({ error: 'item_id required' }, { status: 400 });
+    if (!isUuid(itemId)) return NextResponse.json({ error: 'item_id is not valid' }, { status: 400 });
     const parsed = parseReviewBody(body, store.business_id);
     if (!parsed.ok) return parsed.response;
     const review = await createReview(store.business_id, customerId, { ...parsed.input, item_id: itemId });

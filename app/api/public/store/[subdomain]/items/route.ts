@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { isUuid } from '@/lib/store/review-http';
 import { parseCatalogQuery } from '@/lib/store/query-params';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
 
@@ -66,7 +67,9 @@ export async function GET(
         ? categoryRaw
         : null;
     const search = searchParams.get('search')?.trim() || parsed.search;
-    const branchId = searchParams.get('branch_id');
+    // A non-uuid branch would be a Postgres error on a uuid column; drop it.
+    const rawBranch = searchParams.get('branch_id');
+    const branchId = isUuid(rawBranch) ? rawBranch : null;
     const featuredOnly = searchParams.get('featured') === '1';
     const discountedOnly = searchParams.get('discounted') === '1';
     const maxPriceRaw = Number(searchParams.get('max_price'));
