@@ -469,16 +469,26 @@ export async function storeIncomingMessage(
       };
       console.log('[CRM] WHATSAPP_SKIP_CONVERSATION_MESSAGE_MIRROR: skipping whatsapp_conversation_messages insert');
     } else {
+      // A message id is unique per business, not across Khatario: when two businesses message each other the
+      // same id is stored once in each inbox. Insert, and on any conflict update only this business's row,
+      // so another business's copy is never touched (migration 451).
       messageResult = await db.query(
-        `INSERT INTO whatsapp_conversation_messages 
-         (business_id, conversation_id, message_id, from_number, to_number, 
-          message_text, message_type, media_url, direction, status, sender_name, created_at, source_timestamp)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'incoming', 'delivered', $9, to_timestamp($10::double precision),
-          CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
-            THEN to_timestamp($11::double precision) ELSE NULL END)
-         ON CONFLICT (message_id) DO UPDATE SET
-           sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_conversation_messages.sender_name)
-         RETURNING created_at, source_timestamp, (xmax = 0) AS inserted`,
+        `WITH ins AS (
+           INSERT INTO whatsapp_conversation_messages
+           (business_id, conversation_id, message_id, from_number, to_number,
+            message_text, message_type, media_url, direction, status, sender_name, created_at, source_timestamp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'incoming', 'delivered', $9, to_timestamp($10::double precision),
+            CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
+              THEN to_timestamp($11::double precision) ELSE NULL END)
+           ON CONFLICT DO NOTHING
+           RETURNING created_at, source_timestamp, TRUE AS inserted
+         ), upd AS (
+           UPDATE whatsapp_conversation_messages m
+              SET sender_name = COALESCE($9, m.sender_name)
+            WHERE m.business_id = $1 AND m.message_id = $3 AND NOT EXISTS (SELECT 1 FROM ins)
+           RETURNING m.created_at, m.source_timestamp, FALSE AS inserted
+         )
+         SELECT * FROM ins UNION ALL SELECT * FROM upd`,
         [
           businessId,
           conversation.id,
@@ -696,31 +706,39 @@ export async function storeOutgoingMessage(
 
     const mid = messageId || `out_${Date.now()}_${Math.random()}`;
     const btn = buttonsJson ? JSON.stringify(buttonsJson) : null;
+    // Same per-business rule as storeIncomingMessage: a conflict only ever updates this business's row.
     const result = await queryOne<{ id: string }>(
-      `INSERT INTO whatsapp_conversation_messages 
-       (business_id, conversation_id, message_id, from_number, to_number, 
-        message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp,
-        sent_by, sent_by_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'outgoing', 'sent', $9, to_timestamp($10::double precision),
-         CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
-           THEN to_timestamp($11::double precision) ELSE NULL END,
-         $12, $13)
-         ON CONFLICT (message_id) DO UPDATE SET
-         message_text = EXCLUDED.message_text,
-         message_type = EXCLUDED.message_type,
-         -- Inbox sends save the file first; a later echo of the same message must not replace it.
-         media_url = CASE
-           WHEN whatsapp_conversation_messages.media_url LIKE '/api/whatsapp/media/%' THEN whatsapp_conversation_messages.media_url
-           ELSE COALESCE(EXCLUDED.media_url, whatsapp_conversation_messages.media_url)
-         END,
-         buttons = EXCLUDED.buttons,
-         sent_by = COALESCE(EXCLUDED.sent_by, whatsapp_conversation_messages.sent_by),
-         sent_by_user_id = COALESCE(EXCLUDED.sent_by_user_id, whatsapp_conversation_messages.sent_by_user_id),
-         status = CASE
-           WHEN whatsapp_conversation_messages.status IN ('delivered', 'read', 'failed') THEN whatsapp_conversation_messages.status
-           ELSE 'sent'
-         END
-       RETURNING id`,
+      `WITH ins AS (
+         INSERT INTO whatsapp_conversation_messages
+         (business_id, conversation_id, message_id, from_number, to_number,
+          message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp,
+          sent_by, sent_by_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'outgoing', 'sent', $9, to_timestamp($10::double precision),
+           CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
+             THEN to_timestamp($11::double precision) ELSE NULL END,
+           $12, $13)
+         ON CONFLICT DO NOTHING
+         RETURNING id
+       ), upd AS (
+         UPDATE whatsapp_conversation_messages m SET
+           message_text = $6,
+           message_type = $7,
+           -- Inbox sends save the file first; a later echo of the same message must not replace it.
+           media_url = CASE
+             WHEN m.media_url LIKE '/api/whatsapp/media/%' THEN m.media_url
+             ELSE COALESCE($8, m.media_url)
+           END,
+           buttons = $9,
+           sent_by = COALESCE($12, m.sent_by),
+           sent_by_user_id = COALESCE($13, m.sent_by_user_id),
+           status = CASE
+             WHEN m.status IN ('delivered', 'read', 'failed') THEN m.status
+             ELSE 'sent'
+           END
+          WHERE m.business_id = $1 AND m.message_id = $3 AND NOT EXISTS (SELECT 1 FROM ins)
+         RETURNING m.id
+       )
+       SELECT id FROM ins UNION ALL SELECT id FROM upd`,
       [
         businessId,
         conversation.id,
