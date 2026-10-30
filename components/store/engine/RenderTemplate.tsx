@@ -61,7 +61,7 @@ export function RenderTemplate({
   return (
     <EngineShell
       theme={shellTheme}
-      store={store}
+      subdomain={store.store_subdomain}
       preview={preview}
       rootStyle={engineRootStyle(themeData.settings)}
       header={renderGroup(themeData.header_group, store, themeData, data)}

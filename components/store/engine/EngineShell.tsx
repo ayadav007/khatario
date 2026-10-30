@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { ThemeRow } from '@/lib/store/engine/types';
 import { useStore } from '@/lib/store/store-context';
 import { previewStoreCss } from '@/lib/store/section-css';
@@ -31,7 +30,8 @@ const THEME_RULES =
   '.st-root.eng-root .eng-sec:not(:has(>:not(style))){display:none}' +
   // Custom HTML gets Studio's rich-text gutter and keeps its images inside the page.
   '.st-root.eng-root .eng-html{padding:0 30px;overflow-wrap:anywhere}' +
-  '.st-root.eng-root .eng-html img{max-width:100%;height:auto}' +
+  '.st-root.eng-root .eng-html :is(img,iframe,video,table){max-width:100%}' +
+  '.st-root.eng-root .eng-html :is(img,video){height:auto}' +
   '@container store (max-width: 640px){.st-root.eng-root .eng-html{padding:0 16px}}';
 
 function focusSearch() {
@@ -47,7 +47,7 @@ function focusSearch() {
  */
 export function EngineShell({
   theme,
-  store,
+  subdomain,
   preview,
   rootStyle,
   header,
@@ -56,7 +56,7 @@ export function EngineShell({
 }: {
   /** Only `data.settings` is read; the server sends the theme without its templates. */
   theme: ThemeRow;
-  store: StoreBusinessContext;
+  subdomain: string;
   preview: boolean;
   rootStyle: Record<string, string | number | undefined>;
   header: ReactNode;
@@ -82,7 +82,7 @@ export function EngineShell({
       <div
         className={`st-root store-studio st-cq eng-root${kit ? ' phone-kit' : ''}`}
         style={{ minHeight: '100vh', ...rootStyle } as CSSProperties}
-        data-store={store.store_subdomain}
+        data-store={subdomain}
       >
         <style dangerouslySetInnerHTML={{ __html: THEME_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}

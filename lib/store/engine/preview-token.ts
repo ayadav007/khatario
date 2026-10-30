@@ -9,7 +9,7 @@ function secret(): string {
 }
 
 function mac(body: string): string {
-  return createHmac('sha256', secret()).update(body).digest('base64url');
+  return createHmac('sha256', secret()).update(`store-theme-preview:${body}`).digest('base64url');
 }
 
 /** `base64url(json).base64url(hmac)`; the payload binds the token to one business and one theme. */

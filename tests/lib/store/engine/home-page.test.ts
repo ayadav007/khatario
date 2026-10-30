@@ -47,6 +47,13 @@ describe('loadEngineHome', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('logs a missing-migration error once per process and still falls back', async () => {
+    loadMock.mockRejectedValue({ code: '42703' });
+    await expect(loadEngineHome(store, {})).resolves.toBeNull();
+    await expect(loadEngineHome(store, {})).resolves.toBeNull();
+    expect(errSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('passes preview params and narrowing, ignoring a malformed category id', async () => {
     loadMock.mockResolvedValue({ theme, preview: true });
     resolveMock.mockResolvedValue({ s1: { products: [] } });

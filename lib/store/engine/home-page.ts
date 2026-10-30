@@ -13,6 +13,9 @@ export interface EngineHome {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// A store theme migration that has not run yet fails every request the same way; log it once per process.
+let loggedMissingMigration = false;
+
 function first(v: string | string[] | undefined): string | null {
   const s = Array.isArray(v) ? v[0] : v;
   return typeof s === 'string' && s ? s : null;
@@ -46,7 +49,12 @@ export async function loadEngineHome(
     });
     return { theme, preview, data };
   } catch (e) {
-    console.error('[store engine]', store.store_subdomain, e instanceof Error ? e.message : e);
+    const code = (e as { code?: unknown } | null)?.code;
+    const missingMigration = code === '42703' || code === '42P01';
+    if (!missingMigration || !loggedMissingMigration) {
+      if (missingMigration) loggedMissingMigration = true;
+      console.error('[store engine]', store.store_subdomain, e instanceof Error ? e.message : e);
+    }
     return null;
   }
 }

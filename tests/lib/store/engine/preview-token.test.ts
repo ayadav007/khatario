@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto';
 import { PREVIEW_TTL, signThemePreview, verifyThemePreview } from '@/lib/store/engine/preview-token';
 
 const BIZ = '11111111-1111-4111-8111-111111111111';
@@ -29,6 +30,12 @@ describe('theme preview token', () => {
     const forged = Buffer.from(JSON.stringify({ b: BIZ, t: OTHER, exp: Date.now() + 1e9 })).toString('base64url');
     expect(verifyThemePreview(`${forged}.${sig}`, BIZ)).toBeNull();
     expect(verifyThemePreview(`${body}.${sig.slice(0, -2)}AA`, BIZ)).toBeNull();
+  });
+
+  it('rejects a token whose MAC was computed without the purpose prefix', () => {
+    const body = Buffer.from(JSON.stringify({ b: BIZ, t: THEME, exp: Date.now() + 1e9 })).toString('base64url');
+    const bare = createHmac('sha256', 'unit-test-secret').update(body).digest('base64url');
+    expect(verifyThemePreview(`${body}.${bare}`, BIZ)).toBeNull();
   });
 
   it('rejects garbage', () => {

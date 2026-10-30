@@ -68,4 +68,22 @@ describe('sanitizeCustomHtml', () => {
     expect(sanitizeCustomHtml(undefined)).toBe('');
     expect(sanitizeCustomHtml(42)).toBe('');
   });
+
+  it('drops an inline style that can fetch or execute, and keeps a harmless one', () => {
+    const denied = [
+      'background:url(https://a.com/x.png)',
+      'width:expression(alert(1))',
+      '@import "x"',
+      'background:javascript:alert(1)',
+      'behavior:url(x.htc)',
+      '-moz-binding:x',
+      'color:\\72ed',
+    ];
+    for (const style of denied) {
+      const out = sanitizeCustomHtml(`<div style="${style}">x</div>`);
+      expect(out).toContain('<div');
+      expect(out).not.toContain('style=');
+    }
+    expect(sanitizeCustomHtml('<div style="color:red">x</div>')).toContain('style="color:red"');
+  });
 });
