@@ -310,9 +310,23 @@ OTP still falls back to Baileys when `PLATFORM_WHATSAPP_BUSINESS_ID` is set and 
 
 `447_connect_leads.sql` creates the `leads` table, backfills one lead per pipeline chat, and adds AFTER INSERT/UPDATE triggers on `invoices` and `sales_orders` (`leads_auto_won`: a final sales invoice or confirmed order wins the customer's open leads; quotations, estimates, proformas, challans and credit/debit notes do not; errors are swallowed so a document never fails). Run it in a quiet window: a re-apply on the test DB once hit a transient deadlock with another session. Apply to staging only with owner approval.
 
-**Deploy order.** `scripts/deploy-vps.sh` runs `npm run db:migrate:pending` before `npm run build` and `pm2 reload`, so for the length of the build the old code runs against the migrated database. Approving 447 therefore means approving the push and deploy of everything on `main` up to it (`main` is well ahead of `origin`). During that window the old code still writes deals and sources to `whatsapp_conversations` and opens no leads, so chats put on the pipeline then would be missing from the board. After `pm2 reload`, in the same quiet window, run the file once more: `node scripts/run-migration.js database/migrations/447_connect_leads.sql`. It is idempotent; the second run only adds leads for pipeline chats that still have none and changes nothing else.
+**Deploy order.** `scripts/deploy-vps.sh` runs `npm run db:migrate:pending` before `npm run build` and `pm2 reload`, so for the length of the build the old code runs against the migrated database. Approving 447 therefore means approving the push and deploy of everything on `main` up to it (`main` is well ahead of `origin`). During that window the old code still writes deals and sources to `whatsapp_conversations` and opens no leads, so chats put on the pipeline then would be missing from the board. After `pm2 reload`, in the same quiet window, run the file once more: `node scripts/run-migration.js database/migrations/447_connect_leads.sql`. It is idempotent; the second run only adds leads for pipeline chats that still have none and changes nothing else. It cannot recover stage moves or deal edits the old code made in that window on chats that already had a lead (those wrote only chat columns), so keep the window short and tell staff not to edit the pipeline during the deploy.
 
 **Rollback.** Rolling the code back to before 447 works (the old pipeline columns on `whatsapp_conversations` are kept one release and the new tables and columns are ignored), but every pipeline change made while the lead code ran (stage moves, deals, new and closed leads, manual and imported leads) lives only on `leads` and is lost to the old board. Also, the old follow-up reminder cron joins reminders to chats with an INNER JOIN, so reminders on chat-less leads would be marked notified but never sent; tell the owner which pending reminders have `conversation_id IS NULL` (they are lost to the old code) before rolling back. Leave the `leads_auto_won` triggers in place or drop them; they only write to `leads`.
+
+### Message ids per business (migration 451, two deploys)
+
+When two Khatario businesses message each other (Supplier Hub), WhatsApp gives the message one id and it is stored in both inboxes. The old global `UNIQUE (message_id)` on `whatsapp_conversation_messages` let the sender's save overwrite the receiver's row. The fix ships in two deploys because migrations run before the build (see Migration 447 above), so the old code keeps saving messages for a few minutes against the new schema:
+
+1. **Phase 1 (`451_whatsapp_message_id_per_business.sql`, with commit 8772a78b):** adds `UNIQUE (business_id, message_id)` and keeps the old constraint, which the old code's `ON CONFLICT (message_id)` still needs. The new code inserts with `ON CONFLICT DO NOTHING` and updates only its own business's row, so the overwrite stops on this deploy; until phase 2 the second business's copy of a cross-business message is skipped. The index build blocks writes to `whatsapp_conversation_messages` while it runs: quiet window.
+2. **Phase 2 (the next deploy, once phase-1 code is live everywhere):** add a migration with exactly this, then deploy:
+
+   ```sql
+   ALTER TABLE whatsapp_conversation_messages
+     DROP CONSTRAINT IF EXISTS whatsapp_conversation_messages_message_id_key;
+   ```
+
+   After it, both businesses keep their own copy. Do not add this migration in the same deploy as 451.
 
 ### Platform admin PWA and push (staging and production)
 
