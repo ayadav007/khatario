@@ -1,0 +1,140 @@
+// Pure helpers that shape the Studio 2 section tree and the Add section modal.
+// Client-safe: imports only types, schema-types, registry and ops.
+import type { Block, Section, ThemeData } from '../types';
+import type { SectionSchema } from '../schema-types';
+import { getSectionSchema, sectionsForTemplate } from '../registry';
+import { OP_ERROR_TEXT, canAddBlock, canAddSection, getGroup, templateKind, type GroupKey, type OpError, type SectionRef } from './ops';
+
+export const TREE_GROUPS: { group: GroupKey; title: string }[] = [
+  { group: 'header', title: 'Header' },
+  { group: 'template', title: 'Home' },
+  { group: 'footer', title: 'Footer' },
+];
+
+export interface BlockRow {
+  id: string;
+  /** Position in block_order (what moveBlock takes). */
+  index: number;
+  label: string;
+  hidden: boolean;
+  unknown: boolean;
+}
+
+export interface SectionRow {
+  id: string;
+  ref: SectionRef;
+  /** Position in the group's order (what moveSection takes). */
+  index: number;
+  label: string;
+  hidden: boolean;
+  /** No schema for this type: it can only be removed. */
+  unknown: boolean;
+  blocks: BlockRow[];
+}
+
+export interface AddOption {
+  reason: OpError | null;
+  reasonText: string | null;
+}
+
+export interface AddBlockOption extends AddOption {
+  type: string;
+  name: string;
+}
+
+export interface AddSectionCard extends AddOption {
+  key: string;
+  type: string;
+  presetIndex: number;
+  title: string;
+  schemaName: string;
+  presetName: string;
+}
+
+export interface AddSectionCategory {
+  category: SectionSchema['category'];
+  cards: AddSectionCard[];
+}
+
+const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+function reasonOf(reason: OpError | null): AddOption {
+  return { reason, reasonText: reason ? OP_ERROR_TEXT[reason] : null };
+}
+
+export function sectionLabel(section: Section): string {
+  return section.label || getSectionSchema(section.type)?.name || section.type;
+}
+
+export function blockLabel(sectionType: string, block: Block): string {
+  return getSectionSchema(sectionType)?.blocks?.find((b) => b.type === block.type)?.name || block.type;
+}
+
+function blockRows(section: Section): BlockRow[] {
+  const schema = getSectionSchema(section.type);
+  const rows: BlockRow[] = [];
+  section.block_order.forEach((id, index) => {
+    if (!hasOwn(section.blocks, id)) return;
+    const block = section.blocks[id];
+    rows.push({
+      id,
+      index,
+      label: blockLabel(section.type, block),
+      hidden: !!block.disabled,
+      unknown: !schema?.blocks?.some((b) => b.type === block.type),
+    });
+  });
+  return rows;
+}
+
+export function groupRows(theme: ThemeData, templateKey: string, group: GroupKey): SectionRow[] {
+  const g = getGroup(theme, templateKey, group);
+  const rows: SectionRow[] = [];
+  g.order.forEach((id, index) => {
+    if (!hasOwn(g.sections, id)) return;
+    const section = g.sections[id];
+    rows.push({
+      id,
+      ref: { group, id },
+      index,
+      label: sectionLabel(section),
+      hidden: !!section.disabled,
+      unknown: !getSectionSchema(section.type),
+      blocks: blockRows(section),
+    });
+  });
+  return rows;
+}
+
+export function addBlockOptions(theme: ThemeData, templateKey: string, ref: SectionRef): AddBlockOption[] {
+  const g = getGroup(theme, templateKey, ref.group);
+  if (!hasOwn(g.sections, ref.id)) return [];
+  const schema = getSectionSchema(g.sections[ref.id].type);
+  return (schema?.blocks ?? []).map((b) => ({
+    type: b.type,
+    name: b.name,
+    ...reasonOf(canAddBlock(theme, templateKey, ref, b.type)),
+  }));
+}
+
+export function addSectionCards(theme: ThemeData, templateKey: string, group: GroupKey): AddSectionCategory[] {
+  const byCategory = new Map<SectionSchema['category'], AddSectionCard[]>();
+  for (const schema of sectionsForTemplate(templateKind(templateKey, group))) {
+    const reason = reasonOf(canAddSection(theme, templateKey, group, schema.type));
+    const many = schema.presets.length > 1;
+    const cards = byCategory.get(schema.category) ?? [];
+    schema.presets.forEach((preset, presetIndex) => {
+      cards.push({
+        key: `${schema.type}:${presetIndex}`,
+        type: schema.type,
+        presetIndex,
+        title: many ? `${schema.name} · ${preset.name}` : schema.name,
+        schemaName: schema.name,
+        presetName: preset.name,
+        ...reason,
+      });
+    });
+    byCategory.set(schema.category, cards);
+  }
+  return Array.from(byCategory, ([category, cards]) => ({ category, cards }));
+}

@@ -22,6 +22,8 @@ import {
 import { editorPath, fetchCategories, openWorkingDraft, previewLink, publishTheme, putTheme } from './api';
 import { TopBar } from './TopBar';
 import { PreviewPane, type Device } from './PreviewPane';
+import { SectionTree } from './SectionTree';
+import { AddSectionModal } from './AddSectionModal';
 
 export type { Selection };
 
@@ -39,6 +41,8 @@ export interface Studio2Api {
   /** Where the Add section modal inserts; null while it is closed. */
   addSectionTarget: { group: GroupKey; index: number } | null;
   closeAddSection(): void;
+  /** Publishing or leaving for the next working draft: edits are blocked, so the panes disable their controls. */
+  readOnly: boolean;
 }
 
 export const Studio2Context = createContext<Studio2Api | null>(null);
@@ -352,8 +356,9 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
       hovered,
       addSectionTarget,
       closeAddSection,
+      readOnly: leave !== 'idle',
     }),
-    [history.present, selection, apply, select, hover, openAddSection, categories, hovered, addSectionTarget, closeAddSection],
+    [history.present, selection, apply, select, hover, openAddSection, categories, hovered, addSectionTarget, closeAddSection, leave],
   );
 
   const s = status.status;
@@ -405,7 +410,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
 
         <div className="flex min-h-0 flex-1">
           <aside className="w-72 shrink-0 overflow-y-auto border-r border-gray-200 bg-white">
-            <SectionsPlaceholder />
+            <SectionTree />
           </aside>
           <PreviewPane
             themeId={row.id}
@@ -419,6 +424,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
           </aside>
         </div>
       </div>
+      <AddSectionModal />
     </Studio2Context.Provider>
   );
 }
@@ -450,18 +456,7 @@ function BannerButton({ onClick, children }: { onClick(): void; children: ReactN
   );
 }
 
-// Placeholders: Task 9 builds the section tree, Task 10 the settings panel.
-function SectionsPlaceholder() {
-  const { theme, templateKey } = useStudio2();
-  const count = theme.templates[templateKey]?.order.length ?? 0;
-  return (
-    <div className="p-4">
-      <h2 className="text-sm font-semibold text-gray-900">Sections</h2>
-      <p className="mt-1 text-xs text-gray-500">{count} on this page</p>
-    </div>
-  );
-}
-
+// Placeholder: Task 10 builds the settings panel.
 function SettingsPlaceholder() {
   const { selection } = useStudio2();
   return (
