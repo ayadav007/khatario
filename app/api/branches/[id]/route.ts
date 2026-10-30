@@ -11,6 +11,7 @@ import {
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { checkBranchPlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,8 +113,10 @@ export async function PATCH(
 
     // Subscription: multi_branch is required only when editing a non-default branch while
     // multiple active branches exist. Single-outlet (or default / HQ branch) edits stay allowed on Free.
-    const currentBranch = await db.queryOne<{ is_default: boolean }>(
-      `SELECT is_default FROM branches WHERE id = $1 AND business_id = $2`,
+    const currentBranch = await db.queryOne<{
+      is_default: boolean; gstin: string | null; state: string | null; state_code: string | null;
+    }>(
+      `SELECT is_default, gstin, state, state_code FROM branches WHERE id = $1 AND business_id = $2`,
       [params.id, business_id]
     );
 
@@ -161,6 +164,18 @@ export async function PATCH(
       finalGstin = gstinCheck.gstin;
       finalState = gstinCheck.state;
       finalStateCode = gstinCheck.state_code;
+    }
+    if (gstin !== undefined || state !== undefined || state_code !== undefined) {
+      // The UPDATE keeps old values for nulls, so check the row as it will be saved. A new state
+      // name without a code drops the stored code, which may belong to the old state.
+      const placeError = await checkBranchPlace(db.getPool() as any, business_id, {
+        gstin: finalGstin ?? currentBranch.gstin,
+        state: finalState ?? currentBranch.state,
+        state_code: finalStateCode ?? (state != null ? null : currentBranch.state_code),
+      });
+      if (placeError) {
+        return NextResponse.json(placeError, { status: 400 });
+      }
     }
 
     // If setting as default, unset other default branches

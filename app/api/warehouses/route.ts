@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { checkWarehousePlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -182,6 +183,11 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    const placeError = await checkWarehousePlace(db.getPool() as any, business_id, branch_id, { state });
+    if (placeError) {
+      return NextResponse.json(placeError, { status: 400 });
     }
 
     const warehouse = await db.queryOne(`

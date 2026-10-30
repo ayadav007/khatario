@@ -1,4 +1,4 @@
-import { checkGstin, GST_STATE_NAMES } from '@/lib/tax/gstin';
+import { checkGstin, GST_STATE_NAMES, resolveGstinAndState } from '@/lib/tax/gstin';
 import { effectiveGstScheme, type GstScheme } from '@/lib/gst/scheme-policy';
 
 type Queryable = {
@@ -104,6 +104,64 @@ export async function resolveSupplierRegistration(
     phone: r.b_phone,
     email: r.b_email,
   };
+}
+
+export interface PlaceRegistrationError {
+  code: 'BRANCH_NEEDS_STATE_GSTIN' | 'WAREHOUSE_OUTSIDE_REGISTRATION_STATE' | 'GSTIN_STATE_MISMATCH' | 'INVALID_GSTIN';
+  error: string;
+}
+
+/**
+ * GST registration is per state (s.22 and s.25(1) CGST Act): a principal or additional place of
+ * business must sit in the state of the GSTIN it trades under, and a place in another state needs
+ * its own registration there. Skipped when the business is not registered or the state is unknown.
+ */
+export function placeOutsideRegistration(
+  kind: 'branch' | 'warehouse',
+  place: { state?: string | null; stateCode?: string | null },
+  registration: { gstin: string | null; stateCode: string | null },
+): PlaceRegistrationError | null {
+  if (!registration.gstin) return null;
+  const placeCode = place.stateCode?.trim() ? place.stateCode.trim().padStart(2, '0') : stateCodeFromName(place.state);
+  const regCode = registration.stateCode || registration.gstin.slice(0, 2);
+  if (!placeCode || placeCode === regCode) return null;
+  const placeName = GST_STATE_NAMES[placeCode] ?? place.state ?? placeCode;
+  const regName = GST_STATE_NAMES[regCode] ?? regCode;
+  return kind === 'branch'
+    ? {
+        code: 'BRANCH_NEEDS_STATE_GSTIN',
+        error: `This branch is in ${placeName}, but it has no GSTIN of its own and the business is registered in ${regName}. GST registration is per state, so add this branch's ${placeName} GSTIN.`,
+      }
+    : {
+        code: 'WAREHOUSE_OUTSIDE_REGISTRATION_STATE',
+        error: `This godown is in ${placeName}, but it falls under the ${regName} GST registration. Stock can only be kept at places in the registration's state, so link it to a branch with a ${placeName} GSTIN.`,
+      };
+}
+
+/** Rule above for a branch: its own GSTIN must match its state, otherwise it trades under the head office's. */
+export async function checkBranchPlace(
+  db: Queryable,
+  businessId: string,
+  branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
+): Promise<PlaceRegistrationError | null> {
+  const headOffice = await resolveSupplierRegistration(db, businessId, null);
+  const own = branch.gstin?.trim().toUpperCase() || null;
+  if (own && own !== headOffice.gstin) {
+    const check = resolveGstinAndState({ gstin: own, state: branch.state, state_code: branch.state_code });
+    return check.ok ? null : { code: check.code, error: check.error };
+  }
+  return placeOutsideRegistration('branch', { state: branch.state, stateCode: branch.state_code }, headOffice);
+}
+
+/** Rule above for a godown: checked against its branch's registration, or the head office's without a branch. */
+export async function checkWarehousePlace(
+  db: Queryable,
+  businessId: string,
+  branchId: string | null | undefined,
+  warehouse: { state?: string | null },
+): Promise<PlaceRegistrationError | null> {
+  const registration = await resolveSupplierRegistration(db, businessId, branchId || null);
+  return placeOutsideRegistration('warehouse', { state: warehouse.state }, registration);
 }
 
 /** Effective GST scheme of the registration a document is issued / received under. */

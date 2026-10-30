@@ -2,7 +2,8 @@
  * PATCH /api/branches/[id] authorizes the session user. A body
  * updated_by_user_id or business_id cannot choose the actor or the company.
  */
-jest.mock('@/lib/db', () => ({ queryOne: jest.fn(), query: jest.fn() }));
+const mockPoolQuery = jest.fn();
+jest.mock('@/lib/db', () => ({ queryOne: jest.fn(), query: jest.fn(), getPool: () => ({ query: mockPoolQuery }) }));
 const mockAuthorize = jest.fn();
 jest.mock('@/lib/authorization', () => {
   class AuthorizationError extends Error {
@@ -49,12 +50,16 @@ const context = { params: { id: BRANCH } };
 
 beforeEach(() => {
   const { queryOne } = jest.requireMock('@/lib/db') as { queryOne: jest.Mock };
-  queryOne.mockImplementation(async (sql: string) => {
+  queryOne.mockReset().mockImplementation(async (sql: string) => {
     const text = String(sql);
-    if (text.includes('SELECT is_default FROM branches')) return { is_default: true };
+    if (text.includes('SELECT is_default')) return { is_default: true, gstin: null, state: 'Gujarat', state_code: '24' };
     if (text.includes('COUNT(*)')) return { n: '1' };
     if (text.includes('UPDATE branches SET')) return { id: BRANCH, name: 'Main', business_id: BIZ };
     return null;
+  });
+  // Head office registered in Gujarat.
+  mockPoolQuery.mockReset().mockResolvedValue({
+    rows: [{ b_gstin: '24AAPFU0939F1Z1', b_state: 'Gujarat', b_state_code: '24' }],
   });
   mockAuthorize.mockReset().mockResolvedValue(undefined);
   mockBranchPermission.mockReset().mockResolvedValue(true);
@@ -102,4 +107,17 @@ it('does not let another user id pass the permission check', async () => {
   const { queryOne } = jest.requireMock('@/lib/db') as { queryOne: jest.Mock };
   const updateCall = queryOne.mock.calls.find((call) => String(call[0]).includes('UPDATE branches SET'));
   expect(updateCall).toBeUndefined();
+});
+
+it('refuses to move a branch without its own GSTIN to another state', async () => {
+  const res = await PATCH(patch({ state: 'Maharashtra', state_code: '27' }, session), context);
+  expect(res.status).toBe(400);
+  expect((await res.json()).code).toBe('BRANCH_NEEDS_STATE_GSTIN');
+  const { queryOne } = jest.requireMock('@/lib/db') as { queryOne: jest.Mock };
+  expect(queryOne.mock.calls.find((call) => String(call[0]).includes('UPDATE branches SET'))).toBeUndefined();
+});
+
+it('saves a same-state branch under the head-office GSTIN', async () => {
+  const res = await PATCH(patch({ state: 'Gujarat', state_code: '24' }, session), context);
+  expect(res.status).toBe(200);
 });

@@ -7,6 +7,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { checkBranchPlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -178,6 +179,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+    const placeError = await checkBranchPlace(db.getPool() as any,business_id, gstinCheck);
+    if (placeError) {
+      return NextResponse.json(placeError, { status: 400 });
     }
 
     // CRITICAL: Handle is_default flag

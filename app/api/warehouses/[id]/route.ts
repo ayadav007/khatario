@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { checkWarehousePlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -183,6 +184,18 @@ export async function PATCH(
             { status: 400 }
           );
         }
+      }
+    }
+
+    if (state !== undefined || branch_id !== undefined) {
+      const placeError = await checkWarehousePlace(
+        db.getPool() as any,
+        businessId,
+        branch_id !== undefined ? branch_id : existingWarehouse.branch_id,
+        { state: state !== undefined ? state : existingWarehouse.state },
+      );
+      if (placeError) {
+        return NextResponse.json(placeError, { status: 400 });
       }
     }
 
