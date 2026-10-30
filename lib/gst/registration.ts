@@ -128,18 +128,55 @@ export async function resolveGstScheme(
  * the head office, and a branch with a separate GSTIN only with branches holding that GSTIN.
  */
 export async function registrationBranchIds(db: Queryable, businessId: string, branchId: string): Promise<string[]> {
+  const keys = await branchRegistrationKeys(db, businessId);
+  if (!keys.has(branchId)) return [branchId];
+  const key = keys.get(branchId);
+  return Array.from(keys).filter(([, k]) => k === key).map(([id]) => id);
+}
+
+/**
+ * Branch id → the GSTIN it files under ('' for branches trading under the business registration,
+ * whatever that is). Branches with equal keys share one return and one invoice series space.
+ */
+export async function branchRegistrationKeys(db: Queryable, businessId: string): Promise<Map<string, string>> {
   const res = await db.query<{ id: string; gstin: string | null; b_gstin: string | null }>(
     `SELECT br.id, br.gstin, b.gstin AS b_gstin
        FROM branches br JOIN businesses b ON b.id = br.business_id
       WHERE br.business_id = $1`,
     [businessId],
   );
-  const ownGstin = (r: { gstin: string | null; b_gstin: string | null }) => {
+  const keys = new Map<string, string>();
+  for (const r of res.rows) {
     const g = r.gstin?.trim().toUpperCase() || null;
-    return g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : null;
-  };
-  const target = res.rows.find((r) => r.id === branchId);
-  if (!target) return [branchId];
-  const key = ownGstin(target);
-  return res.rows.filter((r) => ownGstin(r) === key).map((r) => r.id);
+    keys.set(r.id, g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : '');
+  }
+  return keys;
+}
+
+/** GSTIN a branch files its returns under ('' when the business has no GSTIN): the key for per-return records. */
+export async function registrationGstinKey(db: Queryable, businessId: string, branchId: string | null | undefined): Promise<string> {
+  return (await resolveSupplierRegistration(db, businessId, branchId)).gstin ?? '';
+}
+
+/**
+ * A branch without its own GSTIN trades under the business registration, and a place of business
+ * on a GSTIN must be in that GSTIN's state. Returns the error to show when the branch address is
+ * in another state, or null. Unknown states are not judged.
+ */
+export function branchOutsideRegistrationState(
+  branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
+  business: { gstin?: string | null; state?: string | null; state_code?: string | null },
+): string | null {
+  const ownGstin = branch.gstin && branch.gstin.trim() ? branch.gstin.trim().toUpperCase() : null;
+  const bizGstin = business.gstin && business.gstin.trim() ? business.gstin.trim().toUpperCase() : null;
+  if (!bizGstin || (ownGstin && ownGstin !== bizGstin)) return null;
+  const branchState = stateOf(null, branch.state_code ?? null, branch.state ?? null);
+  const regState = stateOf(bizGstin, business.state_code ?? null, business.state ?? null);
+  if (!branchState || !regState || branchState === regState) return null;
+  const branchName = GST_STATE_NAMES[branchState] ?? `state ${branchState}`;
+  const regName = GST_STATE_NAMES[regState] ?? `state ${regState}`;
+  return (
+    `This branch is in ${branchName}, but it has no GSTIN of its own and the business GSTIN is registered in ${regName}. ` +
+    `A place of business in another state needs its own GSTIN: enter the ${branchName} GSTIN for this branch.`
+  );
 }

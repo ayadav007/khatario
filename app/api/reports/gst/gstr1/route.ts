@@ -119,11 +119,15 @@ export async function GET(request: NextRequest) {
         filingDate = now.toISOString().split('T')[0];
       }
 
+      // One GSTR-1 per GSTIN per period: branches on another GSTIN keep their own filing record.
+      const { registrationGstinKey } = await import('@/lib/gst/registration');
+      const filingGstin = await registrationGstinKey(client, business_id, finalBranchId);
+
       // Check if filing record already exists
       const existingFiling = await client.query(
         `SELECT id, status FROM gstr1_filings 
-         WHERE business_id = $1 AND filing_period = $2`,
-        [business_id, filingPeriod]
+         WHERE business_id = $1 AND gstin = $2 AND filing_period = $3`,
+        [business_id, filingGstin, filingPeriod]
       );
 
       let filingId: string;
@@ -134,10 +138,10 @@ export async function GET(request: NextRequest) {
       } else {
         // Create new filing record
         const newFiling = await client.query(
-          `INSERT INTO gstr1_filings (business_id, filing_period, filing_date, status)
-           VALUES ($1, $2, $3, 'draft')
+          `INSERT INTO gstr1_filings (business_id, gstin, filing_period, filing_date, status)
+           VALUES ($1, $2, $3, $4, 'draft')
            RETURNING id`,
-          [business_id, filingPeriod, filingDate]
+          [business_id, filingGstin, filingPeriod, filingDate]
         );
         filingId = newFiling.rows[0].id;
       }
