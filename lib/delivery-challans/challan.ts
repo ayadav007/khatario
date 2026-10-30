@@ -1,4 +1,5 @@
 ﻿import { resolveGstScheme, resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { computeChallanLines, type ChallanLineInput } from '@/lib/delivery-challans/challan-math';
 import {
@@ -101,6 +102,8 @@ export async function writeChallan(
     resolveSupplierRegistration(client as any, businessId, branchId),
     resolveGstScheme(client as any, businessId, branchId),
   ]);
+  const godownMismatch = await findWarehouseStateMismatch(client as any, businessId, registration, [input.warehouse_id]);
+  if (godownMismatch) throw new ChallanInputError(warehouseStateMismatchMessage(godownMismatch));
 
   let posCode = input.place_of_supply_state_code ? String(input.place_of_supply_state_code).padStart(2, '0') : null;
   if (!posCode && input.customer_id) {

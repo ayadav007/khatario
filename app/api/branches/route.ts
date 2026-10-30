@@ -7,6 +7,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { branchOutsideRegistrationState } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -169,8 +170,16 @@ export async function POST(request: NextRequest) {
     if (!gstinCheck.ok) {
       return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
     }
+    const bizReg = await db.queryOne<{ gstin: string | null; state: string | null; state_code: string | null }>(
+      `SELECT gstin, state, state_code FROM businesses WHERE id = $1`,
+      [business_id]
+    );
+    const outOfState = branchOutsideRegistrationState(gstinCheck, bizReg ?? {});
+    if (outOfState) {
+      return NextResponse.json({ error: outOfState, code: 'BRANCH_NEEDS_OWN_GSTIN' }, { status: 400 });
+    }
     if (gstinCheck.pan) {
-      const biz = await db.queryOne<{ gstin: string | null }>(`SELECT gstin FROM businesses WHERE id = $1`, [business_id]);
+      const biz = bizReg;
       const bizPan = panFromGstin(biz?.gstin);
       if (bizPan && bizPan !== gstinCheck.pan) {
         return NextResponse.json(
@@ -218,16 +227,16 @@ export async function POST(request: NextRequest) {
 
     // Rule 46(b): one consecutive series per GSTIN per year. A second branch on the same
     // GSTIN must not restart at INV-001, so non-default branches get their own prefix.
+    // Bills of supply (Rule 49) follow the same rule.
     if (branch && !is_default) {
-      const code =
-        String(invoice_prefix || '').trim() ||
-        `INV-${(String(branch_code || '').trim() || String(name).replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BR').toUpperCase()}`;
+      const tag = (String(branch_code || '').trim() || String(name).replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BR').toUpperCase();
+      const code = String(invoice_prefix || '').trim() || `INV-${tag}`;
       try {
         await db.query(
           `INSERT INTO branch_document_prefixes (branch_id, document_type, prefix)
-           VALUES ($1, 'tax_invoice', $2)
+           VALUES ($1, 'tax_invoice', $2), ($1, 'bill_of_supply', $3)
            ON CONFLICT (branch_id, document_type) DO NOTHING`,
-          [branch.id, code.slice(0, 50)]
+          [branch.id, code.slice(0, 50), `BOS-${tag}`.slice(0, 50)]
         );
       } catch (error: any) {
         if (error?.code !== '42P01') throw error;

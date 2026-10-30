@@ -11,6 +11,7 @@ import {
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { branchOutsideRegistrationState } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -161,6 +162,30 @@ export async function PATCH(
       finalGstin = gstinCheck.gstin;
       finalState = gstinCheck.state;
       finalStateCode = gstinCheck.state_code;
+    }
+
+    // A branch without its own GSTIN must sit in the business GSTIN's state.
+    if (gstin !== undefined || state !== undefined || state_code !== undefined) {
+      const cur = await db.queryOne<{ gstin: string | null; state: string | null; state_code: string | null }>(
+        `SELECT gstin, state, state_code FROM branches WHERE id = $1 AND business_id = $2`,
+        [params.id, business_id]
+      );
+      const bizReg = await db.queryOne<{ gstin: string | null; state: string | null; state_code: string | null }>(
+        `SELECT gstin, state, state_code FROM businesses WHERE id = $1`,
+        [business_id]
+      );
+      const outOfState = branchOutsideRegistrationState(
+        {
+          gstin: finalGstin ?? cur?.gstin,
+          state: finalState ?? cur?.state,
+          // A new state name without a code must not be judged against the old code.
+          state_code: finalStateCode ?? (finalState != null ? null : cur?.state_code),
+        },
+        bizReg ?? {}
+      );
+      if (outOfState) {
+        return NextResponse.json({ error: outOfState, code: 'BRANCH_NEEDS_OWN_GSTIN' }, { status: 400 });
+      }
     }
 
     // If setting as default, unset other default branches
