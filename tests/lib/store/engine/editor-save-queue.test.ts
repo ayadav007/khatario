@@ -1,0 +1,222 @@
+import {
+  AUTOSAVE_MS,
+  RETRY_MS,
+  SaveQueue,
+  backupKey,
+  readBackup,
+  type PutResult,
+  type SaveStatus,
+} from '@/lib/store/engine/editor/save-queue';
+import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
+
+const d = (n: number) => ({ n }) as unknown as ThemeData;
+const row = (updated_at: string, n = 0) =>
+  ({ id: 't1', updated_at, data: d(n) }) as unknown as ThemeRow;
+const ok = (updated_at: string): PutResult => ({ status: 200, body: { theme: row(updated_at) } });
+
+function memStorage(seed: Record<string, string> = {}) {
+  const m = new Map(Object.entries(seed));
+  return {
+    m,
+    getItem: (k: string) => (m.has(k) ? (m.get(k) as string) : null),
+    setItem: (k: string, v: string) => void m.set(k, v),
+    removeItem: (k: string) => void m.delete(k),
+  };
+}
+
+async function tick(n = 10) {
+  for (let i = 0; i < n; i++) await Promise.resolve();
+}
+
+function setup(putImpl: jest.Mock) {
+  const storage = memStorage();
+  const statuses: Array<[SaveStatus, string | undefined]> = [];
+  const onSaved = jest.fn();
+  const q = new SaveQueue('t1', 'v0', {
+    put: putImpl,
+    storage,
+    onStatus: (s, m) => statuses.push([s, m]),
+    onSaved,
+  });
+  return { q, storage, statuses, onSaved };
+}
+
+describe('SaveQueue', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('exposes constants and key', () => {
+    expect(AUTOSAVE_MS).toBe(1000);
+    expect(RETRY_MS).toBe(5000);
+    expect(backupKey('x')).toBe('kh-theme-unsaved:x');
+  });
+
+  it('debounces 1000 ms and saves the latest data once', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q, statuses, onSaved } = setup(put);
+    q.schedule(d(1));
+    jest.advanceTimersByTime(500);
+    q.schedule(d(2));
+    jest.advanceTimersByTime(999);
+    expect(put).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledWith('t1', d(2), 'v0');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(statuses.map((s) => s[0])).toEqual(['pending', 'saving', 'saved']);
+  });
+
+  it('immediate saves without waiting', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues edits made during a save and chains updated_at', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest
+      .fn()
+      .mockImplementationOnce(() => new Promise<PutResult>((r) => (release = r)))
+      .mockResolvedValueOnce(ok('v2'));
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    q.schedule(d(3));
+    expect(put).toHaveBeenCalledTimes(1);
+    release(ok('v1'));
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenLastCalledWith('t1', d(3), 'v1');
+    expect(statuses[statuses.length - 1][0]).toBe('saved');
+  });
+
+  it('stops on conflict and keeps the backup', async () => {
+    const put = jest
+      .fn()
+      .mockResolvedValue({ status: 409, body: { error: 'x', code: 'conflict' } });
+    const { q, storage, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1][0]).toBe('conflict');
+    q.schedule(d(2), true);
+    jest.advanceTimersByTime(10000);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:t1') as string)).toEqual({
+      data: d(2),
+      base: 'v0',
+    });
+    q.retry();
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports locked on live_locked', async () => {
+    const put = jest
+      .fn()
+      .mockResolvedValue({ status: 409, body: { error: 'x', code: 'live_locked' } });
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1][0]).toBe('locked');
+  });
+
+  it('reports error with the body message for 413 and other failures', async () => {
+    const put = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 413, body: { error: 'too big', code: 'too_large' } })
+      .mockResolvedValueOnce({ status: 500, body: {} });
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1]).toEqual(['error', 'too big']);
+    q.retry();
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(statuses[statuses.length - 1][0]).toBe('error');
+  });
+
+  it('keeps a backup and retries after a network failure', async () => {
+    const put = jest.fn().mockRejectedValueOnce(new Error('net')).mockResolvedValueOnce(ok('v1'));
+    const { q, storage, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1][0]).toBe('offline');
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    jest.advanceTimersByTime(RETRY_MS);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenLastCalledWith('t1', d(1), 'v0');
+    expect(statuses[statuses.length - 1][0]).toBe('saved');
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+  });
+
+  it('clears the backup after a clean save', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q, storage } = setup(put);
+    q.schedule(d(1));
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    jest.advanceTimersByTime(AUTOSAVE_MS);
+    await tick();
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+  });
+
+  it('flush saves pending data now and resolves when idle', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q } = setup(put);
+    q.schedule(d(1));
+    const p = q.flush();
+    await tick();
+    await p;
+    expect(put).toHaveBeenCalledTimes(1);
+    await q.flush();
+  });
+
+  it('dispose clears timers and ignores late responses', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest.fn().mockImplementation(() => new Promise<PutResult>((r) => (release = r)));
+    const { q, statuses, onSaved } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.dispose();
+    release(ok('v1'));
+    await tick();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(statuses[statuses.length - 1][0]).toBe('saving');
+    q.schedule(d(2));
+    jest.advanceTimersByTime(5000);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('works when storage throws or is null', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const boom = () => {
+      throw new Error('x');
+    };
+    const bad = { getItem: boom, setItem: boom, removeItem: boom };
+    const q = new SaveQueue('t1', 'v0', { put, storage: bad, onStatus: () => {}, onSaved: () => {} });
+    q.schedule(d(1), true);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(readBackup(bad, 't1', 'v0')).toBeNull();
+    expect(readBackup(null, 't1', 'v0')).toBeNull();
+  });
+});
+
+describe('readBackup', () => {
+  it('marks a backup stale when the server moved on', () => {
+    const s = memStorage({ 'kh-theme-unsaved:t1': JSON.stringify({ data: d(1), base: 'v0' }) });
+    expect(readBackup(s, 't1', 'v0')).toEqual({ data: d(1), stale: false });
+    expect(readBackup(s, 't1', 'v9')).toEqual({ data: d(1), stale: true });
+  });
+
+  it('ignores corrupt JSON and wrong shapes', () => {
+    expect(readBackup(memStorage({ 'kh-theme-unsaved:t1': '{nope' }), 't1', 'v0')).toBeNull();
+    expect(readBackup(memStorage({ 'kh-theme-unsaved:t1': '{"data":{}}' }), 't1', 'v0')).toBeNull();
+    expect(readBackup(memStorage(), 't1', 'v0')).toBeNull();
+  });
+});
