@@ -88,20 +88,28 @@ export function visibleSettings(schemas: readonly SettingSchema[], scope: FormSc
 
 export const CUSTOM_LINK = 'custom';
 
-/** Link picker choices: Home, All products (the catalog), then one catalog page per category (D14). */
-export function linkOptions(categories: readonly { id: string; name: string }[]): { value: string; label: string }[] {
+/** Link picker choices: Home, All products (the catalog), one catalog page per category (D14), then each custom page. */
+export function linkOptions(
+  categories: readonly { id: string; name: string }[],
+  pages: readonly { handle: string; title: string }[] = [],
+): { value: string; label: string }[] {
   return [
     { value: '/', label: 'Home' },
     { value: '/catalog', label: 'All products' },
     ...categories.map((c) => ({ value: `/catalog/${encodeURIComponent(c.id)}`, label: c.name })),
+    ...pages.map((p) => ({ value: `/pages/${p.handle}`, label: p.title || p.handle })),
   ];
 }
 
 /** Which picker choice a stored link is: '' (none), one of linkOptions, or 'custom' (old `/?cat=` links too). */
-export function linkChoice(value: unknown, categories: readonly { id: string; name: string }[]): string {
+export function linkChoice(
+  value: unknown,
+  categories: readonly { id: string; name: string }[],
+  pages: readonly { handle: string; title: string }[] = [],
+): string {
   if (typeof value !== 'string' || value.trim() === '') return '';
   const v = value.trim();
-  return linkOptions(categories).some((o) => o.value === v) ? v : CUSTOM_LINK;
+  return linkOptions(categories, pages).some((o) => o.value === v) ? v : CUSTOM_LINK;
 }
 
 /** Mirrors the server's url rule: empty, `#anchor`, a root-relative path or an https URL. */

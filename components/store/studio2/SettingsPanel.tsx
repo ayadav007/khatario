@@ -32,12 +32,14 @@ import {
 import { blockLabel, isEditableSection, sectionLabel } from '@/lib/store/engine/editor/tree';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema';
+import { pageHandle } from '@/lib/store/engine/shared';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
 import type { Section, ThemeData } from '@/lib/store/engine/types';
 import { SECTION_CSS_MAX } from '@/lib/store/studio-sections';
 import { useStudio2 } from './Studio2Editor';
 import { ColorInput, FieldShell, SchemePicker, SettingField } from './fields/SettingField';
 import { inputCls } from './fields/pickers';
+import { PageSettings } from './PageSettings';
 
 const STRUCTURAL = { mergeKey: null, immediate: true } as const;
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
@@ -50,7 +52,8 @@ const dangerBtn =
 export function SettingsPanel() {
   const { theme, templateKey, selection, readOnly } = useStudio2();
 
-  let body: ReactNode = <Empty />;
+  // D22: an open custom page with nothing selected shows its page settings.
+  let body: ReactNode = !selection && pageHandle(templateKey) ? <PageSettings key={templateKey} pageKey={templateKey} /> : <Empty />;
   if (selection?.kind === 'theme') {
     body = <ThemePanel />;
   } else if (selection) {
@@ -126,7 +129,7 @@ function SettingsForm({
   values: (s: SettingSchema) => unknown;
   onSet: (key: string, value: unknown) => (t: ThemeData) => OpResult | ThemeData;
 }) {
-  const { apply, readOnly, categories, theme } = useStudio2();
+  const { apply, readOnly, categories, pages, theme } = useStudio2();
   const toast = useToastContext();
   const prefix = settingMergeKey(target, '').replace(/[^a-zA-Z0-9_-]/g, '-');
   const fields = visibleSettings(schemas, scope);
@@ -141,6 +144,7 @@ function SettingsForm({
           fieldId={`s2-${prefix}${s.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
           readOnly={readOnly}
           categories={categories}
+          pages={pages}
           colorSchemes={theme.settings.color_schemes}
           onChange={(v) => {
             const err = apply(onSet(s.id, v), { mergeKey: settingMergeKey(target, s.id), immediate: false });

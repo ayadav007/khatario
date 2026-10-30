@@ -15,6 +15,9 @@ export const ID_RE = /^[a-z0-9_-]{1,32}$/;
 export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 export const RESERVED_PAGE_HANDLES: readonly string[] = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
 
+/** D22: caps on a custom page's title and SEO fields (the server clips to these; the editor too). */
+export const PAGE_META_CAPS = { title: 100, seo_title: 120, seo_description: 320 } as const;
+
 /** Templates every theme carries; custom pages are keyed `page.<handle>`. */
 export const CORE_TEMPLATES = ['home', 'product', 'catalog'] as const;
 

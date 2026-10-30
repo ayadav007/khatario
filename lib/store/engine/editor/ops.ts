@@ -1,9 +1,21 @@
-// Pure editor operations on a ThemeData. Client-safe: imports only shared, types, schema-types and registry.
+// Pure editor operations on a ThemeData. Client-safe: imports only shared, types, schema-types, registry and
+// presets/templates.
 // No value coercion here: the server sanitises on save.
 import type { Block, ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData } from '../types';
 import type { SectionSchema } from '../schema-types';
 import { getSectionSchema } from '../registry';
-import { ENGINE_LIMITS, ID_RE, defaultSettings, newId } from '../shared';
+import {
+  ENGINE_LIMITS,
+  ID_RE,
+  PAGE_HANDLE_RE,
+  PAGE_META_CAPS,
+  RESERVED_PAGE_HANDLES,
+  defaultSettings,
+  newId,
+  pageHandle,
+  pageKey,
+} from '../shared';
+import { PAGE_STARTERS } from '../presets/templates';
 
 export type GroupKey = 'header' | 'footer' | 'template';
 export interface SectionRef {
@@ -18,7 +30,11 @@ export type OpError =
   | 'block_limit'
   | 'block_type_limit'
   | 'unknown_block_type'
-  | 'not_found';
+  | 'not_found'
+  | 'page_limit'
+  | 'handle_invalid'
+  | 'handle_reserved'
+  | 'handle_taken';
 export type OpResult = { ok: true; theme: ThemeData; id?: string } | { ok: false; reason: OpError };
 type MakeId = (prefix?: string) => string;
 
@@ -31,6 +47,10 @@ export const OP_ERROR_TEXT: Record<OpError, string> = {
   block_type_limit: 'This block type has reached its limit in this section',
   unknown_block_type: 'This block type is not available in this section',
   not_found: 'That item no longer exists',
+  page_limit: `This theme already has ${ENGINE_LIMITS.customPages} pages`,
+  handle_invalid: 'Use lowercase letters, numbers and hyphens',
+  handle_reserved: 'That address is used by the store',
+  handle_taken: 'Another page already uses this address',
 };
 
 const fail = (reason: OpError): OpResult => ({ ok: false, reason });
@@ -368,6 +388,85 @@ export function fillTemplate(
     sections[id] = section;
   }
   return { ok: true, theme: withGroup(theme, key, 'template', { order, sections }) };
+}
+
+/** A page address from a title: lowercase, other characters become `-`, at most 50 characters, no edge `-`. */
+export function slugifyHandle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 50)
+    .replace(/^-+|-+$/g, '');
+}
+
+function customPageCount(theme: ThemeData): number {
+  return Object.keys(theme.templates).filter((key) => pageHandle(key) !== null).length;
+}
+
+/** Why a new page cannot have this handle (D22), or null. The page limit is checked first. */
+export function canAddPage(theme: ThemeData, handle: string): OpError | null {
+  if (customPageCount(theme) >= ENGINE_LIMITS.customPages) return 'page_limit';
+  if (!PAGE_HANDLE_RE.test(handle)) return 'handle_invalid';
+  if (RESERVED_PAGE_HANDLES.includes(handle)) return 'handle_reserved';
+  if (hasOwn(theme.templates, pageKey(handle))) return 'handle_taken';
+  return null;
+}
+
+/**
+ * Adds the custom page `page.<handle>` built from a starter. Section ids are made fresh against the
+ * whole theme (D12). The result's `id` is the new template key.
+ */
+export function addPage(
+  theme: ThemeData,
+  page: { handle: string; title: string; starter: keyof typeof PAGE_STARTERS },
+  makeId: MakeId = newId,
+): OpResult {
+  const err = canAddPage(theme, page.handle);
+  if (err) return fail(err);
+  if (!hasOwn(PAGE_STARTERS, page.starter)) return fail('not_found');
+  const starter = PAGE_STARTERS[page.starter].build();
+  const used = allSectionIds(theme);
+  const order: string[] = [];
+  const sections: Record<string, Section> = {};
+  for (const oldId of starter.order) {
+    if (!hasOwn(starter.sections, oldId) || order.length >= ENGINE_LIMITS.sectionsPerTemplate) continue;
+    const section = clone(starter.sections[oldId]);
+    const id = uniqueId(makeId, section.type, used);
+    used.add(id);
+    order.push(id);
+    sections[id] = section;
+  }
+  const key = pageKey(page.handle);
+  const tpl: PageTemplate = { order, sections };
+  const title = page.title.trim().slice(0, PAGE_META_CAPS.title);
+  if (title) tpl.title = title;
+  return { ok: true, theme: { ...theme, templates: { ...theme.templates, [key]: tpl } }, id: key };
+}
+
+export function removePage(theme: ThemeData, key: string): OpResult {
+  if (pageHandle(key) === null || !hasOwn(theme.templates, key)) return fail('not_found');
+  const templates = { ...theme.templates };
+  delete templates[key];
+  return { ok: true, theme: { ...theme, templates } };
+}
+
+/** Sets a custom page's title and SEO fields, clipped to the D22 caps; an empty value removes the field. */
+export function setPageMeta(
+  theme: ThemeData,
+  key: string,
+  patch: { title?: string; seo_title?: string; seo_description?: string },
+): OpResult {
+  if (pageHandle(key) === null || !hasOwn(theme.templates, key)) return fail('not_found');
+  const out: PageTemplate = { ...theme.templates[key] };
+  for (const field of ['title', 'seo_title', 'seo_description'] as const) {
+    const raw = patch[field];
+    if (typeof raw !== 'string') continue;
+    // Not trimmed here (the merchant may be typing a space); the server trims on save.
+    const v = raw.slice(0, PAGE_META_CAPS[field]);
+    if (v.trim() === '') delete out[field];
+    else out[field] = v;
+  }
+  return { ok: true, theme: { ...theme, templates: { ...theme.templates, [key]: out } } };
 }
 
 export function setThemeSetting(theme: ThemeData, key: string, value: unknown): ThemeData {

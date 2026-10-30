@@ -1,6 +1,6 @@
 import type { ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData, ThemeSettings, Block } from './types';
 import type { SettingSchema } from './schema-types';
-import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES } from './shared';
+import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, PAGE_META_CAPS, RESERVED_PAGE_HANDLES } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
 import { sanitizeColorSchemes } from './color-schemes';
@@ -109,9 +109,9 @@ function clip(raw: unknown, max: number): string | undefined {
 function sanitizePageTemplate(raw: unknown, kind: TemplateKind, schemeIds: ReadonlySet<string>, isPage: boolean, taken: ReadonlySet<string>): PageTemplate {
   const out: PageTemplate = sanitizeTemplate(raw, kind, schemeIds, taken);
   if (isPage && isObject(raw)) {
-    const title = clip(raw.title, 100);
-    const seoTitle = clip(raw.seo_title, 120);
-    const seoDescription = clip(raw.seo_description, 320);
+    const title = clip(raw.title, PAGE_META_CAPS.title);
+    const seoTitle = clip(raw.seo_title, PAGE_META_CAPS.seo_title);
+    const seoDescription = clip(raw.seo_description, PAGE_META_CAPS.seo_description);
     if (title) out.title = title;
     if (seoTitle) out.seo_title = seoTitle;
     if (seoDescription) out.seo_description = seoDescription;

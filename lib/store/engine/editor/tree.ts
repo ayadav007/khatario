@@ -24,13 +24,25 @@ export function templateTitle(theme: ThemeData, key: string): string {
   return title || handle;
 }
 
+/** The theme's custom pages sorted by title (the handle when untitled), as the switcher and link picker list them. */
+export function customPages(theme: ThemeData): Array<{ key: string; handle: string; title: string }> {
+  const out: Array<{ key: string; handle: string; title: string }> = [];
+  for (const key of Object.keys(theme.templates)) {
+    const handle = pageHandle(key);
+    if (handle) out.push({ key, handle, title: templateTitle(theme, key) });
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || a.key.localeCompare(b.key));
+}
+
 /** The page switcher: Home, Product, Catalog, then custom pages sorted by title. */
 export function templateOptions(theme: ThemeData): Array<{ key: string; label: string }> {
-  const pages = Object.keys(theme.templates)
-    .filter((key) => pageHandle(key) !== null)
-    .map((key) => ({ key, label: templateTitle(theme, key) }))
-    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || a.key.localeCompare(b.key));
+  const pages = customPages(theme).map((p) => ({ key: p.key, label: p.title }));
   return [...Object.keys(CORE_TITLES).map((key) => ({ key, label: CORE_TITLES[key] })), ...pages];
+}
+
+/** The template to keep open: `key` while the switcher still offers it, else Home (its page was undone, deleted or restored away). */
+export function openTemplateKey(theme: ThemeData, key: string): string {
+  return templateOptions(theme).some((o) => o.key === key) ? key : 'home';
 }
 
 /** D15: a product or catalog template with no sections at all (as fillTemplate requires); the editor offers its default layout. */

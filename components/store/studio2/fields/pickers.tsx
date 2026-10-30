@@ -9,6 +9,8 @@ export const inputCls =
   'w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500';
 
 type Category = { id: string; name: string };
+type Page = { handle: string; title: string };
+const NO_PAGES: Page[] = [];
 
 // ---- Link picker -------------------------------------------------------------------------------
 
@@ -16,18 +18,21 @@ export function LinkPicker({
   id,
   value,
   categories,
+  pages = NO_PAGES,
   onChange,
 }: {
   id: string;
   value: string;
   categories: Category[];
+  /** Custom pages, offered after the categories. */
+  pages?: Page[];
   onChange(v: string): void;
 }) {
-  const choice = linkChoice(value, categories);
+  const choice = linkChoice(value, categories, pages);
   // "Custom URL" stays open while the merchant types, even before the value is set.
   const [custom, setCustom] = useState(choice === CUSTOM_LINK);
   const showCustom = custom || choice === CUSTOM_LINK;
-  const options = useMemo(() => linkOptions(categories), [categories]);
+  const options = useMemo(() => linkOptions(categories, pages), [categories, pages]);
   // What the merchant is typing; the stored link changes only to a valid value (or '' when cleared),
   // so a half-typed address never reaches the server, which would drop it to the default.
   const [draft, setDraft] = useState<string | null>(null);

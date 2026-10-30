@@ -8,7 +8,7 @@ import { getGroup, type GroupKey, type OpError, type OpResult, type SectionRef }
 import { canRedo, canUndo, createHistory, record, redo, undo, type History } from '@/lib/store/engine/editor/history';
 import { SaveQueue, backupKey, type SaveStatus } from '@/lib/store/engine/editor/save-queue';
 import { BRIDGE_SOURCE, resolveAddIndex, type EditorToPreview, type PreviewToEditor } from '@/lib/store/engine/editor/bridge';
-import { showsClassicPage, templateOptions } from '@/lib/store/engine/editor/tree';
+import { customPages, openTemplateKey, showsClassicPage, templateOptions } from '@/lib/store/engine/editor/tree';
 import { previewPath } from '@/lib/store/engine/preview-path';
 import {
   isEditableTarget,
@@ -38,6 +38,7 @@ import { PreviewPane, type Device } from './PreviewPane';
 import { SectionTree } from './SectionTree';
 import { AddSectionModal } from './AddSectionModal';
 import { SettingsPanel } from './SettingsPanel';
+import { NewPageModal } from './NewPageModal';
 
 export type { Selection };
 
@@ -52,6 +53,10 @@ export interface Studio2Api {
   hover(ref: SectionRef | null): void;
   openAddSection(group: GroupKey, index: number): void;
   categories: { id: string; name: string }[];
+  /** The theme's custom pages, sorted by title (link pickers offer them). */
+  pages: Array<{ key: string; handle: string; title: string }>;
+  /** Opens another template in the tree and the preview (pending edits are saved first). */
+  switchTemplate(key: string): void;
   /** Section hovered in the preview or the tree (tree highlight). */
   hovered: SectionRef | null;
   /** Where the Add section modal inserts; null while it is closed. */
@@ -107,6 +112,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const selectionRefState = useRef<Selection>(null);
   const [hovered, setHovered] = useState<SectionRef | null>(null);
   const [addSectionTarget, setAddSectionTarget] = useState<{ group: GroupKey; index: number } | null>(null);
+  const [newPageOpen, setNewPageOpen] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [status, setStatus] = useState<{ status: SaveStatus; message?: string }>({ status: 'saved' });
   const statusRef = useRef<SaveStatus>('saved');
@@ -313,6 +319,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 
   const openAddSection = useCallback((group: GroupKey, index: number) => setAddSectionTarget({ group, index }), []);
   const closeAddSection = useCallback(() => setAddSectionTarget(null), []);
+  const closeNewPage = useCallback(() => setNewPageOpen(false), []);
 
   // Another template: nothing stays selected, pending edits are saved, then the frame loads that page.
   // Undo history is whole-theme, so it carries over and a switch is not an entry in it.
@@ -332,6 +339,12 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
     },
     [select],
   );
+
+  // The switcher never holds a page that is gone (its creation undone, deleted, or a restore without it): back to Home.
+  useEffect(() => {
+    const key = openTemplateKey(history.present, templateKey);
+    if (key !== templateKey) void switchTemplate(key);
+  }, [history.present, templateKey, switchTemplate]);
 
   // D20: the Product template previews with the first product the store sells until the merchant picks another.
   useEffect(() => {
@@ -463,6 +476,9 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
     setBackupChoice(null);
   }, [businessId, row.id]);
 
+  const pages = useMemo(() => customPages(history.present), [history.present]);
+  const switchTemplateVoid = useCallback((key: string) => void switchTemplate(key), [switchTemplate]);
+
   const api = useMemo<Studio2Api>(
     () => ({
       theme: history.present,
@@ -473,12 +489,29 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       hover,
       openAddSection,
       categories,
+      pages,
+      switchTemplate: switchTemplateVoid,
       hovered,
       addSectionTarget,
       closeAddSection,
       readOnly: leave !== 'idle',
     }),
-    [history.present, templateKey, selection, apply, select, hover, openAddSection, categories, hovered, addSectionTarget, closeAddSection, leave],
+    [
+      history.present,
+      templateKey,
+      selection,
+      apply,
+      select,
+      hover,
+      openAddSection,
+      categories,
+      pages,
+      switchTemplateVoid,
+      hovered,
+      addSectionTarget,
+      closeAddSection,
+      leave,
+    ],
   );
 
   const s = status.status;
@@ -491,6 +524,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
           templateKey={templateKey}
           templateOptions={templateOptions(history.present)}
           onTemplate={(key) => void switchTemplate(key)}
+          onNewPage={() => setNewPageOpen(true)}
           previewProduct={previewProduct ?? null}
           onPreviewProduct={pickPreviewProduct}
           readOnly={leave !== 'idle'}
@@ -554,6 +588,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
         </div>
       </div>
       <AddSectionModal />
+      {newPageOpen && <NewPageModal onClose={closeNewPage} />}
     </Studio2Context.Provider>
   );
 }

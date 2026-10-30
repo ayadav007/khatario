@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FilePlus2, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Device } from './PreviewPane';
 import { ProductPicker } from './fields/pickers';
@@ -12,6 +12,7 @@ interface Props {
   templateKey: string;
   templateOptions: Array<{ key: string; label: string }>;
   onTemplate(key: string): void;
+  onNewPage(): void;
   /** The product the Product template is previewed with; shown only on that template once one is known. */
   previewProduct: { id: string; name: string | null } | null;
   onPreviewProduct(id: string): void;
@@ -82,6 +83,16 @@ export function TopBar(props: Props) {
           </option>
         ))}
       </select>
+      <button
+        type="button"
+        className={iconBtn}
+        onClick={props.onNewPage}
+        disabled={props.readOnly}
+        title="New page"
+        aria-label="New page"
+      >
+        <FilePlus2 className="h-4 w-4" />
+      </button>
 
       {props.templateKey === 'product' && props.previewProduct && (
         <PreviewProduct product={props.previewProduct} onPick={props.onPreviewProduct} />

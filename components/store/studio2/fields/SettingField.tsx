@@ -29,6 +29,8 @@ export interface SettingFieldProps {
   fieldId: string;
   readOnly: boolean;
   categories: { id: string; name: string }[];
+  /** The theme's custom pages, for link pickers. */
+  pages?: { handle: string; title: string }[];
   colorSchemes: ColorScheme[];
 }
 
@@ -74,7 +76,7 @@ export function FieldShell({
 }
 
 export function SettingField(props: SettingFieldProps) {
-  const { schema, value, onChange, fieldId, readOnly, categories, colorSchemes } = props;
+  const { schema, value, onChange, fieldId, readOnly, categories, pages, colorSchemes } = props;
   const shell = (children: ReactNode, opts: { counter?: { text: string; over: boolean } | null; info?: string; noFor?: boolean } = {}) => (
     <FieldShell label={schema.label} htmlFor={opts.noFor ? undefined : fieldId} info={opts.info ?? schema.info} counter={opts.counter}>
       {children}
@@ -221,7 +223,7 @@ export function SettingField(props: SettingFieldProps) {
       );
 
     case 'url':
-      return shell(<LinkPicker id={fieldId} value={str(value)} categories={categories} onChange={onChange} />);
+      return shell(<LinkPicker id={fieldId} value={str(value)} categories={categories} pages={pages} onChange={onChange} />);
 
     case 'product':
       return shell(
