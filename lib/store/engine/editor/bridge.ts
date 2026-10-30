@@ -33,8 +33,19 @@ function parseRef(v: unknown): SectionRef | null {
   return { group: group as GroupKey, id };
 }
 
+function isNonNegInt(v: unknown, max: number): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && !Object.is(v, -0) && v >= 0 && v <= max;
+}
+
 function isRev(v: unknown): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+  return isNonNegInt(v, Number.MAX_SAFE_INTEGER);
+}
+
+/** `null` is a valid ref (returned as `{ ok: true, ref: null }`); anything else must parse as a SectionRef. */
+function parseNullableRef(v: unknown): { ok: true; ref: SectionRef | null } | null {
+  if (v === null) return { ok: true, ref: null };
+  const ref = parseRef(v);
+  return ref ? { ok: true, ref } : null;
 }
 
 export function parseEditorMessage(data: unknown): EditorToPreview | null {
@@ -42,9 +53,8 @@ export function parseEditorMessage(data: unknown): EditorToPreview | null {
   switch (data.type) {
     case 'select':
     case 'hover': {
-      if (data.ref === null) return { source: BRIDGE_SOURCE, type: data.type, ref: null };
-      const ref = parseRef(data.ref);
-      return ref ? { source: BRIDGE_SOURCE, type: data.type, ref } : null;
+      const r = parseNullableRef(data.ref);
+      return r ? { source: BRIDGE_SOURCE, type: data.type, ref: r.ref } : null;
     }
     case 'scroll-to': {
       const ref = parseRef(data.ref);
@@ -64,9 +74,8 @@ export function parsePreviewMessage(data: unknown): PreviewToEditor | null {
       if (data.rev === null) return { source: BRIDGE_SOURCE, type: 'ready', rev: null };
       return isRev(data.rev) ? { source: BRIDGE_SOURCE, type: 'ready', rev: data.rev } : null;
     case 'hover': {
-      if (data.ref === null) return { source: BRIDGE_SOURCE, type: 'hover', ref: null };
-      const ref = parseRef(data.ref);
-      return ref ? { source: BRIDGE_SOURCE, type: 'hover', ref } : null;
+      const r = parseNullableRef(data.ref);
+      return r ? { source: BRIDGE_SOURCE, type: 'hover', ref: r.ref } : null;
     }
     case 'select': {
       const ref = parseRef(data.ref);
@@ -74,8 +83,7 @@ export function parsePreviewMessage(data: unknown): PreviewToEditor | null {
     }
     case 'add-at': {
       const { index } = data;
-      if (typeof index !== 'number' || !Number.isInteger(index)) return null;
-      if (index < 0 || index > ENGINE_LIMITS.sectionsPerTemplate) return null;
+      if (!isNonNegInt(index, ENGINE_LIMITS.sectionsPerTemplate)) return null;
       return { source: BRIDGE_SOURCE, type: 'add-at', index };
     }
     default:
@@ -85,6 +93,7 @@ export function parsePreviewMessage(data: unknown): PreviewToEditor | null {
 
 /** App origins allowed to embed/post to a store page served on `host` (may include a port). */
 export function appOriginsForStoreHost(protocol: 'http:' | 'https:', host: string): string[] {
+  if (protocol !== 'http:' && protocol !== 'https:') return [];
   const m = /^([^:]*)(?::(\d+))?$/.exec(host.trim().toLowerCase());
   if (!m) return [];
   const hostname = m[1];
@@ -94,7 +103,7 @@ export function appOriginsForStoreHost(protocol: 'http:' | 'https:', host: strin
   if (hostname.endsWith('.localhost')) {
     return [`${protocol}//localhost${port}`, `${protocol}//127.0.0.1${port}`];
   }
-  if (protocol !== 'https:') return [];
+  if (protocol !== 'https:' || port) return [];
   if (hostname.endsWith('.staging.khatario.com')) return ['https://staging.khatario.com'];
   if (hostname.endsWith('.khatario.com')) {
     return ['https://khatario.com', 'https://app.khatario.com', 'https://www.khatario.com'];

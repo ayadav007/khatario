@@ -66,6 +66,52 @@ describe('bridge parsers', () => {
   });
 });
 
+describe('bridge parser hardening', () => {
+  it('rejects prototype tricks and arrays', () => {
+    expect(parsePreviewMessage(JSON.parse('{"__proto__":{"source":"kh-studio","type":"ready"}}'))).toBeNull();
+    expect(parsePreviewMessage(Object.create({ source: S, type: 'ready', rev: null }))).toBeNull();
+    expect(parseEditorMessage(Object.create({ source: S, type: 'refresh', rev: 1 }))).toBeNull();
+    expect(parsePreviewMessage([S, 'ready'])).toBeNull();
+    expect(parseEditorMessage([{ source: S, type: 'refresh', rev: 1 }])).toBeNull();
+  });
+  it('validates index strictly', () => {
+    for (const index of [NaN, Infinity, -Infinity, '3', 26, -0, -1, 1.5, null, undefined]) {
+      expect(parsePreviewMessage({ source: S, type: 'add-at', index })).toBeNull();
+    }
+    expect(parsePreviewMessage({ source: S, type: 'add-at', index: 25 })).not.toBeNull();
+  });
+  it('validates rev strictly', () => {
+    for (const rev of [-0, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 1e300, '1']) {
+      expect(parseEditorMessage({ source: S, type: 'refresh', rev })).toBeNull();
+      expect(parsePreviewMessage({ source: S, type: 'ready', rev })).toBeNull();
+    }
+    expect(parseEditorMessage({ source: S, type: 'refresh', rev: Number.MAX_SAFE_INTEGER })).not.toBeNull();
+  });
+});
+
+describe('appOriginsForStoreHost hardening', () => {
+  it('rejects ports on khatario hosts and bad protocols', () => {
+    expect(appOriginsForStoreHost('https:', 'ganesh.khatario.com:8443')).toEqual([]);
+    expect(appOriginsForStoreHost('https:', 'ganesh.staging.khatario.com:1')).toEqual([]);
+    expect(appOriginsForStoreHost('ftp:' as any, 'ganesh.localhost:3000')).toEqual([]);
+    expect(appOriginsForStoreHost('HTTPS:' as any, 'ganesh.khatario.com')).toEqual([]);
+    expect(appOriginsForStoreHost(undefined as any, 'ganesh.localhost')).toEqual([]);
+  });
+  it('rejects look-alike and reserved hosts', () => {
+    for (const h of [
+      'ganesh.localhost.evil.com', 'ganesh.localhost.', 'user@ganesh.localhost', '[::1]:3000',
+      'staging.khatario.com', 'www.khatario.com', 'app.khatario.com', 'api.khatario.com',
+    ]) {
+      expect(appOriginsForStoreHost('https:', h)).toEqual([]);
+    }
+    expect(appOriginsForStoreHost('http:', 'GANESH.LOCALHOST:3000')).toEqual(['http://localhost:3000', 'http://127.0.0.1:3000']);
+  });
+  it('preview url rejects script and data urls', () => {
+    expect(storeOriginFromPreviewUrl('javascript:alert(1)')).toBeNull();
+    expect(storeOriginFromPreviewUrl('data:text/html,x')).toBeNull();
+  });
+});
+
 describe('appOriginsForStoreHost', () => {
   it('maps localhost stores, keeping the port', () => {
     expect(appOriginsForStoreHost('http:', 'shop.localhost:3016')).toEqual(['http://localhost:3016', 'http://127.0.0.1:3016']);
