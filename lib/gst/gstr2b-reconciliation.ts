@@ -246,9 +246,13 @@ export class GSTR2BReconciliationEngine {
         p.supplier_state_code,
         (p.itc_eligible IS DISTINCT FROM false) AS itc_eligible,
         (p.bill_date < $2::date) AS carried,
-        COALESCE(pi.line_item_type, i.item_type) AS item_type
+        COALESCE(pi.line_item_type, i.item_type) AS item_type,
+        -- GSTIN the bill was booked under: the branch's own GSTIN, else the business GSTIN.
+        COALESCE(NULLIF(UPPER(TRIM(br.gstin)), ''), UPPER(TRIM(biz.gstin)), '') AS recipient_gstin
       FROM purchases p
       JOIN purchase_items pi ON p.id = pi.purchase_id
+      JOIN businesses biz ON biz.id = p.business_id
+      LEFT JOIN branches br ON br.id = p.branch_id
       LEFT JOIN items i ON pi.item_id = i.id
       LEFT JOIN suppliers s ON s.id = p.supplier_id
       WHERE p.business_id = $1
@@ -300,7 +304,8 @@ export class GSTR2BReconciliationEngine {
           supplier_state_code: row.supplier_state_code,
           itc_eligible: row.itc_eligible,
           carried: row.carried,
-          has_service_item: row.item_type === 'service'
+          has_service_item: row.item_type === 'service',
+          recipient_gstin: row.recipient_gstin || '',
         });
       }
 
@@ -339,7 +344,9 @@ export class GSTR2BReconciliationEngine {
         itc_eligibility,
         itc_reversal_type,
         original_invoice_number,
-        original_invoice_date
+        original_invoice_date,
+        COALESCE(UPPER(TRIM(recipient_gstin)),
+                 (SELECT UPPER(TRIM(gstin)) FROM businesses WHERE id = $1), '') AS recipient_gstin
       FROM gstr2b_invoices
       WHERE business_id = $1
         AND filing_period = $2
@@ -368,8 +375,10 @@ export class GSTR2BReconciliationEngine {
     // against an invoice or a purchase return.
     const gstr2bMap = new Map<string, any[]>();
     gstr2bInvoices.forEach((inv: any) => {
-      const key = portalMatchKey(inv);
-      if (!key) return;
+      const portalKey = portalMatchKey(inv);
+      if (!portalKey) return;
+      // A 2B row only supports ITC of the GSTIN it was issued to (s.16, s.25(4)).
+      const key = `${inv.recipient_gstin || ''}#${portalKey}`;
       if (!gstr2bMap.has(key)) gstr2bMap.set(key, []);
       gstr2bMap.get(key)!.push(inv);
     });
@@ -417,7 +426,7 @@ export class GSTR2BReconciliationEngine {
         : isImportGoods
           ? `IMPG|${normalizeDocNumber(bookInv.invoice_number)}`
           : `${String(bookInv.supplier_gstin || '').trim().toUpperCase()}|${normalizeDocNumber(bookInv.invoice_number)}`;
-      const matched2B = this.findMatch(bookInv, gstr2bMap.get(key) ?? [], matched2BIds);
+      const matched2B = this.findMatch(bookInv, gstr2bMap.get(`${bookInv.recipient_gstin || ''}#${key}`) ?? [], matched2BIds);
 
       if (!matched2B) {
         // An earlier month's bill is reported only in the period whose 2B shows it.

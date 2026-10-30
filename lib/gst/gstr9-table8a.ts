@@ -106,7 +106,9 @@ export function aggregateTable8AFromPortal(rows: Gstr2bTable8ARow[], financialYe
 export async function computeTable8A(
   client: PoolClient,
   businessId: string,
-  financialYear: number
+  financialYear: number,
+  /** GSTR-9 per GSTIN: that registration's 2B imports and its branches' purchases. Null = whole business. */
+  scope: { recipientGstin: string | null; branchIds: string[] } | null = null
 ): Promise<Table8AResult> {
   const { fyMonths, portalPeriods } = table8APeriods(financialYear);
   const { from, to } = fyBounds(financialYear);
@@ -115,8 +117,9 @@ export async function computeTable8A(
     `SELECT DISTINCT ON (filing_period) id, filing_period
        FROM gstr2b_imports
       WHERE business_id = $1 AND filing_period = ANY($2::text[])
+        AND ($3::text IS NULL OR UPPER(TRIM(recipient_gstin)) = UPPER($3::text))
       ORDER BY filing_period, import_date DESC, created_at DESC`,
-    [businessId, portalPeriods]
+    [businessId, portalPeriods, scope ? scope.recipientGstin ?? '' : null]
   );
   const importedPeriods = imports.rows.map((r) => r.filing_period).sort();
 
@@ -140,6 +143,7 @@ export async function computeTable8A(
   if (booksPeriods.length > 0) {
     const regularInward = `
       p.business_id = $1 AND p.status = 'final' AND p.deleted_at IS NULL
+      AND ($5::uuid[] IS NULL OR p.branch_id = ANY($5::uuid[]))
       AND COALESCE(p.is_reverse_charge, false) = false
       AND COALESCE(p.document_type, '') NOT IN ('bill_of_entry', 'import_service')
       AND LENGTH(COALESCE(p.supplier_gstin, '')) >= 15
@@ -154,7 +158,7 @@ export async function computeTable8A(
         WHERE ${regularInward}
           AND p.bill_date BETWEEN $2 AND $3
           AND to_char(p.bill_date, 'YYYY-MM') = ANY($4::text[])`,
-      [businessId, from, to, booksPeriods]
+      [businessId, from, to, booksPeriods, scope ? scope.branchIds : null]
     );
     const charges = await client.query(
       `SELECT COALESCE(SUM(pc.taxable_value), 0) AS taxable, COALESCE(SUM(pc.igst_amount), 0) AS igst,
@@ -164,7 +168,7 @@ export async function computeTable8A(
         WHERE ${regularInward}
           AND p.bill_date BETWEEN $2 AND $3
           AND to_char(p.bill_date, 'YYYY-MM') = ANY($4::text[])`,
-      [businessId, from, to, booksPeriods]
+      [businessId, from, to, booksPeriods, scope ? scope.branchIds : null]
     );
     const returns = await client.query(
       `SELECT COALESCE(SUM(pr.subtotal), 0) AS taxable, COALESCE(SUM(pr.igst_total), 0) AS igst,
@@ -176,7 +180,7 @@ export async function computeTable8A(
           AND COALESCE(pr.status, 'final') <> 'cancelled'
           AND pr.return_date BETWEEN $2 AND $3
           AND to_char(pr.return_date, 'YYYY-MM') = ANY($4::text[])`,
-      [businessId, from, to, booksPeriods]
+      [businessId, from, to, booksPeriods, scope ? scope.branchIds : null]
     );
     const b = bills.rows[0] || {};
     const ch = charges.rows[0] || {};
