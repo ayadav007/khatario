@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { currentStoreForPreview } from '@/lib/store/current-store';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
@@ -13,19 +14,19 @@ import {
 import { catalogCategoryName } from '@/lib/store/engine/section-data';
 import { RenderTemplate } from './RenderTemplate';
 
-/** Ids longer than this are never one of the store's categories, so they are not looked up. */
-const MAX_CATEGORY_ID = 64;
-
-/** The category's name, null when the store shows no such category, undefined when the lookup failed. */
-async function categoryName(store: StoreBusinessContext, categoryId: string): Promise<string | null | undefined> {
-  if (categoryId.length > MAX_CATEGORY_ID) return null;
+/**
+ * The category's name, null when the business has no such category, undefined when the lookup failed.
+ * Cached per request, so the page and generateMetadata share one query (the store object comes from
+ * the cached currentStoreForPreview, so both calls pass the same one).
+ */
+const categoryName = cache(async (store: StoreBusinessContext, categoryId: string): Promise<string | null | undefined> => {
   try {
     return await catalogCategoryName(store, categoryId);
   } catch (e) {
     console.error('[store engine] catalog category', store.store_subdomain, e instanceof Error ? e.message : e);
     return undefined;
   }
-}
+});
 
 /**
  * The body of `/catalog` and `/catalog/[category]` (D14). A store without the engine, or whose catalog

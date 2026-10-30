@@ -145,13 +145,25 @@ async function loadCategories(store: StoreBusinessContext): Promise<SectionCateg
   return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: null }));
 }
 
+const CATEGORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * The name of one of the store's categories, or null when the store shows no such category: the same
- * business-scoped list the category grid uses, so a category with no store items is not one.
+ * The name of one of the business's categories, or null when it has no such category (a malformed id
+ * is never queried). A category with no store products still counts: its catalog page shows it empty.
  */
 export async function catalogCategoryName(store: StoreBusinessContext, categoryId: string): Promise<string | null> {
-  const categories = await loadCategories(store);
-  return categories.find((c) => c.id === categoryId)?.name ?? null;
+  if (store.is_demo) {
+    const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
+    const cats = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 1 }).categories;
+    return cats.find((c) => c.id === categoryId)?.name ?? null;
+  }
+  if (!CATEGORY_ID_RE.test(categoryId)) return null;
+  // The categories table has no deleted/active columns; the business scope is the whole visibility rule.
+  const rows = await queryRows<{ name: string }>('SELECT name FROM categories WHERE id = $1 AND business_id = $2', [
+    categoryId,
+    store.business_id,
+  ]);
+  return rows[0]?.name ?? null;
 }
 
 function message(e: unknown): string {
