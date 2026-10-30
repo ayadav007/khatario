@@ -218,15 +218,77 @@ d('Store themes repository (real DB)', () => {
       expect(rows.rows.filter((r) => r.is_working).map((r) => r.id)).toEqual([w.id]);
     });
 
-    it('publish clears the working flag and a new working draft copies the new live', async () => {
+    it('publishing the working draft copies its data onto the live theme and keeps editing the same draft', async () => {
       const w = ok(await getOrCreateWorkingDraft(WD, USER));
+      const liveBefore = (await getLiveTheme(WD))!;
+      const countBefore = (await listThemes(WD)).length;
+      const versionsBefore = (
+        await pool.query(`SELECT count(*)::int AS n FROM store_theme_versions WHERE business_id = $1`, [WD])
+      ).rows[0].n;
+      const edited = { ...w.data, settings: { ...w.data.settings, button_radius: 3 } };
+      const saved = ok(await saveTheme(WD, USER, w.id, edited, w.updated_at));
+
       const pub = ok(await publishTheme(WD, USER, w.id));
+      expect(pub.id).toBe(liveBefore.id);
+      expect(pub.role).toBe('live');
+      expect(pub.data.settings.button_radius).toBe(3);
+      expect(pub.updated_at > liveBefore.updated_at).toBe(true);
+
+      const live = (await getLiveTheme(WD))!;
+      expect(live.id).toBe(liveBefore.id);
+      expect(live.data).toEqual(saved.data);
+
+      const after = (await getTheme(WD, w.id))!;
+      expect(after.role).toBe('draft');
+      expect(after.is_working).toBe(true);
+      expect(after.updated_at).toBe(saved.updated_at); // the editor's save token still holds
+      expect(ok(await getOrCreateWorkingDraft(WD, USER)).id).toBe(w.id);
+      expect((await listThemes(WD)).length).toBe(countBefore);
+
+      const v = await pool.query(
+        `SELECT theme_id, data, published_by FROM store_theme_versions WHERE business_id = $1 ORDER BY published_at DESC, id DESC`,
+        [WD],
+      );
+      expect(v.rows.length).toBe(versionsBefore + 1);
+      expect(v.rows[0].theme_id).toBe(liveBefore.id);
+      expect(v.rows[0].data).toEqual(saved.data);
+      expect(v.rows[0].published_by).toBe(USER);
+    });
+
+    it('publishing the working draft again and again never adds themes or "(editing)"', async () => {
+      const w = ok(await getOrCreateWorkingDraft(WD, USER));
+      const countBefore = (await listThemes(WD)).length;
+      for (let i = 0; i < 3; i++) ok(await publishTheme(WD, USER, w.id));
+      const all = await listThemes(WD);
+      expect(all.length).toBe(countBefore);
+      expect(all.find((t) => t.id === w.id)!.name).toBe('Main (editing)');
+      expect(all.some((t) => t.name.includes('(editing) (editing)'))).toBe(false);
+    });
+
+    it('publishing a draft that is not the working draft still swaps roles', async () => {
+      const w = ok(await getOrCreateWorkingDraft(WD, USER));
+      const liveBefore = (await getLiveTheme(WD))!;
+      const other = ok(await createTheme(WD, USER, { name: 'Library', preset: 'blank', ctx }));
+      const pub = ok(await publishTheme(WD, USER, other.id));
+      expect(pub.id).toBe(other.id);
       expect(pub.role).toBe('live');
       expect(pub.is_working).toBe(false);
-      const next = ok(await getOrCreateWorkingDraft(WD, USER));
-      expect(next.id).not.toBe(w.id);
-      expect(next.is_working).toBe(true);
-      expect(next.data).toEqual((await getLiveTheme(WD))!.data);
+      expect((await getTheme(WD, liveBefore.id))!.role).toBe('draft');
+      const still = (await getTheme(WD, w.id))!;
+      expect(still.is_working).toBe(true);
+      expect(still.role).toBe('draft');
+    });
+
+    it('names a working draft without doubling "(editing)"', async () => {
+      const biz = randomUUID();
+      await pool.query(`INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Theme test', '29AAAPA1234A1Z5', '29', 'regular')`, [biz]);
+      try {
+        ok(await createTheme(biz, USER, { name: 'Shop (editing)', preset: 'blank', ctx }));
+        expect(ok(await getOrCreateWorkingDraft(biz, USER)).name).toBe('Shop (editing)');
+      } finally {
+        await pool.query(`DELETE FROM store_themes WHERE business_id = $1`, [biz]);
+        await pool.query(`DELETE FROM businesses WHERE id = $1`, [biz]);
+      }
     });
 
     it('two concurrent calls produce one draft', async () => {

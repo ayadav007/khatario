@@ -109,6 +109,15 @@ async function createThemeLocked(
   }
 }
 
+const EDITING_SUFFIX = ' (editing)';
+
+/** "<live name> (editing)", never doubled when the live name already ends with it. */
+function workingDraftName(liveName: string): string {
+  const base = liveName.endsWith(EDITING_SUFFIX) ? liveName.slice(0, -EDITING_SUFFIX.length) : liveName;
+  const room = NAME_MAX - EDITING_SUFFIX.length;
+  return `${base.slice(0, room)}${EDITING_SUFFIX}`;
+}
+
 async function insertWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
   return inTransaction(async (client) => {
     await lockBusinessThemes(client, businessId);
@@ -129,7 +138,7 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
       live = created.value;
     }
 
-    const name = `${live.name} (editing)`.slice(0, NAME_MAX);
+    const name = workingDraftName(live.name);
     const res = await client.query(
       `INSERT INTO store_themes (business_id, name, role, preset, data, updated_by, is_working)
        SELECT $1, $2, 'draft', $3, $4::jsonb, $5, true
@@ -148,7 +157,8 @@ export async function getOrCreateWorkingDraft(businessId: string, userId: string
     return await insertWorkingDraft(businessId, userId);
   } catch (err) {
     // The advisory lock should prevent this; if another writer still won the unique index, return their draft.
-    if ((err as { code?: string }).code === '23505') {
+    const e = err as { code?: string; constraint?: string };
+    if (e.code === '23505' && e.constraint === 'store_themes_one_working') {
       const existing = await queryOne<ThemeRow>(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND is_working`, [businessId]);
       if (existing) return good(existing);
     }
@@ -202,10 +212,17 @@ export async function deleteTheme(businessId: string, id: string): Promise<RepoR
   return current ? fail('live_locked') : fail('not_found');
 }
 
+/**
+ * Puts a draft live, recording a version (the newest 30 are kept).
+ * - The working draft (R11): its data is copied onto the live theme, and it stays the working draft
+ *   with the same id, so the editor keeps editing it and no rows pile up.
+ * - Any other draft (the theme library): roles swap; the old live theme becomes a draft.
+ */
 export async function publishTheme(businessId: string, userId: string, id: string): Promise<RepoResult<ThemeRow>> {
   return inTransaction(async (client) => {
+    await lockBusinessThemes(client, businessId);
     // Lock every theme row of the business so two publishes queue instead of both going live.
-    const rows = await client.query(`SELECT id, role FROM store_themes WHERE business_id = $1 FOR UPDATE`, [businessId]);
+    const rows = await client.query(`SELECT id, role, is_working FROM store_themes WHERE business_id = $1 FOR UPDATE`, [businessId]);
     const target = rows.rows.find((r) => r.id === id);
     if (!target) return fail<ThemeRow>('not_found');
 
@@ -214,19 +231,32 @@ export async function publishTheme(businessId: string, userId: string, id: strin
       return good(same.rows[0] as ThemeRow);
     }
 
-    await client.query(
-      `UPDATE store_themes SET role = 'draft', updated_at = NOW() WHERE business_id = $1 AND role = 'live'`,
-      [businessId],
-    );
-    const published = await client.query(
-      `UPDATE store_themes SET role = 'live', is_working = false, updated_by = $3, updated_at = NOW()
-       WHERE business_id = $1 AND id = $2 RETURNING ${ROW_COLS}`,
-      [businessId, id, userId],
-    );
-    const row = published.rows[0] as ThemeRow;
+    const live = rows.rows.find((r) => r.role === 'live');
+    let row: ThemeRow;
+    if (target.is_working && live) {
+      const copied = await client.query(
+        `UPDATE store_themes
+         SET data = (SELECT data FROM store_themes WHERE business_id = $1 AND id = $3), updated_by = $4, updated_at = NOW()
+         WHERE business_id = $1 AND id = $2
+         RETURNING ${ROW_COLS}`,
+        [businessId, live.id, id, userId],
+      );
+      row = copied.rows[0] as ThemeRow;
+    } else {
+      await client.query(
+        `UPDATE store_themes SET role = 'draft', updated_at = NOW() WHERE business_id = $1 AND role = 'live'`,
+        [businessId],
+      );
+      const published = await client.query(
+        `UPDATE store_themes SET role = 'live', is_working = false, updated_by = $3, updated_at = NOW()
+         WHERE business_id = $1 AND id = $2 RETURNING ${ROW_COLS}`,
+        [businessId, id, userId],
+      );
+      row = published.rows[0] as ThemeRow;
+    }
     await client.query(
       `INSERT INTO store_theme_versions (theme_id, business_id, data, published_by) VALUES ($1, $2, $3::jsonb, $4)`,
-      [id, businessId, JSON.stringify(row.data), userId],
+      [row.id, businessId, JSON.stringify(row.data), userId],
     );
     await client.query(
       `DELETE FROM store_theme_versions

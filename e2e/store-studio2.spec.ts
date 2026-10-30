@@ -322,14 +322,20 @@ test.describe('Studio 2 store design editor', () => {
     await expect(confirm).toBeVisible();
     await confirm.getByRole('button', { name: 'Publish', exact: true }).click();
 
-    // The editor moves to a fresh working draft copied from the new live theme.
-    await page.waitForURL((u) => /\/themes\/[^/]+\/editor$/.test(u.pathname) && u.pathname !== editorUrl(id), { timeout: SLOW });
-    const nextId = page.url().match(/\/themes\/([^/]+)\/editor/)![1];
-    expect(nextId).not.toBe(id);
-    expect((await savedTheme(page, id)).role).toBe('live');
-    await waitForEditor(page);
-    await treeButton(page, 'Featured products').click();
+    // R11: the draft's data is copied onto the live theme; the editor stays on the same working draft.
+    const liveId = snap!.themes.find((t) => t.role === 'live')!.id;
+    await expect(page.getByText('Published', { exact: true })).toBeVisible({ timeout: SLOW });
+    await expect.poll(() => savedHeading(page, liveId, 'featured-products'), { timeout: 30_000 }).toBe(text);
+    expect(new URL(page.url()).pathname).toBe(editorUrl(id));
+    const after = await savedTheme(page, id);
+    expect(after.role).toBe('draft');
+    expect((after as { is_working?: boolean }).is_working).toBe(true);
     await expect(page.getByLabel('Heading', { exact: true })).toHaveValue(text);
+    await expect(page.getByLabel('Heading', { exact: true })).toBeEditable();
+    const count = await withDb(async (db) =>
+      (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM store_themes WHERE business_id = $1`, [BUSINESS_ID])).rows[0].n,
+    );
+    expect(count).toBe(snap!.themes.length);
 
     // Shoppers (no preview token, no session) see the published heading.
     const port = new URL(baseURL ?? 'http://localhost:3015').port;
@@ -342,11 +348,11 @@ test.describe('Studio 2 store design editor', () => {
       await shopper.close();
     }
 
-    // Editing again saves to the new draft, never to the live theme.
+    // Editing again saves to the same working draft, never to the live theme.
     const again = `E2E after publish ${Date.now()}`;
     await page.getByLabel('Heading', { exact: true }).fill(again);
-    await expect.poll(() => savedHeading(page, nextId, 'featured-products'), { timeout: 30_000 }).toBe(again);
-    expect(await savedHeading(page, id, 'featured-products')).toBe(text);
+    await expect.poll(() => savedHeading(page, id, 'featured-products'), { timeout: 30_000 }).toBe(again);
+    expect(await savedHeading(page, liveId, 'featured-products')).toBe(text);
   });
 
   test('under 1024 px shows the laptop notice', async ({ page }) => {
