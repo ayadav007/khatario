@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveStoreBySubdomain, getStoreBranches } from '@/lib/store/resolve-store';
+import { resolveOfflineStoreForPreview } from '@/lib/store/preview-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +13,11 @@ export async function GET(
   { params }: { params: { subdomain: string } },
 ) {
   try {
-    const td = request.nextUrl.searchParams.get('td');
-    const store = await resolveStoreBySubdomain(params.subdomain, { allowOffline: Boolean(td) });
+    const sp = request.nextUrl.searchParams;
+    const td = sp.get('td');
+    let store = await resolveStoreBySubdomain(params.subdomain, { allowOffline: Boolean(td) });
+    // Engine theme preview of a store not launched yet: only with a token verified for that business.
+    if (!store) store = await resolveOfflineStoreForPreview(params.subdomain, sp.get('preview_theme'), sp.get('pt'));
     if (!store) {
       return NextResponse.json(
         { error: 'Store not found or not active' },

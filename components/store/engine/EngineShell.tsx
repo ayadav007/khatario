@@ -1,10 +1,12 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import type { ThemeRow } from '@/lib/store/engine/types';
 import { useStore } from '@/lib/store/store-context';
 import { previewStoreCss } from '@/lib/store/section-css';
+import { setStoreFavicon } from '@/lib/store/store-favicon';
+import { findAnchor } from '@/lib/store/engine/anchors';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { QuickCartBar } from '../quick-theme/QuickChrome';
@@ -32,7 +34,13 @@ const THEME_RULES =
   '.st-root.eng-root .eng-html{padding:0 30px;overflow-wrap:anywhere}' +
   '.st-root.eng-root .eng-html :is(img,iframe,video,table){max-width:100%}' +
   '.st-root.eng-root .eng-html :is(img,video){height:auto}' +
-  '@container store (max-width: 640px){.st-root.eng-root .eng-html{padding:0 16px}}';
+  '@container store (max-width: 640px){.st-root.eng-root .eng-html{padding:0 16px}}' +
+  // Editor mode: an empty section stays visible and clickable, with a placeholder naming its type.
+  // Prefixed with the root classes to outrank the display:none rules above; separate rules as above.
+  '.st-root.eng-root.eng-editor .eng-sec:empty{display:block;min-height:48px}' +
+  '.st-root.eng-root.eng-editor .eng-sec:not(:has(>:not(style))){display:block;min-height:48px}' +
+  '.st-root.eng-root.eng-editor .eng-sec:empty::after{content:attr(data-section-type) " (nothing to show yet)";display:block;padding:14px 16px;font-size:13px;color:#6b7280;text-align:center}' +
+  '.st-root.eng-root.eng-editor .eng-sec:not(:has(>:not(style)))::after{content:attr(data-section-type) " (nothing to show yet)";display:block;padding:14px 16px;font-size:13px;color:#6b7280;text-align:center}';
 
 function focusSearch() {
   const input = document.getElementById('store-search') as HTMLInputElement | null;
@@ -49,6 +57,7 @@ export function EngineShell({
   theme,
   subdomain,
   preview,
+  editor = false,
   rootStyle,
   header,
   footer,
@@ -58,18 +67,48 @@ export function EngineShell({
   theme: ThemeRow;
   subdomain: string;
   preview: boolean;
+  /** Studio 2 editor mode: adds `eng-editor` (empty-section placeholders). */
+  editor?: boolean;
   rootStyle: Record<string, string | number | undefined>;
   header: ReactNode;
   footer: ReactNode;
   children: ReactNode;
 }) {
   const settings = theme.data.settings;
-  const { cartCount, branches, selectedBranchId } = useStore();
+  const { cartCount, branches, selectedBranchId, setEngineActive } = useStore();
   const pathname = usePathname();
   const [cartOpen, setCartOpen] = useState(false);
   const openCart = useCallback(() => setCartOpen(true), []);
   const ctx = useMemo(() => ({ openCart }), [openCart]);
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
+
+  // The engine renders this page: the old store theme's CSS, font and favicon stay off (D11).
+  useEffect(() => {
+    setEngineActive(true);
+    return () => setEngineActive(false);
+  }, [setEngineActive]);
+
+  // `#catalog` / `#st-categories` in the URL (phone nav, links from other pages) have no element of that
+  // id on engine pages; scroll to the first section anchor of that kind instead (D12).
+  useEffect(() => {
+    const followHash = () => {
+      let id = '';
+      try {
+        id = decodeURIComponent(window.location.hash.slice(1));
+      } catch {
+        return;
+      }
+      if (id && !document.getElementById(id)) findAnchor(document, id)?.scrollIntoView({ block: 'start' });
+    };
+    followHash();
+    window.addEventListener('hashchange', followHash);
+    return () => window.removeEventListener('hashchange', followHash);
+  }, []);
+
+  const faviconUrl = settings.favicon_url;
+  useEffect(() => {
+    if (faviconUrl) setStoreFavicon(faviconUrl);
+  }, [faviconUrl]);
 
   const kit = settings.phone_kit;
   const hideCartBar = pathname === '/checkout' || pathname === '/cart';
@@ -80,7 +119,7 @@ export function EngineShell({
   return (
     <EngineCartContext.Provider value={ctx}>
       <div
-        className={`st-root store-studio st-cq eng-root${kit ? ' phone-kit' : ''}`}
+        className={`st-root store-studio st-cq eng-root${kit ? ' phone-kit' : ''}${editor ? ' eng-editor' : ''}`}
         style={{ minHeight: '100vh', ...rootStyle } as CSSProperties}
         data-store={subdomain}
       >

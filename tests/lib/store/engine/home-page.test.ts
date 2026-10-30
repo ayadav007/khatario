@@ -60,9 +60,21 @@ describe('loadEngineHome', () => {
     const out = await loadEngineHome(store, { preview_theme: ['p1', 'p2'], pt: 'tok', cat: 'nope', q: '  rice ' });
     expect(loadMock).toHaveBeenCalledWith(store, { preview_theme: 'p1', pt: 'tok' });
     expect(resolveMock).toHaveBeenCalledWith(store, expect.any(Map), { categoryId: null, search: 'rice' });
-    expect(out).toEqual({ theme, preview: true, data: { s1: { products: [] } } });
+    expect(out).toEqual({ theme, preview: true, editor: false, data: { s1: { products: [] } } });
 
     await loadEngineHome(store, { cat: CAT });
     expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: CAT, search: null });
+  });
+
+  it('turns editor mode on only for a verified preview with editor=1', async () => {
+    resolveMock.mockResolvedValue({});
+    loadMock.mockResolvedValue({ theme, preview: true });
+    expect((await loadEngineHome(store, { editor: '1' }))?.editor).toBe(true);
+    expect((await loadEngineHome(store, { editor: ['1', '0'] }))?.editor).toBe(true);
+    expect((await loadEngineHome(store, { editor: 'true' }))?.editor).toBe(false);
+    expect((await loadEngineHome(store, {}))?.editor).toBe(false);
+
+    loadMock.mockResolvedValue({ theme, preview: false });
+    expect((await loadEngineHome(store, { editor: '1' }))?.editor).toBe(false);
   });
 });

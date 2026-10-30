@@ -8,6 +8,8 @@ export type HomeSearchParams = Record<string, string | string[] | undefined>;
 export interface EngineHome {
   theme: ThemeRow;
   preview: boolean;
+  /** Studio 2 editor mode: a verified preview opened with `editor=1`. */
+  editor: boolean;
   data: Record<string, SectionData>;
 }
 
@@ -47,7 +49,8 @@ export async function loadEngineHome(
       categoryId: cat && UUID.test(cat) ? cat : null,
       search: q,
     });
-    return { theme, preview, data };
+    const editor = preview && first(searchParams.editor) === '1';
+    return { theme, preview, editor, data };
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;
     const missingMigration = code === '42703' || code === '42P01';

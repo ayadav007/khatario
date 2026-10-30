@@ -61,6 +61,9 @@ interface StoreContextValue {
   favoriteIds: string[];
   toggleFavorite: (itemId: string) => Promise<boolean>;
   rateProduct: (itemId: string, rating: number) => Promise<{ rating_avg: number; rating_count: number } | null>;
+  /** True while an engine theme renders the page; the old store theme's CSS, font and favicon then stay off. */
+  engineActive: boolean;
+  setEngineActive: (on: boolean) => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -96,6 +99,22 @@ export function withStoreDraft(params: URLSearchParams): URLSearchParams {
   return params;
 }
 
+/**
+ * Adds the engine theme preview params (`preview_theme`, `pt`) from the page URL, so the store API
+ * can return a store that is not launched yet; the server verifies the token for that business.
+ */
+export function withEnginePreview(params: URLSearchParams): URLSearchParams {
+  if (typeof window === 'undefined') return params;
+  const current = new URLSearchParams(window.location.search);
+  const previewTheme = current.get('preview_theme');
+  const pt = current.get('pt');
+  if (previewTheme && pt && previewTheme.length <= 64 && pt.length <= 1024) {
+    params.set('preview_theme', previewTheme);
+    params.set('pt', pt);
+  }
+  return params;
+}
+
 export function StoreProvider({
   subdomain,
   children,
@@ -112,6 +131,7 @@ export function StoreProvider({
   const [cartReady, setCartReady] = useState(false);
   const [customer, setCustomer] = useState<StoreShopper | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [engineActive, setEngineActive] = useState(false);
 
   useEffect(() => {
     try {
@@ -145,7 +165,7 @@ export function StoreProvider({
     let cancelled = false;
     (async () => {
       try {
-        const params = withStoreDraft(new URLSearchParams());
+        const params = withEnginePreview(withStoreDraft(new URLSearchParams()));
         const qs = params.toString();
         const res = await fetch(
           `/api/public/store/${encodeURIComponent(subdomain)}${qs ? `?${qs}` : ''}`,
@@ -437,6 +457,8 @@ export function StoreProvider({
         favoriteIds,
         toggleFavorite,
         rateProduct,
+        engineActive,
+        setEngineActive,
       }}
     >
       <div style={{ ['--store-accent' as string]: accent }}>{children}</div>

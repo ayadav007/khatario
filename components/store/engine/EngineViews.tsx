@@ -8,6 +8,7 @@ import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
 import { catalogHref, ctaTarget } from '@/lib/store/engine/links';
+import { catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
 import {
@@ -21,11 +22,14 @@ import {
 } from '../studio-theme/StudioSections';
 import { useEngineCart } from './EngineShell';
 
-/** Id of the anchor the `source: 'all'` product grid carries (preset links use `#catalog`). */
-export const CATALOG_ANCHOR = 'catalog';
+/**
+ * Preset links and CTA defaults use `#catalog`; each `source: 'all'` grid carries its own
+ * `catalog-<section id>` anchor and `#catalog` scrolls to the first one (D12).
+ */
+const CATALOG_LINK = '#catalog';
 
 function scrollToId(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  findAnchor(document, id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /** Follows a CTA link: `#anchor` scrolls, internal paths use the router, https opens in this tab. */
@@ -47,26 +51,26 @@ function useCatalogNav() {
   const router = useRouter();
   return useCallback(
     (next: { cat?: string | null; q?: string | null }) =>
-      router.push(catalogHref(window.location.search, next, CATALOG_ANCHOR)),
+      router.push(catalogHref(window.location.search, next, firstCatalogAnchorId(document))),
     [router],
   );
 }
 
 export function EngineHero({ s }: { s: StudioSettings }) {
   const follow = useFollowLink();
-  return <StudioHero s={s} live onCta={(link) => follow(link || `#${CATALOG_ANCHOR}`)} />;
+  return <StudioHero s={s} live onCta={(link) => follow(link || CATALOG_LINK)} />;
 }
 
 export function EngineBanner({ s }: { s: StudioSettings }) {
   const follow = useFollowLink();
-  return <StudioBanner s={s} onCta={() => follow(s.link || `#${CATALOG_ANCHOR}`)} />;
+  return <StudioBanner s={s} onCta={() => follow(s.link || CATALOG_LINK)} />;
 }
 
 /** Studio's `.st-btn` that follows a link. */
 export function EngineCtaButton({ label, link }: { label: string; link: string }) {
   const follow = useFollowLink();
   return (
-    <button type="button" className="st-btn" onClick={() => follow(link || `#${CATALOG_ANCHOR}`)}>
+    <button type="button" className="st-btn" onClick={() => follow(link || CATALOG_LINK)}>
       {label} →
     </button>
   );
@@ -151,19 +155,23 @@ function CategoryTiles({
       images={images}
       selectedId={params.get('cat')}
       onSelect={(id) => go({ cat: id })}
-      viewAll={{ label: 'View All', onClick: () => scrollToId(CATALOG_ANCHOR) }}
+      viewAll={{ label: 'View All', onClick: () => scrollToId('catalog') }}
     />
   );
 }
 
-export function EngineCategoryGrid(props: {
+export function EngineCategoryGrid({
+  sectionId,
+  ...props
+}: {
+  sectionId: string;
   s: StudioSettings;
   categories: StudioTileCategory[];
   style: StoreCategoryStyle;
   images: Record<string, string>;
 }) {
   return (
-    <div id="st-categories">
+    <div id={categoriesAnchor(sectionId)}>
       <Suspense fallback={null}>
         <CategoryTiles {...props} />
       </Suspense>
@@ -186,10 +194,12 @@ function useNarrowing(products: StoreItem[]) {
 }
 
 function NarrowableGrid({
+  sectionId,
   s,
   products,
   className,
 }: {
+  sectionId: string;
   s: StudioSettings;
   products: StoreItem[];
   className?: string;
@@ -200,7 +210,7 @@ function NarrowableGrid({
   if (products.length === 0 && !narrowing) return null;
   return (
     <StudioProductsSection
-      id={CATALOG_ANCHOR}
+      id={catalogAnchor(sectionId)}
       s={s}
       action={null}
       gridClassName={className}
@@ -227,10 +237,12 @@ function NarrowableGrid({
 }
 
 export function EngineProductGrid({
+  sectionId,
   s,
   products,
   isRow,
 }: {
+  sectionId: string;
   s: StudioSettings;
   products: StoreItem[];
   /** Product rail: a carousel the phone kit turns into a swipe row. */
@@ -245,7 +257,7 @@ export function EngineProductGrid({
   if (source === 'all' && !isRow) {
     return (
       <Suspense fallback={null}>
-        <NarrowableGrid s={settings} products={products} className={gridClass} />
+        <NarrowableGrid sectionId={sectionId} s={settings} products={products} className={gridClass} />
       </Suspense>
     );
   }
@@ -255,7 +267,7 @@ export function EngineProductGrid({
     label: 'View All',
     onClick: () => {
       if (source === 'category' && s.categoryId) go({ cat: s.categoryId });
-      else scrollToId(CATALOG_ANCHOR);
+      else scrollToId('catalog');
     },
   };
   return (

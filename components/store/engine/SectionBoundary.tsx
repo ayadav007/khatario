@@ -2,8 +2,35 @@
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-/** A section that throws while rendering on the storefront disappears instead of taking the page down. */
-export class SectionBoundary extends Component<{ type: string; children: ReactNode }, { failed: boolean }> {
+/** Editor mode only (D8): the section's name, never the raw error. */
+export function SectionFailedCard({ name }: { name: string }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        margin: '8px 16px',
+        padding: '14px 16px',
+        borderRadius: 8,
+        border: '1px solid #fca5a5',
+        background: '#fef2f2',
+        color: '#b91c1c',
+        fontSize: 14,
+        fontWeight: 600,
+      }}
+    >
+      {name}: This section failed to load
+    </div>
+  );
+}
+
+/**
+ * A section that throws while rendering on the storefront disappears instead of taking the page down.
+ * In the editor (`editorName` set) it shows the failed-section card instead.
+ */
+export class SectionBoundary extends Component<
+  { type: string; editorName?: string; children: ReactNode },
+  { failed: boolean }
+> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -15,6 +42,7 @@ export class SectionBoundary extends Component<{ type: string; children: ReactNo
   }
 
   render() {
-    return this.state.failed ? null : this.props.children;
+    if (!this.state.failed) return this.props.children;
+    return this.props.editorName ? <SectionFailedCard name={this.props.editorName} /> : null;
   }
 }

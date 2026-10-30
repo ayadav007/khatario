@@ -3,7 +3,7 @@ import type { EngineSectionProps } from '../registry';
 import { EngineCategoryGrid } from '../EngineViews';
 import { noBox, str, withDefaults } from './shared';
 
-export function CategoryGrid({ section, data }: EngineSectionProps) {
+export function CategoryGrid({ id, section, data }: EngineSectionProps) {
   if (!data || data.error) return null;
   const v = withDefaults(section);
   const categories = pickCategories(data.categories ?? [], v.categories);
@@ -12,6 +12,7 @@ export function CategoryGrid({ section, data }: EngineSectionProps) {
   for (const c of categories) if (c.image_url) images[c.id] = c.image_url;
   return (
     <EngineCategoryGrid
+      sectionId={id}
       s={noBox({
         title: str(v.heading),
         eyebrow: str(v.eyebrow),

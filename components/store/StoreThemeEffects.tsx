@@ -2,26 +2,19 @@
 
 import { useEffect } from 'react';
 import { useStore } from '@/lib/store/store-context';
-import { sanitizeStoreTheme, storeFontStack } from '@/lib/store/store-theme';
+import { setStoreFavicon } from '@/lib/store/store-favicon';
+import { storeThemeEffects } from './theme-effects-logic';
 
 export function StoreThemeEffects() {
-  const { store } = useStore();
-  const theme = sanitizeStoreTheme(store?.store_theme);
+  const { store, engineActive } = useStore();
+  const { fontCss, customCss, faviconUrl } = storeThemeEffects(store?.store_theme, engineActive);
   useEffect(() => {
-    if (!theme.favicon_url) return;
-    let link = document.querySelector<HTMLLinkElement>('link[data-store-favicon="1"]');
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      link.setAttribute('data-store-favicon', '1');
-      document.head.appendChild(link);
-    }
-    link.href = theme.favicon_url;
-  }, [theme.favicon_url]);
+    if (faviconUrl) setStoreFavicon(faviconUrl);
+  }, [faviconUrl]);
   return (
     <>
-      <style>{`body,.store-root{font-family:${storeFontStack(theme.font_family)}}`}</style>
-      {theme.custom_css ? <style data-store-custom-css>{theme.custom_css}</style> : null}
+      {fontCss ? <style>{fontCss}</style> : null}
+      {customCss ? <style data-store-custom-css>{customCss}</style> : null}
     </>
   );
 }

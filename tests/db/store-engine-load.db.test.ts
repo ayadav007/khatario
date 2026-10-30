@@ -10,11 +10,15 @@ if (url) process.env.DATABASE_URL = url;
 const d = url ? describe : describe.skip;
 
 jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
+// Store resolution checks the plan; these test businesses have no subscription.
+jest.mock('@/lib/subscription/feature-access', () => ({ hasFeatureAccess: jest.fn(async () => true) }));
 
 import { getPool, closePool } from '@/lib/db';
 import { createTheme } from '@/lib/store/engine/themes-repo';
 import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { loadEngineTheme } from '@/lib/store/engine/load-theme';
+import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { resolveOfflineStoreForPreview } from '@/lib/store/preview-store';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { ThemeRow } from '@/lib/store/engine/types';
 
@@ -33,6 +37,7 @@ d('Storefront theme loading (real DB)', () => {
   let draft: ThemeRow;
   let otherDraft: ThemeRow;
   const savedSecret = process.env.JWT_SECRET;
+  const SUB = `lt${BIZ.replace(/-/g, '').slice(0, 12)}`;
 
   const setFlag = (id: string, on: boolean) =>
     pool.query(`UPDATE business_settings SET store_engine = $2 WHERE business_id = $1`, [id, on]);
@@ -55,6 +60,7 @@ d('Storefront theme loading (real DB)', () => {
     draft = ok(await createTheme(BIZ, USER, { name: 'Draft', preset: 'blank', ctx }));
     ok(await createTheme(OTHER, USER, { name: 'Other live', preset: 'studio', ctx }));
     otherDraft = ok(await createTheme(OTHER, USER, { name: 'Other draft', preset: 'blank', ctx }));
+    await pool.query(`UPDATE business_settings SET store_subdomain = $2, store_enabled = false WHERE business_id = $1`, [BIZ, SUB]);
   });
 
   afterAll(async () => {
@@ -148,5 +154,31 @@ d('Storefront theme loading (real DB)', () => {
       process.env.JWT_SECRET = 'load-theme-test-secret';
       if (savedNext !== undefined) process.env.NEXTAUTH_SECRET = savedNext;
     }
+  });
+
+  it('an offline store renders its draft with a valid token and stays hidden without one', async () => {
+    await setFlag(BIZ, false);
+    // Not launched: the normal lookup does not find it.
+    expect(await resolveStoreBySubdomain(SUB)).toBeNull();
+
+    // No token, or only half of the preview params: still hidden.
+    expect(await resolveOfflineStoreForPreview(SUB, null, null)).toBeNull();
+    expect(await resolveOfflineStoreForPreview(SUB, draft.id, null)).toBeNull();
+    expect(await resolveOfflineStoreForPreview(SUB, null, signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor))).toBeNull();
+
+    // Tokens that do not name this theme for this business: still hidden.
+    expect(await resolveOfflineStoreForPreview(SUB, otherDraft.id, signThemePreview(OTHER, otherDraft.id, PREVIEW_TTL.editor))).toBeNull();
+    expect(await resolveOfflineStoreForPreview(SUB, live.id, signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor))).toBeNull();
+    expect(await resolveOfflineStoreForPreview(SUB, draft.id, 'garbage.token')).toBeNull();
+    const expired = signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor, Date.now() - 3 * 3600_000);
+    expect(await resolveOfflineStoreForPreview(SUB, draft.id, expired)).toBeNull();
+
+    // A verified token for this business and theme: the store resolves and renders the draft.
+    const pt = signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor);
+    const store = await resolveOfflineStoreForPreview(SUB, draft.id.toUpperCase(), pt);
+    expect(store?.business_id).toBe(BIZ);
+    const out = await loadEngineTheme(store!, { preview_theme: draft.id, pt });
+    expect(out?.preview).toBe(true);
+    expect(out?.theme.id).toBe(draft.id);
   });
 });
