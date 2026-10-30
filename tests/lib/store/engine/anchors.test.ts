@@ -1,13 +1,17 @@
 import { catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 
+/** Ids; an id's anchor kind (data-eng-anchor) is the part before the first '-' for catalog-/categories- ids. */
 function fakeDoc(ids: string[]) {
-  const els = ids.map((id) => ({ id }));
+  const els = ids.map((id) => {
+    const kind = /^(catalog|categories)-/.exec(id)?.[1] ?? null;
+    return { id, kind };
+  });
   return {
     getElementById: (id: string) => (els.find((e) => e.id === id) as unknown as HTMLElement) ?? null,
     querySelector: (sel: string) => {
-      const m = /^\.eng-sec \[id\^="([^"]+)"\]$/.exec(sel);
+      const m = /^\[data-eng-anchor="([^"]+)"\]$/.exec(sel);
       if (!m) throw new Error(`unexpected selector ${sel}`);
-      return (els.find((e) => e.id.startsWith(m[1])) as unknown as Element) ?? null;
+      return (els.find((e) => e.kind === m[1]) as unknown as Element) ?? null;
     },
   } as unknown as Pick<Document, 'getElementById' | 'querySelector'>;
 }
@@ -27,6 +31,8 @@ describe('engine section anchors', () => {
     expect(findAnchor(doc, 'nothing')).toBeNull();
     expect(findAnchor(doc, 'toString')).toBeNull();
     expect(firstCatalogAnchorId(doc)).toBe('catalog-g1');
+    // A look-alike id without the anchor attribute (e.g. merchant markup) is not followed.
+    expect(findAnchor(fakeDoc(['catalogue-x']), 'catalog')).toBeNull();
   });
 
   it('falls back to the old catalog id when no all-products grid is on the page', () => {

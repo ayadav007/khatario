@@ -107,7 +107,9 @@ export function EngineShell({
 
   const faviconUrl = settings.favicon_url;
   useEffect(() => {
-    if (faviconUrl) setStoreFavicon(faviconUrl);
+    setStoreFavicon(faviconUrl || null);
+    // Leaving the engine page: drop ours; StoreThemeEffects applies the old theme's again.
+    return () => setStoreFavicon(null);
   }, [faviconUrl]);
 
   const kit = settings.phone_kit;

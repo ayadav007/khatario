@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, useTransition, type CSSProper
 import { useRouter } from 'next/navigation';
 import {
   BRIDGE_SOURCE,
+  acceptEditorMessage,
   appOriginsForStoreHost,
-  parseEditorMessage,
   type PreviewToEditor,
 } from '@/lib/store/engine/editor/bridge';
 import type { GroupKey, SectionRef } from '@/lib/store/engine/editor/ops';
@@ -30,6 +30,21 @@ function refOf(el: Element): SectionRef | null {
 }
 
 const keyOf = (ref: SectionRef | null) => (ref ? `${ref.group}:${ref.id}` : '');
+
+function sameLayout(a: Layout, b: Layout): boolean {
+  if (a.addX !== b.addX || a.boxes.length !== b.boxes.length || a.adds.length !== b.adds.length) return false;
+  for (let i = 0; i < a.boxes.length; i++) {
+    const x = a.boxes[i];
+    const y = b.boxes[i];
+    if (x.key !== y.key || x.name !== y.name || x.top !== y.top || x.left !== y.left || x.width !== y.width || x.height !== y.height) {
+      return false;
+    }
+  }
+  for (let i = 0; i < a.adds.length; i++) {
+    if (a.adds[i].index !== b.adds[i].index || a.adds[i].y !== b.adds[i].y) return false;
+  }
+  return true;
+}
 
 function sectionEl(ref: SectionRef): HTMLElement | null {
   // Ids and groups come from the strict parser (or refOf), so they are safe inside the selector.
@@ -100,11 +115,13 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
       }
       const main = layer.closest('main');
       const emptyTop = main ? main.getBoundingClientRect().top - origin.top : 0;
-      setLayout({
+      const next: Layout = {
         boxes,
         adds: insertionPoints(template, emptyTop),
         addX: rootRect.left + rootRect.width / 2 - origin.left,
-      });
+      };
+      // Scroll and resize fire often; only re-render the overlay when something moved.
+      setLayout((prev) => (sameLayout(prev, next) ? prev : next));
     });
   }, []);
 
@@ -132,17 +149,20 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
     let readyTimer: ReturnType<typeof setInterval> | null = null;
     if (framed && originsRef.current.length > 0) {
       post({ source: BRIDGE_SOURCE, type: 'ready', rev: null });
-      readyTimer = setInterval(() => post({ source: BRIDGE_SOURCE, type: 'ready', rev: null }), READY_EVERY_MS);
+      readyTimer = setInterval(() => {
+        if (!parentOriginRef.current) post({ source: BRIDGE_SOURCE, type: 'ready', rev: null });
+      }, READY_EVERY_MS);
     }
 
     const onMessage = (e: MessageEvent) => {
-      if (!framed || e.source !== window.parent) return;
-      if (!originsRef.current.includes(e.origin)) return;
-      if (parentOriginRef.current && e.origin !== parentOriginRef.current) return;
-      const msg = parseEditorMessage(e.data);
-      if (!msg) return;
+      const accepted = acceptEditorMessage(
+        { origin: e.origin, source: e.source, data: e.data },
+        { parent: framed ? window.parent : null, allowed: originsRef.current, locked: parentOriginRef.current },
+      );
+      if (!accepted) return;
+      const { msg } = accepted;
       if (!parentOriginRef.current) {
-        parentOriginRef.current = e.origin;
+        parentOriginRef.current = accepted.lock;
         if (readyTimer) clearInterval(readyTimer);
         readyTimer = null;
       }

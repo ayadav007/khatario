@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import { StoreCatalogView } from '@/components/store/StoreCatalogView';
 import { RenderTemplate } from '@/components/store/engine/RenderTemplate';
 import { currentStoreForPreview } from '@/lib/store/current-store';
@@ -11,9 +12,12 @@ function param(v: string | string[] | undefined): string | null {
 }
 
 export default async function StoreHomePage({ searchParams }: { searchParams: HomeSearchParams }) {
-  // A store that is not launched yet resolves only for a verified theme preview (D10).
-  const store = await currentStoreForPreview(param(searchParams.preview_theme), param(searchParams.pt));
+  // A store that is not launched yet resolves only for a verified theme preview (D10)...
+  const resolved = await currentStoreForPreview(param(searchParams.preview_theme), param(searchParams.pt));
+  const store = resolved?.store ?? null;
   const engine = store ? await loadEngineHome(store, searchParams) : null;
+  // ...and then renders only that preview, never as a normal storefront.
+  if (resolved?.offline && !engine?.preview) notFound();
 
   if (!store || !engine) return <StoreCatalogView />;
 

@@ -9,8 +9,9 @@ export function StoreThemeEffects() {
   const { store, engineActive } = useStore();
   const { fontCss, customCss, faviconUrl } = storeThemeEffects(store?.store_theme, engineActive);
   useEffect(() => {
-    if (faviconUrl) setStoreFavicon(faviconUrl);
-  }, [faviconUrl]);
+    // While the engine renders the page, EngineShell owns the favicon.
+    if (!engineActive) setStoreFavicon(faviconUrl);
+  }, [faviconUrl, engineActive]);
   return (
     <>
       {fontCss ? <style>{fontCss}</style> : null}

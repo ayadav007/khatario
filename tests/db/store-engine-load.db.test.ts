@@ -19,6 +19,7 @@ import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token'
 import { loadEngineTheme } from '@/lib/store/engine/load-theme';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { resolveOfflineStoreForPreview } from '@/lib/store/preview-store';
+import { THEME_DEMO_SLUGS, themeDemoStore } from '@/lib/store/theme-demo';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { ThemeRow } from '@/lib/store/engine/types';
 
@@ -180,5 +181,21 @@ d('Storefront theme loading (real DB)', () => {
     const out = await loadEngineTheme(store!, { preview_theme: draft.id, pt });
     expect(out?.preview).toBe(true);
     expect(out?.theme.id).toBe(draft.id);
+  });
+
+  it('keeps an offline store hidden when the valid token names a deleted theme', async () => {
+    const gone = ok(await createTheme(BIZ, USER, { name: 'Gone', preset: 'blank', ctx }));
+    const pt = signThemePreview(BIZ, gone.id, PREVIEW_TTL.editor);
+    expect((await resolveOfflineStoreForPreview(SUB, gone.id, pt))?.business_id).toBe(BIZ);
+    await pool.query(`DELETE FROM store_themes WHERE business_id = $1 AND id = $2`, [BIZ, gone.id]);
+    expect(await resolveOfflineStoreForPreview(SUB, gone.id, pt)).toBeNull();
+  });
+
+  it('never resolves a demo store through the preview path', async () => {
+    const slug = Object.keys(THEME_DEMO_SLUGS)[0];
+    const demo = themeDemoStore(slug)!;
+    expect(demo.is_demo).toBe(true);
+    const pt = signThemePreview(demo.business_id, draft.id, PREVIEW_TTL.editor);
+    expect(await resolveOfflineStoreForPreview(slug, draft.id, pt)).toBeNull();
   });
 });

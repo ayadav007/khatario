@@ -28,7 +28,15 @@ function renderGroup(
     const Component = Object.prototype.hasOwnProperty.call(SECTION_COMPONENTS, section.type)
       ? SECTION_COMPONENTS[section.type]
       : null;
-    if (!Component) continue;
+    if (!Component) {
+      // Unknown type: shoppers see nothing; the editor shows the failed card so it can be selected and removed.
+      if (editor) {
+        out.push(
+          <SectionFrame key={id} id={id} section={section} theme={theme} group={groupKey} index={index} editor failed />,
+        );
+      }
+      continue;
+    }
     const sectionData = data[id];
     if (sectionData?.error) {
       // Shoppers never see the message; the section is simply left out. The editor shows a red card.

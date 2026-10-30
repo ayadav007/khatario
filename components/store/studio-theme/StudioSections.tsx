@@ -655,6 +655,7 @@ export function StudioProductsSection({
   mobileColumns = 2,
   chips,
   id,
+  anchorKind,
   gridClassName,
   children,
 }: {
@@ -665,6 +666,8 @@ export function StudioProductsSection({
   mobileColumns?: 2 | 3;
   chips?: ReactNode;
   id?: string;
+  /** Engine pages: `data-eng-anchor` for links that target the first grid of a kind. */
+  anchorKind?: string;
   /** Extra grid classes, e.g. `isRow` for a sourced row the phone kit turns into a swipe row. */
   gridClassName?: string;
   children: ReactNode;
@@ -672,7 +675,7 @@ export function StudioProductsSection({
   const className = [productGridClass(s), gridClassName].filter(Boolean).join(' ');
   const style = { '--columns': String(s.columns ?? 5), '--mcols': String(mobileColumns) } as CSSProperties;
   return (
-    <section className="st-section" style={boxStyle(s)} id={id}>
+    <section className="st-section" style={boxStyle(s)} id={id} data-eng-anchor={anchorKind}>
       <StudioSectionHead
         eyebrow={studioEyebrow('products', s.eyebrow, s.source)}
         title={title ?? s.title}

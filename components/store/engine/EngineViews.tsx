@@ -8,7 +8,7 @@ import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
 import { catalogHref, ctaTarget } from '@/lib/store/engine/links';
-import { catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
+import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
 import {
@@ -171,7 +171,7 @@ export function EngineCategoryGrid({
   images: Record<string, string>;
 }) {
   return (
-    <div id={categoriesAnchor(sectionId)}>
+    <div id={categoriesAnchor(sectionId)} data-eng-anchor={ANCHOR_KIND.categories}>
       <Suspense fallback={null}>
         <CategoryTiles {...props} />
       </Suspense>
@@ -211,6 +211,7 @@ function NarrowableGrid({
   return (
     <StudioProductsSection
       id={catalogAnchor(sectionId)}
+      anchorKind={ANCHOR_KIND.catalog}
       s={s}
       action={null}
       gridClassName={className}

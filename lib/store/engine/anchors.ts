@@ -10,13 +10,16 @@ export function categoriesAnchor(sectionId: string): string {
   return `categories-${sectionId}`;
 }
 
+/** `data-eng-anchor` value an anchor of each kind carries. */
+export const ANCHOR_KIND = { catalog: 'catalog', categories: 'categories' } as const;
+
 /**
  * The old fixed ids (`#catalog` in preset links and CTA defaults, `#st-categories` in the phone nav)
- * point at the first section of that kind on the page.
+ * point at the first anchor of that kind on the page.
  */
 const ALIASES: Record<string, string> = {
-  catalog: 'catalog-',
-  'st-categories': 'categories-',
+  catalog: ANCHOR_KIND.catalog,
+  'st-categories': ANCHOR_KIND.categories,
 };
 
 type AnchorDoc = Pick<Document, 'getElementById' | 'querySelector'>;
@@ -25,8 +28,8 @@ type AnchorDoc = Pick<Document, 'getElementById' | 'querySelector'>;
 export function findAnchor(doc: AnchorDoc, id: string): Element | null {
   const exact = doc.getElementById(id);
   if (exact) return exact;
-  const prefix = Object.prototype.hasOwnProperty.call(ALIASES, id) ? ALIASES[id] : null;
-  return prefix ? doc.querySelector(`.eng-sec [id^="${prefix}"]`) : null;
+  const kind = Object.prototype.hasOwnProperty.call(ALIASES, id) ? ALIASES[id] : null;
+  return kind ? doc.querySelector(`[data-eng-anchor="${kind}"]`) : null;
 }
 
 /** The DOM id of the first all-products grid on the page, or the old `catalog` id when there is none. */

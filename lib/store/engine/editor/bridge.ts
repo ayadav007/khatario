@@ -67,6 +67,22 @@ export function parseEditorMessage(data: unknown): EditorToPreview | null {
   }
 }
 
+/**
+ * Gate for messages the storefront preview receives: only from the parent window (`parent` is null
+ * when the page is not framed), only from an allowed app origin, only from the origin locked by the
+ * first valid message, and only well-formed. Returns the message and the origin to lock, or null.
+ */
+export function acceptEditorMessage(
+  event: { origin: string; source: unknown; data: unknown },
+  ctx: { parent: unknown; allowed: readonly string[]; locked: string | null },
+): { msg: EditorToPreview; lock: string } | null {
+  if (ctx.parent === null || ctx.parent === undefined || event.source !== ctx.parent) return null;
+  if (!ctx.allowed.includes(event.origin)) return null;
+  if (ctx.locked !== null && event.origin !== ctx.locked) return null;
+  const msg = parseEditorMessage(event.data);
+  return msg ? { msg, lock: event.origin } : null;
+}
+
 export function parsePreviewMessage(data: unknown): PreviewToEditor | null {
   if (!isPlainObject(data) || data.source !== BRIDGE_SOURCE) return null;
   switch (data.type) {
