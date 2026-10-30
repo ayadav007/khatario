@@ -12,9 +12,11 @@ import {
   isEditableTarget,
   pruneSelection,
   selectionRef,
+  shellView,
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
+  type LeaveState,
   type Selection,
 } from '@/lib/store/engine/editor/shell';
 import { editorPath, fetchCategories, openWorkingDraft, previewLink, publishTheme, putTheme } from './api';
@@ -92,7 +94,15 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   const queueRef = useRef<SaveQueue | null>(null);
   const postRef = useRef<((msg: EditorToPreview) => void) | null>(null);
   const revRef = useRef(0);
-  const leavingRef = useRef(false);
+  // Publishing or moving to the next working draft: the editor is read-only meanwhile.
+  const [leave, setLeaveState] = useState<LeaveState>('idle');
+  const leaveRef = useRef<LeaveState>('idle');
+  const setLeave = useCallback((l: LeaveState) => {
+    leaveRef.current = l;
+    setLeaveState(l);
+  }, []);
+  const restoreDoneRef = useRef(false);
+  const goingRef = useRef(false);
 
   const post = useCallback((msg: EditorToPreview) => postRef.current?.(msg), []);
 
@@ -102,18 +112,20 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   }, []);
 
   // Leave this theme for the business's working draft (after publish, or when it went live elsewhere).
+  // The queue is disposed only once the next draft is known; on failure the editor stays read-only
+  // behind a reload banner (edits are blocked, so nothing can be dropped silently).
   const goToWorkingDraft = useCallback(async () => {
-    if (leavingRef.current) return;
-    leavingRef.current = true;
-    queueRef.current?.dispose();
+    if (leaveRef.current === 'failed' || goingRef.current) return;
+    goingRef.current = true;
+    setLeave('leaving');
     try {
       const next = await openWorkingDraft(businessId);
+      queueRef.current?.dispose();
       router.replace(editorPath(next.id));
-    } catch (e) {
-      leavingRef.current = false;
-      toast.error(e instanceof Error ? e.message : 'Failed to open the working draft');
+    } catch {
+      setLeave('failed');
     }
-  }, [businessId, router, toast]);
+  }, [businessId, router, setLeave]);
   const goToWorkingDraftRef = useRef(goToWorkingDraft);
   goToWorkingDraftRef.current = goToWorkingDraft;
 
@@ -133,19 +145,25 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
       },
     });
     queueRef.current = queue;
-    if (restored) queue.schedule(historyRef.current.present, true);
+    // Deferred so StrictMode's simulated unmount cancels it before queue A can PUT; the ref makes
+    // the restore save and its notice happen once per mounted editor.
+    const restoreTimer =
+      restored && !restoreDoneRef.current
+        ? setTimeout(() => {
+            restoreDoneRef.current = true;
+            queue.schedule(historyRef.current.present, true);
+            toast.info("Restored changes that hadn't saved");
+          }, 0)
+        : null;
     return () => {
+      if (restoreTimer) clearTimeout(restoreTimer);
+      void queue.flush(); // client-side navigation away: send a debounced edit now
       queue.dispose();
       if (queueRef.current === queue) queueRef.current = null;
     };
     // The queue lives as long as this theme; `restored` only matters on the first run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.id, row.updated_at, businessId]);
-
-  useEffect(() => {
-    if (restored) toast.info("Restored changes that hadn't saved");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +195,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
 
   const apply = useCallback<Studio2Api['apply']>(
     (fn, opts) => {
+      if (leaveRef.current !== 'idle') return null;
       const result = fn(historyRef.current.present);
       let next: ThemeData;
       if (isOpResult(result)) {
@@ -196,6 +215,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   );
 
   const doUndo = useCallback(() => {
+    if (leaveRef.current !== 'idle') return;
     const h = undo(historyRef.current);
     if (h === historyRef.current) return;
     setHistoryBoth(h);
@@ -203,6 +223,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   }, [setHistoryBoth]);
 
   const doRedo = useCallback(() => {
+    if (leaveRef.current !== 'idle') return;
     const h = redo(historyRef.current);
     if (h === historyRef.current) return;
     setHistoryBoth(h);
@@ -250,7 +271,8 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
         case 'ready':
           // A fresh frame (or one that finished an older refresh) learns the selection, and catches up.
           post({ source: BRIDGE_SOURCE, type: 'select', ref: selectionRef(selectionRefState.current) });
-          if (msg.rev !== null && msg.rev < revRef.current) {
+          // A reloaded frame (rev null) may have missed a refresh sent while it was loading.
+          if (revRef.current > 0 && (msg.rev === null || msg.rev < revRef.current)) {
             post({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
           }
           break;
@@ -283,21 +305,24 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
 
   const publish = useCallback(async () => {
     const queue = queueRef.current;
-    if (!queue) return;
+    if (!queue || leaveRef.current !== 'idle') return;
+    setLeave('leaving'); // no edits (or undo) while publishing
     await queue.flush();
     if (statusRef.current !== 'saved') {
+      setLeave('idle');
       toast.error('Save your changes before publishing');
       return;
     }
     try {
       await publishTheme(businessId, row.id);
     } catch (e) {
+      setLeave('idle');
       toast.error(e instanceof Error ? e.message : 'Failed to publish theme');
       return;
     }
     toast.success('Published');
     await goToWorkingDraft();
-  }, [businessId, row.id, toast, goToWorkingDraft]);
+  }, [businessId, row.id, toast, goToWorkingDraft, setLeave]);
 
   const keepBackup = useCallback(() => {
     const data = backupChoice;
@@ -332,6 +357,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   );
 
   const s = status.status;
+  const view = shellView(leave, s, status.message);
   return (
     <Studio2Context.Provider value={api}>
       <div className="fixed inset-0 z-[90] flex flex-col bg-white text-gray-900">
@@ -343,19 +369,25 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
           onRedo={doRedo}
           device={device}
           onDevice={setDevice}
-          status={s}
-          statusMessage={status.message}
+          statusLabel={view.statusLabel}
+          statusIsError={leave === 'failed' || s === 'error' || s === 'conflict' || s === 'locked'}
           onCopyPreview={copyPreview}
           onPublish={publish}
         />
 
+        {view.blockingBanner && (
+          <Banner tone="error">
+            {view.blockingBanner}
+            <BannerButton onClick={() => window.location.reload()}>Reload</BannerButton>
+          </Banner>
+        )}
         {s === 'conflict' && (
           <Banner tone="error">
             This theme changed in another tab.
             <BannerButton onClick={() => window.location.reload()}>Reload</BannerButton>
           </Banner>
         )}
-        {s === 'locked' && <Banner tone="error">This theme is now live.</Banner>}
+        {s === 'locked' && !view.blockingBanner && <Banner tone="error">This theme is now live.</Banner>}
         {s === 'offline' && <Banner tone="warn">Offline, retrying…</Banner>}
         {s === 'error' && (
           <Banner tone="error">

@@ -33,7 +33,7 @@ export async function fetchTheme(businessId: string, id: string): Promise<ThemeR
   return theme;
 }
 
-/** Throws on a network failure (the save queue treats that as offline). */
+/** Throws on a network failure or a gateway error (the save queue treats both as offline). */
 export async function putTheme(businessId: string, id: string, data: ThemeData, updatedAt: string): Promise<PutResult> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
     method: 'PUT',
@@ -41,6 +41,8 @@ export async function putTheme(businessId: string, id: string, data: ThemeData, 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ business_id: businessId, data, updated_at: updatedAt }),
   });
+  // A gateway error (proxy during a deploy) is transient: let the queue retry it as offline.
+  if (res.status === 502 || res.status === 503 || res.status === 504) throw new Error(`Gateway ${res.status}`);
   return { status: res.status, body: (await readJson(res)) as PutResult['body'] };
 }
 

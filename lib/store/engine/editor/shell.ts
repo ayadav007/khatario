@@ -75,12 +75,30 @@ export function shortcutFor(e: KeyLike): 'undo' | 'redo' | null {
   return null;
 }
 
-/** Focus in a field keeps the browser's own undo. */
+const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image', 'hidden']);
+
+/** Focus in a text field keeps the browser's own undo; toggles, sliders and buttons do not. */
 export function isEditableTarget(t: unknown): boolean {
   if (!t || typeof t !== 'object') return false;
-  const el = t as { tagName?: unknown; isContentEditable?: unknown };
+  const el = t as { tagName?: unknown; isContentEditable?: unknown; type?: unknown };
   if (el.isContentEditable === true) return true;
-  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+  if (el.tagName === 'INPUT') return !(typeof el.type === 'string' && NON_TEXT_INPUTS.has(el.type.toLowerCase()));
+  return el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+}
+
+/** idle: editing; leaving: publishing or opening the next working draft; failed: that open failed. */
+export type LeaveState = 'idle' | 'leaving' | 'failed';
+
+export const LEAVE_FAILED_TEXT = 'This theme is now live. Reload the editor to keep editing.';
+
+/** What the shell allows and shows while it is (or failed at) leaving this theme. */
+export function shellView(
+  leave: LeaveState,
+  status: SaveStatus,
+  message?: string,
+): { readOnly: boolean; statusLabel: string; blockingBanner: string | null } {
+  if (leave === 'failed') return { readOnly: true, statusLabel: 'Not saved', blockingBanner: LEAVE_FAILED_TEXT };
+  return { readOnly: leave === 'leaving', statusLabel: saveStatusLabel(status, message), blockingBanner: null };
 }
 
 /** The iframe src for an editor preview link. */

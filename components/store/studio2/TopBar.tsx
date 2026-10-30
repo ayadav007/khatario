@@ -4,8 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { SaveStatus } from '@/lib/store/engine/editor/save-queue';
-import { saveStatusLabel } from '@/lib/store/engine/editor/shell';
 import type { Device } from './PreviewPane';
 
 interface Props {
@@ -16,8 +14,8 @@ interface Props {
   onRedo(): void;
   device: Device;
   onDevice(d: Device): void;
-  status: SaveStatus;
-  statusMessage?: string;
+  statusLabel: string;
+  statusIsError: boolean;
   onCopyPreview(): Promise<void>;
   onPublish(): Promise<void>;
 }
@@ -26,7 +24,7 @@ const iconBtn =
   'inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
 
 export function TopBar(props: Props) {
-  const { themeName, canUndo, canRedo, onUndo, onRedo, device, onDevice, status, statusMessage } = props;
+  const { themeName, canUndo, canRedo, onUndo, onRedo, device, onDevice, statusLabel, statusIsError } = props;
   const [confirming, setConfirming] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -102,12 +100,12 @@ export function TopBar(props: Props) {
         <span
           className={clsx(
             'mr-2 max-w-[14rem] truncate text-xs',
-            status === 'error' || status === 'conflict' || status === 'locked' ? 'text-red-600' : 'text-gray-500',
+            statusIsError ? 'text-red-600' : 'text-gray-500',
           )}
           aria-live="polite"
-          title={saveStatusLabel(status, statusMessage)}
+          title={statusLabel}
         >
-          {saveStatusLabel(status, statusMessage)}
+          {statusLabel}
         </span>
 
         <button

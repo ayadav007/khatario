@@ -4,6 +4,7 @@ import {
   pruneSelection,
   saveStatusLabel,
   selectionRef,
+  shellView,
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
@@ -96,5 +97,34 @@ describe('editor shell helpers', () => {
     );
     expect(editorFrameSrc('http://g.localhost:3016/')).toBe('http://g.localhost:3016/?editor=1');
     expect(editorFrameSrc('not a url')).toBeNull();
+  });
+});
+
+describe('editor shell view while leaving the theme', () => {
+  it('is editable and shows the save status while idle', () => {
+    expect(shellView('idle', 'saved')).toEqual({ readOnly: false, statusLabel: 'Saved', blockingBanner: null });
+    expect(shellView('idle', 'error', 'Boom').statusLabel).toBe('Error Boom');
+  });
+
+  it('is read-only while publishing or opening the next draft', () => {
+    expect(shellView('leaving', 'saved')).toEqual({ readOnly: true, statusLabel: 'Saved', blockingBanner: null });
+  });
+
+  it('blocks with a reload banner when the next draft could not be opened', () => {
+    expect(shellView('failed', 'saved')).toEqual({
+      readOnly: true,
+      statusLabel: 'Not saved',
+      blockingBanner: 'This theme is now live. Reload the editor to keep editing.',
+    });
+  });
+});
+
+describe('isEditableTarget input types', () => {
+  it('keeps shortcuts on toggles, ranges and buttons', () => {
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'text' })).toBe(true);
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'number' })).toBe(true);
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'checkbox' })).toBe(false);
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'range' })).toBe(false);
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'button' })).toBe(false);
   });
 });
