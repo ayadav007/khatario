@@ -560,13 +560,24 @@ export async function createInterBranchPurchaseEntries(
   );
   if (existing.rows.length > 0) return;
 
+  // Net of short-delivery credit notes: the receiver only takes what actually arrived (s.16(2)(b)).
   const inv = await client.query(
-    `SELECT invoice_number, subtotal, discount_total, grand_total, cgst_total, sgst_total, igst_total
-       FROM invoices WHERE id = $1 AND business_id = $2`,
+    `SELECT i.invoice_number,
+            i.subtotal - COALESCE(cn.subtotal, 0) AS subtotal, i.discount_total,
+            i.cgst_total - COALESCE(cn.cgst, 0) AS cgst_total,
+            i.sgst_total - COALESCE(cn.sgst, 0) AS sgst_total,
+            i.igst_total - COALESCE(cn.igst, 0) AS igst_total
+       FROM invoices i
+       LEFT JOIN LATERAL (
+         SELECT SUM(subtotal) AS subtotal, SUM(cgst_total) AS cgst, SUM(sgst_total) AS sgst, SUM(igst_total) AS igst
+           FROM credit_notes WHERE invoice_id = i.id AND status = 'active'
+       ) cn ON true
+      WHERE i.id = $1 AND i.business_id = $2`,
     [params.invoiceId, params.businessId]
   );
   const invoice = inv.rows[0];
   if (!invoice) throw new Error('Inter-branch invoice not found');
+  if (round2(Number(invoice.subtotal) - Number(invoice.discount_total || 0)) <= 0) return;
 
   const acc = await interBranchAccounts(client, params.businessId);
   const taxable = round2(Number(invoice.subtotal) - Number(invoice.discount_total || 0));
@@ -620,5 +631,201 @@ export async function createInterBranchPurchaseEntries(
     entryDate: params.invoiceDate,
     reference: invoice.invoice_number,
     lines,
+  });
+}
+
+/**
+ * Part of an inter-branch transfer never arrived. The sender had already supplied it under the
+ * inter-branch tax invoice, so it issues a credit note to the receiving branch for the short
+ * quantity (s.34): inter-branch sales, output tax and the inter-branch receivable are reduced, and
+ * the cost of goods sold on that part is reversed back into the sender's inventory. The caller then
+ * writes the goods off at the sender. Returns the credit note id, or null when nothing is short.
+ */
+export async function issueInterBranchShortCreditNote(
+  client: PoolClient,
+  p: {
+    businessId: string;
+    invoiceId: string;
+    transferNumber: string;
+    date: string;
+    lines: Array<{ itemId: string; qty: number }>;
+    userId?: string | null;
+  }
+): Promise<string | null> {
+  const inv = (
+    await client.query(
+      `SELECT id, branch_id, customer_id, invoice_number, invoice_date::text AS invoice_date, place_of_supply_state_code,
+              subtotal, discount_total
+         FROM invoices WHERE id = $1 AND business_id = $2`,
+      [p.invoiceId, p.businessId]
+    )
+  ).rows[0];
+  if (!inv) throw new Error('Inter-branch invoice not found');
+  const invoiceItems = (
+    await client.query(
+      `SELECT item_id, item_name, hsn_sac, unit, unit_price, quantity, tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount
+         FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order`,
+      [p.invoiceId]
+    )
+  ).rows;
+
+  const notes: Array<{ src: any; qty: number; taxable: number; cgst: number; sgst: number; igst: number }> = [];
+  for (const l of p.lines) {
+    const src = invoiceItems.find((r: any) => r.item_id === l.itemId);
+    const invQty = Number(src?.quantity) || 0;
+    const qty = Math.min(Number(l.qty) || 0, invQty);
+    if (!src || qty <= 0) continue;
+    const ratio = qty / invQty;
+    notes.push({
+      src,
+      qty,
+      taxable: round2(Number(src.taxable_value) * ratio),
+      cgst: round2(Number(src.cgst_amount) * ratio),
+      sgst: round2(Number(src.sgst_amount) * ratio),
+      igst: round2(Number(src.igst_amount) * ratio),
+    });
+  }
+  if (notes.length === 0) return null;
+
+  const sum = (k: 'taxable' | 'cgst' | 'sgst' | 'igst') => round2(notes.reduce((s, n) => s + n[k], 0));
+  const taxable = sum('taxable');
+  const cgst = sum('cgst');
+  const sgst = sum('sgst');
+  const igst = sum('igst');
+  const tax = round2(cgst + sgst + igst);
+  const total = round2(taxable + tax);
+
+  const { nextCreditNoteNumber, assertCreditNoteNumberFree } = await import('@/lib/credit-notes/create-credit-note');
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`credit-note-number:${p.businessId}`]);
+  const number = await nextCreditNoteNumber(client, p.businessId, inv.branch_id);
+  await assertCreditNoteNumberFree(client, p.businessId, inv.branch_id, number);
+
+  const reason = `Short on inter-branch transfer ${p.transferNumber}`;
+  const cn = (
+    await client.query(
+      `INSERT INTO credit_notes (
+         business_id, branch_id, customer_id, invoice_id, credit_note_number, credit_note_date, original_invoice_date,
+         reason, place_of_supply_state_code, subtotal, discount_total, tax_total, cgst_total, sgst_total, igst_total,
+         round_off, grand_total, refund_status, notes, created_by, note_type
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,0,$15,'adjusted',$16,$17,'sales_return')
+       RETURNING id`,
+      [
+        p.businessId, inv.branch_id, inv.customer_id, inv.id, number, p.date, inv.invoice_date, reason,
+        inv.place_of_supply_state_code, taxable, tax, cgst, sgst, igst, total,
+        `${reason}: adjusted against the inter-branch receivable.`, p.userId ?? null,
+      ]
+    )
+  ).rows[0];
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
+    const lineTax = round2(n.cgst + n.sgst + n.igst);
+    await client.query(
+      `INSERT INTO credit_note_items (
+         credit_note_id, item_id, description, qty, unit, unit_price, discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac, restocked
+       ) VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,false)`,
+      [
+        cn.id, n.src.item_id, n.src.item_name, n.qty, n.src.unit, Number(n.src.unit_price) || 0,
+        Number(n.src.tax_rate) || 0, lineTax, round2(n.taxable + lineTax), i, n.src.hsn_sac,
+      ]
+    );
+  }
+  await client.query(
+    `UPDATE customers SET current_balance = COALESCE(current_balance, 0) - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    [total, inv.customer_id]
+  );
+
+  const acc = await interBranchAccounts(client, p.businessId);
+  const label = `Credit note ${number} (${reason})`;
+  const outputTax = (await gstHeadLines(client, p.businessId, 'output', { cgst, sgst, igst }, label)).map((l) => ({
+    ...l,
+    debit: l.credit,
+    credit: 0,
+  }));
+  const lines: VoucherLine[] = [
+    { accountId: acc.sales, debit: taxable, credit: 0, narration: label },
+    ...outputTax,
+    { accountId: acc.receivable, debit: 0, credit: total, narration: label },
+  ];
+
+  // Reverse the cost posted on the invoice for the short part (inventory back, COGS out), in the
+  // proportion of the short value to the invoice value.
+  const invoiceTaxable = round2(Number(inv.subtotal) - Number(inv.discount_total || 0));
+  const ratio = invoiceTaxable > 0 ? Math.min(1, taxable / invoiceTaxable) : 0;
+  const costLines = (
+    await client.query<{ account_id: string; debit: string; credit: string }>(
+      `SELECT l.account_id, SUM(l.debit::numeric) AS debit, SUM(l.credit::numeric) AS credit
+         FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
+        WHERE l.business_id = $1 AND l.voucher_id = $2 AND l.voucher_type = 'invoice'
+          AND a.account_code <> ALL($3::text[])
+        GROUP BY l.account_id`,
+      [p.businessId, p.invoiceId, ['1109', '4103', '2150', '2151', '2152']]
+    )
+  ).rows;
+  const reversed = costLines
+    .map((r) => ({ accountId: r.account_id, debit: round2(Number(r.credit) * ratio), credit: round2(Number(r.debit) * ratio) }))
+    .filter((r) => r.debit > 0 || r.credit > 0);
+  const dr = round2(reversed.reduce((s, r) => s + r.debit, 0));
+  const cr = round2(reversed.reduce((s, r) => s + r.credit, 0));
+  if (reversed.length > 0 && Math.abs(dr - cr) >= 0.01) {
+    // Rounding: settle the difference on the largest line of the lighter side.
+    const side = dr < cr ? 'debit' : 'credit';
+    const target = reversed.filter((r) => r[side] > 0).sort((a, b) => b[side] - a[side])[0];
+    if (target) target[side] = round2(target[side] + Math.abs(dr - cr));
+  }
+  for (const r of reversed) lines.push({ ...r, narration: `Cost reversed - ${label}` });
+
+  await insertVoucherLines(client, {
+    businessId: p.businessId,
+    branchId: inv.branch_id,
+    voucherId: cn.id,
+    voucherType: 'credit_note',
+    entryDate: p.date,
+    reference: number,
+    lines,
+  });
+  return cn.id;
+}
+
+/**
+ * Inventory value the receiving branch takes in for an inter-branch invoice: the cost the sender
+ * moved out on the invoice, less any cost it took back on short-delivery credit notes.
+ */
+export async function interBranchReceiptInventoryAmount(client: PoolClient, businessId: string, invoiceId: string): Promise<number> {
+  const r = await client.query<{ amt: string }>(
+    `SELECT COALESCE(SUM(l.credit - l.debit), 0) AS amt
+       FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
+      WHERE l.business_id = $1 AND a.account_code = ANY($3::text[])
+        AND ((l.voucher_type = 'invoice' AND l.voucher_id = $2)
+          OR (l.voucher_type = 'credit_note' AND l.voucher_id IN (SELECT id FROM credit_notes WHERE invoice_id = $2 AND status = 'active')))`,
+    [businessId, invoiceId, INVENTORY_ACCOUNT_CODES]
+  );
+  return Math.max(0, round2(Number(r.rows[0]?.amt || 0)));
+}
+
+/**
+ * When an inter-branch transfer completes (fully received, or closed short), the receiving branch
+ * books the inter-branch invoice net of any short-delivery credit notes. Safe to call twice.
+ */
+export async function postInterBranchReceiptForTransfer(client: PoolClient, transferId: string): Promise<void> {
+  const t = (
+    await client.query(
+      `SELECT st.business_id, st.inter_branch_invoice_id, i.invoice_date,
+              COALESCE(w.branch_id,
+                (SELECT bw.branch_id FROM branch_warehouses bw WHERE bw.warehouse_id = w.id
+                  ORDER BY bw.is_primary DESC NULLS LAST LIMIT 1)) AS to_branch_id
+         FROM stock_transfers st
+         JOIN invoices i ON i.id = st.inter_branch_invoice_id
+         JOIN warehouses w ON w.id = st.to_location_id
+        WHERE st.id = $1`,
+      [transferId]
+    )
+  ).rows[0];
+  if (!t?.inter_branch_invoice_id || !t.to_branch_id) return;
+  await createInterBranchPurchaseEntries(client, {
+    businessId: t.business_id,
+    toBranchId: t.to_branch_id,
+    invoiceId: t.inter_branch_invoice_id,
+    invoiceDate: t.invoice_date,
+    inventoryAmount: await interBranchReceiptInventoryAmount(client, t.business_id, t.inter_branch_invoice_id),
   });
 }

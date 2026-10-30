@@ -672,6 +672,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (invoice.document_type === 'inter_branch_invoice') {
+        return NextResponse.json(
+          { error: 'An inter-branch invoice is settled between the two branches, not by a customer payment. Record it as a journal between the branches.', code: 'INTER_BRANCH_INVOICE_PAYMENT' },
+          { status: 400 }
+        );
+      }
       if (invoice.status === 'cancelled') {
         return NextResponse.json(
           { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
@@ -763,6 +769,13 @@ export async function POST(request: NextRequest) {
             await client.query('ROLLBACK');
             return NextResponse.json(
               { error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' },
+              { status: 400 }
+            );
+          }
+          if (reference_type === 'invoice' && doc.document_type === 'inter_branch_invoice') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'An inter-branch invoice is settled between the two branches, not by a customer payment. Record it as a journal between the branches.', code: 'INTER_BRANCH_INVOICE_PAYMENT' },
               { status: 400 }
             );
           }

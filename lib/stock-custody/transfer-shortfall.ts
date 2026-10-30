@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { changeGodownStock, GodownStockError, resolveGodown } from '@/lib/inventory/godown-stock';
 import { createQuantityAdjustmentOn } from '@/lib/inventory-adjustment-service';
+import { issueInterBranchShortCreditNote, postInterBranchReceiptForTransfer } from '@/lib/inter-branch-utils';
 
 export interface ShortfallLine {
   item_id: string;
@@ -27,7 +28,7 @@ export async function closeTransferShortfall(
 ): Promise<{ completed: boolean; adjustmentIds: string[] }> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date || '')) throw new GodownStockError('Date is required');
   const t = await client.query(
-    `SELECT id, transfer_number, transfer_date::text, status, from_location_id
+    `SELECT id, transfer_number, transfer_date::text, status, from_location_id, inter_branch_invoice_id
        FROM stock_transfers WHERE id = $1 AND business_id = $2 FOR UPDATE`,
     [transferId, businessId]
   );
@@ -46,6 +47,25 @@ export async function closeTransferShortfall(
   );
   const byItem = new Map(items.rows.map((r: any) => [r.item_id, r]));
   const adjustmentIds: string[] = [];
+
+  // Between GSTINs the goods were already supplied on the inter-branch invoice. The sender takes
+  // the short part back with a credit note (sale, output tax and cost reversed) before writing it
+  // off, so its inventory is not credited twice and the receiver never claims ITC on it.
+  if (transfer.inter_branch_invoice_id) {
+    const short = input.lines
+      .map((l) => ({ itemId: l.item_id, qty: q3(l.qty) }))
+      .filter((l) => l.qty > 0 && byItem.has(l.itemId));
+    if (short.length > 0) {
+      await issueInterBranchShortCreditNote(client, {
+        businessId,
+        invoiceId: transfer.inter_branch_invoice_id,
+        transferNumber: transfer.transfer_number,
+        date: input.date,
+        lines: short,
+        userId,
+      });
+    }
+  }
 
   for (const l of input.lines) {
     const row: any = byItem.get(l.item_id);
@@ -95,6 +115,8 @@ export async function closeTransferShortfall(
   const completed = left.rows[0].open === 0;
   if (completed) {
     await client.query(`UPDATE stock_transfers SET status = 'completed', updated_at = NOW() WHERE id = $1`, [transferId]);
+    // The receiving branch books what actually arrived (net of the credit note).
+    await postInterBranchReceiptForTransfer(client, transferId);
   }
   return { completed, adjustmentIds };
 }

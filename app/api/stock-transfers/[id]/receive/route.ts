@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { createInterBranchPurchaseEntries } from '@/lib/inter-branch-utils';
+import { postInterBranchReceiptForTransfer } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
@@ -230,35 +230,8 @@ export async function POST(
     `, [finalStatus, notes || null, params.id]);
 
     // The receiving branch books the inter-branch invoice once, when the goods are fully received.
-    if (transfer.inter_branch_invoice_id && finalStatus === 'completed') {
-      const invoice = await client.query(
-        `SELECT id, invoice_date FROM invoices WHERE id = $1`,
-        [transfer.inter_branch_invoice_id]
-      );
-      const toWarehouse = await client.query(
-        `SELECT COALESCE(
-           w.branch_id,
-           (SELECT bw.branch_id FROM branch_warehouses bw WHERE bw.warehouse_id = w.id
-             ORDER BY bw.is_primary DESC NULLS LAST LIMIT 1)
-         ) AS branch_id
-           FROM warehouses w WHERE w.id = $1`,
-        [transfer.to_location_id]
-      );
-      if (invoice.rows[0] && toWarehouse.rows[0]?.branch_id) {
-        const cogs = await client.query(
-          `SELECT COALESCE(SUM(credit), 0) AS amt
-             FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
-            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code IN ('1104', '1160', '1161', '1162')`,
-          [transfer.inter_branch_invoice_id]
-        );
-        await createInterBranchPurchaseEntries(client, {
-          businessId: transfer.business_id,
-          toBranchId: toWarehouse.rows[0].branch_id,
-          invoiceId: invoice.rows[0].id,
-          invoiceDate: invoice.rows[0].invoice_date,
-          inventoryAmount: Number(cogs.rows[0]?.amt || 0),
-        });
-      }
+    if (finalStatus === 'completed') {
+      await postInterBranchReceiptForTransfer(client, params.id);
     }
 
     await client.query('COMMIT');

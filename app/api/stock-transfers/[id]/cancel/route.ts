@@ -80,6 +80,28 @@ export async function PATCH(
       );
     }
 
+    // Once any goods have arrived or been closed short, putting the full dispatch back at the source
+    // would duplicate stock and reverse an invoice for goods the receiver already holds.
+    const progressed = await client.query(
+      `SELECT 1 FROM stock_transfer_items
+        WHERE transfer_id = $1 AND (COALESCE(received_qty, 0) > 0 OR COALESCE(qty_short, 0) > 0)
+        LIMIT 1`,
+      [params.id]
+    );
+    if (progressed.rows.length > 0) {
+      await client.query('ROLLBACK');
+      inTransaction = false;
+      return NextResponse.json(
+        {
+          error:
+            'Part of this transfer has already been received or closed short, so it cannot be cancelled. ' +
+            'Close the rest short instead, and send any returned goods back with a new transfer.',
+          code: 'TRANSFER_PARTLY_RECEIVED',
+        },
+        { status: 409 }
+      );
+    }
+
     if (transfer.status === 'in_transit') {
       const transferItemsResult = await client.query(
         `SELECT * FROM stock_transfer_items WHERE transfer_id = $1`,
