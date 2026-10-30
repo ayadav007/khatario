@@ -8,12 +8,12 @@ export function blankPreset(ctx: PresetContext): ThemeData {
   if (ctx.logoUrl) headerSettings.logo_url = ctx.logoUrl;
   return {
     settings: presetSettings(ctx),
-    header_group: template([section('header', headerSettings, [block('menu_link', { label: 'All Products', link: '/' })])]),
+    header_group: template([section('header', headerSettings, [block('menu_link', { label: 'All Products', link: '/catalog' })])]),
     footer_group: template([section('footer', { badge: true })]),
     templates: {
       home: template([]),
       product: defaultTemplate('product'),
-      catalog: template([]),
+      catalog: defaultTemplate('catalog'),
     },
   };
 }

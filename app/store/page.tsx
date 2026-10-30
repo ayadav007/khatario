@@ -1,8 +1,10 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { StoreCatalogView } from '@/components/store/StoreCatalogView';
 import { RenderTemplate } from '@/components/store/engine/RenderTemplate';
 import { currentStoreForPreview } from '@/lib/store/current-store';
 import { loadEngineHome, type HomeSearchParams } from '@/lib/store/engine/home-page';
+import { catalogRedirect } from '@/lib/store/engine/links';
+import { hasEnabledSection, searchString } from '@/lib/store/engine/page-loader';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +22,13 @@ export default async function StoreHomePage({ searchParams }: { searchParams: Ho
   if (resolved?.offline && !engine?.preview) notFound();
 
   if (!store || !engine) return <StoreCatalogView />;
+
+  // D14: browsing (`cat`, `q`) moves to the catalog page, unless the theme's catalog is empty (D15),
+  // whose fallback is this page's narrowed grid.
+  if (hasEnabledSection(engine.theme.data.templates.catalog)) {
+    const to = catalogRedirect(true, '/', searchString(searchParams));
+    if (to) redirect(to);
+  }
 
   return (
     <RenderTemplate

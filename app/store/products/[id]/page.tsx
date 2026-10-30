@@ -1,8 +1,7 @@
 import { notFound } from 'next/navigation';
 import { RenderTemplate } from '@/components/store/engine/RenderTemplate';
 import { currentStoreForPreview } from '@/lib/store/current-store';
-import { loadEnginePage, type HomeSearchParams } from '@/lib/store/engine/page-loader';
-import type { PageTemplate } from '@/lib/store/engine/types';
+import { hasEnabledSection, loadEnginePage, type HomeSearchParams } from '@/lib/store/engine/page-loader';
 import ClassicProductPage from './ClassicProductPage';
 
 export const dynamic = 'force-dynamic';
@@ -10,14 +9,6 @@ export const dynamic = 'force-dynamic';
 function param(v: string | string[] | undefined): string | null {
   const s = Array.isArray(v) ? v[0] : v;
   return typeof s === 'string' && s ? s : null;
-}
-
-/** D15: a product template with no enabled section renders the classic page. */
-function hasEnabledSection(template: PageTemplate | null): boolean {
-  return !!template?.order.some((id) => {
-    const section = template.sections[id];
-    return !!section && !section.disabled;
-  });
 }
 
 export default async function StoreProductPage({
@@ -34,6 +25,7 @@ export default async function StoreProductPage({
   // ...and then renders only that preview, never as a normal storefront.
   if (resolved?.offline && !engine?.preview) notFound();
 
+  // D15: a product template with no enabled section renders the classic page.
   if (!store || !engine || !hasEnabledSection(engine.template)) return <ClassicProductPage />;
 
   return (

@@ -88,16 +88,16 @@ export function visibleSettings(schemas: readonly SettingSchema[], scope: FormSc
 
 export const CUSTOM_LINK = 'custom';
 
-/** Link picker choices: Home, All products (category cleared), then one per category. */
+/** Link picker choices: Home, All products (the catalog), then one catalog page per category (D14). */
 export function linkOptions(categories: readonly { id: string; name: string }[]): { value: string; label: string }[] {
   return [
     { value: '/', label: 'Home' },
-    { value: '/?cat=', label: 'All products' },
-    ...categories.map((c) => ({ value: `/?cat=${encodeURIComponent(c.id)}`, label: c.name })),
+    { value: '/catalog', label: 'All products' },
+    ...categories.map((c) => ({ value: `/catalog/${encodeURIComponent(c.id)}`, label: c.name })),
   ];
 }
 
-/** Which picker choice a stored link is: '' (none), one of linkOptions, or 'custom'. */
+/** Which picker choice a stored link is: '' (none), one of linkOptions, or 'custom' (old `/?cat=` links too). */
 export function linkChoice(value: unknown, categories: readonly { id: string; name: string }[]): string {
   if (typeof value !== 'string' || value.trim() === '') return '';
   const v = value.trim();

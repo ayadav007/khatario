@@ -31,7 +31,7 @@ function tpl(sections: Section[]): Template {
   return { order, sections: map };
 }
 
-/** The starting layout for a new theme's template; catalog arrives with its sections (Task 5). */
+/** The starting layout for a new theme's product or catalog template. */
 export function defaultTemplate(kind: 'product' | 'catalog'): Template {
   if (kind === 'product') {
     return tpl([
@@ -41,7 +41,7 @@ export function defaultTemplate(kind: 'product' | 'catalog'): Template {
       sec('recently-viewed'),
     ]);
   }
-  return tpl([]);
+  return tpl([sec('catalog-banner'), sec('main-catalog')]);
 }
 
 /** Starting points for a new custom page. */

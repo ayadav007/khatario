@@ -30,7 +30,7 @@ export function studioPreset(ctx: PresetContext): ThemeData {
     header_group: template([
       section('announcement', { text: tagline.slice(0, 200).trim() }),
       section('header', headerSettings, [
-        block('menu_link', { label: 'Shop', link: '/#catalog' }),
+        block('menu_link', { label: 'All Products', link: '/catalog' }),
         block('menu_link', { label: 'Offers', link: '/#offers' }),
         block('menu_link', { label: 'Contact', link: '/contact' }),
       ]),
@@ -50,7 +50,7 @@ export function studioPreset(ctx: PresetContext): ThemeData {
         section('testimonials', {}),
       ]),
       product: defaultTemplate('product'),
-      catalog: template([]),
+      catalog: defaultTemplate('catalog'),
     },
   };
 }

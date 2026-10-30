@@ -179,15 +179,18 @@ describe('link picker', () => {
   it('lists Home, All products and each category', () => {
     expect(linkOptions(cats)).toEqual([
       { value: '/', label: 'Home' },
-      { value: '/?cat=', label: 'All products' },
-      { value: '/?cat=11111111-1111-1111-1111-111111111111', label: 'Fruit' },
-      { value: '/?cat=22222222-2222-2222-2222-222222222222', label: 'Veg' },
+      { value: '/catalog', label: 'All products' },
+      { value: '/catalog/11111111-1111-1111-1111-111111111111', label: 'Fruit' },
+      { value: '/catalog/22222222-2222-2222-2222-222222222222', label: 'Veg' },
     ]);
   });
 
   it('maps a value to its option, custom, or none', () => {
     expect(linkChoice('/', cats)).toBe('/');
-    expect(linkChoice('/?cat=22222222-2222-2222-2222-222222222222', cats)).toBe('/?cat=22222222-2222-2222-2222-222222222222');
+    expect(linkChoice('/catalog/22222222-2222-2222-2222-222222222222', cats)).toBe('/catalog/22222222-2222-2222-2222-222222222222');
+    // Links saved before the catalog page stay as they were, shown as custom links.
+    expect(linkChoice('/?cat=22222222-2222-2222-2222-222222222222', cats)).toBe('custom');
+    expect(linkChoice('/?cat=', cats)).toBe('custom');
     expect(linkChoice('https://example.com', cats)).toBe('custom');
     expect(linkChoice('', cats)).toBe('');
     expect(linkChoice(undefined, cats)).toBe('');

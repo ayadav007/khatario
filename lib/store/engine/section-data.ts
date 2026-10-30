@@ -145,6 +145,15 @@ async function loadCategories(store: StoreBusinessContext): Promise<SectionCateg
   return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: null }));
 }
 
+/**
+ * The name of one of the store's categories, or null when the store shows no such category: the same
+ * business-scoped list the category grid uses, so a category with no store items is not one.
+ */
+export async function catalogCategoryName(store: StoreBusinessContext, categoryId: string): Promise<string | null> {
+  const categories = await loadCategories(store);
+  return categories.find((c) => c.id === categoryId)?.name ?? null;
+}
+
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }

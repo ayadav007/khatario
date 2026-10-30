@@ -19,6 +19,8 @@ import { MainProduct } from './sections/MainProduct';
 import { RelatedProducts } from './sections/RelatedProducts';
 import { RecentlyViewed } from './sections/RecentlyViewed';
 import { ProductReviews } from './sections/ProductReviews';
+import { CatalogBanner } from './sections/CatalogBanner';
+import { MainCatalog } from './sections/MainCatalog';
 
 /** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
 export interface EngineRoute {
@@ -59,4 +61,6 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   'related-products': RelatedProducts,
   'recently-viewed': RecentlyViewed,
   'product-reviews': ProductReviews,
+  'catalog-banner': CatalogBanner,
+  'main-catalog': MainCatalog,
 };

@@ -7,7 +7,7 @@ import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
-import { catalogHref, ctaTarget } from '@/lib/store/engine/links';
+import { catalogHref, ctaTarget, engineCatalogHref } from '@/lib/store/engine/links';
 import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
@@ -46,12 +46,15 @@ export function useFollowLink() {
   );
 }
 
-/** Opens the home page narrowed to a category and/or search, scrolled to the catalog grid. */
+/**
+ * Opens the catalog page (D14) for a category and/or search, keeping preview params. A store whose
+ * catalog template is empty sends it on to the home page's narrowed grid.
+ */
 function useCatalogNav() {
   const router = useRouter();
   return useCallback(
-    (next: { cat?: string | null; q?: string | null }) =>
-      router.push(catalogHref(window.location.search, next, firstCatalogAnchorId(document))),
+    (next: { categoryId?: string | null; q?: string | null }) =>
+      router.push(engineCatalogHref(window.location.search, next)),
     [router],
   );
 }
@@ -86,7 +89,7 @@ function HeaderSearchBox({ subdomain, placeholder }: { subdomain: string; placeh
         subdomain={subdomain}
         value={params.get('q') ?? ''}
         onSubmit={(q) => go({ q: q.trim() || null })}
-        onPick={(p: SearchPick) => go({ cat: p.id })}
+        onPick={(p: SearchPick) => go({ categoryId: p.id })}
         placeholder={placeholder}
         inputId="store-search"
         className="h-full min-w-0 flex-1 [&_input]:!min-h-0 [&_input]:!shadow-none [&_input]:!ring-0"
@@ -154,8 +157,8 @@ function CategoryTiles({
       style={style}
       images={images}
       selectedId={params.get('cat')}
-      onSelect={(id) => go({ cat: id })}
-      viewAll={{ label: 'View All', onClick: () => scrollToId('catalog') }}
+      onSelect={(id) => go({ categoryId: id })}
+      viewAll={{ label: 'View All', onClick: () => go({}) }}
     />
   );
 }
@@ -205,8 +208,9 @@ function NarrowableGrid({
   className?: string;
 }) {
   const narrowing = useNarrowing(products);
-  const go = useCatalogNav();
   const router = useRouter();
+  // Clearing returns to the home page's full grid.
+  const clear = () => router.push(catalogHref(window.location.search, {}, firstCatalogAnchorId(document)));
   if (products.length === 0 && !narrowing) return null;
   return (
     <StudioProductsSection
@@ -218,7 +222,7 @@ function NarrowableGrid({
       chips={
         narrowing ? (
           <div className="st-chips">
-            <button type="button" className="on" onClick={() => go({})} aria-label={`Showing ${narrowing.label}. Clear`}>
+            <button type="button" className="on" onClick={clear} aria-label={`Showing ${narrowing.label}. Clear`}>
               Showing {narrowing.label} · Clear
             </button>
           </div>
@@ -267,8 +271,10 @@ export function EngineProductGrid({
   const action: StudioLink = {
     label: 'View All',
     onClick: () => {
-      if (source === 'category' && s.categoryId) go({ cat: s.categoryId });
-      else scrollToId('catalog');
+      if (source === 'category' && s.categoryId) go({ categoryId: s.categoryId });
+      // An all-products grid on this page if there is one, else the catalog page.
+      else if (findAnchor(document, 'catalog')) scrollToId('catalog');
+      else go({});
     },
   };
   return (

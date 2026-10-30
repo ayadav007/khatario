@@ -18,6 +18,8 @@ import { mainProduct } from './sections/main-product';
 import { relatedProducts } from './sections/related-products';
 import { recentlyViewed } from './sections/recently-viewed';
 import { productReviews } from './sections/product-reviews';
+import { catalogBanner } from './sections/catalog-banner';
+import { mainCatalog } from './sections/main-catalog';
 
 /** Appended to every non-group section. Colour scheme, CSS class and custom CSS live on the Section itself. */
 export const COMMON_SETTINGS: SettingSchema[] = [
@@ -52,6 +54,8 @@ const ALL: SectionSchema[] = [
   relatedProducts,
   recentlyViewed,
   productReviews,
+  catalogBanner,
+  mainCatalog,
 ].map(withCommon);
 
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = Object.fromEntries(ALL.map((s) => [s.type, s]));

@@ -19,6 +19,24 @@ export interface EnginePage {
 // A store theme migration that has not run yet fails every request the same way; log it once per process.
 let loggedMissingMigration = false;
 
+/** D15: a product or catalog template with no enabled section renders the classic page instead. */
+export function hasEnabledSection(template: PageTemplate | null | undefined): boolean {
+  return !!template?.order.some((id) => {
+    const section = template.sections[id];
+    return !!section && !section.disabled;
+  });
+}
+
+/** A search-params record as a query string (`?a=1&b=2`, or '' when empty); repeated keys keep every value. */
+export function searchString(searchParams: HomeSearchParams): string {
+  const out = new URLSearchParams();
+  for (const [key, v] of Object.entries(searchParams)) {
+    for (const value of Array.isArray(v) ? v : [v]) if (typeof value === 'string') out.append(key, value);
+  }
+  const qs = out.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export function first(v: string | string[] | undefined): string | null {
   const s = Array.isArray(v) ? v[0] : v;
   return typeof s === 'string' && s ? s : null;

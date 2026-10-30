@@ -42,7 +42,7 @@ export const header: SectionSchema = {
     {
       name: 'Header',
       settings: { show_search: true, icons_position: 'right' },
-      blocks: [{ type: 'menu_link', settings: { label: 'All Products', link: '/' } }],
+      blocks: [{ type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } }],
     },
   ],
 };

@@ -1,10 +1,10 @@
 import { presetTheme, type PresetContext } from '@/lib/store/engine/presets';
 import { sanitizeThemeData, ID_RE } from '@/lib/store/engine/sanitize';
 
-// The product template's section ids are fresh per call (newId), so determinism is checked on its section types.
+// The product and catalog templates' section ids are fresh per call (newId), so determinism is checked on their sections in order.
 function stable(p: ReturnType<typeof presetTheme>) {
-  const t = p.templates.product;
-  return { ...p, templates: { ...p.templates, product: t.order.map((id) => t.sections[id]) } };
+  const list = (key: string) => p.templates[key].order.map((id) => p.templates[key].sections[id]);
+  return { ...p, templates: { ...p.templates, product: list('product'), catalog: list('catalog') } };
 }
 
 const ctx: PresetContext = {
