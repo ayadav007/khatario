@@ -1,9 +1,10 @@
 // Pure helpers for the Studio 2 settings panel (generated fields, pickers, merge keys).
-// Client-safe: imports only engine types/schema-types/theme-settings-schema, ops types and the
+// Client-safe: imports only engine types/schema-types/theme-settings-schema/registry, ops types and the
 // import-free option lists in lib/store (store-theme pulls in only studio-sections).
 import type { ColorScheme, ThemeSettings } from '../types';
 import type { SettingSchema } from '../schema-types';
 import { EDITOR_HIDDEN_SETTINGS } from '../theme-settings-schema';
+import { COMMON_SETTINGS } from '../registry';
 import type { SectionRef } from './ops';
 import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
@@ -36,11 +37,11 @@ export function themeSettingValue(settings: ThemeSettings, schema: SettingSchema
   return settingValue(obj, { ...schema, id: schema.id.slice(dot + 1) });
 }
 
-/** Snaps to the step (counted from min) and clamps to min/max, like the server's range rule. */
+/** Clamps to min/max; a range also snaps to its step (counted from min). Same as the server. */
 export function clampNumber(schema: SettingSchema, n: number): number | null {
   if (!Number.isFinite(n)) return null;
   let v = n;
-  if (schema.step && schema.step > 0) {
+  if (schema.type === 'range' && schema.step && schema.step > 0) {
     const base = schema.min ?? 0;
     v = Number((base + Math.round((v - base) / schema.step) * schema.step).toFixed(6));
   }
@@ -64,9 +65,24 @@ export function lengthCounter(value: unknown, max: number | undefined): { text: 
   return { text: `${n}/${max}`, over: n > max };
 }
 
-/** The settings a form shows: the schema's, minus those not wired yet (D13). */
-export function visibleSettings(schemas: readonly SettingSchema[]): SettingSchema[] {
-  return schemas.filter((s) => !EDITOR_HIDDEN_SETTINGS.includes(s.id));
+/** Which form a settings list belongs to. */
+export type FormScope = { kind: 'theme' } | { kind: 'section'; type: string } | { kind: 'block' };
+
+/**
+ * The settings a form shows, minus those not wired yet (D13): the theme form hides
+ * EDITOR_HIDDEN_SETTINGS.theme; a section form hides the `common` ids that come from
+ * COMMON_SETTINGS plus its type's own list; block forms hide nothing.
+ */
+export function visibleSettings(schemas: readonly SettingSchema[], scope: FormScope): SettingSchema[] {
+  const hidden = EDITOR_HIDDEN_SETTINGS;
+  if (scope.kind === 'block') return schemas.slice();
+  if (scope.kind === 'theme') return schemas.filter((s) => !(hidden.theme as readonly string[]).includes(s.id));
+  const own: readonly string[] = hasOwn(hidden.sections, scope.type)
+    ? hidden.sections[scope.type as keyof typeof hidden.sections]
+    : [];
+  return schemas.filter(
+    (s) => !own.includes(s.id) && !((hidden.common as readonly string[]).includes(s.id) && COMMON_SETTINGS.includes(s)),
+  );
 }
 
 export const CUSTOM_LINK = 'custom';

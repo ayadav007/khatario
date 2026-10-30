@@ -70,6 +70,11 @@ describe('clampNumber', () => {
     expect(clampNumber({ id: 'x', type: 'number', label: 'X', min: 1, max: 999999 }, 0)).toBe(1);
   });
 
+  it('snaps to the step only for range, like the server', () => {
+    expect(clampNumber({ id: 'x', type: 'number', label: 'X', min: 0, max: 100, step: 5 }, 7)).toBe(7);
+    expect(clampNumber({ id: 'x', type: 'range', label: 'X', min: 0, max: 100, step: 5 }, 7)).toBe(5);
+  });
+
   it('returns null for non-finite input', () => {
     expect(clampNumber(range, NaN)).toBeNull();
     expect(clampNumber(range, Infinity)).toBeNull();
@@ -112,19 +117,47 @@ describe('lengthCounter', () => {
 });
 
 describe('visibleSettings', () => {
-  it('drops EDITOR_HIDDEN_SETTINGS from section and theme forms', () => {
-    const fp = getSectionSchema('featured-products')!.settings;
-    const ids = visibleSettings(fp).map((s) => s.id);
-    expect(ids).toContain('spacing_top');
-    expect(ids).toContain('heading');
-    expect(ids).not.toContain('full_width');
-    // A section's own card_style is hidden too (same id): D13 hides by id, in every form.
-    expect(ids).not.toContain('card_style');
-    const theme = visibleSettings(THEME_SETTINGS_SCHEMA).map((s) => s.id);
-    expect(theme).not.toContain('card_style');
-    expect(theme).toContain('button_radius');
-    const footer = visibleSettings(getSectionSchema('footer')!.settings).map((s) => s.id);
-    expect(footer).not.toContain('show_payment_icons');
+  const ids = (list: SettingSchema[]) => list.map((s) => s.id);
+
+  it('keeps a section-level card_style visible (featured-products, product-rail)', () => {
+    for (const type of ['featured-products', 'product-rail']) {
+      const form = ids(visibleSettings(getSectionSchema(type)!.settings, { kind: 'section', type }));
+      expect(form).toContain('card_style');
+      expect(form).toContain('heading');
+      expect(form).toContain('spacing_top');
+    }
+  });
+
+  it('hides the theme card_style', () => {
+    const form = ids(visibleSettings(THEME_SETTINGS_SCHEMA, { kind: 'theme' }));
+    expect(form).not.toContain('card_style');
+    expect(form).toContain('button_radius');
+  });
+
+  it('hides the footer show_payment_icons', () => {
+    const form = ids(visibleSettings(getSectionSchema('footer')!.settings, { kind: 'section', type: 'footer' }));
+    expect(form).not.toContain('show_payment_icons');
+    expect(form.length).toBeGreaterThan(0);
+  });
+
+  it('hides full_width from COMMON_SETTINGS on every section', () => {
+    for (const type of ['rich-text', 'featured-products', 'custom-html']) {
+      expect(ids(visibleSettings(getSectionSchema(type)!.settings, { kind: 'section', type }))).not.toContain('full_width');
+    }
+  });
+
+  it('hides a common id only when it comes from COMMON_SETTINGS', () => {
+    const own: SettingSchema = { id: 'full_width', type: 'checkbox', label: 'Own' };
+    expect(ids(visibleSettings([own], { kind: 'section', type: 'rich-text' }))).toEqual(['full_width']);
+  });
+
+  it('hides nothing in block forms', () => {
+    const block: SettingSchema[] = [
+      { id: 'card_style', type: 'text', label: 'A' },
+      { id: 'show_payment_icons', type: 'checkbox', label: 'B' },
+      ...COMMON_SETTINGS,
+    ];
+    expect(ids(visibleSettings(block, { kind: 'block' }))).toEqual(ids(block));
   });
 
   it('section forms already include COMMON_SETTINGS (registry combines them)', () => {
@@ -159,6 +192,15 @@ describe('link picker', () => {
   it('every option passes the server url rule', () => {
     const schema: SettingSchema = { id: 'l', type: 'url', label: 'L' };
     for (const o of linkOptions(cats)) expect(sanitizeSettingValue(schema, o.value)).toBe(o.value);
+  });
+
+  it('isLinkValue rejects half-typed and unsafe custom URLs', () => {
+    for (const bad of ['h', 'https:', 'https://', 'http://x.com', '//evil.com', 'javascript:alert(1)', 'www.x.com', '/a b', '#a b']) {
+      expect(isLinkValue(bad)).toBe(false);
+    }
+    for (const ok of ['', 'https://x.com', 'https://x.com/a?b=1', '/contact', '/?cat=', '#catalog']) {
+      expect(isLinkValue(ok)).toBe(true);
+    }
   });
 
   it('isLinkValue matches the server url rule', () => {

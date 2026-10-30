@@ -70,7 +70,11 @@ describe('THEME_SETTINGS_SCHEMA', () => {
   });
 
   it('hides the settings not wired until M3', () => {
-    expect(EDITOR_HIDDEN_SETTINGS).toEqual(['full_width', 'card_style', 'show_payment_icons']);
+    expect(EDITOR_HIDDEN_SETTINGS).toEqual({
+      theme: ['card_style'],
+      common: ['full_width'],
+      sections: { footer: ['show_payment_icons'] },
+    });
   });
 
   it('sanity: registry and sanitize still load', () => {

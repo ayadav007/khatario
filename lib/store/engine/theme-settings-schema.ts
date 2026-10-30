@@ -26,5 +26,10 @@ export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'social.youtube', type: 'text', label: 'YouTube', default: '' },
 ];
 
-// These settings are not wired in the renderer until M3, so the editor hides them.
-export const EDITOR_HIDDEN_SETTINGS: readonly string[] = ['full_width', 'card_style', 'show_payment_icons'];
+// Settings not wired in the renderer until M3, so the editor hides them (D13). Scoped: the theme's
+// card_style is hidden but a section's own card_style (featured-products, product-rail) is wired.
+export const EDITOR_HIDDEN_SETTINGS = {
+  theme: ['card_style'],
+  common: ['full_width'],
+  sections: { footer: ['show_payment_icons'] },
+} as const;

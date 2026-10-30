@@ -27,6 +27,7 @@ import {
   themeSettingValue,
   visibleSettings,
   type FieldTarget,
+  type FormScope,
 } from '@/lib/store/engine/editor/fields';
 import { blockLabel, isEditableSection, sectionLabel } from '@/lib/store/engine/editor/tree';
 import { getSectionSchema } from '@/lib/store/engine/registry';
@@ -55,11 +56,12 @@ export function SettingsPanel() {
   } else if (selection) {
     const g = getGroup(theme, templateKey, selection.ref.group);
     const section = hasOwn(g.sections, selection.ref.id) ? g.sections[selection.ref.id] : null;
-    if (section && selection.kind === 'section') body = <SectionPanel key={`${selection.ref.group}:${selection.ref.id}`} sref={selection.ref} section={section} />;
-    else if (section && selection.kind === 'block' && hasOwn(section.blocks, selection.blockId)) {
-      body = (
-        <BlockPanel key={`${selection.ref.group}:${selection.ref.id}:${selection.blockId}`} sref={selection.ref} section={section} blockId={selection.blockId} />
-      );
+    const key = `${selection.ref.group}:${selection.ref.id}`;
+    if (section && selection.kind === 'section') {
+      body = <SectionPanel key={key} sref={selection.ref} section={section} />;
+    } else if (section && selection.kind === 'block' && hasOwn(section.blocks, selection.blockId)) {
+      const blockKey = `${key}:${selection.blockId}`;
+      body = <BlockPanel key={blockKey} sref={selection.ref} section={section} blockId={selection.blockId} />;
     }
   }
 
@@ -113,18 +115,21 @@ function PanelHeader({ title, subtitle, back }: { title: string; subtitle?: stri
 /** One generated field per visible setting, each edit merged under its own key. */
 function SettingsForm({
   schemas,
+  scope,
   target,
   values,
   onSet,
 }: {
   schemas: SettingSchema[];
+  scope: FormScope;
   target: FieldTarget;
   values: (s: SettingSchema) => unknown;
   onSet: (key: string, value: unknown) => (t: ThemeData) => OpResult | ThemeData;
 }) {
   const { apply, readOnly, categories, theme } = useStudio2();
+  const toast = useToastContext();
   const prefix = settingMergeKey(target, '').replace(/[^a-zA-Z0-9_-]/g, '-');
-  const fields = visibleSettings(schemas);
+  const fields = visibleSettings(schemas, scope);
   if (fields.length === 0) return <p className="text-sm text-gray-500">This item has no settings.</p>;
   return (
     <div className="space-y-4">
@@ -138,7 +143,8 @@ function SettingsForm({
           categories={categories}
           colorSchemes={theme.settings.color_schemes}
           onChange={(v) => {
-            apply(onSet(s.id, v), { mergeKey: settingMergeKey(target, s.id), immediate: false });
+            const err = apply(onSet(s.id, v), { mergeKey: settingMergeKey(target, s.id), immediate: false });
+            if (err) toast.error(OP_ERROR_TEXT[err]);
           }}
         />
       ))}
@@ -182,6 +188,7 @@ function SectionPanel({ sref, section }: { sref: SectionRef; section: Section })
       <div className="space-y-5 p-4">
         <SettingsForm
           schemas={schema.settings}
+          scope={{ kind: 'section', type: section.type }}
           target={{ kind: 'section', ref: sref }}
           values={(s) => settingValue(section.settings, s)}
           onSet={(key, value) => (t) => setSectionSetting(t, templateKey, sref, key, value)}
@@ -204,13 +211,16 @@ function SectionPanel({ sref, section }: { sref: SectionRef; section: Section })
 
 function Advanced({ sref, section }: { sref: SectionRef; section: Section }) {
   const { apply, templateKey, theme } = useStudio2();
+  const toast = useToastContext();
   const [open, setOpen] = useState(false);
   const base = `s2-adv-${sref.group}-${sref.id}`;
-  const set = (key: 'color_scheme' | 'css_class' | 'custom_css', value: string) =>
-    apply((t) => updateSection(t, templateKey, sref, { [key]: value }), {
+  const set = (key: 'color_scheme' | 'css_class' | 'custom_css', value: string) => {
+    const err = apply((t) => updateSection(t, templateKey, sref, { [key]: value }), {
       mergeKey: settingMergeKey({ kind: 'section', ref: sref }, key),
       immediate: false,
     });
+    if (err) toast.error(OP_ERROR_TEXT[err]);
+  };
 
   return (
     <div className="border-t border-gray-100 pt-4">
@@ -299,6 +309,7 @@ function BlockPanel({ sref, section, blockId }: { sref: SectionRef; section: Sec
       <div className="space-y-5 p-4">
         <SettingsForm
           schemas={bs.settings}
+          scope={{ kind: 'block' }}
           target={{ kind: 'block', ref: sref, blockId }}
           values={(s) => settingValue(block.settings, s)}
           onSet={(key, value) => (t) => setBlockSetting(t, templateKey, sref, blockId, key, value)}
@@ -326,6 +337,7 @@ function ThemePanel() {
       <div className="space-y-6 p-4">
         <SettingsForm
           schemas={THEME_SETTINGS_SCHEMA}
+          scope={{ kind: 'theme' }}
           target={{ kind: 'theme' }}
           values={(s) => themeSettingValue(theme.settings, s)}
           onSet={(key, value) => (t) => setThemeSetting(t, key, value)}

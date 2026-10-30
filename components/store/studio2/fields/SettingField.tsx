@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
@@ -110,12 +110,7 @@ export function SettingField(props: SettingFieldProps) {
       );
 
     case 'richtext':
-      return shell(
-        <div className={clsx(readOnly && 'pointer-events-none opacity-60')} aria-disabled={readOnly || undefined}>
-          <SimpleRichTextEditor value={str(value)} onChange={(html) => onChange(html)} minHeightClass="min-h-[120px]" />
-        </div>,
-        { noFor: true },
-      );
+      return shell(<RichTextInput value={str(value)} readOnly={readOnly} onChange={onChange} />, { noFor: true });
 
     case 'html': {
       const v = str(value);
@@ -250,6 +245,21 @@ export function SettingField(props: SettingFieldProps) {
     default:
       return null;
   }
+}
+
+/** SimpleRichTextEditor has no disabled prop: while read-only the wrapper is `inert` (no focus, no typing). */
+function RichTextInput({ value, readOnly, onChange }: { value: string; readOnly: boolean; onChange(v: string): void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // React 18 doesn't pass a boolean `inert` through, so set the attribute directly.
+    if (readOnly) ref.current?.setAttribute('inert', '');
+    else ref.current?.removeAttribute('inert');
+  }, [readOnly]);
+  return (
+    <div ref={ref} className={clsx(readOnly && 'opacity-60')} aria-disabled={readOnly || undefined}>
+      <SimpleRichTextEditor value={value} onChange={onChange} minHeightClass="min-h-[120px]" />
+    </div>
+  );
 }
 
 /** A slider plus a number box (range), or just the box (number). Commits only clamped values. */

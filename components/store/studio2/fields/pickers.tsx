@@ -28,7 +28,10 @@ export function LinkPicker({
   const [custom, setCustom] = useState(choice === CUSTOM_LINK);
   const showCustom = custom || choice === CUSTOM_LINK;
   const options = useMemo(() => linkOptions(categories), [categories]);
-  const invalid = showCustom && !isLinkValue(value);
+  // What the merchant is typing; the stored link changes only to a valid value (or '' when cleared),
+  // so a half-typed address never reaches the server, which would drop it to the default.
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && draft.trim() !== '' && !isLinkValue(draft);
 
   return (
     <div className="space-y-1.5">
@@ -43,6 +46,7 @@ export function LinkPicker({
             return;
           }
           setCustom(false);
+          setDraft(null);
           onChange(v);
         }}
       >
@@ -57,14 +61,21 @@ export function LinkPicker({
       {showCustom && (
         <input
           className={inputCls}
-          value={value}
+          value={draft ?? value}
           placeholder="https://"
           aria-label="Custom URL"
           aria-invalid={invalid}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const text = e.target.value;
+            setDraft(text);
+            if (text.trim() === '') onChange('');
+            else if (isLinkValue(text)) onChange(text.trim());
+          }}
+          // A valid draft is already stored; an invalid one stays visible with its hint.
+          onBlur={() => !invalid && setDraft(null)}
         />
       )}
-      {invalid && <p className="text-xs text-red-600">Use an https:// address or a path starting with /</p>}
+      {invalid && <p className="text-xs text-red-600">Use a full https:// address</p>}
     </div>
   );
 }
@@ -135,6 +146,7 @@ export function ProductPicker({
     if (!q) {
       setResults([]);
       setLoading(false);
+      setError(null);
       return;
     }
     const ctl = new AbortController();
