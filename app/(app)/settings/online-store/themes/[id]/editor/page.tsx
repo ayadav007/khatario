@@ -5,8 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
-import { readBackup } from '@/lib/store/engine/editor/save-queue';
+import { backupKey, readBackup } from '@/lib/store/engine/editor/save-queue';
 import { Studio2Editor } from '@/components/store/studio2/Studio2Editor';
 import { editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
 
@@ -39,17 +40,51 @@ function localStore(): Storage | null {
   }
 }
 
+/** Drops unsaved-change backups left for other themes (ones that went live, or were left after a lock). */
+function sweepOtherBackups(storage: Storage | null, keepId: string): void {
+  if (!storage) return;
+  try {
+    const prefix = backupKey('');
+    const keep = backupKey(keepId);
+    const stale: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k && k.startsWith(prefix) && k !== keep) stale.push(k);
+    }
+    stale.forEach((k) => storage.removeItem(k));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** The stored backup, unless it is exactly what the server already has (a save that landed after leaving). */
+function usefulBackup(storage: Storage | null, theme: ThemeRow): { data: ThemeData; stale: boolean } | null {
+  const backup = readBackup(storage, theme.id, theme.updated_at);
+  if (backup && JSON.stringify(backup.data) === JSON.stringify(theme.data)) {
+    try {
+      storage?.removeItem(backupKey(theme.id));
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+  return backup;
+}
+
 export default function Studio2EditorPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === 'string' ? params.id : '';
   const router = useRouter();
   const { business, user } = useAuth();
+  const { canModify, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  // Same rule as the theme routes (settings:update): without it nothing would save.
+  const canEdit = permissionsLoading ? null : canModify('settings') || isPrimaryAdmin;
   const narrow = useNarrow();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (narrow !== false || !business?.id || !id) return;
+    if (narrow !== false || canEdit !== true || !business?.id || !id) return;
     let cancelled = false;
     setLoaded(null);
     setError(null);
@@ -62,7 +97,9 @@ export default function Studio2EditorPage() {
           if (!cancelled) router.replace(editorPath(draft.id));
           return;
         }
-        const backup = readBackup(localStore(), theme.id, theme.updated_at);
+        const storage = localStore();
+        sweepOtherBackups(storage, theme.id);
+        const backup = usefulBackup(storage, theme);
         setLoaded({
           theme,
           initialData: backup && !backup.stale ? backup.data : theme.data,
@@ -76,13 +113,24 @@ export default function Studio2EditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [narrow, business?.id, id, router]);
+  }, [narrow, canEdit, business?.id, id, router]);
 
   if (narrow === null) return null;
   if (narrow) {
     return (
       <div className="fixed inset-0 z-[90] flex items-center justify-center bg-white p-6 text-center text-sm text-gray-700">
         Open the editor on a laptop or desktop
+      </div>
+    );
+  }
+  if (canEdit === false) {
+    return (
+      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-white p-6 text-center text-sm">
+        <p className="text-gray-700">You can&apos;t edit the store design: changing it needs permission to update settings.</p>
+        <p className="text-gray-500">Ask an admin for that permission.</p>
+        <Link href="/settings/online-store" className="text-gray-700 underline">
+          Back to Online store
+        </Link>
       </div>
     );
   }
@@ -107,7 +155,6 @@ export default function Studio2EditorPage() {
     <Studio2Editor
       key={loaded.theme.id}
       businessId={business.id}
-      userId={user.id}
       theme={loaded.theme}
       initialData={loaded.initialData}
       restored={loaded.restored}

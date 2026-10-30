@@ -89,9 +89,53 @@ describe('SaveQueue', () => {
     expect(put).toHaveBeenCalledTimes(1);
     release(ok('v1'));
     await tick();
+    // Typing went on during the save: the next one waits for the debounce again.
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(statuses[statuses.length - 1][0]).toBe('pending');
+    jest.advanceTimersByTime(AUTOSAVE_MS - 1);
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(1);
+    await tick();
     expect(put).toHaveBeenCalledTimes(2);
     expect(put).toHaveBeenLastCalledWith('t1', d(3), 'v1');
     expect(statuses[statuses.length - 1][0]).toBe('saved');
+  });
+
+  it('chains straight away when the newest queued edit was immediate', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest
+      .fn()
+      .mockImplementationOnce(() => new Promise<PutResult>((r) => (release = r)))
+      .mockResolvedValueOnce(ok('v2'));
+    const { q } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    q.schedule(d(3), true);
+    release(ok('v1'));
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenLastCalledWith('t1', d(3), 'v1');
+  });
+
+  it('a flush waiting on a chained save sends it without the debounce', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest
+      .fn()
+      .mockImplementationOnce(() => new Promise<PutResult>((r) => (release = r)))
+      .mockResolvedValueOnce(ok('v2'));
+    const { q } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    let done = false;
+    void q.flush().then(() => (done = true));
+    release(ok('v1'));
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+    await tick();
+    expect(done).toBe(true);
   });
 
   it('stops on conflict and keeps the backup', async () => {
@@ -190,6 +234,46 @@ describe('SaveQueue', () => {
     q.schedule(d(2));
     jest.advanceTimersByTime(5000);
     expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('a save that lands after dispose still clears the backup (leaving right after an edit)', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest.fn().mockImplementation(() => new Promise<PutResult>((r) => (release = r)));
+    const { q, storage, onSaved } = setup(put);
+    q.schedule(d(1));
+    void q.flush();
+    q.dispose();
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(true);
+    release(ok('v1'));
+    await tick();
+    expect(storage.m.has('kh-theme-unsaved:t1')).toBe(false);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('a save that lands after dispose re-bases a still-queued backup on the new updated_at', async () => {
+    let release!: (r: PutResult) => void;
+    const put = jest.fn().mockImplementation(() => new Promise<PutResult>((r) => (release = r)));
+    const { q, storage } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.schedule(d(2));
+    q.dispose();
+    release(ok('v1'));
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(readBackup(storage, 't1', 'v1')).toEqual({ data: d(2), stale: false });
+  });
+
+  it('a failed save after dispose keeps the backup', async () => {
+    let fail!: (e: Error) => void;
+    const put = jest.fn().mockImplementation(() => new Promise<PutResult>((_, rej) => (fail = rej)));
+    const { q, storage } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    q.dispose();
+    fail(new Error('net'));
+    await tick();
+    expect(readBackup(storage, 't1', 'v0')).toEqual({ data: d(1), stale: false });
   });
 
   it('does not stack retry timers across repeated network failures', async () => {

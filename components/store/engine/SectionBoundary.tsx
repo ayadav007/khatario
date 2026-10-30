@@ -25,16 +25,21 @@ export function SectionFailedCard({ name }: { name: string }) {
 
 /**
  * A section that throws while rendering on the storefront disappears instead of taking the page down.
- * In the editor (`editorName` set) it shows the failed-section card instead.
+ * In the editor (`editorName` set) it shows the failed-section card instead. When `resetKey` changes
+ * (the editor saved new settings for the section) the boundary tries the section again.
  */
 export class SectionBoundary extends Component<
-  { type: string; editorName?: string; children: ReactNode },
+  { type: string; editorName?: string; resetKey?: string; children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidUpdate(prev: { resetKey?: string }) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
   }
 
   componentDidCatch(error: Error, _info: ErrorInfo) {

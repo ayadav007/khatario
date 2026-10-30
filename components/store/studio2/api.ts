@@ -82,11 +82,9 @@ export async function previewLink(businessId: string, id: string, kind: 'editor'
   return body.url;
 }
 
-export async function fetchCategories(businessId: string, userId: string): Promise<{ id: string; name: string }[]> {
-  const res = await fetch(
-    `/api/categories?business_id=${encodeURIComponent(businessId)}&user_id=${encodeURIComponent(userId)}`,
-    { credentials: 'include' },
-  );
+/** The business and user come from the session; no ids in the query (they would only reach access logs). */
+export async function fetchCategories(): Promise<{ id: string; name: string }[]> {
+  const res = await fetch('/api/categories', { credentials: 'include' });
   const body = await readJson(res);
   const rows = Array.isArray(body.categories) ? body.categories : [];
   return rows

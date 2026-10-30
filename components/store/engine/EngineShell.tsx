@@ -24,6 +24,11 @@ export function useEngineCart() {
 const THEME_RULES =
   '.st-root.eng-root.store-studio :is(h1,h2,h3,.logo b){font-family:var(--font-heading)}' +
   '.st-root.eng-root.store-studio :is(.st-btn,.addBtn){border-radius:var(--btn-radius)}' +
+  // Buttons follow the section's colour scheme (button / button text), else the store's primary colour.
+  '.st-root.eng-root .st-btn{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
+  '.st-root.eng-root .addBtn:not(:disabled){border-color:var(--c-btn,var(--primary));color:var(--c-btn,var(--primary))}' +
+  '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
+  '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   // Image with text uses an h2 in the hero markup (the page's h1 belongs to the slideshow).
   '.st-root.eng-root .heroCopy .eng-heroTitle{font-size:clamp(24px,5cqi,40px);line-height:1.1;margin:12px 0;font-weight:700;overflow-wrap:anywhere}' +
   // A section that rendered nothing (an empty row, a hidden failure) takes no space; separate rules so

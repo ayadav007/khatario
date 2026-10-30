@@ -47,6 +47,8 @@ export function readBackup(
 export class SaveQueue {
   private serverUpdatedAt: string;
   private queued: ThemeData | null = null;
+  /** The newest schedule() asked to save now (undo, a structural change), so a chained save skips the debounce. */
+  private queuedImmediate = false;
   private inFlight = false;
   private stopped: 'conflict' | 'locked' | null = null;
   private disposed = false;
@@ -72,6 +74,7 @@ export class SaveQueue {
       return;
     }
     this.queued = data;
+    this.queuedImmediate = immediate;
     if (this.inFlight) return; // chained after the current PUT
     this.clearTimers();
     this.setStatus('pending');
@@ -122,9 +125,19 @@ export class SaveQueue {
       return;
     }
     this.inFlight = false;
-    if (this.disposed) return;
 
     const body = res?.body ?? {};
+    if (this.disposed) {
+      // The editor has gone (a flush on leaving): still settle the backup so the next open
+      // doesn't offer changes the server already has. No status or preview callbacks.
+      if (res?.status === 200 && body.theme) {
+        this.serverUpdatedAt = body.theme.updated_at;
+        if (this.queued) this.writeBackup(this.queued);
+        else this.removeBackup();
+      }
+      return;
+    }
+
     if (res?.status === 200 && body.theme) {
       const theme = body.theme;
       this.serverUpdatedAt = theme.updated_at;
@@ -135,7 +148,13 @@ export class SaveQueue {
       }
       if (this.queued) {
         this.writeBackup(this.queued); // re-base on the new updated_at
-        await this.run();
+        if (this.queuedImmediate || this.waiters.length > 0) {
+          await this.run();
+        } else {
+          // Typing continued during the save: wait for the usual pause before the next one.
+          this.setStatus('pending');
+          this.debounceTimer = setTimeout(() => void this.run(), AUTOSAVE_MS);
+        }
         return;
       }
       this.removeBackup();

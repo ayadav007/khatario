@@ -2,14 +2,14 @@ import sanitizeHtml from 'sanitize-html';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
-import { defaultSettings } from './shared';
+import { VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings } from './shared';
 
 export { defaultSettings };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const SCHEME_ID_RE = /^[a-z0-9_-]{1,32}$/;
-const VIDEO_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'youtu.be', 'www.youtu.be', 'vimeo.com', 'www.vimeo.com', 'player.vimeo.com']);
+const VIDEO_HOSTS = new Set(VIDEO_HOST_LIST);
 const FONTS = ['inter', 'nunito', 'outfit', 'fraunces', 'playfair', 'cormorant', 'source-serif'];
 const LIST_MAX = 50;
 const RICHTEXT_MAX = 5000;

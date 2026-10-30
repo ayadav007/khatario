@@ -5,6 +5,7 @@ import type { ColorScheme, ThemeSettings } from '../types';
 import type { SettingSchema } from '../schema-types';
 import { EDITOR_HIDDEN_SETTINGS } from '../theme-settings-schema';
 import { COMMON_SETTINGS } from '../registry';
+import { VIDEO_HOSTS } from '../shared';
 import type { SectionRef } from './ops';
 import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
@@ -115,6 +116,29 @@ export function isLinkValue(raw: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Mirrors the server's video_url rule: empty, or an https link on a YouTube or Vimeo host. */
+export function isVideoUrl(raw: string): boolean {
+  const v = raw.trim();
+  if (v === '') return true;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' && VIDEO_HOSTS.includes(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Free-text settings the server keeps only when they pass a rule: a `video_url`, and the theme's
+ * `social.*` links (stored through the url rule). The field shows the typed text but commits only
+ * a valid value, so it never shows something the server drops. Null: any text is kept.
+ */
+export function textRuleFor(schema: SettingSchema): ((raw: string) => boolean) | null {
+  if (schema.type === 'video_url') return isVideoUrl;
+  if (schema.type === 'text' && schema.id.startsWith('social.')) return isLinkValue;
+  return null;
 }
 
 /** `<group>:<sectionId>[:<blockId>]:<key>`, or `theme:<key>`: edits to one field merge into one undo step. */

@@ -73,7 +73,6 @@ function safeStorage(): Storage | null {
 
 interface Props {
   businessId: string;
-  userId: string;
   theme: ThemeRow;
   /** The data to start from: the server copy, or a restored backup. */
   initialData: ThemeData;
@@ -83,7 +82,7 @@ interface Props {
   staleBackup: ThemeData | null;
 }
 
-export function Studio2Editor({ businessId, userId, theme: row, initialData, restored, staleBackup }: Props) {
+export function Studio2Editor({ businessId, theme: row, initialData, restored, staleBackup }: Props) {
   const router = useRouter();
   const toast = useToastContext();
 
@@ -120,21 +119,26 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
     setHistory(h);
   }, []);
 
-  // Leave this theme for the business's working draft (after publish, or when it went live elsewhere).
-  // The queue is disposed only once the next draft is known; on failure the editor stays read-only
-  // behind a reload banner (edits are blocked, so nothing can be dropped silently).
-  const goToWorkingDraft = useCallback(async () => {
-    if (leaveRef.current === 'failed' || goingRef.current) return;
-    goingRef.current = true;
-    setLeave('leaving');
-    try {
-      const next = await openWorkingDraft(businessId);
-      queueRef.current?.dispose();
-      router.replace(editorPath(next.id));
-    } catch {
-      setLeave('failed');
-    }
-  }, [businessId, router, setLeave]);
+  // Leave this theme for the business's working draft (this theme went live: published here when it
+  // isn't the working draft, or elsewhere). The queue is disposed only once the next draft is known; on
+  // failure the editor stays read-only behind a reload banner (edits are blocked, so nothing is dropped).
+  // `carry`: the server refused edits (live_locked), so they go along as a backup the next draft offers.
+  const goToWorkingDraft = useCallback(
+    async (carry: boolean) => {
+      if (leaveRef.current === 'failed' || goingRef.current) return;
+      goingRef.current = true;
+      setLeave('leaving');
+      try {
+        const next = await openWorkingDraft(businessId);
+        queueRef.current?.dispose();
+        if (carry && next.id !== row.id) carryBackup(row.id, next.id, historyRef.current.present);
+        router.replace(editorPath(next.id));
+      } catch {
+        setLeave('failed');
+      }
+    },
+    [businessId, row.id, router, setLeave],
+  );
   const goToWorkingDraftRef = useRef(goToWorkingDraft);
   goToWorkingDraftRef.current = goToWorkingDraft;
 
@@ -146,7 +150,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
       onStatus: (s, message) => {
         statusRef.current = s;
         setStatus({ status: s, message });
-        if (s === 'locked') void goToWorkingDraftRef.current();
+        if (s === 'locked') void goToWorkingDraftRef.current(true);
       },
       onSaved: () => {
         revRef.current += 1;
@@ -176,13 +180,13 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
 
   useEffect(() => {
     let cancelled = false;
-    fetchCategories(businessId, userId)
+    fetchCategories()
       .then((rows) => !cancelled && setCategories(rows))
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [businessId, userId]);
+  }, [businessId]);
 
   const select = useCallback(
     (sel: Selection, opts?: { scroll?: boolean; afterSave?: boolean }) => {
@@ -286,6 +290,11 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
           if (revRef.current > 0 && (msg.rev === null || msg.rev < revRef.current)) {
             post({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
           }
+          // A reloaded frame (token renewal) starts at the top: bring the selection back into view.
+          if (msg.rev === null) {
+            const ref = selectionRef(selectionRefState.current);
+            if (ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref });
+          }
           {
             // A section added or duplicated before its save was in the frame: scroll to it now.
             const r = resolvePendingScroll(pendingScrollRef.current, msg.rev);
@@ -334,15 +343,22 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
       toast.error('Save your changes before publishing');
       return;
     }
+    let published: ThemeRow;
     try {
-      await publishTheme(businessId, row.id);
+      published = await publishTheme(businessId, row.id);
     } catch (e) {
       setLeave('idle');
       toast.error(e instanceof Error ? e.message : 'Failed to publish theme');
       return;
     }
     toast.success('Published');
-    await goToWorkingDraft();
+    // The working draft's data is copied onto the live theme and it stays the working draft (R11),
+    // so editing goes on here. Any other draft itself became live: move to the working draft.
+    if (published.id === row.id) {
+      await goToWorkingDraft(false);
+      return;
+    }
+    setLeave('idle');
   }, [businessId, row.id, toast, goToWorkingDraft, setLeave]);
 
   const keepBackup = useCallback(() => {
@@ -444,6 +460,18 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
       <AddSectionModal />
     </Studio2Context.Provider>
   );
+}
+
+/** Moves edits the server refused to the next draft's backup slot; its base never matches, so the merchant chooses. */
+function carryBackup(fromId: string, toId: string, data: ThemeData): void {
+  const storage = safeStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(backupKey(toId), JSON.stringify({ data, base: '' }));
+    storage.removeItem(backupKey(fromId));
+  } catch {
+    /* storage unavailable or full */
+  }
 }
 
 function Banner({ tone, children }: { tone: 'error' | 'warn'; children: ReactNode }) {

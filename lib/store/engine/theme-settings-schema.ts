@@ -20,10 +20,10 @@ export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'logo_url', type: 'image', label: 'Logo', default: '' },
   { id: 'favicon_url', type: 'image', label: 'Favicon', default: '' },
   { id: 'custom_css', type: 'textarea', label: 'Custom CSS', default: '', info: 'Applies to the whole store' },
-  { id: 'social.instagram', type: 'text', label: 'Instagram', default: '' },
-  { id: 'social.whatsapp', type: 'text', label: 'WhatsApp', default: '' },
-  { id: 'social.facebook', type: 'text', label: 'Facebook', default: '' },
-  { id: 'social.youtube', type: 'text', label: 'YouTube', default: '' },
+  { id: 'social.instagram', type: 'text', label: 'Instagram', default: '', info: 'Full link, e.g. https://instagram.com/yourstore' },
+  { id: 'social.whatsapp', type: 'text', label: 'WhatsApp', default: '', info: 'Full link, e.g. https://wa.me/919800000000' },
+  { id: 'social.facebook', type: 'text', label: 'Facebook', default: '', info: 'Full link, e.g. https://facebook.com/yourstore' },
+  { id: 'social.youtube', type: 'text', label: 'YouTube', default: '', info: 'Full link, e.g. https://youtube.com/@yourstore' },
 ];
 
 // Settings not wired in the renderer until M3, so the editor hides them (D13). Scoped: the theme's

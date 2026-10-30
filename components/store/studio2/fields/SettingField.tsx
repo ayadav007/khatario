@@ -14,6 +14,7 @@ import {
   lengthCounter,
   listLimit,
   parseHex,
+  textRuleFor,
 } from '@/lib/store/engine/editor/fields';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { SimpleRichTextEditor } from '@/components/email/SimpleRichTextEditor';
@@ -84,7 +85,11 @@ export function SettingField(props: SettingFieldProps) {
     case 'header':
       return <h4 className="border-t border-gray-100 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{schema.label}</h4>;
 
-    case 'text':
+    case 'text': {
+      const rule = textRuleFor(schema);
+      if (rule) {
+        return shell(<CheckedTextInput id={fieldId} value={str(value)} valid={rule} placeholder="https://" onChange={onChange} />);
+      }
       return shell(
         <input
           id={fieldId}
@@ -95,6 +100,7 @@ export function SettingField(props: SettingFieldProps) {
         />,
         { counter: lengthCounter(value, schema.max_length) },
       );
+    }
 
     case 'textarea':
       return shell(
@@ -203,13 +209,13 @@ export function SettingField(props: SettingFieldProps) {
 
     case 'video_url':
       return shell(
-        <input
+        <CheckedTextInput
           id={fieldId}
           type="url"
-          className={inputCls}
           value={str(value)}
+          valid={textRuleFor(schema) ?? (() => true)}
           placeholder="https://www.youtube.com/watch?v=…"
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
         />,
         { info: schema.info ?? 'A YouTube or Vimeo link' },
       );
@@ -245,6 +251,50 @@ export function SettingField(props: SettingFieldProps) {
     default:
       return null;
   }
+}
+
+/**
+ * A text box whose stored value changes only to a valid value (or '' when cleared), like LinkPicker's
+ * custom URL: the server would drop anything else, so the field never shows a value that isn't kept.
+ */
+function CheckedTextInput({
+  id,
+  type,
+  value,
+  valid,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  type?: 'url';
+  value: string;
+  valid(raw: string): boolean;
+  placeholder?: string;
+  onChange(v: string): void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && draft.trim() !== '' && !valid(draft);
+  return (
+    <>
+      <input
+        id={id}
+        type={type}
+        className={clsx(inputCls, invalid && 'border-red-400')}
+        value={draft ?? value}
+        placeholder={placeholder}
+        aria-invalid={invalid}
+        onChange={(e) => {
+          const text = e.target.value;
+          setDraft(text);
+          if (text.trim() === '') onChange('');
+          else if (valid(text)) onChange(text.trim());
+        }}
+        // A valid draft is already stored; an invalid one stays visible with its hint.
+        onBlur={() => !invalid && setDraft(null)}
+      />
+      {invalid && <p className="text-xs text-red-600">Use a full https:// address</p>}
+    </>
+  );
 }
 
 /** SimpleRichTextEditor has no disabled prop: while read-only the wrapper is `inert` (no focus, no typing). */

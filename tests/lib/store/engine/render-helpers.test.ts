@@ -32,6 +32,13 @@ describe('catalogHref', () => {
     );
   });
 
+  it('keeps editor only alongside a theme preview', () => {
+    expect(catalogHref('?preview_theme=abc&pt=tok&editor=1', { q: 'rice' })).toBe('/?preview_theme=abc&pt=tok&editor=1&q=rice');
+    expect(catalogHref('?editor=1', { q: 'rice' })).toBe('/?q=rice');
+    expect(catalogHref('?preview_theme=abc&editor=1', {})).toBe('/?preview_theme=abc');
+    expect(catalogHref('?pt=tok&editor=1', {})).toBe('/?pt=tok');
+  });
+
   it('sets q and drops empty values', () => {
     expect(catalogHref('', { q: 'rice dal', cat: '' })).toBe('/?q=rice+dal');
   });

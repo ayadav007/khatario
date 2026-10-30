@@ -11,22 +11,7 @@ import { requireTenantPermission } from '@/lib/security/require-tenant-permissio
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
-  if (!tenant.ok) return tenant.response;
-  const businessId = tenant.businessId;
-
-  try {
-    const [row, logoRow] = await Promise.all([
-      queryOne<{
-        store_subdomain: string | null;
-        store_enabled: boolean;
-        store_tagline: string | null;
-        store_hero_image_url: string | null;
-        store_min_order_amount: string | null;
-      }>(
-        `SELECT
+const SETTINGS_COLS = `
            store_subdomain, store_enabled,
            store_tagline, store_hero_image_url,
            store_min_order_amount::text,
@@ -41,12 +26,46 @@ export async function GET(request: NextRequest) {
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
            store_promo_sheet,
            COALESCE(store_cart_reminder_enabled, false) AS store_cart_reminder_enabled,
-           COALESCE(store_cart_reminder_hours, 3) AS store_cart_reminder_hours,
+           COALESCE(store_cart_reminder_hours, 3) AS store_cart_reminder_hours`;
+
+type SettingsRow = {
+  store_subdomain: string | null;
+  store_enabled: boolean;
+  store_tagline: string | null;
+  store_hero_image_url: string | null;
+  store_min_order_amount: string | null;
+  store_engine?: boolean;
+};
+
+/**
+ * The settings row. Where migration 450 (store_engine) hasn't run yet the column is missing
+ * (Postgres 42703): read the rest without it, so the store engine reads as off instead of the page failing.
+ */
+async function loadSettingsRow(businessId: string): Promise<SettingsRow | null> {
+  try {
+    return await queryOne<SettingsRow>(
+      `SELECT ${SETTINGS_COLS},
            COALESCE(store_engine, false) AS store_engine
          FROM business_settings
          WHERE business_id = $1`,
-        [businessId],
-      ),
+      [businessId],
+    );
+  } catch (err) {
+    if ((err as { code?: string })?.code !== '42703') throw err;
+    const row = await queryOne<SettingsRow>(`SELECT ${SETTINGS_COLS} FROM business_settings WHERE business_id = $1`, [businessId]);
+    return row ? { ...row, store_engine: false } : null;
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  if (!tenant.ok) return tenant.response;
+  const businessId = tenant.businessId;
+
+  try {
+    const [row, logoRow] = await Promise.all([
+      loadSettingsRow(businessId),
       queryOne<{ logo_url: string | null }>(
         `SELECT logo_url FROM businesses WHERE id = $1`,
         [businessId],

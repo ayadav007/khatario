@@ -6,11 +6,13 @@ import {
   clampNumber,
   encodeImageUrl,
   isLinkValue,
+  isVideoUrl,
   lengthCounter,
   linkChoice,
   linkOptions,
   listLimit,
   parseHex,
+  textRuleFor,
   schemeMergeKey,
   settingMergeKey,
   settingValue,
@@ -22,6 +24,8 @@ import { setSchemeColor } from '@/lib/store/engine/editor/ops';
 import { COMMON_SETTINGS, getSectionSchema } from '@/lib/store/engine/registry';
 import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema';
 import { sanitizeSettingValue } from '@/lib/store/engine/settings';
+import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
+import { presetTheme } from '@/lib/store/engine/presets';
 import { CUSTOM_HTML_MAX } from '@/lib/store/engine/html';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
 import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
@@ -207,6 +211,46 @@ describe('link picker', () => {
     const schema: SettingSchema = { id: 'l', type: 'url', label: 'L' };
     for (const v of ['', 'https://example.com/a', '/about', '#catalog', 'http://x.com', 'javascript:alert(1)', '//evil.com', 'https://a b', '/a b']) {
       expect(isLinkValue(v)).toBe(sanitizeSettingValue(schema, v) === v.trim());
+    }
+  });
+
+  it('isVideoUrl matches the server video_url rule', () => {
+    const schema: SettingSchema = { id: 'v', type: 'video_url', label: 'V' };
+    const samples = [
+      '',
+      'https://www.youtube.com/watch?v=abc',
+      'https://youtu.be/abc',
+      'https://player.vimeo.com/video/1',
+      'https://YouTube.com/watch?v=abc',
+      'https://m.youtube.com/watch?v=abc',
+      'http://youtube.com/watch?v=abc',
+      'youtube.com/watch?v=abc',
+      'https://evil.com/youtube.com',
+      'javascript:alert(1)',
+    ];
+    for (const v of samples) {
+      expect(isVideoUrl(v)).toBe(sanitizeSettingValue(schema, v) === v.trim());
+    }
+    expect(isVideoUrl('https://m.youtube.com/watch?v=abc')).toBe(false);
+    expect(isVideoUrl('https://www.youtube.com/watch?v=abc')).toBe(true);
+  });
+
+  it('textRuleFor checks video links and the theme social links, and leaves other text free', () => {
+    expect(textRuleFor({ id: 'video', type: 'video_url', label: 'V' })).toBe(isVideoUrl);
+    for (const s of THEME_SETTINGS_SCHEMA.filter((x) => x.id.startsWith('social.'))) {
+      expect(textRuleFor(s)).toBe(isLinkValue);
+    }
+    expect(textRuleFor({ id: 'heading', type: 'text', label: 'H' })).toBeNull();
+  });
+
+  it('a social link passes the client rule exactly when the server keeps it', () => {
+    const base = sanitizeThemeData(presetTheme('studio', { businessName: 'S', tagline: 'T' }));
+    for (const v of ['instagram.com/x', '@x', 'wa.me/9198', 'https://instagram.com/x', 'https://wa.me/9198', '']) {
+      const kept = sanitizeThemeData({
+        ...base,
+        settings: { ...base.settings, social: { ...base.settings.social, instagram: v } },
+      }).settings.social.instagram;
+      expect(isLinkValue(v)).toBe(kept === v.trim());
     }
   });
 });

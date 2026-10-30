@@ -12,6 +12,17 @@ export const ENGINE_LIMITS = {
 
 export const ID_RE = /^[a-z0-9_-]{1,32}$/;
 
+/** Hosts a `video_url` setting may point at (https only); the server drops anything else. */
+export const VIDEO_HOSTS: readonly string[] = [
+  'youtube.com',
+  'www.youtube.com',
+  'youtu.be',
+  'www.youtu.be',
+  'vimeo.com',
+  'www.vimeo.com',
+  'player.vimeo.com',
+];
+
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 export function newId(prefix?: string): string {

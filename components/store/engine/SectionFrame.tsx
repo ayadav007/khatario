@@ -60,10 +60,24 @@ export function SectionFrame({
       {failed ? (
         <SectionFailedCard name={typeName} />
       ) : (
-        <SectionBoundary type={section.type} editorName={editor ? typeName : undefined}>
+        <SectionBoundary
+          type={section.type}
+          editorName={editor ? typeName : undefined}
+          resetKey={editor ? hashKey(JSON.stringify(section)) : undefined}
+        >
           <Suspense fallback={null}>{children}</Suspense>
         </SectionBoundary>
       )}
     </section>
   );
+}
+
+/** A short FNV-1a hash, so the boundary's reset key stays small in the editor's payload. */
+function hashKey(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
 }

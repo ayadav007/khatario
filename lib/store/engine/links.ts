@@ -2,6 +2,8 @@
 
 /** Query keys a storefront link keeps: theme preview and the old Studio draft token. */
 const KEPT_PARAMS = ['preview_theme', 'pt', 'td'];
+/** Kept only alongside a theme preview (`preview_theme` and `pt`): the Studio 2 frame stays in editor mode. */
+const PREVIEW_ONLY_PARAMS = ['editor'];
 
 /**
  * Home-page URL with the catalog narrowed by `cat` and/or `q` (empty values are dropped),
@@ -17,6 +19,12 @@ export function catalogHref(
   for (const key of KEPT_PARAMS) {
     const v = current.get(key);
     if (v) out.set(key, v);
+  }
+  if (out.get('preview_theme') && out.get('pt')) {
+    for (const key of PREVIEW_ONLY_PARAMS) {
+      const v = current.get(key);
+      if (v) out.set(key, v);
+    }
   }
   if (next.cat) out.set('cat', next.cat);
   if (next.q) out.set('q', next.q);
