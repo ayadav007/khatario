@@ -7,7 +7,7 @@
  * (published theme, working draft, versions, `store_engine`), so run it through the test-DB wrapper:
  *
  *   STUDIO2_E2E=1 PLAYWRIGHT_BASE_URL=http://localhost:3015 PLAYWRIGHT_SKIP_WEBSERVER=1 \
- *     node .superpowers/sdd/2026-10-30-store-engine-m2-studio2-editor/with-test-db.js \
+ *     node .superpowers/sdd/2026-10-30-store-engine-m3-every-page/with-test-db.js \
  *     npx playwright test e2e/store-studio2.spec.ts --project=chromium
  *
  * Login uses LOCAL_TEST_PHONE / LOCAL_TEST_PASSWORD from .env (the local Map Tester account) and keeps
@@ -25,6 +25,7 @@ const BUSINESS_ID = '4b49ddef-59bc-4ec3-94c0-65f615ce32a3';
 const SUBDOMAIN = 'ganesh';
 const AUTH_FILE = path.join(__dirname, '.auth', 'studio2-local.json');
 const SLOW = 90_000;
+const MISSING_PRODUCT_ID = '00000000-0000-0000-0000-000000000000';
 
 interface ThemeSnap {
   id: string;
@@ -167,6 +168,66 @@ const savedHeading = async (page: Page, id: string, sectionId: string) =>
 
 const status = (page: Page) => page.locator('header [aria-live="polite"]');
 
+/** Origin of the ganesh test store (shoppers browse it on the subdomain, not the app origin). */
+const storeOrigin = (baseURL: string | undefined) => {
+  const port = new URL(baseURL ?? 'http://localhost:3015').port;
+  return `http://${SUBDOMAIN}.localhost${port ? `:${port}` : ''}`;
+};
+
+const sectionsNav = (page: Page) => page.getByRole('navigation', { name: 'Sections' });
+
+/** Switch the editor's page switcher and wait for that page's tree group to show. */
+async function switchPage(page: Page, key: 'product' | 'catalog'): Promise<void> {
+  await page.getByLabel('Page', { exact: true }).selectOption(key);
+  await expect(sectionsNav(page).getByRole('region', { name: key === 'product' ? 'Product' : 'Catalog' })).toBeVisible({ timeout: SLOW });
+}
+
+/** An empty Product or Catalog template shows "Use the default layout"; click it when it is there. */
+async function useDefaultLayout(page: Page): Promise<void> {
+  const btn = page.getByRole('button', { name: 'Use the default layout' });
+  await btn.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+  if (await btn.isVisible()) await btn.click();
+}
+
+/**
+ * A cold compile of a route can abort the first client-side navigation to it, so request each route the
+ * scenarios use once, directly, before any test runs. Failures here are ignored: the tests report real ones.
+ */
+async function warmUp(browser: Browser, baseURL: string | undefined): Promise<void> {
+  const productId = await withDb(async (db) =>
+    (
+      await db.query<{ id: string }>(
+        `SELECT id FROM items WHERE business_id = $1 AND (show_in_store = true OR featured_in_store = true) ORDER BY name LIMIT 1`,
+        [BUSINESS_ID],
+      )
+    ).rows[0]?.id,
+  );
+  const origin = storeOrigin(baseURL);
+  const admin = await browser.newContext({ baseURL, storageState: AUTH_FILE });
+  const shopper = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  try {
+    const a = await admin.newPage();
+    const s = await shopper.newPage();
+    const visit = async (p: Page, url: string) => {
+      try {
+        await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+        await p.waitForLoadState('load', { timeout: 60_000 }).catch(() => undefined);
+      } catch {
+        /* warm-up only */
+      }
+    };
+    await visit(a, '/settings/online-store');
+    await visit(a, editorUrl(snap!.working.id));
+    await visit(s, `${origin}/catalog`);
+    if (productId) await visit(s, `${origin}/products/${productId}`);
+    await visit(s, `${origin}/pages/e2e-page`);
+    await visit(s, `${origin}/products/${MISSING_PRODUCT_ID}`);
+  } finally {
+    await admin.close();
+    await shopper.close();
+  }
+}
+
 async function editFeaturedHeading(page: Page, text: string): Promise<void> {
   await treeButton(page, 'Featured products').click();
   const heading = page.getByLabel('Heading', { exact: true });
@@ -186,6 +247,7 @@ test.describe('Studio 2 store design editor', () => {
     snap = await takeSnapshot();
     await restore(snap, true);
     await login(browser, baseURL ?? 'http://localhost:3015');
+    await warmUp(browser, baseURL);
   });
 
   test.beforeEach(async () => {
@@ -286,7 +348,9 @@ test.describe('Studio 2 store design editor', () => {
     await openEditor(page, id);
     const before = await homeLabels(page);
 
-    // The second "+" sits between the first and second home sections (insert at index 1).
+    // Each "+" posts `add-at` with the template key and `after` (the id of the section above it, null for
+    // the top); the editor resolves that against its own order. The second "+" sits under the first home
+    // section, so the new section lands at position 1.
     const add = preview(page).getByRole('button', { name: 'Add section here' });
     await expect(add.first()).toBeVisible({ timeout: 30_000 });
     await add.nth(1).click();
@@ -360,5 +424,118 @@ test.describe('Studio 2 store design editor', () => {
     await page.goto(editorUrl(snap!.working.id), { waitUntil: 'domcontentloaded', timeout: SLOW });
     await expect(page.getByText('Open the editor on a laptop or desktop')).toBeVisible({ timeout: SLOW });
     await expect(page.locator('iframe[title="Store preview"]')).toHaveCount(0);
+  });
+
+  test('product page: default layout, edit the delivery estimate', async ({ page }) => {
+    await openEditor(page, snap!.working.id);
+    await switchPage(page, 'product');
+    await useDefaultLayout(page);
+    await expect(preview(page).locator('[data-section-group="template"][data-section-type="main-product"]')).toBeVisible({ timeout: SLOW });
+
+    // The default product layout has no Delivery estimate block (R2), so add one from the section's blocks.
+    await page.getByRole('button', { name: 'Expand Product information' }).click();
+    const existing = sectionsNav(page).locator('button[title="Delivery estimate"]');
+    if ((await existing.count()) === 0) {
+      await page.getByRole('button', { name: 'Add block', exact: true }).click();
+      await page.getByRole('menuitem', { name: /^Delivery estimate/ }).click();
+    } else {
+      await existing.first().click();
+    }
+
+    const text = `E2E delivery ${Date.now()}`;
+    const field = page.getByLabel('Text', { exact: true });
+    await expect(field).toBeVisible();
+    await field.fill(text);
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    await expect(preview(page).getByText(text)).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('catalog page: default layout, three columns on desktop', async ({ page }) => {
+    // Wide enough that the preview pane is past the grid's 1024 px container breakpoint, where the
+    // default is 4 columns; 3 then comes only from the setting.
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await openEditor(page, snap!.working.id);
+    await switchPage(page, 'catalog');
+    await useDefaultLayout(page);
+    const grid = preview(page).locator('.eng-catalog-grid').first();
+    await expect(grid).toBeVisible({ timeout: SLOW });
+    const columns = () => grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+
+    await sectionsNav(page).getByRole('button', { name: 'Product grid', exact: true }).click();
+    const box = page.getByRole('spinbutton', { name: 'Columns on desktop' });
+    await expect(box).toBeVisible();
+    await box.fill('3');
+    await box.press('Enter');
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    await expect.poll(columns, { timeout: 30_000 }).toBe(3);
+  });
+
+  test('create custom page and open it', async ({ page, browser, baseURL }) => {
+    await openEditor(page, snap!.working.id);
+    await page.getByRole('button', { name: 'New page', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New page' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Title', { exact: true }).fill('E2E Page');
+    await expect(dialog.getByLabel('Address', { exact: true })).toHaveValue('e2e-page');
+    await dialog.getByLabel('Blank page').check();
+    await dialog.getByRole('button', { name: 'Create page' }).click();
+    await expect(dialog).toBeHidden();
+
+    // The editor opens the new, empty page; add a Rich text section and write its content.
+    const region = sectionsNav(page).getByRole('region', { name: 'E2E Page' });
+    await expect(region).toBeVisible({ timeout: SLOW });
+    await region.getByRole('button', { name: 'Add section', exact: true }).click();
+    const add = page.getByRole('dialog', { name: 'Add section' });
+    await expect(add).toBeVisible();
+    await add.getByRole('button', { name: /^Rich text/ }).first().click();
+    await expect(add).toBeHidden();
+
+    const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await editor.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('Hello e2e');
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+    await page.getByRole('button', { name: 'Publish', exact: true }).click();
+    const confirm = page.getByRole('dialog', { name: 'Publish this theme? Shoppers will see it now.' });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect(page.getByText('Published', { exact: true })).toBeVisible({ timeout: SLOW });
+
+    const shopper = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    try {
+      const shop = await shopper.newPage();
+      await shop.goto(`${storeOrigin(baseURL)}/pages/e2e-page`, { waitUntil: 'domcontentloaded', timeout: SLOW });
+      await expect(shop.getByText('Hello e2e')).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await shopper.close();
+    }
+  });
+
+  test('unknown product id shows "Product not found." with the header', async ({ browser, baseURL }) => {
+    // Make sure the live Product template is an engine layout (an empty one renders the classic page).
+    await withDb((db) =>
+      db.query(
+        `UPDATE store_themes SET data = jsonb_set(data, '{templates,product}', $2::jsonb)
+         WHERE business_id = $1 AND role = 'live'`,
+        [
+          BUSINESS_ID,
+          JSON.stringify({
+            order: ['main-product-1'],
+            sections: { 'main-product-1': { type: 'main-product', settings: {}, blocks: {}, block_order: [] } },
+          }),
+        ],
+      ),
+    );
+    const shopper = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    try {
+      const shop = await shopper.newPage();
+      await shop.goto(`${storeOrigin(baseURL)}/products/${MISSING_PRODUCT_ID}`, { waitUntil: 'domcontentloaded', timeout: SLOW });
+      await expect(shop.getByText('Product not found.')).toBeVisible({ timeout: SLOW });
+      await expect(shop.locator('[data-section-group="header"]').first()).toBeVisible();
+    } finally {
+      await shopper.close();
+    }
   });
 });
