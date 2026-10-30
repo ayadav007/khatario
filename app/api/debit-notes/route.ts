@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { registrationBranchIds, sameRegistration } from '@/lib/gst/registration';
 import { getPool } from '@/lib/db';
 import { getStateCode } from '@/lib/gst-utils';
 import { createDebitNoteLedgerEntries } from '@/lib/ledger-utils';
@@ -15,15 +16,19 @@ import { debitNoteLineSuppliesGoods } from '@/lib/debit-notes/supply-goods';
 
 export const dynamic = 'force-dynamic';
 
+/** Next `DN-001` style number. Rule 53: one consecutive series per GSTIN (every branch filing under it). */
 async function nextDebitNoteNumber(
-  db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Array<{ max_used: string | null }> }> },
-  businessId: string
+  db: { query: (sql: string, params: unknown[]) => Promise<{ rows: any[] }> },
+  businessId: string,
+  branchId?: string | null
 ): Promise<string> {
+  const branchIds = branchId ? await registrationBranchIds(db as any, businessId, branchId) : null;
   const res = await db.query(
     `SELECT MAX(SUBSTRING(debit_note_number FROM '(\\d+)$')::bigint) AS max_used
        FROM debit_notes
-      WHERE business_id = $1 AND debit_note_number ~ '\\d+$'`,
-    [businessId]
+      WHERE business_id = $1 AND debit_note_number ~ '\\d+$'
+        AND ($2::uuid[] IS NULL OR branch_id = ANY($2::uuid[]))`,
+    [businessId, branchIds]
   );
   const next = Number(res.rows[0]?.max_used || 0) + 1;
   return `DN-${String(next).padStart(3, '0')}`;
@@ -50,7 +55,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (request.nextUrl.searchParams.get('next_number') === '1') {
-      return NextResponse.json({ next_debit_note_number: await nextDebitNoteNumber(getPool(), business_id) });
+      // The series is per GSTIN: suggest the next number for the branch the note will be issued from.
+      const sp = request.nextUrl.searchParams;
+      let branchParam = sp.get('branch_id') || undefined;
+      const invoiceParam = sp.get('invoice_id');
+      if (!branchParam && invoiceParam && /^[0-9a-f-]{36}$/i.test(invoiceParam)) {
+        const inv = await getPool().query<{ branch_id: string | null }>(
+          'SELECT branch_id FROM invoices WHERE id = $1 AND business_id = $2',
+          [invoiceParam, business_id]
+        );
+        branchParam = inv.rows[0]?.branch_id ?? undefined;
+      }
+      const branchId = await resolveBranchId({ businessId: business_id, branchId: branchParam }).catch(() => null);
+      return NextResponse.json({ next_debit_note_number: await nextDebitNoteNumber(getPool(), business_id, branchId) });
     }
 
     let accessibleBranchIds: string[] = [];
@@ -167,6 +184,24 @@ export async function POST(request: NextRequest) {
         { error: e?.message || 'Could not resolve branch for debit note' },
         { status: 400 }
       );
+    }
+
+    // A note adjusts the tax of its invoice, so it must be issued under the invoice's GSTIN (s.34).
+    if (invoice_id) {
+      const inv = await client.query<{ branch_id: string | null }>(
+        'SELECT branch_id FROM invoices WHERE id = $1 AND business_id = $2',
+        [invoice_id, business_id]
+      );
+      const invoiceBranch = inv.rows[0]?.branch_id;
+      if (invoiceBranch && !(await sameRegistration(client, business_id, invoiceBranch, stockBranchId))) {
+        return NextResponse.json(
+          {
+            error: 'This note must be issued by a branch on the same GSTIN as the original invoice.',
+            code: 'NOTE_REGISTRATION_MISMATCH',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
@@ -298,13 +333,13 @@ export async function POST(request: NextRequest) {
     const debit_note_number =
       requestedDebitNoteNumber && String(requestedDebitNoteNumber).trim()
         ? String(requestedDebitNoteNumber).trim()
-        : await nextDebitNoteNumber(client, business_id);
+        : await nextDebitNoteNumber(client, business_id, stockBranchId);
     const dupRes = await client.query(
-      'SELECT 1 FROM debit_notes WHERE business_id = $1 AND debit_note_number = $2 LIMIT 1',
-      [business_id, debit_note_number]
+      'SELECT 1 FROM debit_notes WHERE business_id = $1 AND branch_id = ANY($3::uuid[]) AND debit_note_number = $2 LIMIT 1',
+      [business_id, debit_note_number, await registrationBranchIds(client, business_id, stockBranchId)]
     );
     if (dupRes.rows.length > 0) {
-      return rejectDebitNote(409, 'DUPLICATE_NUMBER', `Debit note number ${debit_note_number} already exists`);
+      return rejectDebitNote(409, 'DUPLICATE_NUMBER', `Debit note number ${debit_note_number} is already used on this GSTIN`);
     }
 
     let finalPosStateCode = linkedInvoice?.place_of_supply_state_code || place_of_supply_state_code;

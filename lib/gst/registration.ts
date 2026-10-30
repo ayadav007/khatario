@@ -180,3 +180,10 @@ export function branchOutsideRegistrationState(
     `A place of business in another state needs its own GSTIN: enter the ${branchName} GSTIN for this branch.`
   );
 }
+
+/** True when both branches file under the same GSTIN (a credit or debit note must stay on its invoice's GSTIN). */
+export async function sameRegistration(db: Queryable, businessId: string, branchA: string, branchB: string): Promise<boolean> {
+  if (branchA === branchB) return true;
+  const keys = await branchRegistrationKeys(db, businessId);
+  return keys.has(branchA) && keys.has(branchB) && keys.get(branchA) === keys.get(branchB);
+}

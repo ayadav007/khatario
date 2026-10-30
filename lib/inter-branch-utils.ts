@@ -136,10 +136,12 @@ export async function getOrCreateBranchCustomer(
   const one = async <T,>(text: string, params: unknown[]): Promise<T | null> =>
     client ? ((await client.query(text, params)).rows[0] as T) ?? null : await db.queryOne<any>(text, params);
 
-  // Check if customer already exists for this branch
+  // The branch's own customer record. Ordinary customers carry a branch_id too (khata, WhatsApp and
+  // store orders), so match on customer_type or an inter-branch invoice lands on a shopper.
   const existingCustomer = await one<{ id: string }>(`
     SELECT id FROM customers
-    WHERE business_id = $1 AND branch_id = $2
+    WHERE business_id = $1 AND branch_id = $2 AND customer_type = 'branch'
+    ORDER BY created_at
     LIMIT 1
   `, [businessId, branchId]);
 

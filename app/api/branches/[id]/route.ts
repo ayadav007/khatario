@@ -11,9 +11,25 @@ import {
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
-import { branchOutsideRegistrationState } from '@/lib/gst/registration';
+import { branchOutsideRegistrationState, stateCodeFromName } from '@/lib/gst/registration';
+import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 
 export const dynamic = 'force-dynamic';
+
+/** True when any GST document (invoice, note, purchase, expense, challan) was issued under this branch. */
+async function branchHasGstDocuments(branchId: string): Promise<boolean> {
+  const row = await db.queryOne<{ has_docs: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM invoices WHERE branch_id = $1)
+         OR EXISTS (SELECT 1 FROM credit_notes WHERE branch_id = $1)
+         OR EXISTS (SELECT 1 FROM debit_notes WHERE branch_id = $1)
+         OR EXISTS (SELECT 1 FROM purchases WHERE branch_id = $1)
+         OR EXISTS (SELECT 1 FROM expenses WHERE branch_id = $1)
+         OR EXISTS (SELECT 1 FROM delivery_challans WHERE branch_id = $1) AS has_docs`,
+    [branchId]
+  );
+  return !!row?.has_docs;
+}
 
 /**
  * GET /api/branches/[id]
@@ -94,12 +110,48 @@ export async function PATCH(
       );
     }
 
-    // AUTHORIZATION: Check update permission
-    // First check if user has branch-level edit permission
+    const currentBranch = await db.queryOne<{
+      is_default: boolean;
+      is_active: boolean;
+      is_primary: boolean;
+      gstin: string | null;
+      state: string | null;
+      state_code: string | null;
+      invoice_prefix: string | null;
+    }>(
+      `SELECT is_default, COALESCE(is_active, true) AS is_active, COALESCE(is_primary, false) AS is_primary,
+              gstin, state, state_code, invoice_prefix
+         FROM branches WHERE id = $1 AND business_id = $2`,
+      [params.id, business_id]
+    );
+
+    if (!currentBranch) {
+      return NextResponse.json(
+        { error: 'Branch not found' },
+        { status: 404 }
+      );
+    }
+
+    const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase() : v == null ? '' : String(v));
+    const gstinChanges = gstin !== undefined && norm(gstin) !== norm(currentBranch.gstin);
+    const codeOf = (code: unknown, name: unknown) =>
+      (typeof code === 'string' && code.trim() ? code.trim().padStart(2, '0') : null) ?? stateCodeFromName(name as string | null);
+    const stateChanges =
+      (state !== undefined || state_code !== undefined) &&
+      codeOf(state_code ?? (state !== undefined ? null : currentBranch.state_code), state ?? currentBranch.state) !==
+        codeOf(currentBranch.state_code, currentBranch.state);
+    const flagChanges =
+      (is_active !== undefined && !!is_active !== currentBranch.is_active) ||
+      (is_default !== undefined && !!is_default !== currentBranch.is_default) ||
+      (is_primary !== undefined && !!is_primary !== currentBranch.is_primary) ||
+      (invoice_prefix !== undefined && norm(invoice_prefix) !== norm(currentBranch.invoice_prefix));
+
+    // AUTHORIZATION: branch-level edit covers address and contact details only. Changing the GST
+    // registration (GSTIN, state), the default/active flags or the invoice prefix always needs
+    // settings.update: any user is auto-granted edit on the default branch (lib/branch-access.ts).
     const { checkUserBranchPermission } = await import('@/lib/branch-access');
-    const hasBranchEditPermission = await checkUserBranchPermission(userId, params.id, 'edit');
-    
-    // If user doesn't have branch-level edit permission, check settings.update permission
+    const hasBranchEditPermission =
+      !(gstinChanges || stateChanges || flagChanges) && (await checkUserBranchPermission(userId, params.id, 'edit'));
     if (!hasBranchEditPermission) {
       try {
         await authorize(userId, 'settings', 'update', { businessId: business_id, resourceId: params.id });
@@ -111,17 +163,45 @@ export async function PATCH(
       }
     }
 
-    // Subscription: multi_branch is required only when editing a non-default branch while
-    // multiple active branches exist. Single-outlet (or default / HQ branch) edits stay allowed on Free.
-    const currentBranch = await db.queryOne<{ is_default: boolean }>(
-      `SELECT is_default FROM branches WHERE id = $1 AND business_id = $2`,
-      [params.id, business_id]
-    );
-
-    if (!currentBranch) {
+    // The default branch is where documents without a branch are issued; deactivating it would hand
+    // that role to whichever branch is oldest, possibly on another GSTIN.
+    if (is_active === false && currentBranch.is_default) {
       return NextResponse.json(
-        { error: 'Branch not found' },
-        { status: 404 }
+        {
+          error: 'This is the default branch. Make another branch the default before deactivating it.',
+          code: 'DEFAULT_BRANCH_DEACTIVATE',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Reactivating counts against the plan's branch limit, like creating one.
+    if (is_active === true && !currentBranch.is_active) {
+      try {
+        await enforceAccess({
+          businessId: business_id,
+          userId,
+          feature: FeatureKeys.MULTI_BRANCH,
+          limitType: 'branches',
+        });
+      } catch (e) {
+        const res = enforceAccessErrorResponse(e);
+        if (res) return res;
+        throw e;
+      }
+    }
+
+    // Documents keep the registration they were issued under, and invoices read it from the branch
+    // (print, GSTR-1, GSTR-3B). Once a branch has documents its GSTIN and state cannot change.
+    if ((gstinChanges || stateChanges) && (await branchHasGstDocuments(params.id))) {
+      return NextResponse.json(
+        {
+          error:
+            'This branch already has GST documents, which were issued under its current GSTIN and state. ' +
+            'To trade under a different registration, add a new branch with that GSTIN.',
+          code: 'BRANCH_REGISTRATION_LOCKED',
+        },
+        { status: 409 }
       );
     }
 
