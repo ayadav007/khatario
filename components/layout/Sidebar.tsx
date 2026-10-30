@@ -652,6 +652,7 @@ export const Sidebar = React.memo(function Sidebar() {
         { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart' },
         { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
         { href: '/contra', label: 'Contra (cash / bank)', module: 'journal' },
+        { href: '/inter-branch-settlements', label: 'Inter-branch balances', module: 'journal', featureKey: 'multi_branch' },
         { href: '/advances', label: 'Advances', module: 'journal' },
         { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
         { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },

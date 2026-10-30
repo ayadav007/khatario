@@ -240,6 +240,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart', isLocked: !hasFeature(hasCapability, 'accounting_chart') },
       { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
       { href: '/contra', label: 'Contra', module: 'journal' },
+      { href: '/inter-branch-settlements', label: 'Inter-branch balances', module: 'journal', featureKey: 'multi_branch', isLocked: !hasFeature(hasCapability, 'multi_branch') },
       { href: '/advances', label: 'Advances', module: 'journal' },
       { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
       { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },
