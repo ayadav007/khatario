@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
            store_promo_sheet,
            COALESCE(store_cart_reminder_enabled, false) AS store_cart_reminder_enabled,
-           COALESCE(store_cart_reminder_hours, 3) AS store_cart_reminder_hours
+           COALESCE(store_cart_reminder_hours, 3) AS store_cart_reminder_hours,
+           COALESCE(store_engine, false) AS store_engine
          FROM business_settings
          WHERE business_id = $1`,
         [businessId],
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
       ),
       store_cart_reminder_enabled: (row as { store_cart_reminder_enabled?: boolean })?.store_cart_reminder_enabled === true,
       store_cart_reminder_hours: Number((row as { store_cart_reminder_hours?: number })?.store_cart_reminder_hours ?? 3),
+      store_engine: (row as { store_engine?: boolean })?.store_engine === true,
       logo_url: logoRow?.logo_url ?? null,
       categories,
     });

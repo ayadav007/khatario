@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
@@ -14,6 +15,7 @@ import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager'
 import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { storeHostSuffix } from '@/lib/store/subdomain';
+import { editorPath, openWorkingDraft } from '@/components/store/studio2/api';
 import { pendingBadgeText } from '@/lib/store/review-admin-helpers';
 import {
   DEFAULT_STORE_PROMO,
@@ -48,6 +50,7 @@ interface StoreSettings {
   store_promo_sheet?: StorePromoSheetConfig | null;
   store_cart_reminder_enabled?: boolean;
   store_cart_reminder_hours?: number;
+  store_engine?: boolean;
   logo_url?: string | null;
   categories?: Array<{ id: string; name: string }>;
 }
@@ -95,6 +98,9 @@ function Toggle({
 
 export default function OnlineStoreSettingsPage() {
   const { business, user } = useAuth();
+  const router = useRouter();
+  const [storeEngine, setStoreEngine] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(false);
   const [pendingReviews, setPendingReviews] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -186,6 +192,7 @@ export default function OnlineStoreSettingsPage() {
         setHideBadge(!!data.store_hide_khatario_badge);
         setCartReminderOn(data.store_cart_reminder_enabled === true);
         setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
+        setStoreEngine(data.store_engine === true);
         setShipEmail(data.store_shiprocket_email ?? '');
         setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
         setShipWebhookToken('');
@@ -211,6 +218,19 @@ export default function OnlineStoreSettingsPage() {
   useEffect(() => {
     setHostSuffix(storeHostSuffix(window.location.hostname));
   }, []);
+
+  const openStoreDesignEditor = useCallback(async () => {
+    if (!business?.id) return;
+    setOpeningEditor(true);
+    setError(null);
+    try {
+      const draft = await openWorkingDraft(business.id);
+      router.push(editorPath(draft.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to open the store design editor');
+      setOpeningEditor(false);
+    }
+  }, [business?.id, router]);
 
   const handleSave = useCallback(async () => {
     if (!business?.id) return;
@@ -395,6 +415,17 @@ export default function OnlineStoreSettingsPage() {
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
+          {storeEngine ? (
+            <button
+              type="button"
+              onClick={() => void openStoreDesignEditor()}
+              disabled={openingEditor || !business?.id}
+              className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+            >
+              {openingEditor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Edit store design (beta)
+            </button>
+          ) : null}
           <Link
             href="/settings/online-store/studio"
             className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
