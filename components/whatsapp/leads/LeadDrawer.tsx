@@ -13,6 +13,7 @@ import { STAGE_DOT, type StageOption } from '@/components/whatsapp/pipeline/stag
 import { useAuth } from '@/contexts/AuthContext';
 import type { LeadDetail } from '@/lib/leads/list';
 import { ConvertLeadDialog } from './ConvertLeadDialog';
+import { LeadNotes } from './LeadNotes';
 import {
   describeLeadSource,
   formatLeadPhone,
@@ -419,6 +420,10 @@ export function LeadDrawer({
                 <p className="whitespace-pre-line rounded-lg bg-surface-secondary p-2 text-sm text-text-secondary dark:bg-surface-dark">{lead.summary}</p>
               </section>
             )}
+
+            <section>
+              <LeadNotes leadId={lead.id} />
+            </section>
 
             {/* Follow-ups */}
             <section>

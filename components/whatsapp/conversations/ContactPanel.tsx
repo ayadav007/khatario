@@ -601,8 +601,8 @@ export function ContactPanel({
         {/* Section 4: Internal Notes */}
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <NotesSection
-            conversationId={conversationId}
-            businessId={businessId}
+            notesUrl={`/api/whatsapp/conversations/${conversationId}/notes`}
+            showEnquiry
             notes={notes}
             currentUserId={currentUserId}
             onNoteAdded={onNoteAdded || (() => {})}
