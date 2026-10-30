@@ -8,7 +8,8 @@ jest.mock('@/lib/db', () => {
     query: jest.fn(async (sql: string) => {
       const text = String(sql);
       if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return { rows: [] };
-      if (text.includes('get_account_balance')) return { rows: [{ b: state.balance }] };
+      // Account balance (per GSTIN: read across the registration's branches).
+      if (text.includes('get_account_balance') || text.includes("a.nature = 'debit'")) return { rows: [{ b: state.balance }] };
       if (text.includes('SUM(lel.debit)')) return { rows: state.deposits };
       if (text.includes('FROM ledger_entry_lines')) return { rows: state.lines };
       if (text.includes('FROM accounts')) return { rows: [{ ok: 1 }] };

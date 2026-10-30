@@ -24,9 +24,17 @@ export async function POST(request: NextRequest) {
   if (!access.ok) return access.response;
 
   try {
+    // A 2B belongs to one GSTIN. When the file does not name it, use the selected branch's registration.
+    const branchParam = formData.get('branch_id');
+    const { resolveBranchId } = await import('@/lib/branch-helpers');
+    const branchId = await resolveBranchId({
+      businessId: access.businessId,
+      branchId: typeof branchParam === 'string' && branchParam ? branchParam : undefined,
+    }).catch(() => null);
     const result = await importGstr2bFile({
       businessId: access.businessId,
       userId: access.userId,
+      branchId,
       filingPeriod: filing_period,
       fileName: file.name,
       bytes: Buffer.from(await file.arrayBuffer()),

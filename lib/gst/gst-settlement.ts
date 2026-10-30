@@ -23,6 +23,7 @@ import {
   round2,
 } from '@/lib/gst/gstr3b-ledger';
 import { calendarMonthBounds, lockGstPeriod } from '@/lib/gst/gst-period-lock';
+import { registrationBranchIds } from '@/lib/gst/registration';
 
 const BANK_DEFAULT_CODE = '1102';
 
@@ -214,7 +215,7 @@ export async function getGstPaymentEvents(params: GetGstPaymentEventsParams): Pr
     FROM ledger_entry_lines lel
     INNER JOIN accounts a ON a.id = lel.account_id AND a.business_id = lel.business_id
     WHERE lel.business_id = $1::uuid
-      AND lel.branch_id = $2::uuid
+      AND lel.branch_id = ANY($2::uuid[])
       AND lel.voucher_type = ANY($6::text[])
       AND a.account_code = ANY($5::text[])
       AND lel.entry_date > $3::date
@@ -225,7 +226,7 @@ export async function getGstPaymentEvents(params: GetGstPaymentEventsParams): Pr
     `,
     [
       businessId,
-      branchId,
+      await registrationBranchIds(pool, businessId, branchId),
       afterDateExclusive,
       uptoDate,
       [...GST_PAYMENT_LIABILITY_ACCOUNT_CODES],
@@ -314,7 +315,7 @@ export async function getGstCashPaidByHead(params: {
   branchId?: string | null;
 }): Promise<GstCashPaidByHead> {
   const pool = getPool();
-  const branchSql = params.branchId ? 'AND lel.branch_id = $6::uuid' : '';
+  const branchSql = params.branchId ? 'AND lel.branch_id = ANY($6::uuid[])' : '';
   const queryParams: unknown[] = [
     params.businessId,
     params.fromDate,
@@ -322,7 +323,7 @@ export async function getGstCashPaidByHead(params: {
     [...GST_CASH_DISCHARGE_VOUCHER_TYPES],
     [...GST_PAYMENT_LIABILITY_ACCOUNT_CODES],
   ];
-  if (params.branchId) queryParams.push(params.branchId);
+  if (params.branchId) queryParams.push(await registrationBranchIds(pool, params.businessId, params.branchId));
   const { rows } = await pool.query<{
     voucher_type: string;
     liability_account_code: string;
@@ -379,6 +380,35 @@ export function getItcFromInputBalance(accountBalance: number): number {
 }
 
 /**
+ * A GSTIN has one electronic credit and cash ledger (s.49), so GST balances are read across every
+ * branch filing under the branch's GSTIN. Opening vouchers carry no branch and are counted once.
+ */
+async function gstAccountBalance(
+  db: Pick<PoolClient, 'query'>,
+  accountId: string,
+  businessId: string,
+  asOnDate: string,
+  branchId: string | null
+): Promise<number> {
+  // No branch: the whole business, as get_account_balance does.
+  const branchIds = branchId ? await registrationBranchIds(db as any, businessId, branchId) : null;
+  const { rows } = await db.query<{ b: string }>(
+    `SELECT CASE WHEN a.nature = 'debit' THEN COALESCE(SUM(l.debit - l.credit), 0)
+                 ELSE COALESCE(SUM(l.credit - l.debit), 0) END AS b
+       FROM accounts a
+       LEFT JOIN ledger_entry_lines l
+         ON l.account_id = a.id AND l.business_id = a.business_id
+        AND ($3::date IS NULL OR l.entry_date <= $3::date)
+        AND ($4::uuid[] IS NULL OR l.branch_id = ANY($4::uuid[])
+             OR (l.branch_id IS NULL AND l.voucher_type = 'opening_balance'))
+      WHERE a.id = $1::uuid AND a.business_id = $2::uuid
+      GROUP BY a.nature`,
+    [accountId, businessId, asOnDate, branchIds]
+  );
+  return round2(parseFloat(rows[0]?.b ?? '0'));
+}
+
+/**
  * Ledger balance as at date (same as outstanding GST / `get_account_balance`).
  */
 export async function getGstBalance(
@@ -390,11 +420,7 @@ export async function getGstBalance(
   const acc = await getAccountByCode(businessId, accountCode);
   if (!acc) return 0;
   const pool = getPool();
-  const { rows } = await pool.query<{ b: string }>(
-    `SELECT get_account_balance($1::uuid, $2::uuid, $3::date, $4::uuid) AS b`,
-    [acc.id, businessId, asOnDate, branchId]
-  );
-  return round2(parseFloat(rows[0]?.b ?? '0'));
+  return gstAccountBalance(pool, acc.id, businessId, asOnDate, branchId);
 }
 
 /**
@@ -414,7 +440,7 @@ async function assertNoGstSetoffForPeriod(
     SELECT 1
     FROM ledger_entry_lines
     WHERE business_id = $1::uuid
-      AND branch_id = $2::uuid
+      AND branch_id = ANY($2::uuid[])
       AND voucher_type = 'gst_setoff'
       AND (
         reference_number LIKE $3
@@ -426,7 +452,7 @@ async function assertNoGstSetoffForPeriod(
       )
     LIMIT 1
     `,
-    [businessId, branchId, `GST_SETOFF|${gstPeriod}|%`, monthStart, monthEnd]
+    [businessId, await registrationBranchIds(client, businessId, branchId), `GST_SETOFF|${gstPeriod}|%`, monthStart, monthEnd]
   );
   if (rows.length > 0) {
     throw new Error('GST already settled for this period');
@@ -448,7 +474,7 @@ export async function gstSetoffExistsForPeriod(
     SELECT 1
     FROM ledger_entry_lines
     WHERE business_id = $1::uuid
-      AND branch_id = $2::uuid
+      AND branch_id = ANY($2::uuid[])
       AND voucher_type = 'gst_setoff'
       AND (
         reference_number LIKE $3
@@ -460,7 +486,7 @@ export async function gstSetoffExistsForPeriod(
       )
     LIMIT 1
     `,
-    [businessId, branchId, `GST_SETOFF|${gstPeriod}|%`, monthStart, monthEnd]
+    [businessId, await registrationBranchIds(pool, businessId, branchId), `GST_SETOFF|${gstPeriod}|%`, monthStart, monthEnd]
   );
   return rows.length > 0;
 }
@@ -491,6 +517,8 @@ export { utilizationToLedgerPairs };
  */
 export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<ApplyGstSetoffResult> {
   const { businessId, from, to, branchId } = params;
+  // One electronic credit ledger per GSTIN: every branch filing under it shares the ITC.
+  const gstinBranchIds = await registrationBranchIds(getPool(), businessId, branchId);
   const mode = params.mode ?? 'balance';
   const entryDate = params.entryDate ?? to;
   const asOnDate = params.as_on_date ?? entryDate;
@@ -536,7 +564,7 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     itcSGST = getItcFromInputBalance(balS);
 
     // Credit GSTR-2B does not support yet stays in the input ledger, unused (s.16(2)(aa)).
-    const gate = await loadItcGate(getPool(), businessId, gst_period, [branchId]);
+    const gate = await loadItcGate(getPool(), businessId, gst_period, gstinBranchIds);
     const notYet = (h: 'igst' | 'cgst' | 'sgst' | 'cess') => round2(gate.held[h] + gate.held_before[h]);
     if (notYet('igst') + notYet('cgst') + notYet('sgst') + notYet('cess') >= 0.005) {
       itcIGST = Math.max(0, round2(itcIGST - notYet('igst')));
@@ -548,23 +576,23 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
       );
     }
   } else {
-    outputCess = round2(await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CESS, from, to, branchId));
+    outputCess = round2(await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CESS, from, to, gstinBranchIds));
     itcCess = getItcFromInputLedgerNet(
-      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_CESS, from, to, branchId)
+      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_CESS, from, to, gstinBranchIds)
     );
     outputIGST = round2(
-      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_IGST, from, to, branchId)
+      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_IGST, from, to, gstinBranchIds)
     );
     outputCGST = round2(
-      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CGST, from, to, branchId)
+      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CGST, from, to, gstinBranchIds)
     );
     outputSGST = round2(
-      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_SGST, from, to, branchId)
+      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_SGST, from, to, gstinBranchIds)
     );
 
-    const netIn1110 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_CGST, from, to, branchId);
-    const netIn1111 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_SGST, from, to, branchId);
-    const netIn1112 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_IGST, from, to, branchId);
+    const netIn1110 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_CGST, from, to, gstinBranchIds);
+    const netIn1111 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_SGST, from, to, gstinBranchIds);
+    const netIn1112 = await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_IGST, from, to, gstinBranchIds);
 
     itcCGST = getItcFromInputLedgerNet(netIn1110);
     itcSGST = getItcFromInputLedgerNet(netIn1111);
@@ -837,11 +865,7 @@ async function cashBalanceOnClient(
   asOnDate: string,
   branchId: string
 ): Promise<number> {
-  const { rows } = await client.query<{ b: string }>(
-    `SELECT get_account_balance($1::uuid, $2::uuid, $3::date, $4::uuid) AS b`,
-    [accountId, businessId, asOnDate, branchId]
-  );
-  return round2(parseFloat(rows[0]?.b ?? '0'));
+  return gstAccountBalance(client, accountId, businessId, asOnDate, branchId);
 }
 
 export interface RecordGstCashDepositParams {
@@ -1218,11 +1242,7 @@ export async function getGstCashLedger(params: {
   async function bal(code: string): Promise<number> {
     const acc = await getAccountByCode(businessId, code);
     if (!acc) return 0;
-    const { rows } = await pool.query<{ b: string }>(
-      `SELECT get_account_balance($1::uuid, $2::uuid, $3::date, $4::uuid) AS b`,
-      [acc.id, businessId, asOnDate, branchId]
-    );
-    return round2(parseFloat(rows[0]?.b ?? '0'));
+    return gstAccountBalance(pool, acc.id, businessId, asOnDate, branchId);
   }
 
   const [igstCash, cgstCash, sgstCash, cessCash, rcmI, rcmC, rcmS] = await Promise.all([
@@ -1358,11 +1378,7 @@ export async function getOutstandingGst(params: OutstandingGstParams): Promise<O
   async function bal(code: string): Promise<number> {
     const acc = await getAccountByCode(businessId, code);
     if (!acc) return 0;
-    const { rows } = await pool.query<{ b: string }>(
-      `SELECT get_account_balance($1::uuid, $2::uuid, $3::date, $4::uuid) AS b`,
-      [acc.id, businessId, asOnDate, branchId]
-    );
-    return round2(parseFloat(rows[0]?.b ?? '0'));
+    return gstAccountBalance(pool, acc.id, businessId, asOnDate, branchId);
   }
 
   const output_igst = await bal(GSTR3B_OUTPUT_IGST);

@@ -144,9 +144,37 @@ async function loadGstr3bState(businessId: string, asOn: string) {
   for (const period of recentReturnPeriods(asOn, opts)) {
     const from = `${period.months[0]}-01`;
     const last = period.months[period.months.length - 1];
+    // Each GSTIN files its own GSTR-3B: with several registrations the period counts as filed only
+    // when every GSTIN with sales or purchases in it has a filing. Portal marks carry no GSTIN yet
+    // and still cover the whole business.
     const state = await queryOne<{ filed: boolean; activity: boolean }>(
-      `SELECT
-         ${FILED_3B('$2::text[]')} AS filed,
+      `WITH reg AS (
+         SELECT br.id,
+                CASE WHEN NULLIF(UPPER(TRIM(br.gstin)), '') IS NOT NULL
+                      AND UPPER(TRIM(br.gstin)) <> COALESCE(UPPER(TRIM(b.gstin)), '')
+                     THEN UPPER(TRIM(br.gstin)) ELSE '' END AS reg_key
+           FROM branches br JOIN businesses b ON b.id = br.business_id
+          WHERE br.business_id = $1::uuid
+       ),
+       active AS (
+         SELECT DISTINCT r.reg_key FROM reg r
+          WHERE EXISTS (SELECT 1 FROM invoices WHERE business_id = $1::uuid AND branch_id = r.id AND deleted_at IS NULL
+                          AND status = 'final' AND invoice_date >= $3::date AND invoice_date < ($4::date + INTERVAL '1 month'))
+             OR EXISTS (SELECT 1 FROM purchases WHERE business_id = $1::uuid AND branch_id = r.id AND deleted_at IS NULL
+                          AND COALESCE(status, '') NOT IN ('draft', 'cancelled')
+                          AND bill_date >= $3::date AND bill_date < ($4::date + INTERVAL '1 month'))
+       ),
+       filed_keys AS (
+         SELECT DISTINCT r.reg_key FROM reg r
+           JOIN gst_filings f ON f.branch_id = r.id
+          WHERE f.business_id = $1::uuid AND f.gst_period = ANY($2::text[]) AND f.status IN ${FILED}
+       )
+       SELECT
+         (EXISTS (SELECT 1 FROM gst_return_marks WHERE business_id = $1::uuid AND return_type = 'GSTR3B' AND period = ANY($2::text[]))
+          OR EXISTS (SELECT 1 FROM gst_filings WHERE business_id = $1::uuid AND branch_id IS NULL
+                       AND gst_period = ANY($2::text[]) AND status IN ${FILED})
+          OR (${FILED_3B('$2::text[]')}
+              AND NOT EXISTS (SELECT reg_key FROM active EXCEPT SELECT reg_key FROM filed_keys))) AS filed,
          (EXISTS (SELECT 1 FROM invoices WHERE business_id = $1::uuid AND deleted_at IS NULL AND status = 'final'
                    AND invoice_date >= $3::date AND invoice_date < ($4::date + INTERVAL '1 month'))
           OR EXISTS (SELECT 1 FROM purchases WHERE business_id = $1::uuid AND deleted_at IS NULL

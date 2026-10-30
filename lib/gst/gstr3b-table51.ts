@@ -16,7 +16,7 @@ export async function fillTable51(
   p: { businessId: string; branchId: string | null; gstPeriod: string; filingDate?: string }
 ): Promise<void> {
   const filing = p.filingDate || gstCalendarDateInTz();
-  const dueDateOptions = mergeGstDueDateOptions(await loadGstFilingOrgDefaults(p.businessId));
+  const dueDateOptions = mergeGstDueDateOptions(await loadGstFilingOrgDefaults(p.businessId, p.branchId));
   const charges = await computeGstChargesFull({
     businessId: p.businessId,
     branchId: p.branchId ?? undefined,

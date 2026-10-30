@@ -224,6 +224,8 @@ export default function NewPurchasePage() {
     round_off: 0,
     supplier_gstin: '',
     supplier_state_code: '',
+    /** Bill To GSTIN read from a scanned bill; the server checks it against the branch GSTIN. */
+    bill_to_gstin: '',
     price_mode: 'exclusive' as 'exclusive' | 'inclusive' | 'unknown',
   });
   const [showAdvancedTax, setShowAdvancedTax] = useState(false);
@@ -895,6 +897,7 @@ export default function NewPurchasePage() {
         ...prev,
         bill_number: data.invoice.bill_number || prev.bill_number,
         bill_date: data.invoice.bill_date || prev.bill_date,
+        bill_to_gstin: data.invoice.buyer_gstin || '',
         document_type: data.invoice.document_type || prev.document_type,
         is_reverse_charge: data.invoice.is_reverse_charge || prev.is_reverse_charge,
         price_mode: scanDocumentPriceMode(data.invoice.price_mode),

@@ -663,6 +663,21 @@ export async function POST(request: NextRequest) {
     const businessStateCode =
       registration.stateCode || business.state_code || getStateCode(business.state || '');
     const finalPlaceOfSupply = place_of_supply_state_code || businessStateCode;
+    // ITC belongs to the GSTIN the supplier billed (s.16(2)(a)): a bill addressed to another of the
+    // business's GSTINs must be booked in a branch on that GSTIN.
+    const billTo = typeof body.bill_to_gstin === 'string' ? body.bill_to_gstin.replace(/\s/g, '').toUpperCase() : '';
+    if (billTo.length === 15 && registration.gstin && billTo !== registration.gstin.toUpperCase()) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error:
+            `This bill is addressed to GSTIN ${billTo}, but this branch files under ${registration.gstin}. ` +
+            'Book it in the branch with that GSTIN so the input tax credit goes to the right registration.',
+          code: 'BILL_TO_GSTIN_MISMATCH',
+        },
+        { status: 400 }
+      );
+    }
     for (const item of items as Array<{ item_name?: string; tax_rate?: unknown }>) {
       const rateError = gstRateError(Number(item.tax_rate) || 0, String(bill_date).slice(0, 10));
       if (rateError) {

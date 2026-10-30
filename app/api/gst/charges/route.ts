@@ -105,7 +105,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId, 
       return NextResponse.json({ error: 'as_on_date must be YYYY-MM-DD' }, { status: 400 });
     }
 
-    const org = await loadGstFilingOrgDefaults(businessId);
+    const org = await loadGstFilingOrgDefaults(businessId, finalBranchId);
     const { override: dueDateOverride, due_date_inputs_from_request } =
       parseGstDueDateQueryOverrides(searchParams);
     const dueDateOptions = mergeGstDueDateOptions(org, dueDateOverride);

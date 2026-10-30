@@ -232,6 +232,20 @@ export async function POST(
     // receiving branch's own registration state (s.25(4): a branch GSTIN is a distinct person).
     const buyerReg = await resolveSupplierRegistration(client, business_id, purchaseBranchId);
     const sellerReg = await resolveSupplierRegistration(client, invoice.business_id, invoice.branch_id);
+    // ITC belongs to the GSTIN the supplier billed (s.16(2)(a)).
+    const billedTo = String(invoice.customer_gstin || '').trim().toUpperCase();
+    if (billedTo && buyerReg.gstin && billedTo !== buyerReg.gstin.toUpperCase()) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error:
+            `This invoice is addressed to GSTIN ${billedTo}, but the receiving branch files under ${buyerReg.gstin}. ` +
+            'Receive it in the branch with that GSTIN so the input tax credit goes to the right registration.',
+          code: 'BILL_TO_GSTIN_MISMATCH',
+        },
+        { status: 400 }
+      );
+    }
     if (sellerReg.gstin) invoice.supplier_gstin = sellerReg.gstin;
     const placeOfSupplyStateCode =
       (invoice.place_of_supply_state_code && String(invoice.place_of_supply_state_code).trim()) ||
