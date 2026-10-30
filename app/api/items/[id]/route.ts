@@ -369,6 +369,17 @@ export async function PATCH(
       const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
       galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
     }
+    const patchExtras = ['video_url', 'store_tabs', 'size_chart'].some((k) =>
+      Object.prototype.hasOwnProperty.call(body, k),
+    );
+    let extrasPatched: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
+    if (patchExtras) {
+      const { validateProductExtras } = await import('@/lib/store/product-extras');
+      extrasPatched = validateProductExtras(body);
+      if (!extrasPatched.ok) {
+        return NextResponse.json({ error: extrasPatched.error }, { status: 400 });
+      }
+    }
     const patchSeo =
       Object.prototype.hasOwnProperty.call(body, 'seo_title') ||
       Object.prototype.hasOwnProperty.call(body, 'seo_description') ||
@@ -416,6 +427,24 @@ export async function PATCH(
         parts.push(`, gallery_urls = $${idx}::jsonb`);
         extra.push(galleryJson);
         idx += 1;
+      }
+      if (extrasPatched?.ok) {
+        const v = extrasPatched.value;
+        if (v.video_url !== undefined) {
+          parts.push(`, video_url = $${idx}`);
+          extra.push(v.video_url);
+          idx += 1;
+        }
+        if (v.store_tabs !== undefined) {
+          parts.push(`, store_tabs = $${idx}::jsonb`);
+          extra.push(JSON.stringify(v.store_tabs));
+          idx += 1;
+        }
+        if (v.size_chart !== undefined) {
+          parts.push(`, size_chart = $${idx}::jsonb`);
+          extra.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
+          idx += 1;
+        }
       }
       if (seoPatched) {
         parts.push(`, seo_title = $${idx}`);

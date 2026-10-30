@@ -33,15 +33,18 @@ export async function notifyStoreCustomerWhatsApp(input: {
   }
 }
 
-/** Store message to a shopper: the merchant's chosen Meta template, else plain text over QR. */
+/**
+ * Store message to a shopper: the merchant's chosen Meta template, else plain text over QR.
+ * Resolves with the WhatsApp route used (null when nothing was delivered).
+ */
 export async function notifyStoreEvent(input: {
   businessId: string;
-  eventKey: 'store_order_placed' | 'store_order_paid' | 'store_order_shipped';
+  eventKey: 'store_order_placed' | 'store_order_paid' | 'store_order_shipped' | 'store_cart_reminder';
   phone: string;
   values: EventValues;
   text: string;
-}): Promise<void> {
-  await notifyBusinessEvent({
+}): Promise<{ via: 'cloud' | 'qr' | null }> {
+  return notifyBusinessEvent({
     businessId: input.businessId,
     eventKey: input.eventKey,
     to: input.phone,

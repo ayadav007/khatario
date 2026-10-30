@@ -10,6 +10,7 @@ export const TENANT_WA_EVENT_KEYS = [
   'store_order_placed',
   'store_order_paid',
   'store_order_shipped',
+  'store_cart_reminder',
   'order_confirmed',
   'order_packed',
   'order_ready_for_pickup',
@@ -64,6 +65,8 @@ export const TENANT_WA_FIELDS = {
   refund_note: { label: 'Refund details', sample: 'Your refund of ₹1,250 will reach you in 5-7 working days.' },
   count: { label: 'Number of orders', sample: '3' },
   khata_link: { label: 'Khata link', sample: 'https://ganesh.khatario.com/khata' },
+  item_names: { label: 'Items in the cart', sample: 'Basmati rice 5 kg, Ghee 1 L' },
+  cart_link: { label: 'Cart link', sample: 'https://sharma.khatario.com/cart' },
   settlement_day: { label: 'Settlement day', sample: '5th of every month' },
 } as const;
 
@@ -213,6 +216,21 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
       category: 'UTILITY',
       body: 'Hi {{1}}, your order {{2}} has shipped. Tracking number {{3}}. Track it here: {{4}} Thank you.',
       variableMap: ['customer_name', 'order_number', 'awb', 'tracking_url'],
+    },
+  },
+  {
+    key: 'store_cart_reminder',
+    group: 'store',
+    label: 'Cart reminder',
+    description: 'Sent to a shopper who left items in their cart, when you switch cart reminders on.',
+    recipient: 'customer',
+    categories: ['MARKETING'],
+    fields: ['customer_name', 'store_name', 'item_names', 'total', 'cart_link'],
+    suggested: {
+      name: 'khatario_cart_reminder',
+      category: 'MARKETING',
+      body: 'Hi {{1}}, you left {{2}} (₹{{3}}) in your cart at {{4}}. Complete your order here: {{5}} Thank you.',
+      variableMap: ['customer_name', 'item_names', 'total', 'store_name', 'cart_link'],
     },
   },
   deliveryEvent(

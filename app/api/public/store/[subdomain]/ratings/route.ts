@@ -27,6 +27,17 @@ export async function POST(
     [itemId, store.business_id],
   );
   if (!item) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+  // A written review owns the shopper's star rating; changing it goes through the review.
+  const reviewed = await queryOne(
+    `SELECT 1 FROM store_item_reviews WHERE business_id = $1 AND customer_id = $2 AND item_id = $3`,
+    [store.business_id, session.customerId, itemId],
+  );
+  if (reviewed) {
+    return NextResponse.json(
+      { error: 'You have reviewed this product. Edit your review to change the rating.' },
+      { status: 409 },
+    );
+  }
   await query(
     `INSERT INTO store_item_ratings (business_id, customer_id, item_id, rating)
      VALUES ($1, $2, $3, $4)

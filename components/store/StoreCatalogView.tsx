@@ -17,15 +17,16 @@ import { useStudioSections } from './studio-theme/StoreStudioChrome';
 import { chowkInkOn, chowkOnAccent, isKhatarioPack, resolveHeroSlides, sanitizeStoreTheme, sectionEnabled, storeCanvas, type StoreOverlayBand } from '@/lib/store/store-theme';
 import { studioLinkTarget, type StudioLinkTarget } from '@/lib/store/studio-layout';
 import { isStoreOfferItem } from '@/lib/store/map-store-product';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ActiveFilterChips, CatalogFilterPanel, CatalogSortSelect } from './features/catalog';
+import { useCatalogFilters } from './features/catalog/useCatalogFilters';
+import { useCatalogData } from './features/catalog/useCatalogData';
+import { activeFilterCount, EMPTY_CATALOG_FILTERS } from './features/catalog/catalog-filters';
+import { migrateLandingParams, removeFilterChip, withSelectedFacets } from './features/catalog/catalog-mount';
+import type { SearchPick } from './features/catalog/HeaderSearch';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Loader2, SlidersHorizontal } from 'lucide-react';
 import clsx from 'clsx';
-
-interface StoreCategory {
-  id: string;
-  name: string;
-  item_count?: number;
-}
 
 function StoreOverlayBands({ bands, home, enabled }: { bands: StoreOverlayBand[]; home: boolean; enabled: boolean }) {
   if (!home || !enabled || bands.length === 0) return null;
@@ -51,20 +52,35 @@ function scrollToProducts() {
   requestAnimationFrame(() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
 
-/** Links from other pages land here as ?category=, ?offers=1 or ?nav=<label>. */
+/** Links from other pages land here as ?nav=<label> or ?browse=; ?category= and ?offers=1 go through migrateLandingParams. */
 function readLandingParams() {
-  if (typeof window === 'undefined') return { category: null, offers: false, nav: null, browse: false };
+  if (typeof window === 'undefined') return { nav: null, browse: false };
   const p = new URLSearchParams(window.location.search);
   return {
-    category: p.get('category'),
-    offers: p.get('offers') === '1',
     nav: p.get('nav'),
     /** Quick's Categories tab from another page. */
     browse: p.get('browse') === 'categories',
   };
 }
 
+function CatalogLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+    </div>
+  );
+}
+
+/** The catalog filters live in the URL (useSearchParams), which needs a Suspense boundary. */
 export function StoreCatalogView() {
+  return (
+    <Suspense fallback={<CatalogLoading />}>
+      <StoreCatalogBody />
+    </Suspense>
+  );
+}
+
+function StoreCatalogBody() {
   const { store, loading: storeLoading, error, selectedBranchId } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
@@ -80,15 +96,41 @@ export function StoreCatalogView() {
     return () => mq.removeEventListener('change', apply);
   }, []);
 
-  const [items, setItems] = useState<StoreProduct[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = useCatalogFilters();
+  const filterValue = filters.value;
+  const setFilters = filters.set;
+  // Debounced and stable callers use the latest setter, so they never write stale filters back.
+  const setFiltersRef = useRef(setFilters);
+  setFiltersRef.current = setFilters;
+
+  // Older links (?category=<id>, ?offers=1) are rewritten onto the filter keys before anything loads.
+  const paramsString = searchParams?.toString() ?? '';
+  const landingRewrite = useMemo(() => migrateLandingParams(new URLSearchParams(paramsString)), [paramsString]);
+  useEffect(() => {
+    if (!landingRewrite) return;
+    const qs = landingRewrite.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    if (landingRewrite.get('cat') || landingRewrite.get('disc')) scrollToProducts();
+  }, [landingRewrite, pathname, router]);
+
+  const catalog = useCatalogData(store && !landingRewrite ? store.store_subdomain : null, filters.apiParams, selectedBranchId);
+  const { items, total, categories, loading: itemsLoading, hasMore } = catalog;
+  // Selected categories/brands stay listed (and named) even when the current search has none of them.
+  const facets = useMemo(
+    () => withSelectedFacets(catalog.facets, filters.value, categories),
+    [catalog.facets, filters.value, categories],
+  );
+  // The themes still think in one category / offers / search; the URL may hold more.
+  const selectedCategory = filterValue.categoryIds[0] ?? null;
+  const offersOnly = filterValue.disc != null;
+  const searchQuery = filterValue.q;
+
   const [featuredItems, setFeaturedItems] = useState<StoreProduct[]>([]);
-  const [categories, setCategories] = useState<StoreCategory[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [offersOnly, setOffersOnly] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [itemsLoading, setItemsLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [searchDraft, setSearchDraft] = useState(searchQuery);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [orderConfirm, setOrderConfirm] = useState<{
@@ -102,165 +144,127 @@ export function StoreCatalogView() {
   const pendingNav = useRef<string | null>(null);
   const pendingBrowse = useRef(false);
 
-  const fetchItems = useCallback(
-    async (opts: {
-      categoryId?: string | null;
-      search?: string;
-      offers?: boolean;
-      pageNum?: number;
-      append?: boolean;
-    }) => {
-      if (!store) return;
+  // The q our live typing last wrote: its echo must not overwrite what the shopper typed since.
+  const writtenQ = useRef<string | null>(null);
+  useEffect(() => {
+    if (writtenQ.current !== null && searchQuery === writtenQ.current.trim()) {
+      writtenQ.current = null;
+      return;
+    }
+    // Anything else (Back, a chip, clear, a pick) is adopted.
+    writtenQ.current = null;
+    setSearchDraft(searchQuery);
+  }, [searchQuery]);
 
-      setItemsLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (opts.categoryId) params.set('category_id', opts.categoryId);
-        if (opts.search) params.set('search', opts.search);
-        if (opts.offers) params.set('discounted', '1');
-        if (opts.pageNum && opts.pageNum > 1) params.set('page', String(opts.pageNum));
-        if (selectedBranchId) params.set('branch_id', selectedBranchId);
-        params.set('limit', '40');
-
-        const res = await fetch(
-          `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${withStoreDraft(params)}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-
-        if (opts.append) {
-          setItems((prev) => [...prev, ...data.items]);
-        } else {
-          setItems(data.items);
-        }
-        if (!opts.append && !opts.categoryId && !opts.search && !opts.offers) {
-          const featParams = withStoreDraft(new URLSearchParams({ featured: '1', limit: '6' }));
-          if (selectedBranchId) featParams.set('branch_id', selectedBranchId);
-          const featRes = await fetch(
-            `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${featParams}`,
-          );
-          if (featRes.ok) {
-            const featData = await featRes.json();
-            setFeaturedItems((featData.items as StoreProduct[]) ?? []);
-          } else {
-            setFeaturedItems([]);
-          }
-        }
-        setCategories(data.categories ?? []);
-        setTotal(data.total);
-      } catch {
-        /* ignore */
-      } finally {
-        setItemsLoading(false);
-      }
-    },
-    [store, selectedBranchId],
-  );
+  // Featured products for the home rows; they ignore the filters.
+  useEffect(() => {
+    if (!store) return;
+    let alive = true;
+    const featParams = withStoreDraft(new URLSearchParams({ featured: '1', limit: '6' }));
+    if (selectedBranchId) featParams.set('branch_id', selectedBranchId);
+    fetch(`/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${featParams}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((featData) => {
+        if (alive) setFeaturedItems((featData?.items as StoreProduct[]) ?? []);
+      })
+      .catch(() => {
+        if (alive) setFeaturedItems([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [store, selectedBranchId]);
 
   const landed = useRef(false);
   useEffect(() => {
-    if (!store) return;
-    let categoryId = selectedCategory;
-    let offers = offersOnly;
-    if (!landed.current) {
-      landed.current = true;
-      const landing = readLandingParams();
-      if (landing.category) categoryId = landing.category;
-      if (landing.offers) offers = true;
-      pendingNav.current = landing.nav;
-      pendingBrowse.current = landing.browse;
-      setSelectedCategory(categoryId);
-      setOffersOnly(offers);
-      if (categoryId || offers) scrollToProducts();
-    }
-    setPage(1);
-    fetchItems({ categoryId, search: searchQuery, offers, pageNum: 1 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, selectedBranchId]);
+    if (landed.current) return;
+    landed.current = true;
+    const landing = readLandingParams();
+    pendingNav.current = landing.nav;
+    pendingBrowse.current = landing.browse;
+  }, []);
 
-  const handleCategoryChange = useCallback(
-    (catId: string | null) => {
-      setSelectedCategory(catId);
-      setOffersOnly(false);
-      setPage(1);
-      fetchItems({ categoryId: catId, search: searchQuery, pageNum: 1 });
-    },
-    [fetchItems, searchQuery],
-  );
+  // Navigation (pills, tabs, store nav, category tiles) opens one category: it leaves the offers view and
+  // drops the search, as a shop's collection links do. The filter panel refines (several, keeps q).
+  // Landing links pass `replace` so they add no history entry.
+  const handleCategoryChange = useCallback((catId: string | null, opts?: { replace?: boolean }) => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    setFiltersRef.current({ categoryIds: catId ? [catId] : [], disc: null, q: '' }, opts);
+  }, []);
 
-  const handleSearchChange = useCallback(
-    (query: string) => {
-      setSearchQuery(query);
+  // Studio's header types live: the grid follows after a pause, as before, without a history entry per pause.
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchDraft(query);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      writtenQ.current = query;
+      setFiltersRef.current({ q: query }, { replace: true });
+    }, 350);
+  }, []);
+
+  // Headers with suggestions: the grid follows on submit.
+  const handleSearchSubmit = useCallback((query: string) => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    setFiltersRef.current({ q: query.trim() });
+    if (query.trim()) scrollToProducts();
+  }, []);
+
+  const handleSearchPick = useCallback((pick: SearchPick) => {
+    if (pick.type !== 'category') return;
+    setFiltersRef.current({ categoryIds: [pick.id], disc: null, q: '' });
+    scrollToProducts();
+  }, []);
+
+  const handleLoadMore = catalog.loadMore;
+
+  const clearFilters = useCallback(
+    (opts?: { replace?: boolean }) => {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
-      searchTimeout.current = setTimeout(() => {
-        setPage(1);
-        fetchItems({ categoryId: selectedCategory, search: query, offers: offersOnly, pageNum: 1 });
-      }, 350);
+      setFiltersRef.current({ ...EMPTY_CATALOG_FILTERS, sort: filterValue.sort }, opts);
     },
-    [fetchItems, selectedCategory, offersOnly],
+    [filterValue.sort],
   );
-
-  const handleLoadMore = useCallback(() => {
-    const next = page + 1;
-    setPage(next);
-    fetchItems({
-      categoryId: selectedCategory,
-      search: searchQuery,
-      offers: offersOnly,
-      pageNum: next,
-      append: true,
-    });
-  }, [page, fetchItems, selectedCategory, searchQuery, offersOnly]);
-
-  const clearFilters = useCallback(() => {
-    setSelectedCategory(null);
-    setOffersOnly(false);
-    setSearchQuery('');
-    setPage(1);
-    fetchItems({ pageNum: 1 });
-  }, [fetchItems]);
 
   const handleStudioNavigate = useCallback(
-    (target: StudioLinkTarget) => {
+    (target: StudioLinkTarget, _label?: string, opts?: { replace?: boolean }) => {
       if (target.kind === 'category') {
-        handleCategoryChange(target.id);
+        handleCategoryChange(target.id, opts);
       } else if (target.kind === 'offers') {
-        setSelectedCategory(null);
-        setOffersOnly(true);
-        setPage(1);
-        fetchItems({ search: searchQuery, offers: true, pageNum: 1 });
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+        setFiltersRef.current({ categoryIds: [], disc: filterValue.disc ?? 10, q: '' }, opts);
       } else if (target.kind === 'href') {
         window.location.href = target.href;
         return;
-      } else if (selectedCategory || offersOnly || searchQuery) {
-        clearFilters();
+      } else if (searchQuery || activeFilterCount(filterValue) > 0) {
+        clearFilters(opts);
       }
       scrollToProducts();
     },
-    [handleCategoryChange, fetchItems, searchQuery, selectedCategory, offersOnly, clearFilters],
+    [handleCategoryChange, searchQuery, filterValue, clearFilters],
   );
 
   // Quick's Categories tab opens the category view on the current (or first) category.
   useEffect(() => {
-    const open = () => {
+    const open = (opts?: { replace?: boolean }) => {
       const first = selectedCategory ?? categories[0]?.id;
       if (!first) return;
-      if (first !== selectedCategory) handleCategoryChange(first);
+      if (first !== selectedCategory) handleCategoryChange(first, opts);
       window.scrollTo({ top: 0 });
     };
     if (pendingBrowse.current && categories.length > 0) {
       pendingBrowse.current = false;
-      open();
+      open({ replace: true });
     }
-    window.addEventListener(BROWSE_CATEGORIES_EVENT, open);
-    return () => window.removeEventListener(BROWSE_CATEGORIES_EVENT, open);
+    const onBrowse = () => open();
+    window.addEventListener(BROWSE_CATEGORIES_EVENT, onBrowse);
+    return () => window.removeEventListener(BROWSE_CATEGORIES_EVENT, onBrowse);
   }, [categories, selectedCategory, handleCategoryChange]);
 
   useEffect(() => {
     const label = pendingNav.current;
     if (!label || categories.length === 0) return;
     pendingNav.current = null;
-    handleStudioNavigate(studioLinkTarget(label, categories));
+    handleStudioNavigate(studioLinkTarget(label, categories), label, { replace: true });
   }, [categories, handleStudioNavigate]);
 
   const offerItems = useMemo(
@@ -269,13 +273,7 @@ export function StoreCatalogView() {
   );
   const studioSections = useStudioSections(theme, store, categories);
 
-  if (storeLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-      </div>
-    );
-  }
+  if (storeLoading) return <CatalogLoading />;
 
   if (error || !store) {
     return (
@@ -288,8 +286,61 @@ export function StoreCatalogView() {
     );
   }
 
-  const hasMore = items.length < total;
-  const home = !searchQuery && !selectedCategory && !offersOnly;
+  const filterCount = activeFilterCount(filterValue);
+  const listing = Boolean(searchQuery) || filterCount > 0;
+  const home = !listing;
+  const quick = theme.pack === 'quick';
+
+  // Filters: sidebar from lg up, a "Filters (n)" sheet below (always the sheet on Quick); sort in the toolbar; chips above the grid.
+  const filterToolbar = (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen(true)}
+          className={clsx(
+            'inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-gray-300 bg-[var(--paper,#fff)] px-3 text-sm font-medium text-gray-900',
+            !quick && 'lg:hidden',
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          {filterCount > 0 ? `Filters (${filterCount})` : 'Filters'}
+        </button>
+        <div className="ml-auto">
+          <CatalogSortSelect value={filterValue.sort} onChange={(sort) => setFilters({ sort })} />
+        </div>
+      </div>
+      <ActiveFilterChips
+        value={filterValue}
+        facets={facets}
+        onRemove={(key, item) => setFilters(removeFilterChip(filterValue, key, item))}
+        onClear={filters.clear}
+      />
+    </div>
+  );
+  const filterSidebar =
+    !quick ? (
+      <aside className="hidden w-64 shrink-0 lg:sticky lg:top-4 lg:block">
+        <CatalogFilterPanel facets={facets} value={filterValue} onChange={setFilters} layout="sidebar" />
+      </aside>
+    ) : null;
+  // Studio, Quick and grocery draw their own grid: while filtering, the toolbar sits above it and the sidebar beside it.
+  const withFilters = (body: ReactNode) =>
+    listing ? (
+      <>
+        <div className="mx-auto max-w-6xl px-4 pt-4">{filterToolbar}</div>
+        {filterSidebar ? (
+          <div className="mx-auto max-w-[90rem] lg:flex lg:items-start lg:gap-6 lg:px-4 lg:pt-4">
+            {filterSidebar}
+            <div className="min-w-0 flex-1">{body}</div>
+          </div>
+        ) : (
+          body
+        )}
+      </>
+    ) : (
+      body
+    );
 
   const heroSlides = sectionEnabled(theme, 'hero')
     ? resolveHeroSlides(
@@ -305,7 +356,8 @@ export function StoreCatalogView() {
 
   const popular = khatario && home ? items.filter((p) => p.image_url).slice(0, 6) : [];
   const promoSlides = khatario && home ? heroSlides.filter((s, i) => i > 0 && s.image_url).slice(0, 2) : [];
-  const selectedName = selectedCategory ? categories.find((c) => c.id === selectedCategory)?.name : null;
+  const selectedName =
+    filterValue.categoryIds.length === 1 ? categories.find((c) => c.id === selectedCategory)?.name : null;
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const sparseCatalog = items.length > 0 && items.length < 12;
@@ -317,8 +369,10 @@ export function StoreCatalogView() {
   return (
     <>
       <StoreShell
-        searchQuery={searchQuery}
+        searchQuery={searchDraft}
         onSearchChange={handleSearchChange}
+        onSearchSubmit={handleSearchSubmit}
+        onSearchPick={handleSearchPick}
         showSearch
         onCartOpen={() => setCartOpen(true)}
         padded={false}
@@ -362,45 +416,49 @@ export function StoreCatalogView() {
         }
       >
         {studio ? (
-          <StoreStudioHome
-            store={store}
-            theme={theme}
-            sections={studioSections}
-            items={items}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            offersOnly={offersOnly}
-            searchQuery={searchQuery}
-            total={total}
-            hasMore={hasMore}
-            loading={itemsLoading}
-            onCategory={handleCategoryChange}
-            onClear={clearFilters}
-            onNavigate={handleStudioNavigate}
-            onLoadMore={handleLoadMore}
-            onViewDetail={setDetailProduct}
-            quick={theme.pack === 'quick'}
-          />
+          withFilters(
+            <StoreStudioHome
+              store={store}
+              theme={theme}
+              sections={studioSections}
+              items={items}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              offersOnly={offersOnly}
+              searchQuery={searchQuery}
+              total={total}
+              hasMore={hasMore}
+              loading={itemsLoading}
+              onCategory={handleCategoryChange}
+              onClear={() => clearFilters()}
+              onNavigate={handleStudioNavigate}
+              onLoadMore={handleLoadMore}
+              onViewDetail={setDetailProduct}
+              quick={theme.pack === 'quick'}
+            />,
+          )
         ) : grocery ? (
-          <StoreGroceryHome
-            store={store}
-            theme={theme}
-            paper={paper}
-            ink={ink}
-            items={items}
-            featuredItems={featuredItems}
-            offerItems={offerItems}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            searchQuery={searchQuery}
-            total={total}
-            hasMore={hasMore}
-            loading={itemsLoading}
-            heroSlides={heroSlides}
-            onCategory={handleCategoryChange}
-            onLoadMore={handleLoadMore}
-            onViewDetail={setDetailProduct}
-          />
+          withFilters(
+            <StoreGroceryHome
+              store={store}
+              theme={theme}
+              paper={paper}
+              ink={ink}
+              items={items}
+              featuredItems={featuredItems}
+              offerItems={offerItems}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              searchQuery={searchQuery}
+              total={total}
+              hasMore={hasMore}
+              loading={itemsLoading}
+              heroSlides={heroSlides}
+              onCategory={handleCategoryChange}
+              onLoadMore={handleLoadMore}
+              onViewDetail={setDetailProduct}
+            />,
+          )
         ) : (
           <>
             <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
@@ -522,9 +580,11 @@ export function StoreCatalogView() {
 
             <div className="mx-auto max-w-6xl px-4">
               <section id="all-products" className="pt-8">
-                {searchQuery || selectedCategory ? (
+                {listing ? (
                   <div className="mb-4">
-                    <h2 className="text-[1.15rem] font-semibold">{selectedName || `Results for “${searchQuery}”`}</h2>
+                    <h2 className="text-[1.15rem] font-semibold">
+                      {selectedName || (searchQuery ? `Results for “${searchQuery}”` : 'Products')}
+                    </h2>
                     <p className="mt-0.5 text-[12px]" style={{ opacity: 0.45 }}>
                       {total} products
                     </p>
@@ -533,40 +593,51 @@ export function StoreCatalogView() {
                   <h2 className="mb-3 text-[1.05rem] font-semibold">All products</h2>
                 )}
 
-                {itemsLoading && items.length === 0 ? (
-                  <div className={khatarioGrid}>
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="aspect-square animate-pulse rounded-[1.35rem] bg-white" />
-                    ))}
-                  </div>
-                ) : items.length === 0 ? (
-                  <p className="py-10 text-[13px]" style={{ opacity: 0.5 }}>
-                    {searchQuery ? `No products found for “${searchQuery}”` : 'No products in this store yet.'}
-                  </p>
-                ) : (
-                  <div
-                    className={clsx(khatarioGrid, 'chowk-catalog', itemsLoading && items.length > 0 && 'is-wait')}
-                    aria-busy={itemsLoading}
-                  >
-                    {items.map((item) => (
-                      <StoreProductCard key={item.id} product={item} variant="grid" onViewDetail={setDetailProduct} />
-                    ))}
-                  </div>
-                )}
+                <div className="mb-4">{filterToolbar}</div>
 
-                {hasMore ? (
-                  <div className="mt-8">
-                    <button
-                      type="button"
-                      onClick={handleLoadMore}
-                      disabled={itemsLoading}
-                      className="rounded-full bg-white px-5 py-2 text-[13px] font-medium shadow-sm disabled:opacity-50"
-                      style={{ color: ink }}
-                    >
-                      {itemsLoading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : 'Load more'}
-                    </button>
+                <div className="lg:flex lg:items-start lg:gap-6">
+                  {filterSidebar}
+                  <div className="min-w-0 flex-1">
+                    {itemsLoading && items.length === 0 ? (
+                      <div className={khatarioGrid}>
+                        {Array.from({ length: 8 }).map((_, i) => (
+                          <div key={i} className="aspect-square animate-pulse rounded-[1.35rem] bg-white" />
+                        ))}
+                      </div>
+                    ) : items.length === 0 ? (
+                      <p className="py-10 text-[13px]" style={{ opacity: 0.5 }}>
+                        {searchQuery
+                          ? `No products found for “${searchQuery}”`
+                          : listing
+                            ? 'No products match these filters.'
+                            : 'No products in this store yet.'}
+                      </p>
+                    ) : (
+                      <div
+                        className={clsx(khatarioGrid, 'chowk-catalog', itemsLoading && items.length > 0 && 'is-wait')}
+                        aria-busy={itemsLoading}
+                      >
+                        {items.map((item) => (
+                          <StoreProductCard key={item.id} product={item} variant="grid" onViewDetail={setDetailProduct} />
+                        ))}
+                      </div>
+                    )}
+
+                    {hasMore ? (
+                      <div className="mt-8">
+                        <button
+                          type="button"
+                          onClick={handleLoadMore}
+                          disabled={itemsLoading}
+                          className="rounded-full bg-white px-5 py-2 text-[13px] font-medium shadow-sm disabled:opacity-50"
+                          style={{ color: ink }}
+                        >
+                          {itemsLoading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : 'Load more'}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
               </section>
             </div>
           </>
@@ -601,6 +672,15 @@ export function StoreCatalogView() {
           onClose={() => setOrderConfirm(null)}
         />
       ) : null}
+
+      <CatalogFilterPanel
+        facets={facets}
+        value={filterValue}
+        onChange={setFilters}
+        layout="sheet"
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+      />
 
       {detailProduct ? (
         <StoreProductDetailModal product={detailProduct} onClose={() => setDetailProduct(null)} />

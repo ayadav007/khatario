@@ -7,9 +7,11 @@ import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Heart, MapPin, Search, ShoppingCart, User } from 'lucide-react';
 import { marqueeItems } from '@/lib/store/grocery';
 import { chowkOnAccent, hexLuminance, resolveAnnouncementText, type StoreTheme } from '@/lib/store/store-theme';
+import { HeaderSearch, type SearchPick } from './features/catalog/HeaderSearch';
 
 type StoreInfo = {
   name: string;
+  store_subdomain: string;
   store_tagline: string | null;
   phone: string | null;
   email: string | null;
@@ -64,6 +66,8 @@ export function GroceryHeader({
   searchPlaceholder,
   searchRef,
   onSearchChange,
+  onSearchSubmit,
+  onSearchPick,
   cartCount,
   onCart,
   customerInitial,
@@ -83,6 +87,9 @@ export function GroceryHeader({
   searchPlaceholder: string;
   searchRef: RefObject<HTMLInputElement>;
   onSearchChange?: (q: string) => void;
+  /** Suggestions dropdown; the grid follows on submit. */
+  onSearchSubmit?: (q: string) => void;
+  onSearchPick?: (pick: SearchPick) => void;
   cartCount: number;
   onCart: () => void;
   customerInitial: string | null;
@@ -115,25 +122,26 @@ export function GroceryHeader({
       className={clsx('relative', className)}
       onSubmit={(e) => {
         e.preventDefault();
+        // The search button: Enter is handled inside the suggestions box.
+        const q = e.currentTarget.querySelector('input')?.value.trim() ?? '';
+        (onSearchSubmit ?? onSearchChange)?.(q);
         document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' });
       }}
+      style={{ ['--g-field' as string]: dark ? 'rgba(255,255,255,0.06)' : '#fff', ['--g-ink' as string]: ink }}
     >
-      <input
-        id={id}
-        ref={id === 'store-search' ? searchRef : undefined}
-        type="search"
+      <HeaderSearch
+        subdomain={store.store_subdomain}
         value={searchQuery}
-        onChange={(e) => onSearchChange?.(e.target.value)}
+        onSubmit={onSearchSubmit ?? onSearchChange}
+        onPick={onSearchPick}
         placeholder={phoneHint ? shortSearchHint(searchPlaceholder) : searchPlaceholder}
-        aria-label={searchPlaceholder}
-        enterKeyHint="search"
-        autoComplete="off"
-        className="g-line h-11 w-full rounded-full border py-2 pl-5 pr-14 text-sm outline-none transition-shadow focus:shadow-[0_0_0_4px_color-mix(in_srgb,var(--store-accent)_18%,transparent)]"
-        style={{ backgroundColor: dark ? 'rgba(255,255,255,0.06)' : '#fff', color: ink }}
+        inputRef={id === 'store-search' ? searchRef : undefined}
+        inputId={id}
+        className="[&_input]:h-11 [&_input]:min-h-0 [&_input]:rounded-full [&_input]:border-[color:var(--g-line)] [&_input]:bg-[var(--g-field)] [&_input]:py-2 [&_input]:pl-5 [&_input]:pr-14 [&_input]:text-[color:var(--g-ink)] [&_input]:transition-shadow [&_input:focus]:ring-0 [&_input:focus]:shadow-[0_0_0_4px_color-mix(in_srgb,var(--store-accent)_18%,transparent)]"
       />
       <button
         type="submit"
-        className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full"
+        className="absolute right-1 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full"
         style={{ backgroundColor: accent, color: onAccent }}
         aria-label="Search"
       >

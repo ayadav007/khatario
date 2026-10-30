@@ -26,6 +26,7 @@ import {
 import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
 import { getBusinessUpiVpa, upiAppLinks } from '@/lib/payments/upi-pay-link';
 import { claimStoreCouponUse } from '@/lib/store/coupons';
+import { markRecovered } from '@/lib/store/abandoned-carts';
 import { todayIst } from '@/lib/gst/time-limits';
 import { decideKhataOrder } from '@/lib/khata/rules';
 import { khataPayBy, khataStatementDateFor, khataShortDate } from '@/lib/khata/cycle';
@@ -378,6 +379,9 @@ export async function POST(
         [storeCustomerId, addr, body.customer_pincode?.trim() || null],
       );
     }
+
+    // The shopper's saved cart became this order: no abandoned-cart reminder for it.
+    if (storeCustomerId) await markRecovered(client, store.business_id, storeCustomerId, orderId);
 
     await client.query('COMMIT');
 

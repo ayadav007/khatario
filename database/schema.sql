@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS categories (
     business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
+    size_chart JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -181,6 +182,9 @@ CREATE TABLE IF NOT EXISTS items (
     min_stock DECIMAL(10,2) DEFAULT 0,
     image_url TEXT,
     gallery_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+    video_url TEXT,
+    store_tabs JSONB NOT NULL DEFAULT '[]'::jsonb,
+    size_chart JSONB,
     show_in_store BOOLEAN NOT NULL DEFAULT false,
     featured_in_store BOOLEAN NOT NULL DEFAULT false,
     is_active BOOLEAN DEFAULT true,
@@ -1160,3 +1164,45 @@ CREATE TABLE IF NOT EXISTS push_deliveries (
 CREATE INDEX IF NOT EXISTS idx_push_deliveries_job ON push_deliveries (job_id);
 -- Triggers trg_notifications_push_insert / trg_notifications_push_refire (function
 -- notifications_enqueue_push) are defined in database/migrations/445_push_notifications.sql.
+
+-- Migration 448: shopper reviews for the online store (photos, moderation status, merchant reply).
+CREATE TABLE IF NOT EXISTS store_item_reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+    item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    order_id UUID REFERENCES store_orders(id) ON DELETE SET NULL,
+    rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    title VARCHAR(120),
+    body TEXT NOT NULL,
+    photos JSONB NOT NULL DEFAULT '[]',
+    status VARCHAR(10) NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'pending', 'hidden')),
+    merchant_reply TEXT,
+    replied_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (business_id, customer_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_item_reviews_item ON store_item_reviews (business_id, item_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_store_item_reviews_status ON store_item_reviews (business_id, status, created_at DESC);
+
+-- Migration 449: server-side carts for abandoned-cart reminders. The two switches sit on business_settings with the other store_* settings.
+CREATE TABLE IF NOT EXISTS store_carts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+    items JSONB NOT NULL DEFAULT '[]',
+    subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+    status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'recovered', 'cleared')),
+    reminded_at TIMESTAMPTZ,
+    reminder_via VARCHAR(10),
+    recovered_order_id UUID REFERENCES store_orders(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (business_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_carts_open ON store_carts (business_id, status, updated_at) WHERE status = 'open';
+ALTER TABLE business_settings
+    ADD COLUMN IF NOT EXISTS store_cart_reminder_enabled BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS store_cart_reminder_hours SMALLINT NOT NULL DEFAULT 3
+        CHECK (store_cart_reminder_hours BETWEEN 1 AND 72);

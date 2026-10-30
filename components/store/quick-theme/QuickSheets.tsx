@@ -7,6 +7,9 @@ import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress, type Sto
 import type { StoreProduct } from '../StoreProductCard';
 import { rupees } from '../studio-theme/StudioSections';
 import { QuickSheet } from './QuickChrome';
+import { VariantPicker } from '../features/product/VariantPicker';
+import { findVariant, toVariantInputs } from '../features/product/product-view';
+import { ReviewSummaryCompact } from '../features/reviews/ReviewSummary';
 
 /** Same key checkout reads, so a coupon picked in the cart is already applied there. */
 function couponKey(subdomain: string) {
@@ -217,9 +220,16 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
   );
 }
 
-/** Size / weight picker for items with options, with an ADD or stepper per option. */
+/** Option picker for items with options: swatches / chips, then ADD or a stepper for the chosen one. */
 export function QuickVariantSheet({ product, open, onClose }: { product: StoreProduct; open: boolean; onClose: () => void }) {
   const { cart, addToCart, updateCartQuantity } = useStore();
+  const variants = useMemo(() => toVariantInputs(product.variants), [product.variants]);
+  // VariantPicker preselects the first in-stock option.
+  const [variantId, setVariantId] = useState<string | null>(null);
+  const v = findVariant(variants, variantId);
+  const line = v ? cart.find((c) => c.itemId === product.id && c.variantId === v.id) : undefined;
+  const out = !v || v.current_stock <= 0;
+  const price = Number(v?.selling_price ?? product.selling_price) || 0;
   return (
     <QuickSheet
       open={open}
@@ -232,52 +242,54 @@ export function QuickVariantSheet({ product, open, onClose }: { product: StorePr
         </>
       }
     >
-      <ul className="qk-variants">
-        {product.variants.map((v) => {
-          const line = cart.find((c) => c.itemId === product.id && c.variantId === v.id);
-          const out = v.current_stock <= 0;
-          return (
-            <li key={v.id} className={out ? 'out' : ''}>
-              <div>
-                <b>{v.variant_name}</b>
-                <span>{rupees(Number(v.selling_price) || 0)}</span>
-              </div>
-              {out ? (
-                <small>Out of stock</small>
-              ) : line ? (
-                <Stepper
-                  label={v.variant_name}
-                  quantity={line.quantity}
-                  canAdd={line.quantity < line.maxStock}
-                  onDec={() => updateCartQuantity(product.id, v.id, line.quantity - 1)}
-                  onInc={() => updateCartQuantity(product.id, v.id, line.quantity + 1)}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="qk-add"
-                  onClick={() =>
-                    addToCart({
-                      itemId: product.id,
-                      variantId: v.id,
-                      name: product.name,
-                      variantName: v.variant_name,
-                      price: Number(v.selling_price) || 0,
-                      quantity: 1,
-                      imageUrl: product.image_url ?? undefined,
-                      unit: product.unit,
-                      maxStock: v.current_stock,
-                      taxRate: product.tax_rate,
-                    })
-                  }
-                >
-                  ADD
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <div className="mb-3">
+        <ReviewSummaryCompact itemId={product.id} avg={product.rating_avg ?? 0} count={product.rating_count ?? 0} />
+      </div>
+      <VariantPicker variants={variants} value={variantId} onChange={setVariantId} />
+      <div className="mt-4">
+        <ul className="qk-variants">
+          <li className={out ? 'out' : ''}>
+            <div>
+              <b>{v ? v.variant_name : 'Choose an option'}</b>
+              <span>{rupees(price)}</span>
+            </div>
+            {!v ? (
+              <small>Not available</small>
+            ) : v.current_stock <= 0 ? (
+              <small>Out of stock</small>
+            ) : line ? (
+              <Stepper
+                label={v.variant_name}
+                quantity={line.quantity}
+                canAdd={line.quantity < line.maxStock}
+                onDec={() => updateCartQuantity(product.id, v.id, line.quantity - 1)}
+                onInc={() => updateCartQuantity(product.id, v.id, line.quantity + 1)}
+              />
+            ) : (
+              <button
+                type="button"
+                className="qk-add"
+                onClick={() =>
+                  addToCart({
+                    itemId: product.id,
+                    variantId: v.id,
+                    name: product.name,
+                    variantName: v.variant_name,
+                    price,
+                    quantity: 1,
+                    imageUrl: product.image_url ?? undefined,
+                    unit: product.unit,
+                    maxStock: v.current_stock,
+                    taxRate: product.tax_rate,
+                  })
+                }
+              >
+                ADD
+              </button>
+            )}
+          </li>
+        </ul>
+      </div>
     </QuickSheet>
   );
 }

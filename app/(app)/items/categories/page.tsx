@@ -11,6 +11,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Plus, Tag, Trash2, Loader2, ArrowLeft } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
+import { CategorySizeChartEditor } from '@/components/store/admin/CategorySizeChartEditor';
+import { validateProductExtras } from '@/lib/store/product-extras';
+import type { SizeChart } from '@/lib/store/product-extras';
 
 interface Category {
   id: string;
@@ -18,6 +21,7 @@ interface Category {
   description?: string;
   item_count: number;
   created_at: string;
+  size_chart?: SizeChart | null;
 }
 
 export default function ItemCategoriesPage() {
@@ -28,6 +32,9 @@ export default function ItemCategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [chartEditId, setChartEditId] = useState<string | null>(null);
+  const [chartDraft, setChartDraft] = useState<SizeChart | null>(null);
+  const [chartSaving, setChartSaving] = useState(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
     description: ''
@@ -93,6 +100,37 @@ export default function ItemCategoriesPage() {
       toast.error('Failed to add category');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveChart = async (categoryId: string) => {
+    const check = validateProductExtras({ size_chart: chartDraft });
+    if (!check.ok) {
+      toast.error(check.error);
+      return;
+    }
+    setChartSaving(true);
+    try {
+      // size_chart must always be sent: a request with only { id } clears the chart.
+      const response = await fetch('/api/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: categoryId, size_chart: check.value.size_chart ?? null }),
+      });
+      if (response.ok) {
+        toast.success('Size chart saved');
+        setChartEditId(null);
+        setChartDraft(null);
+        fetchCategories();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to save size chart');
+      }
+    } catch (error) {
+      console.error('Error saving size chart:', error);
+      toast.error('Failed to save size chart');
+    } finally {
+      setChartSaving(false);
     }
   };
 
@@ -217,6 +255,21 @@ export default function ItemCategoriesPage() {
                     <p className="text-xs text-gray-500">
                       {category.item_count} {category.item_count === 1 ? 'item' : 'items'} in this category
                     </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setChartEditId(category.id);
+                          setChartDraft(category.size_chart ?? null);
+                        }}
+                      >
+                        Size chart
+                      </Button>
+                      {category.size_chart ? (
+                        <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">Size chart set</span>
+                      ) : null}
+                    </div>
                   </div>
                   <button
                     onClick={() => handleDeleteCategory(category.id, category.name)}
@@ -227,6 +280,32 @@ export default function ItemCategoriesPage() {
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
+                {chartEditId === category.id && (
+                  <div className="mt-4 space-y-3 border-t pt-4">
+                    <h4 className="text-sm font-semibold text-gray-900">Size chart for {category.name}</h4>
+                    <CategorySizeChartEditor value={chartDraft} onChange={setChartDraft} />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        isLoading={chartSaving}
+                        onClick={() => handleSaveChart(category.id)}
+                      >
+                        Save size chart
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setChartEditId(null);
+                          setChartDraft(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {category.item_count > 0 && (
                   <p className="text-xs text-orange-600 mt-2">
                     Cannot delete: {category.item_count} items assigned to this category

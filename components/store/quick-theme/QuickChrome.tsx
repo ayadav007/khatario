@@ -13,6 +13,7 @@ import { splitList, studioLinkTarget, studioThemeVars, type StudioLinkTarget } f
 import { freeDeliveryProgress } from '@/lib/store/quick';
 import { StudioAnnouncement, StudioSectionFrame, rupees } from '../studio-theme/StudioSections';
 import { studioSection, type StudioNavCategory, type StudioNavState } from '../studio-theme/StoreStudioChrome';
+import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
 import './quick-theme.css';
 
 /** Asks the home page to open the category view; other pages navigate there instead. */
@@ -46,6 +47,8 @@ export function QuickHeader({
   showSearch,
   searchQuery,
   onSearchChange,
+  onSearchSubmit,
+  onSearchPick,
   searchRef,
   searchPlaceholder,
   onNavigate,
@@ -62,6 +65,9 @@ export function QuickHeader({
   showSearch: boolean;
   searchQuery: string;
   onSearchChange?: (q: string) => void;
+  /** Suggestions dropdown; the grid follows on submit. */
+  onSearchSubmit?: (q: string) => void;
+  onSearchPick?: (pick: SearchPick) => void;
   searchRef: RefObject<HTMLInputElement>;
   searchPlaceholder: string;
   onNavigate?: (target: StudioLinkTarget, label: string) => void;
@@ -94,7 +100,6 @@ export function QuickHeader({
   const eta = header.deliveryEta?.trim();
   const name = header.logo || store.name;
   const hint = useSearchHint(searchPlaceholder, categories);
-  const live = showSearch && !!onSearchChange;
 
   const chips = splitList(header.navLinks, '').map((label) => {
     const target = studioLinkTarget(label, categories);
@@ -131,34 +136,27 @@ export function QuickHeader({
       {header.showSearch === false ? null : (
         <div className="qk-search" role="search">
           <Search aria-hidden="true" />
-          {live ? (
-            <>
-              <input
-                id="store-search"
-                ref={searchRef}
-                type="search"
-                value={searchQuery}
-                onChange={(e) => onSearchChange?.(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && searchQuery) {
-                    e.preventDefault();
-                    onSearchChange?.('');
-                  }
-                }}
-                placeholder={hint}
-                aria-label={searchPlaceholder}
-                enterKeyHint="search"
-                autoComplete="off"
-              />
-              {searchQuery ? (
-                <button type="button" className="qk-clear" onClick={() => onSearchChange?.('')} aria-label="Clear search">
-                  <X />
-                </button>
-              ) : null}
-            </>
-          ) : (
-            <a href="/?focus=search">{hint}</a>
-          )}
+          {/* Off the catalog it still types in place with suggestions; submit or a pick goes there. */}
+          <HeaderSearch
+            subdomain={store.store_subdomain}
+            value={searchQuery}
+            onSubmit={onSearchSubmit ?? onSearchChange}
+            onPick={onSearchPick}
+            placeholder={hint}
+            inputRef={searchRef}
+            inputId="store-search"
+            className="h-full min-w-0 flex-1 [&_input]:!shadow-none"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              className="qk-clear"
+              onClick={() => (onSearchSubmit ?? onSearchChange)?.('')}
+              aria-label="Clear search"
+            >
+              <X />
+            </button>
+          ) : null}
         </div>
       )}
       {header.showNav !== false && chips.length ? (

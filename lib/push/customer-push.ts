@@ -11,6 +11,7 @@ export const CUSTOMER_PUSH_EVENTS: Partial<Record<TenantWaEventKey, { title: str
   store_order_placed: { title: 'Order received', href: '/account' },
   store_order_paid: { title: 'Payment received', href: '/account' },
   store_order_shipped: { title: 'Order shipped', href: '/account' },
+  store_cart_reminder: { title: 'Your cart is waiting', href: '/cart' },
   order_confirmed: { title: 'Order confirmed', href: '/account' },
   order_packed: { title: 'Order packed', href: '/account' },
   order_ready_for_pickup: { title: 'Ready for pickup', href: '/account' },

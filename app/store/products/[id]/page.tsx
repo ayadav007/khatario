@@ -1,40 +1,55 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { StoreShell } from '@/components/store/StoreShell';
-import { useStore, withStoreDraft } from '@/lib/store/store-context';
+import { useStore } from '@/lib/store/store-context';
+import { ProductReviewsSection } from '@/components/store/features/reviews';
 import { resolveItemSeo } from '@/lib/store/item-seo';
-import type { StoreProduct } from '@/components/store/StoreProductCard';
-import { Heart, Loader2, Package, Minus, Plus } from 'lucide-react';
-import { isKhatarioPack, chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { productJsonLd } from '@/lib/store/product-jsonld';
+import { Loader2 } from 'lucide-react';
+import { chowkOnAccent, isKhatarioPack, sanitizeStoreTheme, storeCanvas, usesStudioSections } from '@/lib/store/store-theme';
 import { StoreKhatarioProductView } from '@/components/store/StoreKhatarioProductView';
-import { StoreProductGallery } from '@/components/store/StoreProductGallery';
-import { StoreStars } from '@/components/store/StoreStars';
-import clsx from 'clsx';
+import {
+  ProductGallery,
+  ProductInfoTabs,
+  ProductJsonLd,
+  RecentlyViewed,
+  RelatedProducts,
+} from '@/components/store/features/product';
+import { ProductInfo } from '@/components/store/features/product/ProductInfo';
+import { useProductPage } from '@/components/store/features/product/useProductPage';
+import {
+  findVariant,
+  productOffer,
+  toVariantInputs,
+  type StoreProductDetail,
+} from '@/components/store/features/product/product-view';
+
+/** `product-reviews` section: the shared reviews section, feeding new ratings back to the info column. */
+function ProductReviewsSlot({
+  product,
+  onRated,
+}: {
+  product: StoreProductDetail;
+  onRated: (avg: number, count: number) => void;
+}) {
+  return <ProductReviewsSection itemId={product.id} onRated={onRated} />;
+}
 
 export default function StoreProductPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const { store, addToCart, cart, updateCartQuantity, customer, favoriteIds, toggleFavorite, rateProduct } = useStore();
-  const [product, setProduct] = useState<StoreProduct | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { product, related, recent, loading } = useProductPage(store?.store_subdomain, params.id);
+  // Choices are tied to the product they were made on, so moving to another product starts clean
+  // (a reset effect would run after VariantPicker's preselect and wipe it).
+  const [picked, setPicked] = useState<{ productId: string; variantId: string | null } | null>(null);
+  const [rated, setRated] = useState<{ productId: string; avg: number; count: number } | null>(null);
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const paper = storeCanvas(theme);
   const khatario = isKhatarioPack(theme);
-  const grocery = theme.pack === 'grocery';
-  const ink = chowkInkOn(paper);
-
-  useEffect(() => {
-    if (!store || !params.id) return;
-    (async () => {
-      const res = await fetch(
-        `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items/${params.id}?${withStoreDraft(new URLSearchParams())}`,
-      );
-      if (res.ok) setProduct(await res.json());
-      setLoading(false);
-    })();
-  }, [store, params.id]);
 
   useEffect(() => {
     if (!product) return;
@@ -56,10 +71,56 @@ export default function StoreProductPage() {
     if (seo.image) ensure('property', 'og:image', seo.image);
   }, [product]);
 
+  const productId = product?.id ?? null;
+  const variantId = picked && picked.productId === productId ? picked.variantId : null;
+  const setVariantId = useCallback(
+    (id: string | null) => {
+      if (productId) setPicked({ productId, variantId: id });
+    },
+    [productId],
+  );
+  const rating = rated && rated.productId === productId ? rated : null;
+  const onRated = useCallback(
+    (avg: number, count: number) => {
+      if (productId) setRated({ productId, avg, count });
+    },
+    [productId],
+  );
+
+  const variants = useMemo(() => toVariantInputs(product?.variants), [product?.variants]);
+  const variant = findVariant(variants, variantId);
+  const needsVariant = !!product?.has_variants && variants.length > 0;
+
+  // Same cart line identity as everywhere else: item id + variant id (none for plain items).
   const cartItem = useMemo(() => {
     if (!product) return null;
-    return cart.find((c) => c.itemId === product.id && !c.variantId) ?? null;
-  }, [cart, product]);
+    return (
+      cart.find((c) => c.itemId === product.id && (needsVariant ? c.variantId === variantId : !c.variantId)) ?? null
+    );
+  }, [cart, product, needsVariant, variantId]);
+
+  const openProduct = useCallback((id: string) => router.push(`/products/${id}`), [router]);
+
+  const jsonLd = useMemo(() => {
+    if (!product || typeof window === 'undefined') return null;
+    const images = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
+    const inStock = needsVariant
+      ? variants.some((v) => Number(v.current_stock ?? 0) > 0)
+      : product.current_stock > 0;
+    return productJsonLd(
+      {
+        name: product.name,
+        description: product.description ?? '',
+        images,
+        sku: product.code,
+        brand: product.brand ?? null,
+        price: product.selling_price,
+        inStock,
+        url: window.location.href,
+      },
+      { avg: product.rating_avg ?? 0, count: product.rating_count ?? 0 },
+    );
+  }, [product, needsVariant, variants]);
 
   if (loading) {
     return (
@@ -79,166 +140,77 @@ export default function StoreProductPage() {
     );
   }
 
-  const discount =
-    product.mrp && product.mrp > product.selling_price
-      ? Math.round(((product.mrp - product.selling_price) / product.mrp) * 100)
-      : 0;
-  const outOfStock = product.current_stock <= 0 && !product.has_variants;
-
   if (khatario) {
     return (
       <StoreShell padded={false} showSearch={false}>
         <StoreKhatarioProductView product={product} />
+        {jsonLd ? <ProductJsonLd data={jsonLd} /> : null}
       </StoreShell>
     );
   }
 
   const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
+  const offer = productOffer(product, variant, variants.length);
+  const favorite = favoriteIds.includes(product.id);
+  // Studio and Quick shells already set --primary / --paper; grocery and classic do not.
+  const tokens = usesStudioSections(theme)
+    ? undefined
+    : ({ '--primary': accent, '--on-primary': chowkOnAccent(accent), '--paper': paper } as CSSProperties);
 
   return (
     <StoreShell>
-      <div className="grid gap-8 md:grid-cols-2">
-        <div
-          className={clsx(
-            'relative overflow-hidden border',
-            grocery ? 'g-line rounded-[1.75rem] bg-white' : 'rounded-[10px]',
-          )}
-          style={grocery ? undefined : { backgroundColor: 'var(--st-card)', borderColor: 'var(--st-line)' }}
-        >
-          {gallery.length ? (
-            <StoreProductGallery images={gallery} alt={product.name} accent={accent} />
-          ) : (
-            <div className="flex h-72 items-center justify-center md:h-96">
-              <Package className="h-16 w-16 text-gray-300" />
-            </div>
-          )}
-          <button
-            type="button"
-            className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-sm"
-            aria-label={favoriteIds.includes(product.id) ? 'Remove from favourites' : 'Save to favourites'}
-            onClick={() => void toggleFavorite(product.id)}
-          >
-            <Heart
-              className="h-5 w-5"
-              style={{
-                color: favoriteIds.includes(product.id) ? accent : '#6b7280',
-                fill: favoriteIds.includes(product.id) ? accent : 'transparent',
-              }}
-            />
-          </button>
-          {discount > 0 ? (
-            <span
-              className={clsx('absolute left-3 top-3 px-2 py-1 text-xs font-bold', grocery ? 'rounded-full bg-amber-400 px-2.5 text-[#172019]' : 'rounded-md text-white')}
-              style={grocery ? undefined : { backgroundColor: accent }}
-            >
-              {discount}% OFF
-            </span>
-          ) : null}
-        </div>
-        <div>
-          <h1
-            className={
-              grocery
-                ? 'text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl'
-                : 'st-serif text-3xl font-bold leading-tight sm:text-4xl'
-            }
-            style={{ color: ink }}
-          >
-            {product.name}
-          </h1>
-          {product.category_name ? (
-            <p className="mt-1 text-sm text-gray-500">{product.category_name}</p>
-          ) : null}
-          <p className="mt-1 text-sm text-gray-400">{product.unit}</p>
-          <div className="mt-2">
-            <StoreStars
-              value={product.rating_avg ?? 0}
-              count={product.rating_count}
-              size="md"
-              onRate={
-                customer
-                  ? (n) => {
-                      void rateProduct(product.id, n);
-                    }
-                  : undefined
-              }
-            />
+      <div className="space-y-10" style={tokens}>
+        <div className="grid gap-6 md:grid-cols-[55fr_45fr] md:items-start md:gap-10">
+          <div className="min-w-0">
+            <ProductGallery images={gallery} videoUrl={product.video_url} alt={product.name} thumbs="side" />
           </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <p
-              className={clsx('text-3xl tabular-nums', grocery ? 'font-extrabold' : 'font-bold')}
-              style={{ color: grocery ? accent : ink }}
-            >
-              ₹{product.selling_price.toLocaleString('en-IN')}
-            </p>
-            {product.mrp && product.mrp > product.selling_price ? (
-              <p className="text-sm text-gray-400 line-through">
-                ₹{product.mrp.toLocaleString('en-IN')}
-              </p>
-            ) : null}
-          </div>
-          {product.tax_rate > 0 ? (
-            <p className="mt-1 text-xs text-gray-500">
-              GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}
-            </p>
-          ) : null}
-          <p className="mt-2 text-sm text-gray-600">
-            {outOfStock ? 'Out of stock' : 'In stock'}
-          </p>
-          {product.description ? (
-            <p className="mt-4 whitespace-pre-wrap text-sm text-gray-600">{product.description}</p>
-          ) : null}
-
-          {outOfStock ? null : cartItem && !product.has_variants ? (
-            <div
-              className={clsx('mt-6 inline-flex items-center', grocery ? 'rounded-2xl' : 'rounded-md')}
-              style={{ border: `1px solid color-mix(in srgb, ${ink} 20%, transparent)` }}
-            >
-              <button
-                type="button"
-                className="flex h-12 w-12 items-center justify-center"
-                aria-label="Decrease quantity"
-                onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity - 1)}
-              >
-                <Minus className="h-4 w-4" />
-              </button>
-              <span className="min-w-[2rem] text-center font-medium tabular-nums" aria-live="polite">
-                {cartItem.quantity}
-              </span>
-              <button
-                type="button"
-                className="flex h-12 w-12 items-center justify-center"
-                aria-label="Increase quantity"
-                onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity + 1)}
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className={clsx(
-                'mt-6 min-h-12 px-6 py-3 text-sm',
-                grocery ? 'store-grocery-pulse w-full rounded-2xl font-bold sm:w-auto sm:px-10' : 'rounded-md font-semibold sm:px-10',
-              )}
-              style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
-              onClick={() =>
+          <div className="min-w-0 md:sticky md:top-24">
+            <ProductInfo
+              product={product}
+              variantId={variantId}
+              onVariantChange={setVariantId}
+              quantity={cartItem?.quantity ?? 0}
+              onQuantity={(q) => updateCartQuantity(product.id, needsVariant ? variantId ?? undefined : undefined, q)}
+              onAdd={() =>
                 addToCart({
                   itemId: product.id,
+                  variantId: needsVariant ? variant?.id : undefined,
                   name: product.name,
-                  price: product.selling_price,
+                  variantName: needsVariant ? variant?.variant_name : undefined,
+                  price: offer.price,
                   quantity: 1,
                   imageUrl: product.image_url ?? undefined,
                   unit: product.unit,
-                  maxStock: product.current_stock,
+                  maxStock: offer.stock,
                   taxRate: product.tax_rate,
                 })
               }
-            >
-              {product.has_variants ? 'Choose options on home' : 'Add to cart'}
-            </button>
-          )}
+              inCart={!!cartItem}
+              favorite={favorite}
+              onToggleFavorite={() => void toggleFavorite(product.id)}
+              rating={{
+                avg: rating?.avg ?? product.rating_avg ?? 0,
+                count: rating?.count ?? product.rating_count ?? 0,
+                onRate: customer
+                  ? (n) => {
+                      void rateProduct(product.id, n).then((next) => {
+                        if (next) setRated({ productId: product.id, avg: next.rating_avg, count: next.rating_count });
+                      });
+                    }
+                  : undefined,
+              }}
+            />
+          </div>
         </div>
+        <ProductInfoTabs
+          description={product.description}
+          tabs={product.store_tabs ?? []}
+          sizeChart={product.size_chart ?? null}
+        />
+        <ProductReviewsSlot product={product} onRated={onRated} />
+        <RelatedProducts products={related} onOpen={openProduct} />
+        <RecentlyViewed products={recent} onOpen={openProduct} />
+        {jsonLd ? <ProductJsonLd data={jsonLd} /> : null}
       </div>
     </StoreShell>
   );

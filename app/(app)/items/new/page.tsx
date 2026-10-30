@@ -32,6 +32,11 @@ import {
 import type { CustomFieldValues } from '@/types/custom-fields';
 import { extraGalleryUrls, sanitizeGalleryUrls } from '@/lib/store/item-gallery';
 import { CategoryCombobox } from '@/components/items/CategoryCombobox';
+import { ItemStorePageFields } from '@/components/store/admin/ItemStorePageFields';
+import type { ItemStorePageValue } from '@/components/store/admin/ItemStorePageFields';
+import { validateProductExtras } from '@/lib/store/product-extras';
+import type { SizeChart, StoreTab } from '@/lib/store/product-extras';
+import { extrasChanged } from '@/lib/store/size-chart-grid';
 
 interface Supplier {
   id: string;
@@ -43,7 +48,10 @@ interface Supplier {
 interface ItemCategory {
   id: string;
   name: string;
+  size_chart?: SizeChart | null;
 }
+
+const EMPTY_STORE_PAGE: ItemStorePageValue = { video_url: '', store_tabs: [], size_chart: null };
 
 const ITEM_TYPES = [
   { value: 'goods', label: 'Goods', hint: 'Physical products. Stock is tracked.' },
@@ -69,6 +77,9 @@ export default function NewItemPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [productVariantsEnabled, setProductVariantsEnabled] = useState(false);
+  const [storePage, setStorePage] = useState<ItemStorePageValue>(EMPTY_STORE_PAGE);
+  const [loadedStorePage, setLoadedStorePage] = useState<ItemStorePageValue>(EMPTY_STORE_PAGE);
+  const [storePageError, setStorePageError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -485,6 +496,16 @@ export default function NewItemPage() {
               seo_image_url: (item as { seo_image_url?: string | null }).seo_image_url || '',
             });
 
+            const loadedExtras: ItemStorePageValue = {
+              video_url: (item as { video_url?: string | null }).video_url || '',
+              store_tabs: Array.isArray((item as { store_tabs?: unknown }).store_tabs)
+                ? ((item as { store_tabs: StoreTab[] }).store_tabs)
+                : [],
+              size_chart: ((item as { size_chart?: SizeChart | null }).size_chart as SizeChart | null) ?? null,
+            };
+            setStorePage(loadedExtras);
+            setLoadedStorePage(loadedExtras);
+
             const itemIsBundle = !!(item as { is_bundle?: boolean }).is_bundle;
             if (itemIsBundle) {
               try {
@@ -793,7 +814,32 @@ export default function NewItemPage() {
         }
       }
 
+      // Store page extras: validate here, and send each key only when it changed.
+      const extrasCheck = validateProductExtras({
+        video_url: storePage.video_url,
+        store_tabs: storePage.store_tabs,
+        size_chart: storePage.size_chart,
+      });
+      if (!extrasCheck.ok) {
+        setStorePageError(extrasCheck.error);
+        toast.error(extrasCheck.error);
+        setLoading(false);
+        return;
+      }
+      setStorePageError(null);
+      const storePagePayload: Record<string, unknown> = {};
+      if (extrasChanged(storePage.video_url.trim(), loadedStorePage.video_url.trim())) {
+        storePagePayload.video_url = extrasCheck.value.video_url ?? null;
+      }
+      if (extrasChanged(storePage.store_tabs, loadedStorePage.store_tabs)) {
+        storePagePayload.store_tabs = extrasCheck.value.store_tabs ?? [];
+      }
+      if (extrasChanged(storePage.size_chart, loadedStorePage.size_chart)) {
+        storePagePayload.size_chart = extrasCheck.value.size_chart ?? null;
+      }
+
       const basePayload = {
+        ...storePagePayload,
         name: formData.name,
         code: formData.code || null,
         barcode: formData.barcode || null,
@@ -990,6 +1036,7 @@ export default function NewItemPage() {
           setLimitInfo({ current: errorData.current, limit: errorData.limit });
           setShowUpgradePrompt(true);
         } else {
+          if (res.status === 400 && errorData.error) setStorePageError(errorData.error);
           toast.error(errorData.error || `Failed to ${isEditMode ? 'update' : 'create'} item. Check console for details.`);
         }
       }
@@ -2169,6 +2216,20 @@ export default function NewItemPage() {
                   </div>
                 ) : null}
               </AnnotatedFormSection>
+
+              {formData.show_in_store ? (
+                <AnnotatedFormSection
+                  title="Store page"
+                  description="A product video, extra info tabs and a size chart for this item's page in your online store."
+                >
+                  <ItemStorePageFields
+                    value={storePage}
+                    onChange={setStorePage}
+                    categoryChart={categories.find((c) => c.id === formData.category_id)?.size_chart ?? null}
+                    serverError={storePageError}
+                  />
+                </AnnotatedFormSection>
+              ) : null}
             </div>
 
             <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">

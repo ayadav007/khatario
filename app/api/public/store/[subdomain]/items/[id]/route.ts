@@ -24,7 +24,9 @@ export async function GET(
     `SELECT i.id, i.name, i.code, i.description,
             i.selling_price::text, i.mrp::text, i.unit, i.image_url, i.gallery_urls,
             i.seo_title, i.seo_description, i.seo_image_url,
-            i.category_id, c.name AS category_name,
+            i.category_id, c.name AS category_name, i.brand, i.video_url,
+            COALESCE(i.store_tabs, '[]'::jsonb) AS store_tabs,
+            COALESCE(i.size_chart, c.size_chart) AS size_chart,
             COALESCE(i.current_stock, 0)::text AS current_stock,
             COALESCE(i.has_variants, false) AS has_variants,
             i.tax_rate::text,
@@ -53,7 +55,8 @@ export async function GET(
     attributes: unknown;
   }>(
     `SELECT id, variant_name, selling_price::text, COALESCE(current_stock, 0)::text AS current_stock, attributes
-     FROM item_variants WHERE item_id = $1`,
+     FROM item_variants WHERE item_id = $1
+     ORDER BY created_at, id`,
     [params.id],
   );
 
@@ -64,6 +67,10 @@ export async function GET(
     current_stock: parseFloat(item.current_stock as string) || 0,
     tax_rate: parseFloat(item.tax_rate as string) || 0,
     images: storeProductImages(item.image_url, item.gallery_urls),
+    brand: (item.brand as string) || null,
+    video_url: (item.video_url as string) || null,
+    store_tabs: Array.isArray(item.store_tabs) ? item.store_tabs : [],
+    size_chart: item.size_chart ?? null,
     seo_title: (item.seo_title as string) || null,
     seo_description: (item.seo_description as string) || null,
     seo_image_url: (item.seo_image_url as string) || null,

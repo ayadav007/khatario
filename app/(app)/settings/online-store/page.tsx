@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox } from 'lucide-react';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -14,6 +14,7 @@ import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager'
 import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { storeHostSuffix } from '@/lib/store/subdomain';
+import { pendingBadgeText } from '@/lib/store/review-admin-helpers';
 import {
   DEFAULT_STORE_PROMO,
   nextPromoSheetVersion,
@@ -92,6 +93,7 @@ function Toggle({
 
 export default function OnlineStoreSettingsPage() {
   const { business, user } = useAuth();
+  const [pendingReviews, setPendingReviews] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,20 @@ export default function OnlineStoreSettingsPage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [businessLogo, setBusinessLogo] = useState('');
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    if (!business?.id) return;
+    let cancelled = false;
+    fetch(`/api/settings/online-store/reviews?business_id=${business.id}&status=pending`, { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data && Array.isArray(data.reviews)) setPendingReviews(data.reviews.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   const fetchSettings = useCallback(async () => {
     if (!business?.id || !user?.id) return;
@@ -382,6 +398,18 @@ export default function OnlineStoreSettingsPage() {
           >
             <Inbox className="h-3.5 w-3.5" />
             Enquiries
+          </Link>
+          <Link
+            href="/settings/online-store/reviews"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Star className="h-3.5 w-3.5" />
+            Reviews
+            {pendingBadgeText(pendingReviews) ? (
+              <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">
+                {pendingBadgeText(pendingReviews)}
+              </span>
+            ) : null}
           </Link>
           <button
             type="button"

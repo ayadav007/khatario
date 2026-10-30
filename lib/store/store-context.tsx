@@ -1,8 +1,17 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
 import { sanitizeStoreTheme } from './store-theme';
+import {
+  CART_SYNC_DEBOUNCE_MS,
+  cartSignature,
+  cartSyncEnabled,
+  mergeServerCart,
+  shouldPutCart,
+  toSyncLines,
+  type ServerCartLine,
+} from './cart-sync';
 import type { StoreKhataStatus } from '@/lib/khata/store-view';
 
 export interface StoreCartItem {
@@ -275,6 +284,90 @@ export function StoreProvider({
       setFavoriteIds((prev) => Array.from(new Set([...prev, ...remote])));
     })();
   }, [customer, subdomain]);
+
+  // Signed-in cart sync (abandoned-cart recovery): on sign-in merge with the saved cart, then
+  // save every change after a 2 s pause. Failures are ignored; the local cart keeps working.
+  const customerId = customer?.id ?? null;
+  const syncOn = cartSyncEnabled({
+    customerId,
+    storeLoaded: !!store,
+    isDemo: store?.is_demo,
+    draft: !!storeDraftToken(),
+  });
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const cartMergedFor = useRef<string | null>(null);
+  const cartMerging = useRef(false);
+  const cartLastSent = useRef<string | null>(null);
+
+  const putServerCart = useCallback(
+    async (lines: StoreCartItem[]) => {
+      const signature = cartSignature(lines);
+      try {
+        const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/cart`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lines: toSyncLines(lines) }),
+        });
+        if (res.ok) cartLastSent.current = signature;
+      } catch {
+        /* ignore */
+      }
+    },
+    [subdomain],
+  );
+
+  useEffect(() => {
+    if (!syncOn || !customerId || !cartReady) {
+      cartMergedFor.current = null;
+      cartLastSent.current = null;
+      return;
+    }
+    if (cartMergedFor.current === customerId) return;
+    let cancelled = false;
+    cartMerging.current = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/cart`, {
+          credentials: 'include',
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const server = Array.isArray(data.lines) ? (data.lines as ServerCartLine[]) : [];
+        const merged = mergeServerCart(cartRef.current, server);
+        setCart(merged);
+        cartMergedFor.current = customerId;
+        cartMerging.current = false;
+        await putServerCart(merged);
+      } catch {
+        /* ignore */
+      } finally {
+        cartMerging.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      cartMerging.current = false;
+    };
+  }, [syncOn, customerId, cartReady, subdomain, putServerCart]);
+
+  useEffect(() => {
+    const ready = () =>
+      shouldPutCart({
+        enabled: syncOn,
+        customerId,
+        mergedFor: cartMergedFor.current,
+        merging: cartMerging.current,
+        signature: cartSignature(cart),
+        lastSent: cartLastSent.current,
+      });
+    if (!ready()) return;
+    const t = setTimeout(() => {
+      if (ready()) void putServerCart(cart);
+    }, CART_SYNC_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [cart, syncOn, customerId, putServerCart]);
 
   const toggleFavorite = useCallback(
     async (itemId: string) => {

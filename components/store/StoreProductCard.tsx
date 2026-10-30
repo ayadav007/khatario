@@ -23,6 +23,7 @@ export interface StoreProduct {
   image_url: string | null;
   category_id: string | null;
   category_name: string | null;
+  brand?: string | null;
   current_stock: number;
   has_variants: boolean;
   tax_rate: number;

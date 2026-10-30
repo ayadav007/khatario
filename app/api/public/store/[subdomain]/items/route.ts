@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { parseCatalogQuery } from '@/lib/store/query-params';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,9 @@ interface StoreItem {
  *   ?category_id=...  — filter by category
  *   ?search=...       — search by name/code
  *   ?branch_id=...    — stock from specific branch
- *   ?sort=new|bestsellers — newest or most sold first (default A-Z)
+ *   ?sort=new|bestsellers|price_asc|price_desc|discount|rating — default A-Z
+ *   ?cat=uuid,uuid&brand=A,B&min=&max=&stock=1&disc=10|25|50&q= — catalog filters (see parseCatalogQuery)
+ *   ?ids=uuid,uuid    — only those items, in that order; returns { items } only
  *   ?page=1&limit=40  — pagination
  */
 export async function GET(
@@ -56,8 +59,13 @@ export async function GET(
     }
 
     const { searchParams } = request.nextUrl;
-    const categoryId = searchParams.get('category_id');
-    const search = searchParams.get('search')?.trim();
+    const parsed = parseCatalogQuery(searchParams);
+    const categoryRaw = searchParams.get('category_id');
+    const categoryId =
+      categoryRaw && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryRaw)
+        ? categoryRaw
+        : null;
+    const search = searchParams.get('search')?.trim() || parsed.search;
     const branchId = searchParams.get('branch_id');
     const featuredOnly = searchParams.get('featured') === '1';
     const discountedOnly = searchParams.get('discounted') === '1';
@@ -65,7 +73,7 @@ export async function GET(
     const maxPrice =
       Number.isFinite(maxPriceRaw) && maxPriceRaw > 0
         ? Math.min(999999, maxPriceRaw)
-        : null;
+        : (parsed.maxPrice ?? null);
     const { parseStoreItemsSort } = await import('@/lib/store/store-items-query');
     const sort = parseStoreItemsSort(searchParams.get('sort'));
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
@@ -84,7 +92,8 @@ export async function GET(
           featuredOnly,
           discountedOnly,
           maxPrice,
-          sort,
+          // The demo catalog only knows three sorts and ignores the newer filters.
+          sort: sort === 'new' || sort === 'bestsellers' ? sort : 'name',
         }),
       );
     }
@@ -93,11 +102,17 @@ export async function GET(
     const q = buildStoreItemsQuery({
       businessId: store.business_id,
       categoryId,
+      categoryIds: parsed.categoryIds,
+      brands: parsed.brands,
       search,
       branchId,
       featuredOnly,
       discountedOnly,
+      minPrice: parsed.minPrice,
       maxPrice,
+      inStockOnly: parsed.inStockOnly,
+      minDiscountPct: parsed.minDiscountPct,
+      ids: parsed.ids,
       sort,
       limit,
       offset,
@@ -128,6 +143,8 @@ export async function GET(
       sold_count: parseFloat(r.sold_count as string) || 0,
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
+
+    if (parsed.ids?.length) return NextResponse.json({ items });
 
     const categories = await queryRows<{ id: string; name: string; item_count: number }>(
       q.categorySql,

@@ -411,6 +411,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart'].some((k) =>
+      Object.prototype.hasOwnProperty.call(body, k),
+    );
+    let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
+    if (hasExtras) {
+      const { validateProductExtras } = await import('@/lib/store/product-extras');
+      extras = validateProductExtras(body);
+      if (!extras.ok) {
+        return NextResponse.json({ error: extras.error }, { status: 400 });
+      }
+    }
+
     const pool = getPool();
     const client = await pool.connect();
     let item: Item | null = null;
@@ -538,6 +550,32 @@ export async function POST(request: NextRequest) {
           [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
         );
         item = { ...item, ...seo };
+      }
+
+      if (extras?.ok) {
+        const v = extras.value;
+        const sets: string[] = [];
+        const vals: unknown[] = [];
+        if (v.video_url !== undefined) {
+          vals.push(v.video_url);
+          sets.push(`video_url = $${vals.length}`);
+        }
+        if (v.store_tabs !== undefined) {
+          vals.push(JSON.stringify(v.store_tabs));
+          sets.push(`store_tabs = $${vals.length}::jsonb`);
+        }
+        if (v.size_chart !== undefined) {
+          vals.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
+          sets.push(`size_chart = $${vals.length}::jsonb`);
+        }
+        if (sets.length > 0) {
+          vals.push(item.id, business_id);
+          const updated = await client.query<Item>(
+            `UPDATE items SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND business_id = $${vals.length} RETURNING *`,
+            vals,
+          );
+          item = updated.rows[0] ?? item;
+        }
       }
 
       if (lookup_source && normalizedBarcode) {

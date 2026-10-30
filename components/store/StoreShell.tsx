@@ -1,11 +1,11 @@
 'use client';
 
 import { Search, MapPin, ChevronDown } from 'lucide-react';
-import { useStore } from '@/lib/store/store-context';
+import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
 import { GroceryFooter, GroceryHeader, GroceryMarquee } from './StoreGroceryChrome';
 import {
@@ -20,11 +20,15 @@ import { QuickCartBar, QuickHeader, QuickSheet, QuickTabs } from './quick-theme/
 import { phoneKitEnabled } from '@/lib/store/phone-kit';
 import './phone-kit.css';
 import { studioThemeVars, type StudioLinkTarget } from '@/lib/store/studio-layout';
+import { HeaderSearch, type SearchPick } from './features/catalog/HeaderSearch';
 
 interface StoreShellProps {
   children: React.ReactNode;
   onSearchChange?: (query: string) => void;
   searchQuery?: string;
+  /** Header search with suggestions (Quick, grocery, Khatario): the grid follows on submit. */
+  onSearchSubmit?: (query: string) => void;
+  onSearchPick?: (pick: SearchPick) => void;
   showSearch?: boolean;
   onCartOpen?: () => void;
   subnav?: ReactNode;
@@ -47,6 +51,8 @@ export function StoreShell({
   children,
   onSearchChange,
   searchQuery = '',
+  onSearchSubmit,
+  onSearchPick,
   showSearch = false,
   onCartOpen,
   subnav,
@@ -65,6 +71,26 @@ export function StoreShell({
   const searchRef = useRef<HTMLInputElement>(null);
   const theme = sanitizeStoreTheme(store?.store_theme);
   const studioSections = useStudioSections(theme, store, categories);
+  const router = useRouter();
+  // Off the catalog (no search handler) the studio header still types in place, and Enter opens the
+  // catalog with that search. Quick handles this inside HeaderSearch.
+  const [awayQuery, setAwayQuery] = useState('');
+  const studioAwaySearch =
+    !onSearchChange && !isKhatarioPack(theme) && !isGroceryPack(theme) && !isQuickPack(theme);
+  useEffect(() => {
+    if (!studioAwaySearch) return;
+    const input = searchRef.current;
+    if (!input) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      const q = input.value.trim();
+      if (!q) return;
+      e.preventDefault();
+      router.push(`/?${withStoreDraft(new URLSearchParams({ q }))}`);
+    };
+    input.addEventListener('keydown', onKey);
+    return () => input.removeEventListener('keydown', onKey);
+  }, [studioAwaySearch, store, router]);
 
   useEffect(() => {
     if (!store) return;
@@ -203,7 +229,8 @@ export function StoreShell({
 
   if (isQuickPack(theme)) {
     const focusSearch = () => {
-      if (!showSearch || !searchRef.current) {
+      // Quick's header search is on every page now, so the Search tab focuses it in place.
+      if (!searchRef.current) {
         window.location.href = '/?focus=search';
         return;
       }
@@ -232,6 +259,8 @@ export function StoreShell({
           showSearch={showSearch}
           searchQuery={searchQuery}
           onSearchChange={onSearchChange}
+          onSearchSubmit={onSearchSubmit}
+          onSearchPick={onSearchPick}
           searchRef={searchRef}
           searchPlaceholder={searchPlaceholder}
           onNavigate={onStudioNavigate}
@@ -317,9 +346,9 @@ export function StoreShell({
           categories={categories}
           cartCount={cartCount}
           onCart={openCart}
-          showSearch={showSearch}
-          searchQuery={searchQuery}
-          onSearchChange={onSearchChange}
+          showSearch={showSearch || studioAwaySearch}
+          searchQuery={studioAwaySearch ? awayQuery : searchQuery}
+          onSearchChange={studioAwaySearch ? setAwayQuery : onSearchChange}
           searchRef={searchRef}
           searchPlaceholder={searchPlaceholder}
           onNavigate={onStudioNavigate}
@@ -386,6 +415,8 @@ export function StoreShell({
             searchPlaceholder={searchPlaceholder}
             searchRef={searchRef}
             onSearchChange={onSearchChange}
+            onSearchSubmit={onSearchSubmit}
+            onSearchPick={onSearchPick}
             cartCount={cartCount}
             onCart={openCart}
             customerInitial={customer?.name || customer?.phone ? (customer.name || customer.phone).slice(0, 1).toUpperCase() : null}
@@ -434,16 +465,16 @@ export function StoreShell({
 
               {showSearch ? (
                 <div className="relative" role="search">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    id="store-search"
-                    ref={searchRef}
-                    type="search"
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <HeaderSearch
+                    subdomain={store.store_subdomain}
                     value={searchQuery}
-                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    onSubmit={onSearchSubmit}
+                    onPick={onSearchPick}
                     placeholder={searchPlaceholder}
-                    aria-label={searchPlaceholder}
-                    className="h-10 w-full rounded-xl border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none"
+                    inputRef={searchRef}
+                    inputId="store-search"
+                    className="[&_input]:h-10 [&_input]:min-h-0 [&_input]:rounded-xl [&_input]:border-0 [&_input]:bg-white [&_input]:pl-10 [&_input]:pr-4 [&_input]:shadow-sm [&_input]:placeholder:text-gray-400"
                   />
                 </div>
               ) : null}

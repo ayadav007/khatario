@@ -2,16 +2,24 @@
 
 import { X, Plus, Minus } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { useCallback, useEffect, useState } from 'react';
-import type { StoreProduct } from './StoreProductCard';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { StoreKhatarioProductView } from './StoreKhatarioProductView';
-import { StoreProductGallery } from './StoreProductGallery';
+import { ProductGallery } from './features/product/ProductGallery';
+import { ProductInfoTabs } from './features/product/ProductInfoTabs';
+import { VariantPicker } from './features/product/VariantPicker';
+import { findVariant, productOffer, toVariantInputs, type StoreProductDetail } from './features/product/product-view';
 import { chowkInkOn, chowkOnAccent, isKhatarioPack, sanitizeStoreTheme, usesStudioSections, sectionEnabled, storeCanvas, storePackClass } from '@/lib/store/store-theme';
 import { storeDiscountPercent } from '@/lib/store/map-store-product';
+import { ReviewSummaryCompact } from './features/reviews/ReviewSummary';
+
+/** Keeps the square gallery from growing the sheet: about half the screen on phones, 420 px wider. */
+const MODAL_GALLERY_FIT =
+  '[&_[aria-roledescription=carousel]]:max-h-[50vh] sm:[&_[aria-roledescription=carousel]]:max-h-[420px]';
 
 interface StoreProductDetailModalProps {
-  product: StoreProduct;
+  /** List items work too; the detail extras (video, tabs, size chart) are optional. */
+  product: StoreProductDetail;
   onClose: () => void;
 }
 
@@ -24,14 +32,15 @@ export function StoreProductDetailModal({
   const grocery = theme.pack === 'grocery' || usesStudioSections(theme);
   const paper = storeCanvas(theme);
   const accent = theme.accent;
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
-    product.variants[0]?.id ?? null,
-  );
+  const variants = useMemo(() => toVariantInputs(product.variants), [product.variants]);
+  // VariantPicker preselects the first in-stock option on mount.
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
-  const selectedVariant = product.variants.find((v) => v.id === selectedVariantId);
-  const displayPrice = selectedVariant?.selling_price ?? product.selling_price;
-  const displayStock = selectedVariant?.current_stock ?? product.current_stock;
-  const outOfStock = displayStock <= 0;
+  const selectedVariant = findVariant(variants, selectedVariantId);
+  const offer = productOffer(product, selectedVariant, variants.length);
+  const displayPrice = offer.price;
+  const displayStock = offer.stock;
+  const outOfStock = !offer.canAdd;
   const discount = sectionEnabled(theme, 'offers')
     ? storeDiscountPercent(product.mrp, displayPrice)
     : 0;
@@ -100,7 +109,16 @@ export function StoreProductDetailModal({
     const ink = chowkInkOn(paper);
     const hair = `1px solid color-mix(in srgb, ${ink} 14%, transparent)`;
     return (
-      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', storePackClass(theme))} style={{ color: ink }}>
+      <div
+        className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', storePackClass(theme))}
+        style={{
+          color: ink,
+          // Studio and Quick roots already carry these; the feature sections read them.
+          ...(usesStudioSections(theme)
+            ? {}
+            : { ['--primary' as string]: accent, ['--on-primary' as string]: chowkOnAccent(accent), ['--paper' as string]: paper }),
+        }}
+      >
         <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
         <div
           className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"
@@ -123,12 +141,13 @@ export function StoreProductDetailModal({
               {discount}% OFF
             </span>
           ) : null}
-          <div className={clsx('relative max-h-[48vh] w-full', grocery && 'bg-white')}>
-            {(product.images?.length ? product.images : product.image_url ? [product.image_url] : []).length ? (
-              <StoreProductGallery
+          <div className={clsx('relative w-full', MODAL_GALLERY_FIT, grocery && 'bg-white')}>
+            {(product.images?.length ? product.images : product.image_url ? [product.image_url] : []).length ||
+            product.video_url ? (
+              <ProductGallery
                 images={product.images?.length ? product.images : product.image_url ? [product.image_url] : []}
+                videoUrl={product.video_url}
                 alt={product.name}
-                accent={accent}
               />
             ) : (
               <div className="flex aspect-[4/5] w-full items-center justify-center">
@@ -156,44 +175,21 @@ export function StoreProductDetailModal({
                 </span>
               ) : null}
             </p>
-            {product.description ? (
-              <p className="mt-3 text-[13px] leading-relaxed" style={{ opacity: 0.62 }}>
-                {product.description}
-              </p>
-            ) : null}
-
-            {product.has_variants && product.variants.length > 0 ? (
+            <div className="mt-1">
+              <ReviewSummaryCompact itemId={product.id} avg={product.rating_avg ?? 0} count={product.rating_count ?? 0} />
+            </div>
+            {product.has_variants && variants.length > 0 ? (
               <div className="mt-5">
-                <p className="mb-2 text-[12px]" style={{ opacity: 0.5 }}>
-                  Options
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {product.variants.map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => setSelectedVariantId(v.id)}
-                      disabled={v.current_stock <= 0}
-                      className="min-h-11 border px-3 text-[13px] disabled:opacity-40"
-                      style={{
-                        borderColor: v.id === selectedVariantId ? ink : `color-mix(in srgb, ${ink} 18%, transparent)`,
-                        color: ink,
-                      }}
-                    >
-                      {v.variant_name}
-                      <span className="ml-1.5 tabular-nums" style={{ opacity: 0.55 }}>
-                        ₹{v.selling_price.toLocaleString('en-IN')}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <VariantPicker variants={variants} value={selectedVariantId} onChange={setSelectedVariantId} />
               </div>
             ) : null}
 
             <div className="mt-6">
               {outOfStock ? (
                 <p className="py-3 text-[13px]" style={{ opacity: 0.5 }}>
-                  Out of stock
+                  {offer.stock <= 0 && (selectedVariant || !(product.has_variants && variants.length > 0))
+                    ? 'Out of stock'
+                    : 'Choose an option'}
                 </p>
               ) : cartItem ? (
                 <div className={clsx('inline-flex items-center', grocery && 'rounded-xl')} style={{ border: hair }}>
@@ -232,6 +228,13 @@ export function StoreProductDetailModal({
                   {grocery ? 'Add to cart' : 'Add to bag'} · ₹{displayPrice.toLocaleString('en-IN')}
                 </button>
               )}
+            </div>
+            <div className="mt-6">
+              <ProductInfoTabs
+                description={product.description}
+                tabs={product.store_tabs ?? []}
+                sizeChart={product.size_chart ?? null}
+              />
             </div>
           </div>
         </div>
