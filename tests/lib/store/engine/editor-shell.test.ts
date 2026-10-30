@@ -8,6 +8,7 @@ import {
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
+  resolvePendingScroll,
 } from '@/lib/store/engine/editor/shell';
 import type { Section, ThemeData } from '@/lib/store/engine/types';
 
@@ -126,5 +127,22 @@ describe('isEditableTarget input types', () => {
     expect(isEditableTarget({ tagName: 'INPUT', type: 'checkbox' })).toBe(false);
     expect(isEditableTarget({ tagName: 'INPUT', type: 'range' })).toBe(false);
     expect(isEditableTarget({ tagName: 'INPUT', type: 'button' })).toBe(false);
+  });
+});
+
+describe('pending scroll after a save', () => {
+  const ref = { group: 'template' as const, id: 'new1' };
+
+  it('waits for a ready whose rev is past the save count at select time', () => {
+    const pending = { ref, afterRev: 2 };
+    expect(resolvePendingScroll(pending, 2)).toEqual({ resend: null, pending });
+    expect(resolvePendingScroll(pending, 1)).toEqual({ resend: null, pending });
+    expect(resolvePendingScroll(pending, 3)).toEqual({ resend: ref, pending: null });
+  });
+
+  it('keeps waiting on a reloaded frame (rev null) and does nothing without a pending ref', () => {
+    const pending = { ref, afterRev: 0 };
+    expect(resolvePendingScroll(pending, null)).toEqual({ resend: null, pending });
+    expect(resolvePendingScroll(null, 5)).toEqual({ resend: null, pending: null });
   });
 });

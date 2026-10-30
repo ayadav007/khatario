@@ -11,12 +11,14 @@ import { BRIDGE_SOURCE, type EditorToPreview, type PreviewToEditor } from '@/lib
 import {
   isEditableTarget,
   pruneSelection,
+  resolvePendingScroll,
   selectionRef,
   shellView,
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
   type LeaveState,
+  type PendingScroll,
   type Selection,
 } from '@/lib/store/engine/editor/shell';
 import { editorPath, fetchCategories, openWorkingDraft, previewLink, publishTheme, putTheme } from './api';
@@ -32,7 +34,8 @@ export interface Studio2Api {
   templateKey: 'home';
   selection: Selection;
   apply(fn: (t: ThemeData) => OpResult | ThemeData, opts: { mergeKey: string | null; immediate: boolean }): OpError | null;
-  select(sel: Selection, opts?: { scroll?: boolean }): void;
+  /** `afterSave`: the section is new, so scroll again once the preview shows the save that adds it. */
+  select(sel: Selection, opts?: { scroll?: boolean; afterSave?: boolean }): void;
   hover(ref: SectionRef | null): void;
   openAddSection(group: GroupKey, index: number): void;
   categories: { id: string; name: string }[];
@@ -98,6 +101,7 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   const queueRef = useRef<SaveQueue | null>(null);
   const postRef = useRef<((msg: EditorToPreview) => void) | null>(null);
   const revRef = useRef(0);
+  const pendingScrollRef = useRef<PendingScroll | null>(null);
   // Publishing or moving to the next working draft: the editor is read-only meanwhile.
   const [leave, setLeaveState] = useState<LeaveState>('idle');
   const leaveRef = useRef<LeaveState>('idle');
@@ -180,10 +184,12 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
   }, [businessId, userId]);
 
   const select = useCallback(
-    (sel: Selection, opts?: { scroll?: boolean }) => {
+    (sel: Selection, opts?: { scroll?: boolean; afterSave?: boolean }) => {
       selectionRefState.current = sel;
       setSelection(sel);
       const ref = selectionRef(sel);
+      // Any later selection replaces a scroll still waiting for its save.
+      pendingScrollRef.current = opts?.scroll && opts.afterSave && ref ? { ref, afterRev: revRef.current } : null;
       post({ source: BRIDGE_SOURCE, type: 'select', ref });
       if (opts?.scroll && ref) post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref });
     },
@@ -279,9 +285,19 @@ export function Studio2Editor({ businessId, userId, theme: row, initialData, res
           if (revRef.current > 0 && (msg.rev === null || msg.rev < revRef.current)) {
             post({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });
           }
+          {
+            // A section added or duplicated before its save was in the frame: scroll to it now.
+            const r = resolvePendingScroll(pendingScrollRef.current, msg.rev);
+            pendingScrollRef.current = r.pending;
+            if (r.resend) {
+              post({ source: BRIDGE_SOURCE, type: 'select', ref: r.resend });
+              post({ source: BRIDGE_SOURCE, type: 'scroll-to', ref: r.resend });
+            }
+          }
           break;
         case 'select': {
           const sel = toSelection(msg.ref);
+          pendingScrollRef.current = null;
           selectionRefState.current = sel;
           setSelection(sel);
           break;

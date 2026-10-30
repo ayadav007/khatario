@@ -3,7 +3,9 @@ import {
   addBlockOptions,
   addSectionCards,
   blockLabel,
+  dragMove,
   groupRows,
+  isEditableSection,
   sectionLabel,
 } from '@/lib/store/engine/editor/tree';
 import { OP_ERROR_TEXT } from '@/lib/store/engine/editor/ops';
@@ -117,8 +119,9 @@ describe('editor tree helpers', () => {
   });
 
   it('names cards "<schema name> · <preset name>" when a schema has several presets', () => {
-    jest.isolateModules(() => {
-      jest.doMock('@/lib/store/engine/registry', () => {
+    try {
+      jest.isolateModules(() => {
+        jest.doMock('@/lib/store/engine/registry', () => {
         const actual = jest.requireActual('@/lib/store/engine/registry');
         const twin = { ...actual.getSectionSchema('rich-text'), presets: [{ name: 'Plain' }, { name: 'Boxed' }] };
         return {
@@ -134,7 +137,29 @@ describe('editor tree helpers', () => {
         ['rich-text:0', 'Rich text · Plain', 0, 'Plain'],
         ['rich-text:1', 'Rich text · Boxed', 1, 'Boxed'],
       ]);
-    });
+      });
+    } finally {
+      jest.dontMock('@/lib/store/engine/registry');
+    }
+  });
+
+  it('maps a drop to order indices, or null when nothing moves', () => {
+    const rows = [
+      { id: 'a', index: 0 },
+      { id: 'b', index: 1 },
+      { id: 'c', index: 3 }, // order[2] has no section
+    ];
+    expect(dragMove(rows, 'a', 'c')).toEqual({ from: 0, to: 3 });
+    expect(dragMove(rows, 'c', 'a')).toEqual({ from: 3, to: 0 });
+    expect(dragMove(rows, 'b', 'b')).toBeNull();
+    expect(dragMove(rows, 'b', null)).toBeNull();
+    expect(dragMove(rows, 'x', 'a')).toBeNull();
+    expect(dragMove(rows, 'a', 'x')).toBeNull();
+  });
+
+  it('treats only sections with a known schema as editable', () => {
+    expect(isEditableSection(sec('rich-text'))).toBe(true);
+    expect(isEditableSection(sec('no-such-section'))).toBe(false);
   });
 
   it('disables cards that cannot be added, with the op error text', () => {

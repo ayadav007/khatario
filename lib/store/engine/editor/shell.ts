@@ -112,3 +112,21 @@ export function editorFrameSrc(previewUrl: string): string | null {
     return null;
   }
 }
+
+/** A new section to scroll to once the preview shows the save after `afterRev` (it isn't in the frame before). */
+export interface PendingScroll {
+  ref: SectionRef;
+  afterRev: number;
+}
+
+/**
+ * On a preview `ready`: resend select + scroll-to when the frame shows a rev past the pending one.
+ * A reloaded frame (rev null) keeps waiting; the editor follows it with a refresh that carries a rev.
+ */
+export function resolvePendingScroll(
+  pending: PendingScroll | null,
+  readyRev: number | null,
+): { resend: SectionRef | null; pending: PendingScroll | null } {
+  if (!pending || readyRev === null || readyRev <= pending.afterRev) return { resend: null, pending };
+  return { resend: pending.ref, pending: null };
+}

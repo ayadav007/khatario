@@ -33,7 +33,7 @@ import {
   type OpResult,
   type SectionRef,
 } from '@/lib/store/engine/editor/ops';
-import { TREE_GROUPS, addBlockOptions, groupRows, type BlockRow, type SectionRow } from '@/lib/store/engine/editor/tree';
+import { TREE_GROUPS, addBlockOptions, dragMove, groupRows, type BlockRow, type SectionRow } from '@/lib/store/engine/editor/tree';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import type { ThemeData } from '@/lib/store/engine/types';
 import { useStudio2 } from './Studio2Editor';
@@ -42,6 +42,9 @@ const STRUCTURAL = { mergeKey: null, immediate: true } as const;
 
 const iconBtn =
   'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
+
+// Eye-on shows on hover or focus (always on touch screens); a hidden row always shows eye-off.
+const revealOnHover = 'opacity-0 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100';
 
 const sameRef = (a: SectionRef | null | undefined, b: SectionRef) => !!a && a.group === b.group && a.id === b.id;
 
@@ -107,14 +110,12 @@ function GroupTree({ group, title }: { group: GroupKey; title: string }) {
   const edit = useEdit();
   const sensors = usePointerAndKeyboardSensors();
   const rows = useMemo(() => groupRows(theme, templateKey, group), [theme, templateKey, group]);
-  const sortIds = useMemo(() => rows.map((r) => `${group}:${r.id}`), [rows, group]);
+  // Section ids are unique across groups, and each group has its own DndContext.
+  const sortIds = useMemo(() => rows.map((r) => r.id), [rows]);
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    const from = rows[sortIds.indexOf(String(active.id))];
-    const to = rows[sortIds.indexOf(String(over.id))];
-    if (!from || !to) return;
-    edit.run((t) => moveSection(t, templateKey, group, from.index, to.index));
+    const move = dragMove(rows, String(active.id), over ? String(over.id) : null);
+    if (move) edit.run((t) => moveSection(t, templateKey, group, move.from, move.to));
   };
 
   return (
@@ -123,8 +124,8 @@ function GroupTree({ group, title }: { group: GroupKey; title: string }) {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={sortIds} strategy={verticalListSortingStrategy} disabled={readOnly}>
           <ul>
-            {rows.map((row, i) => (
-              <SectionItem key={row.id} sortId={sortIds[i]} row={row} />
+            {rows.map((row) => (
+              <SectionItem key={row.id} row={row} />
             ))}
           </ul>
         </SortableContext>
@@ -142,21 +143,26 @@ function GroupTree({ group, title }: { group: GroupKey; title: string }) {
   );
 }
 
-function SectionItem({ sortId, row }: { sortId: string; row: SectionRow }) {
+function SectionItem({ row }: { row: SectionRow }) {
   const { theme, templateKey, selection, select, hover, hovered, readOnly } = useStudio2();
   const edit = useEdit();
   const { ref } = row;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: sortId,
+    id: row.id,
     disabled: readOnly || row.unknown,
   });
-  const [expanded, setExpanded] = useState(false);
+  // null: follow the selection (open while one of its blocks is selected); otherwise the user's choice.
+  const [expanded, setExpanded] = useState<boolean | null>(null);
   const [renaming, setRenaming] = useState(false);
 
   const schema = getSectionSchema(sectionType(theme, templateKey, ref));
   const hasBlocks = !row.unknown && (row.blocks.length > 0 || !!schema?.blocks?.length);
   const blockSelectedHere = selection?.kind === 'block' && sameRef(selection.ref, ref);
-  const open = hasBlocks && (expanded || blockSelectedHere);
+  const selectedBlockId = blockSelectedHere ? selection.blockId : null;
+  useEffect(() => {
+    if (selectedBlockId) setExpanded((e) => (e === false ? null : e));
+  }, [selectedBlockId]);
+  const open = hasBlocks && (expanded ?? blockSelectedHere);
   const selected = selection?.kind === 'section' && sameRef(selection.ref, ref);
   const isHovered = sameRef(hovered, ref);
 
@@ -166,7 +172,7 @@ function SectionItem({ sortId, row }: { sortId: string; row: SectionRow }) {
   };
   const duplicate = () => {
     const id = edit.create((t) => duplicateSection(t, templateKey, ref));
-    if (id) select({ kind: 'section', ref: { group: ref.group, id } }, { scroll: true });
+    if (id) select({ kind: 'section', ref: { group: ref.group, id } }, { scroll: true, afterSave: true });
   };
 
   return (
@@ -236,8 +242,7 @@ function SectionItem({ sortId, row }: { sortId: string; row: SectionRow }) {
             disabled={readOnly}
             onClick={() => edit.run((t) => toggleSection(t, templateKey, ref))}
             aria-label={row.hidden ? `Show ${row.label}` : `Hide ${row.label}`}
-            aria-pressed={row.hidden}
-            className={clsx(iconBtn, !row.hidden && 'opacity-0 focus:opacity-100 group-hover:opacity-100')}
+            className={clsx(iconBtn, !row.hidden && revealOnHover)}
           >
             {row.hidden ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
           </button>
@@ -315,16 +320,15 @@ function BlockList({ sectionRef, blocks }: { sectionRef: SectionRef; blocks: Blo
   const options = useMemo(() => addBlockOptions(theme, templateKey, sectionRef), [theme, templateKey, sectionRef]);
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    const from = blocks[ids.indexOf(String(active.id))];
-    const to = blocks[ids.indexOf(String(over.id))];
-    if (!from || !to) return;
-    edit.run((t) => moveBlock(t, templateKey, sectionRef, from.index, to.index));
+    const move = dragMove(blocks, String(active.id), over ? String(over.id) : null);
+    if (move) edit.run((t) => moveBlock(t, templateKey, sectionRef, move.from, move.to));
   };
 
   const add = (type: string) => {
-    const count = getGroup(theme, templateKey, sectionRef.group).sections[sectionRef.id]?.block_order.length ?? 0;
-    const id = edit.create((t) => addBlock(t, templateKey, sectionRef, type, count));
+    const id = edit.create((t) => {
+      const count = getGroup(t, templateKey, sectionRef.group).sections[sectionRef.id]?.block_order.length ?? 0;
+      return addBlock(t, templateKey, sectionRef, type, count);
+    });
     if (id) select({ kind: 'block', ref: sectionRef, blockId: id }, { scroll: true });
   };
 
@@ -434,8 +438,7 @@ function BlockItem({ sectionRef, block }: { sectionRef: SectionRef; block: Block
         disabled={readOnly}
         onClick={() => edit.run((t) => toggleBlock(t, templateKey, sectionRef, block.id))}
         aria-label={block.hidden ? `Show ${block.label}` : `Hide ${block.label}`}
-        aria-pressed={block.hidden}
-        className={clsx(iconBtn, !block.hidden && 'opacity-0 focus:opacity-100 group-hover:opacity-100')}
+        className={clsx(iconBtn, !block.hidden && revealOnHover)}
       >
         {block.hidden ? <EyeOff className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
       </button>

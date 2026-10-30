@@ -19,15 +19,40 @@ export function AddSectionModal() {
     [theme, templateKey, target],
   );
 
+  const open = !!target;
   useEffect(() => {
-    if (!target) return;
+    if (!open) return;
+    // Focus returns to whatever opened the modal (a tree button, or the preview frame).
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeAddSection();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAddSection();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      // Keep Tab and Shift+Tab inside the dialog.
+      const items = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled])'));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = dialogRef.current.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
-    dialogRef.current?.querySelector<HTMLButtonElement>('button[data-card]:not([aria-disabled])')?.focus();
-    return () => document.removeEventListener('keydown', onKey);
-  }, [target, closeAddSection]);
+    const firstCard = dialogRef.current?.querySelector<HTMLElement>('button[data-card]:not([aria-disabled])');
+    (firstCard ?? dialogRef.current?.querySelector<HTMLElement>('button'))?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open, closeAddSection]);
 
   if (!target) return null;
   const groupTitle = TREE_GROUPS.find((g) => g.group === target.group)?.title ?? '';
@@ -47,7 +72,7 @@ export function AddSectionModal() {
       toast.error(OP_ERROR_TEXT[err]);
       return;
     }
-    if (id) select({ kind: 'section', ref: { group: target.group, id } }, { scroll: true });
+    if (id) select({ kind: 'section', ref: { group: target.group, id } }, { scroll: true, afterSave: true });
     closeAddSection();
   };
 
@@ -105,6 +130,9 @@ export function AddSectionModal() {
                       )}
                     >
                       <span className="block text-sm font-medium">{card.title}</span>
+                      {card.title === card.schemaName && card.presetName !== card.schemaName && (
+                        <span className="block text-xs text-gray-500">{card.presetName}</span>
+                      )}
                       {card.reasonText && <span className="mt-0.5 block text-[11px] leading-snug">{card.reasonText}</span>}
                     </button>
                   );

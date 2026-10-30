@@ -66,6 +66,23 @@ export function sectionLabel(section: Section): string {
   return section.label || getSectionSchema(section.type)?.name || section.type;
 }
 
+/** A section the settings panel can edit: its type has a schema. Unknown types can only be removed. */
+export function isEditableSection(section: Section): boolean {
+  return !!getSectionSchema(section.type);
+}
+
+/** A drop in a sortable list: the order indices to move between, or null when nothing moves. */
+export function dragMove(
+  rows: readonly { id: string; index: number }[],
+  activeId: string,
+  overId: string | null,
+): { from: number; to: number } | null {
+  if (overId === null || activeId === overId) return null;
+  const from = rows.find((r) => r.id === activeId);
+  const to = rows.find((r) => r.id === overId);
+  return from && to ? { from: from.index, to: to.index } : null;
+}
+
 export function blockLabel(sectionType: string, block: Block): string {
   return getSectionSchema(sectionType)?.blocks?.find((b) => b.type === block.type)?.name || block.type;
 }
@@ -99,7 +116,7 @@ export function groupRows(theme: ThemeData, templateKey: string, group: GroupKey
       index,
       label: sectionLabel(section),
       hidden: !!section.disabled,
-      unknown: !getSectionSchema(section.type),
+      unknown: !isEditableSection(section),
       blocks: blockRows(section),
     });
   });
