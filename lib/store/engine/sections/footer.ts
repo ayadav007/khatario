@@ -9,7 +9,7 @@ export const footer: SectionSchema = {
   settings: [
     { id: 'about', type: 'textarea', label: 'About text', default: '', max_length: 500 },
     { id: 'show_social', type: 'checkbox', label: 'Show social links', default: true },
-    { id: 'show_payment_icons', type: 'checkbox', label: 'Show payment icons', default: true },
+    { id: 'show_payment_icons', type: 'checkbox', label: 'Show payment icons', default: false },
     { id: 'badge', type: 'checkbox', label: 'Show Khatario badge', default: true },
   ],
   blocks: [
@@ -27,7 +27,7 @@ export const footer: SectionSchema = {
   presets: [
     {
       name: 'Footer',
-      settings: { show_social: true, show_payment_icons: true },
+      settings: { show_social: true, show_payment_icons: false },
       blocks: [{ type: 'link_column', settings: { heading: 'Shop', links: 'All Products|/' } }],
     },
   ],

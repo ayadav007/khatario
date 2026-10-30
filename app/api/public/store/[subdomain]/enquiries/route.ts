@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { sanitizeContactForm } from '@/lib/store/store-theme';
-import { NEWSLETTER_TOPIC, validateEnquiry } from '@/lib/store/enquiry';
+import { NEWSLETTER_TOPIC, enquiryAccepted, isPreviewReferer, validateEnquiry } from '@/lib/store/enquiry';
+import { liveThemeHasEnabledSection } from '@/lib/store/engine/page-loader';
 import { notifyStoreMerchantEnquiry } from '@/lib/store/notify-merchant';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
@@ -27,9 +28,16 @@ export async function POST(
 
   const form = sanitizeContactForm(store.store_theme?.contact_form);
   const body = await request.json().catch(() => null);
-  // The newsletter section works whether or not the contact form is switched on.
-  const isNewsletter = body && typeof body === 'object' && (body as Record<string, unknown>).topic === NEWSLETTER_TOPIC;
-  if (!form.enabled && !isNewsletter) {
+  // A newsletter signup is also taken with the contact form off, but only when the store's live theme
+  // has an enabled newsletter section; never from a theme preview or the editor.
+  const isNewsletter = !!body && typeof body === 'object' && (body as Record<string, unknown>).topic === NEWSLETTER_TOPIC;
+  const accepted = await enquiryAccepted({
+    formEnabled: form.enabled,
+    isNewsletter,
+    fromPreview: isPreviewReferer(request.headers.get('referer')),
+    liveNewsletterSection: () => liveThemeHasEnabledSection(store, 'newsletter'),
+  });
+  if (!accepted) {
     return NextResponse.json({ error: 'This store is not accepting messages' }, { status: 404 });
   }
 

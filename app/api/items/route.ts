@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
 
     if (storeOnly) {
       const tableRef = accessibleBranchIds.length > 0 ? 'i' : 'items';
-      sql += ` AND (${tableRef}.show_in_store = true OR ${tableRef}.featured_in_store = true)`;
+      sql += ` AND ${tableRef}.show_in_store = true`;
     }
 
     // Total row count: must NOT reuse the data SELECT (it contains $2 for branch UUID[] in a
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
       countParams.push(updatedAfter);
     }
     if (storeOnly) {
-      countSql += ` AND (${countRef}.show_in_store = true OR ${countRef}.featured_in_store = true)`;
+      countSql += ` AND ${countRef}.show_in_store = true`;
     }
     const countResult = await queryOne<{ total: number }>(countSql, countParams);
     const total = countResult?.total || 0;

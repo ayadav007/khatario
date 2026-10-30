@@ -1,7 +1,7 @@
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { loadEngineTheme } from './load-theme';
 import { collectDataRequests, resolveSectionData, type SectionData } from './section-data';
-import type { PageTemplate, ThemeRow } from './types';
+import type { PageTemplate, Template, ThemeData, ThemeRow } from './types';
 
 export type HomeSearchParams = Record<string, string | string[] | undefined>;
 
@@ -25,6 +25,36 @@ export function hasEnabledSection(template: PageTemplate | null | undefined): bo
     const section = template.sections[id];
     return !!section && !section.disabled;
   });
+}
+
+/** True when any template or group in the theme has an enabled section of this type. */
+export function themeHasEnabledSectionOfType(data: ThemeData | null | undefined, type: string): boolean {
+  if (!data) return false;
+  const templates: Array<Template | null | undefined> = [
+    data.header_group,
+    data.footer_group,
+    ...Object.values(data.templates ?? {}),
+  ];
+  return templates.some((t) =>
+    !!t?.order?.some((id) => {
+      const section = t.sections?.[id];
+      return !!section && !section.disabled && section.type === type;
+    }),
+  );
+}
+
+/**
+ * True when the store's LIVE engine theme (store_engine on, no preview) has an enabled section of this type.
+ * Any failure counts as false, so a broken theme closes the door rather than opening it.
+ */
+export async function liveThemeHasEnabledSection(store: StoreBusinessContext, type: string): Promise<boolean> {
+  try {
+    const engine = await loadEngineTheme(store, {});
+    if (!engine || engine.preview) return false;
+    return themeHasEnabledSectionOfType(engine.theme.data, type);
+  } catch {
+    return false;
+  }
 }
 
 /** A search-params record as a query string (`?a=1&b=2`, or '' when empty); repeated keys keep every value. */

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { RecentlyViewed, RelatedProducts } from '@/components/store/features/product';
 import { ProductReviewsSection } from '@/components/store/features/reviews';
 import { useOptionalEngineProduct } from './EngineProductContext';
+import { engineProductHref } from '@/lib/store/engine/links';
 
 /** Studio 2 editor mode: the shell carries `eng-editor` (sections are server components with no editor prop). */
 function useEngineEditor(): boolean {
@@ -29,7 +30,7 @@ export function EngineRelatedProducts({ heading, limit }: { heading: string; lim
   if (!state) return null;
   const products = state.related.slice(0, limit);
   if (!products.length) return editor ? <Placeholder text="Shows once shoppers have related products to browse." /> : null;
-  return <RelatedProducts title={heading} products={products} onOpen={(id) => router.push(`/products/${id}`)} />;
+  return <RelatedProducts title={heading} products={products} onOpen={(id) => router.push(engineProductHref(window.location.search, id))} />;
 }
 
 /** Recently viewed rail; nothing outside a product page or when the shopper has no history (a hint in the editor). */
@@ -39,7 +40,7 @@ export function EngineRecentlyViewed({ heading }: { heading: string }) {
   const editor = useEngineEditor();
   if (!state) return null;
   if (!state.recent.length) return editor ? <Placeholder text="Shows once shoppers have viewed other products." /> : null;
-  return <RecentlyViewed title={heading} products={state.recent} onOpen={(id) => router.push(`/products/${id}`)} />;
+  return <RecentlyViewed title={heading} products={state.recent} onOpen={(id) => router.push(engineProductHref(window.location.search, id))} />;
 }
 
 /**

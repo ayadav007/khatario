@@ -45,3 +45,19 @@ describe('catalog section schemas', () => {
     expect(schema?.templates).toEqual(['catalog']);
   });
 });
+
+describe('engine product links keep preview params (I3)', () => {
+  // Rendering these client views needs the store context and router; a source check keeps the rule cheap.
+  const { readFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+  const files = [
+    'components/store/engine/EngineViews.tsx',
+    'components/store/engine/product/ProductSections.tsx',
+    'components/store/engine/catalog/MainCatalogView.tsx',
+  ];
+  it.each(files)('%s opens products through engineProductHref', (file) => {
+    const src = readFileSync(join(process.cwd(), file), 'utf8');
+    expect(src).not.toMatch(/router\.push\(`\/products\//);
+    expect(src).toContain('engineProductHref(window.location.search');
+  });
+});

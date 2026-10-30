@@ -249,7 +249,8 @@ describe('soft-delete item list, permission, and deleted-records report', () => 
     };
     // Without the param nothing changes: every matching item is listed.
     expect(await list('')).toEqual({ ids: [SHOWN, FEATURED, OFFLINE].sort(), total: 3 });
-    expect(await list('&store_only=1')).toEqual({ ids: [SHOWN, FEATURED].sort(), total: 2 });
+    // Same rule as the storefront item route: featured but not shown in the store is left out.
+    expect(await list('&store_only=1')).toEqual({ ids: [SHOWN], total: 1 });
     // Only the exact opt-in value filters.
     expect((await list('&store_only=true')).total).toBe(3);
   });

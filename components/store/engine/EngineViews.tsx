@@ -7,7 +7,7 @@ import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
-import { catalogHref, ctaTarget, engineCatalogHref } from '@/lib/store/engine/links';
+import { catalogHref, ctaTarget, engineCatalogHref, engineProductHref } from '@/lib/store/engine/links';
 import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
@@ -267,7 +267,7 @@ function NarrowableGrid({
         <StoreProductCard
           key={item.id}
           product={item as StoreProduct}
-          onViewDetail={(p) => router.push(`/products/${encodeURIComponent(p.id)}`)}
+          onViewDetail={(p) => router.push(engineProductHref(window.location.search, p.id))}
         />
       ))}
       {products.length === 0 ? <div className="empty">No products found.</div> : null}
@@ -317,7 +317,7 @@ export function EngineProductGrid({
         <StoreProductCard
           key={item.id}
           product={item as StoreProduct}
-          onViewDetail={(p) => router.push(`/products/${encodeURIComponent(p.id)}`)}
+          onViewDetail={(p) => router.push(engineProductHref(window.location.search, p.id))}
           highlight={source === 'bestsellers' && i < BESTSELLER_BADGES && (item.sold_count ?? 0) > 0 ? 'Bestseller' : undefined}
         />
       ))}

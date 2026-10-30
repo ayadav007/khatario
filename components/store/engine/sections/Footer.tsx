@@ -24,7 +24,7 @@ export function Footer({ section, store, theme }: EngineSectionProps) {
         links={links}
         badge={showBadge ? 'Powered by Khatario' : undefined}
       />
-      {v.show_payment_icons !== false ? (
+      {v.show_payment_icons === true ? (
         <ul className="eng-pay" aria-label="Payment methods">
           {PAYMENT_METHODS.map((m) => (
             <li key={m}>{m}</li>

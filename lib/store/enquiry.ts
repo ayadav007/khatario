@@ -39,6 +39,35 @@ function checkField(
 /** Topic of the storefront newsletter signup section (D19). */
 export const NEWSLETTER_TOPIC = 'newsletter';
 
+/** True when the page that sent the request was a theme preview or the Studio 2 editor frame. */
+export function isPreviewReferer(referer: string | null | undefined): boolean {
+  if (!referer) return false;
+  try {
+    const sp = new URL(referer).searchParams;
+    return sp.has('preview_theme') || sp.has('pt') || sp.get('editor') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the enquiries endpoint takes this request at all (before validation and rate limits).
+ * The contact form decides, except that a newsletter signup is also taken while the form is off when the
+ * store's live theme has an enabled newsletter section (the merchant opted in by adding it). Newsletter
+ * signups sent from a theme preview or the editor are never taken.
+ */
+export async function enquiryAccepted(opts: {
+  formEnabled: boolean;
+  isNewsletter: boolean;
+  fromPreview: boolean;
+  liveNewsletterSection: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (!opts.isNewsletter) return opts.formEnabled;
+  if (opts.fromPreview) return false;
+  if (opts.formEnabled) return true;
+  return opts.liveNewsletterSection();
+}
+
 export function validateEnquiry(body: unknown, form: StoreContactForm): EnquiryValidation {
   const src = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   if (text(src[ENQUIRY_HONEYPOT_FIELD], 200)) {
