@@ -57,6 +57,13 @@ export async function PATCH(
         error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' 
       }, { status: 400 });
     }
+    // Inter-branch invoices sit in Inter-Branch Receivables (1109), not customer receivables (1103).
+    if (inv.document_type === 'inter_branch_invoice') {
+      return NextResponse.json(
+        { error: 'An inter-branch invoice is settled between the two branches, not by a customer payment. Record it as a journal between the branches.', code: 'INTER_BRANCH_INVOICE_PAYMENT' },
+        { status: 400 }
+      );
+    }
     if (inv.status === 'cancelled') {
       return NextResponse.json(
         { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
