@@ -21,7 +21,7 @@ import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
-import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { registrationBranchIds, resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
@@ -165,13 +165,16 @@ async function allocateBranchInvoiceNumber(
   const issuedNumber = await reserveDocumentNumber(client, branchId, documentType);
   const invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
 
-  const dup = await client.query(
-    `SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL`,
-    [invoiceNumber, branchId, businessId]
+  // Rule 46(b): a number may be used once per GSTIN, so check every branch filing under it.
+  const dup = await client.query<{ branch_id: string }>(
+    `SELECT branch_id FROM invoices WHERE invoice_number = $1 AND branch_id = ANY($2::uuid[]) AND business_id = $3 AND deleted_at IS NULL`,
+    [invoiceNumber, await registrationBranchIds(client, businessId, branchId), businessId]
   );
   if (dup.rows.length > 0) {
     throw new InvoiceCreateServiceError(
-      `Invoice number ${invoiceNumber} already exists for this branch`,
+      dup.rows.some((r) => r.branch_id === branchId)
+        ? `Invoice number ${invoiceNumber} already exists for this branch`
+        : `Invoice number ${invoiceNumber} is already used by another branch on the same GSTIN. Give this branch its own invoice prefix in Settings → Number series.`,
       409,
       'DUPLICATE_INVOICE_NUMBER'
     );

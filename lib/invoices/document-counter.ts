@@ -4,6 +4,8 @@
  * from the highest number already used in that series, so new branches just work.
  */
 
+import { branchRegistrationKeys } from '@/lib/gst/registration';
+
 export type CounterSeries = 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply';
 
 export const COUNTER_SERIES: CounterSeries[] = ['tax_invoice', 'proforma_invoice', 'bill_of_supply'];
@@ -163,4 +165,40 @@ export async function setNextDocumentNumber(
     await db.query(`UPDATE branches SET next_invoice_number = $2 WHERE id = $1`, [branchId, value]);
   }
   return value;
+}
+
+/**
+ * Rule 46(b) / 49: one series per GSTIN. After `prefix` is applied to `targetBranchIds`, returns the
+ * names of two active branches on the same GSTIN that would share a series prefix, or null.
+ */
+export async function findSharedSeriesPrefix(
+  db: Parameters<typeof branchRegistrationKeys>[0],
+  businessId: string,
+  documentType: string,
+  prefix: string,
+  targetBranchIds: string[]
+): Promise<[string, string] | null> {
+  const series = counterSeriesFor(documentType);
+  const keys = await branchRegistrationKeys(db, businessId);
+  const rows = (
+    await db.query<{ id: string; name: string; prefix: string | null }>(
+      `SELECT br.id, br.name,
+              (SELECT p.prefix FROM branch_document_prefixes p
+                WHERE p.branch_id = br.id AND p.document_type = ANY($2::text[])
+                ORDER BY (p.document_type = $3) DESC LIMIT 1) AS prefix
+         FROM branches br
+        WHERE br.business_id = $1 AND COALESCE(br.is_active, true) = true`,
+      [businessId, seriesDocumentTypes(series), series]
+    )
+  ).rows;
+  const targets = new Set(targetBranchIds);
+  const seen = new Map<string, string>();
+  for (const r of rows) {
+    const effective = (targets.has(r.id) ? prefix : r.prefix || DEFAULT_PREFIX[series]).trim().toUpperCase();
+    const slot = `${keys.get(r.id) ?? ''}|${effective}`;
+    const other = seen.get(slot);
+    if (other !== undefined) return [other, r.name];
+    seen.set(slot, r.name);
+  }
+  return null;
 }

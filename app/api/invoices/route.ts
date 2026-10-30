@@ -1310,18 +1310,21 @@ export async function POST(request: NextRequest) {
     const issuedNumber = await reserveDocumentNumber(client, finalBranchId, finalDocumentType, requestedNumber);
     invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
     
-    // Check if invoice number already exists for this branch (matches database constraint)
+    // Rule 46(b): a number may be used once per GSTIN, so check every branch filing under it.
+    const { registrationBranchIds } = await import('@/lib/gst/registration');
     const existingInvoiceCheck = await client.query(
-      'SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL',
-      [invoiceNumber, finalBranchId, business_id]
+      'SELECT id, branch_id FROM invoices WHERE invoice_number = $1 AND branch_id = ANY($2::uuid[]) AND business_id = $3 AND deleted_at IS NULL',
+      [invoiceNumber, await registrationBranchIds(client, business_id, finalBranchId), business_id]
     );
     
-    // If duplicate exists for this branch, throw error before INSERT
     if (existingInvoiceCheck.rows.length > 0) {
       await client.query('ROLLBACK');
+      const sameBranch = existingInvoiceCheck.rows.some((r: { branch_id: string }) => r.branch_id === finalBranchId);
       return NextResponse.json(
         { 
-          error: `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`,
+          error: sameBranch
+            ? `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`
+            : `Invoice number ${invoiceNumber} is already used by another branch on the same GSTIN. Give this branch its own invoice prefix in Settings → Number series.`,
           code: 'DUPLICATE_INVOICE_NUMBER'
         },
         { status: 409 }
