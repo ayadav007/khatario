@@ -10,6 +10,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -92,6 +94,27 @@ export async function PATCH(
 
   // A proforma is not a posted sale, so finalizing it must not touch stock.
   if (inv.document_type !== 'proforma_invoice') {
+  // A godown in another state cannot dispatch under this branch's GSTIN.
+  if (inv.document_type !== 'proforma_invoice') {
+    const registration = await resolveSupplierRegistration(getPool(), inv.business_id, inv.branch_id);
+    const godownMismatch = await findWarehouseStateMismatch(
+      getPool(),
+      inv.business_id,
+      registration,
+      current.items.map((row: { location_id?: string | null }) => row.location_id)
+    );
+    if (godownMismatch) {
+      return NextResponse.json(
+        {
+          error: warehouseStateMismatchMessage(godownMismatch),
+          code: 'WAREHOUSE_STATE_MISMATCH',
+          warehouse_id: godownMismatch.warehouseId,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   // Preflight: bundle component stock before opening the stock transaction
   {
     const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');

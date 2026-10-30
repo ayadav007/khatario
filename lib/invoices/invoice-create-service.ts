@@ -22,6 +22,7 @@ import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } fr
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
   computeInvoiceTotals,
@@ -452,6 +453,20 @@ export async function createInvoiceInTransaction(
     gst_registration_type?: string | null;
   };
   const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const godownMismatch = await findWarehouseStateMismatch(
+    client,
+    business_id,
+    registration,
+    items.map((it) => it.location_id)
+  );
+  if (godownMismatch) {
+    throw new InvoiceCreateServiceError(
+      warehouseStateMismatchMessage(godownMismatch),
+      400,
+      'WAREHOUSE_STATE_MISMATCH',
+      { warehouse_id: godownMismatch.warehouseId }
+    );
+  }
   const taxPolicy = outwardTaxPolicy({
     scheme: effectiveGstScheme(business.gst_registration_type, registration.gstin),
     documentType: document_type,

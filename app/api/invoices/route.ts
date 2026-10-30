@@ -7,6 +7,7 @@ import { InvoiceChargeError, persistInvoiceCharges } from '@/lib/invoices/invoic
 import { computeInvoiceTotals } from '@/lib/invoices/validate-invoice-gst-payload';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
 import { queueLowStockCheck } from '@/lib/low-stock-checker';
@@ -1220,6 +1221,25 @@ export async function POST(request: NextRequest) {
     }
 
     const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    if (document_type !== 'proforma_invoice') {
+      const godownMismatch = await findWarehouseStateMismatch(
+        client,
+        business_id,
+        registration,
+        items.map((it: { location_id?: string | null }) => it.location_id)
+      );
+      if (godownMismatch) {
+        await client.query('ROLLBACK').catch(() => {});
+        return NextResponse.json(
+          {
+            error: warehouseStateMismatchMessage(godownMismatch),
+            code: 'WAREHOUSE_STATE_MISMATCH',
+            warehouse_id: godownMismatch.warehouseId,
+          },
+          { status: 400 }
+        );
+      }
+    }
     const schemeRes = await client.query<{ gst_registration_type: string | null }>(
       'SELECT gst_registration_type FROM businesses WHERE id = $1',
       [business_id]
