@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import type { SuggestResult } from '@/lib/store/store-suggest';
+import { withStoreDraft } from '@/lib/store/store-context';
 import { splitHighlight } from './highlight';
 
 const DEBOUNCE_MS = 200;
@@ -61,8 +62,10 @@ export function SearchSuggest({
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
+        // Carries a preview's `td` / `preview_theme` + `pt`, so an unlaunched store's preview gets suggestions.
+        const qs = withStoreDraft(new URLSearchParams({ q })).toString();
         const res = await fetch(
-          `/api/public/store/${encodeURIComponent(subdomain)}/search/suggest?q=${encodeURIComponent(q)}`,
+          `/api/public/store/${encodeURIComponent(subdomain)}/search/suggest?${qs}`,
           { signal: ctrl.signal },
         );
         if (!res.ok) return;

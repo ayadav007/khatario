@@ -18,7 +18,7 @@ jest.mock('@/lib/subscription/feature-access', () => ({
 }));
 
 import { getPool, closePool } from '@/lib/db';
-import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
+import { signThemePreview, signVersionPreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { createTheme } from '@/lib/store/engine/themes-repo';
 import { signThemeDraft } from '@/lib/store/theme-draft';
 import { sanitizeStoreTheme } from '@/lib/store/store-theme';
@@ -27,6 +27,8 @@ import * as facetsRoute from '@/app/api/public/store/[subdomain]/items/facets/ro
 import * as itemRoute from '@/app/api/public/store/[subdomain]/items/[id]/route';
 import * as relatedRoute from '@/app/api/public/store/[subdomain]/items/[id]/related/route';
 import * as reviewsRoute from '@/app/api/public/store/[subdomain]/items/[id]/reviews/route';
+import * as offersRoute from '@/app/api/public/store/[subdomain]/offers/route';
+import * as suggestRoute from '@/app/api/public/store/[subdomain]/search/suggest/route';
 
 const BIZ = randomUUID();
 const OTHER = randomUUID();
@@ -45,6 +47,7 @@ d('store API preview access', () => {
   let themeId: string;
   let deletedThemeId: string;
   let token: string;
+  let versionId: string;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'api-test-secret';
@@ -74,10 +77,23 @@ d('store API preview access', () => {
     deletedThemeId = gone.value.id;
     token = signThemePreview(BIZ, themeId, PREVIEW_TTL.editor);
     await pool.query(`DELETE FROM store_themes WHERE id = $1`, [deletedThemeId]);
+    versionId = (
+      await pool.query(
+        `INSERT INTO store_theme_versions (theme_id, business_id, data, preset, theme_name, published_by)
+         SELECT id, business_id, data, preset, 'Old look', NULL FROM store_themes WHERE id = $1 RETURNING id`,
+        [themeId],
+      )
+    ).rows[0].id as string;
+    await pool.query(
+      `INSERT INTO store_coupons (business_id, code, discount_type, discount_value, min_order_amount, is_active, show_in_store)
+       VALUES ($1, 'PREVIEW10', 'percent', 10, 0, true, true)`,
+      [BIZ],
+    );
   });
 
   afterAll(async () => {
     if (!pool) return;
+    await pool.query(`DELETE FROM store_coupons WHERE business_id = $1`, [BIZ]);
     await pool.query(`DELETE FROM items WHERE business_id = $1`, [BIZ]);
     await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, [[BIZ, OTHER]]);
     await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [[BIZ, OTHER]]);
@@ -92,7 +108,11 @@ d('store API preview access', () => {
     ['item', (qs) => itemRoute.GET(get(`/items/${ITEM}`, qs), { params: { ...sub, id: ITEM } })],
     ['related', (qs) => relatedRoute.GET(get(`/items/${ITEM}/related`, qs), { params: { ...sub, id: ITEM } })],
     ['reviews', (qs) => reviewsRoute.GET(get(`/items/${ITEM}/reviews`, qs), { params: { ...sub, id: ITEM } })],
+    ['offers', (qs) => offersRoute.GET(get('/offers', qs), { params: sub })],
+    ['suggest', (qs) => suggestRoute.GET(get('/search/suggest', { q: 'preview', ...qs }), { params: sub })],
   ];
+  const offers = routes[5][1];
+  const suggest = routes[6][1];
 
   it('a valid token for an existing theme answers 200 with the items', async () => {
     for (const [name, call] of routes) {
@@ -102,6 +122,35 @@ d('store API preview access', () => {
     const list = await (await routes[0][1]({ preview_theme: themeId, pt: token })).json();
     expect(list.items.map((i: { id: string }) => i.id)).toContain(ITEM);
     expect((await (await routes[2][1]({ preview_theme: themeId, pt: token })).json()).id).toBe(ITEM);
+  });
+
+  it('offers and search suggestions answer a valid theme or version token with their data', async () => {
+    const versionPt = signVersionPreview(BIZ, versionId, PREVIEW_TTL.version);
+    for (const q of [{ preview_theme: themeId, pt: token }, { preview_theme: versionId, pt: versionPt }]) {
+      const o = await offers(q);
+      expect(o.status).toBe(200);
+      expect((await o.json()).coupons.map((c: { code: string }) => c.code)).toEqual(['PREVIEW10']);
+      const s = await suggest(q);
+      expect(s.status).toBe(200);
+      expect((await s.json()).products.map((p: { id: string }) => p.id)).toContain(ITEM);
+    }
+  });
+
+  it('a version token for this business opens every route; a made-up or foreign one is 404', async () => {
+    const own = signVersionPreview(BIZ, versionId, PREVIEW_TTL.version);
+    const foreign = signVersionPreview(OTHER, versionId, PREVIEW_TTL.version);
+    for (const [name, call] of routes) {
+      expect([name, (await call({ preview_theme: versionId, pt: own })).status]).toEqual([name, 200]);
+      expect([name, (await call({ preview_theme: versionId, pt: foreign })).status]).toEqual([name, 404]);
+      expect([name, (await call({ preview_theme: versionId, pt: 'made-up' })).status]).toEqual([name, 404]);
+    }
+  });
+
+  it('offers and suggest are 404 for a made-up theme token', async () => {
+    for (const call of [offers, suggest]) {
+      expect((await call({ preview_theme: themeId, pt: 'made-up' })).status).toBe(404);
+      expect((await call({ preview_theme: themeId, pt: `${token}x` })).status).toBe(404);
+    }
   });
 
   it('no preview params means the unlaunched store is 404 everywhere', async () => {
@@ -131,7 +180,7 @@ d('store API preview access', () => {
   it('the td draft path allows the offline store only with a draft token for its own business', async () => {
     const own = signThemeDraft(BIZ, sanitizeStoreTheme({}));
     const foreign = signThemeDraft(OTHER, sanitizeStoreTheme({}));
-    for (const [name, call] of routes.slice(0, 4)) {
+    for (const [name, call] of [...routes.slice(0, 4), ...routes.slice(5)]) {
       expect([name, (await call({ td: own })).status]).toEqual([name, 200]);
       expect([name, (await call({ td: 'draft-token' })).status]).toEqual([name, 404]);
       expect([name, (await call({ td: '1' })).status]).toEqual([name, 404]);

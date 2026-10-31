@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { resolveStoreWithDraft } from '@/lib/store/preview-store';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/public/store/{subdomain}/offers
  * Coupons the merchant marked "Show in store" that can still be used. Private codes never appear.
+ * A store that is not launched yet answers only for a verified preview (`td`, or an engine theme/version token).
  */
 export async function GET(request: NextRequest, { params }: { params: { subdomain: string } }) {
   try {
-    const td = request.nextUrl.searchParams.get('td');
-    const store = await resolveStoreWithDraft(params.subdomain, td);
+    const store = await storeForPublicApi(params.subdomain, request.nextUrl.searchParams);
     if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     if (store.is_demo) {
       return NextResponse.json({

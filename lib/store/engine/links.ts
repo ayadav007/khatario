@@ -89,6 +89,20 @@ export function catalogRedirect(engine: boolean, path: string, search: string): 
   return `/${qs ? `?${qs}` : ''}`;
 }
 
+/**
+ * The link the product Share button shares: origin + path, never the query or hash, so a preview token
+ * (`preview_theme`, `pt`, `td`) is never passed on. An unparsable href gives '' (Share is then hidden).
+ */
+export function shareUrl(href: string): string {
+  try {
+    const u = new URL(href);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
 export type CtaTarget =
   | { kind: 'none' }
   | { kind: 'anchor'; id: string }

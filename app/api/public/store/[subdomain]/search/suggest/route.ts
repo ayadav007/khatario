@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { resolveStoreWithDraft } from '@/lib/store/preview-store';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { buildSuggestQuery, type SuggestResult } from '@/lib/store/store-suggest';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/public/store/{subdomain}/search/suggest?q=
  * Up to 6 products and 3 categories matching the text (name, code, brand; prefix and mid-word).
+ * A store that is not launched yet answers only for a verified preview (`td`, or an engine theme/version token).
  */
 export async function GET(
   request: NextRequest,
@@ -15,7 +16,7 @@ export async function GET(
 ) {
   try {
     const { searchParams } = request.nextUrl;
-    const store = await resolveStoreWithDraft(params.subdomain, searchParams.get('td'));
+    const store = await storeForPublicApi(params.subdomain, searchParams);
     if (!store) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Heart, Minus, Plus, Share2, Truck } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
 import { StoreStars } from '@/components/store/StoreStars';
 import { ProductGallery, ProductInfoTabs, VariantPicker } from '@/components/store/features/product';
+import { shareUrl } from '@/lib/store/engine/links';
 import { useEngineProduct } from './EngineProductContext';
 import { buyButtonState, type ProductBlockProps } from './product-blocks';
 
@@ -210,9 +211,14 @@ function DeliveryBlock({ id, settings }: ProductBlockProps) {
 function ShareBlock({ id, settings }: ProductBlockProps) {
   const { product } = useEngineProduct();
   const [copied, setCopied] = useState(false);
-  if (!product) return null;
+  // Hidden when the page URL cannot give a shareable link (checked after mount: window is client-only).
+  const [shareable, setShareable] = useState(true);
+  useEffect(() => setShareable(shareUrl(window.location.href) !== ''), []);
+  if (!product || !shareable) return null;
   const share = async () => {
-    const url = window.location.href;
+    // Never the page URL as is: a preview link's token must not travel with the shared product.
+    const url = shareUrl(window.location.href);
+    if (!url) return;
     try {
       if (navigator.share) {
         await navigator.share({ title: product.name, url });

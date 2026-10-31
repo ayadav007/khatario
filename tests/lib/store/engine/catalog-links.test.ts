@@ -1,4 +1,4 @@
-import { catalogRedirect, engineCatalogHref, engineProductHref } from '@/lib/store/engine/links';
+import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl } from '@/lib/store/engine/links';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 
 describe('engineCatalogHref', () => {
@@ -66,5 +66,29 @@ describe('engine product links keep preview params (I3)', () => {
     const src = readFileSync(join(process.cwd(), file), 'utf8');
     expect(src).not.toMatch(/router\.push\(`\/products\//);
     expect(src).toContain('engineProductHref(window.location.search');
+  });
+});
+
+describe('shareUrl (Share never carries a preview token)', () => {
+  const id = '0b6f5f39-6a52-4d8e-9a0e-0c6d8a3b1f21';
+  it('keeps origin and path, dropping the query and hash', () => {
+    expect(shareUrl(`https://a.khatario.com/products/${id}?preview_theme=x&pt=y#r`)).toBe(
+      `https://a.khatario.com/products/${id}`,
+    );
+    expect(shareUrl(`https://a.khatario.com/products/${id}?td=abc`)).toBe(`https://a.khatario.com/products/${id}`);
+  });
+  it('gives an empty string for an unparsable href', () => {
+    expect(shareUrl('nope')).toBe('');
+    expect(shareUrl('')).toBe('');
+  });
+});
+
+describe('the product Share block shares shareUrl', () => {
+  const { readFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+  it('never shares window.location.href as is', () => {
+    const src = readFileSync(join(process.cwd(), 'components/store/engine/product/ProductBlocks.tsx'), 'utf8');
+    expect(src).toContain('shareUrl(window.location.href)');
+    expect(src).not.toMatch(/const url = window\.location\.href/);
   });
 });
