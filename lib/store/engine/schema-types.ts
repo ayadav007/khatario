@@ -34,6 +34,8 @@ export interface SettingSchema {
   step?: number;
   max_length?: number;
   info?: string;
+  /** `image` settings: also take an MP4 or WebM upload, which the section plays as a muted loop. */
+  video?: boolean;
 }
 
 export interface BlockSchema {

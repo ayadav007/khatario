@@ -228,6 +228,7 @@ export function SettingField(props: SettingFieldProps) {
             label={schema.label}
             value={str(value)}
             uploadUrl="/api/settings/online-store/media"
+            allowVideo={schema.video === true}
             onChange={(url) => onChange(encodeImageUrl(url))}
           />
           {/* A photo picked before uploads were stored as files: the server never kept it. */}

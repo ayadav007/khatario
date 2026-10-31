@@ -238,6 +238,8 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
 
+**Studio 2 theme media.** Photos, animated GIFs (stored as animated webp) and slideshow videos (MP4/WebM, up to 10 MB each, kept as uploaded) are stored in `storage/store-theme` inside the app folder (gitignored; override with `STORE_THEME_MEDIA_DIR`) and served by `/media/store-theme/…` with byte ranges. Keep that folder across deploys and include it in backups. Uploads go through `/api/settings/online-store/media`, which fits under the 12M body limit above.
+
 **Online store shopping features (migrations 448/449).** Review photos are stored in `storage/store-reviews` inside the app folder (gitignored; override with `STORE_REVIEW_MEDIA_DIR`). Keep that folder across deploys and include it in backups: shoppers' photos cannot be re-created. The photo upload route needs its own body limit in each vhost, next to `location /` and with the same proxy lines (production upstream shown; staging uses its own `proxy_pass`):
 
 ```nginx

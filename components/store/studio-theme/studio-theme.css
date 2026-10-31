@@ -66,6 +66,9 @@
 .st-root .hero.fit-natural .heroImg{height:auto!important}
 .st-root .heroSizer{display:block;width:100%;height:auto;visibility:hidden;pointer-events:none}
 .st-root .heroSizer.phone{display:none}
+.st-root .heroVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.st-root .hero:is(.fit-contain,.fit-natural) .heroVid{object-fit:contain}
+.st-root .heroVid.phone{display:none}
 .st-root .hero.slideshow .heroCopy{animation:st-rise .6s cubic-bezier(.2,.7,.2,1) both}
 @keyframes st-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .st-root .heroArrow{position:absolute;top:50%;transform:translateY(-50%);z-index:4;width:40px;height:40px;border-radius:50%;border:0;background:color-mix(in srgb,#fff 82%,transparent);color:#1c1917;display:flex;align-items:center;justify-content:center;padding:0;opacity:0;transition:opacity .2s;box-shadow:0 6px 18px -10px rgba(0,0,0,.45)}
@@ -248,6 +251,8 @@
 .st-root .heroSlideImg.hasPhone{background-image:var(--hero-phone-img)!important}
 .st-root .heroImg:has(.heroSizer.phone) .heroSizer.desk{display:none}
 .st-root .heroSizer.phone{display:block}
+.st-root .heroSlideImg.hasPhone .heroVid.desk{display:none}
+.st-root .heroVid.phone{display:block}
 .st-root .benefits{margin-top:16px}
 .st-root .st-section{padding:22px 14px}
 .st-root .sectionTitle{flex-wrap:wrap;align-items:flex-start}

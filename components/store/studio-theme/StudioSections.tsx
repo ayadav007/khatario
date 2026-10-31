@@ -25,6 +25,7 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
+import { isVideoUrl } from '@/lib/store/theme-media-url';
 import './studio-theme.css';
 
 /**
@@ -256,17 +257,23 @@ function usePrefersReducedMotion(): boolean {
 
 /**
  * `natural` fit: an invisible copy of the active slide's image sets the hero's height to the image's
- * own shape; the phone copy takes over in studio-theme.css's phone container query.
+ * own shape; the phone copy takes over in studio-theme.css's phone container query. A video stands in
+ * as a box of its shape once its metadata has loaded (16:9 until then).
  */
-function HeroSizer({ slide, fallback }: { slide: StudioSlide; fallback: StudioSlide }) {
+function HeroSizer({ slide, fallback, ratios }: { slide: StudioSlide; fallback: StudioSlide; ratios: Record<string, number> }) {
   const desk = slide.image || fallback.image || '';
   const phone = slide.mobileImage || fallback.mobileImage || '';
+  const one = (url: string, cls: 'desk' | 'phone') =>
+    isVideoUrl(url) ? (
+      <div className={`heroSizer ${cls}`} style={{ aspectRatio: String(ratios[url] ?? 16 / 9) }} aria-hidden />
+    ) : (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img className={`heroSizer ${cls}`} src={url} alt="" aria-hidden loading="lazy" />
+    );
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {desk ? <img className="heroSizer desk" src={desk} alt="" aria-hidden loading="lazy" /> : null}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {phone ? <img className="heroSizer phone" src={phone} alt="" aria-hidden loading="lazy" /> : null}
+      {desk ? one(desk, 'desk') : null}
+      {phone ? one(phone, 'phone') : null}
     </>
   );
 }
@@ -295,6 +302,8 @@ export function StudioHero({
   const fit = s.imageFit ?? 'cover';
   const hasPhoneImg = slides.some((sl) => sl.mobileImage);
   const [index, setIndex] = useState(0);
+  // Video slides' width / height by URL, for the `natural` fit.
+  const [ratios, setRatios] = useState<Record<string, number>>({});
   const [paused, setPaused] = useState(false);
   const reduced = usePrefersReducedMotion();
   const touchX = useRef<number | null>(null);
@@ -354,22 +363,42 @@ export function StudioHero({
         ) : null}
       </div>
       <div className="heroImg" role="img" aria-label="">
-        {fit === 'natural' ? <HeroSizer slide={slide} fallback={slides[0]} /> : null}
+        {fit === 'natural' ? <HeroSizer slide={slide} fallback={slides[0]} ratios={ratios} /> : null}
         {slides.map((sl, i) => {
           const desk = sl.image || slides[0].image || '';
           const phone = sl.mobileImage || slides[0].mobileImage || '';
+          const layer = (url: string) => `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(url)})`;
+          // Videos play as a muted loop (the only kind browsers autoplay); brightness stands in for the shade layer.
+          const video = (url: string, cls: 'desk' | 'phone') => (
+            <video
+              className={`heroVid ${cls}`}
+              src={url}
+              muted
+              loop
+              autoPlay
+              playsInline
+              preload="metadata"
+              aria-hidden
+              style={shade ? { filter: `brightness(${1 - shade})` } : undefined}
+              onLoadedMetadata={(e) => {
+                const { videoWidth: w, videoHeight: h } = e.currentTarget;
+                if (w && h) setRatios((r) => (r[url] ? r : { ...r, [url]: w / h }));
+              }}
+            />
+          );
           return (
             <div
               key={i}
               className={`heroSlideImg ${i === active ? 'on' : ''} ${phone ? 'hasPhone' : ''}`}
               style={{
-                backgroundImage: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(desk)})`,
-                // A phone image swaps in through studio-theme.css's phone container query.
-                ...(phone
-                  ? { ['--hero-phone-img' as string]: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(phone)})` }
-                  : {}),
+                ...(isVideoUrl(desk) ? {} : { backgroundImage: layer(desk) }),
+                // A phone image swaps in through studio-theme.css's phone container query; a phone video clears it.
+                ...(phone ? { ['--hero-phone-img' as string]: isVideoUrl(phone) ? 'none' : layer(phone) } : {}),
               }}
-            />
+            >
+              {isVideoUrl(desk) ? video(desk, 'desk') : null}
+              {isVideoUrl(phone) ? video(phone, 'phone') : null}
+            </div>
           );
         })}
       </div>
