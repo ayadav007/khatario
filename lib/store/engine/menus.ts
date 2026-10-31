@@ -113,12 +113,16 @@ export function resolveMenu(menu: Menu | null, categories: MenuCategory[] | null
   return resolveItems(menu.items, categories, known, true);
 }
 
-/** Footer columns: each top item is a heading, its children the links, third-level links right after their group. */
+/**
+ * Footer columns: each top item is a heading, its children the links, third-level links right after their group. An
+ * automatic categories item lists the store's categories.
+ */
 export function menuFooterColumns(
   items: ResolvedItem[],
 ): { heading: string; href: string; links: { label: string; href: string }[] }[] {
   return items.map((top) => {
     const links: { label: string; href: string }[] = [];
+    for (const c of top.categories ?? []) links.push({ label: c.name, href: `${CATALOG}/${encodeURIComponent(c.id)}` });
     for (const child of top.children) {
       links.push({ label: child.label, href: child.href });
       for (const grand of child.children) links.push({ label: grand.label, href: grand.href });

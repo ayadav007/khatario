@@ -1,6 +1,8 @@
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import { defaultSettings, sanitizeSettingValue } from '@/lib/store/engine/settings';
+import type { MenuCategory } from '@/lib/store/engine/menus';
+import type { SectionData } from '@/lib/store/engine/section-data';
 import type { Block, Section } from '@/lib/store/engine/types';
 
 // Server only: the settings module pulls in the HTML sanitisers.
@@ -13,6 +15,16 @@ export function noBox(s: StudioSettings): StudioSettings {
 /** Section settings value as a string ('' otherwise). */
 export function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
+}
+
+/**
+ * Categories with products, for a menu's automatic categories item and for hiding links to deleted categories;
+ * null when the optional lookup failed.
+ */
+export function menuCategories(data: SectionData | undefined): MenuCategory[] | null {
+  return data?.categories
+    ? data.categories.filter((c) => c.item_count > 0).map((c) => ({ id: c.id, name: c.name, image_url: c.image_url }))
+    : null;
 }
 
 /** Stored settings over the section schema's defaults. */

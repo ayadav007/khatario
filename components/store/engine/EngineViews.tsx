@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronDown, MapPin, Search, ShoppingCart, User } from 'lucide-react';
+import { ChevronDown, MapPin, Menu as MenuIcon, Search, ShoppingCart, User } from 'lucide-react';
 import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
@@ -26,6 +26,7 @@ import {
 } from '../studio-theme/StudioSections';
 import { useEngineCart } from './EngineShell';
 import { MenuBar } from './menu/MenuBar';
+import { MenuDrawer } from './menu/MenuDrawer';
 import { useEngineCardLook } from './EngineCardContext';
 import { QuickSheet } from '../quick-theme/QuickChrome';
 import { activeQuickCategory, quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
@@ -281,8 +282,17 @@ export function EngineHeader({
   const { cartCount } = useStore();
   const { openCart } = useEngineCart();
   const look = useEngineCardLook();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   if (look?.quick && quick) {
-    return <EngineQuickHeader {...quick} logoUrl={logoUrl} subdomain={subdomain} placeholder={searchPlaceholder} />;
+    return (
+      <EngineQuickHeader
+        {...quick}
+        menuItems={menu.items}
+        logoUrl={logoUrl}
+        subdomain={subdomain}
+        placeholder={searchPlaceholder}
+      />
+    );
   }
   const fallback = (
     <div className="search">
@@ -291,12 +301,33 @@ export function EngineHeader({
     </div>
   );
   const bar = menu.items.length ? <MenuBar items={menu.items} layout={menu.layout} caps={menu.caps} /> : null;
+  // ☰ shows only on phones (menu.css); the side panel takes the bar's place there.
+  const menuButton = menu.items.length ? (
+    <>
+      <button
+        type="button"
+        className="kh-burger"
+        aria-label="Menu"
+        aria-haspopup="dialog"
+        aria-expanded={drawerOpen}
+        onClick={(e) => {
+          // Safari does not focus a tapped button; focused, it gets focus back when the panel closes.
+          e.currentTarget.focus();
+          setDrawerOpen(true);
+        }}
+      >
+        <MenuIcon aria-hidden="true" />
+      </button>
+      <MenuDrawer items={menu.items} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+    </>
+  ) : null;
   const header = (
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
       menuSlot={menu.layout === 'below' ? bar : null}
       inlineSlot={menu.layout === 'inline' ? bar : undefined}
+      menuButton={menuButton}
       search={
         <Suspense fallback={fallback}>
           <HeaderSearchBox subdomain={subdomain} placeholder={searchPlaceholder} />
@@ -525,7 +556,8 @@ export interface QuickHeaderProps {
   name: string;
   /** The header's delivery estimate, e.g. "in 30 minutes". */
   eta: string;
-  links: Array<{ label: string; href: string; highlight: boolean }>;
+  /** The menu's top items; `itemId` and `hasChildren` let a pill open the side panel at its item. */
+  links: Array<{ label: string; href: string; highlight: boolean; itemId?: string; hasChildren?: boolean }>;
   categories: Chip[];
   showSearch: boolean;
   showAccount: boolean;
@@ -555,13 +587,16 @@ function EngineQuickHeader({
   showSearch,
   showAccount,
   showCart,
+  menuItems,
   logoUrl,
   subdomain,
   placeholder,
-}: QuickHeaderProps & { logoUrl: string | null; subdomain: string; placeholder: string }) {
+}: QuickHeaderProps & { menuItems: ResolvedItem[]; logoUrl: string | null; subdomain: string; placeholder: string }) {
   const { cartCount, branches, selectedBranchId, selectBranch, store } = useStore();
   const { openCart } = useEngineCart();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [drawer, setDrawer] = useState<{ open: boolean; itemId: string | null }>({ open: false, itemId: null });
+  const openMenu = (itemId: string) => setDrawer({ open: true, itemId });
   const [pincode, setPincode] = useState('');
   const hint = useCyclingHint(quickSearchHints(placeholder, categories));
   useEffect(() => {
@@ -632,11 +667,19 @@ function EngineQuickHeader({
           </Suspense>
         ) : null}
         {chips.length ? (
-          <Suspense fallback={<QuickPills chips={chips} />}>
-            <QuickPillsLive chips={chips} />
+          <Suspense fallback={<QuickPills chips={chips} onMenu={openMenu} />}>
+            <QuickPillsLive chips={chips} onMenu={openMenu} />
           </Suspense>
         ) : null}
       </div>
+      {menuItems.length ? (
+        <MenuDrawer
+          items={menuItems}
+          open={drawer.open}
+          onClose={() => setDrawer((d) => ({ ...d, open: false }))}
+          initialOpenId={drawer.itemId}
+        />
+      ) : null}
       <QuickSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
@@ -692,11 +735,14 @@ function QuickPills({
   activeCat,
   offersOn,
   onCategory,
+  onMenu,
 }: {
   chips: QuickPill[];
   activeCat?: string | null;
   offersOn?: boolean;
   onCategory?: (id: string) => void;
+  /** Opens the side panel at a menu item (pills with ▾). */
+  onMenu?: (itemId: string) => void;
 }) {
   return (
     <nav className="qk-chips" aria-label="Shop">
@@ -704,12 +750,30 @@ function QuickPills({
         const on = c.categoryId ? c.categoryId === activeCat : c.offers && !!offersOn;
         const cls = [on ? 'on' : '', c.offers ? 'offers' : ''].join(' ').trim() || undefined;
         const id = c.categoryId;
+        const menuId = c.menuItemId;
+        if (menuId) {
+          return (
+            <button
+              type="button"
+              key={c.key}
+              className={['kh-pill-menu', cls].filter(Boolean).join(' ')}
+              aria-haspopup="dialog"
+              onClick={(e) => {
+                e.currentTarget.focus();
+                onMenu?.(menuId);
+              }}
+            >
+              {c.label}
+              <ChevronDown aria-hidden="true" />
+            </button>
+          );
+        }
         return id ? (
           <button type="button" key={c.key} className={cls} aria-pressed={on} onClick={() => onCategory?.(id)}>
             {c.label}
           </button>
         ) : (
-          <a key={c.key} className={cls} href={c.href}>
+          <a key={c.key} className={cls} href={c.href || undefined}>
             {c.label}
           </a>
         );
@@ -718,7 +782,7 @@ function QuickPills({
   );
 }
 
-function QuickPillsLive({ chips }: { chips: QuickPill[] }) {
+function QuickPillsLive({ chips, onMenu }: { chips: QuickPill[]; onMenu: (itemId: string) => void }) {
   const params = useSearchParams();
   const pathname = usePathname();
   const go = useCatalogNav();
@@ -728,6 +792,7 @@ function QuickPillsLive({ chips }: { chips: QuickPill[] }) {
       activeCat={activeQuickCategory(pathname, params.get('cat'))}
       offersOn={!!params.get('disc')}
       onCategory={(id) => go({ categoryId: id })}
+      onMenu={onMenu}
     />
   );
 }

@@ -8,6 +8,14 @@ export interface QuickChip {
   categoryId?: string;
   /** Highlighted menu links (Offers) get the accent outline. */
   offers: boolean;
+  /** A menu item with children: the pill shows ▾ and opens the side panel at this item instead of navigating. */
+  menuItemId?: string;
+}
+
+type QuickLink = { label: string; href: string; highlight: boolean; itemId?: string; hasChildren?: boolean };
+
+function linkChip(l: QuickLink, key: string, offers: boolean): QuickChip {
+  return { key, label: l.label, href: l.href, offers, ...(l.hasChildren && l.itemId ? { menuItemId: l.itemId } : {}) };
 }
 
 /**
@@ -26,18 +34,18 @@ export function quickDeliveryLine(eta: string, storeName: string): string {
  * links such as Offers last, as on the old Quick store.
  */
 export function quickChips(
-  links: Array<{ label: string; href: string; highlight: boolean }>,
+  links: QuickLink[],
   categories: Array<{ id: string; name: string }>,
 ): QuickChip[] {
   const named = new Set(links.map((l) => l.label.trim().toLowerCase()));
   const plain = links.filter((l) => !l.highlight && l.label.trim());
   const highlighted = links.filter((l) => l.highlight && l.label.trim());
   return [
-    ...plain.map((l, i) => ({ key: `l${i}`, label: l.label, href: l.href, offers: false })),
+    ...plain.map((l, i) => linkChip(l, `l${i}`, false)),
     ...categories
       .filter((c) => !named.has(c.name.trim().toLowerCase()))
       .map((c) => ({ key: `c${c.id}`, label: c.name, categoryId: c.id, offers: false })),
-    ...highlighted.map((l, i) => ({ key: `h${i}`, label: l.label, href: l.href, offers: true })),
+    ...highlighted.map((l, i) => linkChip(l, `h${i}`, true)),
   ];
 }
 

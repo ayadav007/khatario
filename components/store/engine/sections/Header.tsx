@@ -1,16 +1,19 @@
 import { pickMenu, resolveMenu } from '@/lib/store/engine/menus';
 import type { EngineSectionProps } from '../registry';
 import { EngineHeader } from '../EngineViews';
-import { str, withDefaults } from './shared';
+import { menuCategories, str, withDefaults } from './shared';
 
 export function Header({ section, data, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
-  // Categories with products feed the automatic categories item and hide links to deleted ones; null = lookup failed.
-  const categories = data?.categories
-    ? data.categories.filter((c) => c.item_count > 0).map((c) => ({ id: c.id, name: c.name, image_url: c.image_url }))
-    : null;
-  const items = resolveMenu(pickMenu(theme.settings.menus ?? [], v.menu, 'main'), categories);
-  const links = items.map((i) => ({ label: i.label, href: i.href, highlight: i.highlight }));
+  const items = resolveMenu(pickMenu(theme.settings.menus ?? [], v.menu, 'main'), menuCategories(data));
+  // Quick's pills: an item with children opens the side panel at that item.
+  const links = items.map((i) => ({
+    label: i.label,
+    href: i.href,
+    highlight: i.highlight,
+    itemId: i.id,
+    hasChildren: i.kind !== 'link',
+  }));
   return (
     <EngineHeader
       s={{

@@ -945,8 +945,8 @@ export function StudioFooter({
 }: {
   s: StudioSettings;
   links: StudioLink[];
-  /** Engine footer: link columns under their headings, then `links` (social) as a last column. */
-  columns?: { heading: string; links: StudioLink[] }[];
+  /** Engine footer: link columns under their headings (linked when `href`), then `links` (social) as a last column. */
+  columns?: { heading: string; href?: string; links: StudioLink[] }[];
   badge?: string;
 }) {
   return (
@@ -957,11 +957,11 @@ export function StudioFooter({
       </div>
       {columns ? (
         <div className="footerCols">
-          {[...columns, { heading: '', links }]
+          {[...columns, { heading: '', href: undefined, links }]
             .filter((c) => c.links.length > 0)
             .map((c, i) => (
               <nav key={i} className="footerLinks footerCol" aria-label={c.heading || undefined}>
-                {c.heading ? <b>{c.heading}</b> : null}
+                {c.heading ? <b>{c.href ? <a href={c.href}>{c.heading}</a> : c.heading}</b> : null}
                 {c.links.map((l) => (
                   <Lnk key={l.label} link={l} />
                 ))}

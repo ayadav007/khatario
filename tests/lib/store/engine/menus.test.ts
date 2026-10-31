@@ -155,6 +155,21 @@ describe('menuFooterColumns', () => {
       { heading: 'Help', href: '', links: [] },
     ]);
   });
+
+  it('lists the store categories under an automatic categories item, a plain link without them', () => {
+    const m = menu('footer', [item('all', { label: 'Categories', source: 'categories' })]);
+    expect(menuFooterColumns(resolveMenu(m, [cat('veg', 'Veg'), cat('a b', 'A & B')]))).toEqual([
+      {
+        heading: 'Categories',
+        href: '/catalog',
+        links: [
+          { label: 'Veg', href: '/catalog/veg' },
+          { label: 'A & B', href: '/catalog/a%20b' },
+        ],
+      },
+    ]);
+    expect(menuFooterColumns(resolveMenu(m, null))).toEqual([{ heading: 'Categories', href: '/catalog', links: [] }]);
+  });
 });
 
 describe('foldMenu', () => {

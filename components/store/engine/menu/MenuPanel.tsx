@@ -12,7 +12,8 @@ export function MenuLink({ label, href, className }: { label: string; href: stri
   );
 }
 
-function Picture({ picture }: { picture: MenuPicture }) {
+/** An item's picture with its caption, linked when it has a link (panels and the phone side panel). */
+export function PanelPicture({ picture }: { picture: MenuPicture }) {
   if (!picture.image) return null;
   const body = (
     <>
@@ -43,7 +44,7 @@ function ViewAll({ item }: { item: ResolvedItem }) {
  * list. Starts with "View all <label>" when the item has its own link; the picture sits on the right.
  */
 export function MenuPanel({ item }: { item: ResolvedItem }) {
-  const picture = item.picture?.image ? <Picture picture={item.picture} /> : null;
+  const picture = item.picture?.image ? <PanelPicture picture={item.picture} /> : null;
 
   if (item.kind === 'categories') {
     const cats = item.categories ?? [];
