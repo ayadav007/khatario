@@ -12,7 +12,7 @@ export const PREMIUM_SECTION_RULES =
   `${R} .eng-collage-body p:last-child{margin-bottom:0}` +
   `${R} .eng-collage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}` +
   `${R} .eng-collage-grid[data-count="1"]{grid-template-columns:minmax(0,1fr)}` +
-  `${R} .eng-collage-tile{position:relative;display:block;overflow:hidden;min-width:0;border-radius:var(--card-radius,var(--btn-radius,10px));background:color-mix(in srgb,currentColor 8%,transparent);color:#fff;text-decoration:none}` +
+  `${R} .eng-collage-tile{position:relative;display:block;overflow:hidden;min-width:0;border-radius:var(--card-radius,var(--btn-radius,10px));background:#2b2b2b;color:#fff;text-decoration:none}` +
   `${R} .eng-collage--portrait .eng-collage-tile{aspect-ratio:3/4}` +
   `${R} .eng-collage--square .eng-collage-tile{aspect-ratio:1/1}` +
   `${R} .eng-collage-media{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .4s ease}` +
@@ -41,7 +41,11 @@ export const PREMIUM_SECTION_RULES =
   `${R} .eng-collage--feature:not(.eng-collage--tiles).eng-collage--square .eng-collage-grid{aspect-ratio:1/1}` +
   `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-tile{aspect-ratio:auto;height:100%}` +
   `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-tile:first-child{grid-row:span 2}` +
-  `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="2"] .eng-collage-tile{grid-row:span 2}` +
+  // Two tiles: side by side, the first twice the width of the second, both keeping the tile shape and sitting on the same baseline.
+  `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="2"]{grid-template-columns:2fr 1fr;grid-template-rows:none;aspect-ratio:auto;align-items:end}` +
+  `${R} .eng-collage--feature:not(.eng-collage--tiles).eng-collage--portrait .eng-collage-grid[data-count="2"] .eng-collage-tile{aspect-ratio:3/4;height:auto}` +
+  `${R} .eng-collage--feature:not(.eng-collage--tiles).eng-collage--square .eng-collage-grid[data-count="2"] .eng-collage-tile{aspect-ratio:1/1;height:auto}` +
+  `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="2"] .eng-collage-tile:first-child{grid-row:auto}` +
   `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="4"]{grid-template-columns:2fr 1fr;grid-template-rows:repeat(3,minmax(0,1fr))}` +
   `${R} .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="4"] .eng-collage-tile:first-child{grid-row:span 3}` +
   '}';

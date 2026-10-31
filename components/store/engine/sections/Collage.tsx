@@ -17,10 +17,9 @@ function tileHref(t: CollageTile): string {
   return target.kind === 'internal' || target.kind === 'external' ? target.href : '';
 }
 
+/** Product and category tiles print their name in the caption, so the picture itself adds nothing for a screen reader. */
 function tileAlt(t: CollageTile): string {
-  if (t.kind === 'product') return t.product.name;
-  if (t.kind === 'category') return t.name;
-  return t.caption;
+  return t.kind === 'image' ? t.caption : '';
 }
 
 function TileBody({ t }: { t: CollageTile }) {

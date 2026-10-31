@@ -38,4 +38,20 @@ describe('premium section rules', () => {
     const at = PREMIUM_SECTION_RULES.indexOf('.eng-collage--text-right .eng-collage-text{order:2}');
     expect(at).toBeGreaterThan(wide);
   });
+
+  it('two featured tiles sit side by side with the first wider, not both spanning two rows', () => {
+    const wide = PREMIUM_SECTION_RULES.slice(PREMIUM_SECTION_RULES.indexOf('@container store (min-width:641px)'));
+    const grid = '.st-root.eng-root .eng-collage--feature:not(.eng-collage--tiles) .eng-collage-grid[data-count="2"]';
+    expect(wide).toContain(grid);
+    expect(ruleBody(grid)).toContain('grid-template-columns:2fr 1fr');
+    expect(ruleBody(grid)).toContain('aspect-ratio:auto');
+    expect(wide).not.toMatch(/data-count="2"\] \.eng-collage-tile\{[^}]*span 2/);
+    // Each tile keeps the tile shape; the first tile is not told to span rows.
+    expect(ruleBody('.st-root.eng-root .eng-collage--feature:not(.eng-collage--tiles).eng-collage--portrait .eng-collage-grid[data-count="2"] .eng-collage-tile')).toContain('aspect-ratio:3/4');
+    expect(ruleBody(`${grid} .eng-collage-tile:first-child`)).toContain('grid-row:auto');
+  });
+
+  it('a tile with no picture has a dark background so its white caption stays readable', () => {
+    expect(ruleBody('.st-root.eng-root .eng-collage-tile')).toContain('background:#2b2b2b');
+  });
 });
