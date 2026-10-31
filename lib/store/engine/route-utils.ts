@@ -11,6 +11,8 @@ const FAILURES = {
   limit: { status: 409, error: 'Theme limit reached. Delete a draft theme first.' },
   too_large: { status: 413, error: 'Theme is too large.' },
   live_locked: { status: 409, error: 'The live theme cannot be changed this way. Edit a draft and publish it.' },
+  working_locked: { status: 409, error: 'This is the copy the editor works on. Use Discard changes instead.' },
+  no_store_design: { status: 409, error: 'There is no store design to copy yet.' },
 } as const;
 
 export function repoFailure(code: keyof typeof FAILURES): NextResponse {

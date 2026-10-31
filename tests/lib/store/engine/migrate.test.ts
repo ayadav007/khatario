@@ -340,3 +340,16 @@ describe('named preset', () => {
     }
   });
 });
+
+describe('Quick header warning (D54, M4 11)', () => {
+  const QUICK_HEADER = "Quick's delivery line, location picker and menu chips are not in the new header yet";
+
+  it('a Quick store is told its header is not carried over yet', () => {
+    expect(migrateStoreTheme(quickDerived, ctx).warnings).toContain(QUICK_HEADER);
+  });
+
+  it('a Studio store is not', () => {
+    expect(migrateStoreTheme(studioSaved, ctx).warnings).not.toContain(QUICK_HEADER);
+    expect(migrateStoreTheme(studioDerived, ctx).warnings).not.toContain(QUICK_HEADER);
+  });
+});

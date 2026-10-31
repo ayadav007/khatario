@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { deleteTheme, getTheme, renameTheme, saveTheme } from '@/lib/store/engine/themes-repo';
 import { isUuid, notFound, repoFailure, repoJson } from '@/lib/store/engine/route-utils';
@@ -23,7 +22,8 @@ async function readBody(request: NextRequest): Promise<Record<string, unknown> |
 export async function GET(request: NextRequest, { params }: Ctx) {
   if (!isUuid(params.id)) return notFound();
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  // D53: reading a theme needs the online-store settings permission too.
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

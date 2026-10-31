@@ -230,6 +230,18 @@ d('Store theme migration runner (real DB)', () => {
     expect(lives).toEqual([{ preset: 'grocery', updated_by: state.user }]);
     // The body's business_id was ignored: GROCERY still has only its one migrated theme.
     expect(await themeCount([GROCERY])).toBe(1);
+
+    // R16: the migrated first version always shows "Set up automatically", also when the app created it.
+    const versions = (
+      await pool.query(
+        `SELECT business_id, published_by, preset FROM store_theme_versions WHERE business_id = ANY($1) ORDER BY preset`,
+        [[WD_FRESH, POST_FRESH]],
+      )
+    ).rows;
+    expect(versions).toEqual([
+      { business_id: POST_FRESH, published_by: null, preset: 'grocery' },
+      { business_id: WD_FRESH, published_by: null, preset: 'khatario' },
+    ]);
   });
 
   it('preview links', async () => {

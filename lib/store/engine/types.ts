@@ -74,6 +74,9 @@ export interface ThemeRow {
   is_working: boolean;
 }
 
+/** A library row (D40): no data; `has_changes` is true only for the working draft when it differs from the live theme. */
+export type ThemeListRow = Omit<ThemeRow, 'data'> & { has_changes: boolean };
+
 /** One published version in the business's timeline (D46). No user ids and no data. */
 export interface ThemeVersionSummary {
   id: string;

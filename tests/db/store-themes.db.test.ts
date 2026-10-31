@@ -19,13 +19,20 @@ import {
   getLiveTheme,
   getOrCreateWorkingDraft,
   getTheme,
+  insertMigratedLiveLocked,
   listThemes,
   publishTheme,
   renameTheme,
+  resetWorkingDraft,
   saveTheme,
 } from '@/lib/store/engine/themes-repo';
+import * as migrationInput from '@/lib/store/engine/migration-input';
 import { presetTheme } from '@/lib/store/engine/presets';
-import type { ThemeRow } from '@/lib/store/engine/types';
+import { presetContextFromRow } from '@/lib/store/engine/preset-context';
+import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
+import { STORE_THEME_PRESETS } from '@/lib/store/store-theme';
+import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
+import { groceryAll } from '../lib/store/engine/fixtures/store-themes';
 
 const ctx = { businessName: 'Theme test', tagline: 'Tagline' };
 
@@ -306,6 +313,237 @@ d('Store themes repository (real DB)', () => {
     it('fails with limit at 20 themes', async () => {
       for (let i = 0; i < 20; i++) ok(await createTheme(WD_FULL, USER, { name: `T${i}`, preset: 'blank', ctx }));
       expect(await getOrCreateWorkingDraft(WD_FULL, USER)).toEqual({ ok: false, code: 'limit' });
+    });
+  });
+  describe('library (M5)', () => {
+    const made: string[] = [];
+    const newBiz = async (storeTheme?: unknown): Promise<string> => {
+      const id = randomUUID();
+      made.push(id);
+      await pool.query(
+        `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Library test', '29AAAPA1234A1Z5', '29', 'regular')`,
+        [id],
+      );
+      if (storeTheme !== undefined) {
+        await pool.query(`INSERT INTO business_settings (business_id, store_theme) VALUES ($1, $2::jsonb)`, [id, JSON.stringify(storeTheme)]);
+      }
+      return id;
+    };
+    const count = async (biz: string) =>
+      (await pool.query(`SELECT count(*)::int AS n FROM store_themes WHERE business_id = $1`, [biz])).rows[0].n as number;
+    /** A copy of `data` whose first product rail has another heading. */
+    const withHeading = (data: ThemeData, heading: string): ThemeData => {
+      const copy = JSON.parse(JSON.stringify(data)) as ThemeData;
+      const home = copy.templates.home;
+      const id = home.order.find((k) => home.sections[k].type === 'product-rail');
+      if (!id) throw new Error('no product rail');
+      home.sections[id].settings.heading = heading;
+      return copy;
+    };
+    /** Live L (Studio), working draft W, and a Blank library draft X. */
+    const libraryStore = async () => {
+      const biz = await newBiz();
+      const live = ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const w = ok(await getOrCreateWorkingDraft(biz, USER));
+      const x = ok(await createTheme(biz, USER, { name: 'Festive', preset: 'blank', ctx }));
+      expect(x.data).not.toEqual(live.data);
+      return { biz, live, w, x };
+    };
+
+    afterAll(async () => {
+      jest.restoreAllMocks();
+      await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM business_settings WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [made]);
+    });
+
+    it('N2: publishing a library draft refreshes a clean working draft', async () => {
+      const { biz, w, x } = await libraryStore();
+      ok(await publishTheme(biz, USER, x.id));
+      const refreshed = (await getTheme(biz, w.id))!;
+      expect(refreshed.is_working).toBe(true);
+      expect(refreshed.data).toEqual(x.data);
+      expect(refreshed.preset).toBe(x.preset);
+      expect(refreshed.name).toBe('Festive (editing)');
+      expect(refreshed.updated_at).not.toBe(w.updated_at);
+
+      ok(await publishTheme(biz, USER, w.id));
+      const liveNow = (await getLiveTheme(biz))!;
+      expect(liveNow.id).toBe(x.id);
+      expect(liveNow.data).toEqual(x.data);
+    });
+
+    it('N2: a working draft with edits is kept as a draft', async () => {
+      const { biz, w, x } = await libraryStore();
+      const edited = ok(await saveTheme(biz, USER, w.id, withHeading(w.data, 'Edited rail'), w.updated_at));
+      ok(await publishTheme(biz, USER, x.id));
+
+      const kept = (await getTheme(biz, w.id))!;
+      expect(kept.is_working).toBe(false);
+      expect(kept.role).toBe('draft');
+      expect(kept.name).toBe('Main (unpublished edits)');
+      expect(kept.data).toEqual(edited.data);
+
+      const fresh = ok(await getOrCreateWorkingDraft(biz, USER));
+      expect(fresh.id).not.toBe(w.id);
+      expect(fresh.data).toEqual(x.data);
+      expect(fresh.name).toBe('Festive (editing)');
+    });
+
+    it('working-draft publish copies the preset', async () => {
+      const { biz, live, w } = await libraryStore();
+      await pool.query(`UPDATE store_themes SET preset = 'quick' WHERE id = $1`, [w.id]);
+      const pub = ok(await publishTheme(biz, USER, w.id));
+      expect(pub.id).toBe(live.id);
+      expect(pub.preset).toBe('quick');
+      expect(pub.name).toBe('Main');
+      expect((await getLiveTheme(biz))!.preset).toBe('quick');
+    });
+
+    it('has_changes', async () => {
+      const { biz, w } = await libraryStore();
+      const flags = async () => Object.fromEntries((await listThemes(biz)).map((t) => [t.id, t.has_changes]));
+      let f = await flags();
+      expect(f[w.id]).toBe(false);
+      expect(Object.values(f).every((v) => v === false)).toBe(true);
+
+      ok(await saveTheme(biz, USER, w.id, withHeading(w.data, 'Changed'), null));
+      f = await flags();
+      expect(f[w.id]).toBe(true);
+      expect(Object.entries(f).filter(([id]) => id !== w.id).every(([, v]) => v === false)).toBe(true);
+    });
+
+    it('resetWorkingDraft', async () => {
+      const { biz, live, w } = await libraryStore();
+      const saved = ok(await saveTheme(biz, USER, w.id, withHeading(w.data, 'Throw away'), null));
+      await pool.query(`UPDATE store_themes SET preset = 'quick', name = 'Renamed' WHERE id = $1`, [w.id]);
+      const reset = ok(await resetWorkingDraft(biz, USER));
+      expect(reset.id).toBe(w.id);
+      expect(reset.is_working).toBe(true);
+      expect(reset.data).toEqual(live.data);
+      expect(reset.preset).toBe(live.preset);
+      expect(reset.name).toBe('Main (editing)');
+      expect(reset.updated_at).not.toBe(saved.updated_at);
+      expect((await listThemes(biz)).find((t) => t.id === w.id)!.has_changes).toBe(false);
+
+      const noWorking = await newBiz();
+      ok(await createTheme(noWorking, USER, { name: 'Only', preset: 'blank', ctx }));
+      expect(await resetWorkingDraft(noWorking, USER)).toEqual({ ok: false, code: 'not_found' });
+      expect(await resetWorkingDraft(OTHER, USER)).toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('delete refuses the working draft', async () => {
+      const { biz, live, w, x } = await libraryStore();
+      expect(await deleteTheme(biz, w.id)).toEqual({ ok: false, code: 'working_locked' });
+      expect(await getTheme(biz, w.id)).not.toBeNull();
+      expect(await deleteTheme(biz, live.id)).toEqual({ ok: false, code: 'live_locked' });
+      expect(await deleteTheme(biz, x.id)).toEqual({ ok: true, value: true });
+      expect(await getTheme(biz, x.id)).toBeNull();
+    });
+
+    it('migrated source', async () => {
+      const biz = await newBiz(groceryAll);
+      // The first create puts the store's migrated design live (R16: its version has no author).
+      ok(await createTheme(biz, USER, { name: 'First', preset: 'blank', ctx }));
+      const versions = (await pool.query(`SELECT published_by FROM store_theme_versions WHERE business_id = $1`, [biz])).rows;
+      expect(versions).toEqual([{ published_by: null }]);
+
+      const r = ok(await createTheme(biz, USER, { name: '', source: 'migrated', ctx }));
+      expect(r.role).toBe('draft');
+      expect(r.is_working).toBe(false);
+      expect(r.preset).toBe('grocery');
+      expect(r.name).toBe(`${STORE_THEME_PRESETS.grocery.label} (from your store)`);
+      expect(r.name).toBe('Premium Grocery (from your store)');
+      expect(r.data).toEqual((await getLiveTheme(biz))!.data);
+      const named = ok(await createTheme(biz, USER, { name: ' My copy ', source: 'migrated', ctx }));
+      expect(named.name).toBe('My copy');
+
+      const bare = await newBiz();
+      expect(await createTheme(bare, USER, { name: '', source: 'migrated', ctx })).toEqual({ ok: false, code: 'no_store_design' });
+      expect(await count(bare)).toBe(0);
+    });
+
+    it('limit applies to every create', async () => {
+      const biz = await newBiz(groceryAll);
+      while ((await count(biz)) < 20) ok(await createTheme(biz, USER, { name: 'Fill', preset: 'blank', ctx }));
+      const anyId = (await listThemes(biz))[0].id;
+      expect(await createTheme(biz, USER, { name: 'P', preset: 'studio', ctx })).toEqual({ ok: false, code: 'limit' });
+      expect(await createTheme(biz, USER, { name: '', duplicateOf: anyId, ctx })).toEqual({ ok: false, code: 'limit' });
+      expect(await createTheme(biz, USER, { name: '', source: 'migrated', ctx })).toEqual({ ok: false, code: 'limit' });
+      expect(await count(biz)).toBe(20);
+    });
+
+    it('oversized migration falls back', async () => {
+      const biz = await newBiz({ preset: 'studio' });
+      const ch = '\u0001'; // JSON-escaped to six bytes, so even the capped fields pass 512 KB
+      const big = {
+        preset: 'studio',
+        custom_css: ch.repeat(8000),
+        studio_sections: Array.from({ length: 24 }, (_, i) => ({
+          id: `rt${i}`,
+          type: 'richtext',
+          name: 'Text',
+          enabled: true,
+          settings: { heading: ch.repeat(120), text: ch.repeat(2000), customCss: ch.repeat(3000) },
+        })),
+      };
+      const spy = jest.spyOn(migrationInput, 'migrationInputFor').mockResolvedValue({
+        raw: big,
+        ctx: { businessName: 'Library test', tagline: '', aboutMd: '', heroUrl: '', logoUrl: '', categories: [] },
+      });
+      try {
+        const w = ok(await getOrCreateWorkingDraft(biz, USER));
+        expect(spy).toHaveBeenCalled();
+        const liveRow = (await getLiveTheme(biz))!;
+        expect(liveRow.preset).toBe('studio');
+        expect(w.data).toEqual(liveRow.data);
+        // Section ids are random per preset build, so compare the settings and the home's section types.
+        const studio = sanitizeThemeData(presetTheme('studio', presetContextFromRow({ name: 'Library test', store_theme: big })));
+        const types = (d: ThemeData) => d.templates.home.order.map((k) => d.templates.home.sections[k].type);
+        expect(liveRow.data.settings).toEqual(studio.settings);
+        expect(types(liveRow.data)).toEqual(types(studio));
+        expect(liveRow.name).toBe(STORE_THEME_PRESETS.studio.label);
+        const v = (await pool.query(`SELECT published_by, preset FROM store_theme_versions WHERE business_id = $1`, [biz])).rows;
+        expect(v).toEqual([{ published_by: null, preset: 'studio' }]);
+
+        // The caller is told why (rolled back: another business with no themes).
+        const other = await newBiz({ preset: 'studio' });
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const r = await insertMigratedLiveLocked(client, other, null, (await migrationInput.migrationInputFor(other))!);
+          expect(r!.theme.preset).toBe('studio');
+          expect(r!.warnings).toContain('Your store design was too large to copy; the Studio theme was used instead');
+        } finally {
+          await client.query('ROLLBACK');
+          client.release();
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('no migration read when live exists', async () => {
+      const biz = await newBiz(groceryAll);
+      ok(await createTheme(biz, USER, { name: 'First', preset: 'blank', ctx }));
+      const spy = jest.spyOn(migrationInput, 'migrationInputFor');
+      try {
+        ok(await createTheme(biz, USER, { name: 'Second', preset: 'studio', ctx }));
+        ok(await getOrCreateWorkingDraft(biz, USER));
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('R16: the migrated first version has no author when the working draft creates it', async () => {
+      const biz = await newBiz(groceryAll);
+      ok(await getOrCreateWorkingDraft(biz, USER));
+      const v = (await pool.query(`SELECT published_by, preset FROM store_theme_versions WHERE business_id = $1`, [biz])).rows;
+      expect(v).toEqual([{ published_by: null, preset: 'grocery' }]);
+      const liveRow = (await pool.query(`SELECT updated_by FROM store_themes WHERE business_id = $1 AND role = 'live'`, [biz])).rows;
+      expect(liveRow).toEqual([{ updated_by: USER }]);
     });
   });
 });

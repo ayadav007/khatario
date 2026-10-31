@@ -1,11 +1,13 @@
-// Server-only. D33/D34: the store's first live engine theme is its migrated design. `migrationInputFor` reads what
-// `migrateStoreTheme` needs; `runStoreThemeMigration` runs the migration for many stores (scripts/migrate-store-themes.mjs).
+// Server-only. D33/D34: the store's first live engine theme is its migrated design. `runStoreThemeMigration` runs
+// the migration for many stores (scripts/migrate-store-themes.mjs).
 // It never writes business_settings (store_engine, store_theme): only store_themes rows of the business being migrated.
-import { getPool, query, queryOne } from '@/lib/db';
-import { migrateStoreTheme, type MigrationContext } from './migrate';
-import { storeCategories } from './section-data';
+import { getPool, query } from '@/lib/db';
+import { migrateStoreTheme } from './migrate';
+import { migrationInputFor } from './migration-input';
 import { insertMigratedLiveLocked, lockBusinessThemes } from './themes-repo';
 import { PREVIEW_TTL, signThemePreview } from './preview-token';
+// M4 7: the input reader lives in migration-input.ts; re-exported so the script and its tests keep this import.
+export { migrationInputFor, type MigrationInput } from './migration-input';
 // Calls to `currentDatabaseName` go through the module's own exports so a test can stub the database name.
 import * as self from './migrate-runner';
 
@@ -32,40 +34,6 @@ export function migrationDatabaseAllowed(actual: string, allow: string | null): 
 export async function currentDatabaseName(): Promise<string> {
   const res = await query<{ name: string }>(`SELECT current_database() AS name`);
   return String(res.rows[0]?.name ?? '');
-}
-
-interface InputRow {
-  name: string | null;
-  logo_url: string | null;
-  store_tagline: string | null;
-  store_about_md: string | null;
-  store_hero_image_url: string | null;
-  store_theme: unknown;
-}
-
-/** The store theme and the store facts `migrateStoreTheme` snapshots, or null when the business does not exist. */
-export async function migrationInputFor(businessId: string): Promise<{ raw: unknown; ctx: MigrationContext } | null> {
-  if (!UUID_RE.test(businessId)) return null;
-  const row = await queryOne<InputRow>(
-    `SELECT b.name, b.logo_url, bs.store_tagline, bs.store_about_md, bs.store_hero_image_url, bs.store_theme
-       FROM businesses b
-       LEFT JOIN business_settings bs ON bs.business_id = b.id
-      WHERE b.id = $1`,
-    [businessId],
-  );
-  if (!row) return null;
-  const categories = (await storeCategories(businessId)).map((c) => ({ id: c.id, name: c.name }));
-  return {
-    raw: row.store_theme ?? null,
-    ctx: {
-      businessName: row.name ?? '',
-      tagline: row.store_tagline ?? '',
-      aboutMd: row.store_about_md ?? '',
-      heroUrl: row.store_hero_image_url ?? '',
-      logoUrl: row.logo_url ?? '',
-      categories,
-    },
-  };
 }
 
 export interface MigrationOptions {
@@ -142,7 +110,7 @@ async function migrateOne(
     if (live.rows.length > 0) {
       row = { ...base, status: 'skipped_live', warnings: [] };
     } else {
-      const input = await migrationInputFor(target.business_id);
+      const input = await migrationInputFor(target.business_id, client);
       if (!input) {
         row = { ...base, status: 'not_found', warnings: [] };
       } else if (opts.dryRun) {

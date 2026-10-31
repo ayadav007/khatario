@@ -26,20 +26,23 @@ jest.mock('@/lib/auth-helpers', () => ({
   ...jest.requireActual('@/lib/auth-helpers'),
   requireTenantBusinessId: () => ({ ok: true, businessId: BIZ }),
 }));
+// Like the real helper: a client business_id that differs from the session is refused, never used.
 jest.mock('@/lib/security/require-tenant-permission', () => ({
-  requireTenantPermission: jest.fn(async () =>
-    state.allowed
+  requireTenantPermission: jest.fn(async (_req: unknown, claimed: unknown) =>
+    state.allowed && !(typeof claimed === 'string' && claimed !== BIZ)
       ? { ok: true, businessId: BIZ, userId: USER }
       : { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) },
   ),
 }));
 
 import { getPool, closePool } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { verifyThemePreview } from '@/lib/store/engine/preview-token';
 import * as listRoute from '@/app/api/settings/online-store/themes/route';
 import * as idRoute from '@/app/api/settings/online-store/themes/[id]/route';
 import * as publishRoute from '@/app/api/settings/online-store/themes/[id]/publish/route';
 import * as workingRoute from '@/app/api/settings/online-store/themes/working-draft/route';
+import * as resetRoute from '@/app/api/settings/online-store/themes/working-draft/reset/route';
 import * as linkRoute from '@/app/api/settings/online-store/themes/[id]/preview-link/route';
 
 const BASE = 'http://localhost:3000/api/settings/online-store/themes';
@@ -81,9 +84,12 @@ d('Theme API (real DB)', () => {
     await closePool();
   });
 
-  it('first POST creates the migrated live theme and returns a draft; a foreign body business_id is ignored', async () => {
+  it('first POST creates the migrated live theme and returns a draft; a foreign body business_id is refused', async () => {
     const other = randomUUID();
     let res = await listRoute.POST(req('', 'POST', { name: 'Main', business_id: other }));
+    expect(res.status).toBe(403);
+    expect((await pool.query(`SELECT 1 FROM store_themes WHERE business_id = ANY($1)`, [[BIZ, other]])).rowCount).toBe(0);
+    res = await listRoute.POST(req('', 'POST', { name: 'Main', business_id: BIZ }));
     expect(res.status).toBe(201);
     const first = (await res.json()).theme;
     expect(first.role).toBe('draft');
@@ -232,5 +238,79 @@ d('Theme API (real DB)', () => {
     } finally {
       state.allowed = true;
     }
+  });
+  describe('library (M5)', () => {
+    const mocked = requireTenantPermission as jest.Mock;
+    const workingId = async () =>
+      (await pool.query(`SELECT id FROM store_themes WHERE business_id = $1 AND is_working`, [BIZ])).rows[0]?.id as string | undefined;
+
+    it('GET list and GET by id need settings read permission', async () => {
+      const anyId = (await pool.query(`SELECT id FROM store_themes WHERE business_id = $1 LIMIT 1`, [BIZ])).rows[0].id;
+      mocked.mockClear();
+      state.allowed = false;
+      try {
+        expect((await listRoute.GET(req('', 'GET'))).status).toBe(403);
+        expect((await idRoute.GET(req(`/${anyId}`, 'GET'), ctx(anyId))).status).toBe(403);
+      } finally {
+        state.allowed = true;
+      }
+      expect(mocked).toHaveBeenCalledTimes(2);
+      for (const call of mocked.mock.calls) {
+        expect(call[2]).toBe('settings');
+        expect(call[3]).toBe('read');
+      }
+      const list = await (await listRoute.GET(req('', 'GET'))).json();
+      expect(list.themes.every((t: { has_changes: unknown }) => typeof t.has_changes === 'boolean')).toBe(true);
+    });
+
+    it('POST source migrated makes a draft; an unknown source is 400', async () => {
+      let res = await listRoute.POST(req('', 'POST', { source: 'migrated' }));
+      expect(res.status).toBe(201);
+      const theme = (await res.json()).theme;
+      expect(theme).toMatchObject({ role: 'draft', is_working: false, preset: 'studio', business_id: BIZ });
+      expect(theme.name).toBe('Studio (from your store)');
+      const before = (await pool.query(`SELECT count(*)::int AS n FROM store_themes WHERE business_id = $1`, [BIZ])).rows[0].n;
+      res = await listRoute.POST(req('', 'POST', { source: 'x' }));
+      expect(res.status).toBe(400);
+      expect((await pool.query(`SELECT count(*)::int AS n FROM store_themes WHERE business_id = $1`, [BIZ])).rows[0].n).toBe(before);
+      expect((await idRoute.DELETE(req(`/${theme.id}`, 'DELETE'), ctx(theme.id))).status).toBe(200);
+    });
+
+    it('DELETE on the working draft is 409 working_locked', async () => {
+      const w = (await (await workingRoute.POST(req('/working-draft', 'POST', {}))).json()).theme;
+      const res = await idRoute.DELETE(req(`/${w.id}`, 'DELETE'), ctx(w.id));
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.code).toBe('working_locked');
+      expect(body.error).toBe('This is the copy the editor works on. Use Discard changes instead.');
+      expect(await workingId()).toBe(w.id);
+    });
+
+    it('POST reset restores the working draft; a foreign business_id is refused; 404 without one', async () => {
+      const id = (await workingId())!;
+      await pool.query(`UPDATE store_themes SET name = 'Scribbled', preset = 'quick' WHERE id = $1`, [id]);
+      const snapshot = async () =>
+        (await pool.query(`SELECT name, preset, data, updated_at FROM store_themes WHERE business_id = $1 ORDER BY id`, [BIZ])).rows;
+
+      const before = await snapshot();
+      const refused = await resetRoute.POST(req('/working-draft/reset', 'POST', { business_id: randomUUID() }));
+      expect(refused.status).toBe(403);
+      expect(await snapshot()).toEqual(before);
+
+      const res = await resetRoute.POST(req('/working-draft/reset', 'POST', {}));
+      expect(res.status).toBe(200);
+      const theme = (await res.json()).theme;
+      const live = (await pool.query(`SELECT name, preset, data FROM store_themes WHERE business_id = $1 AND role = 'live'`, [BIZ])).rows[0];
+      expect(theme.id).toBe(id);
+      expect(theme.is_working).toBe(true);
+      expect(theme.preset).toBe(live.preset);
+      expect(theme.data).toEqual(live.data);
+      expect(theme.name).toBe(`${live.name} (editing)`);
+
+      await pool.query(`DELETE FROM store_themes WHERE id = $1`, [id]);
+      const none = await resetRoute.POST(req('/working-draft/reset', 'POST'));
+      expect(none.status).toBe(404);
+      expect((await none.json()).code).toBe('not_found');
+    });
   });
 });

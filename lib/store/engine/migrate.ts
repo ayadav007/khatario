@@ -149,6 +149,9 @@ export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): Migratio
   let home = groups.home;
   let headerGroup = groups.header;
   let footerGroup = groups.footer;
+  // D54 (M4 11): until the engine header has them, say what Quick's header loses.
+  if (t.pack === 'quick') w.add("Quick's delivery line, location picker and menu chips are not in the new header yet");
+
   if (!studioLike) {
     const pack = migratePackHome(t, ctx);
     home = pack.home;

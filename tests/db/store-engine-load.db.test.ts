@@ -14,7 +14,7 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 jest.mock('@/lib/subscription/feature-access', () => ({ hasFeatureAccess: jest.fn(async () => true) }));
 
 import { getPool, closePool } from '@/lib/db';
-import { createTheme } from '@/lib/store/engine/themes-repo';
+import { createTheme, getLiveTheme } from '@/lib/store/engine/themes-repo';
 import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { loadEngineTheme } from '@/lib/store/engine/load-theme';
 import { loadEnginePage } from '@/lib/store/engine/page-loader';
@@ -58,7 +58,9 @@ d('Storefront theme loading (real DB)', () => {
       );
       await pool.query(`INSERT INTO business_settings (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`, [id]);
     }
-    live = ok(await createTheme(BIZ, USER, { name: 'Main', preset: 'studio', ctx }));
+    // These stores have a settings row, so the first create puts the store's migrated design live (D33, M5).
+    ok(await createTheme(BIZ, USER, { name: 'Main', preset: 'studio', ctx }));
+    live = (await getLiveTheme(BIZ))!;
     draft = ok(await createTheme(BIZ, USER, { name: 'Draft', preset: 'blank', ctx }));
     ok(await createTheme(OTHER, USER, { name: 'Other live', preset: 'studio', ctx }));
     otherDraft = ok(await createTheme(OTHER, USER, { name: 'Other draft', preset: 'blank', ctx }));
