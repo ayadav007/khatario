@@ -22,7 +22,21 @@ export function productSettings(withColumns: boolean): SettingSchema[] {
     { id: 'price_max', type: 'number', label: 'Maximum price', min: 1, max: 999999 },
     { id: 'limit', type: 'range', label: 'Number of products', min: 2, max: 24, step: 1, default: 8 },
     ...(withColumns
-      ? [{ id: 'columns', type: 'range', label: 'Columns', min: 2, max: 6, step: 1, default: 4 } as SettingSchema]
+      ? ([
+          { id: 'columns', type: 'range', label: 'Columns on desktop', min: 2, max: 6, step: 1, default: 4 },
+          {
+            id: 'mobile_columns',
+            type: 'select',
+            label: 'Columns on phone',
+            default: 'auto',
+            info: 'Theme default: 3 on Quick, 2 on the other themes.',
+            options: [
+              { value: 'auto', label: 'Theme default' },
+              { value: '2', label: '2' },
+              { value: '3', label: '3' },
+            ],
+          },
+        ] as SettingSchema[])
       : []),
     {
       id: 'card_style',

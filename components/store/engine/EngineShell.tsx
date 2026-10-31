@@ -38,6 +38,11 @@ const THEME_RULES =
   // A hero with no image on any slide: copy only, full width (the old Grocery and Khatario heroes had no empty panel).
   '.st-root.eng-root .hero.noImg:not(.full){grid-template-columns:1fr}' +
   '.st-root.eng-root .hero.noImg:not(.full) .heroImg{display:none}' +
+  // A product grid's "Columns on phone" beats each preset's phone default (Quick's 3, the others' 2).
+  '@container store (max-width:640px){' +
+  '.st-root.eng-root.eng-root .eng-sec .productGrid.mcols-2:not(.carousel){grid-template-columns:repeat(2,minmax(0,1fr))}' +
+  '.st-root.eng-root.eng-root .eng-sec .productGrid.mcols-3:not(.carousel){grid-template-columns:repeat(3,minmax(0,1fr))}' +
+  '}' +
   // Image with text uses an h2 in the hero markup (the page's h1 belongs to the slideshow).
   '.st-root.eng-root .heroCopy .eng-heroTitle{font-size:clamp(24px,5cqi,40px);line-height:1.1;margin:12px 0;font-weight:700;overflow-wrap:anywhere}' +
   // Full width (eng-sec--full): the section's content drops its side gutter and centred width caps.

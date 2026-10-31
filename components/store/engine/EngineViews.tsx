@@ -437,12 +437,15 @@ export function EngineProductGrid({
   products,
   isRow,
   showViewAll = true,
+  gridClass: extraClass,
 }: {
   sectionId: string;
   s: StudioSettings;
   products: StoreItem[];
   /** Product rail: a carousel the phone kit turns into a swipe row. */
   isRow: boolean;
+  /** Extra grid classes, e.g. `mcols-3` for the section's phone columns. */
+  gridClass?: string;
   /** Category shelves can hide the "View All" link. */
   showViewAll?: boolean;
 }) {
@@ -450,7 +453,7 @@ export function EngineProductGrid({
   const go = useCatalogNav();
   const source = s.source ?? 'all';
   const settings: StudioSettings = { ...s, display: isRow ? 'carousel' : 'grid' };
-  const gridClass = isRow ? 'isRow' : undefined;
+  const gridClass = [isRow ? 'isRow' : '', extraClass ?? ''].filter(Boolean).join(' ') || undefined;
 
   if (source === 'all' && !isRow) {
     return (

@@ -1,3 +1,4 @@
+import { phoneColumnsClass } from '@/lib/store/engine/render-helpers';
 import { productSectionSettings } from '@/lib/store/engine/studio-adapter';
 import type { EngineSectionProps } from '../registry';
 import { EngineProductGrid } from '../EngineViews';
@@ -11,5 +12,6 @@ export function ProductGrid({ id, section, data }: EngineSectionProps) {
   const s = noBox(productSectionSettings(section));
   // The all-products grid stays mounted when a filter empties it, so the shopper can clear the filter.
   if (products.length === 0 && !(s.source === 'all' && !isRow)) return null;
-  return <EngineProductGrid sectionId={id} s={s} products={products} isRow={isRow} />;
+  const phoneCols = isRow ? undefined : phoneColumnsClass(section.settings?.mobile_columns);
+  return <EngineProductGrid sectionId={id} s={s} products={products} isRow={isRow} gridClass={phoneCols} />;
 }

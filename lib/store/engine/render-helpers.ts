@@ -117,3 +117,8 @@ export function categoryMarks(categories: Array<{ id: string; name: string }>, s
   for (const c of categories) out[c.id] = groceryCategoryEmoji(c.name);
   return out;
 }
+
+/** Grid class for a product section's `mobile_columns` setting ('2' or '3'); none for the theme default. */
+export function phoneColumnsClass(value: unknown): string | undefined {
+  return value === '2' || value === '3' ? `mcols-${value}` : undefined;
+}
