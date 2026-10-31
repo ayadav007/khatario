@@ -92,17 +92,19 @@ export async function resolveSupplierRegistration(
     };
   }
   const stateCode = stateOf(businessGstin, r.b_state_code, r.b_state);
+  // An additional place of business under the head-office GSTIN issues from its own address.
+  const ownAddress = !!r.br_address1?.trim();
   return {
     source: 'business',
     gstin: businessGstin,
     stateCode,
     stateName: stateCode ? GST_STATE_NAMES[stateCode] ?? r.b_state : r.b_state,
-    addressLine1: r.b_address,
-    addressLine2: r.b_address2,
-    city: r.b_city,
-    pincode: r.b_pincode,
-    phone: r.b_phone,
-    email: r.b_email,
+    addressLine1: ownAddress ? r.br_address1 : r.b_address,
+    addressLine2: ownAddress ? r.br_address2 : r.b_address2,
+    city: ownAddress ? r.br_city : r.b_city,
+    pincode: ownAddress ? r.br_pincode : r.b_pincode,
+    phone: r.br_phone ?? r.b_phone,
+    email: r.br_email ?? r.b_email,
   };
 }
 
@@ -144,7 +146,14 @@ export async function checkBranchPlace(
   businessId: string,
   branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
 ): Promise<PlaceRegistrationError | null> {
-  const headOffice = await resolveSupplierRegistration(db, businessId, null);
+  return branchPlaceError(branch, await resolveSupplierRegistration(db, businessId, null));
+}
+
+/** `checkBranchPlace` with the head office's registration already loaded (lists check every row). */
+export function branchPlaceError(
+  branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
+  headOffice: { gstin: string | null; stateCode: string | null },
+): PlaceRegistrationError | null {
   const own = branch.gstin?.trim().toUpperCase() || null;
   if (own && own !== headOffice.gstin) {
     const check = resolveGstinAndState({ gstin: own, state: branch.state, state_code: branch.state_code });
@@ -162,6 +171,37 @@ export async function checkWarehousePlace(
 ): Promise<PlaceRegistrationError | null> {
   const registration = await resolveSupplierRegistration(db, businessId, branchId || null);
   return placeOutsideRegistration('warehouse', { state: warehouse.state }, registration);
+}
+
+/** Adds `gst_place_issue` to stored branches, so the list flags rows saved before the rule above. */
+export async function flagBranchPlaces<T extends { gstin?: string | null; state?: string | null; state_code?: string | null }>(
+  db: Queryable,
+  businessId: string,
+  branches: T[],
+): Promise<Array<T & { gst_place_issue: string | null }>> {
+  if (branches.length === 0) return [];
+  const headOffice = await resolveSupplierRegistration(db, businessId, null);
+  return branches.map((b) => ({ ...b, gst_place_issue: branchPlaceError(b, headOffice)?.error ?? null }));
+}
+
+/** Adds `gst_place_issue` to stored godowns, checked against each one's branch registration. */
+export async function flagWarehousePlaces<T extends { branch_id?: string | null; state?: string | null }>(
+  db: Queryable,
+  businessId: string,
+  warehouses: T[],
+): Promise<Array<T & { gst_place_issue: string | null }>> {
+  const registrations = new Map<string, Promise<SupplierRegistration>>();
+  const registrationOf = (branchId: string | null | undefined) => {
+    const key = branchId || '';
+    if (!registrations.has(key)) registrations.set(key, resolveSupplierRegistration(db, businessId, branchId || null));
+    return registrations.get(key)!;
+  };
+  return Promise.all(
+    warehouses.map(async (w) => ({
+      ...w,
+      gst_place_issue: placeOutsideRegistration('warehouse', { state: w.state }, await registrationOf(w.branch_id))?.error ?? null,
+    })),
+  );
 }
 
 /** Effective GST scheme of the registration a document is issued / received under. */

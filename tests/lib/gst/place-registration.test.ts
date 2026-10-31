@@ -1,19 +1,28 @@
-import { checkBranchPlace, checkWarehousePlace, placeOutsideRegistration } from '@/lib/gst/registration';
+import {
+  checkBranchPlace,
+  checkWarehousePlace,
+  flagBranchPlaces,
+  flagWarehousePlaces,
+  placeOutsideRegistration,
+  resolveSupplierRegistration,
+} from '@/lib/gst/registration';
 
 const GJ_GSTIN = '24AAPFU0939F1Z1';
 const MH_GSTIN = '27AAPFU0939F1ZV';
 
 /** Fake db: answers the registration lookup with the head office in Gujarat and an optional branch row. */
-function fakeDb(branch?: { gstin: string | null; state: string | null; state_code: string | null }) {
+function fakeDb(branch?: { gstin: string | null; state: string | null; state_code: string | null; address_line1?: string }) {
   return {
     query: async (_text: string, params?: unknown[]) => ({
       rows: [{
         b_gstin: GJ_GSTIN, b_state: 'Gujarat', b_state_code: '24',
-        b_address: null, b_address2: null, b_city: null, b_pincode: null, b_phone: null, b_email: null,
+        b_address: '1 Ashram Road', b_address2: null, b_city: 'Ahmedabad', b_pincode: '380009', b_phone: '0790000000', b_email: null,
         br_gstin: params?.[1] && branch ? branch.gstin : null,
         br_state: params?.[1] && branch ? branch.state : null,
         br_state_code: params?.[1] && branch ? branch.state_code : null,
-        br_address1: null, br_address2: null, br_city: null, br_pincode: null, br_phone: null, br_email: null,
+        br_address1: params?.[1] && branch?.address_line1 ? branch.address_line1 : null, br_address2: null,
+        br_city: params?.[1] && branch?.address_line1 ? 'Surat' : null, br_pincode: params?.[1] && branch?.address_line1 ? '395003' : null,
+        br_phone: null, br_email: null,
       }],
     }),
   } as any;
@@ -80,5 +89,38 @@ describe('checkWarehousePlace', () => {
   it('checks a godown without a branch against the head office', async () => {
     expect((await checkWarehousePlace(fakeDb(), 'biz', null, { state: 'Maharashtra' }))?.code).toBe('WAREHOUSE_OUTSIDE_REGISTRATION_STATE');
     expect(await checkWarehousePlace(fakeDb(), 'biz', null, { state: 'Gujarat' })).toBeNull();
+  });
+});
+
+describe('address a branch issues documents from', () => {
+  it('prints a same-GSTIN branch under its own address with the head-office GSTIN', async () => {
+    const reg = await resolveSupplierRegistration(fakeDb({ gstin: null, state: 'Gujarat', state_code: '24', address_line1: '4 Ring Road' }), 'biz', 'br');
+    expect(reg).toMatchObject({ source: 'business', gstin: GJ_GSTIN, stateCode: '24', addressLine1: '4 Ring Road', city: 'Surat', pincode: '395003' });
+    expect(reg.phone).toBe('0790000000');
+  });
+
+  it('keeps the head-office address when the branch has none', async () => {
+    const reg = await resolveSupplierRegistration(fakeDb({ gstin: null, state: 'Gujarat', state_code: '24' }), 'biz', 'br');
+    expect(reg).toMatchObject({ addressLine1: '1 Ashram Road', city: 'Ahmedabad', pincode: '380009' });
+  });
+});
+
+describe('list flags for rows saved before the rule', () => {
+  it('flags only the out-of-state branch without its own GSTIN', async () => {
+    const rows = await flagBranchPlaces(fakeDb(), 'biz', [
+      { id: 'a', gstin: null, state: 'Gujarat', state_code: '24' },
+      { id: 'b', gstin: null, state: 'Maharashtra', state_code: '27' },
+      { id: 'c', gstin: MH_GSTIN, state: 'Maharashtra', state_code: '27' },
+    ]);
+    expect(rows.map((r) => !!r.gst_place_issue)).toEqual([false, true, false]);
+    expect(rows[1].gst_place_issue).toMatch(/Maharashtra GSTIN/);
+  });
+
+  it('flags a godown outside its registration state', async () => {
+    const rows = await flagWarehousePlaces(fakeDb(), 'biz', [
+      { id: 'w1', branch_id: null, state: 'Gujarat' },
+      { id: 'w2', branch_id: null, state: 'Rajasthan' },
+    ]);
+    expect(rows.map((r) => !!r.gst_place_issue)).toEqual([false, true]);
   });
 });

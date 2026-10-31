@@ -102,12 +102,15 @@ export async function GET(request: NextRequest) {
         fw.name as from_warehouse_name,
         tw.name as to_warehouse_name,
         u.name as approved_by_name,
-        creator.name as created_by_name
+        creator.name as created_by_name,
+        dc.id as delivery_challan_id,
+        dc.challan_number as delivery_challan_number
       FROM stock_transfers st
       LEFT JOIN warehouses fw ON st.from_location_id = fw.id
       LEFT JOIN warehouses tw ON st.to_location_id = tw.id
       LEFT JOIN users u ON st.approved_by = u.id
       LEFT JOIN users creator ON st.created_by = creator.id
+      LEFT JOIN delivery_challans dc ON dc.stock_transfer_id = st.id AND dc.status <> 'cancelled'
       WHERE st.business_id = $1
       ${branchFilter}
       ORDER BY st.created_at DESC

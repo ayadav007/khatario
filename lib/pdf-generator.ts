@@ -173,15 +173,16 @@ export async function generateDocumentHtml(
         doc.business_gstin = reg.gstin;
         doc.business_state = reg.stateName;
         doc.business_state_code = reg.stateCode;
-        if (reg.addressLine1) {
-          doc.business_address = reg.addressLine1;
-          doc.business_address_line2 = reg.addressLine2;
-          doc.business_city = reg.city;
-          doc.business_pincode = reg.pincode;
-        }
-        if (reg.phone) doc.business_phone = reg.phone;
-        if (reg.email) doc.business_email = reg.email;
       }
+      // A branch prints its own address, also when it trades under the head-office GSTIN.
+      if (reg.addressLine1) {
+        doc.business_address = reg.addressLine1;
+        doc.business_address_line2 = reg.addressLine2;
+        doc.business_city = reg.city;
+        doc.business_pincode = reg.pincode;
+      }
+      if (reg.phone) doc.business_phone = reg.phone;
+      if (reg.email) doc.business_email = reg.email;
     }
 
     const itemsHaveCustomFields = await hasTableColumn('items', 'custom_fields');

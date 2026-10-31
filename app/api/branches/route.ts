@@ -7,7 +7,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
-import { checkBranchPlace } from '@/lib/gst/registration';
+import { checkBranchPlace, flagBranchPlaces } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +86,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ branches });
+    // Flags branches saved before the per-state rule, so the owner can add the missing GSTIN.
+    return NextResponse.json({ branches: await flagBranchPlaces(db.getPool() as any, businessId, branches) });
   } catch (error: any) {
     console.error('Error fetching branches:', error);
     return NextResponse.json(

@@ -46,6 +46,8 @@ interface Transfer {
   approved_by: string | null;
   approved_by_name: string | null;
   approved_at: string | null;
+  delivery_challan_id?: string | null;
+  delivery_challan_number?: string | null;
   items?: TransferItem[];
 }
 
@@ -284,6 +286,17 @@ export default function ViewTransferPage() {
                 </p>
               </div>
             </>
+          )}
+          {transfer.delivery_challan_id && (
+            <div>
+              <label className="text-sm font-medium text-gray-500">Delivery Challan</label>
+              <p>
+                <Link href={`/delivery-challans/${transfer.delivery_challan_id}`} className="text-primary-700 font-medium hover:underline">
+                  {transfer.delivery_challan_number || 'View challan'}
+                </Link>
+              </p>
+              <p className="text-xs text-gray-500">Print it, or make the e-way bill JSON, from the challan.</p>
+            </div>
           )}
           {transfer.notes && (
             <div className="md:col-span-2">

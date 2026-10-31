@@ -3,7 +3,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
-import { checkWarehousePlace } from '@/lib/gst/registration';
+import { checkWarehousePlace, flagWarehousePlaces } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
 
     const warehouses = await db.queryRows(query, params);
 
-    return NextResponse.json({ warehouses });
+    return NextResponse.json({ warehouses: await flagWarehousePlaces(db.getPool() as any, businessId, warehouses) });
   } catch (error: any) {
     console.error('Error fetching warehouses:', error);
     return NextResponse.json(

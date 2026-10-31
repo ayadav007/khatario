@@ -64,10 +64,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT status, stock_posted_at FROM delivery_challans WHERE id = $1 AND business_id = $2 FOR UPDATE',
+      'SELECT status, stock_posted_at, stock_transfer_id FROM delivery_challans WHERE id = $1 AND business_id = $2 FOR UPDATE',
       [params.id, tenant.businessId]
     );
     if (!current.rows[0]) throw new ChallanInputError('Delivery challan not found', 404);
+    if (current.rows[0].stock_transfer_id) {
+      throw new ChallanInputError('This challan was issued for a stock transfer and follows it. Change the transfer instead.', 409);
+    }
     if (!isChallanEditable(current.rows[0].status)) {
       throw new ChallanInputError(`A ${current.rows[0].status} challan cannot be edited`, 409);
     }
@@ -98,11 +101,16 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!(CHALLAN_STATUSES as readonly string[]).includes(next)) {
       throw new ChallanInputError('Invalid status');
     }
-    const current = await queryOne<{ status: string; challan_kind: string; stock_posted_at: string | null; closed_at: string | null }>(
-      'SELECT status, challan_kind, stock_posted_at, closed_at FROM delivery_challans WHERE id = $1 AND business_id = $2',
+    const current = await queryOne<{
+      status: string; challan_kind: string; stock_posted_at: string | null; closed_at: string | null; stock_transfer_id: string | null;
+    }>(
+      'SELECT status, challan_kind, stock_posted_at, closed_at, stock_transfer_id FROM delivery_challans WHERE id = $1 AND business_id = $2',
       [params.id, tenant.businessId]
     );
     if (!current) throw new ChallanInputError('Delivery challan not found', 404);
+    if (current.stock_transfer_id && next === 'cancelled') {
+      throw new ChallanInputError('This challan was issued for a stock transfer. Cancel the transfer to cancel it.', 409);
+    }
     if (!canTransition(current.status, next)) {
       throw new ChallanInputError(`Cannot change a ${current.status} challan to ${next}`, 409);
     }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { CheckCircle, FileText, PackageCheck, Send, XCircle } from 'lucide-react';
 import { UnifiedDocumentDetail } from '@/components/documents/UnifiedDocumentDetail';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +39,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
   const status: string = challan.status || 'draft';
   const returnable = challan.challan_kind === 'returnable';
   const goodsOut = returnable && !!challan.stock_posted_at && !challan.closed_at;
+  const fromTransfer = !!challan.stock_transfer_id;
 
   async function move(next: 'sent' | 'delivered' | 'cancelled') {
     if (next === 'cancelled' && !window.confirm('Cancel this delivery challan? This cannot be undone.')) return;
@@ -86,6 +88,15 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
               : `Returnable: ${PURPOSE_LABEL[challan.purpose] || challan.purpose}`}
         </span>
       )}
+      {fromTransfer && (
+        <Link
+          href={`/stock-transfers/${challan.stock_transfer_id}`}
+          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-800 hover:underline"
+          title="Goods moved between your own godowns on one GSTIN: not a supply, no tax"
+        >
+          Stock transfer challan
+        </Link>
+      )}
       {canTransition(status, 'sent') && (
         <Button size="sm" onClick={() => move('sent')} isLoading={busy === 'sent'} disabled={!!busy}>
           <Send className="w-4 h-4 mr-2" />
@@ -126,7 +137,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           Mark Delivered
         </Button>
       )}
-      {canTransition(status, 'cancelled') && !goodsOut && (
+      {canTransition(status, 'cancelled') && !goodsOut && !fromTransfer && (
         <Button
           variant="secondary"
           size="sm"
@@ -155,7 +166,15 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
         defaults={{
           doc_type: 'delivery_challan',
           sub_supply_type:
-            challan.purpose === 'job_work' ? 'job_work' : challan.purpose === 'exhibition' ? 'exhibition' : returnable ? 'others' : 'supply',
+            challan.purpose === 'job_work'
+              ? 'job_work'
+              : challan.purpose === 'exhibition'
+                ? 'exhibition'
+                : returnable
+                  ? 'others'
+                  : fromTransfer
+                    ? 'own_use'
+                    : 'supply',
           goods_value: Number(challan.grand_total) || undefined,
           vehicle_number: challan.vehicle_number,
         }}
@@ -175,7 +194,7 @@ export default function DeliveryChallanDetailPage() {
       title="Delivery Challan"
       backUrl="/delivery-challans"
       editUrlPrefix="/delivery-challans/edit"
-      canEdit={(doc) => isChallanEditable(doc?.status || 'draft') && !doc?.stock_posted_at}
+      canEdit={(doc) => isChallanEditable(doc?.status || 'draft') && !doc?.stock_posted_at && !doc?.stock_transfer_id}
       headerActions={(doc, reload) => <ChallanStatusActions challan={doc} reload={reload} />}
     />
   );

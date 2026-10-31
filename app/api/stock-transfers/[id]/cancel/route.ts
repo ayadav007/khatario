@@ -149,6 +149,13 @@ export async function PATCH(
       }
     }
 
+    // The dispatch challan goes with the transfer; it never moved stock itself.
+    await client.query(
+      `UPDATE delivery_challans SET status = 'cancelled', cancelled_at = NOW()
+        WHERE stock_transfer_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+      [params.id, transfer.business_id]
+    );
+
     await client.query(
       `UPDATE stock_transfers
           SET status = 'cancelled',

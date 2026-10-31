@@ -1,5 +1,7 @@
 import type { PoolClient } from 'pg';
 import { EwayBillInputError } from '@/lib/gst/eway-bills';
+import { stateCodeFromName } from '@/lib/gst/registration';
+import { loadTransferGodown } from '@/lib/stock-transfers/godowns';
 
 /**
  * E-way bill JSON for the portal's bulk upload, built from a delivery challan or an invoice, so
@@ -80,6 +82,35 @@ async function party(db: Queryable, businessId: string, kind: 'customer' | 'supp
     pincode: PIN(x.pin),
     state: STATE(x.st),
   };
+}
+
+/**
+ * Both ends of a stock transfer's challan: the godowns' own addresses, each under the GSTIN of the
+ * branch it belongs to (the same GSTIN at both ends, since only those transfers get a challan).
+ */
+async function transferParties(db: Queryable, businessId: string, transferId: string): Promise<{ from: Party; to: Party } | null> {
+  const t = (
+    await db.query(`SELECT from_location_id, to_location_id FROM stock_transfers WHERE id = $1 AND business_id = $2`, [transferId, businessId])
+  ).rows[0];
+  if (!t) return null;
+  const end = async (warehouseId: string): Promise<Party> => {
+    const w = await loadTransferGodown(db, businessId, warehouseId);
+    if (!w) throw new EwayBillInputError('Transfer godown not found', 404);
+    const s = await seller(db, businessId, w.branch_id);
+    if (!w.address_line1 || !PIN(w.pincode)) {
+      throw new EwayBillInputError(`Add the address and PIN code of the ${w.name} godown before making e-way bill JSON`);
+    }
+    return {
+      ...s,
+      name: cut(`${s.name} (${w.name})`, 100),
+      addr1: cut(w.address_line1, 120),
+      addr2: cut(w.address_line2, 120),
+      place: cut(w.city, 50),
+      pincode: PIN(w.pincode),
+      state: STATE(stateCodeFromName(w.state)) || s.state,
+    };
+  };
+  return { from: await end(t.from_location_id), to: await end(t.to_location_id) };
 }
 
 function bill(p: {
@@ -186,15 +217,18 @@ export async function ewayBulkJson(
         [sourceId]
       )
     ).rows;
-    const to = c.supplier_id
-      ? await party(db, businessId, 'supplier', c.supplier_id)
-      : await party(db, businessId, 'customer', c.customer_id, c.shipping_address);
+    const transferEnds = c.stock_transfer_id ? await transferParties(db, businessId, c.stock_transfer_id) : null;
+    const to = transferEnds
+      ? transferEnds.to
+      : c.supplier_id
+        ? await party(db, businessId, 'supplier', c.supplier_id)
+        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address);
     return {
       version: '1.0.0621',
       billLists: [
         bill({
           docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
-          from: await seller(db, businessId, c.branch_id), to, lines, distanceKm: opts.distanceKm,
+          from: transferEnds ? transferEnds.from : await seller(db, businessId, c.branch_id), to, lines, distanceKm: opts.distanceKm,
           vehicle: c.vehicle_number, transporterGstin: c.transporter_gstin, transporterName: c.transporter_name,
         }),
       ],

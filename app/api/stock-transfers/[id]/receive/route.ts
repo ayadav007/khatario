@@ -229,6 +229,15 @@ export async function POST(
       WHERE id = $3
     `, [finalStatus, notes || null, params.id]);
 
+    if (finalStatus === 'completed') {
+      await client.query(
+        `UPDATE delivery_challans
+            SET status = 'delivered', delivered_at = NOW(), delivery_date = COALESCE(delivery_date, CURRENT_DATE)
+          WHERE stock_transfer_id = $1 AND business_id = $2 AND status = 'sent'`,
+        [params.id, transfer.business_id]
+      );
+    }
+
     // The receiving branch books the inter-branch invoice once, when the goods are fully received.
     if (transfer.inter_branch_invoice_id && finalStatus === 'completed') {
       const invoice = await client.query(

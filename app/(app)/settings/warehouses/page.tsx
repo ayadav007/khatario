@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import { Plus, MapPin, Phone, Mail, CheckCircle, Package, Trash2 } from 'lucide-react';
+import { Plus, MapPin, Phone, Mail, CheckCircle, Package, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
@@ -24,6 +24,8 @@ interface Location {
   phone: string;
   email: string;
   is_active: boolean;
+  /** Set when the godown sits outside its GST registration's state. */
+  gst_place_issue?: string | null;
   linked_branches?: Array<{
     branch_id: string;
     branch_name: string;
@@ -127,6 +129,7 @@ export default function LocationsPage() {
         phone: '', // Warehouses don't have phone in the new schema
         email: '', // Warehouses don't have email in the new schema
         is_active: w.is_active !== false,
+        gst_place_issue: w.gst_place_issue || null,
         linked_branches: branchLinksMap.get(w.id) || []
       }));
       setLocations(mappedLocations);
@@ -315,6 +318,13 @@ export default function LocationsPage() {
                     </div>
                   )}
                 </div>
+
+{location.gst_place_issue && (
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{location.gst_place_issue}</span>
+                  </div>
+                )}
 
                 {/* Address */}
                 <div className="mb-4">
