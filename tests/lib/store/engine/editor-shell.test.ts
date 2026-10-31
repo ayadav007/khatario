@@ -53,6 +53,8 @@ describe('editor shell helpers', () => {
     expect(selectionRef({ kind: 'section', ref })).toEqual(ref);
     expect(selectionRef({ kind: 'block', ref, blockId: 'b1' })).toEqual(ref);
     expect(selectionRef({ kind: 'theme' })).toBeNull();
+    expect(selectionRef({ kind: 'menus' })).toBeNull();
+    expect(selectionRef({ kind: 'menu', menuId: 'main', itemId: null })).toBeNull();
     expect(selectionRef(null)).toBeNull();
   });
 
@@ -70,6 +72,26 @@ describe('editor shell helpers', () => {
     const th = { kind: 'theme' as const };
     expect(pruneSelection(theme, 'home', th)).toBe(th);
     expect(pruneSelection(theme, 'home', null)).toBeNull();
+  });
+
+  it('prunes a menu selection whose menu or item no longer exists', () => {
+    const withMenus: ThemeData = {
+      ...theme,
+      settings: {
+        menus: [{ id: 'main', name: 'Main', items: [{ id: 'a', label: 'A', link: '', children: [{ id: 'a1', label: 'A1', link: '' }] }] }],
+      } as unknown as ThemeData['settings'],
+    };
+    const menus = { kind: 'menus' as const };
+    expect(pruneSelection(withMenus, 'home', menus)).toBe(menus);
+    const whole = { kind: 'menu' as const, menuId: 'main', itemId: null };
+    expect(pruneSelection(withMenus, 'home', whole)).toBe(whole);
+    const item = { kind: 'menu' as const, menuId: 'main', itemId: 'a1' };
+    expect(pruneSelection(withMenus, 'home', item)).toBe(item);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: 'main', itemId: 'gone' })).toEqual(whole);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: 'gone', itemId: 'a' })).toEqual(menus);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: '__proto__', itemId: null })).toEqual(menus);
+    // A theme with no menus list at all still prunes safely.
+    expect(pruneSelection(theme, 'home', whole)).toEqual(menus);
   });
 
   it('reads undo and redo shortcuts', () => {

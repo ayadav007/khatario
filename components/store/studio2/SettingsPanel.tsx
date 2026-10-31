@@ -56,7 +56,8 @@ export function SettingsPanel({ preset }: { preset?: ThemePreset } = {}) {
   let body: ReactNode = !selection && pageHandle(templateKey) ? <PageSettings key={templateKey} pageKey={templateKey} /> : <Empty />;
   if (selection?.kind === 'theme') {
     body = <ThemePanel preset={preset} />;
-  } else if (selection) {
+  } else if (selection && (selection.kind === 'section' || selection.kind === 'block')) {
+    // The Menus editor (kind 'menus' / 'menu') has its own panel.
     const g = getGroup(theme, templateKey, selection.ref.group);
     const section = hasOwn(g.sections, selection.ref.id) ? g.sections[selection.ref.id] : null;
     const key = `${selection.ref.group}:${selection.ref.id}`;

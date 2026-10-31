@@ -1,6 +1,6 @@
 // Client-safe helpers for the Studio 2 editor shell (selection, save status, shortcuts).
 // Pure: no React, no DOM globals. Imports only ops (types + getGroup).
-import type { ThemeData, ThemeRole } from '../types';
+import type { MenuItem, ThemeData, ThemeRole } from '../types';
 import { getGroup, type SectionRef } from './ops';
 import type { SaveStatus } from './save-queue';
 
@@ -8,7 +8,13 @@ export type Selection =
   | { kind: 'section'; ref: SectionRef }
   | { kind: 'block'; ref: SectionRef; blockId: string }
   | { kind: 'theme' }
+  | { kind: 'menus' }
+  | { kind: 'menu'; menuId: string; itemId: string | null }
   | null;
+
+function hasMenuItem(items: MenuItem[] | undefined, id: string): boolean {
+  return (items ?? []).some((i) => i.id === id || hasMenuItem(i.children, id));
+}
 
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -19,7 +25,7 @@ export function toSelection(ref: SectionRef | null): Selection {
 
 /** The section the preview should outline for a selection, if any. */
 export function selectionRef(sel: Selection): SectionRef | null {
-  if (!sel || sel.kind === 'theme') return null;
+  if (!sel || sel.kind === 'theme' || sel.kind === 'menus' || sel.kind === 'menu') return null;
   return sel.ref;
 }
 
@@ -28,7 +34,14 @@ export function selectionRef(sel: Selection): SectionRef | null {
  * A missing block falls back to its section; a missing section clears the selection.
  */
 export function pruneSelection(theme: ThemeData, templateKey: string, sel: Selection): Selection {
-  if (!sel || sel.kind === 'theme') return sel;
+  if (!sel || sel.kind === 'theme' || sel.kind === 'menus') return sel;
+  if (sel.kind === 'menu') {
+    const menus = Array.isArray(theme.settings?.menus) ? theme.settings.menus : [];
+    const menu = menus.find((m) => m.id === sel.menuId);
+    if (!menu) return { kind: 'menus' };
+    if (sel.itemId === null || hasMenuItem(menu.items, sel.itemId)) return sel;
+    return { kind: 'menu', menuId: sel.menuId, itemId: null };
+  }
   const group = getGroup(theme, templateKey, sel.ref.group);
   if (!hasOwn(group.sections, sel.ref.id)) return null;
   if (sel.kind === 'section') return sel;
