@@ -18,6 +18,7 @@ import '../studio-theme/studio-theme.css';
 import { EngineCardContext } from './EngineCardContext';
 import { STYLE_RULES } from './style-rules';
 import { CONTENT_BLOCK_RULES } from './content-block-rules';
+import { PREMIUM_SECTION_RULES } from './premium-section-rules';
 import './presets/quick.css';
 import './presets/grocery.css';
 import './presets/khatario.css';
@@ -320,7 +321,7 @@ export function EngineShell({
         data-store={subdomain}
         data-card={settings.card_style}
       >
-        <style dangerouslySetInnerHTML={{ __html: THEME_RULES + CONTENT_BLOCK_RULES + STYLE_RULES }} />
+        <style dangerouslySetInnerHTML={{ __html: THEME_RULES + CONTENT_BLOCK_RULES + PREMIUM_SECTION_RULES + STYLE_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}
         {storeCss ? <style dangerouslySetInnerHTML={{ __html: storeCss }} /> : null}
         <div className="st-sticky st-cq">{header}</div>

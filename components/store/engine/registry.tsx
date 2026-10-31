@@ -21,6 +21,7 @@ import { RecentlyViewed } from './sections/RecentlyViewed';
 import { ProductReviews } from './sections/ProductReviews';
 import { CatalogBanner } from './sections/CatalogBanner';
 import { MainCatalog } from './sections/MainCatalog';
+import { Collage } from './sections/Collage';
 import { CollectionList } from './sections/CollectionList';
 import { LogoList } from './sections/LogoList';
 import { Video } from './sections/Video';
@@ -72,6 +73,7 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   'product-reviews': ProductReviews,
   'catalog-banner': CatalogBanner,
   'main-catalog': MainCatalog,
+  collage: Collage,
   'collection-list': CollectionList,
   'logo-list': LogoList,
   video: Video,
