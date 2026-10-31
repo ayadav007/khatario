@@ -25,11 +25,11 @@ function themeOf(body: Record<string, unknown>): ThemeRow | null {
   return t && typeof t === 'object' && typeof t.id === 'string' ? t : null;
 }
 
-export async function listThemes(): Promise<ThemeListRow[]> {
+export async function listThemes(): Promise<{ themes: ThemeListRow[]; premium_enabled: boolean }> {
   const res = await fetch(BASE, { credentials: 'include' });
   const body = await readJson(res);
   if (!res.ok || !Array.isArray(body.themes)) throw new Error(errorOf(body, 'Failed to load themes'));
-  return body.themes as ThemeListRow[];
+  return { themes: body.themes as ThemeListRow[], premium_enabled: body.premium_enabled === true };
 }
 
 export async function createTheme(opts: {

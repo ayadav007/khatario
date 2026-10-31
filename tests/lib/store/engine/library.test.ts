@@ -26,6 +26,8 @@ import {
   STUDIO_BACK_LABEL,
   LIBRARY_PATH,
   LEAVE_UNSAVED_TEXT,
+  isPremiumPreset,
+  visiblePresetChoices,
 } from '@/lib/store/engine/library';
 import type { ThemeListRow, ThemeVersionSummary } from '@/lib/store/engine/types';
 
@@ -222,5 +224,14 @@ describe('library texts (D39, D41, D42, D52)', () => {
     for (const a of MENU_ACTIONS) expect(ACTION_LABELS[a].length).toBeGreaterThan(0);
     expect(ACTION_LABELS.discard).toBe('Discard changes');
     expect(ACTION_LABELS.preview).toBe('Preview link');
+  });
+});
+
+describe('premium presets', () => {
+  it('hides premium presets until the flag is on', () => {
+    expect(visiblePresetChoices(false).map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank']);
+    expect(visiblePresetChoices(true).map((c) => c.preset)).toContain('heritage');
+    expect(isPremiumPreset('heritage')).toBe(true);
+    expect(isPremiumPreset('studio')).toBe(false);
   });
 });

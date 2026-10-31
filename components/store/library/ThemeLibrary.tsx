@@ -68,6 +68,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
   const router = useRouter();
   const toast = useToastContext();
   const [rows, setRows] = useState<ThemeListRow[] | null>(null);
+  const [premiumEnabled, setPremiumEnabled] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [backups, setBackups] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -82,7 +83,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
 
   const load = useCallback(async () => {
     try {
-      const list = await listThemes();
+      const { themes: list, premium_enabled } = await listThemes();
       const storage = localStore();
       const t = Date.now();
       // D51: drop this store's backups of themes that are gone or two weeks old; badge the rest.
@@ -94,6 +95,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       });
       setBackups(new Set(list.filter((r) => hasBackup(storage, businessId, r.id)).map((r) => r.id)));
       setRows(list);
+      setPremiumEnabled(premium_enabled);
       loadedRef.current = true;
       setNow(t);
       setLoadError(null);
@@ -403,6 +405,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       {adding ? (
         <AddThemeModal
           count={count}
+          premiumEnabled={premiumEnabled}
           onClose={closeAdd}
           onCreated={(theme) => {
             setAdding(false);

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { createTheme, listThemes, type ThemeSource } from '@/lib/store/engine/themes-repo';
+import { premiumThemesEnabled } from '@/lib/store/engine/premium';
+import { isPremiumPreset } from '@/lib/store/engine/library';
 import { presetContextFor } from '@/lib/store/engine/preset-context';
 import { THEME_READ, isUuid, repoJson } from '@/lib/store/engine/route-utils';
 import type { ThemePreset } from '@/lib/store/engine/types';
@@ -19,7 +21,11 @@ export async function GET(request: NextRequest) {
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
   try {
-    return NextResponse.json({ themes: await listThemes(tenant.businessId) });
+    const [themes, premium_enabled] = await Promise.all([
+      listThemes(tenant.businessId),
+      premiumThemesEnabled(tenant.businessId),
+    ]);
+    return NextResponse.json({ themes, premium_enabled });
   } catch (error) {
     console.error('themes GET:', error);
     return NextResponse.json({ error: 'Failed to load themes' }, { status: 500 });
@@ -50,6 +56,12 @@ export async function POST(request: NextRequest) {
   const source = body.source === undefined || body.source === null ? 'preset' : body.source;
   if (typeof source !== 'string' || !SOURCES.includes(source as ThemeSource)) {
     return NextResponse.json({ error: 'Invalid source' }, { status: 400 });
+  }
+
+  // Premium presets are for stores with the flag on. Duplicates, the migrated design, editing and version restore
+  // are never gated, so a store that loses the flag keeps and edits the premium themes it already has.
+  if (source === 'preset' && body.duplicate_of == null && isPremiumPreset(preset as ThemePreset) && !(await premiumThemesEnabled(tenant.businessId))) {
+    return NextResponse.json({ error: 'Premium themes are not enabled for this store', code: 'premium_locked' }, { status: 403 });
   }
 
   try {

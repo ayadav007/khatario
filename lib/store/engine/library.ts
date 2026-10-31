@@ -60,6 +60,15 @@ export const PRESET_CHOICES: PresetChoice[] = [
   },
 ];
 
+/** The preset choices a store may start from: premium ones only when its premium flag is on. */
+export function visiblePresetChoices(premiumEnabled: boolean): PresetChoice[] {
+  return premiumEnabled ? PRESET_CHOICES : PRESET_CHOICES.filter((c) => !c.premium);
+}
+
+export function isPremiumPreset(preset: ThemePreset): boolean {
+  return PRESET_CHOICES.some((c) => c.preset === preset && c.premium === true);
+}
+
 export const MIGRATED_CHOICE = {
   label: 'Your current store design',
   description: 'A copy of how your store looks today',

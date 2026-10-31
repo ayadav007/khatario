@@ -5,7 +5,7 @@ import { Loader2, Store, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { ThemePreset, ThemeRow } from '@/lib/store/engine/types';
-import { LIMIT_NOTICE, MIGRATED_CHOICE, PRESET_CHOICES, THEME_NAME_MAX, canAddTheme } from '@/lib/store/engine/library';
+import { LIMIT_NOTICE, MIGRATED_CHOICE, THEME_NAME_MAX, canAddTheme, visiblePresetChoices } from '@/lib/store/engine/library';
 import { createTheme } from './api';
 
 type Choice = ThemePreset | 'migrated';
@@ -13,12 +13,14 @@ type Choice = ThemePreset | 'migrated';
 interface AddThemeModalProps {
   /** Themes the business has now (D43: Add is disabled at 20). */
   count: number;
+  /** Premium presets are offered only when the store's premium flag is on. */
+  premiumEnabled: boolean;
   onClose(): void;
   onCreated(theme: ThemeRow): void;
 }
 
-/** D43: one of the five presets or the store's current design, and an optional name (empty takes the server's). */
-export function AddThemeModal({ count, onClose, onCreated }: AddThemeModalProps) {
+/** D43: one of the presets or the store's current design, and an optional name (empty takes the server's). */
+export function AddThemeModal({ count, premiumEnabled, onClose, onCreated }: AddThemeModalProps) {
   const toast = useToastContext();
   const titleId = useId();
   const nameId = useId();
@@ -105,7 +107,7 @@ export function AddThemeModal({ count, onClose, onCreated }: AddThemeModalProps)
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <fieldset className="space-y-2">
             <legend className="mb-2 text-xs font-medium text-gray-700">Start from</legend>
-            {PRESET_CHOICES.map((c) => (
+            {visiblePresetChoices(premiumEnabled).map((c) => (
               <label key={c.preset} className={optionCls(choice === c.preset)}>
                 <input
                   type="radio"
@@ -120,7 +122,14 @@ export function AddThemeModal({ count, onClose, onCreated }: AddThemeModalProps)
                   <span className="h-8 w-5" style={{ background: c.accent }} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900">{c.label}</span>
+                  <span className="block text-sm font-medium text-gray-900">
+                    {c.label}
+                    {c.premium ? (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                        Premium
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="block text-xs text-gray-500">{c.description}</span>
                 </span>
               </label>
