@@ -47,7 +47,11 @@ export function collectDataRequests(groups: Template[]): Map<string, SectionData
       if (section.disabled) continue;
       const schema = getSectionSchema(section.type);
       if (!schema?.data) continue;
-      out.set(id, schema.data(section.settings));
+      const blocks = section.block_order
+        .map((blockId) => section.blocks[blockId])
+        .filter((b) => b && !b.disabled)
+        .map((b) => ({ type: b.type, settings: b.settings }));
+      out.set(id, schema.data(section.settings, blocks));
     }
   }
   return out;

@@ -29,6 +29,9 @@ import { countdown } from './sections/countdown';
 import { spacer } from './sections/spacer';
 import { promoCards } from './sections/promo-cards';
 import { categoryShelves } from './sections/category-shelves';
+import { collage } from './sections/collage';
+import { shopTheLook } from './sections/shop-the-look';
+import { imageGallery } from './sections/image-gallery';
 
 /** Appended to every non-group section. Colour scheme, CSS class and custom CSS live on the Section itself. */
 export const COMMON_SETTINGS: SettingSchema[] = [
@@ -94,6 +97,9 @@ const ALL: SectionSchema[] = [
   spacer,
   promoCards,
   categoryShelves,
+  collage,
+  shopTheLook,
+  imageGallery,
 ].map(withCommon);
 
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = Object.fromEntries(ALL.map((s) => [s.type, s]));

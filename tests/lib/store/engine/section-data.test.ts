@@ -51,6 +51,26 @@ describe('collectDataRequests', () => {
   });
 });
 
+describe('collectDataRequests with blocks', () => {
+  it('hands each schema its enabled blocks in order', () => {
+    const A = '11111111-1111-4111-8111-111111111111';
+    const B = '22222222-2222-4222-8222-222222222222';
+    const C = '33333333-3333-4333-8333-333333333333';
+    const look: Section = {
+      type: 'shop-the-look',
+      settings: {},
+      blocks: {
+        'hotspot-1': { type: 'hotspot', settings: { product: A }, disabled: true },
+        'hotspot-2': { type: 'hotspot', settings: { product: B } },
+        'hotspot-3': { type: 'hotspot', settings: { product: C } },
+      },
+      block_order: ['hotspot-3', 'hotspot-2', 'hotspot-1'],
+    };
+    const map = collectDataRequests([group({ look })]);
+    expect(map.get('look')).toEqual({ productIds: [C, B] });
+  });
+});
+
 describe('resolveSectionData for demo stores', () => {
   it('serves products and categories from the demo catalog without touching the database', async () => {
     const { resolveSectionData } = await import('@/lib/store/engine/section-data');

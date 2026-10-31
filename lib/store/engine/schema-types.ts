@@ -85,5 +85,9 @@ export interface SectionSchema {
     settings?: Record<string, unknown>;
     blocks?: Array<{ type: string; settings?: Record<string, unknown> }>;
   }>;
-  data?: (settings: Record<string, unknown>) => SectionDataRequest;
+  /** `blocks` are the section's enabled blocks in order; a one-argument function ignores them. */
+  data?: (
+    settings: Record<string, unknown>,
+    blocks: Array<{ type: string; settings: Record<string, unknown> }>,
+  ) => SectionDataRequest;
 }
