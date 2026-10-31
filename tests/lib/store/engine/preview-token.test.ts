@@ -29,7 +29,17 @@ describe('theme preview token', () => {
     const [body, sig] = signThemePreview(BIZ, THEME, PREVIEW_TTL.editor).split('.');
     const forged = Buffer.from(JSON.stringify({ b: BIZ, t: OTHER, exp: Date.now() + 1e9 })).toString('base64url');
     expect(verifyThemePreview(`${forged}.${sig}`, BIZ)).toBeNull();
-    expect(verifyThemePreview(`${body}.${sig.slice(0, -2)}AA`, BIZ)).toBeNull();
+    const flip = (s: string, i: number) => `${s.slice(0, i)}${s[i] === 'A' ? 'B' : 'A'}${s.slice(i + 1)}`;
+    expect(verifyThemePreview(`${body}.${flip(sig, sig.length >> 1)}`, BIZ)).toBeNull();
+  });
+
+  it('never verifies a token with its middle character flipped', () => {
+    const flip = (s: string, i: number) => `${s.slice(0, i)}${s[i] === 'A' ? 'B' : 'A'}${s.slice(i + 1)}`;
+    for (let i = 0; i < 200; i++) {
+      const t = signThemePreview(BIZ, THEME, PREVIEW_TTL.share, Date.now() + i * 7919);
+      expect(verifyThemePreview(t, BIZ)).toBe(THEME);
+      expect(verifyThemePreview(flip(t, t.length >> 1), BIZ)).toBeNull();
+    }
   });
 
   it('rejects a token whose MAC was computed without the purpose prefix', () => {

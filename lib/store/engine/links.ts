@@ -4,6 +4,8 @@
 const KEPT_PARAMS = ['preview_theme', 'pt', 'td'];
 /** Kept only alongside a theme preview (`preview_theme` and `pt`): the Studio 2 frame stays in editor mode. */
 const PREVIEW_ONLY_PARAMS = ['editor'];
+/** Category ids are uuids; anything else in `cat` cannot name a category. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Home-page URL with the catalog narrowed by `cat` and/or `q` (empty values are dropped),
@@ -57,14 +59,16 @@ export function engineProductHref(currentSearch: string, productId: string): str
 
 /**
  * Where an old or misplaced catalog URL goes (D14), or null to stay:
- * - an engine home with `cat` or `q` → the engine catalog;
+ * - an engine home with `cat` or `q` → the engine catalog (a `cat` that is not a uuid is dropped, so a
+ *   malformed link shows the home, or the catalog search, instead of a 404);
  * - `/catalog[/<id>]` on a store without the engine catalog → the home with `cat=<id>` and the rest of the query.
  */
 export function catalogRedirect(engine: boolean, path: string, search: string): string | null {
   const query = new URLSearchParams(search);
   if (engine) {
     if (path !== '/') return null;
-    const categoryId = query.get('cat');
+    const rawCat = query.get('cat');
+    const categoryId = rawCat && UUID_RE.test(rawCat) ? rawCat : null;
     const q = query.get('q');
     if (!categoryId && !q) return null;
     return engineCatalogHref(search, { categoryId, q });

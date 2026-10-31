@@ -26,7 +26,7 @@ export function studioPreset(ctx: PresetContext): ThemeData {
   if (ctx.logoUrl) headerSettings.logo_url = ctx.logoUrl;
 
   return {
-    settings: presetSettings(ctx),
+    settings: presetSettings(ctx, 'studio'),
     header_group: template([
       section('announcement', { text: tagline.slice(0, 200).trim() }),
       section('header', headerSettings, [

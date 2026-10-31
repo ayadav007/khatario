@@ -9,6 +9,7 @@ export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
     id: 'card_style',
     type: 'select',
     label: 'Card style',
+    info: 'Product grid and rail sections keep their own card style',
     default: 'bordered',
     options: [
       { value: 'plain', label: 'Plain' },

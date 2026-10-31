@@ -1,5 +1,6 @@
 import { presetTheme, type PresetContext } from '@/lib/store/engine/presets';
 import { sanitizeThemeData, ID_RE } from '@/lib/store/engine/sanitize';
+import { section, template } from '@/lib/store/engine/presets/shared';
 
 // The product and catalog templates' section ids are fresh per call (newId), so determinism is checked on their sections in order.
 function stable(p: ReturnType<typeof presetTheme>) {
@@ -52,6 +53,25 @@ describe('studio home', () => {
     expect(p.templates.home.sections.slideshow.blocks['slide-1'].settings.heading).toBe('Welcome to Rose Mart');
     expect(p.templates.home.sections.multicolumn.block_order).toHaveLength(4);
     expect(p.header_group.order).toEqual(['announcement', 'header']);
+  });
+});
+
+describe('studio look', () => {
+  it('paints scheme 1 with Studio paper', () => {
+    expect(presetTheme('studio', ctx).settings.color_schemes[0].background).toBe('#fbf8f3');
+    expect(presetTheme('blank', ctx).settings.color_schemes[0].background).toBe('#fbf8f3');
+  });
+});
+
+describe('template ids (D30)', () => {
+  it('suffixes a repeated section type', () => {
+    expect(template([section('product-rail', {}), section('product-rail', {})]).order).toEqual(['product-rail', 'product-rail-2']);
+  });
+
+  it('keeps every section under its id', () => {
+    const t = template([section('product-rail', { heading: 'A' }), section('rich-text', {}), section('product-rail', { heading: 'B' })]);
+    expect(t.order).toEqual(['product-rail', 'rich-text', 'product-rail-2']);
+    expect(t.sections['product-rail-2'].settings.heading).toBe('B');
   });
 });
 

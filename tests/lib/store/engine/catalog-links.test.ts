@@ -23,7 +23,13 @@ describe('engineProductHref', () => {
 
 describe('catalogRedirect', () => {
   it('sends an engine home with cat to the catalog', () => {
-    expect(catalogRedirect(true, '/', '?cat=C')).toBe('/catalog/C');
+    const id = '44444444-4444-4444-8444-444444444444';
+    expect(catalogRedirect(true, '/', `?cat=${id}`)).toBe(`/catalog/${id}`);
+    expect(catalogRedirect(true, '/', `?cat=${id.toUpperCase()}&q=rice`)).toBe(`/catalog/${id.toUpperCase()}?q=rice`);
+  });
+
+  it('drops a malformed cat on an engine home', () => {
+    expect(catalogRedirect(true, '/', '?cat=foo&q=rice')).toBe('/catalog?q=rice');
   });
 
   it('sends a non-engine catalog to the home with cat and the rest of the query', () => {
@@ -33,6 +39,7 @@ describe('catalogRedirect', () => {
 
   it('is null when there is nothing to redirect', () => {
     expect(catalogRedirect(true, '/', '')).toBeNull();
+    expect(catalogRedirect(true, '/', '?cat=foo')).toBeNull();
     expect(catalogRedirect(true, '/catalog', '?q=a')).toBeNull();
     expect(catalogRedirect(false, '/', '?cat=C')).toBeNull();
   });

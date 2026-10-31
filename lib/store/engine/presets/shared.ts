@@ -1,21 +1,6 @@
-import type { Block, Section, Template, ThemeSettings } from '../types';
-import { sanitizeColorSchemes } from '../color-schemes';
-import type { PresetContext } from './index';
+import type { Block, Section, Template } from '../types';
 
-export function presetSettings(ctx: PresetContext): ThemeSettings {
-  return {
-    color_schemes: sanitizeColorSchemes(undefined, ctx.accent),
-    font_heading: 'outfit',
-    font_body: 'inter',
-    button_radius: 10,
-    card_style: 'bordered',
-    phone_kit: true,
-    logo_url: ctx.logoUrl ?? '',
-    favicon_url: '',
-    custom_css: '',
-    social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
-  };
-}
+export { presetSettings } from './look';
 
 export function block(type: string, settings: Record<string, unknown>): Block {
   return { type, settings };
@@ -34,10 +19,18 @@ export function section(type: string, settings: Record<string, unknown>, blocks:
   return out;
 }
 
-/** Section id is the section type. */
+/**
+ * D30: a section's id is its type; a repeated type gets `-2`, `-3` and so on, so ids stay unique and
+ * deterministic (two `product-rail`s become `product-rail` and `product-rail-2`).
+ */
 export function template(sections: Section[]): Template {
-  return {
-    order: sections.map((s) => s.type),
-    sections: Object.fromEntries(sections.map((s) => [s.type, s])),
-  };
+  const counts: Record<string, number> = {};
+  const out: Template = { order: [], sections: {} };
+  for (const s of sections) {
+    counts[s.type] = (counts[s.type] ?? 0) + 1;
+    const id = counts[s.type] === 1 ? s.type : `${s.type}-${counts[s.type]}`;
+    out.order.push(id);
+    out.sections[id] = s;
+  }
+  return out;
 }
