@@ -121,10 +121,13 @@ describe('sectionFrameStyle', () => {
     expect(s.background).toBe('#ff7028');
     expect(s['--c-btn']).toBe('#000000');
     expect(s['--c-text']).toBe('#111827');
-    expect(s['--st-soft']).toBe('color-mix(in srgb, #111827 4%, #ff7028)');
+    // A typed background is the hero panel's exact colour.
+    expect(s['--st-soft']).toBe('#ff7028');
     const dark = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3', custom_colors: { accent: '#ff1f8e' } }));
     expect(dark.background).toBe('#111827');
     expect(dark['--primary']).toBe('#ff1f8e');
+    // No typed background: the panel keeps the scheme's tint.
+    expect(dark['--st-soft']).toMatch(/^color-mix\(/);
   });
 
   it('falls back to scheme 1 for an unknown scheme', () => {
