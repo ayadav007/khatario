@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart } from 'lucide-react';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart, Palette } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -425,6 +425,15 @@ export default function OnlineStoreSettingsPage() {
               {openingEditor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               Edit store design (beta)
             </button>
+          ) : null}
+          {storeEngine ? (
+            <Link
+              href="/settings/online-store/themes"
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Palette className="h-3.5 w-3.5" />
+              Themes (beta)
+            </Link>
           ) : null}
           <Link
             href="/settings/online-store/studio"

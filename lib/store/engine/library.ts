@@ -148,3 +148,62 @@ export function relativeEdited(iso: string, now: number): string {
   }
   return formatDate(t);
 }
+
+// ---- Library page texts and display rules (Task 5). Kept here so the components only lay things out. ----
+
+export const THEME_NAME_MAX = 60;
+
+/** D52: shown on the library and appended to the publish confirm while `store_engine` is off. */
+export const ENGINE_OFF_NOTICE =
+  'Shoppers still see your classic store. Published themes show only in preview links until the new store design is switched on.';
+export const DISCARD_CONFIRM = 'Discard unpublished changes? Your working copy goes back to the live theme.';
+export const PREVIEW_COPIED = 'Preview link copied (works for 7 days)';
+export const NO_EDIT_NOTICE = 'Ask an admin for permission to change the store design';
+export const LIMIT_NOTICE = 'Delete a draft to add another';
+export const NARROW_EDITOR_NOTICE = 'Open the editor on a laptop or desktop';
+export const BACKUP_BADGE = 'Unsaved edits on this device';
+
+export function presetLabel(preset: ThemePreset): string {
+  return (PRESET_CHOICES.find((c) => c.preset === preset) ?? PRESET_CHOICES[0]).label;
+}
+
+export function themeCountLabel(count: number): string {
+  return `${count} of ${ENGINE_LIMITS.themesPerBusiness} themes`;
+}
+
+export function publishConfirmText(name: string, storeEngine: boolean): string {
+  const base = `Publish '${name}'? Shoppers will see it now.`;
+  return storeEngine ? base : `${base} ${ENGINE_OFF_NOTICE}`;
+}
+
+/** D42. */
+export function deleteConfirmText(name: string): string {
+  return `Delete '${name}'? This can't be undone. Versions it published stay in Version history.`;
+}
+
+/** The rename rule the server applies (1–60 characters after trimming); null when the name is fine. */
+export function checkThemeName(name: string): string | null {
+  const n = name.trim();
+  if (!n) return 'Enter a name';
+  if (n.length > THEME_NAME_MAX) return `Use ${THEME_NAME_MAX} characters or fewer`;
+  return null;
+}
+
+/** Customise on the live theme or the working draft opens (or creates) the working draft; a draft opens itself. */
+export function customiseOpensWorkingDraft(row: ThemeListRow): boolean {
+  return row.role === 'live' || row.is_working;
+}
+
+export const ACTION_LABELS: Record<ThemeAction, string> = {
+  customise: 'Customise',
+  preview: 'Preview link',
+  duplicate: 'Duplicate',
+  rename: 'Rename',
+  publish: 'Publish',
+  discard: 'Discard changes',
+  delete: 'Delete',
+  history: 'History',
+};
+
+/** Every action except Customise, in the order the row buttons and the "⋯" menu show them (Delete last). */
+export const MENU_ACTIONS: ThemeAction[] = ['preview', 'duplicate', 'rename', 'publish', 'discard', 'history', 'delete'];

@@ -1,5 +1,16 @@
 import {
+  ACTION_LABELS,
+  DISCARD_CONFIRM,
+  ENGINE_OFF_NOTICE,
   MIGRATED_CHOICE,
+  MENU_ACTIONS,
+  PREVIEW_COPIED,
+  checkThemeName,
+  customiseOpensWorkingDraft,
+  deleteConfirmText,
+  presetLabel,
+  publishConfirmText,
+  themeCountLabel,
   PRESET_CHOICES,
   authorLabel,
   canAddTheme,
@@ -114,5 +125,50 @@ describe('dates and authors', () => {
     expect(relativeEdited(ago(2 * 24 * 60 * min), now)).toBe('2 days ago');
     expect(relativeEdited(ago(7 * 24 * 60 * min), now)).toBe('24 Oct 2026');
     expect(relativeEdited(new Date(now + 5 * min).toISOString(), now)).toBe('just now');
+  });
+});
+
+describe('library texts (D39, D41, D42, D52)', () => {
+  it('labels presets and falls back to Studio', () => {
+    expect(presetLabel('grocery')).toBe('Premium Grocery');
+    expect(presetLabel('blank')).toBe('Blank');
+    expect(presetLabel('nope' as never)).toBe('Studio');
+  });
+  it('counts themes against the limit', () => {
+    expect(themeCountLabel(3)).toBe('3 of 20 themes');
+    expect(themeCountLabel(1)).toBe('1 of 20 themes');
+  });
+  it('words the publish confirm, adding the classic-store sentence when the engine is off', () => {
+    expect(publishConfirmText('Green 2', true)).toBe("Publish 'Green 2'? Shoppers will see it now.");
+    expect(publishConfirmText('Green 2', false)).toBe(
+      "Publish 'Green 2'? Shoppers will see it now. Shoppers still see your classic store. Published themes show only in preview links until the new store design is switched on.",
+    );
+    expect(ENGINE_OFF_NOTICE).toBe(
+      'Shoppers still see your classic store. Published themes show only in preview links until the new store design is switched on.',
+    );
+  });
+  it('words the delete and discard confirms and the preview toast', () => {
+    expect(deleteConfirmText('Copy of Green 2')).toBe(
+      "Delete 'Copy of Green 2'? This can't be undone. Versions it published stay in Version history.",
+    );
+    expect(DISCARD_CONFIRM).toBe('Discard unpublished changes? Your working copy goes back to the live theme.');
+    expect(PREVIEW_COPIED).toBe('Preview link copied (works for 7 days)');
+  });
+  it('checks a theme name: 1 to 60 characters after trimming', () => {
+    expect(checkThemeName('  ')).toBe('Enter a name');
+    expect(checkThemeName('a'.repeat(61))).toBe('Use 60 characters or fewer');
+    expect(checkThemeName(` ${'a'.repeat(60)} `)).toBeNull();
+    expect(checkThemeName('Green 2')).toBeNull();
+  });
+  it('Customise on the live theme or the working draft goes through the working draft', () => {
+    expect(customiseOpensWorkingDraft(row({ role: 'live' }))).toBe(true);
+    expect(customiseOpensWorkingDraft(row({ is_working: true }))).toBe(true);
+    expect(customiseOpensWorkingDraft(row({}))).toBe(false);
+  });
+  it('menu actions keep a fixed order, leave out Customise and have labels', () => {
+    expect(MENU_ACTIONS).toEqual(['preview', 'duplicate', 'rename', 'publish', 'discard', 'history', 'delete']);
+    for (const a of MENU_ACTIONS) expect(ACTION_LABELS[a].length).toBeGreaterThan(0);
+    expect(ACTION_LABELS.discard).toBe('Discard changes');
+    expect(ACTION_LABELS.preview).toBe('Preview link');
   });
 });
