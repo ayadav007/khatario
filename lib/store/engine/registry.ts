@@ -34,6 +34,26 @@ import { categoryShelves } from './sections/category-shelves';
 export const COMMON_SETTINGS: SettingSchema[] = [
   { id: 'spacing_top', type: 'range', label: 'Top spacing', min: 0, max: 96, step: 4, default: 32 },
   { id: 'spacing_bottom', type: 'range', label: 'Bottom spacing', min: 0, max: 96, step: 4, default: 32 },
+  {
+    id: 'spacing_left',
+    type: 'range',
+    label: 'Left spacing',
+    min: 0,
+    max: 96,
+    step: 4,
+    default: 0,
+    info: "Once set, replaces a slideshow card's own gap on this side",
+  },
+  {
+    id: 'spacing_right',
+    type: 'range',
+    label: 'Right spacing',
+    min: 0,
+    max: 96,
+    step: 4,
+    default: 0,
+    info: "Once set, replaces a slideshow card's own gap on this side",
+  },
   { id: 'full_width', type: 'checkbox', label: 'Full width', default: false },
 ];
 

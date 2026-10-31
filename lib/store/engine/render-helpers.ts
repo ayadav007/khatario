@@ -41,9 +41,22 @@ export function engineRootStyle(settings: ThemeSettings): Style {
   };
 }
 
-/** The section wrapper's classes: `eng-sec`, plus `eng-sec--full` when the merchant chose full width. */
+const SPACING_EDGES = [
+  ['spacing_top', 'eng-sp-t'],
+  ['spacing_right', 'eng-sp-r'],
+  ['spacing_bottom', 'eng-sp-b'],
+  ['spacing_left', 'eng-sp-l'],
+] as const;
+
+/**
+ * The section wrapper's classes: `eng-sec`, plus `eng-sec--full` when the merchant chose full width, and
+ * `eng-sp-{t,r,b,l}` for each spacing the merchant set: there the spacing replaces a hero card's own margin
+ * (Quick and the phone kit inset the slideshow), so Top spacing 0 means no gap.
+ */
 export function sectionFrameClass(settings: Record<string, unknown>): string {
-  return settings.full_width === true ? 'eng-sec eng-sec--full' : 'eng-sec';
+  const out = settings.full_width === true ? ['eng-sec', 'eng-sec--full'] : ['eng-sec'];
+  for (const [key, cls] of SPACING_EDGES) if (typeof settings[key] === 'number') out.push(cls);
+  return out.join(' ');
 }
 
 /**
@@ -75,6 +88,9 @@ export function sectionFrameStyle(settings: ThemeSettings, section: Section): St
   const box = toStudioBox(section);
   if (box.spacingTop !== undefined) style.paddingTop = box.spacingTop;
   if (box.spacingBottom !== undefined) style.paddingBottom = box.spacingBottom;
+  const { spacing_left: left, spacing_right: right } = section.settings ?? {};
+  if (typeof left === 'number' && left > 0) style.paddingLeft = left;
+  if (typeof right === 'number' && right > 0) style.paddingRight = right;
   return style;
 }
 

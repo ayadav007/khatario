@@ -130,6 +130,12 @@ describe('sectionFrameStyle', () => {
     expect(dark['--st-soft']).toMatch(/^color-mix\(/);
   });
 
+  it('pads the sides by Left and Right spacing', () => {
+    const s = sectionFrameStyle(settings, sec({ settings: { spacing_left: 16, spacing_right: 0 } }));
+    expect(s.paddingLeft).toBe(16);
+    expect(s.paddingRight).toBeUndefined();
+  });
+
   it('falls back to scheme 1 for an unknown scheme', () => {
     const s = sectionFrameStyle(settings, sec({ color_scheme: 'nope' }));
     expect(s['--c-bg']).toBe('#ffffff');
@@ -175,5 +181,13 @@ describe('sectionFrameClass', () => {
     expect(sectionFrameClass({ full_width: false })).toBe('eng-sec');
     expect(sectionFrameClass({ full_width: 'true' })).toBe('eng-sec');
     expect(sectionFrameClass({})).toBe('eng-sec');
+  });
+
+  it('marks each spacing the merchant set, so it replaces a hero card margin on that side', () => {
+    expect(sectionFrameClass({ spacing_top: 0, spacing_left: 8 })).toBe('eng-sec eng-sp-t eng-sp-l');
+    expect(sectionFrameClass({ full_width: true, spacing_right: 0, spacing_bottom: 4 })).toBe(
+      'eng-sec eng-sec--full eng-sp-r eng-sp-b',
+    );
+    expect(sectionFrameClass({ spacing_top: '0' })).toBe('eng-sec');
   });
 });
