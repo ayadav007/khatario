@@ -1,0 +1,341 @@
+{
+  "settings": {
+    "color_schemes": [
+      {
+        "id": "scheme-1",
+        "name": "Light",
+        "background": "#f4f5f7",
+        "text": "#1c1917",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#dadbdc",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-2",
+        "name": "Soft (tinted)",
+        "background": "#f3f4f6",
+        "text": "#111827",
+        "accent": "#b94717",
+        "button": "#111827",
+        "button_text": "#ffffff",
+        "border": "#d1d5db",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-3",
+        "name": "Dark",
+        "background": "#111827",
+        "text": "#f9fafb",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#374151",
+        "card": "#1f2937"
+      },
+      {
+        "id": "scheme-4",
+        "name": "Accent",
+        "background": "#b94717",
+        "text": "#f4efe6",
+        "accent": "#f4efe6",
+        "button": "#f4efe6",
+        "button_text": "#b94717",
+        "border": "#c56940",
+        "card": "#be5428"
+      },
+      {
+        "id": "scheme-5",
+        "name": "Cream",
+        "background": "#faf5eb",
+        "text": "#3b2f23",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e7dcc8",
+        "card": "#fffaf0"
+      },
+      {
+        "id": "scheme-6",
+        "name": "Ink",
+        "background": "#000000",
+        "text": "#ffffff",
+        "accent": "#fbbf24",
+        "button": "#fbbf24",
+        "button_text": "#000000",
+        "border": "#262626",
+        "card": "#0a0a0a"
+      }
+    ],
+    "font_heading": "inter",
+    "font_body": "inter",
+    "button_radius": 12,
+    "card_style": "plain",
+    "label_style": "normal",
+    "frame_style": "none",
+    "texture": "none",
+    "phone_kit": true,
+    "logo_url": "",
+    "favicon_url": "",
+    "custom_css": "",
+    "social": {
+      "instagram": "",
+      "whatsapp": "",
+      "facebook": "",
+      "youtube": ""
+    },
+    "menus": [
+      {
+        "id": "main",
+        "name": "Main menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "All Products",
+            "link": "/catalog"
+          },
+          {
+            "id": "m2",
+            "label": "Offers",
+            "link": "/catalog?disc=10"
+          },
+          {
+            "id": "m3",
+            "label": "Contact",
+            "link": "/contact"
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "name": "Footer menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "Help",
+            "link": "",
+            "children": [
+              {
+                "id": "m2",
+                "label": "Contact",
+                "link": "/contact"
+              },
+              {
+                "id": "m3",
+                "label": "Refund policy",
+                "link": "/refund"
+              },
+              {
+                "id": "m4",
+                "label": "Terms",
+                "link": "/terms"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "header_group": {
+    "order": [
+      "announcement",
+      "header"
+    ],
+    "sections": {
+      "announcement": {
+        "type": "announcement",
+        "settings": {
+          "text": "Fixture tagline"
+        },
+        "blocks": {},
+        "block_order": [],
+        "color_scheme": "scheme-4"
+      },
+      "header": {
+        "type": "header",
+        "settings": {
+          "search_placeholder": "Search for items…",
+          "menu": "main"
+        },
+        "blocks": {},
+        "block_order": [],
+        "color_scheme": "scheme-4"
+      }
+    }
+  },
+  "footer_group": {
+    "order": [
+      "footer"
+    ],
+    "sections": {
+      "footer": {
+        "type": "footer",
+        "settings": {
+          "menu": "footer",
+          "badge": true
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "templates": {
+    "home": {
+      "order": [
+        "slideshow",
+        "rich-text",
+        "category-grid",
+        "product-rail",
+        "featured-products"
+      ],
+      "sections": {
+        "slideshow": {
+          "type": "slideshow",
+          "settings": {
+            "height": "medium",
+            "layout": "full"
+          },
+          "blocks": {
+            "slide-1": {
+              "type": "slide",
+              "settings": {
+                "heading": "Welcome to Fixture Store",
+                "description": "Fixture tagline",
+                "button_text": "Order now",
+                "link": "#catalog"
+              }
+            }
+          },
+          "block_order": [
+            "slide-1"
+          ]
+        },
+        "rich-text": {
+          "type": "rich-text",
+          "settings": {
+            "heading": "",
+            "content": "<p>Fixture tagline</p>",
+            "align": "left",
+            "spacing_top": 12,
+            "spacing_bottom": 0
+          },
+          "blocks": {},
+          "block_order": [],
+          "label": "Tagline"
+        },
+        "category-grid": {
+          "type": "category-grid",
+          "settings": {
+            "heading": "",
+            "style": "tiles"
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "product-rail": {
+          "type": "product-rail",
+          "settings": {
+            "heading": "Popular products",
+            "source": "all",
+            "limit": 6
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "featured-products": {
+          "type": "featured-products",
+          "settings": {
+            "heading": "All products",
+            "source": "all",
+            "limit": 24,
+            "columns": 4
+          },
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "product": {
+      "order": [
+        "main-product-cs2mhl",
+        "product-reviews-xlo1lm",
+        "related-products-i9oe17",
+        "recently-viewed-wc5mwm"
+      ],
+      "sections": {
+        "main-product-cs2mhl": {
+          "type": "main-product",
+          "settings": {},
+          "blocks": {
+            "title-1": {
+              "type": "title",
+              "settings": {}
+            },
+            "price-1": {
+              "type": "price",
+              "settings": {}
+            },
+            "variant-picker-1": {
+              "type": "variant_picker",
+              "settings": {}
+            },
+            "buy-buttons-1": {
+              "type": "buy_buttons",
+              "settings": {}
+            },
+            "description-1": {
+              "type": "description",
+              "settings": {}
+            }
+          },
+          "block_order": [
+            "title-1",
+            "price-1",
+            "variant-picker-1",
+            "buy-buttons-1",
+            "description-1"
+          ]
+        },
+        "product-reviews-xlo1lm": {
+          "type": "product-reviews",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "related-products-i9oe17": {
+          "type": "related-products",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "recently-viewed-wc5mwm": {
+          "type": "recently-viewed",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "catalog": {
+      "order": [
+        "catalog-banner-7xi81g",
+        "main-catalog-7h2fah"
+      ],
+      "sections": {
+        "catalog-banner-7xi81g": {
+          "type": "catalog-banner",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "main-catalog-7h2fah": {
+          "type": "main-catalog",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,377 @@
+{
+  "settings": {
+    "color_schemes": [
+      {
+        "id": "scheme-1",
+        "name": "Light",
+        "background": "#f3f5f7",
+        "text": "#1c1917",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#d9dbdc",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-2",
+        "name": "Soft (tinted)",
+        "background": "#f3f4f6",
+        "text": "#111827",
+        "accent": "#b94717",
+        "button": "#111827",
+        "button_text": "#ffffff",
+        "border": "#d1d5db",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-3",
+        "name": "Dark",
+        "background": "#111827",
+        "text": "#f9fafb",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#374151",
+        "card": "#1f2937"
+      },
+      {
+        "id": "scheme-4",
+        "name": "Accent",
+        "background": "#b94717",
+        "text": "#f4efe6",
+        "accent": "#f4efe6",
+        "button": "#f4efe6",
+        "button_text": "#b94717",
+        "border": "#c56940",
+        "card": "#be5428"
+      },
+      {
+        "id": "scheme-5",
+        "name": "Cream",
+        "background": "#faf5eb",
+        "text": "#3b2f23",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e7dcc8",
+        "card": "#fffaf0"
+      },
+      {
+        "id": "scheme-6",
+        "name": "Ink",
+        "background": "#000000",
+        "text": "#ffffff",
+        "accent": "#fbbf24",
+        "button": "#fbbf24",
+        "button_text": "#000000",
+        "border": "#262626",
+        "card": "#0a0a0a"
+      }
+    ],
+    "font_heading": "inter",
+    "font_body": "inter",
+    "button_radius": 14,
+    "card_style": "shadow",
+    "label_style": "normal",
+    "frame_style": "none",
+    "texture": "none",
+    "phone_kit": true,
+    "logo_url": "",
+    "favicon_url": "",
+    "custom_css": "",
+    "social": {
+      "instagram": "",
+      "whatsapp": "",
+      "facebook": "",
+      "youtube": ""
+    },
+    "menus": [
+      {
+        "id": "main",
+        "name": "Main menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "All Products",
+            "link": "/catalog"
+          },
+          {
+            "id": "m2",
+            "label": "Offers",
+            "link": "/catalog?disc=10",
+            "highlight": true
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "name": "Footer menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "Help",
+            "link": "",
+            "children": [
+              {
+                "id": "m2",
+                "label": "Contact",
+                "link": "/contact"
+              },
+              {
+                "id": "m3",
+                "label": "Refund policy",
+                "link": "/refund"
+              },
+              {
+                "id": "m4",
+                "label": "Terms",
+                "link": "/terms"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "header_group": {
+    "order": [
+      "header"
+    ],
+    "sections": {
+      "header": {
+        "type": "header",
+        "settings": {
+          "search_placeholder": "Search for products…",
+          "delivery_eta": "in 30 minutes",
+          "menu": "main"
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "footer_group": {
+    "order": [
+      "footer"
+    ],
+    "sections": {
+      "footer": {
+        "type": "footer",
+        "settings": {
+          "menu": "footer",
+          "badge": true
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "templates": {
+    "home": {
+      "order": [
+        "slideshow",
+        "category-grid",
+        "product-rail",
+        "product-rail-2",
+        "multicolumn",
+        "featured-products"
+      ],
+      "sections": {
+        "slideshow": {
+          "type": "slideshow",
+          "settings": {
+            "height": "small",
+            "layout": "full",
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {
+            "slide-1": {
+              "type": "slide",
+              "settings": {
+                "heading": "Welcome to Fixture Store",
+                "description": "Fixture tagline",
+                "button_text": "Shop now",
+                "link": "#catalog"
+              }
+            }
+          },
+          "block_order": [
+            "slide-1"
+          ]
+        },
+        "category-grid": {
+          "type": "category-grid",
+          "settings": {
+            "heading": "Shop by category",
+            "columns": 8,
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "product-rail": {
+          "type": "product-rail",
+          "settings": {
+            "heading": "Bestsellers",
+            "source": "bestsellers",
+            "limit": 12,
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "product-rail-2": {
+          "type": "product-rail",
+          "settings": {
+            "heading": "Top deals",
+            "source": "discounted",
+            "limit": 12,
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "multicolumn": {
+          "type": "multicolumn",
+          "settings": {
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {
+            "column-1": {
+              "type": "column",
+              "settings": {
+                "icon": "truck",
+                "title": "Fast delivery",
+                "text": "Quick dispatch on every order"
+              }
+            },
+            "column-2": {
+              "type": "column",
+              "settings": {
+                "icon": "cash",
+                "title": "Cash on delivery",
+                "text": "Pay when it reaches you"
+              }
+            },
+            "column-3": {
+              "type": "column",
+              "settings": {
+                "icon": "return",
+                "title": "Easy returns",
+                "text": "Hassle-free replacements"
+              }
+            },
+            "column-4": {
+              "type": "column",
+              "settings": {
+                "icon": "shield",
+                "title": "Secure payments",
+                "text": "UPI, cards and wallets"
+              }
+            }
+          },
+          "block_order": [
+            "column-1",
+            "column-2",
+            "column-3",
+            "column-4"
+          ]
+        },
+        "featured-products": {
+          "type": "featured-products",
+          "settings": {
+            "heading": "Handpicked for you",
+            "source": "all",
+            "limit": 24,
+            "columns": 6,
+            "spacing_top": 12,
+            "spacing_bottom": 12
+          },
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "product": {
+      "order": [
+        "main-product-fsmcwd",
+        "product-reviews-mi18of",
+        "related-products-73uk3a",
+        "recently-viewed-0hxdym"
+      ],
+      "sections": {
+        "main-product-fsmcwd": {
+          "type": "main-product",
+          "settings": {},
+          "blocks": {
+            "title-1": {
+              "type": "title",
+              "settings": {}
+            },
+            "price-1": {
+              "type": "price",
+              "settings": {}
+            },
+            "variant-picker-1": {
+              "type": "variant_picker",
+              "settings": {}
+            },
+            "buy-buttons-1": {
+              "type": "buy_buttons",
+              "settings": {}
+            },
+            "description-1": {
+              "type": "description",
+              "settings": {}
+            }
+          },
+          "block_order": [
+            "title-1",
+            "price-1",
+            "variant-picker-1",
+            "buy-buttons-1",
+            "description-1"
+          ]
+        },
+        "product-reviews-mi18of": {
+          "type": "product-reviews",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "related-products-73uk3a": {
+          "type": "related-products",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "recently-viewed-0hxdym": {
+          "type": "recently-viewed",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "catalog": {
+      "order": [
+        "main-catalog"
+      ],
+      "sections": {
+        "main-catalog": {
+          "type": "main-catalog",
+          "settings": {
+            "layout": "rail"
+          },
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    }
+  }
+}

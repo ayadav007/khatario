@@ -147,9 +147,10 @@ describe('studioSaved', () => {
     expect(blocks(show, 'slide').map((b) => b.settings.heading)).toEqual(['Hello', 'Two']);
     expect(first(h, 'category-grid').settings).toMatchObject({ heading: 'Aisles', columns: 8 });
     const rich = first(h, 'rich-text');
-    expect(rich.settings.heading).toBe('About us');
-    expect(rich.settings.content).toContain('&lt;b&gt;dal&lt;/b&gt;');
-    expect(rich.settings.content).not.toContain('<b>');
+    expect(rich.block_order).toEqual(['heading-1', 'text-1']);
+    expect(rich.blocks['heading-1'].settings.text).toBe('About us');
+    expect(rich.blocks['text-1'].settings.content).toContain('&lt;b&gt;dal&lt;/b&gt;');
+    expect(rich.blocks['text-1'].settings.content).not.toContain('<b>');
     const mq = first(h, 'marquee');
     expect(mq.settings.speed).toBe(18);
     expect(blocks(mq, 'item').map((b) => b.settings.text)).toEqual(['Free delivery', 'COD', 'Fresh daily']);
@@ -268,7 +269,7 @@ describe('hostile', () => {
 
   it('escapes rich text', () => {
     const rich = first(home(r), 'rich-text');
-    expect(rich.settings.content).not.toContain('<script');
+    expect(rich.blocks['text-1'].settings.content).not.toContain('<script');
   });
 });
 

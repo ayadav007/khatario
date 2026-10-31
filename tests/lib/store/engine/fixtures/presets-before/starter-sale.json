@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "type": "image-banner",
+      "settings": {
+        "heading": "Sale",
+        "button_text": "Shop now",
+        "link": "/catalog"
+      },
+      "blocks": {},
+      "block_order": []
+    },
+    {
+      "type": "product-rail",
+      "settings": {
+        "source": "discounted",
+        "heading": "On offer now",
+        "limit": 8
+      },
+      "blocks": {},
+      "block_order": []
+    }
+  ]
+}

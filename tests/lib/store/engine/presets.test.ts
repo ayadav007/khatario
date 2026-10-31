@@ -196,7 +196,9 @@ describe('khatario preset', () => {
   it('has the Khatario home order, with the tagline line after the hero', () => {
     expect(homeTypes(p)).toEqual(['slideshow', 'rich-text', 'category-grid', 'product-rail', 'featured-products']);
     expect(p.templates.home.sections['rich-text']).toMatchObject({ label: 'Tagline' });
-    expect(p.templates.home.sections['rich-text'].settings.content).toBe('<p>Fresh finds, fast delivery</p>');
+    const tagline = p.templates.home.sections['rich-text'];
+    expect(tagline.block_order).toEqual(['text-1']);
+    expect(tagline.blocks['text-1']).toEqual({ type: 'text', settings: { content: '<p>Fresh finds, fast delivery</p>' } });
     expect(homeTypes(presetTheme('khatario', { ...ctx, tagline: '  ' }))).toEqual([
       'slideshow',
       'category-grid',

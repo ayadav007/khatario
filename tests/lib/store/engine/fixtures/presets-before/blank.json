@@ -1,0 +1,225 @@
+{
+  "settings": {
+    "color_schemes": [
+      {
+        "id": "scheme-1",
+        "name": "Light",
+        "background": "#fbf8f3",
+        "text": "#1c1917",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e0ddd9",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-2",
+        "name": "Soft (tinted)",
+        "background": "#f3f4f6",
+        "text": "#111827",
+        "accent": "#b94717",
+        "button": "#111827",
+        "button_text": "#ffffff",
+        "border": "#d1d5db",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-3",
+        "name": "Dark",
+        "background": "#111827",
+        "text": "#f9fafb",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#374151",
+        "card": "#1f2937"
+      },
+      {
+        "id": "scheme-4",
+        "name": "Accent",
+        "background": "#b94717",
+        "text": "#f4efe6",
+        "accent": "#f4efe6",
+        "button": "#f4efe6",
+        "button_text": "#b94717",
+        "border": "#c56940",
+        "card": "#be5428"
+      },
+      {
+        "id": "scheme-5",
+        "name": "Cream",
+        "background": "#faf5eb",
+        "text": "#3b2f23",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e7dcc8",
+        "card": "#fffaf0"
+      },
+      {
+        "id": "scheme-6",
+        "name": "Ink",
+        "background": "#000000",
+        "text": "#ffffff",
+        "accent": "#fbbf24",
+        "button": "#fbbf24",
+        "button_text": "#000000",
+        "border": "#262626",
+        "card": "#0a0a0a"
+      }
+    ],
+    "font_heading": "outfit",
+    "font_body": "inter",
+    "button_radius": 10,
+    "card_style": "bordered",
+    "label_style": "normal",
+    "frame_style": "none",
+    "texture": "none",
+    "phone_kit": true,
+    "logo_url": "",
+    "favicon_url": "",
+    "custom_css": "",
+    "social": {
+      "instagram": "",
+      "whatsapp": "",
+      "facebook": "",
+      "youtube": ""
+    },
+    "menus": [
+      {
+        "id": "main",
+        "name": "Main menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "All Products",
+            "link": "/catalog"
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "name": "Footer menu",
+        "items": []
+      }
+    ]
+  },
+  "header_group": {
+    "order": [
+      "header"
+    ],
+    "sections": {
+      "header": {
+        "type": "header",
+        "settings": {
+          "menu": "main"
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "footer_group": {
+    "order": [
+      "footer"
+    ],
+    "sections": {
+      "footer": {
+        "type": "footer",
+        "settings": {
+          "menu": "footer",
+          "badge": true
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "templates": {
+    "home": {
+      "order": [],
+      "sections": {}
+    },
+    "product": {
+      "order": [
+        "main-product-lxon1c",
+        "product-reviews-ei4ngh",
+        "related-products-61mbjj",
+        "recently-viewed-zuzbyj"
+      ],
+      "sections": {
+        "main-product-lxon1c": {
+          "type": "main-product",
+          "settings": {},
+          "blocks": {
+            "title-1": {
+              "type": "title",
+              "settings": {}
+            },
+            "price-1": {
+              "type": "price",
+              "settings": {}
+            },
+            "variant-picker-1": {
+              "type": "variant_picker",
+              "settings": {}
+            },
+            "buy-buttons-1": {
+              "type": "buy_buttons",
+              "settings": {}
+            },
+            "description-1": {
+              "type": "description",
+              "settings": {}
+            }
+          },
+          "block_order": [
+            "title-1",
+            "price-1",
+            "variant-picker-1",
+            "buy-buttons-1",
+            "description-1"
+          ]
+        },
+        "product-reviews-ei4ngh": {
+          "type": "product-reviews",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "related-products-61mbjj": {
+          "type": "related-products",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "recently-viewed-zuzbyj": {
+          "type": "recently-viewed",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "catalog": {
+      "order": [
+        "catalog-banner-oqim42",
+        "main-catalog-qu79hh"
+      ],
+      "sections": {
+        "catalog-banner-oqim42": {
+          "type": "catalog-banner",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "main-catalog-qu79hh": {
+          "type": "main-catalog",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    }
+  }
+}

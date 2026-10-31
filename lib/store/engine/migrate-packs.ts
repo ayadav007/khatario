@@ -164,7 +164,13 @@ function brandStory(t: StoreTheme, ctx: MigrationContext): Section | null {
   const on = sectionEnabled(t, 'brand_story');
   const text = on ? t.brand_story.trim() || ctx.aboutMd.trim() : t.brand_story.trim();
   if (!text) return null;
-  return off(engineSection('rich-text', { heading: 'Our story', content: textToParagraphs(text), align: 'left' }), on);
+  return off(
+    engineSection('rich-text', { align: 'left' }, [
+      { type: 'heading', settings: { text: 'Our story' } },
+      { type: 'text', settings: { content: textToParagraphs(text) } },
+    ]),
+    on,
+  );
 }
 
 function groceryHome(t: StoreTheme, ctx: MigrationContext, w: Warnings): Array<Section | null> {

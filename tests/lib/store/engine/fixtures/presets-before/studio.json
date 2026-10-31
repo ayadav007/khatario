@@ -1,0 +1,368 @@
+{
+  "settings": {
+    "color_schemes": [
+      {
+        "id": "scheme-1",
+        "name": "Light",
+        "background": "#fbf8f3",
+        "text": "#1c1917",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e0ddd9",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-2",
+        "name": "Soft (tinted)",
+        "background": "#f3f4f6",
+        "text": "#111827",
+        "accent": "#b94717",
+        "button": "#111827",
+        "button_text": "#ffffff",
+        "border": "#d1d5db",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-3",
+        "name": "Dark",
+        "background": "#111827",
+        "text": "#f9fafb",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#374151",
+        "card": "#1f2937"
+      },
+      {
+        "id": "scheme-4",
+        "name": "Accent",
+        "background": "#b94717",
+        "text": "#f4efe6",
+        "accent": "#f4efe6",
+        "button": "#f4efe6",
+        "button_text": "#b94717",
+        "border": "#c56940",
+        "card": "#be5428"
+      },
+      {
+        "id": "scheme-5",
+        "name": "Cream",
+        "background": "#faf5eb",
+        "text": "#3b2f23",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e7dcc8",
+        "card": "#fffaf0"
+      },
+      {
+        "id": "scheme-6",
+        "name": "Ink",
+        "background": "#000000",
+        "text": "#ffffff",
+        "accent": "#fbbf24",
+        "button": "#fbbf24",
+        "button_text": "#000000",
+        "border": "#262626",
+        "card": "#0a0a0a"
+      }
+    ],
+    "font_heading": "outfit",
+    "font_body": "inter",
+    "button_radius": 10,
+    "card_style": "bordered",
+    "label_style": "normal",
+    "frame_style": "none",
+    "texture": "none",
+    "phone_kit": true,
+    "logo_url": "",
+    "favicon_url": "",
+    "custom_css": "",
+    "social": {
+      "instagram": "",
+      "whatsapp": "",
+      "facebook": "",
+      "youtube": ""
+    },
+    "menus": [
+      {
+        "id": "main",
+        "name": "Main menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "All Products",
+            "link": "/catalog"
+          },
+          {
+            "id": "m2",
+            "label": "Offers",
+            "link": "/#offers"
+          },
+          {
+            "id": "m3",
+            "label": "Contact",
+            "link": "/contact"
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "name": "Footer menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "Help",
+            "link": "",
+            "children": [
+              {
+                "id": "m2",
+                "label": "Contact",
+                "link": "/contact"
+              },
+              {
+                "id": "m3",
+                "label": "Refund policy",
+                "link": "/refund"
+              },
+              {
+                "id": "m4",
+                "label": "Terms",
+                "link": "/terms"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "header_group": {
+    "order": [
+      "announcement",
+      "header"
+    ],
+    "sections": {
+      "announcement": {
+        "type": "announcement",
+        "settings": {
+          "text": "Fixture tagline"
+        },
+        "blocks": {},
+        "block_order": []
+      },
+      "header": {
+        "type": "header",
+        "settings": {
+          "menu": "main"
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "footer_group": {
+    "order": [
+      "footer"
+    ],
+    "sections": {
+      "footer": {
+        "type": "footer",
+        "settings": {
+          "menu": "footer",
+          "badge": true
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "templates": {
+    "home": {
+      "order": [
+        "slideshow",
+        "category-grid",
+        "product-rail",
+        "multicolumn",
+        "featured-products",
+        "testimonials"
+      ],
+      "sections": {
+        "slideshow": {
+          "type": "slideshow",
+          "settings": {},
+          "blocks": {
+            "slide-1": {
+              "type": "slide",
+              "settings": {
+                "heading": "Welcome to Fixture Store",
+                "description": "Fixture tagline",
+                "button_text": "Shop now",
+                "link": "#catalog"
+              }
+            }
+          },
+          "block_order": [
+            "slide-1"
+          ]
+        },
+        "category-grid": {
+          "type": "category-grid",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "product-rail": {
+          "type": "product-rail",
+          "settings": {
+            "heading": "Bestsellers",
+            "source": "bestsellers"
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "multicolumn": {
+          "type": "multicolumn",
+          "settings": {},
+          "blocks": {
+            "column-1": {
+              "type": "column",
+              "settings": {
+                "icon": "truck",
+                "title": "Fast delivery",
+                "text": "Quick dispatch on every order"
+              }
+            },
+            "column-2": {
+              "type": "column",
+              "settings": {
+                "icon": "cash",
+                "title": "Cash on delivery",
+                "text": "Pay when it reaches you"
+              }
+            },
+            "column-3": {
+              "type": "column",
+              "settings": {
+                "icon": "return",
+                "title": "Easy returns",
+                "text": "Hassle-free replacements"
+              }
+            },
+            "column-4": {
+              "type": "column",
+              "settings": {
+                "icon": "shield",
+                "title": "Secure payments",
+                "text": "UPI, cards and wallets"
+              }
+            }
+          },
+          "block_order": [
+            "column-1",
+            "column-2",
+            "column-3",
+            "column-4"
+          ]
+        },
+        "featured-products": {
+          "type": "featured-products",
+          "settings": {
+            "heading": "All products",
+            "source": "all",
+            "limit": 24
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "testimonials": {
+          "type": "testimonials",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "product": {
+      "order": [
+        "main-product-2ebutb",
+        "product-reviews-iuf6yd",
+        "related-products-k92beu",
+        "recently-viewed-t2dfxx"
+      ],
+      "sections": {
+        "main-product-2ebutb": {
+          "type": "main-product",
+          "settings": {},
+          "blocks": {
+            "title-1": {
+              "type": "title",
+              "settings": {}
+            },
+            "price-1": {
+              "type": "price",
+              "settings": {}
+            },
+            "variant-picker-1": {
+              "type": "variant_picker",
+              "settings": {}
+            },
+            "buy-buttons-1": {
+              "type": "buy_buttons",
+              "settings": {}
+            },
+            "description-1": {
+              "type": "description",
+              "settings": {}
+            }
+          },
+          "block_order": [
+            "title-1",
+            "price-1",
+            "variant-picker-1",
+            "buy-buttons-1",
+            "description-1"
+          ]
+        },
+        "product-reviews-iuf6yd": {
+          "type": "product-reviews",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "related-products-k92beu": {
+          "type": "related-products",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "recently-viewed-t2dfxx": {
+          "type": "recently-viewed",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "catalog": {
+      "order": [
+        "catalog-banner-0nsdr4",
+        "main-catalog-89vwk4"
+      ],
+      "sections": {
+        "catalog-banner-0nsdr4": {
+          "type": "catalog-banner",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "main-catalog-89vwk4": {
+          "type": "main-catalog",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    }
+  }
+}

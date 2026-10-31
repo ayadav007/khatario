@@ -1,0 +1,48 @@
+{
+  "sections": [
+    {
+      "type": "rich-text",
+      "settings": {
+        "heading": "Get in touch",
+        "content": "<p>Call or message us and we will get back to you.</p>",
+        "align": "center"
+      },
+      "blocks": {},
+      "block_order": []
+    },
+    {
+      "type": "faq",
+      "settings": {
+        "heading": "Frequently asked questions"
+      },
+      "blocks": {
+        "question-1": {
+          "type": "question",
+          "settings": {
+            "question": "How long does delivery take?",
+            "answer": "<p>Most orders arrive in 2 to 4 days.</p>"
+          }
+        },
+        "question-2": {
+          "type": "question",
+          "settings": {
+            "question": "Can I return an item?",
+            "answer": "<p>Yes. Message us within 7 days of delivery.</p>"
+          }
+        },
+        "question-3": {
+          "type": "question",
+          "settings": {
+            "question": "How can I track my order?",
+            "answer": "<p>We share tracking details by message once your order ships.</p>"
+          }
+        }
+      },
+      "block_order": [
+        "question-1",
+        "question-2",
+        "question-3"
+      ]
+    }
+  ]
+}

@@ -13,7 +13,7 @@ export function khatarioTaglineSection(tagline: string): Section | null {
   const text = tagline.trim();
   if (!text) return null;
   return {
-    ...engineSection('rich-text', { heading: '', content: textToParagraphs(text), align: 'left', spacing_top: 12, spacing_bottom: 0 }),
+    ...engineSection('rich-text', { align: 'left', spacing_top: 12, spacing_bottom: 0 }, [{ type: 'text', settings: { content: textToParagraphs(text) } }]),
     label: 'Tagline',
   };
 }

@@ -87,7 +87,15 @@ describe('editor tree helpers', () => {
     expect(addBlockOptions(t, 'home', { group: 'template', id: 'b' })).toEqual([
       { type: 'column', name: 'Column', reason: null, reasonText: null },
     ]);
-    expect(addBlockOptions(t, 'home', { group: 'template', id: 'a' })).toEqual([]);
+    // Rich text takes the six content blocks; the highlight card is Image with text only.
+    expect(addBlockOptions(t, 'home', { group: 'template', id: 'a' }).map((o) => o.type)).toEqual([
+      'eyebrow',
+      'heading',
+      'text',
+      'quote',
+      'checklist_item',
+      'button',
+    ]);
     expect(addBlockOptions(t, 'home', { group: 'template', id: 'c' })).toEqual([]);
     // Fill multicolumn to its 6-column cap.
     const ids = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];

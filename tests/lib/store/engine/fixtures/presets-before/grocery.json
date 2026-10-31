@@ -1,0 +1,365 @@
+{
+  "settings": {
+    "color_schemes": [
+      {
+        "id": "scheme-1",
+        "name": "Light",
+        "background": "#f6f7f4",
+        "text": "#1c1917",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#dcdcd9",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-2",
+        "name": "Soft (tinted)",
+        "background": "#f3f4f6",
+        "text": "#111827",
+        "accent": "#b94717",
+        "button": "#111827",
+        "button_text": "#ffffff",
+        "border": "#d1d5db",
+        "card": "#ffffff"
+      },
+      {
+        "id": "scheme-3",
+        "name": "Dark",
+        "background": "#111827",
+        "text": "#f9fafb",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#374151",
+        "card": "#1f2937"
+      },
+      {
+        "id": "scheme-4",
+        "name": "Accent",
+        "background": "#b94717",
+        "text": "#f4efe6",
+        "accent": "#f4efe6",
+        "button": "#f4efe6",
+        "button_text": "#b94717",
+        "border": "#c56940",
+        "card": "#be5428"
+      },
+      {
+        "id": "scheme-5",
+        "name": "Cream",
+        "background": "#faf5eb",
+        "text": "#3b2f23",
+        "accent": "#b94717",
+        "button": "#b94717",
+        "button_text": "#f4efe6",
+        "border": "#e7dcc8",
+        "card": "#fffaf0"
+      },
+      {
+        "id": "scheme-6",
+        "name": "Deep green",
+        "background": "#3c2310",
+        "text": "#ffffffe0",
+        "accent": "#fbbf24",
+        "button": "#fbbf24",
+        "button_text": "#07140d",
+        "border": "#533d2d",
+        "card": "#48301e"
+      }
+    ],
+    "font_heading": "inter",
+    "font_body": "inter",
+    "button_radius": 24,
+    "card_style": "bordered",
+    "label_style": "normal",
+    "frame_style": "none",
+    "texture": "none",
+    "phone_kit": true,
+    "logo_url": "",
+    "favicon_url": "",
+    "custom_css": "",
+    "social": {
+      "instagram": "",
+      "whatsapp": "",
+      "facebook": "",
+      "youtube": ""
+    },
+    "menus": [
+      {
+        "id": "main",
+        "name": "Main menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "All Products",
+            "link": "/catalog"
+          },
+          {
+            "id": "m2",
+            "label": "Offers",
+            "link": "/catalog?disc=10"
+          },
+          {
+            "id": "m3",
+            "label": "Contact",
+            "link": "/contact"
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "name": "Footer menu",
+        "items": [
+          {
+            "id": "m1",
+            "label": "Help",
+            "link": "",
+            "children": [
+              {
+                "id": "m2",
+                "label": "Contact",
+                "link": "/contact"
+              },
+              {
+                "id": "m3",
+                "label": "Refund policy",
+                "link": "/refund"
+              },
+              {
+                "id": "m4",
+                "label": "Terms",
+                "link": "/terms"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "header_group": {
+    "order": [
+      "announcement",
+      "header"
+    ],
+    "sections": {
+      "announcement": {
+        "type": "announcement",
+        "settings": {
+          "text": "Fixture tagline",
+          "scrolling": true
+        },
+        "blocks": {},
+        "block_order": [],
+        "color_scheme": "scheme-6"
+      },
+      "header": {
+        "type": "header",
+        "settings": {
+          "search_placeholder": "Search for products, brands and categories…",
+          "menu": "main",
+          "show_category_chips": true
+        },
+        "blocks": {},
+        "block_order": []
+      }
+    }
+  },
+  "footer_group": {
+    "order": [
+      "footer"
+    ],
+    "sections": {
+      "footer": {
+        "type": "footer",
+        "settings": {
+          "menu": "footer",
+          "badge": true
+        },
+        "blocks": {},
+        "block_order": [],
+        "color_scheme": "scheme-6"
+      }
+    }
+  },
+  "templates": {
+    "home": {
+      "order": [
+        "slideshow",
+        "category-grid",
+        "product-rail",
+        "promo-cards",
+        "featured-products"
+      ],
+      "sections": {
+        "slideshow": {
+          "type": "slideshow",
+          "settings": {
+            "speed": 7,
+            "height": "large",
+            "layout": "image-text"
+          },
+          "blocks": {
+            "slide-1": {
+              "type": "slide",
+              "settings": {
+                "heading": "Fixture tagline",
+                "description": "Fresh produce and everyday essentials, delivered to your doorstep.",
+                "button_text": "Shop groceries",
+                "link": "#catalog"
+              }
+            }
+          },
+          "block_order": [
+            "slide-1"
+          ]
+        },
+        "category-grid": {
+          "type": "category-grid",
+          "settings": {
+            "heading": "Shop by category",
+            "eyebrow": "",
+            "columns": 6,
+            "style": "emoji"
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "product-rail": {
+          "type": "product-rail",
+          "settings": {
+            "heading": "Today's deals",
+            "source": "discounted",
+            "limit": 8
+          },
+          "blocks": {},
+          "block_order": []
+        },
+        "promo-cards": {
+          "type": "promo-cards",
+          "settings": {
+            "style": "split"
+          },
+          "blocks": {
+            "card-1": {
+              "type": "card",
+              "settings": {
+                "eyebrow": "Today's offers",
+                "heading": "Everyday essentials, honest prices",
+                "text": "Handpicked deals from our shelves, updated regularly.",
+                "button_text": "Shop offers",
+                "link": "/catalog?disc=10"
+              }
+            },
+            "card-2": {
+              "type": "card",
+              "settings": {
+                "eyebrow": "Fixture Store",
+                "heading": "Fixture tagline",
+                "text": "Add to cart, check out, and we will get your order ready.",
+                "button_text": "Start shopping",
+                "link": "#catalog"
+              }
+            }
+          },
+          "block_order": [
+            "card-1",
+            "card-2"
+          ]
+        },
+        "featured-products": {
+          "type": "featured-products",
+          "settings": {
+            "heading": "All products",
+            "source": "all",
+            "limit": 24,
+            "columns": 5
+          },
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "product": {
+      "order": [
+        "main-product-nz4we1",
+        "product-reviews-nuyjp0",
+        "related-products-3m26gh",
+        "recently-viewed-mooeud"
+      ],
+      "sections": {
+        "main-product-nz4we1": {
+          "type": "main-product",
+          "settings": {},
+          "blocks": {
+            "title-1": {
+              "type": "title",
+              "settings": {}
+            },
+            "price-1": {
+              "type": "price",
+              "settings": {}
+            },
+            "variant-picker-1": {
+              "type": "variant_picker",
+              "settings": {}
+            },
+            "buy-buttons-1": {
+              "type": "buy_buttons",
+              "settings": {}
+            },
+            "description-1": {
+              "type": "description",
+              "settings": {}
+            }
+          },
+          "block_order": [
+            "title-1",
+            "price-1",
+            "variant-picker-1",
+            "buy-buttons-1",
+            "description-1"
+          ]
+        },
+        "product-reviews-nuyjp0": {
+          "type": "product-reviews",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "related-products-3m26gh": {
+          "type": "related-products",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "recently-viewed-mooeud": {
+          "type": "recently-viewed",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    },
+    "catalog": {
+      "order": [
+        "catalog-banner-pu9kjk",
+        "main-catalog-3p14tg"
+      ],
+      "sections": {
+        "catalog-banner-pu9kjk": {
+          "type": "catalog-banner",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        },
+        "main-catalog-3p14tg": {
+          "type": "main-catalog",
+          "settings": {},
+          "blocks": {},
+          "block_order": []
+        }
+      }
+    }
+  }
+}

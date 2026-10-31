@@ -1,4 +1,5 @@
 import type { SectionSchema } from '../schema-types';
+import { CONTENT_BLOCKS } from '../content-blocks';
 
 export const richText: SectionSchema = {
   type: 'rich-text',
@@ -6,8 +7,6 @@ export const richText: SectionSchema = {
   category: 'Text',
   templates: ['home', 'product', 'catalog', 'page'],
   settings: [
-    { id: 'heading', type: 'text', label: 'Heading', default: '', max_length: 120 },
-    { id: 'content', type: 'richtext', label: 'Content', default: '' },
     {
       id: 'align',
       type: 'select',
@@ -20,5 +19,16 @@ export const richText: SectionSchema = {
       ],
     },
   ],
-  presets: [{ name: 'Rich text', settings: { heading: 'About us', content: '<p>Share your story.</p>', align: 'center' } }],
+  blocks: CONTENT_BLOCKS,
+  max_blocks: 12,
+  presets: [
+    {
+      name: 'Rich text',
+      settings: { align: 'center' },
+      blocks: [
+        { type: 'heading', settings: { text: 'About us' } },
+        { type: 'text', settings: { content: '<p>Share your story.</p>' } },
+      ],
+    },
+  ],
 };

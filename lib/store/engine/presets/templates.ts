@@ -51,12 +51,14 @@ export const PAGE_STARTERS: Record<'blank' | 'about' | 'sale' | 'contact', { lab
     label: 'About us',
     build: () =>
       tpl([
-        sec('image-with-text', {
-          heading: 'Our story',
-          description: '<p>Tell customers about your business.</p>',
-          image_side: 'left',
-        }),
-        sec('rich-text', { heading: 'What we stand for', content: '<p>Share what makes your shop different.</p>', align: 'center' }),
+        sec('image-with-text', { image_side: 'left' }, [
+          blk('heading', { text: 'Our story' }),
+          blk('text', { content: '<p>Tell customers about your business.</p>' }),
+        ]),
+        sec('rich-text', { align: 'center' }, [
+          blk('heading', { text: 'What we stand for' }),
+          blk('text', { content: '<p>Share what makes your shop different.</p>' }),
+        ]),
       ]),
   },
   sale: {
@@ -71,7 +73,10 @@ export const PAGE_STARTERS: Record<'blank' | 'about' | 'sale' | 'contact', { lab
     label: 'Contact',
     build: () =>
       tpl([
-        sec('rich-text', { heading: 'Get in touch', content: '<p>Call or message us and we will get back to you.</p>', align: 'center' }),
+        sec('rich-text', { align: 'center' }, [
+          blk('heading', { text: 'Get in touch' }),
+          blk('text', { content: '<p>Call or message us and we will get back to you.</p>' }),
+        ]),
         sec('faq', { heading: 'Frequently asked questions' }, [
           blk('question', { question: 'How long does delivery take?', answer: '<p>Most orders arrive in 2 to 4 days.</p>' }),
           blk('question', { question: 'Can I return an item?', answer: '<p>Yes. Message us within 7 days of delivery.</p>' }),

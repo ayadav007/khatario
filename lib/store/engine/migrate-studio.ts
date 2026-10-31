@@ -338,11 +338,10 @@ function migrateTestimonials(src: StudioSection, t: StoreTheme, w: Warnings): Se
 function migrateRichText(src: StudioSection, w: Warnings): Section {
   const s = src.settings;
   warnColours(src, w);
-  return common(
-    engineSection('rich-text', { heading: s.title ?? '', content: textToParagraphs(s.text ?? ''), align: s.textAlign ?? 'center' }),
-    src,
-    'home',
-  );
+  const blocks: Array<{ type: string; settings: Raw }> = [];
+  if (s.title) blocks.push({ type: 'heading', settings: { text: s.title } });
+  blocks.push({ type: 'text', settings: { content: textToParagraphs(s.text ?? '') } });
+  return common(engineSection('rich-text', { align: s.textAlign ?? 'center' }, blocks), src, 'home');
 }
 
 function migrateUsp(src: StudioSection, w: Warnings): Section {

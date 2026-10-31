@@ -89,8 +89,8 @@ describe('groceryAll', () => {
     expect(first(h, 'testimonials').settings.heading).toBe('Loved by our customers');
     expect(blocks(first(h, 'testimonials'), 'quote')).toHaveLength(3);
     const story = first(h, 'rich-text');
-    expect(story.settings.heading).toBe('Our story');
-    expect(story.settings.content).toBe('<p>Three generations of grocers.</p><p>Still on Main Road.</p>');
+    expect(story.blocks['heading-1'].settings.text).toBe('Our story');
+    expect(story.blocks['text-1'].settings.content).toBe('<p>Three generations of grocers.</p><p>Still on Main Road.</p>');
   });
 
   it('turns the hero into one fallback slide when there are no slides', () => {
@@ -241,8 +241,9 @@ describe('khatarioDefault', () => {
     expect(types(home(r))).toEqual(['slideshow', 'rich-text', 'category-grid', 'product-rail', 'featured-products']);
     const line = first(home(r), 'rich-text');
     expect(line.label).toBe('Tagline');
-    expect(line.settings).toMatchObject({ heading: '', align: 'left', spacing_top: 12, spacing_bottom: 0 });
-    expect(line.settings.content).toBe(`<p>${ctx.tagline}</p>`);
+    expect(line.settings).toMatchObject({ align: 'left', spacing_top: 12, spacing_bottom: 0 });
+    expect(line.block_order).toEqual(['text-1']);
+    expect(line.blocks['text-1'].settings.content).toBe(`<p>${ctx.tagline}</p>`);
   });
 
   it('uses a Shop-from fallback slide and the full-width medium slideshow', () => {
@@ -317,7 +318,7 @@ describe('khatarioAll', () => {
     expect(ofType(h, 'product-rail')[0].settings).toMatchObject({ heading: 'Popular products', source: 'all', limit: 6 });
     expect(ofType(h, 'featured-products')[0].settings).toMatchObject({ heading: 'Featured', source: 'featured', limit: 6, columns: 2 });
     expect(first(h, 'testimonials').settings.heading).toBe('Customer testimonials');
-    expect(ofType(h, 'rich-text')[1].settings.heading).toBe('Our story');
+    expect(ofType(h, 'rich-text')[1].blocks['heading-1'].settings.text).toBe('Our story');
   });
 
   it("header's color_scheme is scheme-4", () => {

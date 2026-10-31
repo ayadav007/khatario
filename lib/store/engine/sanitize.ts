@@ -3,6 +3,7 @@ import type { SettingSchema } from './schema-types';
 import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, PAGE_META_CAPS, RESERVED_PAGE_HANDLES } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
+import { convertLegacyTextSections } from './text-sections-convert';
 import { convertLegacyMenus, sanitizeMenus } from './menus-sanitize';
 import { sanitizeColorSchemes, sanitizeCustomColors } from './color-schemes';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
@@ -177,7 +178,8 @@ function isValidPageKey(key: string): boolean {
 
 export function sanitizeThemeData(raw: unknown): ThemeData {
   // Old header and footer links become menus first: the header and footer schemas no longer declare those blocks.
-  const r = convertLegacyMenus(isObject(raw) ? raw : {});
+  // Old Image with text / Rich text settings become content blocks the same way.
+  const r = convertLegacyTextSections(convertLegacyMenus(isObject(raw) ? raw : {}));
   const settings = sanitizeThemeSettings(r.settings);
   const schemeIds: ReadonlySet<string> = new Set<string>(settings.color_schemes.map((s: ColorScheme) => s.id));
   // D12: a section id is unique across the header group, the footer group and each template (templates may share ids with each other).
