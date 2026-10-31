@@ -69,6 +69,25 @@ describe('engine product links keep preview params (I3)', () => {
   });
 });
 
+describe('the header search keeps preview params (final review I1)', () => {
+  const { readFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+  const src = readFileSync(join(process.cwd(), 'components/store/features/catalog/HeaderSearch.tsx'), 'utf8');
+  it('opens a picked product through engineProductHref', () => {
+    expect(src).not.toMatch(/router\.push\(`\/products\//);
+    expect(src).toContain('engineProductHref(window.location.search, p.id)');
+  });
+  it('opens the catalog (search or category) through catalogHref', () => {
+    expect(src).toContain('catalogHref(window.location.search, next)');
+    expect(src.match(/router\.push\(/g)).toHaveLength(2);
+  });
+  it('a product pick from a version preview keeps its token', () => {
+    const id = '0b6f5f39-6a52-4d8e-9a0e-0c6d8a3b1f21';
+    expect(engineProductHref('?preview_theme=v&pt=tok&q=ri', id)).toBe(`/products/${id}?preview_theme=v&pt=tok`);
+    expect(engineProductHref('?td=abc', id)).toBe(`/products/${id}?td=abc`);
+  });
+});
+
 describe('shareUrl (Share never carries a preview token)', () => {
   const id = '0b6f5f39-6a52-4d8e-9a0e-0c6d8a3b1f21';
   it('keeps origin and path, dropping the query and hash', () => {

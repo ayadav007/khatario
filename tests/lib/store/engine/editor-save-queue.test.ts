@@ -2,7 +2,10 @@ import {
   AUTOSAVE_MS,
   RETRY_MS,
   SaveQueue,
+  CARRIED_BASE,
   backupKey,
+  backupOnOpen,
+  keepGoneBackup,
   readBackup,
   hasBackup,
   sweepBackups,
@@ -264,7 +267,7 @@ describe('SaveQueue', () => {
     release(ok('v1'));
     await tick();
     expect(put).toHaveBeenCalledTimes(1);
-    expect(readBackup(storage, 'b1', 't1', 'v1')).toEqual({ data: d(2), stale: false });
+    expect(readBackup(storage, 'b1', 't1', 'v1')).toEqual({ data: d(2), kind: 'current', gone: false });
   });
 
   it('a failed save after dispose keeps the backup', async () => {
@@ -276,7 +279,7 @@ describe('SaveQueue', () => {
     q.dispose();
     fail(new Error('net'));
     await tick();
-    expect(readBackup(storage, 'b1', 't1', 'v0')).toEqual({ data: d(1), stale: false });
+    expect(readBackup(storage, 'b1', 't1', 'v0')).toEqual({ data: d(1), kind: 'current', gone: false });
   });
 
   it('does not stack retry timers across repeated network failures', async () => {
@@ -445,10 +448,12 @@ describe('SaveQueue', () => {
 });
 
 describe('readBackup', () => {
-  it('marks a backup stale when the server moved on', () => {
+  it('tells a current backup from an outdated one (the server moved on) and a carried one', () => {
     const s = memStorage({ 'kh-theme-unsaved:b1:t1': JSON.stringify({ data: d(1), base: 'v0' }) });
-    expect(readBackup(s, 'b1', 't1', 'v0')).toEqual({ data: d(1), stale: false });
-    expect(readBackup(s, 'b1', 't1', 'v9')).toEqual({ data: d(1), stale: true });
+    expect(readBackup(s, 'b1', 't1', 'v0')).toEqual({ data: d(1), kind: 'current', gone: false });
+    expect(readBackup(s, 'b1', 't1', 'v9')).toEqual({ data: d(1), kind: 'outdated', gone: false });
+    const c = memStorage({ 'kh-theme-unsaved:b1:t1': JSON.stringify({ data: d(1), base: CARRIED_BASE }) });
+    expect(readBackup(c, 'b1', 't1', 'v9')).toEqual({ data: d(1), kind: 'carried', gone: false });
   });
 
   it('ignores corrupt JSON and wrong shapes', () => {
@@ -545,5 +550,109 @@ describe('backup JSON', () => {
     expect(typeof parsed.savedAt).toBe('number');
     expect(parsed.base).toBe('v0');
     q.dispose();
+  });
+});
+
+// Final review I2: a stale full-theme backup must never put an old design back over a newer publish.
+describe('backupOnOpen (final review I2)', () => {
+  const theme = (updated_at: string, n: number) => ({ id: 't1', updated_at, data: d(n) });
+
+  it('the review scenario: a 409 after a library publish leaves an outdated backup, which is dropped, not offered', async () => {
+    // Tab A: Studio on W (old design d(1), saved at v1). Tab B publishes X; D40 refreshes W to X's design
+    // d(9) at v2. Tab A types a heading (old design + heading = d(2)); the PUT gets 409 conflict.
+    const put = jest.fn().mockResolvedValue({ status: 409, body: { error: 'changed', code: 'conflict' } });
+    const storage = memStorage();
+    const statuses: SaveStatus[] = [];
+    const q = new SaveQueue('b1', 't1', 'v1', { put, storage, onStatus: (st) => statuses.push(st), onSaved: () => {} });
+    q.schedule(d(2), true);
+    await tick();
+    expect(statuses[statuses.length - 1]).toBe('conflict');
+    expect(readBackup(storage, 'b1', 't1', 'v2')?.kind).toBe('outdated');
+    // Reload: the editor opens W at v2 with X's design. The old design is not offered, and the backup is gone.
+    const open = backupOnOpen(storage, 'b1', theme('v2', 9));
+    expect(open).toEqual({ initialData: d(9), restored: false, carried: null, dropped: true });
+    expect(storage.getItem(backupKey('b1', 't1'))).toBeNull();
+    // A second open says nothing more.
+    expect(backupOnOpen(storage, 'b1', theme('v2', 9)).dropped).toBe(false);
+  });
+
+  it('restores a backup made on the same server copy', () => {
+    const storage = memStorage({ [backupKey('b1', 't1')]: JSON.stringify({ data: d(2), base: 'v1', savedAt: 1 }) });
+    expect(backupOnOpen(storage, 'b1', theme('v1', 1))).toEqual({ initialData: d(2), restored: true, carried: null, dropped: false });
+  });
+
+  it('offers a carried backup (edits moved from a deleted or published theme)', () => {
+    const storage = memStorage({ [backupKey('b1', 't1')]: JSON.stringify({ data: d(2), base: CARRIED_BASE, savedAt: 1 }) });
+    expect(backupOnOpen(storage, 'b1', theme('v5', 1))).toEqual({ initialData: d(1), restored: false, carried: d(2), dropped: false });
+  });
+
+  it('silently removes a backup equal to the server copy', () => {
+    const storage = memStorage({ [backupKey('b1', 't1')]: JSON.stringify({ data: d(1), base: 'v0', savedAt: 1 }) });
+    expect(backupOnOpen(storage, 'b1', theme('v1', 1))).toEqual({ initialData: d(1), restored: false, carried: null, dropped: false });
+    expect(storage.getItem(backupKey('b1', 't1'))).toBeNull();
+  });
+
+  it('opens plainly with no backup or no storage', () => {
+    expect(backupOnOpen(memStorage(), 'b1', theme('v1', 1)).initialData).toEqual(d(1));
+    expect(backupOnOpen(null, 'b1', theme('v1', 1)).restored).toBe(false);
+  });
+});
+
+// Final review M1: edits of a deleted theme whose move to the working copy failed are kept, not swept.
+describe('gone backups (final review M1)', () => {
+  function listStorage(seed: Record<string, string> = {}) {
+    const s = memStorage(seed);
+    return {
+      ...s,
+      get length() {
+        return s.m.size;
+      },
+      key: (i: number) => Array.from(s.m.keys())[i] ?? null,
+    };
+  }
+  const now = 1_800_000_000_000;
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('keepGoneBackup stores the edits marked gone, as a carried backup', () => {
+    const s = listStorage();
+    expect(keepGoneBackup(s, 'b1', 'X', d(3), now)).toBe(true);
+    expect(readBackup(s, 'b1', 'X', 'whatever')).toEqual({ data: d(3), kind: 'carried', gone: true });
+    const boom = () => {
+      throw new Error('x');
+    };
+    expect(keepGoneBackup({ getItem: boom, setItem: boom, removeItem: boom }, 'b1', 'X', d(3), now)).toBe(false);
+    expect(keepGoneBackup(null, 'b1', 'X', d(3), now)).toBe(false);
+  });
+
+  it("the library's sweep moves a gone backup to the working copy instead of dropping it", () => {
+    const s = listStorage();
+    keepGoneBackup(s, 'b1', 'X', d(3), now - DAY);
+    s.setItem(backupKey('b1', 'Y'), JSON.stringify({ data: d(4), base: 'v', savedAt: now })); // a plain deleted theme
+    sweepBackups(s, 'b1', { keepThemeIds: ['W', 'L'], now, adoptInto: 'W' });
+    expect(s.getItem(backupKey('b1', 'X'))).toBeNull();
+    expect(s.getItem(backupKey('b1', 'Y'))).toBeNull();
+    expect(readBackup(s, 'b1', 'W', 'v7')).toEqual({ data: d(3), kind: 'carried', gone: false });
+    // The working copy then offers it (Keep my changes / Discard).
+    expect(backupOnOpen(s, 'b1', { id: 'W', updated_at: 'v7', data: d(1) }).carried).toEqual(d(3));
+  });
+
+  it('keeps a gone backup when the working copy already has one, or there is none, until it is 14 days old', () => {
+    const s = listStorage();
+    keepGoneBackup(s, 'b1', 'X', d(3), now);
+    s.setItem(backupKey('b1', 'W'), JSON.stringify({ data: d(5), base: 'v1', savedAt: now }));
+    sweepBackups(s, 'b1', { keepThemeIds: ['W'], now, adoptInto: 'W' });
+    expect(readBackup(s, 'b1', 'X', '')?.gone).toBe(true);
+    expect(readBackup(s, 'b1', 'W', 'v1')?.data).toEqual(d(5));
+    sweepBackups(s, 'b1', { keepThemeIds: ['L'], now, adoptInto: null });
+    expect(readBackup(s, 'b1', 'X', '')?.gone).toBe(true);
+    sweepBackups(s, 'b1', { keepThemeIds: ['L'], now: now + 15 * DAY, adoptInto: null });
+    expect(s.getItem(backupKey('b1', 'X'))).toBeNull();
+  });
+
+  it("the editor page's sweep (no list) keeps a fresh gone backup", () => {
+    const s = listStorage();
+    keepGoneBackup(s, 'b1', 'X', d(3), now);
+    sweepBackups(s, 'b1', { now });
+    expect(readBackup(s, 'b1', 'X', '')?.gone).toBe(true);
   });
 });

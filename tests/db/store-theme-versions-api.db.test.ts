@@ -107,13 +107,13 @@ d('Theme versions API (real DB)', () => {
     await closePool();
   });
 
-  it('GET lists the business versions newest first with author names, and no data or user ids; it needs settings read', async () => {
+  it('GET lists the business versions newest first with author names, and no data or user ids; it needs settings read or update', async () => {
     const mocked = requireTenantPermission as jest.Mock;
     mocked.mockClear();
     const res = await versionsRoute.GET(req('', 'GET'));
     expect(res.status).toBe(200);
     expect(mocked.mock.calls[0][2]).toBe('settings');
-    expect(mocked.mock.calls[0][3]).toBe('read');
+    expect(mocked.mock.calls[0][3]).toEqual(['read', 'update']); // read or update (final review M2)
     const { versions } = await res.json();
     expect(versions).toHaveLength(2);
     expect(versions[0]).toMatchObject({ id: newest, theme_name: 'Summer', preset: 'grocery', published_by_name: 'Asha', theme_exists: true });

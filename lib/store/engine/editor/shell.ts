@@ -105,15 +105,51 @@ export function isEditableTarget(t: unknown): boolean {
 export type LeaveState = 'idle' | 'leaving' | 'failed';
 
 export const LEAVE_FAILED_TEXT = 'This theme is now live. Reload the editor to keep editing.';
+/** Final review M1: the theme was deleted and opening the working copy failed. */
+export const GONE_LEAVE_FAILED_TEXT = "This theme was deleted and your working copy couldn't be opened.";
+/** …and the unsaved edits were stored for the working copy (the library moves them there). */
+export const GONE_EDITS_KEPT_TEXT =
+  'Your unsaved changes are kept on this device and will be offered on your working copy.';
+/** …and this browser would not store them: they live only in this tab. */
+export const GONE_EDITS_TAB_ONLY_TEXT =
+  "Your unsaved changes couldn't be stored on this device: keep this tab open and try again.";
+
+/**
+ * Why the editor is leaving this theme: it went live, or it was deleted. For `gone`, what became of the
+ * unsaved edits when the move failed: none to keep, kept for the working copy, or only in this tab.
+ */
+export type LeaveReason = 'live' | { gone: 'none' | 'kept' | 'tab_only' };
+
+/** Save stopped for good on this theme: only Reload (or the move to the working copy) goes on. */
+const STOPPED: ReadonlySet<SaveStatus> = new Set<SaveStatus>(['conflict', 'locked', 'gone']);
+
+/**
+ * Final review I2: edits are taken only while idle and while saving can still go on. In conflict, locked or
+ * gone, a new edit could never be saved here and would only rewrite the backup on top of a stale design.
+ */
+export function acceptsEdits(leave: LeaveState, status: SaveStatus): boolean {
+  return leave === 'idle' && !STOPPED.has(status);
+}
 
 /** What the shell allows and shows while it is (or failed at) leaving this theme. */
 export function shellView(
   leave: LeaveState,
   status: SaveStatus,
   message?: string,
-): { readOnly: boolean; statusLabel: string; blockingBanner: string | null } {
-  if (leave === 'failed') return { readOnly: true, statusLabel: 'Not saved', blockingBanner: LEAVE_FAILED_TEXT };
-  return { readOnly: leave === 'leaving', statusLabel: saveStatusLabel(status, message), blockingBanner: null };
+  reason: LeaveReason = 'live',
+): { readOnly: boolean; statusLabel: string; blockingBanner: string | null; retry: boolean } {
+  if (leave === 'failed') {
+    if (reason === 'live') return { readOnly: true, statusLabel: 'Not saved', blockingBanner: LEAVE_FAILED_TEXT, retry: false };
+    const edits =
+      reason.gone === 'kept' ? ` ${GONE_EDITS_KEPT_TEXT}` : reason.gone === 'tab_only' ? ` ${GONE_EDITS_TAB_ONLY_TEXT}` : '';
+    return { readOnly: true, statusLabel: 'Not saved', blockingBanner: `${GONE_LEAVE_FAILED_TEXT}${edits}`, retry: true };
+  }
+  return {
+    readOnly: !acceptsEdits(leave, status),
+    statusLabel: saveStatusLabel(status, message),
+    blockingBanner: null,
+    retry: false,
+  };
 }
 
 /** The iframe src for an editor preview link. */

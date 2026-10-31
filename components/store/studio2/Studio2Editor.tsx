@@ -6,11 +6,12 @@ import { useToastContext } from '@/contexts/ToastContext';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
 import { getGroup, type GroupKey, type OpError, type OpResult, type SectionRef } from '@/lib/store/engine/editor/ops';
 import { canRedo, canUndo, createHistory, record, redo, undo, type History } from '@/lib/store/engine/editor/history';
-import { SaveQueue, backupKey, type SaveStatus } from '@/lib/store/engine/editor/save-queue';
+import { CARRIED_BASE, SaveQueue, backupKey, keepGoneBackup, type SaveStatus } from '@/lib/store/engine/editor/save-queue';
 import { BRIDGE_SOURCE, resolveAddIndex, type EditorToPreview, type PreviewToEditor } from '@/lib/store/engine/editor/bridge';
 import { customPages, openTemplateKey, showsClassicPage, templateOptions } from '@/lib/store/engine/editor/tree';
 import { previewPath } from '@/lib/store/engine/preview-path';
 import {
+  acceptsEdits,
   isEditableTarget,
   pruneSelection,
   remoteThemeState,
@@ -20,6 +21,7 @@ import {
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
+  type LeaveReason,
   type LeaveState,
   type PendingScroll,
   type Selection,
@@ -85,6 +87,9 @@ const NO_PRODUCTS_TEXT = 'Add a product to preview the product page';
 const GONE_TOAST = 'This theme was deleted in another tab. Your unsaved edits are offered on your working copy.';
 /** An idle tab found its theme deleted, with nothing unsaved to carry. */
 const GONE_IDLE_TOAST = 'This theme was deleted in another tab.';
+/** Final review I2: an outdated backup was removed when the editor opened. */
+const DROPPED_BACKUP_TEXT =
+  "Changes that hadn't saved on this device were made before this theme changed elsewhere, so they were not kept.";
 /** D50: the re-check on returning to the tab runs at most this often. */
 const RECHECK_MS = 10_000;
 
@@ -110,11 +115,13 @@ interface Props {
   initialData: ThemeData;
   /** initialData is a restored backup: save it straight away. */
   restored: boolean;
-  /** A backup made before the server copy changed; the merchant chooses. */
-  staleBackup: ThemeData | null;
+  /** Edits carried here from another theme (deleted, or published elsewhere); the merchant chooses. */
+  carriedBackup: ThemeData | null;
+  /** An outdated backup was dropped on opening (final review I2): say so. */
+  droppedBackup: boolean;
 }
 
-export function Studio2Editor({ businessId, theme: row, initialData, restored, staleBackup }: Props) {
+export function Studio2Editor({ businessId, theme: row, initialData, restored, carriedBackup, droppedBackup }: Props) {
   const router = useRouter();
   const toast = useToastContext();
   const toastRef = useRef(toast);
@@ -132,7 +139,8 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const [status, setStatus] = useState<{ status: SaveStatus; message?: string }>({ status: 'saved' });
   const statusRef = useRef<SaveStatus>('saved');
   const [device, setDevice] = useState<Device>('desktop');
-  const [backupChoice, setBackupChoice] = useState<ThemeData | null>(staleBackup);
+  const [backupChoice, setBackupChoice] = useState<ThemeData | null>(carriedBackup);
+  const [droppedNotice, setDroppedNotice] = useState(droppedBackup);
   // The template in the tree, and the one the frame shows: it follows once pending edits are saved.
   const [templateKey, setTemplateKey] = useState('home');
   const templateKeyRef = useRef('home');
@@ -152,6 +160,8 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const pendingScrollRef = useRef<PendingScroll | null>(null);
   // Publishing or moving to the next working draft: the editor is read-only meanwhile.
   const [leave, setLeaveState] = useState<LeaveState>('idle');
+  // Why a move to the working draft failed (the banner text, and whether Try again is offered).
+  const [leaveReason, setLeaveReason] = useState<LeaveReason>('live');
   const leaveRef = useRef<LeaveState>('idle');
   const setLeave = useCallback((l: LeaveState) => {
     leaveRef.current = l;
@@ -176,8 +186,10 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   // `carry`: the server refused edits (live_locked, or gone when deleted elsewhere), so they go along as a
   // backup the next draft offers. Nothing is carried when everything here is already saved (an idle tab's
   // re-check, D50). A deleted working draft gets a new one from openWorkingDraft, and the carry still applies.
+  // `reason` 'gone' (final review M1): if the open fails, unsaved edits are stored marked gone, so the library
+  // moves them to the working copy instead of sweeping them, and the banner says so and offers Try again.
   const goToWorkingDraft = useCallback(
-    async (carry: boolean) => {
+    async (carry: boolean, reason: 'live' | 'gone') => {
       if (leaveRef.current === 'failed' || goingRef.current) return;
       goingRef.current = true;
       setLeave('leaving');
@@ -188,6 +200,13 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
         if (carry && unsaved && next.id !== row.id) carryBackup(businessId, row.id, next.id, historyRef.current.present);
         router.replace(editorPath(next.id));
       } catch {
+        if (reason === 'gone') {
+          const unsaved = carry && statusRef.current !== 'saved';
+          const kept = unsaved && keepGoneBackup(safeStorage(), businessId, row.id, historyRef.current.present, Date.now());
+          setLeaveReason({ gone: !unsaved ? 'none' : kept ? 'kept' : 'tab_only' });
+        } else {
+          setLeaveReason('live');
+        }
         setLeave('failed');
       }
     },
@@ -195,6 +214,14 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   );
   const goToWorkingDraftRef = useRef(goToWorkingDraft);
   goToWorkingDraftRef.current = goToWorkingDraft;
+
+  // Try again after the theme was deleted and the working copy could not be opened (final review M1).
+  const retryLeave = useCallback(() => {
+    if (leaveRef.current !== 'failed') return;
+    goingRef.current = false;
+    setLeave('leaving');
+    void goToWorkingDraft(true, 'gone');
+  }, [goToWorkingDraft, setLeave]);
 
   // Save queue, one per theme.
   useEffect(() => {
@@ -204,11 +231,11 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       onStatus: (s, message) => {
         statusRef.current = s;
         setStatus({ status: s, message });
-        if (s === 'locked') void goToWorkingDraftRef.current(true);
+        if (s === 'locked') void goToWorkingDraftRef.current(true, 'live');
         if (s === 'gone') {
           // An idle tab's re-check may already be leaving (and toasted); a late 404 from its pending save is quiet.
           if (!goingRef.current) toastRef.current.info(GONE_TOAST);
-          void goToWorkingDraftRef.current(true);
+          void goToWorkingDraftRef.current(true, 'gone');
         }
       },
       onSaved: (saved) => {
@@ -278,7 +305,8 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
 
   const apply = useCallback<Studio2Api['apply']>(
     (fn, opts) => {
-      if (leaveRef.current !== 'idle') return null;
+      // Read-only while leaving, and once saving stopped (conflict, locked, gone) until Reload (final review I2).
+      if (!acceptsEdits(leaveRef.current, statusRef.current)) return null;
       const result = fn(historyRef.current.present);
       let next: ThemeData;
       if (isOpResult(result)) {
@@ -298,7 +326,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   );
 
   const doUndo = useCallback(() => {
-    if (leaveRef.current !== 'idle') return;
+    if (!acceptsEdits(leaveRef.current, statusRef.current)) return;
     const h = undo(historyRef.current);
     if (h === historyRef.current) return;
     setHistoryBoth(h);
@@ -306,7 +334,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   }, [setHistoryBoth]);
 
   const doRedo = useCallback(() => {
-    if (leaveRef.current !== 'idle') return;
+    if (!acceptsEdits(leaveRef.current, statusRef.current)) return;
     const h = redo(historyRef.current);
     if (h === historyRef.current) return;
     setHistoryBoth(h);
@@ -362,9 +390,9 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       const state = remoteThemeState({ updatedAt: base, status: statusRef.current }, remote);
       if (state === 'gone') {
         toastRef.current.info(pending ? GONE_TOAST : GONE_IDLE_TOAST);
-        void goToWorkingDraftRef.current(true);
+        void goToWorkingDraftRef.current(true, 'gone');
       } else if (state === 'live') {
-        void goToWorkingDraftRef.current(true);
+        void goToWorkingDraftRef.current(true, 'live');
       } else if (state === 'changed') {
         queueRef.current?.markConflict(); // the existing "changed in another tab" banner
       }
@@ -524,7 +552,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
     // The working draft's data is copied onto the live theme and it stays the working draft (R11),
     // so editing goes on here. Any other draft itself became live: move to the working draft.
     if (published.id === row.id) {
-      await goToWorkingDraft(false);
+      await goToWorkingDraft(false, 'live');
       return;
     }
     setLeave('idle');
@@ -568,6 +596,8 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   }, [businessId, row.id]);
 
   const pages = useMemo(() => customPages(history.present), [history.present]);
+  const s = status.status;
+  const view = shellView(leave, s, status.message, leaveReason);
   const switchTemplateVoid = useCallback((key: string) => void switchTemplate(key), [switchTemplate]);
 
   const api = useMemo<Studio2Api>(
@@ -585,7 +615,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       hovered,
       addSectionTarget,
       closeAddSection,
-      readOnly: leave !== 'idle',
+      readOnly: view.readOnly,
     }),
     [
       history.present,
@@ -601,12 +631,10 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       hovered,
       addSectionTarget,
       closeAddSection,
-      leave,
+      view.readOnly,
     ],
   );
 
-  const s = status.status;
-  const view = shellView(leave, s, status.message);
   return (
     <Studio2Context.Provider value={api}>
       <div className="fixed inset-0 z-[90] flex flex-col bg-white text-gray-900">
@@ -618,7 +646,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
           onNewPage={() => setNewPageOpen(true)}
           previewProduct={previewProduct ?? null}
           onPreviewProduct={pickPreviewProduct}
-          readOnly={leave !== 'idle'}
+          readOnly={view.readOnly}
           canUndo={canUndo(history)}
           canRedo={canRedo(history)}
           onUndo={doUndo}
@@ -635,12 +663,16 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
         {view.blockingBanner && (
           <Banner tone="error">
             {view.blockingBanner}
-            <BannerButton onClick={() => window.location.reload()}>Reload</BannerButton>
+            {view.retry ? (
+              <BannerButton onClick={retryLeave}>Try again</BannerButton>
+            ) : (
+              <BannerButton onClick={() => window.location.reload()}>Reload</BannerButton>
+            )}
           </Banner>
         )}
         {s === 'conflict' && (
           <Banner tone="error">
-            This theme changed in another tab.
+            This theme changed in another tab. Reload to keep editing.
             <BannerButton onClick={() => window.location.reload()}>Reload</BannerButton>
           </Banner>
         )}
@@ -652,11 +684,18 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
             <BannerButton onClick={() => queueRef.current?.retry()}>Retry</BannerButton>
           </Banner>
         )}
-        {backupChoice && (
+        {backupChoice && !view.readOnly && (
           <Banner tone="warn">
-            You have changes that hadn&apos;t saved, made before this theme last changed.
+            You have changes that hadn&apos;t saved from another theme (deleted, or published elsewhere). Keep my
+            changes replaces this design with them.
             <BannerButton onClick={keepBackup}>Keep my changes</BannerButton>
             <BannerButton onClick={discardBackup}>Discard</BannerButton>
+          </Banner>
+        )}
+        {droppedNotice && (
+          <Banner tone="warn">
+            {DROPPED_BACKUP_TEXT}
+            <BannerButton onClick={() => setDroppedNotice(false)}>OK</BannerButton>
           </Banner>
         )}
 
@@ -701,7 +740,7 @@ function carryBackup(businessId: string, fromId: string, toId: string, data: The
   const storage = safeStorage();
   if (!storage) return;
   try {
-    storage.setItem(backupKey(businessId, toId), JSON.stringify({ data, base: '', savedAt: Date.now() }));
+    storage.setItem(backupKey(businessId, toId), JSON.stringify({ data, base: CARRIED_BASE, savedAt: Date.now() }));
     storage.removeItem(backupKey(businessId, fromId));
   } catch {
     /* storage unavailable or full */

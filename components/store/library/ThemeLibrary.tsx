@@ -86,7 +86,12 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       const storage = localStore();
       const t = Date.now();
       // D51: drop this store's backups of themes that are gone or two weeks old; badge the rest.
-      sweepBackups(storage, businessId, { keepThemeIds: list.map((r) => r.id), now: t });
+      // Edits kept from a deleted theme whose move failed (marked gone, final review M1) go to the working copy.
+      sweepBackups(storage, businessId, {
+        keepThemeIds: list.map((r) => r.id),
+        now: t,
+        adoptInto: list.find((r) => r.is_working)?.id ?? null,
+      });
       setBackups(new Set(list.filter((r) => hasBackup(storage, businessId, r.id)).map((r) => r.id)));
       setRows(list);
       loadedRef.current = true;

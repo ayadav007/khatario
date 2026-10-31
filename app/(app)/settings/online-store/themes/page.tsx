@@ -15,7 +15,8 @@ export default function ThemeLibraryPage() {
   const { canView, canModify, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
   // No user yet means permissions are still loading too (N1), not that they are missing.
   const ready = !permissionsLoading && !!user;
-  const mayView = ready ? canView('settings') || isPrimaryAdmin : null;
+  // The theme GETs accept settings read OR update (a role can store update without view).
+  const mayView = ready ? canView('settings') || canModify('settings') || isPrimaryAdmin : null;
   const mayEdit = ready ? canModify('settings') || isPrimaryAdmin : null;
   const [storeEngine, setStoreEngine] = useState<boolean | null>(null);
 

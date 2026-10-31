@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
-import { withStoreDraft } from '@/lib/store/store-context';
+import { catalogHref, engineProductHref } from '@/lib/store/engine/links';
 import { SearchSuggest } from './SearchSuggest';
 
 export type SearchPick = { type: 'product' | 'category'; id: string };
@@ -49,10 +49,10 @@ export function HeaderSearch({
     };
   }, [inputRef, inputId]);
 
-  // Off the catalog: open it with the search or category (keeping a studio preview's draft token).
-  const toCatalog = (params: Record<string, string>) => {
-    const qs = withStoreDraft(new URLSearchParams(params)).toString();
-    router.push(qs ? `/?${qs}` : '/');
+  // Off the catalog: open it with the search or category, keeping the preview params (`preview_theme`,
+  // `pt`, `td`) so a preview of an unlaunched store stays open.
+  const toCatalog = (next: { q?: string; cat?: string }) => {
+    router.push(catalogHref(window.location.search, next));
   };
 
   const submit = (q: string) => {
@@ -61,7 +61,7 @@ export function HeaderSearch({
   };
 
   const pick = (p: SearchPick) => {
-    if (p.type === 'product') router.push(`/products/${encodeURIComponent(p.id)}`);
+    if (p.type === 'product') router.push(engineProductHref(window.location.search, p.id));
     else if (onPick) onPick(p);
     else toCatalog({ cat: p.id });
   };

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { deleteTheme, getTheme, renameTheme, saveTheme } from '@/lib/store/engine/themes-repo';
-import { isUuid, notFound, repoFailure, repoJson } from '@/lib/store/engine/route-utils';
+import { THEME_READ, isUuid, notFound, repoFailure, repoJson } from '@/lib/store/engine/route-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   if (!isUuid(params.id)) return notFound();
   const { searchParams } = new URL(request.url);
   // D53: reading a theme needs the online-store settings permission too.
-  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', THEME_READ);
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

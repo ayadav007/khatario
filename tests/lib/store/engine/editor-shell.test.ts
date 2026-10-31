@@ -5,6 +5,7 @@ import {
   saveStatusLabel,
   selectionRef,
   shellView,
+  acceptsEdits,
   shortcutFor,
   shouldWarnOnLeave,
   toSelection,
@@ -105,12 +106,12 @@ describe('editor shell helpers', () => {
 
 describe('editor shell view while leaving the theme', () => {
   it('is editable and shows the save status while idle', () => {
-    expect(shellView('idle', 'saved')).toEqual({ readOnly: false, statusLabel: 'Saved', blockingBanner: null });
+    expect(shellView('idle', 'saved')).toEqual({ readOnly: false, statusLabel: 'Saved', blockingBanner: null, retry: false });
     expect(shellView('idle', 'error', 'Boom').statusLabel).toBe('Error Boom');
   });
 
   it('is read-only while publishing or opening the next draft', () => {
-    expect(shellView('leaving', 'saved')).toEqual({ readOnly: true, statusLabel: 'Saved', blockingBanner: null });
+    expect(shellView('leaving', 'saved')).toEqual({ readOnly: true, statusLabel: 'Saved', blockingBanner: null, retry: false });
   });
 
   it('blocks with a reload banner when the next draft could not be opened', () => {
@@ -118,7 +119,42 @@ describe('editor shell view while leaving the theme', () => {
       readOnly: true,
       statusLabel: 'Not saved',
       blockingBanner: 'This theme is now live. Reload the editor to keep editing.',
+      retry: false,
     });
+  });
+
+  // Final review I2: once saving stopped, a new edit could only rewrite the backup on a stale design.
+  it.each(['conflict', 'locked', 'gone'] as const)('is read-only once the save is stopped (%s), until Reload', (s) => {
+    expect(shellView('idle', s).readOnly).toBe(true);
+    expect(acceptsEdits('idle', s)).toBe(false);
+  });
+
+  it.each(['saved', 'pending', 'saving', 'offline', 'error'] as const)('accepts edits while idle and %s', (s) => {
+    expect(shellView('idle', s).readOnly).toBe(false);
+    expect(acceptsEdits('idle', s)).toBe(true);
+  });
+
+  it('accepts no edits while leaving or after a failed leave', () => {
+    expect(acceptsEdits('leaving', 'saved')).toBe(false);
+    expect(acceptsEdits('failed', 'saved')).toBe(false);
+  });
+
+  // Final review M1: a failed move after a delete is not called "now live", and offers Try again.
+  it('says the theme was deleted, with Try again, when the move after a delete failed', () => {
+    const none = shellView('failed', 'saved', undefined, { gone: 'none' });
+    expect(none).toEqual({
+      readOnly: true,
+      statusLabel: 'Not saved',
+      blockingBanner: "This theme was deleted and your working copy couldn't be opened.",
+      retry: true,
+    });
+    expect(none.blockingBanner).not.toMatch(/now live/);
+    expect(shellView('failed', 'gone', undefined, { gone: 'kept' }).blockingBanner).toBe(
+      "This theme was deleted and your working copy couldn't be opened. Your unsaved changes are kept on this device and will be offered on your working copy.",
+    );
+    expect(shellView('failed', 'gone', undefined, { gone: 'tab_only' }).blockingBanner).toBe(
+      "This theme was deleted and your working copy couldn't be opened. Your unsaved changes couldn't be stored on this device: keep this tab open and try again.",
+    );
   });
 });
 
@@ -174,5 +210,31 @@ describe('remoteThemeState (another tab)', () => {
 
   it('is the same for an equal updated_at', () => {
     expect(remoteThemeState(local('saved'), remote('draft', 'v1'))).toBe('same');
+  });
+});
+
+// Final review I2/M1: the editor wiring (a client component; jest here is node-only, so a source check).
+describe('Studio2Editor wiring (final review I2, M1)', () => {
+  const { readFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+  const src = readFileSync(join(process.cwd(), 'components/store/studio2/Studio2Editor.tsx'), 'utf8');
+  const page = readFileSync(join(process.cwd(), 'app/(app)/settings/online-store/themes/[id]/editor/page.tsx'), 'utf8');
+
+  it('apply, undo and redo refuse edits once saving stopped, and the panes follow view.readOnly', () => {
+    expect(src.match(/if \(!acceptsEdits\(leaveRef\.current, statusRef\.current\)\) return/g)).toHaveLength(3);
+    expect(src).toContain('readOnly: view.readOnly,');
+    expect(src).toContain('readOnly={view.readOnly}');
+    expect(src).not.toContain("readOnly: leave !== 'idle'");
+  });
+
+  it('a delete leads to a gone-aware move, which keeps the edits when it fails', () => {
+    expect(src.match(/goToWorkingDraftRef\.current\(true, 'gone'\)/g)).toHaveLength(2);
+    expect(src).toContain('keepGoneBackup(safeStorage(), businessId, row.id, historyRef.current.present, Date.now())');
+    expect(src).toContain('<BannerButton onClick={retryLeave}>Try again</BannerButton>');
+  });
+
+  it('the editor page opens through backupOnOpen, so an outdated backup is never offered', () => {
+    expect(page).toContain('backupOnOpen(storage, business.id, theme)');
+    expect(page).not.toContain('staleBackup');
   });
 });

@@ -11,12 +11,14 @@ export type TenantPermissionResult =
 /**
  * Tenant and actor from the middleware-verified session, then an RBAC check in that tenant.
  * A client `business_id` that differs from the session is refused (403); it is never used.
+ * `action` may list several actions: any one of them is enough (e.g. a read that `update` also allows,
+ * since a role can store update without view). The refusal is the first action's.
  */
 export async function requireTenantPermission(
   request: NextRequest,
   claimedBusinessId: unknown,
   moduleKey: string,
-  action: AuthorizeAction
+  action: AuthorizeAction | readonly AuthorizeAction[]
 ): Promise<TenantPermissionResult> {
   const tenant = requireTenantBusinessId(
     request,
@@ -27,11 +29,17 @@ export async function requireTenantPermission(
   if (!userId) {
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
-  try {
-    await authorize(userId, moduleKey, action, { businessId: tenant.businessId });
-  } catch (error) {
-    if (error instanceof AuthorizationError) return { ok: false, response: error.toNextResponse() };
-    throw error;
+  const actions: readonly AuthorizeAction[] = Array.isArray(action) ? action : [action as AuthorizeAction];
+  let refused: AuthorizationError | null = null;
+  for (const a of actions) {
+    try {
+      await authorize(userId, moduleKey, a, { businessId: tenant.businessId });
+      return { ok: true, businessId: tenant.businessId, userId };
+    } catch (error) {
+      if (!(error instanceof AuthorizationError)) throw error;
+      refused ??= error;
+    }
   }
-  return { ok: true, businessId: tenant.businessId, userId };
+  if (refused) return { ok: false, response: refused.toNextResponse() };
+  return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { THEME_READ } from '@/lib/store/engine/route-utils';
 import { listVersions } from '@/lib/store/engine/versions-repo';
 
 export const dynamic = 'force-dynamic';
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   // D53: reading needs the online-store settings permission; a query business_id is only compared, never used.
-  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', THEME_READ);
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

@@ -45,14 +45,24 @@ export function hasBackup(storage: Pick<Storage, 'getItem'> | null, businessId: 
 }
 
 /**
+ * The `base` of edits moved here from another theme (refused as live_locked, or that theme was deleted, D50).
+ * It never matches a server `updated_at`, so the merchant chooses (Keep my changes / Discard).
+ */
+export const CARRIED_BASE = '';
+
+/**
  * Drops this business's backups that are no longer useful (D51): ones whose theme is not in `keepThemeIds`
  * (only when a list is given), ones with no readable `savedAt` or older than `maxAgeMs`, and any legacy
  * business-less key. Other businesses' backups stay.
+ *
+ * A backup marked `gone` (its theme was deleted and the editor could not open the working copy, final
+ * review M1) is not dropped for being unlisted: it moves to `adoptInto` (the working copy) as a carried
+ * backup when that slot is free, and otherwise waits for a later sweep (still within `maxAgeMs`).
  */
 export function sweepBackups(
-  storage: Pick<Storage, 'length' | 'key' | 'removeItem' | 'getItem'> | null,
+  storage: (Pick<Storage, 'length' | 'key' | 'removeItem' | 'getItem'> & Partial<Pick<Storage, 'setItem'>>) | null,
   businessId: string,
-  opts: { keepThemeIds?: string[]; now: number; maxAgeMs?: number },
+  opts: { keepThemeIds?: string[]; now: number; maxAgeMs?: number; adoptInto?: string | null },
 ): void {
   if (!storage) return;
   try {
@@ -60,6 +70,7 @@ export function sweepBackups(
     const maxAge = opts.maxAgeMs ?? BACKUP_MAX_AGE_MS;
     const keep = opts.keepThemeIds ? new Set(opts.keepThemeIds) : null;
     const stale: string[] = [];
+    const goneOrphans: Array<{ key: string; data: unknown; savedAt: number }> = [];
     for (let i = 0; i < storage.length; i++) {
       const k = storage.key(i);
       if (!k) continue;
@@ -68,30 +79,72 @@ export function sweepBackups(
         continue;
       }
       if (!k.startsWith(prefix)) continue;
-      if (keep && !keep.has(k.slice(prefix.length))) {
+      let parsed: { savedAt?: unknown; gone?: unknown; data?: unknown } | null;
+      try {
+        parsed = JSON.parse(storage.getItem(k) ?? 'null');
+      } catch {
+        parsed = null;
+      }
+      const savedAt = parsed?.savedAt;
+      if (typeof savedAt !== 'number' || opts.now - savedAt > maxAge) {
         stale.push(k);
         continue;
       }
-      let savedAt: unknown;
-      try {
-        savedAt = JSON.parse(storage.getItem(k) ?? 'null')?.savedAt;
-      } catch {
-        savedAt = undefined;
+      if (keep && !keep.has(k.slice(prefix.length))) {
+        if (parsed?.gone === true && parsed.data) goneOrphans.push({ key: k, data: parsed.data, savedAt });
+        else stale.push(k);
       }
-      if (typeof savedAt !== 'number' || opts.now - savedAt > maxAge) stale.push(k);
     }
     stale.forEach((k) => storage.removeItem(k));
+    const target = opts.adoptInto ? backupKey(businessId, opts.adoptInto) : null;
+    if (target && storage.setItem && goneOrphans.length > 0 && storage.getItem(target) === null) {
+      // The newest one takes the free slot; any other waits for a later sweep.
+      const newest = goneOrphans.reduce((a, b) => (b.savedAt > a.savedAt ? b : a));
+      storage.setItem(target, JSON.stringify({ data: newest.data, base: CARRIED_BASE, savedAt: newest.savedAt }));
+      storage.removeItem(newest.key);
+    }
   } catch {
     /* storage unavailable */
   }
 }
+
+/**
+ * Keeps the edits of a theme that was deleted while the editor could not open the working copy (final review
+ * M1): stored under the deleted theme's key and marked `gone`, so the library's sweep moves them to the
+ * working copy instead of dropping them. False when storage is unavailable.
+ */
+export function keepGoneBackup(
+  storage: BackupStorage | null,
+  businessId: string,
+  themeId: string,
+  data: ThemeData,
+  now: number,
+): boolean {
+  if (!storage) return false;
+  try {
+    storage.setItem(backupKey(businessId, themeId), JSON.stringify({ data, base: CARRIED_BASE, savedAt: now, gone: true }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How a stored backup relates to the server copy:
+ * - current: made on this exact server copy (same `updated_at`): restored and saved straight away;
+ * - carried: moved here from another theme (CARRIED_BASE): offered with Keep my changes / Discard;
+ * - outdated: made on an older copy, and the server moved on since (another tab saved, published or reset
+ *   it). Never offered: it holds the whole old design, and keeping it would put that design back over the
+ *   newer one (final review I2).
+ */
+export type BackupKind = 'current' | 'carried' | 'outdated';
 
 export function readBackup(
   storage: BackupStorage | null,
   businessId: string,
   themeId: string,
   serverUpdatedAt: string,
-): { data: ThemeData; stale: boolean } | null {
+): { data: ThemeData; kind: BackupKind; gone: boolean } | null {
   if (!storage) return null;
   try {
     const raw = storage.getItem(backupKey(businessId, themeId));
@@ -100,10 +153,54 @@ export function readBackup(
     if (!parsed || typeof parsed !== 'object' || !parsed.data || typeof parsed.base !== 'string') {
       return null;
     }
-    return { data: parsed.data as ThemeData, stale: parsed.base !== serverUpdatedAt };
+    const kind: BackupKind =
+      parsed.base === serverUpdatedAt ? 'current' : parsed.base === CARRIED_BASE ? 'carried' : 'outdated';
+    return { data: parsed.data as ThemeData, kind, gone: parsed.gone === true };
   } catch {
     return null;
   }
+}
+
+/** What the editor opens with, given the server copy and any stored backup (see BackupKind). */
+export interface BackupOnOpen {
+  initialData: ThemeData;
+  /** initialData is a current backup: save it straight away. */
+  restored: boolean;
+  /** A carried backup: the merchant keeps or discards it. */
+  carried: ThemeData | null;
+  /** An outdated backup was dropped: the editor says so. */
+  dropped: boolean;
+}
+
+/**
+ * Reads the backup for an opening editor and settles it. One equal to the server copy (a save that landed
+ * after leaving) is removed silently; an outdated one is removed and reported as `dropped`.
+ */
+export function backupOnOpen(
+  storage: BackupStorage | null,
+  businessId: string,
+  theme: { id: string; updated_at: string; data: ThemeData },
+): BackupOnOpen {
+  const plain: BackupOnOpen = { initialData: theme.data, restored: false, carried: null, dropped: false };
+  const backup = readBackup(storage, businessId, theme.id, theme.updated_at);
+  if (!backup) return plain;
+  const remove = () => {
+    try {
+      storage?.removeItem(backupKey(businessId, theme.id));
+    } catch {
+      /* ignore */
+    }
+  };
+  if (JSON.stringify(backup.data) === JSON.stringify(theme.data)) {
+    remove();
+    return plain;
+  }
+  if (backup.kind === 'outdated') {
+    remove();
+    return { ...plain, dropped: true };
+  }
+  if (backup.kind === 'carried') return { ...plain, carried: backup.data };
+  return { ...plain, initialData: backup.data, restored: true };
 }
 
 export class SaveQueue {

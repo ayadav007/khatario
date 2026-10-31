@@ -3,6 +3,12 @@ import type { RepoResult } from './themes-repo';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * The permission a theme or version GET needs: settings read OR update (D53). The role API can store
+ * update without view, and such staff must still open the library and the editor.
+ */
+export const THEME_READ = ['read', 'update'] as const;
+
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
 
 const FAILURES = {

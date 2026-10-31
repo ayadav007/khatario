@@ -244,7 +244,7 @@ d('Theme API (real DB)', () => {
     const workingId = async () =>
       (await pool.query(`SELECT id FROM store_themes WHERE business_id = $1 AND is_working`, [BIZ])).rows[0]?.id as string | undefined;
 
-    it('GET list and GET by id need settings read permission', async () => {
+    it('GET list and GET by id need settings read or update permission (final review M2)', async () => {
       const anyId = (await pool.query(`SELECT id FROM store_themes WHERE business_id = $1 LIMIT 1`, [BIZ])).rows[0].id;
       mocked.mockClear();
       state.allowed = false;
@@ -257,7 +257,8 @@ d('Theme API (real DB)', () => {
       expect(mocked).toHaveBeenCalledTimes(2);
       for (const call of mocked.mock.calls) {
         expect(call[2]).toBe('settings');
-        expect(call[3]).toBe('read');
+        // A role can store update without view: either one opens the library and the editor.
+        expect(call[3]).toEqual(['read', 'update']);
       }
       const list = await (await listRoute.GET(req('', 'GET'))).json();
       expect(list.themes.every((t: { has_changes: unknown }) => typeof t.has_changes === 'boolean')).toBe(true);

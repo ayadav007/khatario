@@ -7,19 +7,23 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
-import { backupKey, readBackup, sweepBackups } from '@/lib/store/engine/editor/save-queue';
+import { backupOnOpen, readBackup, sweepBackups } from '@/lib/store/engine/editor/save-queue';
 import { Studio2Editor } from '@/components/store/studio2/Studio2Editor';
 import { ThemeGoneError, editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
 import { LIBRARY_PATH } from '@/lib/store/engine/library';
 
 const NARROW_QUERY = '(max-width: 1023px)';
 const GONE_TEXT = 'This theme no longer exists.';
+/** Final review M1: its edits were kept when the move to the working copy failed; the library moves them there. */
+const GONE_EDITS_TEXT =
+  'This theme no longer exists. Your unsaved changes from it are kept on this device: open Themes, then your working copy, to keep or discard them.';
 
 interface Loaded {
   theme: ThemeRow;
   initialData: ThemeData;
   restored: boolean;
-  staleBackup: ThemeData | null;
+  carriedBackup: ThemeData | null;
+  droppedBackup: boolean;
 }
 
 function useNarrow(): boolean | null {
@@ -42,28 +46,14 @@ function localStore(): Storage | null {
   }
 }
 
-/** The stored backup, unless it is exactly what the server already has (a save that landed after leaving). */
-function usefulBackup(storage: Storage | null, businessId: string, theme: ThemeRow): { data: ThemeData; stale: boolean } | null {
-  const backup = readBackup(storage, businessId, theme.id, theme.updated_at);
-  if (backup && JSON.stringify(backup.data) === JSON.stringify(theme.data)) {
-    try {
-      storage?.removeItem(backupKey(businessId, theme.id));
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }
-  return backup;
-}
-
 export default function Studio2EditorPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === 'string' ? params.id : '';
   const router = useRouter();
   const { business, user } = useAuth();
   const { canModify, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
-  // Same rule as the theme routes (settings:update): without it nothing would save. No user yet means
-  // permissions are still loading too (N1), not that they are missing.
+  // Same rule as the theme writes (settings:update): without it nothing would save. The theme GETs accept
+  // update as well as read (final review M2). No user yet means permissions are still loading too (N1).
   const canEdit = permissionsLoading || !user ? null : canModify('settings') || isPrimaryAdmin;
   const narrow = useNarrow();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -85,18 +75,22 @@ export default function Studio2EditorPage() {
         }
         const storage = localStore();
         sweepBackups(storage, business.id, { now: Date.now() });
-        const backup = usefulBackup(storage, business.id, theme);
+        // Final review I2: a backup made on an older copy is dropped, never offered (see BackupKind).
+        const open = backupOnOpen(storage, business.id, theme);
         setLoaded({
           theme,
-          initialData: backup && !backup.stale ? backup.data : theme.data,
-          restored: !!backup && !backup.stale,
-          staleBackup: backup?.stale ? backup.data : null,
+          initialData: open.initialData,
+          restored: open.restored,
+          carriedBackup: open.carried,
+          droppedBackup: open.dropped,
         });
       } catch (e) {
         if (cancelled) return;
         // D50: a deleted theme (or a stale link) says so plainly; the link below goes back to the library.
-        if (e instanceof ThemeGoneError) setError(GONE_TEXT);
-        else setError(e instanceof Error && e.message ? e.message : 'Failed to load theme');
+        if (e instanceof ThemeGoneError) {
+          const kept = readBackup(localStore(), business.id, id, '')?.gone === true;
+          setError(kept ? GONE_EDITS_TEXT : GONE_TEXT);
+        } else setError(e instanceof Error && e.message ? e.message : 'Failed to load theme');
       }
     })();
     return () => {
@@ -147,7 +141,8 @@ export default function Studio2EditorPage() {
       theme={loaded.theme}
       initialData={loaded.initialData}
       restored={loaded.restored}
-      staleBackup={loaded.staleBackup}
+      carriedBackup={loaded.carriedBackup}
+      droppedBackup={loaded.droppedBackup}
     />
   );
 }
