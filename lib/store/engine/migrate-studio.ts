@@ -105,6 +105,19 @@ export function labelLink(label: string, ctx: MigrationContext, w: Warnings, whe
   }
 }
 
+/** The old Quick store padded each home section 12-16px; the engine default is 32px. */
+export const QUICK_SECTION_SPACING = 12;
+
+/** Quick's rhythm for the spacing the merchant never set (a set value is kept). */
+function quickSpacing(out: Section, src: StudioSection): void {
+  const s = src.settings;
+  out.settings = {
+    ...out.settings,
+    ...(typeof s.spacingTop === 'number' ? {} : { spacing_top: QUICK_SECTION_SPACING }),
+    ...(typeof s.spacingBottom === 'number' ? {} : { spacing_bottom: QUICK_SECTION_SPACING }),
+  };
+}
+
 /** Common wrapper fields: hidden, class names, section CSS, spacing and the Studio name. */
 function common(target: Section, src: StudioSection, kind: 'home' | 'group'): Section {
   const s = src.settings;
@@ -423,6 +436,7 @@ export function migrateStudioSections(
     // A derived section that is switched off and holds nothing of the merchant's is left out, as the store never showed it.
     if (derived && src.enabled === false && !derivedHasContent(src, t)) continue;
     const s = homeSection(src, t, ctx, w);
+    if (s && t.pack === 'quick') quickSpacing(s, src);
     if (s) homeSections.push(s);
   }
   const max = ENGINE_LIMITS.sectionsPerTemplate;

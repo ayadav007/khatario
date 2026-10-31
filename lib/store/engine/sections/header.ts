@@ -47,5 +47,6 @@ export const header: SectionSchema = {
     },
   ],
   // The chips are optional: a failed category lookup drops only the chips, never the logo, search, cart or menu.
-  data: (s) => (s.show_category_chips === true ? { categories: true, categoriesOptional: true } : {}),
+  // Categories always: the Quick preset's header uses them for its pills and search hints.
+  data: () => ({ categories: true, categoriesOptional: true }),
 };

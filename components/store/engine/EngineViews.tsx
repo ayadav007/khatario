@@ -1,8 +1,9 @@
 'use client';
 
-import { Suspense, useCallback } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown, MapPin, Search, ShoppingCart, User } from 'lucide-react';
 import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
@@ -24,6 +25,10 @@ import {
   type StudioTileCategory,
 } from '../studio-theme/StudioSections';
 import { useEngineCart } from './EngineShell';
+import { useEngineCardLook } from './EngineCardContext';
+import { QuickSheet } from '../quick-theme/QuickChrome';
+import { quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
+import { cleanPincode, pincodeLine, pincodeServiceable, storePinKey } from '@/lib/store/store-pincode';
 
 /**
  * Preset links and CTA defaults use `#catalog`; each `source: 'all'` grid carries its own
@@ -189,11 +194,19 @@ export function EngineCtaButton({ label, link }: { label: string; link: string }
   );
 }
 
-function HeaderSearchBox({ subdomain, placeholder }: { subdomain: string; placeholder: string }) {
+function HeaderSearchBox({
+  subdomain,
+  placeholder,
+  className = 'search',
+}: {
+  subdomain: string;
+  placeholder: string;
+  className?: string;
+}) {
   const params = useSearchParams();
   const go = useCatalogNav();
   return (
-    <div className="search" role="search">
+    <div className={className} role="search">
       <Search aria-hidden="true" />
       <HeaderSearch
         subdomain={subdomain}
@@ -244,6 +257,7 @@ export function EngineHeader({
   subdomain,
   searchPlaceholder,
   chips,
+  quick,
 }: {
   s: StudioSettings;
   logoUrl: string | null;
@@ -252,9 +266,15 @@ export function EngineHeader({
   searchPlaceholder: string;
   /** Category chips under the header row (All, then each category). */
   chips?: Chip[];
+  /** Quick preset only: the old Quick header (delivery line, pincode, cycling hint, pill row). */
+  quick?: QuickHeaderProps;
 }) {
   const { cartCount } = useStore();
   const { openCart } = useEngineCart();
+  const look = useEngineCardLook();
+  if (look?.quick && quick) {
+    return <EngineQuickHeader {...quick} logoUrl={logoUrl} subdomain={subdomain} placeholder={searchPlaceholder} />;
+  }
   const fallback = (
     <div className="search">
       <Search aria-hidden="true" />
@@ -484,5 +504,216 @@ export function EngineProductGrid({
         />
       ))}
     </StudioProductsSection>
+  );
+}
+
+export interface QuickHeaderProps {
+  name: string;
+  /** The header's delivery estimate, e.g. "in 30 minutes". */
+  eta: string;
+  links: Array<{ label: string; href: string; highlight: boolean }>;
+  categories: Chip[];
+  showSearch: boolean;
+  showAccount: boolean;
+  showCart: boolean;
+}
+
+/** Cycles through `hints` every 2.6 s (not with reduced motion). */
+function useCyclingHint(hints: string[]): string {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (hints.length < 2 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const t = window.setInterval(() => setI((n) => n + 1), 2600);
+    return () => window.clearInterval(t);
+  }, [hints.length]);
+  return hints[i % hints.length] ?? '';
+}
+
+/**
+ * The Quick preset's header, the old Quick store's markup (quick-theme.css): delivery line with the pincode sheet,
+ * account and cart, a search box with cycling category hints, and a pill row ending in a highlighted Offers.
+ */
+function EngineQuickHeader({
+  name,
+  eta,
+  links,
+  categories,
+  showSearch,
+  showAccount,
+  showCart,
+  logoUrl,
+  subdomain,
+  placeholder,
+}: QuickHeaderProps & { logoUrl: string | null; subdomain: string; placeholder: string }) {
+  const { cartCount, branches, selectedBranchId, selectBranch, store } = useStore();
+  const { openCart } = useEngineCart();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pincode, setPincode] = useState('');
+  const hint = useCyclingHint(quickSearchHints(placeholder, categories));
+  useEffect(() => {
+    try {
+      setPincode(cleanPincode(localStorage.getItem(storePinKey(subdomain)) ?? ''));
+    } catch {
+      /* storage blocked */
+    }
+  }, [subdomain]);
+  const savePin = (value: string) => {
+    const next = cleanPincode(value);
+    setPincode(next);
+    try {
+      localStorage.setItem(storePinKey(subdomain), next);
+    } catch {
+      /* storage blocked */
+    }
+  };
+  const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
+  const pinOk = pincodeServiceable(branch, pincode);
+  const chips = quickChips(links, categories);
+
+  return (
+    <div className="qk-top">
+      <div className="qk-head">
+        <div className="qk-row">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="qk-logo" src={logoUrl} alt={name} />
+          ) : null}
+          <button type="button" className="qk-loc" onClick={() => setSheetOpen(true)} aria-label="Change delivery location">
+            <b>{quickDeliveryLine(eta, name)}</b>
+            <span>
+              <MapPin aria-hidden="true" />
+              {pincodeLine(pincode, branch?.name, store?.name ?? name)}
+              <ChevronDown aria-hidden="true" />
+            </span>
+          </button>
+          <div className="qk-actions">
+            {showAccount ? (
+              <Link href="/account" aria-label="Account">
+                <User />
+              </Link>
+            ) : null}
+            {showCart ? (
+              <button
+                type="button"
+                className="qk-cartBtn"
+                onClick={openCart}
+                aria-label={cartCount ? `Cart, ${cartCount} items` : 'Cart'}
+              >
+                <ShoppingCart />
+                {cartCount > 0 ? <sup>{cartCount}</sup> : null}
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {showSearch ? (
+          <Suspense
+            fallback={
+              <div className="qk-search">
+                <Search aria-hidden="true" />
+                <span>{hint}</span>
+              </div>
+            }
+          >
+            <HeaderSearchBox subdomain={subdomain} placeholder={hint} className="qk-search" />
+          </Suspense>
+        ) : null}
+        {chips.length ? (
+          <Suspense fallback={<QuickPills chips={chips} />}>
+            <QuickPillsLive chips={chips} />
+          </Suspense>
+        ) : null}
+      </div>
+      <QuickSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        label="Delivery location"
+        title={<h2>Where should we deliver?</h2>}
+        footer={
+          <button type="button" className="qk-cta qk-ctaPlain" onClick={() => setSheetOpen(false)}>
+            Done
+          </button>
+        }
+      >
+        <div className="qk-locBody">
+          {branches.length > 1 ? (
+            <div className="qk-branches">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={b.id === selectedBranchId ? 'on' : ''}
+                  onClick={() => selectBranch(b.id)}
+                >
+                  <MapPin />
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <label>
+            Pincode
+            <input
+              inputMode="numeric"
+              value={pincode}
+              onChange={(e) => savePin(e.target.value)}
+              placeholder="6-digit pincode"
+              maxLength={6}
+              autoFocus
+            />
+          </label>
+          {pincode.length === 6 && !pinOk ? (
+            <p className="warn">This store may not deliver to {pincode}. Pickup may still be available.</p>
+          ) : pincode.length === 6 ? (
+            <p className="good">We deliver to {pincode}.</p>
+          ) : null}
+        </div>
+      </QuickSheet>
+    </div>
+  );
+}
+
+type QuickPill = ReturnType<typeof quickChips>[number];
+
+function QuickPills({
+  chips,
+  activeCat,
+  offersOn,
+  onCategory,
+}: {
+  chips: QuickPill[];
+  activeCat?: string | null;
+  offersOn?: boolean;
+  onCategory?: (id: string) => void;
+}) {
+  return (
+    <nav className="qk-chips" aria-label="Shop">
+      {chips.map((c) => {
+        const on = c.categoryId ? c.categoryId === activeCat : c.offers && !!offersOn;
+        const cls = [on ? 'on' : '', c.offers ? 'offers' : ''].join(' ').trim() || undefined;
+        const id = c.categoryId;
+        return id ? (
+          <button type="button" key={c.key} className={cls} aria-pressed={on} onClick={() => onCategory?.(id)}>
+            {c.label}
+          </button>
+        ) : (
+          <a key={c.key} className={cls} href={c.href}>
+            {c.label}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
+function QuickPillsLive({ chips }: { chips: QuickPill[] }) {
+  const params = useSearchParams();
+  const go = useCatalogNav();
+  return (
+    <QuickPills
+      chips={chips}
+      activeCat={params.get('cat')}
+      offersOn={!!params.get('disc')}
+      onCategory={(id) => go({ categoryId: id })}
+    />
   );
 }

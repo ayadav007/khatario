@@ -185,6 +185,14 @@ describe('quickDerived', () => {
     expect(first(home(r), 'featured-products').settings).toMatchObject({ source: 'all', limit: 24, columns: 6 });
   });
 
+  it("uses Quick's 12px rhythm for sections whose spacing was never set (the old Quick store's own padding)", () => {
+    for (const id of home(r).order) {
+      expect(home(r).sections[id].settings).toMatchObject({ spacing_top: 12, spacing_bottom: 12 });
+    }
+    const studio = migrateStoreTheme(studioDerived, ctx);
+    expect(first(home(studio), 'slideshow').settings.spacing_top).not.toBe(12);
+  });
+
   it('keeps the phone kit on even when the old theme switched it off', () => {
     expect(migrateStoreTheme({ ...quickDerived, phone_kit: false }, ctx).data.settings.phone_kit).toBe(true);
     expect(migrateStoreTheme({ ...studioDerived, phone_kit: false }, ctx).data.settings.phone_kit).toBe(false);

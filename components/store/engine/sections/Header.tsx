@@ -28,6 +28,15 @@ export function Header({ section, data, store, theme }: EngineSectionProps) {
           ? data.categories.map((c) => ({ id: c.id, name: c.name }))
           : undefined
       }
+      quick={{
+        name: store.name,
+        eta: str(v.delivery_eta),
+        links,
+        categories: (data?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+        showSearch: v.show_search !== false,
+        showAccount: v.show_account !== false,
+        showCart: v.show_cart !== false,
+      }}
     />
   );
 }

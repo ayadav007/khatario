@@ -3,6 +3,10 @@ import type { PresetContext } from './index';
 import { block, presetSettings, section, template, welcomeSlide } from './shared';
 import { STUDIO_USPS, studioFooter } from './studio';
 import { defaultTemplate } from './templates';
+import { QUICK_SECTION_SPACING } from '../migrate-studio';
+
+/** Quick's tight section rhythm (the old Quick store's padding). */
+const tight = { spacing_top: QUICK_SECTION_SPACING, spacing_bottom: QUICK_SECTION_SPACING };
 
 /** Quick: the quick-delivery app home, in the order `toQuickLayout` gives the Studio layout. */
 export function quickPreset(ctx: PresetContext): ThemeData {
@@ -23,12 +27,12 @@ export function quickPreset(ctx: PresetContext): ThemeData {
     footer_group: template([studioFooter()]),
     templates: {
       home: template([
-        section('slideshow', { layout: 'full', height: 'small' }, [block('slide', welcomeSlide(ctx))]),
-        section('category-grid', { heading: 'Shop by category', columns: 8 }),
-        section('product-rail', { heading: 'Bestsellers', source: 'bestsellers', limit: 12 }),
-        section('product-rail', { heading: 'Top deals', source: 'discounted', limit: 12 }),
-        section('multicolumn', {}, STUDIO_USPS.map((u) => block('column', u))),
-        section('featured-products', { heading: 'Handpicked for you', source: 'all', limit: 24, columns: 6 }),
+        section('slideshow', { layout: 'full', height: 'small', ...tight }, [block('slide', welcomeSlide(ctx))]),
+        section('category-grid', { heading: 'Shop by category', columns: 8, ...tight }),
+        section('product-rail', { heading: 'Bestsellers', source: 'bestsellers', limit: 12, ...tight }),
+        section('product-rail', { heading: 'Top deals', source: 'discounted', limit: 12, ...tight }),
+        section('multicolumn', { ...tight }, STUDIO_USPS.map((u) => block('column', u))),
+        section('featured-products', { heading: 'Handpicked for you', source: 'all', limit: 24, columns: 6, ...tight }),
       ]),
       product: defaultTemplate('product'),
       catalog: defaultTemplate('catalog'),

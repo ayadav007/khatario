@@ -1,5 +1,6 @@
 'use client';
 
+import { storePinKey } from '@/lib/store/store-pincode';
 import { Search, MapPin, ChevronDown } from 'lucide-react';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -43,9 +44,7 @@ interface StoreShellProps {
 
 const NO_CATEGORIES: StudioNavCategory[] = [];
 
-function pinKey(subdomain: string) {
-  return `khatario-store-pin:${subdomain}`;
-}
+const pinKey = storePinKey;
 
 export function StoreShell({
   children,

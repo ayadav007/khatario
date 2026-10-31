@@ -75,3 +75,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------- Desktop: the old Quick store's 1200px column (sections set to Full width still span) ---------- */
+.st-root.eng-root.eng-preset-quick .qk-main .eng-sec:not(.eng-sec--full) {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}

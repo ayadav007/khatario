@@ -69,7 +69,7 @@ describe('resolveSectionData for demo stores', () => {
 });
 
 describe('M4 data requests', () => {
-  it('category-shelves asks for shelves with its defaults; the header asks for categories only with chips', () => {
+  it('category-shelves asks for shelves with its defaults; the header always asks for categories (Quick pills and hints), optional', () => {
     const map = collectDataRequests([
       group({
         shelves: section('category-shelves'),
@@ -78,7 +78,7 @@ describe('M4 data requests', () => {
       }),
     ]);
     expect(map.get('shelves')).toEqual({ shelves: { maxCategories: 6, perShelf: 8 } });
-    expect(map.get('h')).toEqual({});
+    expect(map.get('h')).toEqual({ categories: true, categoriesOptional: true });
     expect(map.get('chips')).toEqual({ categories: true, categoriesOptional: true });
   });
 
