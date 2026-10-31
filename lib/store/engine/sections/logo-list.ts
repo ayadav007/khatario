@@ -15,6 +15,8 @@ export const logoList: SectionSchema = {
         { id: 'image', type: 'image', label: 'Logo', default: '' },
         { id: 'link', type: 'url', label: 'Link', default: '' },
         { id: 'alt', type: 'text', label: 'Alt text', default: '', max_length: 60 },
+        { id: 'name', type: 'text', label: 'Name (shown when there is no logo image)', default: '', max_length: 40 },
+        { id: 'caption', type: 'text', label: 'Caption', default: '', max_length: 80 },
       ],
     },
   ],

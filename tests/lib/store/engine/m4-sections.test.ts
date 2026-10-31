@@ -60,7 +60,7 @@ describe('M4 new sections', () => {
     expect(homeWith('promo-cards', {}, cards).block_order).toHaveLength(4);
     const schema = getSectionSchema('promo-cards')!;
     expect(schema.settings.find((s) => s.id === 'style')).toMatchObject({ type: 'select', default: 'split' });
-    expect(schema.settings.find((s) => s.id === 'columns')).toMatchObject({ type: 'range', min: 1, max: 3, default: 2 });
+    expect(schema.settings.find((s) => s.id === 'columns')).toMatchObject({ type: 'range', min: 1, max: 4, default: 2 });
     const card = schema.blocks!.find((b) => b.type === 'card')!;
     expect(card.settings.find((s) => s.id === 'button_text')?.default).toBe('Shop now');
     expect(card.settings.find((s) => s.id === 'link')?.default).toBe('#catalog');

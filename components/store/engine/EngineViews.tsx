@@ -124,7 +124,7 @@ export function EnginePromoCards({
   return (
     <div className="eng-promos-block">
       {heading ? <h2>{heading}</h2> : null}
-      <div className="eng-promos" data-style={style} style={{ ['--eng-cols' as string]: String(columns) }}>
+      <div className="eng-promos" data-style={style} data-cols={columns} style={{ ['--eng-cols' as string]: String(columns) }}>
         {cards.map((c) => (
           <article key={c.id} className={`eng-promo ${c.image ? 'has-img' : 'no-img'}`}>
             {c.image ? (

@@ -58,6 +58,10 @@ const THEME_RULES =
   '.st-root.eng-root .quotes .eng-quote-by{display:flex;align-items:center;gap:8px;margin-top:14px}' +
   '.st-root.eng-root .quotes .eng-quote-by b{margin-top:0}' +
   '.st-root.eng-root .quotes .eng-quote-by img{width:32px;height:32px;border-radius:50%;object-fit:cover}' +
+  '.st-root.eng-root .quotes .eng-quote-who{display:flex;flex-direction:column;gap:2px}' +
+  '.st-root.eng-root .quotes .eng-quote-who small{font-size:12px;color:var(--st-muted)}' +
+  '.st-root.eng-root .quotes>blockquote>strong{display:block;margin-bottom:6px}' +
+  '.st-root.eng-root .eng-test-summary{margin:6px 0 0;font-size:14px;color:var(--st-muted)}' +
   // Footer link columns, each under its heading.
   '.st-root.eng-root .footerCols{margin-left:auto;display:flex;gap:36px;flex-wrap:wrap}' +
   '.st-root.eng-root .footerCols .footerCol{margin-left:0;flex-direction:column;gap:8px}' +
@@ -114,6 +118,9 @@ const THEME_RULES =
   '.st-root.eng-root .eng-collection-title{display:block;margin-top:8px;font-weight:600;text-align:center}' +
   '.st-root.eng-root .eng-logos ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:20px 32px}' +
   '.st-root.eng-root .eng-logos img{display:block;max-height:48px;max-width:140px;width:auto;height:auto;object-fit:contain}' +
+  '.st-root.eng-root .eng-logos li{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}' +
+  '.st-root.eng-root .eng-logos .eng-logo-name{font-family:var(--font-heading);font-size:20px;font-weight:700;letter-spacing:.02em}' +
+  '.st-root.eng-root .eng-logos li small{font-size:12px;color:var(--st-muted)}' +
   '.st-root.eng-root .eng-video-frame{position:relative;aspect-ratio:16/9;max-width:960px;margin:0 auto;background:#000;border-radius:var(--btn-radius,10px);overflow:hidden}' +
   '.st-root.eng-root .eng-video-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
   '.st-root.eng-root .eng-video-cover{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000 center/cover no-repeat;cursor:pointer;color:#fff;font-size:44px}' +
@@ -148,7 +155,7 @@ const THEME_RULES =
   '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 30%,rgba(0,0,0,.7))}' +
   '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img .eng-promo-copy{position:relative;z-index:1;justify-content:flex-end}' +
   '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img .eyebrow{color:#fff}' +
-  '@container store (max-width: 640px){.st-root.eng-root .eng-promos-block{padding:0 16px}.st-root.eng-root .eng-promos{grid-template-columns:minmax(0,1fr)}.st-root.eng-root .eng-promos[data-style="split"] .eng-promo-img{flex-basis:38%}}' +
+  '@container store (max-width: 640px){.st-root.eng-root .eng-promos-block{padding:0 16px}.st-root.eng-root .eng-promos{grid-template-columns:minmax(0,1fr)}.st-root.eng-root .eng-promos[data-cols="4"]{grid-template-columns:repeat(2,minmax(0,1fr))}.st-root.eng-root .eng-promos[data-style="split"] .eng-promo-img{flex-basis:38%}}' +
   '.st-root.eng-root .eng-sec--full .eng-promos-block{padding-left:0;padding-right:0}' +
   // Emoji category tiles: the emoji fills the tile mark.
   '.st-root.eng-root .catMark.catEmoji{font-family:inherit;font-size:52px;line-height:1}' +

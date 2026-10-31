@@ -115,7 +115,7 @@ describe('studio adapter', () => {
           ['b', 'quote', { text: 'X' }, true],
         ]),
       ),
-    ).toEqual([{ text: 'T', name: 'N', photo: '', rating: 4 }]);
+    ).toEqual([{ text: 'T', name: 'N', photo: '', rating: 4, title: '', location: '', purchased: '' }]);
   });
 
   it('product sections map fields', () => {
@@ -138,5 +138,13 @@ describe('studio adapter', () => {
   it('productSectionSettings maps show_tagline and show_swatches, default off', () => {
     expect(productSectionSettings(sec('featured-products', { show_tagline: true }))).toMatchObject({ showTagline: true, showSwatches: false });
     expect(productSectionSettings(sec('featured-products', {}))).toMatchObject({ showTagline: false, showSwatches: false });
+  });
+
+  it('testimonialItems and multicolumnSettings carry the new fields', () => {
+    expect(
+      testimonialItems(sec('testimonials', {}, [['a', 'quote', { text: 'Great', name: 'A', title: 'Loved it', location: 'Delhi', purchased: 'Saree', rating: 5 }]]))[0],
+    ).toMatchObject({ title: 'Loved it', location: 'Delhi', purchased: 'Saree' });
+    expect(multicolumnSettings(sec('multicolumn', {}, [['a', 'column', { title: 'T', image: '/i.webp' }]])).usps![0]).toMatchObject({ image: '/i.webp' });
+    expect(multicolumnSettings(sec('multicolumn', {}, [['a', 'column', { title: 'T' }]])).usps![0]).not.toHaveProperty('image');
   });
 });

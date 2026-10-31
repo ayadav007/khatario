@@ -24,7 +24,7 @@ export function PromoCards({ section }: EngineSectionProps) {
     cards.push(card);
   }
   if (cards.length === 0) return null;
-  const columns = typeof v.columns === 'number' ? Math.min(3, Math.max(1, Math.round(v.columns))) : 2;
+  const columns = typeof v.columns === 'number' ? Math.min(4, Math.max(1, Math.round(v.columns))) : 2;
   return (
     <EnginePromoCards
       heading={str(v.heading)}

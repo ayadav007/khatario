@@ -49,6 +49,8 @@ export interface StudioUsp {
   icon: StudioUspIcon;
   title: string;
   text: string;
+  /** A photo shown instead of the icon. */
+  image?: string;
 }
 
 export interface StudioBadge {

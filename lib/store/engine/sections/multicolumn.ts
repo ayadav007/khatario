@@ -13,6 +13,7 @@ export const multicolumn: SectionSchema = {
       limit: 6,
       settings: [
         { id: 'icon', type: 'icon', label: 'Icon', default: 'badge' },
+        { id: 'image', type: 'image', label: 'Photo (replaces the icon)', default: '' },
         { id: 'title', type: 'text', label: 'Title', default: '', max_length: 40 },
         { id: 'text', type: 'text', label: 'Text', default: '', max_length: 120 },
       ],

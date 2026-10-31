@@ -82,3 +82,14 @@ describe('tagline and swatch switches', () => {
     expect(title.settings.find((x) => x.id === 'show_tagline')).toMatchObject({ type: 'checkbox', default: false });
   });
 });
+
+describe('small block upgrades', () => {
+  it('new block settings with empty defaults, promo columns to 4', () => {
+    const q = getSectionSchema('testimonials')!.blocks![0].settings.map((s) => s.id);
+    expect(q).toEqual(expect.arrayContaining(['title', 'location', 'purchased']));
+    expect(getSectionSchema('testimonials')!.settings.find((s) => s.id === 'show_summary')).toMatchObject({ type: 'checkbox', default: false });
+    expect(getSectionSchema('logo-list')!.blocks![0].settings.map((s) => s.id)).toEqual(expect.arrayContaining(['name', 'caption']));
+    expect(getSectionSchema('promo-cards')!.settings.find((s) => s.id === 'columns')).toMatchObject({ max: 4 });
+    expect(getSectionSchema('multicolumn')!.blocks![0].settings.find((s) => s.id === 'image')).toMatchObject({ type: 'image' });
+  });
+});

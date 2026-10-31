@@ -884,9 +884,14 @@ export function StudioUspStrip({ s }: { s: StudioSettings }) {
           const Icon = USP_ICONS[u.icon] ?? BadgeCheck;
           return (
             <div className="uspItem" key={`${u.icon}-${i}`}>
-              <span className="uspIcon">
-                <Icon />
-              </span>
+              {u.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={u.image} alt="" className="uspImg" loading="lazy" />
+              ) : (
+                <span className="uspIcon">
+                  <Icon />
+                </span>
+              )}
               <span>
                 {u.title ? <b>{u.title}</b> : null}
                 {u.text ? <small>{u.text}</small> : null}

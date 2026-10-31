@@ -18,7 +18,7 @@ export const promoCards: SectionSchema = {
         { value: 'overlay', label: 'Caption over image' },
       ],
     },
-    { id: 'columns', type: 'range', label: 'Columns', min: 1, max: 3, step: 1, default: 2 },
+    { id: 'columns', type: 'range', label: 'Columns', min: 1, max: 4, step: 1, default: 2 },
   ],
   blocks: [
     {

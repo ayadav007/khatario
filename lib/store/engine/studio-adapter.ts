@@ -89,6 +89,7 @@ export function multicolumnSettings(section: Section): StudioSettings {
     icon: pick<StudioUspIcon>(b.icon, STUDIO_USP_ICONS) ?? 'badge',
     title: str(b.title),
     text: str(b.text),
+    ...(str(b.image) ? { image: str(b.image) } : {}),
   }));
   return { ...toStudioBox(section), title: str(s.heading), usps };
 }
@@ -105,11 +106,16 @@ export function marqueeSettings(section: Section): StudioSettings {
   return { ...toStudioBox(section), text, speed };
 }
 
-export function testimonialItems(section: Section): { text: string; name: string; photo: string; rating: number }[] {
+export function testimonialItems(
+  section: Section,
+): { text: string; name: string; photo: string; rating: number; title: string; location: string; purchased: string }[] {
   return blocksOf(section, 'quote').map((b) => ({
     text: str(b.text),
     name: str(b.name),
     photo: str(b.photo),
+    title: str(b.title),
+    location: str(b.location),
+    purchased: str(b.purchased),
     rating: Math.min(5, Math.max(1, Math.round(num(b.rating) ?? 5))),
   }));
 }
