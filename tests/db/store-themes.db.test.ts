@@ -546,4 +546,101 @@ d('Store themes repository (real DB)', () => {
       expect(liveRow).toEqual([{ updated_by: USER }]);
     });
   });
+
+  describe('menus', () => {
+    const made: string[] = [];
+    const newBiz = async (): Promise<string> => {
+      const id = randomUUID();
+      made.push(id);
+      await pool.query(
+        `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Menus test', '29AAAPA1234A1Z5', '29', 'regular')`,
+        [id],
+      );
+      return id;
+    };
+
+    afterAll(async () => {
+      await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [made]);
+    });
+
+    /** A draft saved with `mutate` applied to a copy of the Studio preset's data. */
+    const savedDraft = async (mutate: (raw: Record<string, any>) => void) => {
+      const biz = await newBiz();
+      ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const draft = ok(await createTheme(biz, USER, { name: 'Menus', preset: 'studio', ctx }));
+      const raw = JSON.parse(JSON.stringify(draft.data)) as Record<string, any>;
+      mutate(raw);
+      const saved = ok(await saveTheme(biz, USER, draft.id, raw, null));
+      return { biz, id: draft.id, saved };
+    };
+
+    it('two menus with three levels, a picture and a categories item survive a save and reload', async () => {
+      const menus = [
+        {
+          id: 'main',
+          name: 'Main menu',
+          items: [
+            {
+              id: 'shop',
+              label: 'Shop',
+              link: '/catalog',
+              highlight: true,
+              picture: { image: 'https://example.com/shop.jpg', caption: 'New season', link: '/catalog' },
+              children: [
+                {
+                  id: 'women',
+                  label: 'Women',
+                  link: '',
+                  children: [
+                    { id: 'sarees', label: 'Sarees', link: '/catalog/sarees' },
+                    { id: 'suits', label: 'Suits', link: '/catalog/suits' },
+                  ],
+                },
+                { id: 'men', label: 'Men', link: '/catalog/men' },
+              ],
+            },
+            { id: 'cats', label: 'Categories', link: '', source: 'categories', category_photos: true },
+            { id: 'about', label: 'About', link: '/pages/about' },
+          ],
+        },
+        {
+          id: 'footer',
+          name: 'Footer menu',
+          items: [{ id: 'help', label: 'Help', link: '', children: [{ id: 'faq', label: 'FAQ', link: '/pages/faq' }] }],
+        },
+      ];
+      const { biz, id, saved } = await savedDraft((raw) => {
+        raw.settings.menus = menus;
+      });
+      const reloaded = (await getTheme(biz, id))!;
+      expect(reloaded.data.settings.menus).toEqual(menus);
+      expect(reloaded.data.settings.menus).toEqual(saved.data.settings.menus);
+    });
+
+    it('an old theme with header menu_link blocks and no menus loads with the main menu and header menu main', async () => {
+      const { biz, id } = await savedDraft((raw) => {
+        delete raw.settings.menus;
+        const header = raw.header_group.order.map((k: string) => raw.header_group.sections[k]).find((s: any) => s.type === 'header');
+        header.blocks = {
+          l1: { type: 'menu_link', settings: { label: 'Shop all', link: '/catalog' } },
+          l2: { type: 'menu_link', settings: { label: 'Offers', link: '/pages/offers', highlight: true } },
+        };
+        header.block_order = ['l1', 'l2'];
+        delete header.settings.menu;
+      });
+      const reloaded = (await getTheme(biz, id))!;
+      const main = reloaded.data.settings.menus.find((m) => m.id === 'main')!;
+      expect(main.items.map((i) => [i.label, i.link, i.highlight === true])).toEqual([
+        ['Shop all', '/catalog', false],
+        ['Offers', '/pages/offers', true],
+      ]);
+      expect(reloaded.data.settings.menus.some((m) => m.id === 'footer')).toBe(true);
+      const hid = reloaded.data.header_group.order.find((k) => reloaded.data.header_group.sections[k].type === 'header')!;
+      const header = reloaded.data.header_group.sections[hid];
+      expect(header.settings.menu).toBe('main');
+      expect(header.block_order).toEqual([]);
+    });
+  });
 });

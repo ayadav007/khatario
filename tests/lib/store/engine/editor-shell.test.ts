@@ -1,6 +1,7 @@
 import {
   editorFrameSrc,
   isEditableTarget,
+  menuHoldItemId,
   pruneSelection,
   saveStatusLabel,
   selectionRef,
@@ -72,6 +73,39 @@ describe('editor shell helpers', () => {
     const th = { kind: 'theme' as const };
     expect(pruneSelection(theme, 'home', th)).toBe(th);
     expect(pruneSelection(theme, 'home', null)).toBeNull();
+  });
+
+  it('holds a top item of the menu the header uses, and nothing else', () => {
+    const item = (id: string, children?: { id: string; label: string; link: string }[]) => ({ id, label: id, link: '', children });
+    const withHeader = (menu?: string): ThemeData => ({
+      ...theme,
+      header_group: {
+        order: ['hd'],
+        sections: { hd: { ...section(), type: 'header', settings: menu === undefined ? {} : { menu } } },
+      },
+      settings: {
+        menus: [
+          { id: 'main', name: 'Main', items: [item('shop', [{ id: 'kid', label: 'Kid', link: '/' }]), item('about')] },
+          { id: 'sale', name: 'Sale', items: [item('deals')] },
+        ],
+      } as unknown as ThemeData['settings'],
+    });
+    const pick = (menuId: string, itemId: string | null) => ({ kind: 'menu' as const, menuId, itemId });
+    // The header uses main by default (and when its setting names a menu that is gone).
+    expect(menuHoldItemId(withHeader(), pick('main', 'shop'))).toBe('shop');
+    expect(menuHoldItemId(withHeader('gone'), pick('main', 'about'))).toBe('about');
+    // A nested item, the whole menu, another menu, a missing item and other selections release it.
+    expect(menuHoldItemId(withHeader(), pick('main', 'kid'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('main', null))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('sale', 'deals'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('main', 'gone'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), { kind: 'menus' })).toBeNull();
+    expect(menuHoldItemId(withHeader(), null)).toBeNull();
+    // Following the header's own menu setting.
+    expect(menuHoldItemId(withHeader('sale'), pick('sale', 'deals'))).toBe('deals');
+    expect(menuHoldItemId(withHeader('sale'), pick('main', 'shop'))).toBeNull();
+    // No header section or no menus list is safe.
+    expect(menuHoldItemId(theme, pick('main', 'shop'))).toBeNull();
   });
 
   it('prunes a menu selection whose menu or item no longer exists', () => {

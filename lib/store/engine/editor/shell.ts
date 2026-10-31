@@ -1,6 +1,7 @@
 // Client-safe helpers for the Studio 2 editor shell (selection, save status, shortcuts).
 // Pure: no React, no DOM globals. Imports only ops (types + getGroup).
 import type { MenuItem, ThemeData, ThemeRole } from '../types';
+import { pickMenu } from '../menus';
 import { getGroup, type SectionRef } from './ops';
 import type { SaveStatus } from './save-queue';
 
@@ -27,6 +28,19 @@ export function toSelection(ref: SectionRef | null): Selection {
 export function selectionRef(sel: Selection): SectionRef | null {
   if (!sel || sel.kind === 'theme' || sel.kind === 'menus' || sel.kind === 'menu') return null;
   return sel.ref;
+}
+
+/**
+ * The top menu item whose dropdown the preview should hold open: the selected item when it is a top-level item of the
+ * menu the Header section uses (the preview only shows that one), else null.
+ */
+export function menuHoldItemId(theme: ThemeData, sel: Selection): string | null {
+  if (!sel || sel.kind !== 'menu' || sel.itemId === null) return null;
+  const header = theme.header_group.order.map((id) => theme.header_group.sections[id]).find((s) => s?.type === 'header');
+  const menus = Array.isArray(theme.settings?.menus) ? theme.settings.menus : [];
+  const used = pickMenu(menus, header?.settings?.menu, 'main');
+  if (!used || used.id !== sel.menuId) return null;
+  return used.items.some((i) => i.id === sel.itemId) ? sel.itemId : null;
 }
 
 /**

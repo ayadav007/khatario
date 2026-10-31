@@ -10,7 +10,9 @@ export type EditorToPreview =
   | { source: 'kh-studio'; type: 'select'; template: string; ref: SectionRef | null }
   | { source: 'kh-studio'; type: 'hover'; ref: SectionRef | null }
   | { source: 'kh-studio'; type: 'scroll-to'; template: string; ref: SectionRef }
-  | { source: 'kh-studio'; type: 'refresh'; rev: number };
+  | { source: 'kh-studio'; type: 'refresh'; rev: number }
+  // Holds the header dropdown of this top menu item open in the preview; null releases it.
+  | { source: 'kh-studio'; type: 'menu-hold'; itemId: string | null };
 
 export type PreviewToEditor =
   | { source: 'kh-studio'; type: 'ready'; template: string; rev: number | null }
@@ -78,6 +80,11 @@ export function parseEditorMessage(data: unknown): EditorToPreview | null {
     }
     case 'refresh':
       return isRev(data.rev) ? { source: BRIDGE_SOURCE, type: 'refresh', rev: data.rev } : null;
+    case 'menu-hold': {
+      const { itemId } = data;
+      if (itemId === null) return { source: BRIDGE_SOURCE, type: 'menu-hold', itemId: null };
+      return typeof itemId === 'string' && ID_RE.test(itemId) ? { source: BRIDGE_SOURCE, type: 'menu-hold', itemId } : null;
+    }
     default:
       return null;
   }
