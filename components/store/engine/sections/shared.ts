@@ -22,7 +22,7 @@ export function str(v: unknown): string {
  * null when the optional lookup failed.
  */
 export function menuCategories(data: SectionData | undefined): MenuCategory[] | null {
-  return data?.categories
+  return data?.categories && !data.categoriesFailed
     ? data.categories.filter((c) => c.item_count > 0).map((c) => ({ id: c.id, name: c.name, image_url: c.image_url }))
     : null;
 }
