@@ -39,6 +39,8 @@ import { SectionTree } from './SectionTree';
 import { AddSectionModal } from './AddSectionModal';
 import { SettingsPanel } from './SettingsPanel';
 import { NewPageModal } from './NewPageModal';
+import { VersionHistoryDrawer } from '@/components/store/library/VersionHistoryDrawer';
+import { LEAVE_UNSAVED_TEXT } from '@/lib/store/engine/library';
 
 export type { Selection };
 
@@ -113,6 +115,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
   const [hovered, setHovered] = useState<SectionRef | null>(null);
   const [addSectionTarget, setAddSectionTarget] = useState<{ group: GroupKey; index: number } | null>(null);
   const [newPageOpen, setNewPageOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [status, setStatus] = useState<{ status: SaveStatus; message?: string }>({ status: 'saved' });
   const statusRef = useRef<SaveStatus>('saved');
@@ -461,6 +464,27 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
     setLeave('idle');
   }, [businessId, row.id, toast, goToWorkingDraft, setLeave]);
 
+  // Open a draft restored from the version history: pending edits are saved first, as publish does.
+  const openRestored = useCallback(
+    async (theme: ThemeRow) => {
+      if (leaveRef.current !== 'idle') return;
+      const queue = queueRef.current;
+      setLeave('leaving'); // no edits while the last save goes out
+      if (queue) await queue.flush();
+      if (statusRef.current !== 'saved') {
+        setLeave('idle');
+        toast.error(LEAVE_UNSAVED_TEXT);
+        return;
+      }
+      router.push(editorPath(theme.id));
+    },
+    [router, toast, setLeave],
+  );
+  const closeHistory = useCallback(() => setHistoryOpen(false), []);
+  // The drawer's toast "Restored as …" carries the Open action; the drawer closes so the editor is in view.
+  const onRestored = useCallback(() => setHistoryOpen(false), []);
+  const openRestoredVoid = useCallback((theme: ThemeRow) => void openRestored(theme), [openRestored]);
+
   const keepBackup = useCallback(() => {
     const data = backupChoice;
     if (!data) return;
@@ -538,6 +562,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
           statusIsError={leave === 'failed' || s === 'error' || s === 'conflict' || s === 'locked'}
           onCopyPreview={copyPreview}
           onPublish={publish}
+          onHistory={() => setHistoryOpen(true)}
         />
 
         {view.blockingBanner && (
@@ -589,6 +614,14 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
       </div>
       <AddSectionModal />
       {newPageOpen && <NewPageModal onClose={closeNewPage} />}
+      {/* The editor page only opens with settings:update, so Preview and Restore are offered. */}
+      <VersionHistoryDrawer
+        open={historyOpen}
+        onClose={closeHistory}
+        canEdit
+        onRestored={onRestored}
+        onOpenRestored={openRestoredVoid}
+      />
     </Studio2Context.Provider>
   );
 }

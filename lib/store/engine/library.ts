@@ -1,7 +1,7 @@
 // Client-safe rules for the theme library (D39): which actions each row gets, the preset choices, dates and
 // authors. Imports only types and shared.ts, so the library page can use it without pg or sanitize-html.
 import { ENGINE_LIMITS } from './shared';
-import type { ThemeListRow, ThemePreset } from './types';
+import type { ThemeListRow, ThemePreset, ThemeVersionSummary } from './types';
 
 export interface PresetChoice {
   preset: ThemePreset;
@@ -77,12 +77,17 @@ export function splitLibrary(rows: ThemeListRow[]): LibrarySplit {
 
 export type ThemeAction = 'customise' | 'preview' | 'duplicate' | 'rename' | 'publish' | 'discard' | 'delete' | 'history';
 
-/** The D39 table. Without edit permission only the preview link stays, plus History on the live card. */
+/**
+ * The D39 table. Without edit permission only History on the live card stays (R17): a preview link is a
+ * 7-day share of a possibly unpublished design outside the team, so its route needs settings:update and
+ * a view-only user never sees the button.
+ */
 export function themeActions(row: ThemeListRow, opts: { canEdit: boolean }): Set<ThemeAction> {
-  const out = new Set<ThemeAction>(['preview']);
+  const out = new Set<ThemeAction>();
   const isLive = row.role === 'live';
   if (isLive) out.add('history');
   if (!opts.canEdit) return out;
+  out.add('preview');
   out.add('customise');
   out.add('duplicate');
   out.add('rename');
@@ -207,3 +212,30 @@ export const ACTION_LABELS: Record<ThemeAction, string> = {
 
 /** Every action except Customise, in the order the row buttons and the "⋯" menu show them (Delete last). */
 export const MENU_ACTIONS: ThemeAction[] = ['preview', 'duplicate', 'rename', 'publish', 'discard', 'history', 'delete'];
+
+// ---- Version history drawer (Task 6). ----
+
+export const LIBRARY_PATH = '/settings/online-store/themes';
+/** Studio 2's Back link: it opens the theme library. */
+export const STUDIO_BACK_LABEL = 'Themes';
+export const VERSION_HISTORY_EMPTY =
+  'No publishes yet. Each time you publish, a version is saved here (the newest 30 are kept).';
+export const LEAVE_UNSAVED_TEXT = 'Save your changes before leaving';
+/** How long the library highlights a restored (or added) draft. */
+export const HISTORY_HIGHLIGHT_MS = 3000;
+
+export type VersionAction = 'preview' | 'restore';
+
+/** R17: both the version preview link and Restore as draft need settings:update, so a view-only user only reads the list. */
+export function versionActions(opts: { canEdit: boolean }): Set<VersionAction> {
+  return opts.canEdit ? new Set<VersionAction>(['preview', 'restore']) : new Set<VersionAction>();
+}
+
+/** The theme's name at publish time, plus "(deleted)" once that theme is gone (D44). */
+export function versionRowName(v: Pick<ThemeVersionSummary, 'theme_name' | 'theme_exists'>): string {
+  return v.theme_exists ? v.theme_name : `${v.theme_name} (deleted)`;
+}
+
+export function restoredToastText(name: string): string {
+  return `Restored as '${name}'`;
+}

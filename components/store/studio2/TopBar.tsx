@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, FilePlus2, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FilePlus2, History as HistoryIcon, Link2, Loader2, Monitor, Redo2, Smartphone, Undo2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Device } from './PreviewPane';
 import { ProductPicker } from './fields/pickers';
+import { LIBRARY_PATH, STUDIO_BACK_LABEL } from '@/lib/store/engine/library';
 
 interface Props {
   themeName: string;
@@ -27,6 +28,8 @@ interface Props {
   statusIsError: boolean;
   onCopyPreview(): Promise<void>;
   onPublish(): Promise<void>;
+  /** Opens the version history drawer. */
+  onHistory(): void;
 }
 
 const iconBtn =
@@ -60,11 +63,11 @@ export function TopBar(props: Props) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3">
       <Link
-        href="/settings/online-store"
+        href={LIBRARY_PATH}
         className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back
+        {STUDIO_BACK_LABEL}
       </Link>
       <span className="max-w-[16rem] truncate text-sm font-semibold text-gray-900" title={themeName}>
         {themeName}
@@ -136,6 +139,14 @@ export function TopBar(props: Props) {
           {statusLabel}
         </span>
 
+        <button
+          type="button"
+          onClick={props.onHistory}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <HistoryIcon className="h-4 w-4" />
+          History
+        </button>
         <button
           type="button"
           onClick={() => void copy()}

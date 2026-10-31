@@ -7,11 +7,12 @@ import { ArrowLeft, Loader2, Palette, Plus } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
-import type { ThemeListRow } from '@/lib/store/engine/types';
+import type { ThemeListRow, ThemeRow } from '@/lib/store/engine/types';
 import { hasBackup, sweepBackups } from '@/lib/store/engine/editor/save-queue';
 import {
   DISCARD_CONFIRM,
   ENGINE_OFF_NOTICE,
+  HISTORY_HIGHLIGHT_MS,
   NARROW_EDITOR_NOTICE,
   NO_EDIT_NOTICE,
   PREVIEW_COPIED,
@@ -37,15 +38,14 @@ import { ThemeRowCard, type RowKind } from './ThemeRowCard';
 import { AddThemeModal } from './AddThemeModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RenameDialog } from './RenameDialog';
+import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 
 export interface ThemeLibraryProps {
   businessId: string;
-  /** settings modify permission (D39): without it only Preview link and History stay. */
+  /** settings modify permission (D39): without it only History on the live card stays (R17: no preview link). */
   canEdit: boolean;
   /** `store_engine` (D52): off shows the classic-store notice and adds it to the publish confirm. */
   storeEngine: boolean;
-  /** Opens the version history (Task 6). History is shown only when this is given. */
-  onOpenHistory?: () => void;
 }
 
 type Busy = { id: string; action: ThemeAction } | null;
@@ -64,7 +64,7 @@ function errorText(e: unknown, fallback: string): string {
 }
 
 /** D39: the live card with its working copy, the drafts, and every library action. */
-export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }: ThemeLibraryProps) {
+export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryProps) {
   const router = useRouter();
   const toast = useToastContext();
   const [rows, setRows] = useState<ThemeListRow[] | null>(null);
@@ -77,6 +77,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }
   const [renaming, setRenaming] = useState<ThemeListRow | null>(null);
   const [adding, setAdding] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -108,6 +109,13 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }
     const t = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(t);
   }, []);
+
+  // A new row (added, duplicated or restored) is highlighted for a few seconds.
+  useEffect(() => {
+    if (!highlight) return;
+    const t = window.setTimeout(() => setHighlight(null), HISTORY_HIGHLIGHT_MS);
+    return () => window.clearTimeout(t);
+  }, [highlight]);
 
   /** Runs one request at a time, so a double click can never send two. Returns false when it failed or was refused. */
   const run = useCallback(
@@ -191,11 +199,11 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }
           setConfirm({ kind: action, row });
           return;
         case 'history':
-          onOpenHistory?.();
+          setHistoryOpen(true);
           return;
       }
     },
-    [businessId, customise, load, onOpenHistory, run, toast],
+    [businessId, customise, load, run, toast],
   );
 
   const confirmAction = useCallback(async () => {
@@ -224,21 +232,25 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }
   const closeConfirm = useCallback(() => setConfirm(null), []);
   const closeRename = useCallback(() => setRenaming(null), []);
   const closeAdd = useCallback(() => setAdding(false), []);
+  const closeHistory = useCallback(() => setHistoryOpen(false), []);
+  const onRestored = useCallback(
+    (theme: ThemeRow) => {
+      // The drawer toasts "Restored as …"; close it so the new draft's highlight is in view.
+      setHistoryOpen(false);
+      setHighlight(theme.id);
+      void load();
+    },
+    [load],
+  );
 
   const split = useMemo(() => splitLibrary(rows ?? []), [rows]);
   const count = rows?.length ?? 0;
-
-  const actionsFor = (row: ThemeListRow): Set<ThemeAction> => {
-    const set = themeActions(row, { canEdit });
-    if (!onOpenHistory) set.delete('history');
-    return set;
-  };
 
   const renderRow = (row: ThemeListRow, kind: RowKind) => (
     <ThemeRowCard
       row={row}
       kind={kind}
-      actions={actionsFor(row)}
+      actions={themeActions(row, { canEdit })}
       hasBackup={backups.has(row.id)}
       now={now}
       busyAction={busy?.id === row.id ? busy.action : null}
@@ -382,6 +394,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine, onOpenHistory }
           }}
         />
       ) : null}
+      <VersionHistoryDrawer open={historyOpen} onClose={closeHistory} canEdit={canEdit} onRestored={onRestored} />
       {adding ? (
         <AddThemeModal
           count={count}

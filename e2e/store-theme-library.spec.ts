@@ -1,5 +1,5 @@
 /**
- * Theme library, end to end (store engine M5, Task 5).
+ * Theme library and version history, end to end (store engine M5, Tasks 5 and 6).
  *
  * Local only, same setup as e2e/store-studio2.spec.ts: a dev server on the disposable `kh_phase2_test` DB and the
  * "Map Test Shop" store (subdomain `ganesh`). Skipped unless STUDIO2_E2E=1. The spec talks to that DB directly to
@@ -20,7 +20,7 @@ import path from 'path';
 import { config } from 'dotenv';
 import { Client } from 'pg';
 import { test, expect, type Browser, type Locator, type Page } from '@playwright/test';
-import { deleteConfirmText, publishConfirmText } from '../lib/store/engine/library';
+import { authorLabel, deleteConfirmText, publishConfirmText, restoredToastText } from '../lib/store/engine/library';
 
 config({ path: '.env' });
 
@@ -179,6 +179,37 @@ async function savedTheme(page: Page, id: string): Promise<{ id: string; role: s
   return (await res.json()).theme;
 }
 
+/** Add a Grocery draft and publish it from the library; returns its id. */
+async function addAndPublish(page: Page, name: string): Promise<string> {
+  await addTheme(page, 'Premium Grocery', name);
+  const row = draftNamed(page, name);
+  await expect(row).toBeVisible({ timeout: SLOW });
+  const id = await row.getAttribute('data-theme-id');
+  expect(id).toBeTruthy();
+  await row.getByRole('button', { name: 'Publish', exact: true }).click();
+  const confirm = page.getByRole('alertdialog', { name: publishConfirmText(name, true) });
+  await confirm.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(confirm).toBeHidden({ timeout: SLOW });
+  await expect(liveRow(page).getByRole('heading', { name, exact: true })).toBeVisible({ timeout: SLOW });
+  return id!;
+}
+
+interface VersionApiRow {
+  id: string;
+  theme_name: string;
+  published_by_name: string | null;
+}
+
+async function latestVersion(page: Page): Promise<VersionApiRow> {
+  const res = await page.request.get('/api/settings/online-store/themes/versions');
+  expect(res.ok()).toBeTruthy();
+  const { versions } = (await res.json()) as { versions: VersionApiRow[] };
+  expect(versions.length).toBeGreaterThan(0);
+  return versions[0];
+}
+
+const historyDrawer = (page: Page): Locator => page.getByRole('dialog', { name: 'Version history' });
+
 // ---- tests --------------------------------------------------------------------------------------
 
 test.describe('Store theme library', () => {
@@ -309,5 +340,86 @@ test.describe('Store theme library', () => {
     const theme = await savedTheme(page, id!);
     expect(theme.role).toBe('draft');
     expect(theme.is_working).toBe(false);
+  });
+  test('history lists a publish with author, preview opens read-only', async ({ page, context }) => {
+    await openLibrary(page);
+    await addAndPublish(page, 'History test');
+    const latest = await latestVersion(page);
+    expect(latest.theme_name).toBe('History test');
+    // A library publish is the session user's, never "Set up automatically".
+    expect(latest.published_by_name).toBeTruthy();
+
+    await liveRow(page).getByRole('button', { name: 'History', exact: true }).click();
+    const drawer = historyDrawer(page);
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Close' })).toBeFocused();
+    const first = drawer.locator(`[data-version-id="${latest.id}"]`);
+    await expect(first).toBeVisible({ timeout: SLOW });
+    await expect(drawer.locator('[data-version-id]').first()).toHaveAttribute('data-version-id', latest.id);
+    await expect(first.getByText('Latest', { exact: true })).toBeVisible();
+    await expect(first.getByText('History test', { exact: true })).toBeVisible();
+    await expect(first.getByText(`by ${authorLabel(latest.published_by_name)}`, { exact: true })).toBeVisible();
+    expect(await drawer.locator('[data-version-id]').count()).toBeLessThanOrEqual(30);
+
+    // Preview opens a new tab on that version: the Preview badge, no editor layer, even with editor=1.
+    const [tab] = await Promise.all([
+      context.waitForEvent('page'),
+      first.getByRole('button', { name: 'Preview', exact: true }).click(),
+    ]);
+    await tab.waitForURL((u) => u.searchParams.get('preview_theme') === latest.id, { timeout: SLOW });
+    await expect(tab.getByRole('status').filter({ hasText: /^Preview$/ })).toBeVisible({ timeout: SLOW });
+    await expect(tab.locator('[data-editor-template]')).toHaveCount(0);
+    const editorUrl = new URL(tab.url());
+    editorUrl.searchParams.set('editor', '1');
+    await tab.goto(editorUrl.toString(), { waitUntil: 'domcontentloaded', timeout: SLOW });
+    await expect(tab.getByRole('status').filter({ hasText: /^Preview$/ })).toBeVisible({ timeout: SLOW });
+    await expect(tab.locator('[data-editor-template]')).toHaveCount(0);
+    await tab.close();
+
+    // Escape closes the drawer.
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+  });
+
+  test('restore as draft from the editor opens the restored draft', async ({ page }) => {
+    await openLibrary(page);
+    await addAndPublish(page, 'Restore test');
+    const latest = await latestVersion(page);
+    const before = await themeCount();
+
+    await liveRow(page).getByRole('button', { name: 'Customise', exact: true }).click();
+    await page.waitForURL((u) => /\/settings\/online-store\/themes\/[^/]+\/editor$/.test(u.pathname), { timeout: SLOW });
+    await expect(page.getByRole('navigation', { name: 'Sections' })).toBeVisible({ timeout: SLOW });
+    // Back is now "Themes" and opens the library.
+    await expect(page.getByRole('link', { name: 'Themes', exact: true })).toHaveAttribute('href', LIBRARY);
+
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    const drawer = historyDrawer(page);
+    const row = drawer.locator(`[data-version-id="${latest.id}"]`);
+    await expect(row).toBeVisible({ timeout: SLOW });
+    await row.getByRole('button', { name: 'Restore as draft', exact: true }).click();
+
+    const toastText = restoredToastText('Restored: Restore test');
+    await expect(page.getByText(toastText, { exact: true })).toBeVisible({ timeout: SLOW });
+    await expect(drawer).toBeHidden();
+    expect(await themeCount()).toBe(before + 1);
+
+    const restoredId = await withDb(async (db) =>
+      (
+        await db.query<{ id: string }>(
+          `SELECT id FROM store_themes WHERE business_id = $1 AND name = $2 AND role = 'draft' ORDER BY created_at DESC LIMIT 1`,
+          [BUSINESS_ID, 'Restored: Restore test'],
+        )
+      ).rows[0]?.id,
+    );
+    expect(restoredId).toBeTruthy();
+
+    await page.getByRole('button', { name: 'Open', exact: true }).click();
+    await page.waitForURL((u) => u.pathname === `${LIBRARY}/${restoredId}/editor`, { timeout: SLOW });
+    await expect(page.getByText('Restored: Restore test', { exact: true }).first()).toBeVisible({ timeout: SLOW });
+    const restored = await savedTheme(page, restoredId!);
+    expect(restored.role).toBe('draft');
+    expect(restored.is_working).toBe(false);
+    expect(restored.preset).toBe('grocery');
   });
 });

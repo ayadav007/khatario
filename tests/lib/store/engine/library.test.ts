@@ -18,8 +18,16 @@ import {
   relativeEdited,
   splitLibrary,
   themeActions,
+  versionActions,
+  versionRowName,
+  restoredToastText,
+  VERSION_HISTORY_EMPTY,
+  HISTORY_HIGHLIGHT_MS,
+  STUDIO_BACK_LABEL,
+  LIBRARY_PATH,
+  LEAVE_UNSAVED_TEXT,
 } from '@/lib/store/engine/library';
-import type { ThemeListRow } from '@/lib/store/engine/types';
+import type { ThemeListRow, ThemeVersionSummary } from '@/lib/store/engine/types';
 
 const row = (over: Partial<ThemeListRow>): ThemeListRow =>
   ({
@@ -91,9 +99,48 @@ describe('themeActions', () => {
     expect(a.has('delete') && a.has('publish')).toBe(true);
     expect(a.has('discard') || a.has('history')).toBe(false);
   });
-  it('without edit permission only preview and history remain', () => {
-    expect(Array.from(themeActions(row({ role: 'live' }), { canEdit: false })).sort()).toEqual(['history', 'preview']);
-    expect(Array.from(themeActions(row({}), { canEdit: false }))).toEqual(['preview']);
+  it('without edit permission only History on the live card remains (R17: no preview link)', () => {
+    // A 7-day share link shows an unpublished design outside the team, so the route needs settings:update
+    // and a view-only user never sees the button.
+    expect(Array.from(themeActions(row({ role: 'live' }), { canEdit: false }))).toEqual(['history']);
+    expect(Array.from(themeActions(row({}), { canEdit: false }))).toEqual([]);
+    expect(Array.from(themeActions(row({ is_working: true, has_changes: true }), { canEdit: false }))).toEqual([]);
+  });
+  it('with edit permission every row keeps its preview link', () => {
+    for (const r of [row({ role: 'live' }), row({}), row({ is_working: true })]) {
+      expect(themeActions(r, { canEdit: true }).has('preview')).toBe(true);
+    }
+  });
+});
+
+describe('version history (Task 6)', () => {
+  const v = (over: Partial<ThemeVersionSummary>): ThemeVersionSummary => ({
+    id: 'v1',
+    theme_id: 't1',
+    theme_name: 'Green 2',
+    preset: 'grocery',
+    published_at: '2026-10-31T10:35:00.000Z',
+    published_by_name: 'Asha',
+    theme_exists: true,
+    ...over,
+  });
+  it('version preview links and restore need edit permission (R17)', () => {
+    expect(Array.from(versionActions({ canEdit: true })).sort()).toEqual(['preview', 'restore']);
+    expect(Array.from(versionActions({ canEdit: false }))).toEqual([]);
+  });
+  it('names a version and marks a deleted theme', () => {
+    expect(versionRowName(v({}))).toBe('Green 2');
+    expect(versionRowName(v({ theme_exists: false, theme_id: null }))).toBe('Green 2 (deleted)');
+  });
+  it('uses the brief texts verbatim', () => {
+    expect(VERSION_HISTORY_EMPTY).toBe(
+      'No publishes yet. Each time you publish, a version is saved here (the newest 30 are kept).',
+    );
+    expect(restoredToastText('Restored: Green 2')).toBe("Restored as 'Restored: Green 2'");
+    expect(LEAVE_UNSAVED_TEXT).toBe('Save your changes before leaving');
+    expect(HISTORY_HIGHLIGHT_MS).toBe(3000);
+    expect(STUDIO_BACK_LABEL).toBe('Themes');
+    expect(LIBRARY_PATH).toBe('/settings/online-store/themes');
   });
 });
 
