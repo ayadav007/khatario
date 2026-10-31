@@ -8,6 +8,7 @@
 - Store khata: built, checked in the browser on the test DB and committed; next migration 444 on staging (owner approval) and the khata-statements cron line at deploy [[docs/plan/STORE_KHATA.md]]
 
 ## Next
+- Store page customisation, sub-project 1 of 4: header and footer menus (dropdowns, mega menus, automatic categories, phone side panel); spec approved, implementation plan written (8 tasks), awaiting owner review and execution choice [[docs/superpowers/plans/2026-10-31-store-menus.md]]. Then cart page, checkout page, sign-up and login page, each with its own spec [[docs/superpowers/specs/2026-10-31-store-menus-design.md]]
 - Connect leads: sub-project 1 (leads table, pipeline on leads, repeat enquiries, no-chat leads, convert to customer, Leads page) built, final review clean, committed on main (migrations 447 and 451 on the test DB only); next: deploy with 447 + 451 + 452 (owner approval, quiet window, re-run 447 after reload), then the next deploy adds the 451 phase-2 constraint drop, lead comments from chat notes built (migration 452); then sub-project 2 lead score and 3 template broadcast by segment [[docs/plan/CONNECT_LEADS.md]] [[docs/SERVER_INFRASTRUCTURE.md]]
 - Template designer and gallery redesign: phases A–C built, owner review, then commit [[docs/plan/TEMPLATE_DESIGNER_REDESIGN.md]]
 - Distributor invoice template: phase 2 (licences, salesman, scheme discount, free qty, batch and MRP on lines; migration 435) [[docs/plan/DISTRIBUTOR_INVOICE_TEMPLATE.md]]
