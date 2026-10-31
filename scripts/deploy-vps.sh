@@ -5,6 +5,14 @@
 #   bash scripts/deploy-vps.sh
 #   bash scripts/deploy-vps.sh --no-pull
 #   bash scripts/deploy-vps.sh --full       # run every step, ignoring what changed since the last deploy
+#   bash scripts/deploy-vps.sh --fast       # same as --skip-install --skip-kb --skip-face
+#
+# Skip switches (each can be combined with the others):
+#   --skip-install     never run npm ci, even when package.json or the lockfile changed
+#   --skip-kb          never re-index the assistant's help docs (Gemini embeddings)
+#   --skip-face        never fetch the staff face-check models
+#   --skip-typecheck   build without the TypeScript check (fastest; type errors are not caught)
+# Migrations, the build and the PM2 reload always run.
 #
 # Steps that only matter when their files change (npm ci, assistant knowledge re-index) are skipped
 # when nothing they depend on changed since the last finished deploy. That commit is kept in
@@ -44,9 +52,21 @@ restore_deploy_scripts() {
 
 NO_PULL=false
 FULL=false
+SKIP_INSTALL=false
+SKIP_KB=false
+SKIP_FACE=false
+SKIP_TYPECHECK=false
 for arg in "$@"; do
-  if [[ "$arg" == "--no-pull" ]]; then NO_PULL=true; fi
-  if [[ "$arg" == "--full" ]]; then FULL=true; fi
+  case "$arg" in
+    --no-pull) NO_PULL=true ;;
+    --full) FULL=true ;;
+    --fast) SKIP_INSTALL=true; SKIP_KB=true; SKIP_FACE=true ;;
+    --skip-install) SKIP_INSTALL=true ;;
+    --skip-kb) SKIP_KB=true ;;
+    --skip-face) SKIP_FACE=true ;;
+    --skip-typecheck) SKIP_TYPECHECK=true ;;
+    *) echo "Unknown option: $arg" >&2; exit 2 ;;
+  esac
 done
 
 # Read KEY=VALUE without sourcing (safe for encryption keys / special chars).
@@ -123,7 +143,17 @@ changed_since_deploy() {
 export ONNXRUNTIME_NODE_INSTALL=skip
 
 # Dependencies only change with package.json, the lockfile or patch-package patches.
-if [[ -d node_modules ]] && ! changed_since_deploy package.json package-lock.json patches; then
+if [[ "$SKIP_INSTALL" == true ]]; then
+  if [[ ! -d node_modules ]]; then
+    echo "❌ --skip-install, but node_modules is missing: run without it once" >&2
+    exit 1
+  fi
+  if changed_since_deploy package.json package-lock.json patches; then
+    echo "⚠️  npm ci skipped (--skip-install) although package.json, the lockfile or patches/ changed"
+  else
+    echo ">> npm ci skipped (--skip-install)"
+  fi
+elif [[ -d node_modules ]] && ! changed_since_deploy package.json package-lock.json patches; then
   echo ">> npm ci skipped: package.json, package-lock.json and patches/ unchanged since the last deploy"
 else
   echo ">> npm ci"
@@ -139,9 +169,13 @@ fi
 echo ""
 
 # Khatario Staff face check (YuNet + SFace, matched on this server). Skips files already in place.
-echo ">> npm run face:models"
-if ! npm run face:models; then
-  echo "⚠️  Face models missing — staff check-ins with face check go to manager review until fixed (deploy continues)"
+if [[ "$SKIP_FACE" == true ]]; then
+  echo ">> face models skipped (--skip-face)"
+else
+  echo ">> npm run face:models"
+  if ! npm run face:models; then
+    echo "⚠️  Face models missing — staff check-ins with face check go to manager review until fixed (deploy continues)"
+  fi
 fi
 echo ""
 
@@ -153,7 +187,9 @@ echo ""
 # them and nightly at 03:00. Runs when knowledge/ or the indexing code changed, or when a help-doc
 # source was left in error (for example the embedding quota ran out part-way last time).
 REINDEX_REASON=""
-if changed_since_deploy knowledge lib/rag/ingest lib/rag/embed.ts lib/rag/config.ts; then
+if [[ "$SKIP_KB" == true ]]; then
+  :
+elif changed_since_deploy knowledge lib/rag/ingest lib/rag/embed.ts lib/rag/config.ts; then
   REINDEX_REASON="knowledge/ or the indexing code changed"
 else
   # Inside an if, so a non-zero exit does not trip the ERR trap.
@@ -176,6 +212,8 @@ if [[ -n "$REINDEX_REASON" ]]; then
     dotenv_config_path="$ENV_FILE" --source=markdown; then
     echo "⚠️  Knowledge re-index reported errors — check kb_sources in /admin/assistant (deploy continues)"
   fi
+elif [[ "$SKIP_KB" == true ]]; then
+  echo ">> assistant knowledge re-index skipped (--skip-kb)"
 else
   echo ">> assistant knowledge re-index skipped: knowledge/ and indexing code unchanged, no source in error"
 fi
@@ -185,8 +223,14 @@ echo ""
 # pages deleted since then. next build regenerates them, and the running server never reads them.
 rm -rf .next/types
 
-echo ">> npm run build"
-npm run build
+# npm run build type-checks with tsc once, then next build skips its own second pass (next.config.mjs).
+if [[ "$SKIP_TYPECHECK" == true ]]; then
+  echo ">> next build (no type check: --skip-typecheck)"
+  KH_SKIP_TYPECHECK=1 node --max-old-space-size=4096 node_modules/next/dist/bin/next build --no-lint
+else
+  echo ">> npm run build"
+  npm run build
+fi
 echo ""
 
 if command -v pm2 >/dev/null 2>&1; then
