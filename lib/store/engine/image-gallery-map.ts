@@ -36,3 +36,17 @@ export function galleryClass(settings: Record<string, unknown>): string {
   const hover = pick(settings.hover, ['none', 'caption', 'caption-link'], 'caption');
   return `eng-gallery eng-gallery--${layout} eng-gallery--${shape} eng-gallery--hover-${hover}`;
 }
+
+/**
+ * The picture's `alt` and its link's `aria-label`. A visible caption already names the picture and its link, so
+ * `alt` is empty then (no double announcement). With no caption shown (hover "none") `alt` carries the text; a
+ * linked picture with no text at all gets a positional label (`index` is 0-based) so the link has a name.
+ */
+export function galleryAlt(g: GalleryImage, hover: unknown, index: number): { alt: string; ariaLabel: string | undefined } {
+  const text = g.caption || g.subcaption;
+  const captionShown = hover !== 'none' && !!text;
+  return {
+    alt: captionShown ? '' : text,
+    ariaLabel: g.href && !text ? `Gallery image ${index + 1}` : undefined,
+  };
+}

@@ -111,6 +111,17 @@ describe('premium section rules', () => {
   it('image gallery: two columns on phones, except the strip which keeps its own', () => {
     const phone = PREMIUM_SECTION_RULES.indexOf('@container store (max-width:640px){.st-root.eng-root .eng-gallery:not(.eng-gallery--strip)');
     expect(phone).toBeGreaterThan(0);
-    expect(PREMIUM_SECTION_RULES.slice(phone, PREMIUM_SECTION_RULES.indexOf('}}', phone))).toContain('--eng-cols:2');
+    const phoneBlock = PREMIUM_SECTION_RULES.slice(phone, PREMIUM_SECTION_RULES.indexOf('}}', phone));
+    // !important is what beats the renderer's inline --eng-cols.
+    expect(phoneBlock).toContain('--eng-cols:2!important');
+  });
+
+  it('image gallery: on phones the strip shows about two cards with the next peeking, whatever its columns; wide keeps columns', () => {
+    const phoneAt = PREMIUM_SECTION_RULES.indexOf('@container store (max-width:640px){.st-root.eng-root .eng-gallery:not(.eng-gallery--strip)');
+    const phoneBlock = PREMIUM_SECTION_RULES.slice(phoneAt, PREMIUM_SECTION_RULES.indexOf('}}', phoneAt));
+    expect(phoneBlock).toContain('.st-root.eng-root .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/2.2)');
+    expect(ruleBody('.st-root.eng-root .eng-gallery--strip .eng-gallery-item')).toContain('flex:0 0 calc(100%/var(--eng-cols))');
+    // The phone override comes after the base rule so it wins at equal specificity.
+    expect(PREMIUM_SECTION_RULES.indexOf('calc(100%/2.2)')).toBeGreaterThan(PREMIUM_SECTION_RULES.indexOf('calc(100%/var(--eng-cols))'));
   });
 });

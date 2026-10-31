@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { galleryClass, galleryImages, type GalleryImage } from '@/lib/store/engine/image-gallery-map';
+import { galleryAlt, galleryClass, galleryImages, type GalleryImage } from '@/lib/store/engine/image-gallery-map';
 import type { EngineSectionProps } from '../registry';
 import { CollageTileLink } from './CollageTileLink';
 import { blockSettings, str, withDefaults } from './shared';
@@ -10,11 +10,11 @@ function clamped(v: unknown, min: number, max: number, fallback: number): number
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
 }
 
-function ImageBody({ g }: { g: GalleryImage }) {
+function ImageBody({ g, alt }: { g: GalleryImage; alt: string }) {
   return (
     <figure className="eng-gallery-fig">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="eng-gallery-media" src={g.image} alt={g.caption} loading="lazy" />
+      <img className="eng-gallery-media" src={g.image} alt={alt} loading="lazy" />
       {g.caption || g.subcaption ? (
         <figcaption className="eng-gallery-cap">
           {g.caption ? <b>{g.caption}</b> : null}
@@ -45,17 +45,20 @@ export function ImageGallery({ section }: EngineSectionProps) {
         </div>
       ) : null}
       <ul className="eng-gallery-list">
-        {images.map((g) => (
-          <li key={g.id} className="eng-gallery-item">
-            {g.href ? (
-              <CollageTileLink href={g.href} className="eng-gallery-link" kind="gallery">
-                <ImageBody g={g} />
-              </CollageTileLink>
-            ) : (
-              <ImageBody g={g} />
-            )}
-          </li>
-        ))}
+        {images.map((g, i) => {
+          const { alt, ariaLabel } = galleryAlt(g, v.hover, i);
+          return (
+            <li key={g.id} className="eng-gallery-item">
+              {g.href ? (
+                <CollageTileLink href={g.href} className="eng-gallery-link" kind="gallery" ariaLabel={ariaLabel}>
+                  <ImageBody g={g} alt={alt} />
+                </CollageTileLink>
+              ) : (
+                <ImageBody g={g} alt={alt} />
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

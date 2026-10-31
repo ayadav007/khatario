@@ -119,5 +119,6 @@ export const PREMIUM_SECTION_RULES =
   `${R} .eng-gallery--hover-none .eng-gallery-cap{display:none}` +
   // Touch screens cannot hover: captions are always visible (unless the gallery shows none).
   `@media (hover:none){${R} .eng-gallery-cap{opacity:1}}` +
-  // Phones: two columns; the strip keeps its own count. !important beats the inline variable.
-  `@container store (max-width:640px){${R} .eng-gallery:not(.eng-gallery--strip){--eng-cols:2!important}}`;
+  // Phones: two columns (!important beats the inline variable); the strip shows about two cards with the next one peeking, whatever its columns.
+  `@container store (max-width:640px){${R} .eng-gallery:not(.eng-gallery--strip){--eng-cols:2!important}` +
+  `${R} .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/2.2)}}`;
