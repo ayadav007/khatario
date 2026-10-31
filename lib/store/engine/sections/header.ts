@@ -24,26 +24,24 @@ export const header: SectionSchema = {
     { id: 'show_account', type: 'checkbox', label: 'Show account', default: true },
     { id: 'show_cart', type: 'checkbox', label: 'Show cart', default: true },
     { id: 'show_cart_count', type: 'checkbox', label: 'Show cart count', default: true },
-    { id: 'show_category_chips', type: 'checkbox', label: 'Category chips', default: false, info: 'A row of category chips under the header' },
-  ],
-  blocks: [
+    { id: 'menu', type: 'menu', label: 'Menu', default: 'main' },
     {
-      type: 'menu_link',
-      name: 'Menu link',
-      limit: 12,
-      settings: [
-        { id: 'label', type: 'text', label: 'Label', default: 'All Products', max_length: 40 },
-        { id: 'link', type: 'url', label: 'Link', default: '/' },
-        { id: 'highlight', type: 'checkbox', label: 'Highlight', default: false },
+      id: 'menu_layout',
+      type: 'select',
+      label: 'Menu layout',
+      default: 'below',
+      options: [
+        { value: 'below', label: 'Menu below logo' },
+        { value: 'inline', label: 'All on one line' },
       ],
     },
+    { id: 'menu_caps', type: 'checkbox', label: 'Menu text in capitals', default: false },
+    { id: 'show_category_chips', type: 'checkbox', label: 'Category chips', default: false, info: 'A row of category chips under the header' },
   ],
-  max_blocks: 12,
   presets: [
     {
       name: 'Header',
       settings: { show_search: true, icons_position: 'right' },
-      blocks: [{ type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } }],
     },
   ],
   // The chips are optional: a failed category lookup drops only the chips, never the logo, search, cart or menu.

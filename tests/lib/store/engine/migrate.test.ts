@@ -25,6 +25,8 @@ const first = (t: Template, type: string): Section => {
   if (!id) throw new Error(`no ${type}`);
   return t.sections[id];
 };
+/** The top items of the migrated theme's `main` menu (the old header links). */
+const mainItems = (r: MigrationResult) => r.data.settings.menus.find((m) => m.id === 'main')?.items ?? [];
 const blocks = (s: Section, type: string) => s.block_order.map((id) => s.blocks[id]).filter((b) => b.type === type);
 
 describe.each(Object.entries(ALL_FIXTURES))('%s fixture invariants', (_name, raw) => {
@@ -126,7 +128,8 @@ describe('studioSaved', () => {
 
   it('converts nav labels into links', () => {
     const header = r.data.header_group.sections.header;
-    const links = blocks(header, 'menu_link').map((b) => [b.settings.label, b.settings.link, b.settings.highlight]);
+    const links = mainItems(r).map((i) => [i.label, i.link, i.highlight === true]);
+    expect(header.settings.menu).toBe('main');
     expect(links).toEqual([
       ['All Products', '/catalog', false],
       ['Fruits', `/catalog/${CAT_FRUITS}`, false],
@@ -157,10 +160,16 @@ describe('studioSaved', () => {
     expect(ann.settings).toMatchObject({ text: 'Free delivery today', link: '/catalog', text_align: 'left' });
     const footer = r.data.footer_group.sections.footer;
     expect(footer.settings.about).toBe('Since 1990');
-    const col = blocks(footer, 'link_column');
+    expect(footer.settings.menu).toBe('footer');
+    const col = r.data.settings.menus.find((m) => m.id === 'footer')!.items;
     expect(col).toHaveLength(1);
-    expect(col[0].settings.heading).toBe('Links');
-    expect(col[0].settings.links).toBe(`Shop|/\nAbout|/about\nFruits|/catalog/${CAT_FRUITS}\nOffers|/catalog?disc=10`);
+    expect(col[0].label).toBe('Links');
+    expect(col[0].children!.map((c) => [c.label, c.link])).toEqual([
+      ['Shop', '/'],
+      ['About', '/about'],
+      ['Fruits', `/catalog/${CAT_FRUITS}`],
+      ['Offers', '/catalog?disc=10'],
+    ]);
   });
 
   it('copies social links', () => {
@@ -246,7 +255,7 @@ describe('hostile', () => {
   });
 
   it('keeps a typed https nav link as the old store did, and drops an http one with a warning', () => {
-    const links = blocks(r.data.header_group.sections.header, 'menu_link').map((b) => b.settings.link);
+    const links = mainItems(r).map((i) => i.link);
     expect(links).toEqual([`/catalog/${CAT_FRUITS}`, 'https://evil.com/x']);
     expect(r.warnings.some((w) => /plain\.example/.test(w))).toBe(true);
     expect(r.warnings.some((w) => /evil\.com/.test(w))).toBe(false);

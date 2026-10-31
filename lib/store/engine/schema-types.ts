@@ -21,6 +21,7 @@ export type SettingType =
   | 'icon'
   | 'font'
   | 'html'
+  | 'menu'
   | 'header';
 
 export interface SettingSchema {

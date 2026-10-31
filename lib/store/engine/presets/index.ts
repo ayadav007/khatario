@@ -4,6 +4,7 @@ import { blankPreset } from './blank';
 import { quickPreset } from './quick';
 import { groceryPreset } from './grocery';
 import { khatarioPreset } from './khatario';
+import { convertLegacyMenus } from '../menus-sanitize';
 
 export interface PresetContext {
   businessName: string;
@@ -13,7 +14,7 @@ export interface PresetContext {
   heroUrl?: string;
 }
 
-export function presetTheme(preset: ThemePreset, ctx: PresetContext): ThemeData {
+function buildPreset(preset: ThemePreset, ctx: PresetContext): ThemeData {
   switch (preset) {
     case 'blank':
       return blankPreset(ctx);
@@ -27,4 +28,12 @@ export function presetTheme(preset: ThemePreset, ctx: PresetContext): ThemeData 
     default:
       return studioPreset(ctx);
   }
+}
+
+/**
+ * A preset's theme. The preset files still lay out the header and footer links as `menu_link` / `link_column` blocks;
+ * they become the `main` and `footer` menus here, so every preset is already what `sanitizeThemeData` keeps.
+ */
+export function presetTheme(preset: ThemePreset, ctx: PresetContext): ThemeData {
+  return convertLegacyMenus(buildPreset(preset, ctx) as unknown as Record<string, unknown>) as unknown as ThemeData;
 }

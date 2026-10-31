@@ -72,3 +72,123 @@ export function sanitizeMenus(raw: unknown): Menu[] {
   }
   return out;
 }
+
+// ---- One-time conversion of the old header `menu_link` and footer `link_column` blocks into menus ----
+
+const LEGACY_HEADER_BLOCK = 'menu_link';
+const LEGACY_FOOTER_BLOCK = 'link_column';
+
+type RawSection = Record<string, unknown>;
+
+/** The first section of `type` in a raw header or footer group, as [id, section]. */
+function findSection(group: unknown, type: string): [string, RawSection] | null {
+  if (!isObject(group) || !isObject(group.sections) || !Array.isArray(group.order)) return null;
+  for (const id of group.order) {
+    if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(group.sections, id)) continue;
+    const s = group.sections[id];
+    if (isObject(s) && s.type === type) return [id, s];
+  }
+  return null;
+}
+
+/** Enabled blocks of one type, in `block_order`. */
+function enabledBlocks(section: RawSection, type: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  if (!isObject(section.blocks) || !Array.isArray(section.block_order)) return out;
+  for (const id of section.block_order) {
+    if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(section.blocks, id)) continue;
+    const b = section.blocks[id];
+    if (!isObject(b) || b.type !== type || b.disabled === true) continue;
+    out.push(isObject(b.settings) ? b.settings : {});
+  }
+  return out;
+}
+
+/** The section without its blocks of `legacyType`, and with `menu` set. Other blocks stay (the sanitiser handles them). */
+function withMenu(section: RawSection, legacyType: string, menuId: string): RawSection {
+  const blocks = isObject(section.blocks) ? section.blocks : {};
+  const order = Array.isArray(section.block_order) ? section.block_order : [];
+  const keptOrder = order.filter((id) => typeof id === 'string' && !(isObject(blocks[id]) && (blocks[id] as RawSection).type === legacyType));
+  const keptBlocks: Record<string, unknown> = {};
+  for (const [id, b] of Object.entries(blocks)) {
+    if (!(isObject(b) && b.type === legacyType)) keptBlocks[id] = b;
+  }
+  return {
+    ...section,
+    settings: { ...(isObject(section.settings) ? section.settings : {}), menu: menuId },
+    blocks: keptBlocks,
+    block_order: keptOrder,
+  };
+}
+
+/** The old footer text rule: `Label|/url` per line; a line without `|`, an empty label or a bad link is skipped. */
+function footerLinks(raw: unknown): { label: string; link: string }[] {
+  const out: { label: string; link: string }[] = [];
+  if (typeof raw !== 'string') return out;
+  for (const line of raw.split('\n')) {
+    const i = line.indexOf('|');
+    if (i < 0) continue;
+    const label = line.slice(0, i).trim();
+    const href = sanitizeSettingValue(URL_SCHEMA, line.slice(i + 1).trim());
+    if (label && typeof href === 'string' && href) out.push({ label, link: href });
+  }
+  return out;
+}
+
+/**
+ * Turn the old header `menu_link` blocks and footer `link_column` blocks of a RAW theme into the `main` and `footer` menus.
+ * Applies when the theme has no usable menus yet (`settings.menus` is missing, not an array, or holds nothing valid; a
+ * preset or a migrated store arrives with `[]`); a theme with menus is returned unchanged. After one run both menus
+ * exist, so a second run changes nothing. Returns a new object; the input is untouched. Must run before the header and
+ * footer are sanitised, because their schemas no longer declare the old block types.
+ */
+export function convertLegacyMenus(raw: Record<string, unknown>): Record<string, unknown> {
+  const settings = isObject(raw.settings) ? raw.settings : {};
+  if (sanitizeMenus(settings.menus).length > 0) return { ...raw };
+
+  const out: Record<string, unknown> = { ...raw };
+
+  let n = 0;
+  const nextId = () => `m${++n}`;
+
+  const mainItems: MenuItem[] = [];
+  const header = findSection(raw.header_group, 'header');
+  if (header) {
+    for (const b of enabledBlocks(header[1], LEGACY_HEADER_BLOCK)) {
+      const label = typeof b.label === 'string' ? b.label : 'All Products';
+      const link = typeof b.link === 'string' && b.link.trim() ? b.link : '/';
+      const item: MenuItem = { id: nextId(), label, link };
+      if (b.highlight === true) item.highlight = true;
+      mainItems.push(item);
+    }
+  }
+
+  n = 0;
+  const footerItems: MenuItem[] = [];
+  const footer = findSection(raw.footer_group, 'footer');
+  if (footer) {
+    for (const b of enabledBlocks(footer[1], LEGACY_FOOTER_BLOCK)) {
+      const item: MenuItem = { id: nextId(), label: typeof b.heading === 'string' ? b.heading : 'Shop', link: '' };
+      const links = footerLinks(b.links).map((l) => ({ id: nextId(), label: l.label, link: l.link }));
+      if (links.length > 0) item.children = links;
+      footerItems.push(item);
+    }
+  }
+
+  out.settings = {
+    ...settings,
+    menus: sanitizeMenus([
+      { id: 'main', name: 'Main menu', items: mainItems },
+      { id: 'footer', name: 'Footer menu', items: footerItems },
+    ]),
+  };
+
+  const swap = (groupKey: 'header_group' | 'footer_group', found: [string, RawSection] | null, legacyType: string, menuId: string) => {
+    if (!found) return;
+    const group = raw[groupKey] as Record<string, unknown>;
+    out[groupKey] = { ...group, sections: { ...(group.sections as Record<string, unknown>), [found[0]]: withMenu(found[1], legacyType, menuId) } };
+  };
+  swap('header_group', header, LEGACY_HEADER_BLOCK, 'main');
+  swap('footer_group', footer, LEGACY_FOOTER_BLOCK, 'footer');
+  return out;
+}

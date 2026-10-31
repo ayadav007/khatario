@@ -125,8 +125,9 @@ describe('quick preset', () => {
     expect(p.header_group.order).toEqual(['header']);
     const h = p.header_group.sections.header;
     expect(h.settings).toMatchObject({ delivery_eta: 'in 30 minutes', search_placeholder: 'Search for products…' });
-    expect(h.block_order.map((id) => h.blocks[id].settings)).toEqual([
-      { label: 'All Products', link: '/catalog' },
+    expect(h.settings.menu).toBe('main');
+    expect(p.settings.menus.find((m) => m.id === 'main')!.items.map(({ label, link, highlight }) => ({ label, link, highlight }))).toEqual([
+      { label: 'All Products', link: '/catalog', highlight: undefined },
       { label: 'Offers', link: '/catalog?disc=10', highlight: true },
     ]);
   });

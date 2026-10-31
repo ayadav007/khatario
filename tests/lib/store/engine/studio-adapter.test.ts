@@ -1,8 +1,6 @@
 import {
   announcementSettings,
   bannerSettings,
-  footerColumns,
-  headerNavLinks,
   imageWithTextSettings,
   marqueeSettings,
   multicolumnSettings,
@@ -111,7 +109,7 @@ describe('studio adapter', () => {
     ]);
   });
 
-  it('testimonials and header links skip disabled blocks', () => {
+  it('testimonials skip disabled blocks', () => {
     expect(
       testimonialItems(
         sec('testimonials', {}, [
@@ -120,23 +118,6 @@ describe('studio adapter', () => {
         ]),
       ),
     ).toEqual([{ text: 'T', name: 'N', photo: '', rating: 4 }]);
-    expect(headerNavLinks(sec('header', {}, [['a', 'menu_link', { label: 'Sale', link: '/sale', highlight: true }]]))).toEqual([
-      { label: 'Sale', href: '/sale', highlight: true },
-    ]);
-  });
-
-  it('footer parses Label|/url lines and drops bad urls', () => {
-    const links = 'Refund|/refund\nBad|javascript:x\nno pipe\nAbs|https://example.com/a\n|/nolabel';
-    const cols = footerColumns(sec('footer', {}, [['a', 'link_column', { heading: 'Help', links }]]));
-    expect(cols).toEqual([
-      {
-        heading: 'Help',
-        links: [
-          { label: 'Refund', href: '/refund' },
-          { label: 'Abs', href: 'https://example.com/a' },
-        ],
-      },
-    ]);
   });
 
   it('product sections map fields', () => {

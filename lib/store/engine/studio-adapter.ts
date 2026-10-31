@@ -1,7 +1,7 @@
 import type { StudioProductSource, StudioSettings, StudioSlide, StudioUsp, StudioUspIcon } from '@/lib/store/studio-sections';
 import { STUDIO_PRODUCT_SOURCES, STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import { getSectionSchema } from './registry';
-import { defaultSettings, sanitizeSettingValue } from './settings';
+import { defaultSettings } from './settings';
 import type { Block, Section } from './types';
 
 type Raw = Record<string, unknown>;
@@ -128,28 +128,6 @@ export function testimonialItems(section: Section): { text: string; name: string
     photo: str(b.photo),
     rating: Math.min(5, Math.max(1, Math.round(num(b.rating) ?? 5))),
   }));
-}
-
-export function headerNavLinks(section: Section): { label: string; href: string; highlight: boolean }[] {
-  return blocksOf(section, 'menu_link').map((b) => ({
-    label: str(b.label),
-    href: str(b.link, '/') || '/',
-    highlight: b.highlight === true,
-  }));
-}
-
-export function footerColumns(section: Section): { heading: string; links: { label: string; href: string }[] }[] {
-  return blocksOf(section, 'link_column').map((b) => {
-    const links: { label: string; href: string }[] = [];
-    for (const line of str(b.links).split('\n')) {
-      const i = line.indexOf('|');
-      if (i < 0) continue;
-      const label = line.slice(0, i).trim();
-      const href = sanitizeSettingValue({ id: 'url', type: 'url', label: 'URL' }, line.slice(i + 1).trim());
-      if (label && typeof href === 'string' && href) links.push({ label, href });
-    }
-    return { heading: str(b.heading), links };
-  });
 }
 
 export function productSectionSettings(section: Section): StudioSettings {

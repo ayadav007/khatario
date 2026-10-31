@@ -26,6 +26,8 @@ const first = (t: Template, type: string): Section => {
 };
 const blocks = (s: Section, type: string) => s.block_order.map((id) => s.blocks[id]).filter((b) => b.type === type);
 const noTagline = { ...ctx, tagline: '' };
+/** The top items of the migrated theme's `main` menu (the old header links). */
+const mainItems = (r: MigrationResult) => r.data.settings.menus.find((m) => m.id === 'main')?.items ?? [];
 
 describe.each(Object.entries(PACK_FIXTURES))('%s fixture invariants', (_name, raw) => {
   it.each([
@@ -138,7 +140,8 @@ describe('groceryAll', () => {
   it('header shows category chips and All Products plus Offers; footer uses scheme 6', () => {
     const header = r.data.header_group.sections.header;
     expect(header.settings.show_category_chips).toBe(true);
-    expect(blocks(header, 'menu_link').map((b) => [b.settings.label, b.settings.link])).toEqual([
+    expect(header.settings.menu).toBe('main');
+    expect(mainItems(r).map((i) => [i.label, i.link])).toEqual([
       ['All Products', '/catalog'],
       ['Offers', '/catalog?disc=10'],
     ]);
@@ -213,7 +216,8 @@ describe('groceryDefault', () => {
     expect(types(home(m))).toEqual(['slideshow', 'featured-products']);
     const header = m.data.header_group.sections.header;
     expect(header.settings.show_category_chips).toBe(false);
-    expect(blocks(header, 'menu_link').map((b) => b.settings.label)).toEqual(['All Products']);
+    expect(header.settings.menu).toBe('main');
+    expect(mainItems(m).map((i) => i.label)).toEqual(['All Products']);
   });
 });
 

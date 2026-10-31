@@ -1,4 +1,3 @@
-import { footerColumns } from '@/lib/store/engine/studio-adapter';
 import { StudioFooter, type StudioLink } from '../../studio-theme/StudioSections';
 import type { EngineSectionProps } from '../registry';
 import { str, withDefaults } from './shared';
@@ -9,7 +8,8 @@ const SOCIAL_LABELS = { instagram: 'Instagram', whatsapp: 'WhatsApp', facebook: 
 
 export function Footer({ section, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
-  const columns = footerColumns(section);
+  // Real menus arrive with the menu components (Tasks 4 and 5); until then the footer shows no link columns.
+  const columns: { heading: string; links: { label: string; href: string }[] }[] = [];
   const links: StudioLink[] = [];
   if (v.show_social !== false) {
     for (const key of Object.keys(SOCIAL_LABELS) as (keyof typeof SOCIAL_LABELS)[]) {

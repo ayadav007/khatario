@@ -2,7 +2,7 @@ import sanitizeHtml from 'sanitize-html';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
-import { VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings } from './shared';
+import { ID_RE, VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings } from './shared';
 
 export { defaultSettings };
 
@@ -129,6 +129,8 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
       return typeof raw === 'string' && FONTS.includes(raw) ? raw : undefined;
     case 'html':
       return typeof raw === 'string' ? sanitizeCustomHtml(raw) : undefined;
+    case 'menu':
+      return typeof raw === 'string' && (raw === '' || ID_RE.test(raw)) ? raw : undefined;
     default:
       return undefined;
   }

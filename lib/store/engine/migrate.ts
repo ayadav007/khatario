@@ -13,7 +13,8 @@ import { resolveStudioSections, themeToStudioSections } from '@/lib/store/studio
 import type { ColorScheme, Section, Template, ThemeData, ThemeSettings } from './types';
 import { PRESET_LOOK, mixHex, schemesFor } from './presets/look';
 import { template } from './presets/shared';
-import { engineSection, engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings } from './migrate-studio';
+import { engineSection, engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings, withLegacyBlocks } from './migrate-studio';
+import { convertLegacyMenus } from './menus-sanitize';
 import { migratePackHome } from './migrate-packs';
 
 export interface MigrationContext {
@@ -117,7 +118,7 @@ function packChrome(
       { type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } },
       ...(sectionEnabled(t, 'offers') ? [{ type: 'menu_link', settings: { label: 'Offers', link: '/catalog?disc=10' } }] : []),
     ];
-    const rebuilt = engineSection('header', { ...header.settings, show_category_chips: sectionEnabled(t, 'categories') }, links);
+    const rebuilt = withLegacyBlocks(engineSection('header', { ...header.settings, show_category_chips: sectionEnabled(t, 'categories') }), links);
     head = { ...header, settings: rebuilt.settings, blocks: rebuilt.blocks, block_order: rebuilt.block_order };
   } else {
     head = { ...header, color_scheme: 'scheme-4' };
@@ -182,5 +183,6 @@ export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): Migratio
       catalog: { order: [], sections: {} },
     },
   };
-  return { preset: t.pack, name: STORE_THEME_PRESETS[t.pack].label, data, warnings: w.all() };
+  // The old header and footer links become menus here too, so the result is already what `sanitizeThemeData` keeps.
+  return { preset: t.pack, name: STORE_THEME_PRESETS[t.pack].label, data: convertLegacyMenus(data as unknown as Record<string, unknown>) as unknown as ThemeData, warnings: w.all() };
 }

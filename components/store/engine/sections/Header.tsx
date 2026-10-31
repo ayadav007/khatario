@@ -1,11 +1,11 @@
-import { headerNavLinks } from '@/lib/store/engine/studio-adapter';
 import type { EngineSectionProps } from '../registry';
 import { EngineHeader } from '../EngineViews';
 import { str, withDefaults } from './shared';
 
 export function Header({ section, data, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
-  const links = headerNavLinks(section);
+  // Real menus arrive with the menu components (Tasks 4 and 5); until then the header shows no links.
+  const links: { label: string; href: string; highlight: boolean }[] = [];
   return (
     <EngineHeader
       s={{

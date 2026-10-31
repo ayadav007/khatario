@@ -82,6 +82,16 @@ export function engineSection(type: string, raw: Raw, rawBlocks: Array<{ type: s
   return section(type, sanitizeSettings(schema.settings, raw), out);
 }
 
+/**
+ * A header or footer carrying the old `menu_link` / `link_column` blocks, raw. Their schemas no longer declare those
+ * types (so `engineSection` would drop them); the one-time conversion in `convertLegacyMenus` turns them into menus.
+ * Ids are the preset ones (`menu-link-1`, `link-column-1`).
+ */
+export function withLegacyBlocks(target: Section, legacy: Array<{ type: string; settings: Raw }>): Section {
+  const built = section(target.type, target.settings, legacy.map((b) => block(b.type, b.settings)));
+  return { ...target, blocks: built.blocks, block_order: built.block_order };
+}
+
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(n)));
 
 /** Studio's free-text label → an engine link (D32), or null when the link cannot be kept. */
@@ -199,7 +209,7 @@ function migrateHeader(src: StudioSection, t: StoreTheme, ctx: MigrationContext,
       links.push({ type: 'menu_link', settings: { label, link, highlight: !!highlight && label.toLowerCase() === highlight } });
     }
   }
-  return common(engineSection('header', raw, links), src, 'group');
+  return common(withLegacyBlocks(engineSection('header', raw), links), src, 'group');
 }
 
 function migrateFooter(src: StudioSection, ctx: MigrationContext, w: Warnings): Section {
@@ -216,7 +226,7 @@ function migrateFooter(src: StudioSection, ctx: MigrationContext, w: Warnings): 
   }
   warnColours(src, w);
   const blocks = lines.length ? [{ type: 'link_column', settings: { heading: 'Links', links: lines.join('\n') } as Raw }] : [];
-  return common(engineSection('footer', raw, blocks), src, 'group');
+  return common(withLegacyBlocks(engineSection('footer', raw), blocks), src, 'group');
 }
 
 function migrateHero(src: StudioSection, w: Warnings): Section {

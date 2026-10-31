@@ -63,11 +63,14 @@ describe('editor ops', () => {
   it('addBlock refuses past a section block cap and unknown block types', () => {
     let t = fixture();
     const mk = ids();
-    const ref = { group: 'footer' as const, id: getGroup(t, 'home', 'footer').order[0] };
-    while (getGroup(t, 'home', 'footer').sections[ref.id].block_order.length < 4) {
-      t = ok(addBlock(t, 'home', ref, 'link_column', 0, mk));
+    // Promo cards cap at four blocks (the footer no longer has blocks: its links are a menu).
+    const added: any = addSection(t, 'home', 'template', 'promo-cards', 0, 0, mk);
+    t = ok(added);
+    const ref = { group: 'template' as const, id: added.id as string };
+    while (getGroup(t, 'home', 'template').sections[ref.id].block_order.length < 4) {
+      t = ok(addBlock(t, 'home', ref, 'card', 0, mk));
     }
-    expect(addBlock(t, 'home', ref, 'link_column', 0)).toEqual({ ok: false, reason: 'block_limit' });
+    expect(addBlock(t, 'home', ref, 'card', 0)).toEqual({ ok: false, reason: 'block_limit' });
     expect(addBlock(t, 'home', ref, 'bogus', 0)).toEqual({ ok: false, reason: 'unknown_block_type' });
   });
 
@@ -140,11 +143,11 @@ describe('editor ops', () => {
     expect(mg.sections).toBe(g.sections);
     expect(moveSection(t, 'home', 'template', 0, 99)).toEqual({ ok: false, reason: 'not_found' });
     expect(moveSection(t, 'home', 'template', -1, 0)).toEqual({ ok: false, reason: 'not_found' });
-    const hg = getGroup(t, 'home', 'header');
+    const hg = getGroup(t, 'home', 'template');
     const hid = hg.order.find((id) => hg.sections[id].block_order.length > 1)!;
-    const ref = { group: 'header' as const, id: hid };
+    const ref = { group: 'template' as const, id: hid };
     const bm = ok(moveBlock(t, 'home', ref, 0, 1));
-    const s = getGroup(bm, 'home', 'header').sections[hid];
+    const s = getGroup(bm, 'home', 'template').sections[hid];
     expect(s.block_order[1]).toBe(hg.sections[hid].block_order[0]);
     expect(s.blocks).toBe(hg.sections[hid].blocks);
     expect(moveBlock(t, 'home', ref, 0, 99)).toEqual({ ok: false, reason: 'not_found' });
@@ -237,12 +240,12 @@ describe('editor ops', () => {
     expect(getGroup(ok(moveSection(t, 'home', 'template', last, 0)), 'home', 'template').order[0]).toBe(g.order[last]);
     expect(moveSection(t, 'home', 'template', last + 1, 0)).toEqual({ ok: false, reason: 'not_found' });
     expect(moveSection(t, 'home', 'template', 0, last + 1)).toEqual({ ok: false, reason: 'not_found' });
-    const hg = getGroup(t, 'home', 'header');
+    const hg = getGroup(t, 'home', 'template');
     const hid = hg.order.find((id) => hg.sections[id].block_order.length > 1)!;
-    const ref = { group: 'header' as const, id: hid };
+    const ref = { group: 'template' as const, id: hid };
     const bo = hg.sections[hid].block_order;
     const bl = bo.length - 1;
-    const sec = (th: ThemeData) => getGroup(th, 'home', 'header').sections[hid];
+    const sec = (th: ThemeData) => getGroup(th, 'home', 'template').sections[hid];
     expect(sec(ok(moveBlock(t, 'home', ref, 0, bl))).block_order[bl]).toBe(bo[0]);
     expect(sec(ok(moveBlock(t, 'home', ref, bl, 0))).block_order[0]).toBe(bo[bl]);
     expect(moveBlock(t, 'home', ref, -1, 0)).toEqual({ ok: false, reason: 'not_found' });
@@ -267,9 +270,11 @@ describe('editor ops', () => {
   it('duplicateBlock is refused at the block limit', () => {
     let t = fixture();
     const mk = ids();
-    const ref = { group: 'footer' as const, id: getGroup(t, 'home', 'footer').order[0] };
-    while (getGroup(t, 'home', 'footer').sections[ref.id].block_order.length < 4) t = ok(addBlock(t, 'home', ref, 'link_column', 0, mk));
-    const bid = getGroup(t, 'home', 'footer').sections[ref.id].block_order[0];
+    const added: any = addSection(t, 'home', 'template', 'promo-cards', 0, 0, mk);
+    t = ok(added);
+    const ref = { group: 'template' as const, id: added.id as string };
+    while (getGroup(t, 'home', 'template').sections[ref.id].block_order.length < 4) t = ok(addBlock(t, 'home', ref, 'card', 0, mk));
+    const bid = getGroup(t, 'home', 'template').sections[ref.id].block_order[0];
     expect(duplicateBlock(t, 'home', ref, bid, mk)).toEqual({ ok: false, reason: 'block_limit' });
   });
 });
