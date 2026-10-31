@@ -111,6 +111,16 @@ d('Theme API (real DB)', () => {
     expect((await idRoute.GET(req('/nope', 'GET'), ctx('nope'))).status).toBe(404);
   });
 
+  it('POST with the grocery preset builds the Grocery home', async () => {
+    const res = await listRoute.POST(req('', 'POST', { name: 'Grocery', preset: 'grocery' }));
+    expect(res.status).toBe(201);
+    const theme = (await res.json()).theme;
+    expect(theme.preset).toBe('grocery');
+    const home = theme.data.templates.home;
+    expect(home.order.map((id: string) => home.sections[id].type)).toContain('promo-cards');
+    expect((await idRoute.DELETE(req(`/${theme.id}`, 'DELETE'), ctx(theme.id))).status).toBe(200);
+  });
+
   it('PUT saves a draft, then a stale updated_at is 409', async () => {
     const got = (await (await idRoute.GET(req(`/${draftId}`, 'GET'), ctx(draftId))).json()).theme;
     let res = await idRoute.PUT(req(`/${draftId}`, 'PUT', { data: got.data, updated_at: draftUpdatedAt }), ctx(draftId));
