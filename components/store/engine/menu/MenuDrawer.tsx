@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, X } from 'lucide-react';
 import type { ResolvedItem } from '@/lib/store/engine/menus';
 import { MenuLink, PanelPicture } from './MenuPanel';
@@ -9,8 +10,29 @@ import './menu.css';
 
 /** Marks the history entry pushed when the panel opens, so Back closes it. */
 const HISTORY_KEY = 'khMenuDrawer';
-/** The Header section's scheme colours, carried into the portal. */
-const SCHEME_VARS = ['--c-bg', '--c-text', '--c-accent', '--c-btn', '--c-btn-text', '--c-border', '--c-card'] as const;
+/**
+ * What the panel's CSS reads from the store root and the Header section (scheme colours, Studio colours, fonts),
+ * carried onto the portal's wrapper as resolved values.
+ */
+const CARRIED_VARS = [
+  '--c-bg',
+  '--c-text',
+  '--c-accent',
+  '--c-btn',
+  '--c-btn-text',
+  '--c-border',
+  '--c-card',
+  '--primary',
+  '--on-primary',
+  '--text',
+  '--paper',
+  '--st-card',
+  '--st-line',
+  '--st-muted',
+  '--font-heading',
+  '--font-body',
+  '--btn-radius',
+] as const;
 
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
@@ -27,6 +49,31 @@ function historyToken(): unknown {
   } catch {
     return undefined;
   }
+}
+
+/** The marker's resolved colours and font, for the wrapper outside the store root. */
+function carriedStyle(mark: HTMLElement): CSSProperties {
+  const cs = getComputedStyle(mark);
+  const out: Record<string, string> = {};
+  for (const name of CARRIED_VARS) {
+    const value = cs.getPropertyValue(name).trim();
+    if (value) out[name] = value;
+  }
+  if (cs.fontFamily) out.fontFamily = cs.fontFamily;
+  return out as CSSProperties;
+}
+
+/** Scrolls to a same-page `#anchor`; engine anchors without such an element go through the shell's hashchange. */
+function followHash(hash: string) {
+  let id = '';
+  try {
+    id = decodeURIComponent(hash.slice(1));
+  } catch {
+    return;
+  }
+  const el = id ? document.getElementById(id) : null;
+  if (el) el.scrollIntoView({ block: 'start' });
+  else window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 
 function DrawerSub({ item }: { item: ResolvedItem }) {
@@ -88,7 +135,8 @@ function DrawerSub({ item }: { item: ResolvedItem }) {
  * Phone side panel: slides in from the left over an overlay. Closes with ✕, an overlay tap, Esc or Back (opening
  * pushes a history entry); locks page scroll, keeps focus inside and returns it to the button that opened it. Items
  * with children expand in place; `initialOpenId` opens with that item expanded. Rendered in place on the server (so
- * its links are in the HTML), then portalled to the store root so no sticky or contained parent traps it.
+ * its links are in the HTML), then portalled to <body>: the store root is a size container (`st-cq`), which would
+ * make it the containing block of the fixed panel. The portal's `st-root` wrapper carries the colours and fonts.
  */
 export function MenuDrawer({
   items,
@@ -102,6 +150,7 @@ export function MenuDrawer({
   initialOpenId?: string | null;
 }) {
   const uid = useId();
+  const router = useRouter();
   const markRef = useRef<HTMLSpanElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
@@ -109,8 +158,10 @@ export function MenuDrawer({
   const onCloseRef = useRef(onClose);
   /** A link in the panel was followed: leave the pushed entry alone instead of going back over the navigation. */
   const navigating = useRef(false);
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const [vars, setVars] = useState<CSSProperties>({});
+  /** The token on the history entry this opening pushed (null when closed or not pushed). */
+  const tokenRef = useRef<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [hostStyle, setHostStyle] = useState<CSSProperties>({});
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
@@ -118,23 +169,15 @@ export function MenuDrawer({
   });
 
   useEffect(() => {
-    setHost(markRef.current?.closest<HTMLElement>('.st-root') ?? document.body);
+    if (markRef.current) setHostStyle(carriedStyle(markRef.current));
+    setMounted(true);
   }, []);
 
   // Each opening starts from the requested item and the header's current colours.
   useIsoLayoutEffect(() => {
     if (!open) return;
     setExpanded(new Set(initialOpenId ? [initialOpenId] : []));
-    const mark = markRef.current;
-    if (mark) {
-      const cs = getComputedStyle(mark);
-      const next: Record<string, string> = {};
-      for (const name of SCHEME_VARS) {
-        const value = cs.getPropertyValue(name).trim();
-        if (value) next[name] = value;
-      }
-      setVars(next as CSSProperties);
-    }
+    if (markRef.current) setHostStyle(carriedStyle(markRef.current));
   }, [open, initialOpenId]);
 
   useEffect(() => {
@@ -149,6 +192,7 @@ export function MenuDrawer({
       // Keep the router's own state on the entry so going forward onto it later is a plain restore.
       window.history.pushState({ ...((window.history.state as object | null) ?? {}), [HISTORY_KEY]: token }, '');
       pushed = true;
+      tokenRef.current = token;
     } catch {
       /* history blocked (sandboxed frame): Back just won't close the panel */
     }
@@ -191,6 +235,7 @@ export function MenuDrawer({
       // Closed by ✕, overlay or Esc: take back the entry we pushed, but only while it is still the current one.
       if (pushed && !popped && !navigating.current && historyToken() === token) window.history.back();
       navigating.current = false;
+      tokenRef.current = null;
       if (opener && opener !== document.body && opener.isConnected) opener.focus({ preventScroll: true });
     };
     // initialOpenId is read once per opening; the panel is reopened to change it.
@@ -205,16 +250,34 @@ export function MenuDrawer({
       return next;
     });
 
+  // Following an internal link swaps the panel's history entry for the destination, so Back from there returns
+  // to this page in one step. New tabs, downloads, other targets and modified clicks keep the browser's behaviour.
   const onNavClick = (e: MouseEvent<HTMLElement>) => {
-    if (!(e.target as Element).closest('a[href]')) return;
+    const a = (e.target as Element).closest<HTMLAnchorElement>('a[href]');
+    if (!a) return;
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (a.target || a.hasAttribute('download')) return;
     navigating.current = true;
+    const url = new URL(a.href, window.location.href);
+    const here = window.location;
+    const ours = tokenRef.current !== null && historyToken() === tokenRef.current;
+    if (ours && url.origin === here.origin) {
+      e.preventDefault();
+      if (url.pathname === here.pathname && url.search === here.search && url.hash) {
+        // Same-page anchor: the panel's entry becomes this page's #anchor (Next keeps its state on it).
+        window.history.replaceState(null, '', url.hash);
+        window.setTimeout(() => followHash(url.hash), 0);
+      } else {
+        router.replace(`${url.pathname}${url.search}${url.hash}`);
+      }
+    }
     onClose();
   };
 
   const subId = (id: string) => `${uid}-sub-${id}`;
 
   const drawer = (
-    <div className="kh-drawer-wrap" hidden={!open} style={vars}>
+    <div className="kh-drawer-wrap" hidden={!open}>
       <div className="kh-drawer-scrim" aria-hidden="true" onClick={onClose} />
       <div ref={panelRef} className="kh-drawer" role="dialog" aria-modal="true" aria-label="Menu">
         <div className="kh-drawer-head">
@@ -278,7 +341,14 @@ export function MenuDrawer({
   return (
     <>
       <span ref={markRef} hidden />
-      {host ? createPortal(drawer, host) : drawer}
+      {mounted
+        ? createPortal(
+            <div className="st-root eng-root kh-drawer-host" style={hostStyle}>
+              {drawer}
+            </div>,
+            document.body,
+          )
+        : drawer}
     </>
   );
 }

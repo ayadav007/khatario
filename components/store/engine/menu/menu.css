@@ -79,7 +79,9 @@
 .st-root .kh-burger{display:inline-flex;order:-2}
 }
 
-/* Side panel: fixed over the page (above the sticky header, bottom tabs and cart bar), in the header's colours. */
+/* Side panel: fixed over the page (above the sticky header, bottom tabs and cart bar), in the header's colours. Once
+   mounted it lives in a <body> wrapper (`st-root kh-drawer-host`, no `st-cq`) so the viewport is its containing block. */
+.st-root.kh-drawer-host{background:none;min-height:0}
 .st-root .kh-drawer-wrap{position:fixed;inset:0;z-index:55}
 .st-root .kh-drawer-wrap[hidden]{display:none}
 .st-root .kh-drawer-scrim{position:absolute;inset:0;background:rgba(15,23,42,.45);animation:kh-fade .2s ease-out}
