@@ -93,4 +93,31 @@ export const PREMIUM_SECTION_RULES =
   `${R} .eng-look--right .eng-look-photo{order:2}` +
   `${R} .eng-look--no-list{grid-template-columns:minmax(0,1fr)}` +
   `${R} .eng-look--no-photo{grid-template-columns:minmax(0,1fr);max-width:560px}` +
-  '}';
+  '}' +
+  // Image gallery. --eng-cols (2-6) and --eng-gap (px) come inline from the renderer.
+  `${R} .eng-gallery{display:flex;flex-direction:column;gap:24px}` +
+  `${R} .eng-gallery-head{display:flex;flex-direction:column;align-items:flex-start;gap:12px;max-width:640px}` +
+  `${R} .eng-gallery-head .eyebrow,${R} .eng-gallery-heading{margin:0}` +
+  `${R} .eng-gallery-heading{font-weight:700;line-height:1.1;font-size:clamp(28px,4.4cqi,48px);overflow-wrap:anywhere}` +
+  `${R} .eng-gallery-list{margin:0;padding:0;list-style:none;min-width:0}` +
+  `${R} .eng-gallery--grid .eng-gallery-list{display:grid;grid-template-columns:repeat(var(--eng-cols),minmax(0,1fr));gap:var(--eng-gap)}` +
+  `${R} .eng-gallery--masonry .eng-gallery-list{columns:var(--eng-cols);column-gap:var(--eng-gap)}` +
+  `${R} .eng-gallery--masonry .eng-gallery-item{break-inside:avoid;margin-bottom:var(--eng-gap)}` +
+  `${R} .eng-gallery--strip .eng-gallery-list{display:flex;gap:var(--eng-gap);overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}` +
+  `${R} .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/var(--eng-cols));min-width:0;scroll-snap-align:start}` +
+  `${R} .eng-gallery-item{min-width:0}` +
+  `${R} .eng-gallery-link{display:block;color:inherit;text-decoration:none}` +
+  `${R} .eng-gallery-link:focus-visible{outline:2px solid var(--c-text,#1c1c18);outline-offset:2px}` +
+  `${R} .eng-gallery-fig{position:relative;overflow:hidden;margin:0;border-radius:var(--card-radius,var(--btn-radius,10px));background:#2b2b2b;color:#fff}` +
+  `${R} .eng-gallery-media{display:block;width:100%;height:auto;object-fit:cover}` +
+  `${R} .eng-gallery--square .eng-gallery-media{aspect-ratio:1/1}` +
+  `${R} .eng-gallery--portrait .eng-gallery-media{aspect-ratio:3/4}` +
+  `${R} .eng-gallery-cap{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:2px;padding:28px 12px 10px;background:linear-gradient(to top,rgba(0,0,0,.6),transparent);overflow-wrap:anywhere;opacity:0;transition:opacity .25s ease}` +
+  `${R} .eng-gallery-cap b{font-weight:600}` +
+  `${R} .eng-gallery-cap span{font-size:.9em;opacity:.9}` +
+  `${R} .eng-gallery-item:hover .eng-gallery-cap,${R} .eng-gallery-item:focus-within .eng-gallery-cap{opacity:1}` +
+  `${R} .eng-gallery--hover-none .eng-gallery-cap{display:none}` +
+  // Touch screens cannot hover: captions are always visible (unless the gallery shows none).
+  `@media (hover:none){${R} .eng-gallery-cap{opacity:1}}` +
+  // Phones: two columns; the strip keeps its own count. !important beats the inline variable.
+  `@container store (max-width:640px){${R} .eng-gallery:not(.eng-gallery--strip){--eng-cols:2!important}}`;

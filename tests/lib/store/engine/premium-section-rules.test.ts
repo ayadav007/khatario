@@ -14,7 +14,7 @@ describe('premium section rules', () => {
       .map((r) => r.split('{')[0].trim())
       .filter(Boolean);
     expect(selectors.length).toBeGreaterThan(5);
-    for (const sel of selectors) expect(sel.startsWith('.st-root.eng-root') || sel.startsWith('@container')).toBe(true);
+    for (const sel of selectors) expect(sel.startsWith('.st-root.eng-root') || sel.startsWith('@container') || sel.startsWith('@media')).toBe(true);
   });
 
   it('portrait tiles are 3/4 and square tiles 1/1', () => {
@@ -81,5 +81,36 @@ describe('premium section rules', () => {
 
   it('shop the look: the empty-state note is for the editor only', () => {
     expect(ruleBody('.st-root.eng-root:not(.eng-editor) .eng-look-empty')).toContain('display:none');
+  });
+  it('image gallery: grid columns, masonry columns and a snapping strip from the --eng-cols variable', () => {
+    expect(ruleBody('.st-root.eng-root .eng-gallery--grid .eng-gallery-list')).toContain('grid-template-columns:repeat(var(--eng-cols),minmax(0,1fr))');
+    expect(ruleBody('.st-root.eng-root .eng-gallery--masonry .eng-gallery-list')).toContain('columns:var(--eng-cols)');
+    const strip = ruleBody('.st-root.eng-root .eng-gallery--strip .eng-gallery-list');
+    expect(strip).toContain('display:flex');
+    expect(strip).toContain('overflow-x:auto');
+    expect(strip).toContain('scroll-snap-type:x mandatory');
+    expect(ruleBody('.st-root.eng-root .eng-gallery--strip .eng-gallery-item')).toContain('flex:0 0 calc(100%/var(--eng-cols))');
+  });
+
+  it('image gallery: square is 1/1, portrait 3/4, natural has no ratio', () => {
+    expect(ruleBody('.st-root.eng-root .eng-gallery--square .eng-gallery-media')).toContain('aspect-ratio:1/1');
+    expect(ruleBody('.st-root.eng-root .eng-gallery--portrait .eng-gallery-media')).toContain('aspect-ratio:3/4');
+    expect(PREMIUM_SECTION_RULES).not.toContain('eng-gallery--natural .eng-gallery-media{aspect-ratio');
+  });
+
+  it('image gallery: captions fade in on hover or focus, stay visible without hover, and hide for hover-none', () => {
+    expect(ruleBody('.st-root.eng-root .eng-gallery-cap')).toContain('opacity:0');
+    expect(PREMIUM_SECTION_RULES).toContain('.eng-gallery-item:hover .eng-gallery-cap');
+    expect(PREMIUM_SECTION_RULES).toContain('.eng-gallery-item:focus-within .eng-gallery-cap');
+    const none = PREMIUM_SECTION_RULES.indexOf('@media (hover:none)');
+    expect(none).toBeGreaterThan(0);
+    expect(PREMIUM_SECTION_RULES.slice(none)).toContain('.eng-gallery-cap{opacity:1}');
+    expect(ruleBody('.st-root.eng-root .eng-gallery--hover-none .eng-gallery-cap')).toContain('display:none');
+  });
+
+  it('image gallery: two columns on phones, except the strip which keeps its own', () => {
+    const phone = PREMIUM_SECTION_RULES.indexOf('@container store (max-width:640px){.st-root.eng-root .eng-gallery:not(.eng-gallery--strip)');
+    expect(phone).toBeGreaterThan(0);
+    expect(PREMIUM_SECTION_RULES.slice(phone, PREMIUM_SECTION_RULES.indexOf('}}', phone))).toContain('--eng-cols:2');
   });
 });

@@ -23,6 +23,7 @@ import { CatalogBanner } from './sections/CatalogBanner';
 import { MainCatalog } from './sections/MainCatalog';
 import { Collage } from './sections/Collage';
 import { ShopTheLook } from './sections/ShopTheLook';
+import { ImageGallery } from './sections/ImageGallery';
 import { CollectionList } from './sections/CollectionList';
 import { LogoList } from './sections/LogoList';
 import { Video } from './sections/Video';
@@ -76,6 +77,7 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   'main-catalog': MainCatalog,
   collage: Collage,
   'shop-the-look': ShopTheLook,
+  'image-gallery': ImageGallery,
   'collection-list': CollectionList,
   'logo-list': LogoList,
   video: Video,
