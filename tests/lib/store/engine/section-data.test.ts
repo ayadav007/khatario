@@ -1,4 +1,9 @@
-import { collectDataRequests, productRequestKey } from '@/lib/store/engine/section-data';
+jest.mock('@/lib/db', () => ({ queryRows: jest.fn() }));
+
+import { queryRows } from '@/lib/db';
+import { collectDataRequests, collectProductIds, productRequestKey, resolveSectionData } from '@/lib/store/engine/section-data';
+import type { SectionDataRequest } from '@/lib/store/engine/schema-types';
+import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { Section, Template } from '@/lib/store/engine/types';
 
 function section(type: string, settings: Record<string, unknown> = {}, disabled = false): Section {
@@ -95,5 +100,69 @@ describe('M4 data requests', () => {
       expect(shelf.products.length).toBeLessThanOrEqual(4);
       for (const p of shelf.products) expect(p.category_id).toBe(shelf.category.id);
     }
+  });
+});
+
+describe('products by id', () => {
+  const queryMock = queryRows as jest.Mock;
+  const a = '11111111-1111-4111-8111-111111111111';
+  const b = '22222222-2222-4222-8222-222222222222';
+  const c = '33333333-3333-4333-8333-333333333333';
+  const store = { business_id: '99999999-9999-4999-8999-999999999999', store_subdomain: 'ganesh' } as StoreBusinessContext;
+  const row = (id: string) => ({ id, name: `Item ${id.slice(0, 1)}`, selling_price: 100, mrp: null });
+
+  beforeEach(() => queryMock.mockReset());
+
+  it('collectProductIds dedupes across sections, drops non-uuids and keeps first-seen order', () => {
+    const m = new Map<string, SectionDataRequest>([
+      ['s1', { productIds: [a, 'junk'] }],
+      ['s2', { productIds: [b, a] }],
+      ['s3', { categories: true }],
+    ]);
+    expect(collectProductIds(m)).toEqual([a, b]);
+  });
+
+  it('collectProductIds takes at most 12 ids per section', () => {
+    const many = Array.from({ length: 15 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect(collectProductIds(new Map([['s', { productIds: many }]]))).toEqual(many.slice(0, 12));
+  });
+
+  it('gives each section only its own ids, in its own order, from one query', async () => {
+    // The query returns rows in its own order; unknown ids are simply absent.
+    queryMock.mockResolvedValue([row(a), row(b)]);
+    const out = await resolveSectionData(
+      store,
+      new Map<string, SectionDataRequest>([
+        ['s1', { productIds: [b, a] }],
+        ['s2', { productIds: [a, c, 'not-a-uuid'] }],
+        ['s3', { productIds: [c] }],
+      ]),
+    );
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0][1]).toContainEqual([b, a, c]);
+    expect(Object.keys(out.s1.productsById!)).toEqual([b, a]);
+    expect(Object.keys(out.s2.productsById!)).toEqual([a]);
+    expect(out.s3.productsById).toEqual({});
+    expect(out.s1.error).toBeUndefined();
+  });
+
+  it('marks only the sections that asked for ids when the query fails', async () => {
+    queryMock.mockRejectedValue(new Error('statement timeout'));
+    const out = await resolveSectionData(
+      store,
+      new Map<string, SectionDataRequest>([
+        ['s1', { productIds: [a] }],
+        ['s2', { categories: true, categoriesOptional: true }],
+      ]),
+    );
+    expect(out.s1.error).toBe('statement timeout');
+    expect(out.s1.productsById).toBeUndefined();
+    expect(out.s2.error).toBeUndefined();
+  });
+
+  it('runs no query when no section asks for ids', async () => {
+    const out = await resolveSectionData(store, new Map<string, SectionDataRequest>([['s1', { productIds: ['junk'] }]]));
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(out.s1.productsById).toEqual({});
   });
 });

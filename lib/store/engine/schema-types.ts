@@ -53,6 +53,8 @@ export interface SectionDataRequest {
     priceMax?: number;
     limit: number;
   };
+  /** Products by id, at most 12; each section gets the ones found, keyed by id. */
+  productIds?: string[];
   categories?: boolean;
   /** A failed categories lookup gives this section no categories instead of an error (the section still renders). */
   categoriesOptional?: boolean;

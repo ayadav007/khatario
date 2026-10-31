@@ -16,6 +16,8 @@ export interface SectionCategory {
 export interface SectionData {
   products?: StoreItem[];
   categories?: SectionCategory[];
+  /** The products a section asked for by id: only those found, in the order asked. */
+  productsById?: Record<string, StoreItem>;
   /** Category shelves: one entry per category with products, in category order. */
   shelves?: Array<{ category: SectionCategory; products: StoreItem[] }>;
   error?: string;
@@ -171,7 +173,7 @@ async function loadCategories(store: StoreBusinessContext): Promise<SectionCateg
   return storeCategories(store.business_id);
 }
 
-const CATEGORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The name of one of the business's categories, or null when it has no such category (a malformed id
@@ -183,13 +185,51 @@ export async function catalogCategoryName(store: StoreBusinessContext, categoryI
     const cats = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 1 }).categories;
     return cats.find((c) => c.id === categoryId)?.name ?? null;
   }
-  if (!CATEGORY_ID_RE.test(categoryId)) return null;
+  if (!UUID_RE.test(categoryId)) return null;
   // The categories table has no deleted/active columns; the business scope is the whole visibility rule.
   const rows = await queryRows<{ name: string }>('SELECT name FROM categories WHERE id = $1 AND business_id = $2', [
     categoryId,
     store.business_id,
   ]);
   return rows[0]?.name ?? null;
+}
+
+/** A section asks for at most this many products by id. */
+const MAX_PRODUCT_IDS = 12;
+
+/** One section's valid ids: UUIDs only, deduplicated, in its own order, capped. */
+function ownProductIds(req: SectionDataRequest): string[] {
+  const seen = new Set<string>();
+  for (const id of req.productIds ?? []) {
+    if (seen.size >= MAX_PRODUCT_IDS) break;
+    if (typeof id === 'string' && UUID_RE.test(id)) seen.add(id);
+  }
+  return [...seen];
+}
+
+/** Every product id the sections asked for: UUID-checked, deduplicated, in first-seen order. */
+export function collectProductIds(requests: Map<string, SectionDataRequest>): string[] {
+  const all = new Set<string>();
+  for (const req of requests.values()) for (const id of ownProductIds(req)) all.add(id);
+  return [...all];
+}
+
+async function loadProductsById(store: StoreBusinessContext, ids: string[], opts: ResolveOptions): Promise<StoreItem[]> {
+  if (store.is_demo) {
+    const { themeDemoProducts } = await import('@/lib/store/theme-demo');
+    const wanted = new Set(ids);
+    return themeDemoProducts(store.store_theme?.pack).filter((p) => wanted.has(p.id)) as unknown as StoreItem[];
+  }
+  // The store items query already hides products that are not shown in the store, inactive or deleted.
+  const q = buildStoreItemsQuery({
+    businessId: store.business_id,
+    branchId: opts.branchId ?? null,
+    ids,
+    limit: ids.length,
+    offset: 0,
+  });
+  const rows = await queryRows<Record<string, unknown>>(q.listSql, q.listParams);
+  return rows.map(mapStoreItemRow);
 }
 
 function message(e: unknown): string {
@@ -208,6 +248,16 @@ export async function resolveSectionData(
   const productJobs = new Map<string, Promise<{ items?: StoreItem[]; error?: string }>>();
   const sectionKey = new Map<string, string>();
   let categoriesJob: Promise<{ items?: SectionCategory[]; error?: string }> | null = null;
+
+  // Every id on the page loads in one query; each section then picks its own.
+  const allIds = collectProductIds(requests);
+  const idsJob: Promise<{ items?: StoreItem[]; error?: string }> | null =
+    allIds.length > 0
+      ? loadProductsById(store, allIds, opts).then(
+          (items) => ({ items }),
+          (e) => ({ error: message(e) }),
+        )
+      : null;
 
   const productJob = (p: ProductsRequest): string => {
     const key = productRequestKey(p, opts);
@@ -258,6 +308,22 @@ export async function resolveSectionData(
       const r = await productJobs.get(sectionKey.get(id)!)!;
       if (r.error) data.error = r.error;
       else data.products = r.items;
+    }
+    if (req.productIds) {
+      const own = ownProductIds(req);
+      if (own.length === 0) data.productsById = {};
+      else {
+        const r = await idsJob!;
+        if (r.error) data.error = data.error ?? r.error;
+        else {
+          const found = new Map((r.items ?? []).map((p) => [p.id, p]));
+          data.productsById = {};
+          for (const pid of own) {
+            const item = found.get(pid);
+            if (item) data.productsById[pid] = item;
+          }
+        }
+      }
     }
     if (req.categories && categoriesJob) {
       const r = await categoriesJob;
