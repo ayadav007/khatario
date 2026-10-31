@@ -1,4 +1,5 @@
 // Raw `business_settings.store_theme` values, as stored, one or more per pack (M4 migration tests).
+import { applyStorePreset } from '@/lib/store/store-theme';
 import type { MigrationContext } from '@/lib/store/engine/migrate';
 
 export const CAT_FRUITS = '11111111-1111-4111-8111-111111111111';
@@ -189,4 +190,79 @@ export const ALL_FIXTURES: Record<string, unknown> = {
   retiredNoir,
   hostile,
   namedGrocery,
+};
+
+// ---- Grocery and Khatario homes (Task 6) ----
+
+const ALL_TOGGLES_ON = [
+  'hero',
+  'categories',
+  'featured',
+  'offers',
+  'product_shelves',
+  'category_shelves',
+  'overlay',
+  'testimonials',
+  'brand_story',
+  'trust',
+  'catalog',
+].map((id) => ({ id, enabled: true }));
+
+/** A Grocery store as the gallery's "Premium Grocery" button leaves it. */
+export const groceryDefault = applyStorePreset('grocery');
+
+/** A Grocery store with every toggle on and something in every content list. */
+export const groceryAll = {
+  ...applyStorePreset('grocery'),
+  homepage_sections: ALL_TOGGLES_ON,
+  overlay_bands: [
+    { image_url: 'https://cdn.example.com/band1.jpg', caption: 'Mango season', cta: 'Grab mangoes' },
+    { image_url: 'https://cdn.example.com/band2.jpg', caption: 'Dairy fresh', cta: '' },
+  ],
+  product_shelves: [
+    { id: 'deals', title: 'Hot deals', enabled: true, kind: 'discounted', price_max: 0 },
+    { id: 'under99', title: 'Under ₹99', enabled: false, kind: 'price_max', price_max: 99 },
+  ],
+  testimonials: [
+    { name: 'Asha', text: 'Lovely mangoes.', photo_url: '' },
+    { name: 'Ravi', text: 'Fast delivery.', photo_url: 'https://cdn.example.com/ravi.jpg' },
+    { name: 'Meera', text: 'Fair prices.', photo_url: '' },
+  ],
+  brand_story: 'Three generations of grocers.\n\nStill on Main Road.',
+  announcement: 'Free delivery over ₹299 · Fresh every morning',
+  announcement_bg: '#112233',
+  announcement_fg: '#ffeeaa',
+  category_images: { [CAT_FRUITS]: 'https://cdn.example.com/fruits.jpg' },
+};
+
+/** A Khatario store as the gallery's "Khatario" button leaves it. */
+export const khatarioDefault = applyStorePreset('khatario');
+
+/** A Khatario store with three image slides and every toggle on. */
+export const khatarioAll = {
+  ...applyStorePreset('khatario'),
+  homepage_sections: ALL_TOGGLES_ON,
+  hero_slides: [
+    { image_url: 'https://cdn.example.com/k1.jpg', title: 'Big sale', subtitle: 'Everything fresh', viewport: 'both' },
+    { image_url: 'https://cdn.example.com/k2.jpg', title: 'Snacks', subtitle: '', viewport: 'both' },
+    { image_url: 'https://cdn.example.com/k3.jpg', title: 'Drinks', subtitle: '', viewport: 'desktop' },
+  ],
+  overlay_bands: [{ image_url: 'https://cdn.example.com/kb.jpg', caption: 'Weekend offers', cta: '' }],
+  product_shelves: [{ id: 'cheap', title: 'Under ₹49', enabled: true, kind: 'price_max', price_max: 49 }],
+  testimonials: [{ name: 'Asha', text: 'Lovely store.', photo_url: '' }],
+  brand_story: 'Since 1990.',
+};
+
+/** A Khatario store with the hero off; used with a context that has no tagline. */
+export const khatarioBare = {
+  ...applyStorePreset('khatario'),
+  homepage_sections: [{ id: 'hero', enabled: false }],
+};
+
+export const PACK_FIXTURES: Record<string, unknown> = {
+  groceryDefault,
+  groceryAll,
+  khatarioDefault,
+  khatarioAll,
+  khatarioBare,
 };

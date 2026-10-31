@@ -3,14 +3,17 @@
 import {
   STORE_THEME_PRESETS,
   chowkOnAccent,
+  resolveAnnouncementText,
   sanitizeStoreTheme,
+  sectionEnabled,
   storeCanvas,
   type StoreTheme,
 } from '@/lib/store/store-theme';
 import { resolveStudioSections, themeToStudioSections } from '@/lib/store/studio-layout';
-import type { ColorScheme, ThemeData, ThemeSettings } from './types';
+import type { ColorScheme, Section, Template, ThemeData, ThemeSettings } from './types';
 import { PRESET_LOOK, mixHex, schemesFor } from './presets/look';
-import { engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings } from './migrate-studio';
+import { template } from './presets/shared';
+import { engineSection, engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings } from './migrate-studio';
 import { migratePackHome } from './migrate-packs';
 
 export interface MigrationContext {
@@ -80,6 +83,48 @@ function migrateSettings(t: StoreTheme, ctx: MigrationContext, w: Warnings): The
   };
 }
 
+/**
+ * Grocery and Khatario chrome, as their old shells paint it (D31):
+ * - Grocery: a scrolling announcement (custom text, else the tagline) and the footer on scheme 6; the header shows
+ *   category chips while categories are on, and its menu is All Products plus Offers while offers are on.
+ * - Khatario: the announcement (custom text only) and the header on scheme 4; the default footer.
+ * An announcement with no text is kept switched off. Custom announcement colours are applied by the caller.
+ */
+function packChrome(
+  t: StoreTheme,
+  ctx: MigrationContext,
+  header: Section,
+  footer: Section,
+  w: Warnings,
+): { header: Template; footer: Template } {
+  const grocery = t.pack === 'grocery';
+  const text = resolveAnnouncementText(t, grocery ? ctx.tagline : '');
+  if (text.length > 200) w.add('The announcement text was shortened to 200 characters.');
+  const raw: Record<string, unknown> = { text, text_align: t.announcement_align };
+  if (grocery) raw.scrolling = true;
+  if (t.announcement_link) {
+    const link = engineUrl(t.announcement_link);
+    if (link) raw.link = link;
+    else w.add('The announcement link was dropped: the new theme only takes https or same-store links.');
+  }
+  const announcement: Section = { ...engineSection('announcement', raw), color_scheme: grocery ? 'scheme-6' : 'scheme-4' };
+  if (!text) announcement.disabled = true;
+
+  let head: Section;
+  if (grocery) {
+    const links = [
+      { type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } },
+      ...(sectionEnabled(t, 'offers') ? [{ type: 'menu_link', settings: { label: 'Offers', link: '/catalog?disc=10' } }] : []),
+    ];
+    const rebuilt = engineSection('header', { ...header.settings, show_category_chips: sectionEnabled(t, 'categories') }, links);
+    head = { ...header, settings: rebuilt.settings, blocks: rebuilt.blocks, block_order: rebuilt.block_order };
+  } else {
+    head = { ...header, color_scheme: 'scheme-4' };
+  }
+  const foot: Section = grocery ? { ...footer, color_scheme: 'scheme-6' } : footer;
+  return { header: template([announcement, head]), footer: template([foot]) };
+}
+
 export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): MigrationResult {
   const t = sanitizeStoreTheme(raw);
   const w = new Warnings();
@@ -93,22 +138,28 @@ export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): Migratio
   }
 
   const studioLike = t.pack === 'studio' || t.pack === 'quick';
-  // Grocery and Khatario take only the announcement, header and footer from the Studio view; their home is mapped apart.
+  // Grocery and Khatario take only the header and footer from the Studio view; their announcement and home are
+  // mapped apart.
   const sections = studioLike
     ? resolveStudioSections(t, studioCtx)
-    : themeToStudioSections(t, studioCtx).filter((s) => s.type === 'announcement' || s.type === 'header' || s.type === 'footer');
+    : themeToStudioSections(t, studioCtx).filter((s) => s.type === 'header' || s.type === 'footer');
   const groups = migrateStudioSections(sections, t, ctx);
   for (const m of groups.warnings) w.add(m);
 
   let home = groups.home;
+  let headerGroup = groups.header;
+  let footerGroup = groups.footer;
   if (!studioLike) {
     const pack = migratePackHome(t, ctx);
     home = pack.home;
     for (const m of pack.warnings) w.add(m);
+    const chrome = packChrome(t, ctx, groups.header.sections.header, groups.footer.sections.footer, w);
+    headerGroup = chrome.header;
+    footerGroup = chrome.footer;
   }
 
   // D31: custom announcement colours replace scheme 5, renamed "Announcement", and the bar uses it.
-  const announcement = groups.header.sections.announcement;
+  const announcement = headerGroup.sections.announcement;
   const annSrc = sections.find((s) => s.type === 'announcement');
   const bg = annSrc ? annSrc.settings.background ?? '' : t.announcement_bg;
   const fg = annSrc ? annSrc.settings.textColor ?? '' : t.announcement_fg;
@@ -119,8 +170,8 @@ export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): Migratio
 
   const data: ThemeData = {
     settings,
-    header_group: groups.header,
-    footer_group: groups.footer,
+    header_group: headerGroup,
+    footer_group: footerGroup,
     templates: {
       home,
       product: { order: [], sections: {} },

@@ -331,11 +331,11 @@ describe('named preset', () => {
     expect(r.data.settings.color_schemes[0].accent).toBe('#176b45');
   });
 
-  it('grocery and khatario homes wait for Task 6', () => {
+  it('grocery and khatario get a mapped home', () => {
     for (const raw of [namedGrocery, { preset: 'khatario' }]) {
       const r = migrateStoreTheme(raw, ctx);
-      expect(r.data.templates.home.order).toEqual([]);
-      expect(r.warnings).toContain('pack home not migrated yet');
+      expect(r.data.templates.home.order.length).toBeGreaterThan(0);
+      expect(r.warnings).not.toContain('pack home not migrated yet');
     }
   });
 });
