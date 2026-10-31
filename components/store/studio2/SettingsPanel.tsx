@@ -31,10 +31,10 @@ import {
 } from '@/lib/store/engine/editor/fields';
 import { blockLabel, isEditableSection, sectionLabel } from '@/lib/store/engine/editor/tree';
 import { getSectionSchema } from '@/lib/store/engine/registry';
-import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema';
+import { THEME_SETTINGS_SCHEMA, lockedThemeSettings } from '@/lib/store/engine/theme-settings-schema';
 import { pageHandle } from '@/lib/store/engine/shared';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
-import type { Section, ThemeData } from '@/lib/store/engine/types';
+import type { Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
 import { SECTION_CSS_MAX } from '@/lib/store/studio-sections';
 import { useStudio2 } from './Studio2Editor';
 import { ColorInput, FieldShell, SchemePicker, SettingField } from './fields/SettingField';
@@ -49,13 +49,13 @@ const actionBtn =
 const dangerBtn =
   'inline-flex items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40';
 
-export function SettingsPanel() {
+export function SettingsPanel({ preset }: { preset?: ThemePreset } = {}) {
   const { theme, templateKey, selection, readOnly } = useStudio2();
 
   // D22: an open custom page with nothing selected shows its page settings.
   let body: ReactNode = !selection && pageHandle(templateKey) ? <PageSettings key={templateKey} pageKey={templateKey} /> : <Empty />;
   if (selection?.kind === 'theme') {
-    body = <ThemePanel />;
+    body = <ThemePanel preset={preset} />;
   } else if (selection) {
     const g = getGroup(theme, templateKey, selection.ref.group);
     const section = hasOwn(g.sections, selection.ref.id) ? g.sections[selection.ref.id] : null;
@@ -122,12 +122,15 @@ function SettingsForm({
   target,
   values,
   onSet,
+  locked,
 }: {
   schemas: SettingSchema[];
   scope: FormScope;
   target: FieldTarget;
   values: (s: SettingSchema) => unknown;
   onSet: (key: string, value: unknown) => (t: ThemeData) => OpResult | ThemeData;
+  /** Setting id to the text shown under it when the preset fixes it (theme settings only). */
+  locked?: Readonly<Record<string, string>>;
 }) {
   const { apply, readOnly, categories, pages, theme } = useStudio2();
   const toast = useToastContext();
@@ -136,22 +139,27 @@ function SettingsForm({
   if (fields.length === 0) return <p className="text-sm text-gray-500">This item has no settings.</p>;
   return (
     <div className="space-y-4">
-      {fields.map((s) => (
-        <SettingField
-          key={s.id}
-          schema={s}
-          value={values(s)}
-          fieldId={`s2-${prefix}${s.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
-          readOnly={readOnly}
-          categories={categories}
-          pages={pages}
-          colorSchemes={theme.settings.color_schemes}
-          onChange={(v) => {
-            const err = apply(onSet(s.id, v), { mergeKey: settingMergeKey(target, s.id), immediate: false });
-            if (err) toast.error(OP_ERROR_TEXT[err]);
-          }}
-        />
-      ))}
+      {fields.map((s) => {
+        const lockText = locked && hasOwn(locked, s.id) ? locked[s.id] : undefined;
+        return (
+          <SettingField
+            key={s.id}
+            schema={s}
+            // A locked toggle is always on (Quick's phone kit), whatever the stored value says.
+            value={lockText && s.type === 'checkbox' ? true : values(s)}
+            locked={lockText}
+            fieldId={`s2-${prefix}${s.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
+            readOnly={readOnly}
+            categories={categories}
+            pages={pages}
+            colorSchemes={theme.settings.color_schemes}
+            onChange={(v) => {
+              const err = apply(onSet(s.id, v), { mergeKey: settingMergeKey(target, s.id), immediate: false });
+              if (err) toast.error(OP_ERROR_TEXT[err]);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -333,7 +341,7 @@ function BlockPanel({ sref, section, blockId }: { sref: SectionRef; section: Sec
   );
 }
 
-function ThemePanel() {
+function ThemePanel({ preset }: { preset?: ThemePreset }) {
   const { theme, apply } = useStudio2();
   return (
     <div>
@@ -345,6 +353,7 @@ function ThemePanel() {
           target={{ kind: 'theme' }}
           values={(s) => themeSettingValue(theme.settings, s)}
           onSet={(key, value) => (t) => setThemeSetting(t, key, value)}
+          locked={lockedThemeSettings(preset)}
         />
         <div className="space-y-3 border-t border-gray-100 pt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Colour schemes</h3>

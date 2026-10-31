@@ -1,5 +1,6 @@
 // Client-safe: types only. Defaults match presets/shared.ts.
 import type { SettingSchema } from './schema-types';
+import type { ThemePreset } from './types';
 
 export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'font_heading', type: 'font', label: 'Heading font', default: 'outfit' },
@@ -35,3 +36,11 @@ export const EDITOR_HIDDEN_SETTINGS: {
   common: readonly string[];
   sections: Readonly<Record<string, readonly string[]>>;
 } = { theme: [], common: [], sections: {} };
+
+const NO_LOCKS: Readonly<Record<string, string>> = Object.freeze({});
+const QUICK_LOCKS: Readonly<Record<string, string>> = Object.freeze({ phone_kit: 'Always on in the Quick theme' });
+
+/** D29: theme settings the preset fixes, each with the line the editor shows under the disabled field. */
+export function lockedThemeSettings(preset: ThemePreset | undefined): Readonly<Record<string, string>> {
+  return preset === 'quick' ? QUICK_LOCKS : NO_LOCKS;
+}

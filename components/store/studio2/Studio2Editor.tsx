@@ -583,7 +583,7 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, s
             onMessage={onPreviewMessage}
           />
           <aside className="w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-white">
-            <SettingsPanel />
+            <SettingsPanel preset={row.preset} />
           </aside>
         </div>
       </div>

@@ -9,9 +9,14 @@ import { setStoreFavicon } from '@/lib/store/store-favicon';
 import { findAnchor } from '@/lib/store/engine/anchors';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
-import { QuickCartBar } from '../quick-theme/QuickChrome';
+import { engineRootClass } from '@/lib/store/engine/root-class';
+import { BROWSE_CATEGORIES_EVENT, QuickCartBar, QuickTabs } from '../quick-theme/QuickChrome';
 import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
+// Preset layers (D27): each is scoped to .st-root.eng-root.eng-preset-<preset>, so loading all three is safe.
+import './presets/quick.css';
+import './presets/grocery.css';
+import './presets/khatario.css';
 
 const EngineCartContext = createContext<{ openCart: () => void }>({ openCart: () => {} });
 
@@ -128,6 +133,18 @@ function focusSearch() {
   input.focus();
 }
 
+/** Scheme 6 as variables the Grocery layer paints its "deep" promo cards with. */
+function deepSchemeVars(settings: ThemeRow['data']['settings']): Record<string, string> {
+  const deep = settings.color_schemes?.find((s) => s.id === 'scheme-6');
+  if (!deep) return {};
+  return {
+    '--eng-deep-bg': deep.background,
+    '--eng-deep-text': deep.text,
+    '--eng-deep-accent': deep.accent,
+    '--eng-deep-btn-text': deep.button_text,
+  };
+}
+
 /**
  * Storefront chrome for an engine theme: the Studio root classes, the theme's variables
  * (computed on the server and passed as `rootStyle`), store-wide CSS, cart drawer and phone nav.
@@ -159,6 +176,13 @@ export function EngineShell({
   const [cartOpen, setCartOpen] = useState(false);
   const openCart = useCallback(() => setCartOpen(true), []);
   const ctx = useMemo(() => ({ openCart }), [openCart]);
+  const root = engineRootClass({
+    preset: theme.preset,
+    phoneKit: settings.phone_kit === true,
+    editor,
+    schemeBackground: settings.color_schemes?.[0]?.background,
+  });
+  const { kit, quick } = root;
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 
   // The engine renders this page: the old store theme's CSS, font and favicon stay off (D11).
@@ -184,6 +208,16 @@ export function EngineShell({
     return () => window.removeEventListener('hashchange', followHash);
   }, []);
 
+  // Quick's Categories tab: on the home page it asks for the category view (an event), elsewhere it opens
+  // /?browse=categories. Engine pages have no category view, so both scroll to the first category grid.
+  useEffect(() => {
+    if (!quick) return;
+    const toCategories = () => findAnchor(document, 'st-categories')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (new URLSearchParams(window.location.search).get('browse') === 'categories') toCategories();
+    window.addEventListener(BROWSE_CATEGORIES_EVENT, toCategories);
+    return () => window.removeEventListener(BROWSE_CATEGORIES_EVENT, toCategories);
+  }, [quick]);
+
   const faviconUrl = settings.favicon_url;
   useEffect(() => {
     setStoreFavicon(faviconUrl || null);
@@ -191,17 +225,18 @@ export function EngineShell({
     return () => setStoreFavicon(null);
   }, [faviconUrl]);
 
-  const kit = settings.phone_kit;
   const hideCartBar = pathname === '/checkout' || pathname === '/cart';
   const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
   const freeAbove = branch?.free_delivery_above ?? null;
-  const showKitBar = kit && !hideCartBar && cartCount > 0;
+  // Quick mounts its own cart bar (always, as the old Quick shell did); the kit bar is for the other presets.
+  const showKitBar = !quick && kit && !hideCartBar && cartCount > 0;
+  const deepVars = useMemo(() => deepSchemeVars(settings), [settings]);
 
   return (
     <EngineCartContext.Provider value={ctx}>
       <div
-        className={`st-root store-studio st-cq eng-root${kit ? ' phone-kit' : ''}${editor ? ' eng-editor' : ''}`}
-        style={{ minHeight: '100vh', ...rootStyle } as CSSProperties}
+        className={root.className}
+        style={{ minHeight: '100vh', ...deepVars, ...rootStyle } as CSSProperties}
         data-store={subdomain}
         data-card={settings.card_style}
       >
@@ -209,16 +244,29 @@ export function EngineShell({
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}
         {storeCss ? <style dangerouslySetInnerHTML={{ __html: storeCss }} /> : null}
         <div className="st-sticky st-cq">{header}</div>
-        <main
-          className={[
-            'pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-10',
-            showKitBar ? 'qk-kitRoom' : '',
-          ].join(' ')}
-        >
-          {children}
-        </main>
+        {quick ? (
+          // Quick's shell (D29): qk-main leaves room for the cart bar and tabs; noBar on cart and checkout.
+          <main className={hideCartBar ? 'qk-main noBar' : 'qk-main'}>{children}</main>
+        ) : (
+          <main
+            className={[
+              'pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-10',
+              showKitBar ? 'qk-kitRoom' : '',
+            ].join(' ')}
+          >
+            {children}
+          </main>
+        )}
         <div className="st-cq">{footer}</div>
-        <StoreMobileNav onSearch={focusSearch} onCart={openCart} />
+        {quick ? (
+          <>
+            {/* Not inside .qk-kit: Quick's bar shows on every width (it hides itself when the cart is empty). */}
+            {hideCartBar ? null : <QuickCartBar freeAbove={freeAbove} onCart={openCart} />}
+            <QuickTabs onSearch={focusSearch} onCart={openCart} />
+          </>
+        ) : (
+          <StoreMobileNav onSearch={focusSearch} onCart={openCart} />
+        )}
         {showKitBar ? (
           <div className="qk-kit">
             <QuickCartBar freeAbove={freeAbove} onCart={openCart} />

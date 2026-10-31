@@ -32,6 +32,8 @@ export interface SettingFieldProps {
   /** The theme's custom pages, for link pickers. */
   pages?: { handle: string; title: string }[];
   colorSchemes: ColorScheme[];
+  /** The preset fixes this setting (D29): the field is disabled and this text is its info line. */
+  locked?: string;
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -75,7 +77,17 @@ export function FieldShell({
   );
 }
 
+const noop = () => {};
+
 export function SettingField(props: SettingFieldProps) {
+  if (props.locked) {
+    // A disabled fieldset disables every native control inside; edits are dropped as well.
+    return (
+      <fieldset disabled className="m-0 min-w-0 border-0 p-0 opacity-60" data-locked="true">
+        <SettingField {...props} locked={undefined} schema={{ ...props.schema, info: props.locked }} onChange={noop} />
+      </fieldset>
+    );
+  }
   const { schema, value, onChange, fieldId, readOnly, categories, pages, colorSchemes } = props;
   const shell = (children: ReactNode, opts: { counter?: { text: string; over: boolean } | null; info?: string; noFor?: boolean } = {}) => (
     <FieldShell label={schema.label} htmlFor={opts.noFor ? undefined : fieldId} info={opts.info ?? schema.info} counter={opts.counter}>
@@ -145,10 +157,18 @@ export function SettingField(props: SettingFieldProps) {
 
     case 'checkbox':
       return (
-        <label className="flex items-center justify-between gap-3 text-sm text-gray-800">
-          <span className="text-xs font-medium text-gray-700">{schema.label}</span>
-          <input type="checkbox" className="h-4 w-4" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
-        </label>
+        <div className="space-y-1.5">
+          <label className="flex items-center justify-between gap-3 text-sm text-gray-800">
+            <span className="text-xs font-medium text-gray-700">{schema.label}</span>
+            <input type="checkbox" className="h-4 w-4" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
+          </label>
+          {schema.info && (
+            <p className="flex items-start gap-1 text-[11px] text-gray-500">
+              <Info className="mt-px h-3 w-3 shrink-0" />
+              {schema.info}
+            </p>
+          )}
+        </div>
       );
 
     case 'select':

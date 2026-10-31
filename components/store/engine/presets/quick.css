@@ -1,0 +1,77 @@
+/* Quick preset layer (D27). Thin on purpose: quick-theme.css already restyles the Studio markup
+   under .store-quick, which the engine root carries on this preset. This file covers only the
+   engine's own markup (promo cards, category shelves, header chips) and Quick's three phone columns.
+   Every selector starts with .st-root.eng-root.eng-preset-quick, so nothing leaks to other presets. */
+
+/* ---------- Promo cards: Quick's 14px corners and soft shadow ---------- */
+.st-root.eng-root.eng-preset-quick .eng-promos-block {
+  padding: 0 16px;
+}
+.st-root.eng-root.eng-preset-quick .eng-promos-block > h2 {
+  font-size: clamp(17px, 2.4cqi, 22px);
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  margin: 0 0 12px;
+}
+.st-root.eng-root.eng-preset-quick .eng-promos {
+  gap: 12px;
+}
+.st-root.eng-root.eng-preset-quick .eng-sec .eng-promo {
+  border: 0;
+  border-radius: var(--qk-radius, 14px);
+  background: var(--qk-card, var(--st-card, #ffffff));
+  box-shadow: var(--qk-shadow, 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 14px -8px rgba(15, 23, 42, 0.18));
+}
+.st-root.eng-root.eng-preset-quick .eng-sec .eng-promo-copy {
+  padding: 16px 18px;
+}
+.st-root.eng-root.eng-preset-quick .eng-sec .eng-promo-copy h3 {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.st-root.eng-root.eng-preset-quick .eng-sec .eng-promo-copy p {
+  font-size: 13px;
+}
+
+/* ---------- Category shelves: Quick's section rhythm ---------- */
+.st-root.eng-root.eng-preset-quick .eng-shelves {
+  gap: 0;
+}
+
+/* ---------- Header chips: Quick's pill row ---------- */
+.st-root.eng-root.eng-preset-quick .eng-chips {
+  padding: 8px 16px 10px;
+}
+.st-root.eng-root.eng-preset-quick .eng-chips button {
+  border-color: var(--st-line);
+  background: var(--qk-card, var(--st-card, #ffffff));
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.st-root.eng-root.eng-preset-quick .eng-chips button.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ---------- Phones: three product columns, two on the narrowest screens ---------- */
+@container store (max-width: 640px) {
+  .st-root.eng-root.eng-preset-quick .eng-promos-block {
+    padding: 0 12px;
+  }
+  .st-root.eng-root.eng-preset-quick .eng-sec .productGrid:not(.carousel):not(.isRow) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .st-root.eng-root.eng-preset-quick .eng-sec .productGrid.isRow:not(.carousel) {
+    grid-auto-columns: calc((100% - 2 * 8px) / 3.15);
+  }
+}
+@container store (max-width: 380px) {
+  .st-root.eng-root.eng-preset-quick .eng-sec .productGrid:not(.carousel):not(.isRow) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
