@@ -1,3 +1,4 @@
+import type { StoreSwatch } from '@/lib/store/product-extras';
 import { extraGalleryUrls, sanitizeGalleryUrls } from '@/lib/store/item-gallery';
 
 export function storeProductImages(imageUrl: unknown, galleryUrls: unknown): string[] {
@@ -76,6 +77,9 @@ export interface StoreItem {
   featured_in_store?: boolean;
   created_at: string | null;
   sold_count: number;
+  store_badge: string | null;
+  store_tagline: string | null;
+  store_swatches: StoreSwatch[];
   variants: Array<{
     id: string;
     variant_name: string;
@@ -109,6 +113,9 @@ export function mapStoreItemRow(r: Record<string, unknown>): StoreItem {
     gst_included: !!(r as { gst_included?: boolean }).gst_included,
     created_at: r.created_at ? new Date(r.created_at as string).toISOString() : null,
     sold_count: parseFloat(r.sold_count as string) || 0,
+    store_badge: (r.store_badge as string) || null,
+    store_tagline: (r.store_tagline as string) || null,
+    store_swatches: Array.isArray(r.store_swatches) ? r.store_swatches : [],
     variants: Array.isArray(r.variants) ? r.variants : [],
   };
 }

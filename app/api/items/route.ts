@@ -421,7 +421,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
-    const hasExtras = ['video_url', 'store_tabs', 'size_chart'].some((k) =>
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -577,6 +577,18 @@ export async function POST(request: NextRequest) {
         if (v.size_chart !== undefined) {
           vals.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
           sets.push(`size_chart = $${vals.length}::jsonb`);
+        }
+        if (v.store_badge !== undefined) {
+          vals.push(v.store_badge);
+          sets.push(`store_badge = $${vals.length}`);
+        }
+        if (v.store_tagline !== undefined) {
+          vals.push(v.store_tagline);
+          sets.push(`store_tagline = $${vals.length}`);
+        }
+        if (v.store_swatches !== undefined) {
+          vals.push(JSON.stringify(v.store_swatches));
+          sets.push(`store_swatches = $${vals.length}::jsonb`);
         }
         if (sets.length > 0) {
           vals.push(item.id, business_id);

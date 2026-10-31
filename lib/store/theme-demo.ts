@@ -2,6 +2,7 @@ import { DEFAULT_STORE_PROMO } from '@/lib/store/promo-sheet';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { DEFAULT_HOMEPAGE_SECTIONS, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
+import type { StoreSwatch } from '@/lib/store/product-extras';
 
 export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset, 'custom'>; pack: StoreThemePack }> = {
   'theme-studio': { preset: 'studio', pack: 'studio' },
@@ -57,6 +58,7 @@ function mk(
   featured = false,
   image: string | null = null,
   unit = 'PCS',
+  card?: { badge?: string; tagline?: string; swatches?: StoreSwatch[] },
 ): StoreProduct {
   return {
     id,
@@ -77,13 +79,23 @@ function mk(
     rating_avg: 4.6,
     rating_count: 12,
     featured_in_store: featured,
+    store_badge: card?.badge ?? null,
+    store_tagline: card?.tagline ?? null,
+    store_swatches: card?.swatches ?? [],
     variants: [],
   };
 }
 
 function apparelDemoProducts(): StoreProduct[] {
   return [
-    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80', 'PCS', {
+      badge: 'Pure merino',
+      tagline: 'Spun in Ludhiana',
+      swatches: [
+        { name: 'Oat', hex: '#d9cbb3' },
+        { name: 'Charcoal', hex: '#333333' },
+      ],
+    }),
     mk('demo-2', 'Linen overshirt', 2450, null, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
     mk('demo-3', 'Everyday tote', 890, 990, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=900&q=80'),
     mk('demo-4', 'Cotton tee', 650, null, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),

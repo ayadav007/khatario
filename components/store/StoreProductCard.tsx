@@ -11,6 +11,7 @@ import { QuickVariantSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
 import { useEngineCardLook } from './engine/EngineCardContext';
 import { productCardLook } from '@/lib/store/engine/card-look';
+import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -41,6 +42,9 @@ export interface StoreProduct {
   seo_title?: string | null;
   seo_description?: string | null;
   seo_image_url?: string | null;
+  store_badge?: string | null;
+  store_tagline?: string | null;
+  store_swatches?: StoreSwatch[];
   variants: Array<{
     id: string;
     variant_name: string;

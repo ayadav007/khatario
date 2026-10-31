@@ -369,7 +369,7 @@ export async function PATCH(
       const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
       galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
     }
-    const patchExtras = ['video_url', 'store_tabs', 'size_chart'].some((k) =>
+    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extrasPatched: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -443,6 +443,21 @@ export async function PATCH(
         if (v.size_chart !== undefined) {
           parts.push(`, size_chart = $${idx}::jsonb`);
           extra.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
+          idx += 1;
+        }
+        if (v.store_badge !== undefined) {
+          parts.push(`, store_badge = $${idx}`);
+          extra.push(v.store_badge);
+          idx += 1;
+        }
+        if (v.store_tagline !== undefined) {
+          parts.push(`, store_tagline = $${idx}`);
+          extra.push(v.store_tagline);
+          idx += 1;
+        }
+        if (v.store_swatches !== undefined) {
+          parts.push(`, store_swatches = $${idx}::jsonb`);
+          extra.push(JSON.stringify(v.store_swatches));
           idx += 1;
         }
       }

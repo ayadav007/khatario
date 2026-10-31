@@ -1,10 +1,24 @@
 export type StoreTab = { title: string; body: string };
 export type SizeChart = { columns: string[]; rows: string[][] };
 
-export type ProductExtrasResult =
-  | { ok: true; value: { video_url?: string | null; store_tabs?: StoreTab[]; size_chart?: SizeChart | null } }
-  | { ok: false; error: string };
+export type StoreSwatch = { name: string; hex: string };
 
+export type ProductExtrasValue = {
+  video_url?: string | null;
+  store_tabs?: StoreTab[];
+  size_chart?: SizeChart | null;
+  store_badge?: string | null;
+  store_tagline?: string | null;
+  store_swatches?: StoreSwatch[];
+};
+
+export type ProductExtrasResult = { ok: true; value: ProductExtrasValue } | { ok: false; error: string };
+
+const MAX_BADGE = 24;
+const MAX_TAGLINE = 60;
+const MAX_SWATCHES = 6;
+const MAX_SWATCH_NAME = 30;
+const SWATCH_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const MAX_TABS = 4;
 const MAX_TAB_TITLE = 40;
 const MAX_TAB_BODY = 4000;
@@ -98,10 +112,30 @@ function validateChart(raw: unknown): { value: SizeChart } | { error: string } {
   return { value: { columns, rows } };
 }
 
+function validateSwatches(raw: unknown): { value: StoreSwatch[] } | { error: string } {
+  if (!Array.isArray(raw)) return { error: 'Swatches must be a list.' };
+  if (raw.length > MAX_SWATCHES) return { error: `Up to ${MAX_SWATCHES} swatches.` };
+  const swatches: StoreSwatch[] = [];
+  for (const s of raw) {
+    if (!isObj(s) || typeof s.name !== 'string' || typeof s.hex !== 'string') continue;
+    const hex = s.hex.trim();
+    if (!SWATCH_HEX.test(hex)) continue;
+    swatches.push({ name: s.name.trim().slice(0, MAX_SWATCH_NAME), hex: hex.toLowerCase() });
+  }
+  return { value: swatches };
+}
+
+/** Trims and clips a short text field; empty text becomes null. */
+function cleanShortText(raw: unknown, max: number, label: string): { value: string | null } | { error: string } {
+  if (raw === null || raw === undefined) return { value: null };
+  if (typeof raw !== 'string') return { error: `${label} must be text.` };
+  return { value: raw.trim().slice(0, max) || null };
+}
+
 /** Validates only the keys present in `body`; returns the cleaned values or the first error. */
 export function validateProductExtras(body: unknown): ProductExtrasResult {
   const src = isObj(body) ? body : {};
-  const value: { video_url?: string | null; store_tabs?: StoreTab[]; size_chart?: SizeChart | null } = {};
+  const value: ProductExtrasValue = {};
 
   if ('video_url' in src) {
     const raw = src.video_url;
@@ -138,6 +172,24 @@ export function validateProductExtras(body: unknown): ProductExtrasResult {
       if ('error' in r) return { ok: false, error: r.error };
       value.size_chart = r.value;
     }
+  }
+
+  if ('store_badge' in src) {
+    const r = cleanShortText(src.store_badge, MAX_BADGE, 'The badge');
+    if ('error' in r) return { ok: false, error: r.error };
+    value.store_badge = r.value;
+  }
+
+  if ('store_tagline' in src) {
+    const r = cleanShortText(src.store_tagline, MAX_TAGLINE, 'The tagline');
+    if ('error' in r) return { ok: false, error: r.error };
+    value.store_tagline = r.value;
+  }
+
+  if ('store_swatches' in src) {
+    const r = validateSwatches(src.store_swatches ?? []);
+    if ('error' in r) return { ok: false, error: r.error };
+    value.store_swatches = r.value;
   }
 
   return { ok: true, value };
