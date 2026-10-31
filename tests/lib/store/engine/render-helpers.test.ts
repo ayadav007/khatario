@@ -116,6 +116,17 @@ describe('sectionFrameStyle', () => {
     expect(sectionFrameStyle(settings, sec())['--st-soft']).toBeUndefined();
   });
 
+  it('paints custom colours over the section scheme (scheme 1 on Default)', () => {
+    const s = sectionFrameStyle(settings, sec({ custom_colors: { background: '#ff7028', button: '#000000' } }));
+    expect(s.background).toBe('#ff7028');
+    expect(s['--c-btn']).toBe('#000000');
+    expect(s['--c-text']).toBe('#111827');
+    expect(s['--st-soft']).toBe('color-mix(in srgb, #111827 4%, #ff7028)');
+    const dark = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3', custom_colors: { accent: '#ff1f8e' } }));
+    expect(dark.background).toBe('#111827');
+    expect(dark['--primary']).toBe('#ff1f8e');
+  });
+
   it('falls back to scheme 1 for an unknown scheme', () => {
     const s = sectionFrameStyle(settings, sec({ color_scheme: 'nope' }));
     expect(s['--c-bg']).toBe('#ffffff');

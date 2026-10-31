@@ -271,10 +271,15 @@ export function updateSection(
   theme: ThemeData,
   templateKey: string,
   ref: SectionRef,
-  patch: Partial<Pick<Section, 'label' | 'color_scheme' | 'css_class' | 'custom_css'>>,
+  patch: Partial<Pick<Section, 'label' | 'color_scheme' | 'css_class' | 'custom_css' | 'custom_colors'>>,
 ): OpResult {
   return mapSection(theme, templateKey, ref, (s) => {
     const out: Section = { ...s };
+    if ('custom_colors' in patch) {
+      const c = patch.custom_colors;
+      if (c && Object.keys(c).length) out.custom_colors = { ...c };
+      else delete out.custom_colors;
+    }
     for (const key of ['label', 'color_scheme', 'css_class', 'custom_css'] as const) {
       if (!(key in patch)) continue;
       const raw = patch[key];

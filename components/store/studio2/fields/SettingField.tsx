@@ -455,11 +455,17 @@ export function SchemePicker({
   schemes,
   onChange,
   allowNone,
+  custom,
+  onCustom,
 }: {
   value: string;
   schemes: ColorScheme[];
   onChange(v: string): void;
   allowNone?: boolean;
+  /** The section's own colours when it uses them (the Custom tile is then selected). */
+  custom?: Omit<ColorScheme, 'id' | 'name'> | null;
+  /** Shows a Custom tile; called when it is picked. */
+  onCustom?: () => void;
 }) {
   return (
     <div role="radiogroup" aria-label="Colour scheme" className="grid grid-cols-3 gap-1.5">
@@ -467,11 +473,11 @@ export function SchemePicker({
         <button
           type="button"
           role="radio"
-          aria-checked={!value}
+          aria-checked={!value && !custom}
           onClick={() => onChange('')}
           className={clsx(
             'flex h-14 items-center justify-center rounded-md border text-xs text-gray-600',
-            !value ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-300 hover:border-gray-400',
+            !value && !custom ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-300 hover:border-gray-400',
           )}
         >
           Default
@@ -498,6 +504,26 @@ export function SchemePicker({
           </span>
         </button>
       ))}
+      {onCustom && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!!custom}
+          title="This section's own colours"
+          onClick={onCustom}
+          className={clsx(
+            'flex h-14 flex-col items-start justify-between overflow-hidden rounded-md border p-1.5 text-left',
+            custom ? 'border-gray-900 ring-1 ring-gray-900' : 'border-dashed border-gray-400 hover:border-gray-500',
+          )}
+          style={custom ? { background: custom.background, color: custom.text } : undefined}
+        >
+          <span className="text-sm font-semibold leading-none">Aa</span>
+          <span className="flex w-full items-center justify-between gap-1">
+            <span className="truncate text-[10px]">Custom</span>
+            {custom && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: custom.button }} />}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

@@ -49,7 +49,13 @@ export function SectionFrame({
       id={sectionDomId(id)}
       data-section-type={section.type}
       data-section-id={id}
-      data-scheme={section.color_scheme && theme.settings.color_schemes.some((c) => c.id === section.color_scheme) ? section.color_scheme : undefined}
+      data-scheme={
+        section.custom_colors && Object.keys(section.custom_colors).length
+          ? 'custom'
+          : section.color_scheme && theme.settings.color_schemes.some((c) => c.id === section.color_scheme)
+            ? section.color_scheme
+            : undefined
+      }
       data-section-group={group}
       {...(editor ? { 'data-section-index': index, 'data-section-name': section.label || typeName } : {})}
       className={[sectionFrameClass(section.settings), sanitizeCssClass(section.css_class)].filter(Boolean).join(' ')}

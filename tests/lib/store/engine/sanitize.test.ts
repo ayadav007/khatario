@@ -105,6 +105,18 @@ describe('sanitizeTemplate', () => {
   });
 });
 
+describe('section custom colours', () => {
+  it('keeps valid hex for known fields only, lower-cased, and drops an empty set', () => {
+    const s = sanitizeSection(
+      { type: 'rich-text', settings: {}, blocks: {}, block_order: [], custom_colors: { background: '#FF7028', text: 'red', bogus: '#000000', card: '#fff' } },
+      'home',
+    );
+    expect(s?.custom_colors).toEqual({ background: '#ff7028', card: '#fff' });
+    const none = sanitizeSection({ type: 'rich-text', settings: {}, blocks: {}, block_order: [], custom_colors: { text: 'javascript:x' } }, 'home');
+    expect(none && 'custom_colors' in none).toBe(false);
+  });
+});
+
 describe('sanitizeThemeData', () => {
   it('rejects reserved and malformed page handles, keeps page.diwali-sale with title', () => {
     const page = { title: 'Diwali sale', order: ['a'], sections: { a: sec('rich-text') } };

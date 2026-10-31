@@ -461,3 +461,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** On Shalini's Quick draft scheme 1 ("Light") was orange and the header and slideshow were on Default. Default keeps the preset's own surfaces: the Quick header bar is the scheme's card colour (white) and the hero panel, banner and category tiles use Studio's fixed beige tints (`--st-soft`, `--st-banner`, `--st-tile`), so the orange showed around them only; even an explicitly chosen scheme left the hero panel beige. Now a chosen scheme (`sectionFrameStyle`) sets those three surfaces from its own background, text and accent, and a Quick header on a chosen scheme takes the scheme background. Default is unchanged (the preset's look). The picker labels the first tile "<name> · theme" and the Colours block says Default keeps the style's look while a scheme, including the theme tile, paints the whole section.
 - **Shipped:** this commit. Store tests 1078 pass, `tsc` clean. Not deployed.
 - **Open:** none new.
+
+## 2026-10-31: Sections get their own colours (Custom, hex codes)
+- **Asked:** an option to put hex codes for a section's colours, not only shared schemes.
+- **Decided:** A section can carry `custom_colors` (any of the seven scheme colours as hex), sanitised to known fields and valid hex (`sanitizeCustomColors`); the frame paints them over the section's scheme (scheme 1 on Default) exactly like a chosen scheme (`sectionFrameStyle`, `data-scheme="custom"`), so text, accent, buttons, cards, borders, hero panel, banner and tiles all follow. In the editor the Colours block has a Custom tile after the schemes: picking it copies the colours the section shows now, then seven fields (hex text or colour picker) edit this section only; picking a scheme tile or Default clears them.
+- **Shipped:** this commit. Store tests 1080 pass, `tsc` clean. Not deployed.
+- **Open:** none new.

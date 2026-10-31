@@ -16,6 +16,8 @@ export interface Section {
   disabled?: boolean;
   label?: string;
   color_scheme?: string;
+  /** This section's own colours (hex), over its scheme (or scheme 1); set from the editor's Custom tile. */
+  custom_colors?: Partial<SchemeColors>;
   css_class?: string;
   custom_css?: string;
 }
@@ -42,6 +44,9 @@ export interface ColorScheme {
   border: string;
   card: string;
 }
+
+/** A colour scheme's seven colours, without its id and name. */
+export type SchemeColors = Omit<ColorScheme, 'id' | 'name'>;
 
 export interface ThemeSettings {
   color_schemes: ColorScheme[];

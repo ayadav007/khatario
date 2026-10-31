@@ -54,9 +54,13 @@ export function sectionFrameClass(settings: Record<string, unknown>): string {
 export function sectionFrameStyle(settings: ThemeSettings, section: Section): Style {
   const schemes = settings.color_schemes;
   const index = section.color_scheme ? schemes.findIndex((s) => s.id === section.color_scheme) : -1;
-  const scheme = schemes[index >= 0 ? index : 0];
-  const style: Style = scheme ? { ...schemeCssVars(scheme, index <= 0) } : {};
-  if (scheme && index >= 0) {
+  const custom = section.custom_colors && Object.keys(section.custom_colors).length ? section.custom_colors : null;
+  // Custom colours sit over the section's scheme (scheme 1 on Default) and paint it like a chosen scheme.
+  const base = schemes[index >= 0 ? index : 0];
+  const scheme = base && custom ? { ...base, ...custom } : base;
+  const painted = index >= 0 || !!custom;
+  const style: Style = scheme ? { ...schemeCssVars(scheme, index <= 0 && !custom) } : {};
+  if (scheme && painted) {
     Object.assign(style, studioSchemeVars(scheme, true));
     // A chosen scheme paints the whole section: the surfaces Studio tints from a fixed beige (hero panel, banner,
     // category tiles) come from the scheme too. On Default the preset keeps its own panels.

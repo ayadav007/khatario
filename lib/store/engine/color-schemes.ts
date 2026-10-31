@@ -1,4 +1,4 @@
-import type { ColorScheme } from './types';
+import type { ColorScheme, SchemeColors } from './types';
 import { isHexColor } from './settings';
 
 export const DEFAULT_COLOR_SCHEMES: ColorScheme[] = [
@@ -10,7 +10,18 @@ export const DEFAULT_COLOR_SCHEMES: ColorScheme[] = [
   { id: 'scheme-6', name: 'Ink', background: '#000000', text: '#ffffff', accent: '#fbbf24', button: '#fbbf24', button_text: '#000000', border: '#262626', card: '#0a0a0a' },
 ];
 
-const COLOR_FIELDS = ['background', 'text', 'accent', 'button', 'button_text', 'border', 'card'] as const;
+export const COLOR_FIELDS = ['background', 'text', 'accent', 'button', 'button_text', 'border', 'card'] as const;
+
+/** A section's own colours: the known fields with a valid hex value, or undefined when none is left. */
+export function sanitizeCustomColors(raw: unknown): Partial<SchemeColors> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Partial<SchemeColors> = {};
+  for (const f of COLOR_FIELDS) {
+    const v = (raw as Record<string, unknown>)[f];
+    if (typeof v === 'string' && isHexColor(v)) out[f] = v.toLowerCase();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 export function sanitizeColorSchemes(raw: unknown, accent?: string): ColorScheme[] {
   const list = Array.isArray(raw) ? raw.slice(0, DEFAULT_COLOR_SCHEMES.length) : [];

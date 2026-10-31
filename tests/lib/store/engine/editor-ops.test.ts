@@ -173,6 +173,10 @@ describe('editor ops', () => {
     expect(sec().label).toBe('Hero');
     t = ok(updateSection(t, 'home', ref, { label: '' }));
     expect('label' in sec()).toBe(false);
+    t = ok(updateSection(t, 'home', ref, { custom_colors: { background: '#ff7028' } }));
+    expect(sec().custom_colors).toEqual({ background: '#ff7028' });
+    t = ok(updateSection(t, 'home', ref, { color_scheme: 'scheme-2', custom_colors: undefined }));
+    expect('custom_colors' in sec()).toBe(false);
     t = ok(setSectionSetting(t, 'home', ref, 'spacing_top', 8));
     expect(sec().settings.spacing_top).toBe(8);
     const bid = sec().block_order[0];

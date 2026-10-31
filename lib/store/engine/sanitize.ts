@@ -3,7 +3,7 @@ import type { SettingSchema } from './schema-types';
 import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, PAGE_META_CAPS, RESERVED_PAGE_HANDLES } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
-import { sanitizeColorSchemes } from './color-schemes';
+import { sanitizeColorSchemes, sanitizeCustomColors } from './color-schemes';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
 
 export { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES };
@@ -67,6 +67,8 @@ export function sanitizeSection(raw: unknown, kind: TemplateKind, schemeIds?: Re
   if (typeof raw.color_scheme === 'string' && ID_RE.test(raw.color_scheme) && (!schemeIds || schemeIds.has(raw.color_scheme))) {
     section.color_scheme = raw.color_scheme;
   }
+  const custom = sanitizeCustomColors(raw.custom_colors);
+  if (custom) section.custom_colors = custom;
   if (typeof raw.label === 'string') {
     const label = raw.label.trim().slice(0, 40);
     if (label) section.label = label;

@@ -233,24 +233,54 @@ function SectionColours({ sref, section }: { sref: SectionRef; section: Section 
   const schemes = theme.settings.color_schemes;
   const chosen = schemes.find((c) => c.id === section.color_scheme) ?? null;
   const shown = chosen ?? schemes[0];
-  const setScheme = (value: string) => {
-    const err = apply((t) => updateSection(t, templateKey, sref, { color_scheme: value }), {
-      mergeKey: settingMergeKey({ kind: 'section', ref: sref }, 'color_scheme'),
-      immediate: false,
+  const custom = section.custom_colors && Object.keys(section.custom_colors).length ? section.custom_colors : null;
+  const patch = (p: Parameters<typeof updateSection>[3], key: string, immediate: boolean) => {
+    const err = apply((t) => updateSection(t, templateKey, sref, p), {
+      mergeKey: settingMergeKey({ kind: 'section', ref: sref }, key),
+      immediate,
     });
     if (err) toast.error(OP_ERROR_TEXT[err]);
   };
+  // A scheme tile (or Default) replaces any custom colours; Custom starts from the colours the section shows now.
+  const setScheme = (value: string) => patch({ color_scheme: value, custom_colors: undefined }, 'color_scheme', true);
+  const startCustom = () => {
+    if (!shown) return;
+    const { id: _id, name: _name, ...colors } = shown;
+    patch({ custom_colors: { ...colors, ...(custom ?? {}) } }, 'custom_colors', true);
+  };
+  const setCustom = (field: (typeof SCHEME_COLOR_FIELDS)[number]['key'], hex: string) =>
+    patch({ custom_colors: { ...(custom ?? {}), [field]: hex } }, `custom_colors.${field}`, false);
   if (!shown) return null;
   return (
     <div className="space-y-2 border-t border-gray-100 pt-4">
       <FieldShell label="Colours">
-        <SchemePicker allowNone value={section.color_scheme ?? ''} schemes={schemes} onChange={setScheme} />
+        <SchemePicker
+          allowNone
+          value={custom ? '' : section.color_scheme ?? ''}
+          schemes={schemes}
+          onChange={setScheme}
+          custom={custom ? { ...shown, ...custom } : null}
+          onCustom={startCustom}
+        />
       </FieldShell>
+      {custom ? (
+        <div className="space-y-3 rounded-md border border-gray-200 p-3">
+          <p className="text-[11px] text-gray-500">This section&apos;s own colours. Type a hex code or pick a colour.</p>
+          {SCHEME_COLOR_FIELDS.map((f) => {
+            const id = `s2-custom-${sref.group}-${sref.id}-${f.key}`;
+            return (
+              <FieldShell key={f.key} label={f.label} htmlFor={id}>
+                <ColorInput id={id} value={custom[f.key] ?? shown[f.key]} onChange={(hex) => setCustom(f.key, hex)} />
+              </FieldShell>
+            );
+          })}
+        </div>
+      ) : null}
       <p className="text-[11px] text-gray-500">
         Default keeps the theme style&apos;s own look. A scheme paints the whole section in its colours; “{schemes[0]?.name} · theme”
-        is the theme colours.
+        is the theme colours. Custom sets this section&apos;s colours only.
       </p>
-      <button
+      {!custom && <button
         type="button"
         aria-expanded={editing}
         onClick={() => setEditing((o) => !o)}
@@ -258,8 +288,8 @@ function SectionColours({ sref, section }: { sref: SectionRef; section: Section 
       >
         {editing ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         {chosen ? `Edit “${chosen.name}” colours` : 'Edit theme colours'}
-      </button>
-      {editing && (
+      </button>}
+      {editing && !custom && (
         <div className="space-y-3 rounded-md border border-gray-200 p-3">
           <p className="text-[11px] text-gray-500">
             {chosen ? `Changes every section that uses “${chosen.name}”.` : 'Changes the whole store and every section on Default.'}
