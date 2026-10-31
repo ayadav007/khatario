@@ -453,6 +453,8 @@ function NarrowableGrid({
           key={item.id}
           product={item as StoreProduct}
           onViewDetail={(p) => router.push(engineProductHref(window.location.search, p.id))}
+          showTagline={s.showTagline}
+          showSwatches={s.showSwatches}
         />
       ))}
       {products.length === 0 ? <div className="empty">No products found.</div> : null}
@@ -510,6 +512,8 @@ export function EngineProductGrid({
           product={item as StoreProduct}
           onViewDetail={(p) => router.push(engineProductHref(window.location.search, p.id))}
           highlight={source === 'bestsellers' && i < BESTSELLER_BADGES && (item.sold_count ?? 0) > 0 ? 'Bestseller' : undefined}
+          showTagline={s.showTagline}
+          showSwatches={s.showSwatches}
         />
       ))}
     </StudioProductsSection>

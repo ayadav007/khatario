@@ -146,4 +146,9 @@ describe('studio adapter', () => {
     });
     expect(announcementSettings(sec('announcement', { text: 'Hello', link: '/x' }))).toMatchObject({ text: 'Hello', link: '/x', textAlign: 'center' });
   });
+
+  it('productSectionSettings maps show_tagline and show_swatches, default off', () => {
+    expect(productSectionSettings(sec('featured-products', { show_tagline: true }))).toMatchObject({ showTagline: true, showSwatches: false });
+    expect(productSectionSettings(sec('featured-products', {}))).toMatchObject({ showTagline: false, showSwatches: false });
+  });
 });

@@ -236,7 +236,7 @@ export function EngineShell({
     style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
   });
   const { kit, quick } = root;
-  const cardLook = useMemo(() => ({ quick, phoneKit: kit }), [quick, kit]);
+  const cardLook = useMemo(() => ({ quick, phoneKit: kit, tagline: false, swatches: false }), [quick, kit]);
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 
   // In a theme preview, a plain store link (menu, footer, pill) gets the preview params before the browser follows it,

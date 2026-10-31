@@ -5,6 +5,9 @@ import { isQuickPack, usesStudioSections, type StoreTheme } from '@/lib/store/st
 export interface EngineCardLook {
   quick: boolean;
   phoneKit: boolean;
+  /** Studio tiles show the product's tagline / colour swatches (a section can still override). */
+  tagline: boolean;
+  swatches: boolean;
 }
 
 /**

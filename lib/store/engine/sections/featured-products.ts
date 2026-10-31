@@ -51,6 +51,8 @@ export function productSettings(withColumns: boolean): SettingSchema[] {
     },
     { id: 'show_rating', type: 'checkbox', label: 'Show rating', default: true },
     { id: 'show_badges', type: 'checkbox', label: 'Show badges', default: true },
+    { id: 'show_tagline', type: 'checkbox', label: 'Show tagline', default: false },
+    { id: 'show_swatches', type: 'checkbox', label: 'Show colour swatches', default: false },
   ];
 }
 

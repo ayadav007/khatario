@@ -4,13 +4,14 @@ import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
 import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
-import { isNewArrival, lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
-import { StudioAddButton, StudioProductTile, type StudioBadge } from './studio-theme/StudioSections';
+import { lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
+import { StudioAddButton, StudioProductTile } from './studio-theme/StudioSections';
 import { useCallback, useMemo, useState } from 'react';
 import { QuickVariantSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
 import { useEngineCardLook } from './engine/EngineCardContext';
 import { productCardLook } from '@/lib/store/engine/card-look';
+import { cardBadges } from '@/lib/store/engine/card-badges';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -62,6 +63,9 @@ interface StoreProductCardProps {
   variant?: StoreProductCardVariant;
   /** Studio: an extra badge from the section, e.g. "Bestseller". */
   highlight?: string;
+  /** Studio: show the product's tagline / colour swatches; undefined follows the theme preset. */
+  showTagline?: boolean;
+  showSwatches?: boolean;
 }
 
 /** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
@@ -161,11 +165,14 @@ function ProductCard({
   onViewDetail,
   variant,
   highlight,
+  showTagline,
+  showSwatches,
   onOptions,
 }: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
-  const look = productCardLook(useEngineCardLook(), theme);
+  const engineLook = useEngineCardLook();
+  const look = productCardLook(engineLook, theme);
   const accent = theme.accent;
   const khatario = isKhatarioPack(theme);
   const quick = look.quick;
@@ -272,10 +279,14 @@ function ProductCard({
         disabled={outOfStock}
       />
     );
-    const badges: StudioBadge[] = [
-      ...(highlight ? [{ label: highlight, tone: 'hot' as const }] : []),
-      ...(isNewArrival(product.created_at) ? [{ label: 'New', tone: 'new' as const }] : []),
-    ];
+    const { badges, hideDiscount } = cardBadges({
+      customBadge: product.store_badge,
+      highlight,
+      createdAt: product.created_at,
+      discountPct: discount,
+    });
+    const tagline = (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
+    const swatches = (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
     const tile = (
       <StudioProductTile
@@ -286,8 +297,10 @@ function ProductCard({
         image={gallery[0] ?? product.image_url}
         hoverImage={gallery[1]}
         href={`/products/${product.id}`}
-        discount={discount}
+        discount={hideDiscount ? 0 : discount}
         badges={badges}
+        tagline={tagline}
+        swatches={swatches}
         rating={product.rating_avg}
         ratingCount={product.rating_count}
         lowStock={lowStockCount(product)}

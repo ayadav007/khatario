@@ -42,6 +42,7 @@ export const mainProduct: SectionSchema = {
         { id: 'show_brand', type: 'checkbox', label: 'Show brand', default: true },
         { id: 'show_meta', type: 'checkbox', label: 'Show category and unit', default: true },
         { id: 'show_rating', type: 'checkbox', label: 'Show rating', default: true },
+        { id: 'show_tagline', type: 'checkbox', label: 'Show tagline', default: false },
       ],
     },
     {

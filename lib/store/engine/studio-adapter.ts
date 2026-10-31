@@ -140,6 +140,8 @@ export function productSectionSettings(section: Section): StudioSettings {
     cardStyle: pick(s.card_style, ['bordered', 'shadow', 'minimal'] as const) ?? 'bordered',
     showRating: bool(s.show_rating, true),
     showBadges: bool(s.show_badges, true),
+    showTagline: bool(s.show_tagline, false),
+    showSwatches: bool(s.show_swatches, false),
   };
   const limit = num(s.limit);
   if (limit !== undefined) out.limit = limit;

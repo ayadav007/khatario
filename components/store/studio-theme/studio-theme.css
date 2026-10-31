@@ -135,6 +135,10 @@
 .st-root .pimg .out{position:absolute;inset:auto 6px 6px 6px;background:color-mix(in srgb,var(--st-card) 90%,transparent);font-size:11px;text-align:center;border-radius:4px;padding:3px}
 .st-root .pname{font-size:13px;margin-top:8px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .st-root .punit{font-size:11px;color:var(--st-muted);margin-top:2px}
+.st-root .ptag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin:8px 0 2px}
+.st-root .ptag + .pname{margin-top:0}
+.st-root .pswatches{display:flex;gap:6px;margin-top:6px}
+.st-root .pswatches span{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
 .st-root .price{font-size:15px;font-weight:700;margin:6px 0 8px}
 .st-root .price del{color:var(--st-muted);font-weight:400;margin-left:6px;font-size:12px}
 /* Product section card options. */

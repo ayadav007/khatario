@@ -70,3 +70,15 @@ describe('main-product schema', () => {
     expect(data.templates.home.order).toEqual([]);
   });
 });
+
+describe('tagline and swatch switches', () => {
+  it('product sections and the title block have the tagline and swatch switches, default off', () => {
+    for (const t of ['featured-products', 'product-rail']) {
+      const s = getSectionSchema(t)!.settings;
+      expect(s.find((x) => x.id === 'show_tagline')).toMatchObject({ type: 'checkbox', default: false });
+      expect(s.find((x) => x.id === 'show_swatches')).toMatchObject({ type: 'checkbox', default: false });
+    }
+    const title = getSectionSchema('main-product')!.blocks!.find((b) => b.type === 'title')!;
+    expect(title.settings.find((x) => x.id === 'show_tagline')).toMatchObject({ type: 'checkbox', default: false });
+  });
+});

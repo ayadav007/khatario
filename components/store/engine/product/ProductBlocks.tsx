@@ -36,6 +36,9 @@ function TitleBlock({ id, settings }: ProductBlockProps) {
         <p className="text-xs font-semibold uppercase tracking-wide opacity-60">{product.brand}</p>
       ) : null}
       <h1 className="mt-1 text-2xl font-bold leading-tight sm:text-3xl">{product.name}</h1>
+      {settings.show_tagline === true && product.store_tagline ? (
+        <p className="mt-1 text-xs font-semibold uppercase tracking-wide opacity-60">{product.store_tagline}</p>
+      ) : null}
       {on(settings.show_meta) && meta ? <p className="mt-1 text-sm opacity-60">{meta}</p> : null}
       {on(settings.show_rating) ? (
         <div className="mt-2">

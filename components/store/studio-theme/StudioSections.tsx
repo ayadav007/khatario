@@ -22,7 +22,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-theme';
-import type { StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
+import type { StudioBadge, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
+import type { StoreSwatch } from '@/lib/store/product-extras';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import { isVideoUrl } from '@/lib/store/theme-media-url';
@@ -555,10 +556,7 @@ export function StudioCategoriesSection({
   );
 }
 
-export interface StudioBadge {
-  label: string;
-  tone: 'sale' | 'new' | 'hot';
-}
+export type { StudioBadge } from '@/lib/store/studio-sections';
 
 export function StudioProductTile({
   name,
@@ -578,6 +576,8 @@ export function StudioProductTile({
   fav,
   onFav,
   add,
+  tagline,
+  swatches,
 }: {
   name: string;
   unit?: string;
@@ -600,6 +600,10 @@ export function StudioProductTile({
   fav?: boolean;
   onFav?: () => void;
   add?: ReactNode;
+  /** One line above the name. */
+  tagline?: string | null;
+  /** Colour dots under the price. */
+  swatches?: StoreSwatch[];
 }) {
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
   const [broken, setBroken] = useState(false);
@@ -642,6 +646,7 @@ export function StudioProductTile({
         </button>
         {outOfStock ? <span className="out">Out of stock</span> : null}
       </div>
+      {tagline ? <div className="ptag">{tagline}</div> : null}
       <a className="pname" href={href}>
         {name}
       </a>
@@ -657,6 +662,13 @@ export function StudioProductTile({
         <div className="price">
           {rupees(price)}
           {off > 0 && mrp ? <del>{rupees(mrp)}</del> : null}
+        </div>
+      ) : null}
+      {swatches?.length ? (
+        <div className="pswatches">
+          {swatches.map((s) => (
+            <span key={s.hex + s.name} title={s.name} style={{ background: s.hex }} />
+          ))}
         </div>
       ) : null}
       {lowStock && !outOfStock ? <div className="plow">Only {lowStock} left</div> : null}

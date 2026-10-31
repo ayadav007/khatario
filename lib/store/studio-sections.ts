@@ -51,6 +51,11 @@ export interface StudioUsp {
   text: string;
 }
 
+export interface StudioBadge {
+  label: string;
+  tone: 'sale' | 'new' | 'hot';
+}
+
 export interface StudioSettings {
   text?: string;
   extra?: string;
@@ -123,6 +128,10 @@ export interface StudioSettings {
   imageRatio?: 'square' | 'portrait' | 'landscape';
   showRating?: boolean;
   showBadges?: boolean;
+  /** Product tiles: the product's one-line tagline above its name. */
+  showTagline?: boolean;
+  /** Product tiles: the product's colour swatches under its price. */
+  showSwatches?: boolean;
   /** USP strip. */
   usps?: StudioUsp[];
   /** Marquee. */
@@ -264,6 +273,8 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   imageRatio: { kind: 'enum', values: ['square', 'portrait', 'landscape'] },
   showRating: { kind: 'bool' },
   showBadges: { kind: 'bool' },
+  showTagline: { kind: 'bool' },
+  showSwatches: { kind: 'bool' },
   usps: { kind: 'usps' },
   speed: { kind: 'enum', values: ['slow', 'normal', 'fast'] },
   cssClass: { kind: 'cssclass' },
