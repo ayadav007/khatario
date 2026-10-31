@@ -1,4 +1,4 @@
-import { PARITY_WIDTHS, parityHtml, parityTargets, storeOrigin } from '@/lib/store/engine/parity';
+import { PARITY_WIDTHS, parityHtml, parityNavigationAllowed, parityTargets, storeOrigin } from '@/lib/store/engine/parity';
 import type { MigrationReportRow } from '@/lib/store/engine/migrate-runner';
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.c2VjcmV0LXRva2Vu.abcDEF123';
@@ -154,5 +154,41 @@ describe('parityHtml', () => {
     ]);
     expect(out).not.toContain('"><b>');
     expect(out).not.toContain('a/"x.png');
+  });
+});
+
+describe('parityNavigationAllowed', () => {
+  it('allows the base host and its store subdomains only', () => {
+    const staging = 'https://staging.khatario.com';
+    expect(parityNavigationAllowed(staging, 'https://ganesh.staging.khatario.com/?engine=1')).toBe(true);
+    expect(parityNavigationAllowed(staging, 'https://staging.khatario.com/login')).toBe(true);
+    expect(parityNavigationAllowed(staging, 'about:blank')).toBe(true);
+    for (const url of [
+      'https://khatario.com/',
+      'https://ganesh.khatario.com/',
+      'https://www.ganeshstore.in/',
+      'https://staging.khatario.com.evil.com/',
+      'http://ganesh.staging.khatario.com/',
+      'https://ganesh.staging.khatario.com:8443/',
+      'https://u:p@ganesh.staging.khatario.com/',
+      'javascript:alert(1)',
+      'not a url',
+    ]) {
+      expect(parityNavigationAllowed(staging, url)).toBe(false);
+    }
+  });
+
+  it('allows localhost store subdomains on the same port only', () => {
+    const local = 'http://localhost:3015';
+    expect(parityNavigationAllowed(local, 'http://ganesh.localhost:3015/')).toBe(true);
+    expect(parityNavigationAllowed(local, 'http://localhost:3015/')).toBe(true);
+    expect(parityNavigationAllowed('http://127.0.0.1:3015', 'http://ganesh.localhost:3015/')).toBe(true);
+    expect(parityNavigationAllowed(local, 'http://ganesh.localhost:4000/')).toBe(false);
+    expect(parityNavigationAllowed(local, 'https://ganesh.localhost:3015/')).toBe(false);
+    expect(parityNavigationAllowed(local, 'https://khatario.com/')).toBe(false);
+  });
+
+  it('refuses everything under a base that is not allowed', () => {
+    expect(parityNavigationAllowed('https://khatario.com', 'https://khatario.com/')).toBe(false);
   });
 });

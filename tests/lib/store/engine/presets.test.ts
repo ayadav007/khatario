@@ -192,8 +192,16 @@ describe('khatario preset', () => {
     expect(p.header_group.sections.header.settings.search_placeholder).toBe('Search for items…');
   });
 
-  it('has the Khatario home order', () => {
-    expect(homeTypes(p)).toEqual(['slideshow', 'category-grid', 'product-rail', 'featured-products']);
+  it('has the Khatario home order, with the tagline line after the hero', () => {
+    expect(homeTypes(p)).toEqual(['slideshow', 'rich-text', 'category-grid', 'product-rail', 'featured-products']);
+    expect(p.templates.home.sections['rich-text']).toMatchObject({ label: 'Tagline' });
+    expect(p.templates.home.sections['rich-text'].settings.content).toBe('<p>Fresh finds, fast delivery</p>');
+    expect(homeTypes(presetTheme('khatario', { ...ctx, tagline: '  ' }))).toEqual([
+      'slideshow',
+      'category-grid',
+      'product-rail',
+      'featured-products',
+    ]);
     const s = p.templates.home.sections;
     expect(s.slideshow.settings).toMatchObject({ layout: 'full', height: 'medium' });
     expect(s.slideshow.blocks[s.slideshow.block_order[0]].settings).toMatchObject({ button_text: 'Order now', link: '#catalog' });

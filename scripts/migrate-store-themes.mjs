@@ -14,7 +14,7 @@
 //
 // The connection comes only from DATABASE_URL in this process's environment. The URL is never printed; only the
 // database name is.
-// Exit codes: 0 all succeeded, 1 any business failed, 2 refused (bad arguments, no DATABASE_URL, wrong database).
+// Exit codes: 0 all succeeded, 1 any business failed or a --business id was not found, 2 refused (bad arguments, no DATABASE_URL, wrong database).
 import { createRequire } from 'module';
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
@@ -74,7 +74,7 @@ process.env.TS_NODE_TRANSPILE_ONLY = 'true';
 const require = createRequire(import.meta.url);
 require('ts-node/register');
 require('tsconfig-paths/register');
-const { runStoreThemeMigration, MigrationRefusedError } = require(join(ROOT, 'lib/store/engine/migrate-runner.ts'));
+const { runStoreThemeMigration, MigrationRefusedError, migrationExitCode } = require(join(ROOT, 'lib/store/engine/migrate-runner.ts'));
 const { closePool } = require(join(ROOT, 'lib/db.ts'));
 
 let code = 0;
@@ -105,7 +105,7 @@ try {
     console.log('Notice: no preview signing secret is configured, so no preview links were added.');
   }
   console.log(`Report: ${opts.report}`);
-  if (out.rows.some((r) => r.status === 'failed')) code = 1;
+  code = migrationExitCode(out.rows, opts.businessIds.length > 0);
 } catch (err) {
   if (err instanceof MigrationRefusedError) {
     console.error(err.message);

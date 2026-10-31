@@ -12,6 +12,8 @@
 //   --only <sub>      just this store subdomain
 //   --out <dir>       output folder (default tmp-qa/engine-parity; tmp-qa/ is never committed)
 //
+// The browser never leaves the base: a navigation (a redirect included) to any other host is aborted and that shot
+// is marked failed, so a store that redirects to its custom or production domain is never driven (AGENTS.md).
 // A failed shot is a red "failed" cell in the page and does not stop the run; the run exits 0. Bad arguments exit 2.
 // Preview share tokens are never printed or written to index.html.
 import { createRequire } from 'module';
@@ -76,7 +78,7 @@ process.env.TS_NODE_TRANSPILE_ONLY = 'true';
 const require = createRequire(import.meta.url);
 require('ts-node/register');
 require('tsconfig-paths/register');
-const { PARITY_WIDTHS, parityHtml, parityTargets } = require(join(ROOT, 'lib/store/engine/parity.ts'));
+const { PARITY_WIDTHS, parityHtml, parityNavigationAllowed, parityTargets } = require(join(ROOT, 'lib/store/engine/parity.ts'));
 
 let report;
 if (opts.report) {
@@ -112,10 +114,40 @@ try {
       for (const side of ['old', 'new']) {
         const rel = `${target.label}/${side}-${width}.png`;
         const context = await browser.newContext({ viewport: { width, height: SHOT_HEIGHT }, reducedMotion: 'reduce' });
+        let escaped = null;
         try {
+          // Every navigation request (redirects too) must stay on the base; others are aborted and fail the shot.
+          // Sub-resources (images, fonts) may still load from a CDN.
+          await context.route('**/*', (route) => {
+            const request = route.request();
+            if (request.isNavigationRequest() && !parityNavigationAllowed(opts.base, request.url())) {
+              let mainFrame = true;
+              try {
+                mainFrame = request.frame().parentFrame() === null;
+              } catch {
+                /* a request with no frame: treat it as the page itself */
+              }
+              if (mainFrame) escaped = escaped ?? new URL(request.url()).host;
+              return route.abort('blockedbyclient');
+            }
+            return route.continue();
+          });
           const page = await context.newPage();
-          await page.goto(side === 'old' ? target.oldUrl : target.newUrl, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
+          page.on('request', (request) => {
+            if (request.isNavigationRequest() && request.frame() === page.mainFrame() && !parityNavigationAllowed(opts.base, request.url())) {
+              escaped = escaped ?? new URL(request.url()).host;
+            }
+          });
+          await page.goto(side === 'old' ? target.oldUrl : target.newUrl, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS }).catch((err) => {
+            if (!escaped) throw err;
+          });
+          if (escaped || !parityNavigationAllowed(opts.base, page.url())) {
+            throw new Error(`refused: navigation left the allowed base for ${escaped ?? new URL(page.url()).host}`);
+          }
           await page.waitForTimeout(SETTLE_MS);
+          if (escaped || !parityNavigationAllowed(opts.base, page.url())) {
+            throw new Error(`refused: navigation left the allowed base for ${escaped ?? new URL(page.url()).host}`);
+          }
           await page.screenshot({ path: join(outDir, rel), fullPage: true });
           shot[side] = rel;
         } catch (err) {

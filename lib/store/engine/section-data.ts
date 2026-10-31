@@ -27,6 +27,8 @@ export interface ResolveOptions {
   categoryId?: string | null;
   /** Narrows only `source: 'all'` requests (the `q` URL key). */
   search?: string | null;
+  /** Narrows only `source: 'all'` requests (the `disc` URL key: 10, 25 or 50 percent off or more). */
+  minDiscountPct?: number | null;
 }
 
 type ProductsRequest = NonNullable<SectionDataRequest['products']>;
@@ -48,7 +50,7 @@ export function collectDataRequests(groups: Template[]): Map<string, SectionData
 /** Requests with the same key run as one query. Only fields that apply to the source are part of the key. */
 export function productRequestKey(
   p: ProductsRequest,
-  narrow: { categoryId?: string | null; search?: string | null } = {},
+  narrow: { categoryId?: string | null; search?: string | null; minDiscountPct?: number | null } = {},
 ): string {
   return JSON.stringify([
     p.source,
@@ -56,6 +58,7 @@ export function productRequestKey(
     p.source === 'price_max' ? (p.priceMax ?? null) : null,
     p.source === 'all' ? (narrow.categoryId ?? null) : null,
     p.source === 'all' ? (narrow.search ?? null) : null,
+    p.source === 'all' ? (narrow.minDiscountPct ?? null) : null,
     p.limit,
   ]);
 }
@@ -93,6 +96,7 @@ function queryInput(
     case 'all':
       input.categoryId = opts.categoryId ?? null;
       input.search = opts.search ?? null;
+      input.minDiscountPct = opts.minDiscountPct ?? null;
       break;
   }
   return input;
@@ -118,6 +122,7 @@ async function loadProducts(
       limit: p.limit,
       featuredOnly: input.featuredOnly,
       discountedOnly: input.discountedOnly,
+      minDiscountPct: input.minDiscountPct,
       maxPrice: input.maxPrice,
       sort: input.sort === 'new' || input.sort === 'bestsellers' ? input.sort : 'name',
     }).items as unknown as StoreItem[];
@@ -242,7 +247,9 @@ export async function resolveSectionData(
     }
     if (req.categories && categoriesJob) {
       const r = await categoriesJob;
-      if (r.error) data.error = data.error ?? r.error;
+      // Optional categories (the header's chips) degrade to none, so the section still renders.
+      if (r.error && req.categoriesOptional) data.categories = [];
+      else if (r.error) data.error = data.error ?? r.error;
       else data.categories = r.items;
     }
     const plan = shelfPlans.get(id);

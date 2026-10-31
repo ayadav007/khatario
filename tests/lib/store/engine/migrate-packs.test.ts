@@ -160,6 +160,12 @@ describe('groceryDefault', () => {
     expect(types(home(r))).toEqual(types(preset.templates.home));
   });
 
+  it('uses the very cards of the Grocery preset (one shared copy)', () => {
+    const preset = presetTheme('grocery', { businessName: ctx.businessName, tagline: ctx.tagline, heroUrl: ctx.heroUrl });
+    const cardsOf = (t: Template) => blocks(first(t, 'promo-cards'), 'card').map((b) => b.settings);
+    expect(cardsOf(home(r))).toEqual(cardsOf(preset.templates.home));
+  });
+
   it('shows the two default Grocery cards when there are no bands', () => {
     const cards = blocks(first(home(r), 'promo-cards'), 'card').map((b) => b.settings);
     expect(cards).toHaveLength(2);
@@ -217,6 +223,13 @@ describe('khatarioDefault', () => {
     const preset = presetTheme('khatario', { businessName: ctx.businessName, tagline: '', heroUrl: ctx.heroUrl });
     expect(types(home(r))).toEqual(['slideshow', 'category-grid', 'product-rail', 'featured-products']);
     expect(types(home(r))).toEqual(types(preset.templates.home));
+  });
+
+  it('reproduces the Khatario preset home, tagline line included (store with a tagline)', () => {
+    const r = migrateStoreTheme(khatarioDefault, ctx);
+    const preset = presetTheme('khatario', { businessName: ctx.businessName, tagline: ctx.tagline, heroUrl: ctx.heroUrl });
+    expect(types(home(r))).toEqual(types(preset.templates.home));
+    expect(first(home(r), 'rich-text')).toEqual(first(preset.templates.home, 'rich-text'));
   });
 
   it('adds the tagline line after the hero when the store has one', () => {

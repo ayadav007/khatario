@@ -60,11 +60,12 @@ describe('studioDerived', () => {
     expect(types(home(r))).toEqual(['slideshow', 'category-grid', 'featured-products', 'image-banner', 'testimonials']);
   });
 
-  it('marks the mobile-only slide', () => {
+  it('shows every slide on both devices, as the old Studio hero did (it never read the slide viewport)', () => {
     const slides = blocks(first(home(r), 'slideshow'), 'slide');
     expect(slides).toHaveLength(2);
     expect(slides[0].settings.device).toBe('both');
-    expect(slides[1].settings.device).toBe('mobile');
+    // hero_slides[1] is `viewport: 'mobile'` in the fixture; the old Studio hero still showed it on desktop.
+    expect(slides[1].settings.device).toBe('both');
     expect(slides[0].settings.link).toBe('#catalog');
   });
 

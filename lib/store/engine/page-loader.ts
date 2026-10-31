@@ -81,7 +81,7 @@ export async function loadEnginePage(
   store: StoreBusinessContext,
   searchParams: HomeSearchParams,
   templateKey: string,
-  narrow?: { categoryId?: string | null; search?: string | null },
+  narrow?: { categoryId?: string | null; search?: string | null; minDiscountPct?: number | null },
 ): Promise<EnginePage | null> {
   try {
     const engine = await loadEngineTheme(store, {
@@ -101,6 +101,7 @@ export async function loadEnginePage(
     const data = await resolveSectionData(store, requests, {
       categoryId: narrow?.categoryId ?? null,
       search: narrow?.search ?? null,
+      ...(narrow?.minDiscountPct ? { minDiscountPct: narrow.minDiscountPct } : {}),
     });
     // A demo theme is never stored, so it can never be edited.
     const editor = preview && !engine.demo && first(searchParams.editor) === '1';

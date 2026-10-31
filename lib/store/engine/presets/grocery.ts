@@ -1,8 +1,31 @@
-import type { ThemeData } from '../types';
+import type { Block, ThemeData } from '../types';
 import type { PresetContext } from './index';
 import { block, onScheme, presetSettings, section, template } from './shared';
 import { studioFooter } from './studio';
 import { defaultTemplate } from './templates';
+
+/**
+ * The old Grocery home's two default promo cards (StoreGroceryHome, no overlay bands). The one copy, shared by
+ * this preset and the migration (migrate-packs.ts), so the two cannot drift.
+ */
+export function groceryDefaultCards(businessName: string, tagline: string): Block[] {
+  return [
+    block('card', {
+      eyebrow: "Today's offers",
+      heading: 'Everyday essentials, honest prices',
+      text: 'Handpicked deals from our shelves, updated regularly.',
+      button_text: 'Shop offers',
+      link: '/catalog?disc=10',
+    }),
+    block('card', {
+      eyebrow: businessName.trim().slice(0, 40).trim(),
+      heading: (tagline.trim() || 'Your weekly shop in a few taps').slice(0, 120).trim(),
+      text: 'Add to cart, check out, and we will get your order ready.',
+      button_text: 'Start shopping',
+      link: '#catalog',
+    }),
+  ];
+}
 
 /** Premium Grocery: marquee, category chips, hero card, emoji aisles, deals, promo cards and the full grid. */
 export function groceryPreset(ctx: PresetContext): ThemeData {
@@ -23,24 +46,6 @@ export function groceryPreset(ctx: PresetContext): ThemeData {
   };
   if (ctx.heroUrl) slide.image = ctx.heroUrl;
 
-  // The old Grocery home's two default promo cards (StoreGroceryHome, no overlay bands).
-  const cards = [
-    block('card', {
-      eyebrow: "Today's offers",
-      heading: 'Everyday essentials, honest prices',
-      text: 'Handpicked deals from our shelves, updated regularly.',
-      button_text: 'Shop offers',
-      link: '/catalog?disc=10',
-    }),
-    block('card', {
-      eyebrow: name.slice(0, 40).trim(),
-      heading: (tagline || 'Your weekly shop in a few taps').slice(0, 120).trim(),
-      text: 'Add to cart, check out, and we will get your order ready.',
-      button_text: 'Start shopping',
-      link: '#catalog',
-    }),
-  ];
-
   return {
     settings: presetSettings(ctx, 'grocery'),
     header_group: template([
@@ -57,7 +62,7 @@ export function groceryPreset(ctx: PresetContext): ThemeData {
         section('slideshow', { layout: 'image-text', height: 'large', speed: 7 }, [block('slide', slide)]),
         section('category-grid', { heading: 'Shop by category', eyebrow: '', style: 'emoji', columns: 6 }),
         section('product-rail', { heading: "Today's deals", source: 'discounted', limit: 8 }),
-        section('promo-cards', { style: 'split' }, cards),
+        section('promo-cards', { style: 'split' }, groceryDefaultCards(name, tagline)),
         section('featured-products', { heading: 'All products', source: 'all', limit: 24, columns: 5 }),
       ]),
       product: defaultTemplate('product'),

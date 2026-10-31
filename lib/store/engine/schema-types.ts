@@ -51,6 +51,8 @@ export interface SectionDataRequest {
     limit: number;
   };
   categories?: boolean;
+  /** A failed categories lookup gives this section no categories instead of an error (the section still renders). */
+  categoriesOptional?: boolean;
   /** Category shelves: the first `maxCategories` categories with products, `perShelf` products each. */
   shelves?: { maxCategories: number; perShelf: number };
 }

@@ -192,6 +192,8 @@ export function filterDemoCatalog(opts: {
   limit: number;
   featuredOnly?: boolean;
   discountedOnly?: boolean;
+  /** At least this percent off MRP (the `disc` catalog filter). */
+  minDiscountPct?: number | null;
   maxPrice?: number | null;
   sort?: 'name' | 'new' | 'bestsellers';
 }) {
@@ -207,6 +209,10 @@ export function filterDemoCatalog(opts: {
     items = items.filter(
       (i) => i.mrp != null && i.mrp > i.selling_price && i.current_stock > 0,
     );
+  }
+  if (opts.minDiscountPct != null && opts.minDiscountPct > 0) {
+    const pct = opts.minDiscountPct;
+    items = items.filter((i) => i.mrp != null && i.mrp > 0 && ((i.mrp - i.selling_price) / i.mrp) * 100 >= pct);
   }
   if (opts.maxPrice != null && opts.maxPrice > 0) {
     items = items.filter((i) => i.selling_price <= opts.maxPrice!);

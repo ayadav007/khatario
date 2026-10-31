@@ -206,7 +206,7 @@ function migrateFooter(src: StudioSection, ctx: MigrationContext, w: Warnings): 
   return common(engineSection('footer', raw, blocks), src, 'group');
 }
 
-function migrateHero(src: StudioSection, t: StoreTheme, derived: boolean, w: Warnings): Section {
+function migrateHero(src: StudioSection, w: Warnings): Section {
   const s = src.settings;
   const interval = s.autoplay ?? 6;
   const raw: Raw = { layout: s.layout ?? 'image-text', height: s.height ?? 'medium', autoplay: interval > 0 };
@@ -219,9 +219,9 @@ function migrateHero(src: StudioSection, t: StoreTheme, derived: boolean, w: War
     { image: s.image, heading: s.heading, description: s.description, buttonText: s.buttonText, link: s.link },
     ...(s.slides ?? []),
   ].slice(0, 6);
-  // Derived heroes come from `hero_slides`, so each slide keeps its device.
-  const devices: string[] = derived ? t.hero_slides.map((x) => x.viewport) : [];
-  const blocks = slides.map((sl, i) => {
+  // The old Studio hero (Studio and Quick stores) showed every slide on every device and never read
+  // `hero_slides[].viewport`, so every migrated slide is for both devices.
+  const blocks = slides.map((sl) => {
     const link = sl.link ? engineUrl(sl.link) : '';
     return {
       type: 'slide',
@@ -231,7 +231,7 @@ function migrateHero(src: StudioSection, t: StoreTheme, derived: boolean, w: War
         description: sl.description ?? '',
         button_text: sl.buttonText ?? '',
         link: link || '#catalog',
-        device: devices[i] ?? 'both',
+        device: 'both',
       } as Raw,
     };
   });
@@ -368,10 +368,10 @@ function derivedHasContent(src: StudioSection, t: StoreTheme): boolean {
   }
 }
 
-function homeSection(src: StudioSection, t: StoreTheme, ctx: MigrationContext, derived: boolean, w: Warnings): Section | null {
+function homeSection(src: StudioSection, t: StoreTheme, ctx: MigrationContext, w: Warnings): Section | null {
   switch (src.type) {
     case 'hero':
-      return migrateHero(src, t, derived, w);
+      return migrateHero(src, w);
     case 'categories':
       return migrateCategories(src, t, ctx, w);
     case 'products':
@@ -422,7 +422,7 @@ export function migrateStudioSections(
     if (src.type === 'announcement' || src.type === 'header' || src.type === 'footer') continue;
     // A derived section that is switched off and holds nothing of the merchant's is left out, as the store never showed it.
     if (derived && src.enabled === false && !derivedHasContent(src, t)) continue;
-    const s = homeSection(src, t, ctx, derived, w);
+    const s = homeSection(src, t, ctx, w);
     if (s) homeSections.push(s);
   }
   const max = ENGINE_LIMITS.sectionsPerTemplate;

@@ -66,6 +66,19 @@ describe('loadEngineHome', () => {
     expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: CAT, search: null });
   });
 
+  it('narrows by disc (10, 25 or 50) for the Offers links, ignoring any other value', async () => {
+    loadMock.mockResolvedValue({ theme, preview: false });
+    resolveMock.mockResolvedValue({});
+    await loadEngineHome(store, { disc: '10' });
+    expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: null, search: null, minDiscountPct: 10 });
+    await loadEngineHome(store, { disc: ['25', '10'] });
+    expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: null, search: null, minDiscountPct: 25 });
+    for (const disc of ['15', 'abc', '0', '-10']) {
+      await loadEngineHome(store, { disc });
+      expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: null, search: null });
+    }
+  });
+
   it('turns editor mode on only for a verified preview with editor=1', async () => {
     resolveMock.mockResolvedValue({});
     loadMock.mockResolvedValue({ theme, preview: true });

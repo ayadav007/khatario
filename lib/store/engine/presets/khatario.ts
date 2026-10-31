@@ -1,13 +1,28 @@
-import type { ThemeData } from '../types';
+import type { Section, ThemeData } from '../types';
+import { engineSection, textToParagraphs } from '../migrate-studio';
 import type { PresetContext } from './index';
 import { block, onScheme, presetSettings, section, template, welcomeSlide } from './shared';
 import { studioFooter } from './studio';
 import { defaultTemplate } from './templates';
 
+/**
+ * The tagline line the old Khatario home shows after the hero (StoreCatalogView), or null without a tagline.
+ * Shared by this preset and the migration (migrate-packs.ts).
+ */
+export function khatarioTaglineSection(tagline: string): Section | null {
+  const text = tagline.trim();
+  if (!text) return null;
+  return {
+    ...engineSection('rich-text', { heading: '', content: textToParagraphs(text), align: 'left', spacing_top: 12, spacing_bottom: 0 }),
+    label: 'Tagline',
+  };
+}
+
 /** Khatario: accent announcement and header, a full-width carousel, category pills, popular products and the grid. */
 export function khatarioPreset(ctx: PresetContext): ThemeData {
   const headerSettings: Record<string, unknown> = { search_placeholder: 'Search for items…' };
   if (ctx.logoUrl) headerSettings.logo_url = ctx.logoUrl;
+  const tagline = khatarioTaglineSection(ctx.tagline);
 
   return {
     settings: presetSettings(ctx, 'khatario'),
@@ -26,6 +41,7 @@ export function khatarioPreset(ctx: PresetContext): ThemeData {
     templates: {
       home: template([
         section('slideshow', { layout: 'full', height: 'medium' }, [block('slide', welcomeSlide(ctx, 'Order now'))]),
+        ...(tagline ? [tagline] : []),
         section('category-grid', { heading: '', style: 'tiles' }),
         section('product-rail', { heading: 'Popular products', source: 'all', limit: 6 }),
         section('featured-products', { heading: 'All products', source: 'all', limit: 24, columns: 4 }),

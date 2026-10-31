@@ -46,5 +46,6 @@ export const header: SectionSchema = {
       blocks: [{ type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } }],
     },
   ],
-  data: (s) => (s.show_category_chips === true ? { categories: true } : {}),
+  // The chips are optional: a failed category lookup drops only the chips, never the logo, search, cart or menu.
+  data: (s) => (s.show_category_chips === true ? { categories: true, categoriesOptional: true } : {}),
 };

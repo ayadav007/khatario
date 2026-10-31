@@ -41,6 +41,30 @@ export function storeOrigin(base: string, subdomain: string): string {
   throw new Error('--base must be http://localhost:<port>, http://127.0.0.1:<port> or https://staging.khatario.com');
 }
 
+/**
+ * True when the parity browser may navigate to `url` under this base: the base's own host or one of its store
+ * subdomains, on the base's protocol (and port, for localhost). Anything else (a redirect to a custom or
+ * production domain, a bad URL) is false, so the script never drives a page outside localhost or staging.
+ */
+export function parityNavigationAllowed(base: string, url: string): boolean {
+  let origin: URL;
+  let target: URL;
+  try {
+    origin = new URL(storeOrigin(base, 'theme-studio'));
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  if (target.protocol === 'about:' && target.href === 'about:blank') return true;
+  if (target.protocol !== origin.protocol || target.username || target.password) return false;
+  const root = origin.hostname.replace(/^theme-studio\./, '');
+  if (root === 'localhost') {
+    const hostOk = target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname.endsWith('.localhost');
+    return hostOk && target.port === origin.port;
+  }
+  return (target.hostname === root || target.hostname.endsWith(`.${root}`)) && !target.port;
+}
+
 /** A same-origin path (`/…`, not `//host…`), or null. */
 function localPath(path: string | undefined): string | null {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return null;

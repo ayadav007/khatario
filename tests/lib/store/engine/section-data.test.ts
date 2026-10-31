@@ -78,7 +78,7 @@ describe('M4 data requests', () => {
     ]);
     expect(map.get('shelves')).toEqual({ shelves: { maxCategories: 6, perShelf: 8 } });
     expect(map.get('h')).toEqual({});
-    expect(map.get('chips')).toEqual({ categories: true });
+    expect(map.get('chips')).toEqual({ categories: true, categoriesOptional: true });
   });
 
   it('demo stores get one shelf per demo category, each of that category only', async () => {

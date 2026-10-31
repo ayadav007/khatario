@@ -2,6 +2,8 @@
 // mirrors `StoreGroceryHome` and the Khatario branch of `StoreCatalogView`, in the order they render. Pure.
 import { sectionEnabled, type StoreHomepageSectionId, type StoreTheme } from '@/lib/store/store-theme';
 import { template } from './presets/shared';
+import { groceryDefaultCards } from './presets/grocery';
+import { khatarioTaglineSection } from './presets/khatario';
 import { engineSection, keepImage, textToParagraphs, Warnings } from './migrate-studio';
 import type { Section, Template } from './types';
 import type { MigrationContext } from './migrate';
@@ -93,32 +95,6 @@ function promoCards(cards: BlockIn[], style: 'split' | 'overlay', enabled: boole
   return label ? { ...s, label } : s;
 }
 
-/** The old Grocery home's two cards when it has no overlay bands (same copy as the Grocery preset). */
-function defaultGroceryCards(ctx: MigrationContext): BlockIn[] {
-  return [
-    {
-      type: 'card',
-      settings: {
-        eyebrow: "Today's offers",
-        heading: 'Everyday essentials, honest prices',
-        text: 'Handpicked deals from our shelves, updated regularly.',
-        button_text: 'Shop offers',
-        link: '/catalog?disc=10',
-      },
-    },
-    {
-      type: 'card',
-      settings: {
-        eyebrow: ctx.businessName.trim().slice(0, 40).trim(),
-        heading: (ctx.tagline.trim() || 'Your weekly shop in a few taps').slice(0, 120).trim(),
-        text: 'Add to cart, check out, and we will get your order ready.',
-        button_text: 'Start shopping',
-        link: '#catalog',
-      },
-    },
-  ];
-}
-
 function groceryPromo(t: StoreTheme, ctx: MigrationContext, w: Warnings): Section | null {
   const on = sectionEnabled(t, 'overlay');
   const bands = t.overlay_bands.slice(0, 2);
@@ -135,7 +111,7 @@ function groceryPromo(t: StoreTheme, ctx: MigrationContext, w: Warnings): Sectio
           link: '#catalog',
         },
       }))
-    : defaultGroceryCards(ctx);
+    : groceryDefaultCards(ctx.businessName, ctx.tagline);
   return promoCards(cards, 'split', on);
 }
 
@@ -211,16 +187,10 @@ function groceryHome(t: StoreTheme, ctx: MigrationContext, w: Warnings): Array<S
 
 function khatarioHome(t: StoreTheme, ctx: MigrationContext, w: Warnings): Array<Section | null> {
   const on = (id: StoreHomepageSectionId) => sectionEnabled(t, id);
-  const tagline = ctx.tagline.trim();
   w.add('Khatario popular products now also list products without a photo.');
   return [
     hero(t, ctx, false, w),
-    tagline
-      ? {
-          ...engineSection('rich-text', { heading: '', content: textToParagraphs(tagline), align: 'left', spacing_top: 12, spacing_bottom: 0 }),
-          label: 'Tagline',
-        }
-      : null,
+    khatarioTaglineSection(ctx.tagline),
     categories(t, ctx, false, w),
     khatarioBands(t, w),
     products('product-rail', { heading: 'Popular products', source: 'all', limit: 6 }),

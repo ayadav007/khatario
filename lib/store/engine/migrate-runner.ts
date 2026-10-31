@@ -87,6 +87,14 @@ export interface MigrationReportRow {
   error?: string;
 }
 
+/**
+ * The script's exit code for a finished run: 1 when any business failed, or when ids were given explicitly
+ * (`--business`) and one names no business (a mistyped uuid must not look like success); else 0.
+ */
+export function migrationExitCode(rows: Array<Pick<MigrationReportRow, 'status'>>, explicitIds: boolean): 0 | 1 {
+  return rows.some((r) => r.status === 'failed' || (explicitIds && r.status === 'not_found')) ? 1 : 0;
+}
+
 function errorMessage(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.slice(0, ERROR_MAX);

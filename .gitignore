@@ -125,3 +125,4 @@ Desktop.ini
 # Khatario Staff face models (npm run face:models)
 models/face/*.onnx
 models/face/*.part
+tmp-qa/
