@@ -251,8 +251,11 @@ test.describe('Store theme library', () => {
   });
 
   test.afterAll(async () => {
-    if (snap) await restore(snap, snap.storeEngine);
-    await setPremium(originalPremium);
+    try {
+      if (snap) await restore(snap, snap.storeEngine);
+    } finally {
+      await setPremium(originalPremium);
+    }
   });
 
   test('library shows live card and working copy', async ({ page }) => {

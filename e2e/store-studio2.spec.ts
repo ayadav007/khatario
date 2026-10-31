@@ -266,7 +266,7 @@ async function storeProduct(addable: boolean): Promise<{ id: string; name: strin
     (
       await db.query<{ id: string; name: string }>(
         `SELECT id, name FROM items
-         WHERE business_id = $1 AND show_in_store = true AND (is_active IS NULL OR is_active = true) AND deleted_at IS NULL
+         WHERE business_id = $1 AND (show_in_store = true OR featured_in_store = true) AND (is_active IS NULL OR is_active = true) AND deleted_at IS NULL
            ${addable ? 'AND COALESCE(has_variants, false) = false AND COALESCE(current_stock, 0) > 0' : ''}
          ORDER BY name LIMIT 1`,
         [BUSINESS_ID],
@@ -868,6 +868,11 @@ test.describe('Studio 2 store design editor', () => {
       await expect(pin).toHaveAttribute('style', /left:\s*30%/);
       await expect(pin).toHaveAttribute('style', /top:\s*40%/);
       await pin.scrollIntoViewIfNeeded();
+      // The picture is lazy with no reserved height: wait until it has loaded and the photo box has settled.
+      await expect
+        .poll(() => look.locator('.eng-look-img').evaluate((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0), { timeout: 30_000 })
+        .toBe(true);
+      await expect.poll(async () => (await look.locator('.eng-look-photo').boundingBox())?.height ?? 0, { timeout: 30_000 }).toBeGreaterThan(50);
       const [p, photo] = [await pin.boundingBox(), await look.locator('.eng-look-photo').boundingBox()];
       expect(p && photo).toBeTruthy();
       expect(Math.abs(((p!.x + p!.width / 2 - photo!.x) / photo!.width) * 100 - 30)).toBeLessThan(2);
