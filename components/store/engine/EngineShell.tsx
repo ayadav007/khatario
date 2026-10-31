@@ -11,6 +11,7 @@ import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { engineRootClass } from '@/lib/store/engine/root-class';
+import { PRESET_CARD_FIELDS } from '@/lib/store/engine/card-look';
 import { BROWSE_CATEGORIES_EVENT, QuickCartBar, QuickTabs } from '../quick-theme/QuickChrome';
 import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
@@ -243,7 +244,11 @@ export function EngineShell({
     style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
   });
   const { kit, quick } = root;
-  const cardLook = useMemo(() => ({ quick, phoneKit: kit, tagline: false, swatches: false }), [quick, kit]);
+  const cardFields = PRESET_CARD_FIELDS[theme.preset] ?? PRESET_CARD_FIELDS.studio;
+  const cardLook = useMemo(
+    () => ({ quick, phoneKit: kit, tagline: cardFields.tagline, swatches: cardFields.swatches }),
+    [quick, kit, cardFields],
+  );
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 
   // In a theme preview, a plain store link (menu, footer, pill) gets the preview params before the browser follows it,

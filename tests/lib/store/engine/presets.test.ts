@@ -1,6 +1,8 @@
 import { presetTheme, type PresetContext } from '@/lib/store/engine/presets';
 import { sanitizeThemeData, ID_RE } from '@/lib/store/engine/sanitize';
 import { section, template } from '@/lib/store/engine/presets/shared';
+import { heritagePreset } from '@/lib/store/engine/presets/heritage';
+import { getSectionSchema } from '@/lib/store/engine/registry';
 
 // The product and catalog templates' section ids are fresh per call (newId), so determinism is checked on their sections in order.
 function stable(p: ReturnType<typeof presetTheme>) {
@@ -211,5 +213,101 @@ describe('khatario preset', () => {
     expect(s['category-grid'].settings).toMatchObject({ style: 'tiles', heading: '' });
     expect(s['product-rail'].settings).toMatchObject({ heading: 'Popular products', source: 'all', limit: 6 });
     expect(s['featured-products'].settings).toMatchObject({ heading: 'All products', source: 'all', limit: 24, columns: 4 });
+  });
+});
+
+describe('heritage preset', () => {
+  const CTX = ctx;
+  const home = () => heritagePreset(CTX).templates.home;
+
+  it('passes the sanitiser unchanged and uses only registered sections and blocks', () => {
+    for (const c of [CTX, { businessName: 'X', tagline: '' }]) {
+      const p = presetTheme('heritage', c);
+      expect(sanitizeThemeData(p)).toEqual(p);
+    }
+    const t = heritagePreset(CTX);
+    const types = [
+      ...Object.values(t.header_group.sections),
+      ...Object.values(t.footer_group.sections),
+      ...Object.values(t.templates).flatMap((tpl) => Object.values(tpl.sections)),
+    ].map((s) => s.type);
+    expect(types).toEqual(expect.arrayContaining(['collage', 'shop-the-look', 'image-gallery', 'featured-products', 'testimonials', 'logo-list', 'newsletter']));
+    for (const tpl of Object.values(t.templates)) {
+      for (const s of Object.values(tpl.sections)) {
+        const schema = getSectionSchema(s.type);
+        expect(schema).not.toBeNull();
+        for (const b of Object.values(s.blocks)) expect(schema!.blocks?.some((bs) => bs.type === b.type)).toBe(true);
+      }
+    }
+  });
+
+  it('has valid unique ids, is deterministic on the home page and stays under 64 KB', () => {
+    const p = presetTheme('heritage', CTX);
+    const ids = [...p.header_group.order, ...p.templates.home.order, ...p.footer_group.order];
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(ID_RE);
+    expect(stable(presetTheme('heritage', CTX))).toEqual(stable(presetTheme('heritage', CTX)));
+    expect(JSON.stringify(p).length).toBeLessThan(65536);
+  });
+
+  it('has the section order and switches from the spec', () => {
+    const h = home();
+    expect(h.order.map((id) => h.sections[id].type)).toEqual([
+      'collage', 'multicolumn', 'promo-cards', 'featured-products', 'image-with-text', 'shop-the-look', 'testimonials', 'logo-list', 'image-gallery', 'newsletter',
+    ]);
+    expect(h.sections[h.order[3]].settings).toMatchObject({ columns: 4, show_badges: true, show_tagline: true, show_swatches: true, heading: 'Signature pieces', source: 'featured', limit: 8 });
+    expect(heritagePreset(CTX).templates.product.sections['main-product'].block_order.filter((id) => id.startsWith('collapsible-tab'))).toHaveLength(3);
+  });
+
+  it('builds the collage from the business name and tagline with three sample tiles', () => {
+    const c = home().sections.collage;
+    expect(c.settings).toMatchObject({ layout: 'text-left', feature_tile: 'first', heading: 'Welcome to Rose Mart', text: '<p>Fresh finds, fast delivery</p>', button_text: 'Explore the collection', link: '/catalog', button_2_text: 'Our story', link_2: '/pages/about' });
+    expect(c.block_order.map((id) => c.blocks[id].settings.image)).toEqual([1, 2, 3].map((n) => `/store-presets/heritage/hero-${n}.svg`));
+    const bare = heritagePreset({ businessName: 'X', tagline: '' }).templates.home.sections.collage;
+    expect(String(bare.settings.text)).toMatch(/^<p>.+<\/p>$/);
+  });
+
+  it('points every sample image at a file that ships', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const t = heritagePreset(CTX);
+    const urls = JSON.stringify(t).match(/\/store-presets\/heritage\/[a-z0-9-]+\.svg/g) ?? [];
+    expect(new Set(urls).size).toBe(9);
+    for (const u of new Set(urls)) {
+      const file = path.join(process.cwd(), 'public', u);
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeLessThan(4096);
+    }
+  });
+
+  it('has the crimson announcement, five-link menu, dark footer and four-column catalog', () => {
+    const p = presetTheme('heritage', CTX);
+    const a = p.header_group.sections.announcement;
+    expect(a.color_scheme).toBe('scheme-3');
+    expect(a.settings.text).toBe('Fresh finds, fast delivery');
+    expect(presetTheme('heritage', { businessName: 'X', tagline: '' }).header_group.sections.announcement.settings.text).toBe('Complimentary shipping on orders over ₹15,000');
+    expect(p.settings.menus.find((m) => m.id === 'main')!.items.map(({ label, link }) => ({ label, link }))).toEqual([
+      { label: 'New in', link: '/catalog' },
+      { label: 'Sarees', link: '/catalog' },
+      { label: 'Bridal', link: '/catalog' },
+      { label: 'Jewellery', link: '/catalog' },
+      { label: 'Our story', link: '/pages/about' },
+    ]);
+    const f = p.footer_group.sections.footer;
+    expect(f.color_scheme).toBe('scheme-4');
+    expect(f.settings).toMatchObject({ show_payment_icons: true, about: 'Fresh finds, fast delivery' });
+    const cat = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
+    expect(cat.settings.columns_desktop).toBe(4);
+  });
+
+  it('invents no reviews, press names or customer photos', () => {
+    const h = home();
+    const quotes = Object.values(h.sections.testimonials.blocks);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0].settings).toMatchObject({ text: 'Tell shoppers what a customer said about you.', name: 'A customer' });
+    expect(quotes[0].settings.photo).toBeUndefined();
+    const logos = Object.values(h.sections['logo-list'].blocks).map((b) => b.settings);
+    expect(logos.map((l) => l.name)).toEqual(['Your press mention', 'Another publication', 'A magazine']);
+    for (const l of logos) expect(l.image).toBeUndefined();
   });
 });

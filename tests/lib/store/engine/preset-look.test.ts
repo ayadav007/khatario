@@ -5,7 +5,7 @@ import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema'
 import { chowkOnAccent } from '@/lib/store/store-theme';
 import type { ThemePreset } from '@/lib/store/engine/types';
 
-const PRESETS: ThemePreset[] = ['studio', 'blank', 'quick', 'grocery', 'khatario'];
+const PRESETS: ThemePreset[] = ['studio', 'blank', 'quick', 'grocery', 'khatario', 'heritage'];
 
 describe('mixHex', () => {
   it('mixes and rounds half up', () => {
@@ -29,6 +29,7 @@ describe('PRESET_LOOK', () => {
     expect(PRESET_LOOK.quick).toEqual({ canvas: '#f3f5f7', accent: '#0f7a5c', font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow', label_style: 'normal', frame_style: 'none', texture: 'none' });
     expect(PRESET_LOOK.grocery).toEqual({ canvas: '#f6f7f4', accent: '#176b45', font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' });
     expect(PRESET_LOOK.khatario).toEqual({ canvas: '#f4f5f7', accent: '#00897b', font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' });
+    expect(PRESET_LOOK.heritage).toEqual({ canvas: '#fcf9f3', accent: '#7a0c1e', font_heading: 'newsreader', font_body: 'manrope', button_radius: 0, card_style: 'bordered', label_style: 'caps', frame_style: 'accent', texture: 'dots' });
   });
 });
 
@@ -118,6 +119,49 @@ it('the theme card_style setting explains its reach', () => {
   expect(s?.info).toBe('Product grid and rail sections keep their own card style');
 });
 
-it('every preset starts with the default style', () => {
-  for (const p of PRESETS) expect(presetSettings({ businessName: 'X', tagline: '' }, p)).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
+it('every preset but Heritage starts with the default style', () => {
+  for (const p of PRESETS.filter((x) => x !== 'heritage')) expect(presetSettings({ businessName: 'X', tagline: '' }, p)).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
+});
+
+describe('heritage schemes', () => {
+  it('heritage uses its fixed six schemes and the store accent replaces the button colour', () => {
+    const s = schemesFor('heritage', undefined);
+    expect(s.map((x) => x.name)).toEqual(['Ivory', 'Parchment', 'Crimson', 'Dark', 'Cream', 'Gold']);
+    expect(s.map((x) => x.id)).toEqual(['scheme-1', 'scheme-2', 'scheme-3', 'scheme-4', 'scheme-5', 'scheme-6']);
+    expect(s[0]).toMatchObject({ background: '#fcf9f3', accent: '#c89d53', button: '#7a0c1e' });
+    expect(s[3].background).toBe('#1b1514');
+    expect(schemesFor('heritage', '#004537')[0].button).toBe('#004537');
+  });
+
+  it('puts the store accent on Ivory, Parchment and Cream buttons and the Crimson background only', () => {
+    const base = schemesFor('heritage', undefined);
+    const s = schemesFor('heritage', '#004537');
+    for (const i of [0, 1, 4]) expect(s[i].button).toBe('#004537');
+    expect(s[2].background).toBe('#004537');
+    expect(s[3]).toEqual(base[3]);
+    expect(s[5]).toEqual(base[5]);
+    expect(s[2].button).toBe(base[2].button);
+  });
+
+  it('returns a fresh copy of the table every call', () => {
+    const a = schemesFor('heritage', undefined);
+    a[0].button = '#000000';
+    expect(schemesFor('heritage', undefined)[0].button).toBe('#7a0c1e');
+  });
+
+  it('holds the brief colours', () => {
+    const s = schemesFor('heritage', undefined);
+    expect(s[0]).toEqual({ id: 'scheme-1', name: 'Ivory', background: '#fcf9f3', text: '#1c1c18', accent: '#c89d53', button: '#7a0c1e', button_text: '#ffffff', border: mixHex('#1c1c18', '#fcf9f3', 0.12), card: '#ffffff' });
+    expect(s[1]).toMatchObject({ background: '#f4ece0', text: '#1c1c18' });
+    expect(s[2]).toMatchObject({ background: '#7a0c1e', text: '#fcf9f3', accent: '#c89d53', button: '#c89d53', button_text: '#1c1c18' });
+    expect(s[3]).toMatchObject({ background: '#1b1514', text: '#fbf8f5', accent: '#c89d53', button: '#c89d53', button_text: '#1b1514', border: '#3d3230', card: '#2a2220' });
+    expect(s[4]).toMatchObject({ background: '#faf5ed', text: '#1c1c18' });
+    expect(s[5]).toMatchObject({ background: '#c89d53', text: '#1c1c18', accent: '#7a0c1e', button: '#7a0c1e', button_text: '#ffffff' });
+  });
+
+  it('presetSettings gives Heritage its fonts, corners and style fields', () => {
+    expect(presetSettings({ businessName: 'X', tagline: '' }, 'heritage')).toMatchObject({
+      font_heading: 'newsreader', font_body: 'manrope', button_radius: 0, card_style: 'bordered', label_style: 'caps', frame_style: 'accent', texture: 'dots',
+    });
+  });
 });

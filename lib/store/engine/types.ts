@@ -1,5 +1,5 @@
 export type TemplateKind = 'home' | 'product' | 'catalog' | 'page' | 'header' | 'footer';
-export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank';
+export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage';
 export type ThemeRole = 'live' | 'draft';
 
 export interface Block {

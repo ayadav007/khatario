@@ -23,7 +23,7 @@ describe('editor ops client safety', () => {
         });
       }
       const lib = require('@/lib/store/engine/library');
-      expect(lib.PRESET_CHOICES).toHaveLength(5);
+      expect(lib.PRESET_CHOICES).toHaveLength(6);
       const api = require('@/components/store/library/api');
       for (const k of [
         'listThemes',

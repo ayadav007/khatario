@@ -1,7 +1,7 @@
 // Client-safe: types only. The engine shell's root classes (D27) and the phone kit rule (D29).
 import type { ThemePreset, ThemeSettings } from './types';
 
-const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank'];
+const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage'];
 
 // Each non-default style setting is one root class; the rules live in components/store/engine/style-rules.ts.
 const STYLE_CLASSES: { [K in 'label_style' | 'frame_style' | 'texture']: Readonly<Record<string, string>> } = {

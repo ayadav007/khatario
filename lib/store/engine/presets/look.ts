@@ -34,6 +34,7 @@ export const PRESET_LOOK: Record<ThemePreset, PresetLook> = {
   blank: STUDIO_LOOK,
   quick: { canvas: PACK_CANVAS.quick, accent: STORE_THEME_PRESETS.quick.accent, font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow', label_style: 'normal', frame_style: 'none', texture: 'none' },
   grocery: { canvas: PACK_CANVAS.grocery, accent: STORE_THEME_PRESETS.grocery.accent, font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' },
+  heritage: { canvas: '#fcf9f3', accent: '#7a0c1e', font_heading: 'newsreader', font_body: 'manrope', button_radius: 0, card_style: 'bordered', label_style: 'caps', frame_style: 'accent', texture: 'dots' },
   khatario: { canvas: PACK_CANVAS.khatario, accent: STORE_THEME_PRESETS.khatario.accent, font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' },
 };
 
@@ -86,8 +87,83 @@ function validRgb(v: string | undefined): v is string {
   return typeof v === 'string' && RGB_RE.test(v) && isHexColor(v);
 }
 
+const HERITAGE_INK = '#1c1c18';
+const HERITAGE_GOLD = '#c89d53';
+const HERITAGE_CRIMSON = '#7a0c1e';
+
+function heritageLight(id: string, name: string, background: string): ColorScheme {
+  return {
+    id,
+    name,
+    background,
+    text: HERITAGE_INK,
+    accent: HERITAGE_GOLD,
+    button: HERITAGE_CRIMSON,
+    button_text: '#ffffff',
+    border: mixHex(HERITAGE_INK, '#fcf9f3', 0.12),
+    card: '#ffffff',
+  };
+}
+
+/**
+ * Presets whose six schemes are a fixed table rather than derived from a paper and an accent. The store's accent
+ * still lands on `schemesFor`'s output: see `heritageSchemes`.
+ */
+export const PRESET_SCHEMES: Partial<Record<ThemePreset, ColorScheme[]>> = {
+  heritage: [
+    heritageLight('scheme-1', 'Ivory', '#fcf9f3'),
+    heritageLight('scheme-2', 'Parchment', '#f4ece0'),
+    {
+      id: 'scheme-3',
+      name: 'Crimson',
+      background: HERITAGE_CRIMSON,
+      text: '#fcf9f3',
+      accent: HERITAGE_GOLD,
+      button: HERITAGE_GOLD,
+      button_text: HERITAGE_INK,
+      border: mixHex('#fcf9f3', HERITAGE_CRIMSON, 0.2),
+      card: mixHex('#fcf9f3', HERITAGE_CRIMSON, 0.08),
+    },
+    {
+      id: 'scheme-4',
+      name: 'Dark',
+      background: '#1b1514',
+      text: '#fbf8f5',
+      accent: HERITAGE_GOLD,
+      button: HERITAGE_GOLD,
+      button_text: '#1b1514',
+      border: '#3d3230',
+      card: '#2a2220',
+    },
+    heritageLight('scheme-5', 'Cream', '#faf5ed'),
+    {
+      id: 'scheme-6',
+      name: 'Gold',
+      background: HERITAGE_GOLD,
+      text: HERITAGE_INK,
+      accent: HERITAGE_CRIMSON,
+      button: HERITAGE_CRIMSON,
+      button_text: '#ffffff',
+      border: mixHex(HERITAGE_INK, HERITAGE_GOLD, 0.2),
+      card: mixHex('#ffffff', HERITAGE_GOLD, 0.2),
+    },
+  ],
+};
+
+/** The fixed table, with the store's accent as the button on Ivory, Parchment and Cream and the paper of Crimson. */
+function heritageSchemes(table: ColorScheme[], accent: string | undefined): ColorScheme[] {
+  const out = table.map((s) => ({ ...s }));
+  if (!validRgb(accent)) return out;
+  const onAccent = chowkOnAccent(accent);
+  for (const i of [0, 1, 4]) out[i] = { ...out[i], button: accent, button_text: contrastRatio(out[i].button_text, accent) >= 3 ? out[i].button_text : onAccent };
+  out[2] = { ...out[2], background: accent, text: contrastRatio(out[2].text, accent) >= 3 ? out[2].text : onAccent };
+  return out;
+}
+
 /** The six colour schemes of a preset (D26), built from its paper and the store's accent. */
 export function schemesFor(preset: ThemePreset, accent: string | undefined, canvas?: string): ColorScheme[] {
+  const fixed = PRESET_SCHEMES[preset];
+  if (fixed) return heritageSchemes(fixed, accent);
   const look = PRESET_LOOK[preset] ?? STUDIO_LOOK;
   const a = validRgb(accent) ? accent : look.accent;
   const bg = validRgb(canvas) ? canvas : look.canvas;

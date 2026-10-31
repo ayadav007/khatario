@@ -10,6 +10,8 @@ export interface PresetChoice {
   /** The preset's paper and accent, for the picker swatch. Copied from presets/look.ts (a test keeps them equal). */
   canvas: string;
   accent: string;
+  /** A preset that ships sample images and a fuller layout; the picker marks it. */
+  premium?: true;
 }
 
 export const PRESET_CHOICES: PresetChoice[] = [
@@ -47,6 +49,14 @@ export const PRESET_CHOICES: PresetChoice[] = [
     description: 'An empty page to build from scratch',
     canvas: '#fbf8f3',
     accent: '#b94717',
+  },
+  {
+    preset: 'heritage',
+    label: 'Heritage Couture',
+    description: 'Ivory, crimson and gold with serif headings: a boutique for fashion, couture and jewellery. Comes with sample images; replace them with yours',
+    canvas: '#fcf9f3',
+    accent: '#7a0c1e',
+    premium: true,
   },
 ];
 

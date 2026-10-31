@@ -20,6 +20,12 @@ describe('engineRootClass', () => {
     expect(r.quick).toBe(false);
   });
 
+  it('accepts the heritage preset', () => {
+    const r = engineRootClass({ preset: 'heritage', phoneKit: false, editor: false, schemeBackground: '#fcf9f3', style: { label_style: 'caps', frame_style: 'accent', texture: 'dots' } });
+    expect(classes(r.className)).toEqual(expect.arrayContaining(['eng-preset-heritage', 'eng-labels-caps', 'eng-frame-accent', 'eng-texture-dots']));
+    expect(r.quick).toBe(false);
+  });
+
   it('grocery follows the phone kit setting', () => {
     const off = engineRootClass({ preset: 'grocery', phoneKit: false, editor: false, schemeBackground: '#f6f7f4', style });
     expect(off.kit).toBe(false);

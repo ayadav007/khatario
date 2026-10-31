@@ -1,4 +1,4 @@
-import { productCardLook } from '@/lib/store/engine/card-look';
+import { PRESET_CARD_FIELDS, productCardLook } from '@/lib/store/engine/card-look';
 
 describe('productCardLook', () => {
   const grocery = { pack: 'grocery' as const, phone_kit: false };
@@ -22,5 +22,12 @@ describe('productCardLook', () => {
 
   it('carries tagline and swatch flags', () => {
     expect(productCardLook({ quick: false, phoneKit: false, tagline: true, swatches: false }, grocery).studioTile).toBe(true);
+  });
+});
+
+describe('PRESET_CARD_FIELDS', () => {
+  it('shows the tagline and swatches on Heritage only', () => {
+    expect(PRESET_CARD_FIELDS.heritage).toEqual({ tagline: true, swatches: true });
+    for (const p of ['studio', 'quick', 'grocery', 'khatario', 'blank'] as const) expect(PRESET_CARD_FIELDS[p]).toEqual({ tagline: false, swatches: false });
   });
 });

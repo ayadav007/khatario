@@ -43,9 +43,9 @@ const row = (over: Partial<ThemeListRow>): ThemeListRow =>
   }) as ThemeListRow;
 
 describe('PRESET_CHOICES', () => {
-  it('lists the five presets once each, in order, matching the preset look', () => {
-    expect(PRESET_CHOICES.map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank']);
-    expect(PRESET_CHOICES.map((c) => c.label)).toEqual(['Studio', 'Quick', 'Premium Grocery', 'Khatario', 'Blank']);
+  it('lists the six presets once each, in order, matching the preset look', () => {
+    expect(PRESET_CHOICES.map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage']);
+    expect(PRESET_CHOICES.map((c) => c.label)).toEqual(['Studio', 'Quick', 'Premium Grocery', 'Khatario', 'Blank', 'Heritage Couture']);
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PRESET_LOOK } = require('@/lib/store/engine/presets/look');
     for (const c of PRESET_CHOICES) {
@@ -53,6 +53,11 @@ describe('PRESET_CHOICES', () => {
       expect(c.accent).toBe(PRESET_LOOK[c.preset].accent);
       expect(c.description.length).toBeGreaterThan(0);
     }
+  });
+  it('marks only Heritage Couture as premium', () => {
+    expect(PRESET_CHOICES.filter((c) => c.premium).map((c) => c.preset)).toEqual(['heritage']);
+    expect(PRESET_CHOICES[PRESET_CHOICES.length - 1].premium).toBe(true);
+    expect(presetLabel('heritage')).toBe('Heritage Couture');
   });
   it('has the migrated choice text', () => {
     expect(MIGRATED_CHOICE).toEqual({

@@ -8,7 +8,7 @@ import type { ThemePreset } from '@/lib/store/engine/types';
 
 export const dynamic = 'force-dynamic';
 
-const PRESETS: ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank'];
+const PRESETS: ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage'];
 const SOURCES: ThemeSource[] = ['preset', 'migrated'];
 
 export async function GET(request: NextRequest) {
