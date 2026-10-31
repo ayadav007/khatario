@@ -42,13 +42,31 @@ function convertSection(section: unknown): unknown {
   for (const k of OLD_KEYS) delete kept[k];
   const out: Raw = { ...section, settings: kept };
 
+  const made = blocksFromOldSettings(section.type, settings);
   const hasBlocks = Array.isArray(section.block_order) && section.block_order.length > 0;
   if (!hasBlocks) {
-    const made = blocksFromOldSettings(section.type, settings);
     out.blocks = Object.fromEntries(made.map((m) => [m.id, m.block]));
     out.block_order = made.map((m) => m.id);
+  } else if (made.length > 0) {
+    // A section that already has blocks and still holds old content (saved from a copy that was never converted):
+    // the old content goes in front of its blocks under ids it does not use yet, so nothing is lost.
+    const existing = isObject(section.blocks) ? section.blocks : {};
+    const order = section.block_order as unknown[];
+    const taken = new Set<string>([...Object.keys(existing), ...order.filter((id): id is string => typeof id === 'string')]);
+    const renamed = made.map((m) => ({ id: freeId(m.id.replace(/-1$/, ''), taken), block: m.block }));
+    out.blocks = { ...existing, ...Object.fromEntries(renamed.map((m) => [m.id, m.block])) };
+    out.block_order = [...renamed.map((m) => m.id), ...order];
   }
   return out;
+}
+
+/** The first `<base>-N` (N from 1) not in `taken`; it is added to `taken`. */
+function freeId(base: string, taken: Set<string>): string {
+  let n = 1;
+  while (taken.has(`${base}-${n}`)) n++;
+  const id = `${base}-${n}`;
+  taken.add(id);
+  return id;
 }
 
 function convertTemplate(template: unknown): unknown {
@@ -60,7 +78,9 @@ function convertTemplate(template: unknown): unknown {
 
 /**
  * Turn the old heading, description / content, button text and link settings of every Image with text and Rich text
- * section of a RAW theme into content blocks. A section that already has blocks keeps them and only loses the old keys.
+ * section of a RAW theme into content blocks. A section that already has blocks keeps them; any non-empty old content
+ * becomes blocks placed before them (under the next free `heading-N` / `text-N` / `button-N` ids), and empty old keys
+ * are just removed. Nothing is dropped.
  * After one run the old keys are gone, so a second run changes nothing. Only these two section types are touched.
  * Returns a new object; the input is untouched.
  */

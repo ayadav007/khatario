@@ -7,6 +7,9 @@ export const CONTENT_BLOCK_RULES =
   // Each block spaces itself with a bottom margin; a paragraph inside a text block adds none of its own, so
   // the gap before the next block is one margin, not two.
   `${R} .eng-cb{margin:0 0 12px}` +
+  // A text block keeps the 20px the old description left before the button (and before anything else that follows).
+  // Before the :last-child rule, so a text block at the end still adds nothing.
+  `${R} .eng-cb-text{margin-bottom:20px}` +
   `${R} .eng-cb:last-child{margin-bottom:0}` +
   `${R} .eng-cb-text p:last-child{margin-bottom:0}` +
   `${R} .eng-cb-heading{font-weight:700;line-height:1.15;overflow-wrap:anywhere}` +

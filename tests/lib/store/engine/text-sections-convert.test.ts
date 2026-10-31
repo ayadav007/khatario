@@ -38,14 +38,48 @@ describe('convertLegacyTextSections', () => {
     expect(b.settings).toEqual({});
   });
 
-  it('a section that already has blocks keeps them and only loses the old keys; running twice changes nothing', () => {
-    const half = legacy('rich-text', { heading: 'Old', content: '<p>old</p>' });
+  it('a section that already has blocks gets its old content as blocks in front of them, under free ids; running twice changes nothing', () => {
+    const half = legacy('rich-text', { heading: 'Old', content: '<p>old</p>', align: 'left' });
+    half.templates.home.sections.a.blocks = { 'text-1': { type: 'text', settings: { content: '<p>new</p>' } } };
+    half.templates.home.sections.a.block_order = ['text-1'];
+    const once = convertLegacyTextSections(half);
+    const s = once.templates.home.sections.a;
+    expect(s.block_order).toEqual(['heading-1', 'text-2', 'text-1']);
+    expect(s.blocks['heading-1']).toEqual({ type: 'heading', settings: { text: 'Old' } });
+    expect(s.blocks['text-2']).toEqual({ type: 'text', settings: { content: '<p>old</p>' } });
+    expect(s.blocks['text-1'].settings.content).toBe('<p>new</p>');
+    expect(s.settings).toEqual({ align: 'left' });
+    expect(convertLegacyTextSections(once)).toEqual(once);
+    const clean = sanitizeThemeData(once);
+    expect(clean.templates.home.sections.a.block_order).toEqual(['heading-1', 'text-2', 'text-1']);
+    expect(sanitizeThemeData(clean)).toEqual(clean);
+  });
+
+  it('a half-converted Image with text keeps its heading, text and button ahead of the existing blocks', () => {
+    const half = legacy('image-with-text', { heading: 'H', description: '<p>D</p>', button_text: 'Go', link: '/go' });
+    half.templates.home.sections.a.blocks = {
+      'heading-1': { type: 'heading', settings: { text: 'Added' } },
+      'button-1': { type: 'button', settings: { label: 'Added' } },
+      'button-2': { type: 'button', settings: { label: 'Added too' } },
+    };
+    half.templates.home.sections.a.block_order = ['heading-1', 'button-1', 'button-2'];
+    const s = convertLegacyTextSections(half).templates.home.sections.a;
+    expect(s.block_order).toEqual(['heading-2', 'text-1', 'button-3', 'heading-1', 'button-1', 'button-2']);
+    expect(s.blocks['heading-2']).toEqual({ type: 'heading', settings: { text: 'H' } });
+    expect(s.blocks['text-1']).toEqual({ type: 'text', settings: { content: '<p>D</p>' } });
+    expect(s.blocks['button-3']).toEqual({ type: 'button', settings: { label: 'Go', link: '/go' } });
+    expect(s.blocks['heading-1'].settings.text).toBe('Added');
+    expect(s.settings).toEqual({});
+  });
+
+  it('a section that already has blocks and only empty old keys just loses the keys', () => {
+    const half = legacy('rich-text', { heading: '', content: '  ', align: 'center' });
     half.templates.home.sections.a.blocks = { 'text-1': { type: 'text', settings: { content: '<p>new</p>' } } };
     half.templates.home.sections.a.block_order = ['text-1'];
     const once = convertLegacyTextSections(half);
     expect(once.templates.home.sections.a.block_order).toEqual(['text-1']);
-    expect(once.templates.home.sections.a.blocks['text-1'].settings.content).toBe('<p>new</p>');
-    expect(once.templates.home.sections.a.settings).toEqual({});
+    expect(once.templates.home.sections.a.blocks).toEqual(half.templates.home.sections.a.blocks);
+    expect(once.templates.home.sections.a.settings).toEqual({ align: 'center' });
     expect(convertLegacyTextSections(once)).toEqual(once);
   });
 

@@ -31,6 +31,15 @@ describe('content block rules', () => {
     expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy :is(.eng-cb-text,.eng-cb-quote)')).toContain('align-self:stretch');
   });
 
+  it('a text block keeps the old 20px gap before what follows, and none when it is last', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-text')).toBe('margin-bottom:20px');
+    // Same specificity, so the :last-child rule must come after it to win.
+    const selectors = CONTENT_BLOCK_RULES.split('}').map((r) => r.split('{')[0].trim());
+    expect(selectors.indexOf('.st-root.eng-root .eng-cb-text')).toBeGreaterThan(selectors.indexOf('.st-root.eng-root .eng-cb'));
+    expect(selectors.indexOf('.st-root.eng-root .eng-cb:last-child')).toBeGreaterThan(selectors.indexOf('.st-root.eng-root .eng-cb-text'));
+    expect(ruleBody('.st-root.eng-root .eng-cb:last-child')).toBe('margin-bottom:0');
+  });
+
   it('the last paragraph of a text block adds no margin of its own', () => {
     expect(ruleBody('.st-root.eng-root .eng-cb-text p:last-child')).toContain('margin-bottom:0');
   });

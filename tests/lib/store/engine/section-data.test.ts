@@ -146,18 +146,26 @@ describe('products by id', () => {
     expect(out.s1.error).toBeUndefined();
   });
 
-  it('marks only the sections that asked for ids when the query fails', async () => {
+  it('a failed ids query gives only the sections that asked for ids no products and the failed flag, never an error', async () => {
     queryMock.mockRejectedValue(new Error('statement timeout'));
     const out = await resolveSectionData(
       store,
       new Map<string, SectionDataRequest>([
         ['s1', { productIds: [a] }],
         ['s2', { categories: true, categoriesOptional: true }],
+        ['s3', { productIds: ['junk'] }],
       ]),
     );
-    expect(out.s1.error).toBe('statement timeout');
-    expect(out.s1.productsById).toBeUndefined();
+    // Like optional categories: the section still renders (RenderTemplate drops sections with an error).
+    expect(out.s1.error).toBeUndefined();
+    expect(out.s1.productsById).toEqual({});
+    expect(out.s1.productsFailed).toBe(true);
     expect(out.s2.error).toBeUndefined();
+    expect(out.s2.productsFailed).toBeUndefined();
+    // A section with no valid ids asked for nothing, so nothing failed for it.
+    expect(out.s3.productsById).toEqual({});
+    expect(out.s3.productsFailed).toBeUndefined();
+    expect(out.s3.error).toBeUndefined();
   });
 
   it('runs no query when no section asks for ids', async () => {

@@ -95,7 +95,7 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
             onChange={(e) => set({ store_badge: e.target.value })}
           />
           <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-            Replaces the automatic New / % off badge. Leave empty to keep those.
+            Shown on Studio-style product cards. Replaces the automatic New / % off badge there. Leave empty to keep those.
           </p>
         </div>
         <div>

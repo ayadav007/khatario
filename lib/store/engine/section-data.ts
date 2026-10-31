@@ -20,6 +20,8 @@ export interface SectionData {
   productsById?: Record<string, StoreItem>;
   /** An optional categories lookup failed: `categories` is `[]` so the section still renders, but it is not the truth. */
   categoriesFailed?: true;
+  /** The products-by-id lookup failed: `productsById` is `{}` so the section still renders without them, but it is not the truth. */
+  productsFailed?: true;
   /** Category shelves: one entry per category with products, in category order. */
   shelves?: Array<{ category: SectionCategory; products: StoreItem[] }>;
   error?: string;
@@ -316,8 +318,11 @@ export async function resolveSectionData(
       if (own.length === 0) data.productsById = {};
       else {
         const r = await idsJob!;
-        if (r.error) data.error = data.error ?? r.error;
-        else {
+        // Like optional categories: the section renders with no products rather than disappearing.
+        if (r.error) {
+          data.productsById = {};
+          data.productsFailed = true;
+        } else {
           const found = new Map((r.items ?? []).map((p) => [p.id, p]));
           data.productsById = {};
           for (const pid of own) {

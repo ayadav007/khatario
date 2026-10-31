@@ -2,7 +2,7 @@
 
 Plan: `docs/superpowers/plans/2026-10-31-store-premium-foundations.md`. Spec: `docs/superpowers/specs/2026-10-31-store-premium-themes-design.md`.
 
-Branch `claude/premium-foundations` (worktree), commits `2aefae0a..7daec744` plus the Task 10 commit. Nothing is pushed or merged. Tasks 1 to 9 were built and reviewed without a browser (owner's rule: test on staging); **nothing here has been looked at in a browser**. The Studio 2 manual check that Task 10 step 2 called for was moved to the staging checklist below by controller ruling.
+Branch `claude/premium-foundations` (worktree), commits `2aefae0a..7daec744` plus the Task 10 commits, then **`main` (at `5e2d6c8e`) merged into the branch at `c07548ff`**, then the final-review fix commit. Nothing is pushed, and the branch is not merged into `main`. Tasks 1 to 9 were built and reviewed without a browser (owner's rule: test on staging); **nothing here has been looked at in a browser**. The Studio 2 manual check that Task 10 step 2 called for was moved to the staging checklist below by controller ruling.
 
 ## What shipped
 
@@ -17,12 +17,14 @@ Branch `claude/premium-foundations` (worktree), commits `2aefae0a..7daec744` plu
 | 7 | Content blocks in Image with text and Rich text; one-time conversion of old themes; presets, starters and Studio migration emit blocks | `fdcda07c` |
 | 8 | Content blocks render; preset parity test | `c3077519`, fix `9642252b` |
 | 9 | Testimonials (`title`, `location`, `purchased`, `show_summary`), Logo list (`name`, `caption`), Promo cards 4 columns, Multicolumn column `image` | `7daec744` |
-| 10 | Three e2e scenarios, `next build` check, this document | this commit |
+| 10 | Three e2e scenarios, `next build` check, this document | `9d95b0f8`, `74ce198e` |
+| Merge | `main` merged into the branch (menus build, sanitised `getTheme` / working draft / duplicate) | `c07548ff` |
+| Final fixes | Safer text-section conversion, products-by-id failure semantics, 20px text gap, badge help text, DB test for old Rich text | the commit after `c07548ff` |
 
 ## Owed at merge
 
 - **Project log and roadmap are not written on this branch.** By controller ruling, the `docs/project.log.md` entry (required by AGENTS.md) and the `docs/roadmap.md` card ("foundations built, Heritage Couture plan next") are written by the controller in the main checkout at merge time, because the main checkout's copies already carry other sessions' entries and would conflict. If that does not happen, the AGENTS.md requirement is silently lost.
-- **Numbers for the log entry:** jest `tests/lib/store` plus the two DB suites on `kh_phase2_test`: 112 suites, 1211 tests, all pass; `npx tsc --noEmit -p .` clean; `npx next build` passed on the second run, after the first failed on Newsreader's font fallback metrics and was fixed with `adjustFontFallback: false` (Task 10 commit). Decisions to log: `preload: false` on all non-Inter store fonts; the `productsById` shape (`SectionData.productsById`, per-section, only that section's valid ids, in order); the custom badge replaces only the "% OFF" badge (the struck MRP stays); texture rules use `!important`. Open: plan 2 (Heritage Couture) next; migration 458 applied to the test DB only, staging needs the owner; nothing pushed.
+- **Numbers for the log entry (after the merge and final fixes):** jest `tests/lib/store` (111 suites, 1267 tests) plus the three DB suites `store-themes`, `store-product-card-fields`, `store-section-products-by-id` on `kh_phase2_test` (3 suites, 43 tests), all pass. Before the merge: 112 suites, 1211 tests; `npx tsc --noEmit -p .` clean; `npx next build` passed on the second run, after the first failed on Newsreader's font fallback metrics and was fixed with `adjustFontFallback: false` (Task 10 commit). Decisions to log: `preload: false` on all non-Inter store fonts; the `productsById` shape (`SectionData.productsById`, per-section, only that section's valid ids, in order); the custom badge replaces only the "% OFF" badge (the struck MRP stays); texture rules use `!important`; **the conversion rule** (a text section that already has blocks and still holds non-empty old `heading` / `description` / `content` / `button_text` / `link` gets that content as blocks placed before its existing blocks, under the next free `heading-N` / `text-N` / `button-N` ids; empty old keys are just removed; nothing is dropped; this changes the spec's earlier "a section that already has blocks is left alone", spec §5 updated); **products-by-id failure semantics** (a failed by-id lookup gives each section that asked for ids `productsById: {}` and `productsFailed: true`, never `error`, so the section still renders without products, like `categoriesOptional` / `categoriesFailed`; spec §7). Open: plan 2 (Heritage Couture) next; migration 458 applied to the test DB only, staging needs the owner; nothing pushed.
 - **The three new e2e scenarios assume the ganesh fixture** and were written without a browser: the section card named exactly "Image with text" (`/^Image with text/` in the Add section dialog), the Featured products section having the id `featured-products` with its visible items showing, and the second "Add section here" button (`add.nth(1)`) landing at home position 1. If the fixture changes, adjust those first.
 
 ## Before deploying (owner approval required)
@@ -34,7 +36,7 @@ If the code ships before the migration, the store item list query and the public
 - [ ] The owner approves the migration run.
 - [ ] 458 runs on staging before the code is deployed. Check the migration number does not clash with another session's file (the M5 carry-over already noted a 448 and an untracked 455 elsewhere).
 - [ ] No script runs for this work.
-- [ ] Old themes convert on load, not in the database: an Image with text or Rich text with the old settings (`heading`, `text`, `button_label`, `button_link`, `content`) becomes blocks in memory the first time the theme is read, and is stored as blocks only when the owner next saves or publishes. Nothing to backfill.
+- [ ] Old themes convert on load, not in the database: an Image with text or Rich text with the old settings (`heading`, `description`, `content`, `button_text`, `link`) becomes blocks in memory the first time the theme is read, and is stored as blocks only when the owner next saves or publishes. Nothing to backfill.
 - [ ] `store_engine` stays off for every real store throughout. Use the engine test store with it on.
 
 ## Build check (Task 10)
@@ -100,14 +102,14 @@ No section uses it yet (plan 2 sections will), so there is nothing to see on sta
 - [ ] Image width Narrow (about 40/60 split) on desktop; phone stacking unchanged.
 - [ ] Text align Centre really centres the heading, text, buttons and quote (the quote drops its left rule).
 - [ ] Two buttons sit in one row; Outline style looks like an outline in the store's button colour.
-- [ ] A Text block followed by a Button: the gap looks like one block gap, not a doubled one.
+- [ ] A Text block followed by a Button (or anything else): the gap is 20px, the same as the old description-to-button gap, not a doubled one; a Text block at the end of the column adds no gap.
 - [ ] Rich text: heading, text and quote blocks render centred or left per the Align setting.
 - [ ] An empty Heading or Text block draws nothing (no blank gap).
 - [ ] The page starters (About, Sale, Contact, Blank) and the Khatario preset tagline add blocks and look like they did before.
 
 ### 7. Small block upgrades (Task 9)
 
-- [ ] Testimonials: Title, Location and Purchased on a block show as a bold title above the quote and "location · Bought: x" after the name. Show summary on: a line like "4.8 average from N reviews" under the heading; off by default. A rating of 4.96 or higher: see the rounding item in the deferred list.
+- [ ] Testimonials: Title, Location and Purchased on a block show as a bold title above the quote and "location · Bought: x" after the name. Show summary on: a line like "4.8 / 5 from N reviews" under the heading; off by default. A rating of 4.96 or higher: see the rounding item in the deferred list.
 - [ ] Logo list: a block with **only a name** shows the name in the heading font where the logo would be; a block with an image and a caption shows the caption under it; a block with neither is not drawn. Logos still centre and wrap as before on every preset (`.eng-logos li` is now a flex column for all stores).
 - [ ] Promo cards: Columns goes to 4 on desktop; on a phone it holds 2 per row at 4 columns. **Split promo cards at 4 columns on a phone look cramped**: check and decide whether to cap phone columns lower for the split layout.
 - [ ] Multicolumn: a column with a photo shows the photo instead of its icon, sized to fit the column; columns without a photo are unchanged.
@@ -158,7 +160,7 @@ One line each, so the staging pass and the final review see them.
 - The DB test title says "one query" but asserts no query count; there is no page-wide ceiling on the union of ids (12 per section only).
 
 **Task 7, conversion**
-- "Already has blocks" is judged by `block_order.length` only: dangling ids would skip conversion and lose text (unreachable for sanitised data).
+- "Already has blocks" is judged by `block_order.length` only; since the final fixes this no longer loses text (old content is converted ahead of the existing blocks, dangling ids are then dropped by the sanitiser). A section already at the 12-block cap would have its last existing blocks trimmed by the sanitiser once the converted ones are put in front (only reachable through the half-converted case, which the merged `main` sanitising on read makes very unlikely).
 - `migrate-studio` always pushes a text block even when the Studio text is empty (the Task 8 renderer drops empty blocks, so it draws nothing).
 - A whitespace-only button label now makes no button; the junk-input test asserts only `not.toThrow`; the starter fixtures are unsanitised `{sections: [...]}`.
 
@@ -186,4 +188,4 @@ One line each, so the staging pass and the final review see them.
 
 - Sections can ask for products by id (`SectionDataRequest.productIds`, `SectionData.productsById`); no section uses it yet.
 - Fonts Cinzel, Newsreader, Manrope, DM Serif Display, Lora and Poppins are available; Style settings, card fields and block upgrades are the tools Heritage Couture builds on.
-- Merge note: this branch carries the Task 5 and 9 changes to `EngineViews.tsx` and `StudioSections.tsx`, which the menus session also edits in the main checkout; expect conflicts there when merging into `main`.
+- Merge note: `main` has been merged into this branch at `c07548ff`. The only textual conflict was `lib/store/engine/section-data.ts` (the `SectionData` interface: `productsById` from this branch and `categoriesFailed` from `main` both kept); `EngineViews.tsx` and `StudioSections.tsx` merged cleanly. One semantic follow-up: `main` changed the footer menu conversion so a column's links get ids before the column, so the preset parity fixtures' footer menu ids were renumbered in the merge commit (text-section content untouched). Merging the branch into `main` later should now only bring in whatever lands on `main` after `5e2d6c8e`.

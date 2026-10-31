@@ -694,4 +694,65 @@ d('Store themes repository (real DB)', () => {
       expectConverted(stored.rows[0].data as ThemeData);
     });
   });
+
+  describe('old text sections', () => {
+    const made: string[] = [];
+    const newBiz = async (): Promise<string> => {
+      const id = randomUUID();
+      made.push(id);
+      await pool.query(
+        `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Text sections test', '29AAAPA1234A1Z5', '29', 'regular')`,
+        [id],
+      );
+      return id;
+    };
+
+    afterAll(async () => {
+      await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [made]);
+    });
+
+    /** Rewrites a theme row in place so its home page ends with a Rich text section in the pre-blocks shape. */
+    const addOldRichText = async (biz: string, id: string) => {
+      const row = await pool.query(`SELECT data FROM store_themes WHERE business_id = $1 AND id = $2`, [biz, id]);
+      const raw = row.rows[0].data as Record<string, any>;
+      raw.templates.home.sections['old-rt'] = {
+        type: 'rich-text',
+        settings: { heading: 'Our promise', content: '<p>Fresh every day.</p>', align: 'center' },
+        blocks: {},
+        block_order: [],
+      };
+      raw.templates.home.order.push('old-rt');
+      await pool.query(`UPDATE store_themes SET data = $3::jsonb WHERE business_id = $1 AND id = $2`, [biz, id, JSON.stringify(raw)]);
+    };
+
+    const expectConverted = (data: ThemeData) => {
+      const s = data.templates.home.sections['old-rt'];
+      expect(s.block_order).toEqual(['heading-1', 'text-1']);
+      expect(s.blocks['heading-1'].type).toBe('heading');
+      expect(s.blocks['heading-1'].settings.text).toBe('Our promise');
+      expect(s.blocks['text-1'].type).toBe('text');
+      expect(s.blocks['text-1'].settings.content).toBe('<p>Fresh every day.</p>');
+      expect(s.settings.align).toBe('center');
+      for (const old of ['heading', 'content', 'description', 'button_text', 'link']) expect(s.settings).not.toHaveProperty(old);
+    };
+
+    it('getTheme (the editor GET) returns a stored old Rich text section with heading and text blocks and no old keys', async () => {
+      const biz = await newBiz();
+      ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const draft = ok(await createTheme(biz, USER, { name: 'Old', preset: 'studio', ctx }));
+      await addOldRichText(biz, draft.id);
+      expectConverted((await getTheme(biz, draft.id))!.data);
+    });
+
+    it('the working draft of a live theme with an old Rich text section opens converted', async () => {
+      const biz = await newBiz();
+      const liveRow = ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      await addOldRichText(biz, liveRow.id);
+      const w = ok(await getOrCreateWorkingDraft(biz, USER));
+      expectConverted(w.data);
+      expectConverted(ok(await getOrCreateWorkingDraft(biz, USER)).data);
+    });
+  });
 });
