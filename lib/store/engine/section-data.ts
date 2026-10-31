@@ -140,18 +140,32 @@ export async function storeCategories(businessId: string): Promise<SectionCatego
     q.categorySql,
     q.categoryParams,
   );
-  // The categories table has no image column yet.
-  return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: null }));
+  // The categories table has no image column yet: like the old storefront, a category shows the photo of its
+  // first store product (by name) that has one.
+  const photos = await queryRows<{ category_id: string; image_url: string }>(
+    `SELECT DISTINCT ON (i.category_id) i.category_id, i.image_url
+       FROM items i
+      WHERE i.business_id = $1 AND i.show_in_store = true
+        AND (i.is_active IS NULL OR i.is_active = true)
+        AND i.deleted_at IS NULL
+        AND i.category_id IS NOT NULL AND COALESCE(i.image_url, '') <> ''
+      ORDER BY i.category_id, i.name, i.id`,
+    [businessId],
+  );
+  const photo = new Map(photos.map((p) => [p.category_id, p.image_url]));
+  return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: photo.get(r.id) ?? null }));
 }
 
 async function loadCategories(store: StoreBusinessContext): Promise<SectionCategory[]> {
   if (store.is_demo) {
     const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
-    return filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 1 }).categories.map((c) => ({
+    const demo = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 500 });
+    const byName = [...demo.items].sort((a, b) => a.name.localeCompare(b.name));
+    return demo.categories.map((c) => ({
       id: c.id,
       name: c.name,
       item_count: c.item_count,
-      image_url: null,
+      image_url: byName.find((i) => i.category_id === c.id && i.image_url)?.image_url ?? null,
     }));
   }
   return storeCategories(store.business_id);

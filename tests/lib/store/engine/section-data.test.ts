@@ -63,7 +63,8 @@ describe('resolveSectionData for demo stores', () => {
     expect(out.f.products!.length).toBeGreaterThan(0);
     expect(out.f.products!.length).toBeLessThanOrEqual(3);
     expect(out.c.categories!.length).toBeGreaterThan(0);
-    expect(out.c.categories![0].image_url).toBeNull();
+    // Like the old storefront, a demo category shows its first product photo (by name).
+    expect(out.c.categories![0].image_url).toMatch(/^https:\/\//);
   });
 });
 

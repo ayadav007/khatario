@@ -123,3 +123,9 @@ export function ctaTarget(link: unknown): CtaTarget {
   }
   return { kind: 'none' };
 }
+
+/** True in the Studio 2 editor's preview frame (a theme preview opened with `editor=1`). */
+export function isEditorFrameSearch(currentSearch: string): boolean {
+  const q = new URLSearchParams(currentSearch);
+  return Boolean(q.get('preview_theme') && q.get('pt')) && q.get('editor') === '1';
+}

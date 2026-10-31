@@ -272,6 +272,8 @@ export function StudioHero({
   const benefits = splitList(s.benefits, '');
   const slides = heroSlides(s);
   const many = slides.length > 1;
+  // `noImg`: no slide has an image. Engine pages drop the empty image panel (EngineShell); the old store does not.
+  const noImg = slides.every((sl) => !sl.image);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const reduced = usePrefersReducedMotion();
@@ -294,7 +296,7 @@ export function StudioHero({
 
   return (
     <div
-      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''}`}
+      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''} ${noImg ? 'noImg' : ''}`}
       style={boxStyle(s)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}

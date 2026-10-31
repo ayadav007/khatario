@@ -1,4 +1,4 @@
-import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl } from '@/lib/store/engine/links';
+import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch } from '@/lib/store/engine/links';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 
 describe('engineCatalogHref', () => {
@@ -109,5 +109,15 @@ describe('the product Share block shares shareUrl', () => {
     const src = readFileSync(join(process.cwd(), 'components/store/engine/product/ProductBlocks.tsx'), 'utf8');
     expect(src).toContain('shareUrl(window.location.href)');
     expect(src).not.toMatch(/const url = window\.location\.href/);
+  });
+});
+
+describe('isEditorFrameSearch', () => {
+  it('is true only for a theme preview opened with editor=1', () => {
+    expect(isEditorFrameSearch('?preview_theme=t1&pt=x&editor=1')).toBe(true);
+    expect(isEditorFrameSearch('?preview_theme=t1&pt=x')).toBe(false);
+    expect(isEditorFrameSearch('?editor=1')).toBe(false);
+    expect(isEditorFrameSearch('?preview_theme=t1&editor=1')).toBe(false);
+    expect(isEditorFrameSearch('')).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { storeDraftToken, useStore } from '@/lib/store/store-context';
+import { isEditorFrameSearch } from '@/lib/store/engine/links';
 import {
   isStorePromoActive,
   shouldShowStorePromo,
@@ -37,7 +38,8 @@ export function StorePromoSheet() {
   const promo = store?.store_promo_sheet;
 
   useEffect(() => {
-    if (storeDraftToken()) {
+    // Never over a design being edited: the old Studio draft preview or the Studio 2 editor frame.
+    if (storeDraftToken() || isEditorFrameSearch(window.location.search)) {
       setOpen(false);
       return;
     }

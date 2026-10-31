@@ -144,6 +144,24 @@ d('store engine section data (real DB)', () => {
     expect(out.c2.categories).toEqual(expected);
   });
 
+  it('gives a category without its own image the first product photo in it, by name', async () => {
+    await pool.query(`UPDATE items SET image_url = $2 WHERE id = $1`, [DISCOUNTED, 'https://img.test/banana.jpg']);
+    await pool.query(`UPDATE items SET image_url = $2 WHERE id = $1`, [FEATURED, '']);
+    try {
+      const out = await resolveSectionData(store, new Map<string, SectionDataRequest>([['c', { categories: true }]]));
+      expect(out.c.categories).toEqual([
+        { id: CAT_B, name: 'Berry', item_count: 1, image_url: null },
+        { id: CAT_A, name: 'Fruit', item_count: 2, image_url: 'https://img.test/banana.jpg' },
+      ]);
+      // A photo on a product hidden from the store is never used.
+      await pool.query(`UPDATE items SET show_in_store = false WHERE id = $1`, [DISCOUNTED]);
+      const hidden = await resolveSectionData(store, new Map<string, SectionDataRequest>([['c', { categories: true }]]));
+      expect(hidden.c.categories?.find((c) => c.id === CAT_A)?.image_url).toBeNull();
+    } finally {
+      await pool.query(`UPDATE items SET image_url = NULL, show_in_store = true WHERE id = ANY($1)`, [[DISCOUNTED, FEATURED]]);
+    }
+  });
+
   it('shares one query between identical product requests', async () => {
     const { queryRows } = jest.requireMock('@/lib/db') as { queryRows: jest.Mock };
     queryRows.mockClear();

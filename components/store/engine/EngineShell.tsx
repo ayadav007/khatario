@@ -35,6 +35,9 @@ const THEME_RULES =
   '.st-root.eng-root .addBtn:not(:disabled){border-color:var(--c-btn,var(--primary));color:var(--c-btn,var(--primary))}' +
   '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
+  // A hero with no image on any slide: copy only, full width (the old Grocery and Khatario heroes had no empty panel).
+  '.st-root.eng-root .hero.noImg:not(.full){grid-template-columns:1fr}' +
+  '.st-root.eng-root .hero.noImg:not(.full) .heroImg{display:none}' +
   // Image with text uses an h2 in the hero markup (the page's h1 belongs to the slideshow).
   '.st-root.eng-root .heroCopy .eng-heroTitle{font-size:clamp(24px,5cqi,40px);line-height:1.1;margin:12px 0;font-weight:700;overflow-wrap:anywhere}' +
   // Full width (eng-sec--full): the section's content drops its side gutter and centred width caps.
