@@ -1,5 +1,6 @@
 import type { StoreCategoryStyle, StoreFontFamily } from '@/lib/store/store-theme';
 import { storeFontStack } from '@/lib/store/store-theme';
+import { groceryCategoryEmoji } from '@/lib/store/grocery';
 import { studioVars } from '@/lib/store/studio-layout';
 import { schemeCssVars } from './color-schemes';
 import { toStudioBox } from './studio-adapter';
@@ -78,8 +79,41 @@ export function pickCategories<T extends { id: string }>(all: T[], picked: unkno
   return out;
 }
 
-/** Engine category-grid style to the Studio tile style. */
+/** Engine category-grid style to the Studio tile style. Emoji tiles are icon tiles whose mark is the emoji. */
 export function engineCategoryStyle(style: unknown, hasImages: boolean): StoreCategoryStyle {
   if (hasImages) return 'photo';
-  return style === 'cards' ? 'icon' : 'letter';
+  return style === 'cards' || style === 'emoji' ? 'icon' : 'letter';
+}
+
+/**
+ * Category id to tile photo: each category's own `image_url`, overridden by the section's enabled
+ * `category_image` blocks (in block order). Blocks for categories not in the list are ignored.
+ */
+export function categoryImageMap(
+  section: Section,
+  categories: Array<{ id: string; image_url?: string | null }>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const known = new Set<string>();
+  for (const c of categories) {
+    known.add(c.id);
+    if (c.image_url) out[c.id] = c.image_url;
+  }
+  for (const id of section.block_order ?? []) {
+    const block = section.blocks?.[id];
+    if (!block || block.disabled || block.type !== 'category_image') continue;
+    const category = block.settings?.category;
+    const image = block.settings?.image;
+    if (typeof category !== 'string' || !known.has(category)) continue;
+    if (typeof image === 'string' && image) out[category] = image;
+  }
+  return out;
+}
+
+/** Category id to the short text in its tile mark: an emoji per category for the `emoji` style, else none. */
+export function categoryMarks(categories: Array<{ id: string; name: string }>, style: unknown): Record<string, string> {
+  if (style !== 'emoji') return {};
+  const out: Record<string, string> = {};
+  for (const c of categories) out[c.id] = groceryCategoryEmoji(c.name);
+  return out;
 }

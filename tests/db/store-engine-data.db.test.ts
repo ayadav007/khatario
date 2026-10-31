@@ -159,6 +159,46 @@ d('store engine section data (real DB)', () => {
     expect(queryRows).toHaveBeenCalledTimes(1);
   });
 
+  it('category shelves: one shelf per category with products, never another business category', async () => {
+    const EMPTY = randomUUID();
+    const OTHER_CAT = randomUUID();
+    const OTHER_ITEM = randomUUID();
+    await pool.query(`INSERT INTO categories (id, business_id, name) VALUES ($1, $2, 'Empty shelf')`, [EMPTY, BIZ]);
+    await pool.query(`INSERT INTO categories (id, business_id, name) VALUES ($1, $2, 'Aaa other')`, [OTHER_CAT, OTHER_BIZ]);
+    await pool.query(
+      `INSERT INTO items (id, business_id, category_id, name, code, unit, purchase_price, selling_price, tax_rate,
+                          current_stock, show_in_store)
+       VALUES ($1, $2, $3, 'Other thing', 'OTH', 'PCS', 5, 10, 0, 10, true)`,
+      [OTHER_ITEM, OTHER_BIZ, OTHER_CAT],
+    );
+    try {
+      const out = await resolveSectionData(
+        store,
+        new Map<string, SectionDataRequest>([
+          ['shelves', { shelves: { maxCategories: 6, perShelf: 1 } }],
+          ['wide', { shelves: { maxCategories: 1, perShelf: 8 } }],
+        ]),
+      );
+      expect(out.shelves.error).toBeUndefined();
+      const shelves = out.shelves.shelves!;
+      expect(shelves.map((s) => s.category.id)).toEqual([CAT_B, CAT_A]);
+      for (const shelf of shelves) {
+        expect(shelf.products.length).toBeLessThanOrEqual(1);
+        for (const p of shelf.products) expect(p.category_id).toBe(shelf.category.id);
+      }
+      expect(out.wide.shelves!.map((s) => s.category.id)).toEqual([CAT_B]);
+      expect(out.wide.shelves![0].products.map((p) => p.id)).toEqual([PLAIN]);
+
+      const { storeCategories } = await import('@/lib/store/engine/section-data');
+      const cats = await storeCategories(BIZ);
+      expect(cats.map((c) => c.id)).not.toContain(OTHER_CAT);
+      expect(cats.map((c) => c.id)).not.toContain(EMPTY);
+    } finally {
+      await pool.query(`DELETE FROM items WHERE id = $1`, [OTHER_ITEM]);
+      await pool.query(`DELETE FROM categories WHERE id = ANY($1)`, [[EMPTY, OTHER_CAT]]);
+    }
+  });
+
   it('keeps other sections intact when one section query fails', async () => {
     failure.failNextList = true;
     const out = await resolveSectionData(

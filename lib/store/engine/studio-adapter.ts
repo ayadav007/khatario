@@ -70,6 +70,15 @@ function toSlide(b: Raw): StudioSlide {
   };
 }
 
+export type SlideDevice = 'both' | 'mobile' | 'desktop';
+
+/** Each slide's device, in the same order as `slideshowSettings` lays the slides out. */
+export function slideshowDevices(section: Section): SlideDevice[] {
+  return blocksOf(section, 'slide')
+    .slice(0, 1 + MAX_EXTRA_SLIDES)
+    .map((b) => pick(b.device, ['both', 'mobile', 'desktop'] as const) ?? 'both');
+}
+
 export function slideshowSettings(section: Section): StudioSettings {
   const s = settingsOf(section);
   const [first, ...rest] = blocksOf(section, 'slide').map(toSlide);

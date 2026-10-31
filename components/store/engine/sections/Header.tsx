@@ -3,7 +3,7 @@ import type { EngineSectionProps } from '../registry';
 import { EngineHeader } from '../EngineViews';
 import { str, withDefaults } from './shared';
 
-export function Header({ section, store, theme }: EngineSectionProps) {
+export function Header({ section, data, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
   const links = headerNavLinks(section);
   return (
@@ -23,6 +23,11 @@ export function Header({ section, store, theme }: EngineSectionProps) {
       nav={links.map((l) => ({ label: l.label, href: l.href }))}
       subdomain={store.store_subdomain}
       searchPlaceholder={str(v.search_placeholder) || 'Search products'}
+      chips={
+        v.show_category_chips === true && data?.categories?.length
+          ? data.categories.map((c) => ({ id: c.id, name: c.name }))
+          : undefined
+      }
     />
   );
 }

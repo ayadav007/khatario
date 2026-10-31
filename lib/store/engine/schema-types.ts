@@ -51,6 +51,8 @@ export interface SectionDataRequest {
     limit: number;
   };
   categories?: boolean;
+  /** Category shelves: the first `maxCategories` categories with products, `perShelf` products each. */
+  shelves?: { maxCategories: number; perShelf: number };
 }
 
 export interface SectionSchema {

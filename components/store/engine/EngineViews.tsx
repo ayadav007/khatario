@@ -7,6 +7,8 @@ import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
+import { useIsPhone } from '@/lib/store/phone-kit';
+import { pickSlidesForDevice } from '@/lib/store/engine/shared';
 import { catalogHref, ctaTarget, engineCatalogHref, engineProductHref } from '@/lib/store/engine/links';
 import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
@@ -17,6 +19,7 @@ import {
   StudioHeader,
   StudioHero,
   StudioProductsSection,
+  heroSlides,
   type StudioLink,
   type StudioTileCategory,
 } from '../studio-theme/StudioSections';
@@ -59,9 +62,116 @@ function useCatalogNav() {
   );
 }
 
-export function EngineHero({ s }: { s: StudioSettings }) {
+/**
+ * The slides for this device (D28): those set to it or to both, else all. The server and the first
+ * client render use desktop, as the old storefront did; phones switch after mount.
+ */
+function slidesForDevice(s: StudioSettings, devices: string[] | undefined, phone: boolean): StudioSettings {
+  if (!devices || devices.length === 0) return s;
+  const all = heroSlides(s);
+  const picked = pickSlidesForDevice(devices.slice(0, all.length), phone).filter((i) => i < all.length);
+  if (picked.length === 0 || picked.length === all.length) return s;
+  const [first, ...rest] = picked.map((i) => all[i]);
+  const out: StudioSettings = { ...s, ...first };
+  if (rest.length) out.slides = rest;
+  else delete out.slides;
+  return out;
+}
+
+export function EngineHero({ s, devices }: { s: StudioSettings; devices?: Array<'both' | 'mobile' | 'desktop'> }) {
   const follow = useFollowLink();
-  return <StudioHero s={s} live onCta={(link) => follow(link || CATALOG_LINK)} />;
+  const phone = useIsPhone();
+  const shown = slidesForDevice(s, devices, phone);
+  return (
+    <StudioHero
+      key={phone ? 'mobile' : 'desktop'}
+      s={shown}
+      live
+      onCta={(link) => follow(link || CATALOG_LINK)}
+    />
+  );
+}
+
+export interface EnginePromoCard {
+  id: string;
+  eyebrow: string;
+  heading: string;
+  text: string;
+  buttonText: string;
+  link: string;
+  image: string;
+}
+
+/** Promo cards: `split` puts the copy beside the image, `overlay` puts a caption over it. */
+export function EnginePromoCards({
+  heading,
+  style,
+  columns,
+  cards,
+}: {
+  heading: string;
+  style: 'split' | 'overlay';
+  columns: number;
+  cards: EnginePromoCard[];
+}) {
+  const follow = useFollowLink();
+  return (
+    <div className="eng-promos-block">
+      {heading ? <h2>{heading}</h2> : null}
+      <div className="eng-promos" data-style={style} style={{ ['--eng-cols' as string]: String(columns) }}>
+        {cards.map((c) => (
+          <article key={c.id} className={`eng-promo ${c.image ? 'has-img' : 'no-img'}`}>
+            {c.image ? (
+              <div className="eng-promo-img" style={{ backgroundImage: `url(${JSON.stringify(c.image)})` }} />
+            ) : null}
+            <div className="eng-promo-copy">
+              {c.eyebrow ? <small className="eyebrow">{c.eyebrow}</small> : null}
+              {c.heading ? <h3>{c.heading}</h3> : null}
+              {c.text ? <p>{c.text}</p> : null}
+              {c.buttonText ? (
+                <button type="button" className="st-btn" onClick={() => follow(c.link || CATALOG_LINK)}>
+                  {c.buttonText} →
+                </button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Scrolling announcement: the items run in a CSS loop (paused under reduced motion); the whole bar follows the link. */
+export function EngineAnnouncementScroll({ items, link }: { items: string[]; link: string }) {
+  const follow = useFollowLink();
+  const run = (hidden: boolean) => (
+    <div className="eng-announce-run" aria-hidden={hidden || undefined}>
+      {items.map((t, i) => (
+        <span key={i}>{t}</span>
+      ))}
+    </div>
+  );
+  const inner = (
+    <div className="eng-announce-scroll">
+      <div className="eng-announce-track">
+        {run(false)}
+        {run(true)}
+      </div>
+    </div>
+  );
+  if (!link) return <div className="announce eng-announce">{inner}</div>;
+  return (
+    <a
+      className="announce eng-announce"
+      href={link}
+      onClick={(e) => {
+        e.preventDefault();
+        follow(link);
+      }}
+    >
+      {inner}
+    </a>
+  );
 }
 
 export function EngineBanner({ s }: { s: StudioSettings }) {
@@ -98,18 +208,50 @@ function HeaderSearchBox({ subdomain, placeholder }: { subdomain: string; placeh
   );
 }
 
+type Chip = { id: string; name: string };
+
+function ChipRow({ chips, selectedId, onPick }: { chips: Chip[]; selectedId: string | null; onPick?: (id: string | null) => void }) {
+  return (
+    <nav className="eng-chips" aria-label="Categories">
+      <button type="button" className={selectedId ? '' : 'on'} aria-pressed={!selectedId} onClick={() => onPick?.(null)}>
+        All
+      </button>
+      {chips.map((c) => (
+        <button
+          type="button"
+          key={c.id}
+          className={selectedId === c.id ? 'on' : ''}
+          aria-pressed={selectedId === c.id}
+          onClick={() => onPick?.(c.id)}
+        >
+          {c.name}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function CategoryChips({ chips }: { chips: Chip[] }) {
+  const params = useSearchParams();
+  const go = useCatalogNav();
+  return <ChipRow chips={chips} selectedId={params.get('cat')} onPick={(id) => go({ categoryId: id })} />;
+}
+
 export function EngineHeader({
   s,
   logoUrl,
   nav,
   subdomain,
   searchPlaceholder,
+  chips,
 }: {
   s: StudioSettings;
   logoUrl: string | null;
   nav: StudioLink[];
   subdomain: string;
   searchPlaceholder: string;
+  /** Category chips under the header row (All, then each category). */
+  chips?: Chip[];
 }) {
   const { cartCount } = useStore();
   const { openCart } = useEngineCart();
@@ -119,7 +261,7 @@ export function EngineHeader({
       <span>{searchPlaceholder}</span>
     </div>
   );
-  return (
+  const header = (
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
@@ -135,6 +277,15 @@ export function EngineHeader({
       homeHref="/"
     />
   );
+  if (!chips || chips.length === 0) return header;
+  return (
+    <>
+      {header}
+      <Suspense fallback={<ChipRow chips={chips} selectedId={null} />}>
+        <CategoryChips chips={chips} />
+      </Suspense>
+    </>
+  );
 }
 
 function CategoryTiles({
@@ -142,11 +293,13 @@ function CategoryTiles({
   categories,
   style,
   images,
+  marks,
 }: {
   s: StudioSettings;
   categories: StudioTileCategory[];
   style: StoreCategoryStyle;
   images: Record<string, string>;
+  marks?: Record<string, string>;
 }) {
   const params = useSearchParams();
   const go = useCatalogNav();
@@ -156,6 +309,7 @@ function CategoryTiles({
       categories={categories}
       style={style}
       images={images}
+      marks={marks}
       selectedId={params.get('cat')}
       onSelect={(id) => go({ categoryId: id })}
       viewAll={{ label: 'View All', onClick: () => go({}) }}
@@ -172,6 +326,8 @@ export function EngineCategoryGrid({
   categories: StudioTileCategory[];
   style: StoreCategoryStyle;
   images: Record<string, string>;
+  /** Category id to the text in its tile mark (emoji tiles). */
+  marks?: Record<string, string>;
 }) {
   return (
     <div id={categoriesAnchor(sectionId)} data-eng-anchor={ANCHOR_KIND.categories}>
@@ -280,12 +436,15 @@ export function EngineProductGrid({
   s,
   products,
   isRow,
+  showViewAll = true,
 }: {
   sectionId: string;
   s: StudioSettings;
   products: StoreItem[];
   /** Product rail: a carousel the phone kit turns into a swipe row. */
   isRow: boolean;
+  /** Category shelves can hide the "View All" link. */
+  showViewAll?: boolean;
 }) {
   const router = useRouter();
   const go = useCatalogNav();
@@ -302,7 +461,7 @@ export function EngineProductGrid({
   }
   if (products.length === 0) return null;
 
-  const action: StudioLink = {
+  const action: StudioLink | null = !showViewAll ? null : {
     label: 'View All',
     onClick: () => {
       if (source === 'category' && s.categoryId) go({ categoryId: s.categoryId });

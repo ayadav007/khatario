@@ -66,3 +66,33 @@ describe('resolveSectionData for demo stores', () => {
     expect(out.c.categories![0].image_url).toBeNull();
   });
 });
+
+describe('M4 data requests', () => {
+  it('category-shelves asks for shelves with its defaults; the header asks for categories only with chips', () => {
+    const map = collectDataRequests([
+      group({
+        shelves: section('category-shelves'),
+        h: section('header'),
+        chips: section('header', { show_category_chips: true }),
+      }),
+    ]);
+    expect(map.get('shelves')).toEqual({ shelves: { maxCategories: 6, perShelf: 8 } });
+    expect(map.get('h')).toEqual({});
+    expect(map.get('chips')).toEqual({ categories: true });
+  });
+
+  it('demo stores get one shelf per demo category, each of that category only', async () => {
+    const { resolveSectionData } = await import('@/lib/store/engine/section-data');
+    const { themeDemoStore } = await import('@/lib/store/theme-demo');
+    const store = themeDemoStore('theme-grocery');
+    const out = await resolveSectionData(store!, new Map([['s', { shelves: { maxCategories: 2, perShelf: 4 } }]]));
+    expect(out.s.error).toBeUndefined();
+    expect(out.s.shelves!.length).toBeGreaterThan(0);
+    expect(out.s.shelves!.length).toBeLessThanOrEqual(2);
+    for (const shelf of out.s.shelves!) {
+      expect(shelf.products.length).toBeGreaterThan(0);
+      expect(shelf.products.length).toBeLessThanOrEqual(4);
+      for (const p of shelf.products) expect(p.category_id).toBe(shelf.category.id);
+    }
+  });
+});

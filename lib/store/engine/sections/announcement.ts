@@ -10,6 +10,13 @@ export const announcement: SectionSchema = {
     { id: 'text', type: 'text', label: 'Text', default: 'Free delivery on orders above ₹499', max_length: 200 },
     { id: 'link', type: 'url', label: 'Link', default: '' },
     {
+      id: 'scrolling',
+      type: 'checkbox',
+      label: 'Scrolling',
+      default: false,
+      info: 'Split items with · | or •; the whole bar follows the link',
+    },
+    {
       id: 'text_align',
       type: 'select',
       label: 'Text alignment',

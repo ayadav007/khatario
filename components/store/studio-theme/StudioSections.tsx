@@ -405,6 +405,7 @@ export function StudioCategoryTiles({
   columns,
   selectedId,
   onSelect,
+  marks,
 }: {
   categories: StudioTileCategory[];
   style: StoreCategoryStyle;
@@ -412,6 +413,8 @@ export function StudioCategoryTiles({
   columns: number;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  /** Category id to short text shown in the tile mark (emoji tiles); absent keeps the icon or letter. */
+  marks?: Record<string, string>;
 }) {
   return (
     <div className="catGrid" style={{ '--columns': String(columns) } as CSSProperties}>
@@ -423,7 +426,9 @@ export function StudioCategoryTiles({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={photo} alt="" loading="lazy" />
             ) : (
-              <div className="catMark">{style === 'icon' ? <Tag /> : c.name.charAt(0).toUpperCase()}</div>
+              <div className={marks?.[c.id] ? 'catMark catEmoji' : 'catMark'}>
+                {marks?.[c.id] ? marks[c.id] : style === 'icon' ? <Tag /> : c.name.charAt(0).toUpperCase()}
+              </div>
             )}
             <b>{c.name}</b>
             {c.count != null ? <small>{c.count} items</small> : null}
@@ -458,6 +463,7 @@ export function StudioCategoriesSection({
   selectedId,
   onSelect,
   viewAll,
+  marks,
 }: {
   s: StudioSettings;
   categories: StudioTileCategory[];
@@ -466,6 +472,8 @@ export function StudioCategoriesSection({
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   viewAll?: StudioLink;
+  /** Passed to the tiles (D38). */
+  marks?: Record<string, string>;
 }) {
   return (
     <section className="st-section" style={boxStyle(s)}>
@@ -477,6 +485,7 @@ export function StudioCategoriesSection({
         columns={s.columns ?? 6}
         selectedId={selectedId}
         onSelect={onSelect}
+        marks={marks}
       />
     </section>
   );

@@ -16,6 +16,8 @@ export interface SectionCategory {
 export interface SectionData {
   products?: StoreItem[];
   categories?: SectionCategory[];
+  /** Category shelves: one entry per category with products, in category order. */
+  shelves?: Array<{ category: SectionCategory; products: StoreItem[] }>;
   error?: string;
 }
 
@@ -126,6 +128,17 @@ async function loadProducts(
   return rows.map(mapStoreItemRow);
 }
 
+/** A business's store categories (those with store products), by name, with item counts. */
+export async function storeCategories(businessId: string): Promise<SectionCategory[]> {
+  const q = buildStoreItemsQuery({ businessId, limit: 1, offset: 0 });
+  const rows = await queryRows<{ id: string; name: string; item_count: number }>(
+    q.categorySql,
+    q.categoryParams,
+  );
+  // The categories table has no image column yet.
+  return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: null }));
+}
+
 async function loadCategories(store: StoreBusinessContext): Promise<SectionCategory[]> {
   if (store.is_demo) {
     const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
@@ -136,13 +149,7 @@ async function loadCategories(store: StoreBusinessContext): Promise<SectionCateg
       image_url: null,
     }));
   }
-  const q = buildStoreItemsQuery({ businessId: store.business_id, limit: 1, offset: 0 });
-  const rows = await queryRows<{ id: string; name: string; item_count: number }>(
-    q.categorySql,
-    q.categoryParams,
-  );
-  // The categories table has no image column yet.
-  return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: null }));
+  return storeCategories(store.business_id);
 }
 
 const CATEGORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -183,26 +190,46 @@ export async function resolveSectionData(
   const sectionKey = new Map<string, string>();
   let categoriesJob: Promise<{ items?: SectionCategory[]; error?: string }> | null = null;
 
-  for (const [id, req] of requests) {
-    if (req.products) {
-      const key = productRequestKey(req.products, opts);
-      sectionKey.set(id, key);
-      if (!productJobs.has(key)) {
-        productJobs.set(
-          key,
-          loadProducts(store, req.products, opts).then(
-            (items) => ({ items }),
-            (e) => ({ error: message(e) }),
-          ),
-        );
-      }
+  const productJob = (p: ProductsRequest): string => {
+    const key = productRequestKey(p, opts);
+    if (!productJobs.has(key)) {
+      productJobs.set(
+        key,
+        loadProducts(store, p, opts).then(
+          (items) => ({ items }),
+          (e) => ({ error: message(e) }),
+        ),
+      );
     }
-    if (req.categories && !categoriesJob) {
+    return key;
+  };
+
+  for (const [id, req] of requests) {
+    if (req.products) sectionKey.set(id, productJob(req.products));
+    if ((req.categories || req.shelves) && !categoriesJob) {
       categoriesJob = loadCategories(store).then(
         (items) => ({ items }),
         (e) => ({ error: message(e) }),
       );
     }
+  }
+
+  // Shelves need the categories first; their per-category product requests share the same job map.
+  const shelfPlans = new Map<string, { error?: string; shelves: Array<{ category: SectionCategory; key: string }> }>();
+  for (const [id, req] of requests) {
+    if (!req.shelves || !categoriesJob) continue;
+    const cats = await categoriesJob;
+    if (cats.error) {
+      shelfPlans.set(id, { error: cats.error, shelves: [] });
+      continue;
+    }
+    const picked = (cats.items ?? []).filter((c) => c.item_count > 0).slice(0, Math.max(0, req.shelves.maxCategories));
+    shelfPlans.set(id, {
+      shelves: picked.map((category) => ({
+        category,
+        key: productJob({ source: 'category', categoryId: category.id, limit: req.shelves!.perShelf }),
+      })),
+    });
   }
 
   const result: Record<string, SectionData> = {};
@@ -217,6 +244,22 @@ export async function resolveSectionData(
       const r = await categoriesJob;
       if (r.error) data.error = data.error ?? r.error;
       else data.categories = r.items;
+    }
+    const plan = shelfPlans.get(id);
+    if (plan) {
+      if (plan.error) data.error = data.error ?? plan.error;
+      else {
+        const shelves: NonNullable<SectionData['shelves']> = [];
+        for (const { category, key } of plan.shelves) {
+          const r = await productJobs.get(key)!;
+          if (r.error) {
+            data.error = data.error ?? r.error;
+            break;
+          }
+          if (r.items && r.items.length > 0) shelves.push({ category, products: r.items });
+        }
+        if (!data.error) data.shelves = shelves;
+      }
     }
     result[id] = data;
   }

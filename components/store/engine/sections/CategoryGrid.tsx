@@ -1,4 +1,4 @@
-import { engineCategoryStyle, pickCategories } from '@/lib/store/engine/render-helpers';
+import { categoryImageMap, categoryMarks, engineCategoryStyle, pickCategories } from '@/lib/store/engine/render-helpers';
 import type { EngineSectionProps } from '../registry';
 import { EngineCategoryGrid } from '../EngineViews';
 import { noBox, str, withDefaults } from './shared';
@@ -8,8 +8,7 @@ export function CategoryGrid({ id, section, data }: EngineSectionProps) {
   const v = withDefaults(section);
   const categories = pickCategories(data.categories ?? [], v.categories);
   if (categories.length === 0) return null;
-  const images: Record<string, string> = {};
-  for (const c of categories) if (c.image_url) images[c.id] = c.image_url;
+  const images = categoryImageMap(section, categories);
   return (
     <EngineCategoryGrid
       sectionId={id}
@@ -21,6 +20,7 @@ export function CategoryGrid({ id, section, data }: EngineSectionProps) {
       categories={categories.map((c) => ({ id: c.id, name: c.name, count: c.item_count }))}
       style={engineCategoryStyle(v.style, Object.keys(images).length > 0)}
       images={images}
+      marks={categoryMarks(categories, v.style)}
     />
   );
 }

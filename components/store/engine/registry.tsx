@@ -28,6 +28,8 @@ import { Faq } from './sections/Faq';
 import { Newsletter } from './sections/Newsletter';
 import { Countdown } from './sections/Countdown';
 import { Spacer } from './sections/Spacer';
+import { PromoCards } from './sections/PromoCards';
+import { CategoryShelves } from './sections/CategoryShelves';
 
 /** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
 export interface EngineRoute {
@@ -77,4 +79,6 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   newsletter: Newsletter,
   countdown: Countdown,
   spacer: Spacer,
+  'promo-cards': PromoCards,
+  'category-shelves': CategoryShelves,
 };

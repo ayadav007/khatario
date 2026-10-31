@@ -42,6 +42,17 @@ export const slideshow: SectionSchema = {
         { id: 'description', type: 'textarea', label: 'Description', default: '', max_length: 300 },
         { id: 'button_text', type: 'text', label: 'Button text', default: 'Shop now', max_length: 30 },
         { id: 'link', type: 'url', label: 'Link', default: '' },
+        {
+          id: 'device',
+          type: 'select',
+          label: 'Show on',
+          default: 'both',
+          options: [
+            { value: 'both', label: 'Phones and desktops' },
+            { value: 'mobile', label: 'Phones only' },
+            { value: 'desktop', label: 'Desktops only' },
+          ],
+        },
       ],
     },
   ],

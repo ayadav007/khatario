@@ -24,6 +24,7 @@ export const header: SectionSchema = {
     { id: 'show_account', type: 'checkbox', label: 'Show account', default: true },
     { id: 'show_cart', type: 'checkbox', label: 'Show cart', default: true },
     { id: 'show_cart_count', type: 'checkbox', label: 'Show cart count', default: true },
+    { id: 'show_category_chips', type: 'checkbox', label: 'Category chips', default: false, info: 'A row of category chips under the header' },
   ],
   blocks: [
     {
@@ -45,4 +46,5 @@ export const header: SectionSchema = {
       blocks: [{ type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } }],
     },
   ],
+  data: (s) => (s.show_category_chips === true ? { categories: true } : {}),
 };

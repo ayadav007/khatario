@@ -18,10 +18,23 @@ export const categoryGrid: SectionSchema = {
         { value: 'tiles', label: 'Tiles' },
         { value: 'circles', label: 'Circles' },
         { value: 'cards', label: 'Cards' },
+        { value: 'emoji', label: 'Emoji icons' },
       ],
     },
     { id: 'categories', type: 'category_list', label: 'Categories', info: 'Leave empty to show all categories', default: [] },
   ],
+  blocks: [
+    {
+      type: 'category_image',
+      name: 'Category image',
+      limit: 40,
+      settings: [
+        { id: 'category', type: 'category', label: 'Category' },
+        { id: 'image', type: 'image', label: 'Image', default: '' },
+      ],
+    },
+  ],
+  max_blocks: 40,
   presets: [{ name: 'Category grid', settings: { heading: 'Shop by category', columns: 4, style: 'tiles' } }],
   data: () => ({ categories: true }),
 };

@@ -93,5 +93,16 @@ export function videoEmbedUrl(url: string): string | null {
   return null;
 }
 
+/**
+ * The indexes of the slides to show on this device: those set to it or to `both`, else all of them
+ * (the rule `resolveHeroSlides` used on the old storefront).
+ */
+export function pickSlidesForDevice(devices: string[], phone: boolean): number[] {
+  const device = phone ? 'mobile' : 'desktop';
+  const all = devices.map((_, i) => i);
+  const matching = all.filter((i) => devices[i] === 'both' || devices[i] === device);
+  return matching.length > 0 ? matching : all;
+}
+
 /** Sandbox for every embedded video iframe; the same value custom HTML iframes are forced to (html.ts). */
 export const EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';

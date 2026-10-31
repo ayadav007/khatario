@@ -76,6 +76,44 @@ const THEME_RULES =
   '.st-root.eng-root .eng-countdown-boxes b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}' +
   '.st-root.eng-root .eng-countdown-boxes span{font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
   '@container store (max-width: 640px){.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding:0 16px}.st-root.eng-root .eng-collections-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
+  // Promo cards: a grid of cards; split = copy plus image, overlay = image cover, gradient and caption.
+  '.st-root.eng-root .eng-promos-block{padding:0 30px}' +
+  '.st-root.eng-root .eng-promos-block>h2{margin:0 0 16px}' +
+  '.st-root.eng-root .eng-promos{display:grid;grid-template-columns:repeat(var(--eng-cols,2),minmax(0,1fr));gap:14px}' +
+  '.st-root.eng-root .eng-promo{position:relative;display:flex;min-height:180px;overflow:hidden;border-radius:var(--btn-radius,10px);background:var(--c-card,var(--st-card,#fff));border:1px solid var(--c-border,rgba(0,0,0,.1));overflow-wrap:anywhere}' +
+  '.st-root.eng-root .eng-promo-img{background:#eee center/cover no-repeat}' +
+  '.st-root.eng-root .eng-promo-copy{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:8px;padding:20px}' +
+  '.st-root.eng-root .eng-promo-copy h3{margin:0;font-size:20px;line-height:1.2}' +
+  '.st-root.eng-root .eng-promo-copy p{margin:0;opacity:.85}' +
+  '.st-root.eng-root .eng-promos[data-style="split"] .eng-promo-img{flex:0 0 42%;order:2}' +
+  '.st-root.eng-root .eng-promos[data-style="split"] .eng-promo-copy{flex:1 1 auto}' +
+  '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img{min-height:240px;border:0;color:#fff;align-items:flex-end}' +
+  '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img .eng-promo-img{position:absolute;inset:0}' +
+  '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 30%,rgba(0,0,0,.7))}' +
+  '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img .eng-promo-copy{position:relative;z-index:1;justify-content:flex-end}' +
+  '.st-root.eng-root .eng-promos[data-style="overlay"] .eng-promo.has-img .eyebrow{color:#fff}' +
+  '@container store (max-width: 640px){.st-root.eng-root .eng-promos-block{padding:0 16px}.st-root.eng-root .eng-promos{grid-template-columns:minmax(0,1fr)}.st-root.eng-root .eng-promos[data-style="split"] .eng-promo-img{flex-basis:38%}}' +
+  '.st-root.eng-root .eng-sec--full .eng-promos-block{padding-left:0;padding-right:0}' +
+  // Emoji category tiles: the emoji fills the tile mark.
+  '.st-root.eng-root .catMark.catEmoji{font-family:inherit;font-size:52px;line-height:1}' +
+  // Category shelves: one rail per category, stacked.
+  '.st-root.eng-root .eng-shelves{display:flex;flex-direction:column;gap:28px}' +
+  // Header category chips: a scrolling pill row under the header row.
+  '.st-root.eng-root .eng-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:8px 30px 10px}' +
+  '.st-root.eng-root .eng-chips::-webkit-scrollbar{display:none}' +
+  '.st-root.eng-root .eng-chips button{flex:0 0 auto;border:1px solid var(--st-line,rgba(0,0,0,.15));background:var(--st-card,#fff);color:var(--text);border-radius:999px;padding:6px 14px;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}' +
+  '.st-root.eng-root .eng-chips button.on{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}' +
+  '@container store (max-width: 640px){.st-root.eng-root .eng-chips{padding:6px 16px 8px}}' +
+  // Scrolling announcement: two copies of the items loop; paused on hover and under reduced motion.
+  '.st-root.eng-root a.eng-announce{text-decoration:none;color:inherit;display:flex}' +
+  '.st-root.eng-root .eng-announce{padding-left:0;padding-right:0}' +
+  '.st-root.eng-root .eng-announce-scroll{overflow:hidden;width:100%}' +
+  '.st-root.eng-root .eng-announce-track{display:flex;width:max-content;animation:eng-announce 30s linear infinite}' +
+  '.st-root.eng-root .eng-announce:hover .eng-announce-track{animation-play-state:paused}' +
+  '.st-root.eng-root .eng-announce-run{display:flex;flex:0 0 auto}' +
+  '.st-root.eng-root .eng-announce-run span{white-space:nowrap;padding:0 28px}' +
+  '@keyframes eng-announce{to{transform:translateX(-50%)}}' +
+  '@media (prefers-reduced-motion: reduce){.st-root.eng-root .eng-announce-track{animation:none}}' +
   // Editor mode: an empty section stays visible and clickable, with a placeholder naming its type.
   // Prefixed with the root classes to outrank the display:none rules above; separate rules as above.
   '.st-root.eng-root.eng-editor .eng-sec:empty{display:block;min-height:48px}' +
