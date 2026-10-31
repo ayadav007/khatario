@@ -4,6 +4,7 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import { createTheme, listThemes } from '@/lib/store/engine/themes-repo';
 import { presetContextFor } from '@/lib/store/engine/preset-context';
+import { migrationInputFor } from '@/lib/store/engine/migrate-runner';
 import { isUuid, repoJson } from '@/lib/store/engine/route-utils';
 import type { ThemePreset } from '@/lib/store/engine/types';
 
@@ -53,6 +54,8 @@ export async function POST(request: NextRequest) {
       preset: preset as ThemePreset,
       duplicateOf: typeof body.duplicate_of === 'string' ? body.duplicate_of : undefined,
       ctx: await presetContextFor(tenant.businessId),
+      // D33: before the store's first theme, its migrated design goes live. The business comes from the session.
+      migrate: await migrationInputFor(tenant.businessId),
     });
     return repoJson(result, 'theme', 201);
   } catch (error) {

@@ -81,14 +81,19 @@ d('Theme API (real DB)', () => {
     await closePool();
   });
 
-  it('first POST is live, second is draft, and a foreign body business_id is ignored', async () => {
+  it('first POST creates the migrated live theme and returns a draft; a foreign body business_id is ignored', async () => {
     const other = randomUUID();
     let res = await listRoute.POST(req('', 'POST', { name: 'Main', business_id: other }));
     expect(res.status).toBe(201);
     const first = (await res.json()).theme;
-    expect(first.role).toBe('live');
+    expect(first.role).toBe('draft');
     expect(first.business_id).toBe(BIZ);
-    liveId = first.id;
+    const live = await pool.query(`SELECT id, preset, updated_by FROM store_themes WHERE business_id = $1 AND role = 'live'`, [BIZ]);
+    expect(live.rows).toHaveLength(1);
+    // No store_theme saved: the store's design is the default Studio look.
+    expect(live.rows[0].preset).toBe('studio');
+    expect(live.rows[0].updated_by).toBe(USER);
+    liveId = live.rows[0].id;
 
     res = await listRoute.POST(req('', 'POST', { name: 'Second', preset: 'blank' }));
     expect(res.status).toBe(201);
@@ -102,7 +107,7 @@ d('Theme API (real DB)', () => {
 
     res = await listRoute.GET(req('', 'GET'));
     const { themes } = await res.json();
-    expect(themes.map((t: { id: string }) => t.id)).toEqual([liveId, draftId]);
+    expect(themes.map((t: { id: string }) => t.id)).toEqual([liveId, draftId, first.id]);
   });
 
   it('rejects a bad preset, a bad duplicate_of and a non-uuid id', async () => {

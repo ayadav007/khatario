@@ -4,6 +4,8 @@ import type { ThemeData, ThemePreset, ThemeRow } from './types';
 import { ENGINE_LIMITS, sanitizeThemeData, themeTooLarge } from './sanitize';
 import { presetTheme, type PresetContext } from './presets';
 import { presetContextFor } from './preset-context';
+import { migrateStoreTheme, type MigrationContext } from './migrate';
+import { migrationInputFor } from './migrate-runner';
 
 export type RepoResult<T> =
   | { ok: true; value: T }
@@ -53,19 +55,55 @@ async function inTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise
   }
 }
 
+export interface MigrationInput {
+  raw: unknown;
+  ctx: MigrationContext;
+}
+
+/**
+ * Creates a theme. With `migrate` (D33) and no live theme yet, the store's migrated design is inserted as the live
+ * theme first, so the requested theme becomes a draft beside it. Without `migrate`, the first theme is live (M1).
+ */
 export async function createTheme(
   businessId: string,
   userId: string,
-  input: { name: string; preset?: ThemePreset; duplicateOf?: string; ctx: PresetContext },
+  input: { name: string; preset?: ThemePreset; duplicateOf?: string; ctx: PresetContext; migrate?: MigrationInput | null },
 ): Promise<RepoResult<ThemeRow>> {
   return inTransaction(async (client) => {
     await lockBusinessThemes(client, businessId);
+    if (input.migrate) await insertMigratedLiveLocked(client, businessId, userId, input.migrate);
     return createThemeLocked(client, businessId, userId, input);
   });
 }
 
+/**
+ * D33. Caller holds the business advisory lock inside a transaction. Inserts the migrated design as the live theme
+ * when the business has none; null when a live theme exists or the business is at the theme limit (the caller
+ * reports `limit`). `userId` is the session user, or null from the migration script.
+ */
+export async function insertMigratedLiveLocked(
+  client: PoolClient,
+  businessId: string,
+  userId: string | null,
+  input: MigrationInput,
+): Promise<{ theme: ThemeRow; warnings: string[] } | null> {
+  const result = migrateStoreTheme(input.raw, input.ctx);
+  const data = sanitizeThemeData(result.data);
+  if (themeTooLarge(data)) throw new Error('The migrated theme is larger than the theme size limit');
+  const res = await client.query(
+    `INSERT INTO store_themes (business_id, name, role, preset, data, updated_by)
+     SELECT $1, $2, 'live', $3, $4::jsonb, $5
+     WHERE NOT EXISTS (SELECT 1 FROM store_themes WHERE business_id = $1 AND role = 'live')
+       AND (SELECT count(*) FROM store_themes WHERE business_id = $1) < $6
+     RETURNING ${ROW_COLS}`,
+    [businessId, result.name.slice(0, NAME_MAX), result.preset, JSON.stringify(data), userId, ENGINE_LIMITS.themesPerBusiness],
+  );
+  if (res.rows.length === 0) return null;
+  return { theme: res.rows[0] as ThemeRow, warnings: result.warnings };
+}
+
 // Serialise creates per business so the 20-theme limit and "first theme is live" cannot race.
-async function lockBusinessThemes(client: PoolClient, businessId: string): Promise<void> {
+export async function lockBusinessThemes(client: PoolClient, businessId: string): Promise<void> {
   await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`store_themes:${businessId}`]);
 }
 
@@ -129,13 +167,22 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
       await client.query(`SELECT name, preset, data FROM store_themes WHERE business_id = $1 AND role = 'live'`, [businessId])
     ).rows[0];
     if (!live) {
-      const created = await createThemeLocked(client, businessId, userId, {
-        name: 'Main',
-        preset: 'studio',
-        ctx: await presetContextFor(businessId),
-      });
-      if (!created.ok) return created;
-      live = created.value;
+      // D33: the first live theme is the store's migrated design. Only when there is no business row to migrate
+      // from does it fall back to the Studio preset.
+      const input = await migrationInputFor(businessId);
+      if (input) {
+        const migrated = await insertMigratedLiveLocked(client, businessId, userId, input);
+        if (!migrated) return fail<ThemeRow>('limit');
+        live = migrated.theme;
+      } else {
+        const created = await createThemeLocked(client, businessId, userId, {
+          name: 'Main',
+          preset: 'studio',
+          ctx: await presetContextFor(businessId),
+        });
+        if (!created.ok) return created;
+        live = created.value;
+      }
     }
 
     const name = workingDraftName(live.name);
@@ -151,7 +198,7 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
   });
 }
 
-/** The draft the Studio edits: reuse it, or copy the live theme into a new one (creating a live Studio theme first if none). */
+/** The draft the Studio edits: reuse it, or copy the live theme into a new one (creating the migrated live theme first if none, D33). */
 export async function getOrCreateWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
   try {
     return await insertWorkingDraft(businessId, userId);
