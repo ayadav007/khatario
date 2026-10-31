@@ -14,6 +14,7 @@ import { BROWSE_CATEGORIES_EVENT, QuickCartBar, QuickTabs } from '../quick-theme
 import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
 // Preset layers (D27): each is scoped to .st-root.eng-root.eng-preset-<preset>, so loading all three is safe.
+import { EngineCardContext } from './EngineCardContext';
 import './presets/quick.css';
 import './presets/grocery.css';
 import './presets/khatario.css';
@@ -183,6 +184,7 @@ export function EngineShell({
     schemeBackground: settings.color_schemes?.[0]?.background,
   });
   const { kit, quick } = root;
+  const cardLook = useMemo(() => ({ quick, phoneKit: kit }), [quick, kit]);
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 
   // The engine renders this page: the old store theme's CSS, font and favicon stay off (D11).
@@ -234,6 +236,7 @@ export function EngineShell({
 
   return (
     <EngineCartContext.Provider value={ctx}>
+      <EngineCardContext.Provider value={cardLook}>
       <div
         className={root.className}
         style={{ minHeight: '100vh', ...deepVars, ...rootStyle } as CSSProperties}
@@ -289,6 +292,7 @@ export function EngineShell({
           </div>
         ) : null}
       </div>
+      </EngineCardContext.Provider>
     </EngineCartContext.Provider>
   );
 }

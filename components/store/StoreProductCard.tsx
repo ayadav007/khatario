@@ -3,12 +3,14 @@
 import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isQuickPack, sanitizeStoreTheme, sectionEnabled, storeCanvas, usesStudioSections } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
 import { isNewArrival, lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
 import { StudioAddButton, StudioProductTile, type StudioBadge } from './studio-theme/StudioSections';
 import { useCallback, useMemo, useState } from 'react';
 import { QuickVariantSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
+import { useEngineCardLook } from './engine/EngineCardContext';
+import { productCardLook } from '@/lib/store/engine/card-look';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -61,7 +63,8 @@ interface StoreProductCardProps {
 /** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
 export function StoreProductCard(props: StoreProductCardProps) {
   const { store } = useStore();
-  const sheets = usePhoneSheets(sanitizeStoreTheme(store?.store_theme));
+  const look = productCardLook(useEngineCardLook(), sanitizeStoreTheme(store?.store_theme));
+  const sheets = usePhoneSheets(look.sheetsTheme);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const picker = sheets && props.product.has_variants;
   return (
@@ -158,9 +161,10 @@ function ProductCard({
 }: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
+  const look = productCardLook(useEngineCardLook(), theme);
   const accent = theme.accent;
   const khatario = isKhatarioPack(theme);
-  const quick = isQuickPack(theme);
+  const quick = look.quick;
   const layout: StoreProductCardVariant = variant ?? 'grid';
 
   const inCart = useMemo(() => {
@@ -228,7 +232,7 @@ function ProductCard({
     [product.id, cartItem, updateCartQuantity],
   );
 
-  if (usesStudioSections(theme)) {
+  if (look.studioTile) {
     const open = inCart > 0 && !product.has_variants;
     const add = !theme.show_listing_add ? null : open ? (
       <div className="stepper">
