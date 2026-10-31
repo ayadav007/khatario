@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { resolveStoreWithDraft } from '@/lib/store/preview-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest, { params }: { params: { subdomain: string } }) {
   try {
     const td = request.nextUrl.searchParams.get('td');
-    const store = await resolveStoreBySubdomain(params.subdomain, { allowOffline: Boolean(td) });
+    const store = await resolveStoreWithDraft(params.subdomain, td);
     if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     if (store.is_demo) {
       return NextResponse.json({

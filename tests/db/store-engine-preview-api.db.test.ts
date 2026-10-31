@@ -20,6 +20,8 @@ jest.mock('@/lib/subscription/feature-access', () => ({
 import { getPool, closePool } from '@/lib/db';
 import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { createTheme } from '@/lib/store/engine/themes-repo';
+import { signThemeDraft } from '@/lib/store/theme-draft';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import * as itemsRoute from '@/app/api/public/store/[subdomain]/items/route';
 import * as facetsRoute from '@/app/api/public/store/[subdomain]/items/facets/route';
 import * as itemRoute from '@/app/api/public/store/[subdomain]/items/[id]/route';
@@ -126,9 +128,14 @@ d('store API preview access', () => {
     expect((await routes[0][1]({ preview_theme: themeId })).status).toBe(404);
   });
 
-  it('the td draft path still allows the offline store', async () => {
+  it('the td draft path allows the offline store only with a draft token for its own business', async () => {
+    const own = signThemeDraft(BIZ, sanitizeStoreTheme({}));
+    const foreign = signThemeDraft(OTHER, sanitizeStoreTheme({}));
     for (const [name, call] of routes.slice(0, 4)) {
-      expect([name, (await call({ td: 'draft-token' })).status]).toEqual([name, 200]);
+      expect([name, (await call({ td: own })).status]).toEqual([name, 200]);
+      expect([name, (await call({ td: 'draft-token' })).status]).toEqual([name, 404]);
+      expect([name, (await call({ td: '1' })).status]).toEqual([name, 404]);
+      expect([name, (await call({ td: foreign })).status]).toEqual([name, 404]);
     }
   });
 

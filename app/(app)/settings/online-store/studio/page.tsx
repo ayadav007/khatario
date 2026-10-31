@@ -109,7 +109,8 @@ export default function ThemeStudioPage() {
         let realProductId: string | null = null;
         if (subdomain) {
           try {
-            const itemsRes = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/items?limit=10&td=1`);
+            // The merchant's own items API (signed in), so an unlaunched store still shows its real products.
+            const itemsRes = await fetch('/api/items?store_only=1&limit=10', { credentials: 'include' });
             if (itemsRes.ok) {
               const itemsBody = await itemsRes.json();
               const rows: StudioProduct[] = (itemsBody.items ?? []).map(
