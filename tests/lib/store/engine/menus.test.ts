@@ -1,4 +1,14 @@
-import { foldMenu, menuFooterColumns, menuItemKind, pickMenu, resolveMenu } from '@/lib/store/engine/menus';
+import {
+  MENU_CLOSED,
+  foldMenu,
+  menuFooterColumns,
+  menuItemKind,
+  menuOpenStep,
+  pickMenu,
+  resolveMenu,
+  type MenuOpenEvent,
+  type MenuOpenState,
+} from '@/lib/store/engine/menus';
 import type { Menu, MenuItem } from '@/lib/store/engine/types';
 
 const item = (id: string, extra: Partial<MenuItem> = {}): MenuItem => ({ id, label: `Label ${id}`, link: '', ...extra });
@@ -152,4 +162,75 @@ describe('foldMenu', () => {
   it('keeps what fits beside More', () => expect(foldMenu([100, 100, 100], 250, 60)).toBe(1));
   it('can fold everything', () => expect(foldMenu([300], 100, 60)).toBe(0));
   it('handles no items', () => expect(foldMenu([], 0, 60)).toBe(0));
+});
+
+describe('menuOpenStep', () => {
+  const run = (events: MenuOpenEvent[], from: MenuOpenState = MENU_CLOSED) => events.reduce(menuOpenStep, from);
+  const openA: MenuOpenState = { open: 'a', hoverOpened: null, pending: null };
+
+  it('hover opens only when the delay runs out', () => {
+    expect(run([{ type: 'enter', id: 'a', hasPanel: true }]).open).toBeNull();
+    expect(run([{ type: 'enter', id: 'a', hasPanel: true }, { type: 'fire' }])).toEqual({ open: 'a', hoverOpened: 'a', pending: null });
+  });
+  it('leaving before the delay cancels the open', () => {
+    expect(run([{ type: 'enter', id: 'a', hasPanel: true }, { type: 'leave', id: 'a' }, { type: 'fire' }])).toEqual(MENU_CLOSED);
+  });
+  it('a sweep across a plain link still closes the open panel', () => {
+    const s = run(
+      [
+        { type: 'leave', id: 'a' },
+        { type: 'enter', id: 'b', hasPanel: false },
+        { type: 'leave', id: 'b' },
+        { type: 'fire' },
+      ],
+      openA,
+    );
+    expect(s).toEqual(MENU_CLOSED);
+  });
+  it('a sweep across another panel item within the delay still closes the open panel', () => {
+    const s = run(
+      [
+        { type: 'leave', id: 'a' },
+        { type: 'enter', id: 'c', hasPanel: true },
+        { type: 'leave', id: 'c' },
+        { type: 'fire' },
+      ],
+      openA,
+    );
+    expect(s).toEqual(MENU_CLOSED);
+  });
+  it('resting on another panel item switches to it', () => {
+    expect(run([{ type: 'leave', id: 'a' }, { type: 'enter', id: 'c', hasPanel: true }, { type: 'fire' }], openA).open).toBe('c');
+  });
+  it('coming back into the open item cancels its close', () => {
+    expect(run([{ type: 'leave', id: 'a' }, { type: 'enter', id: 'a', hasPanel: true }], openA)).toEqual(openA);
+  });
+  it('a leave while a close is pending keeps the same pending step (the grace period does not restart)', () => {
+    const s = menuOpenStep(openA, { type: 'leave', id: 'a' });
+    expect(menuOpenStep(s, { type: 'leave', id: 'b' })).toBe(s);
+  });
+  it('a mouse click on ▾ after hover opened the panel keeps it open, a second click closes it', () => {
+    const hovered = run([{ type: 'enter', id: 'a', hasPanel: true }, { type: 'fire' }]);
+    const clicked = menuOpenStep(hovered, { type: 'toggle', id: 'a', mouse: true });
+    expect(clicked).toEqual(openA);
+    expect(menuOpenStep(clicked, { type: 'toggle', id: 'a', mouse: true }).open).toBeNull();
+  });
+  it('a click during the hover delay opens the panel', () => {
+    expect(run([{ type: 'enter', id: 'a', hasPanel: true }, { type: 'toggle', id: 'a', mouse: true }])).toEqual(openA);
+  });
+  it('keyboard and touch toggling still close a hover-opened panel', () => {
+    const hovered = run([{ type: 'enter', id: 'a', hasPanel: true }, { type: 'fire' }]);
+    expect(menuOpenStep(hovered, { type: 'toggle', id: 'a', mouse: false }).open).toBeNull();
+  });
+  it('toggle switches between items, one open at a time', () => {
+    expect(menuOpenStep(openA, { type: 'toggle', id: 'b', mouse: false }).open).toBe('b');
+  });
+  it('close by id only closes that item; close without id closes anything', () => {
+    expect(menuOpenStep(openA, { type: 'close', id: 'b' })).toBe(openA);
+    expect(menuOpenStep(openA, { type: 'close', id: 'a' })).toEqual(MENU_CLOSED);
+    expect(menuOpenStep(openA, { type: 'close' })).toEqual(MENU_CLOSED);
+  });
+  it('keyboard open opens and cancels a pending step', () => {
+    expect(run([{ type: 'leave', id: 'a' }, { type: 'open', id: 'a' }, { type: 'fire' }], openA)).toEqual(openA);
+  });
 });

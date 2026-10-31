@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { foldMenu, type ResolvedItem } from '@/lib/store/engine/menus';
+import { MENU_CLOSED, foldMenu, menuOpenStep, type ResolvedItem } from '@/lib/store/engine/menus';
 import { MenuLink, MenuPanel } from './MenuPanel';
 import './menu.css';
 
@@ -39,9 +39,11 @@ export function MenuBar({
   const uid = useId();
   const rootRef = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLUListElement>(null);
-  const timer = useRef<number | undefined>(undefined);
   const focusFirst = useRef<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  /** Pointer type of the last press on a toggle; empty for a keyboard click. */
+  const pressedWith = useRef('');
+  const [menu, dispatch] = useReducer(menuOpenStep, MENU_CLOSED);
+  const openId = menu.open;
   const [eventHeld, setEventHeld] = useState<string | null>(null);
   const [keep, setKeep] = useState(items.length);
   const [ready, setReady] = useState(false);
@@ -54,8 +56,13 @@ export function MenuBar({
   const moreOpen = shown === MORE || (shown !== null && overflow.some((i) => i.id === shown));
   const panelId = (id: string) => `${uid}-panel-${id}`;
 
-  const clearTimer = () => window.clearTimeout(timer.current);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Hover's delayed open and grace-period close: one pending step, replaced or cancelled by the next event.
+  useEffect(() => {
+    const pending = menu.pending;
+    if (!pending) return;
+    const t = window.setTimeout(() => dispatch({ type: 'fire' }), pending.kind === 'open' ? OPEN_DELAY : CLOSE_DELAY);
+    return () => window.clearTimeout(t);
+  }, [menu.pending]);
 
   useEffect(() => {
     const onHold = (e: Event) => {
@@ -70,7 +77,7 @@ export function MenuBar({
   useEffect(() => {
     if (openId === null) return;
     const onDown = (e: globalThis.PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenId(null);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) dispatch({ type: 'close' });
     };
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
@@ -107,37 +114,34 @@ export function MenuBar({
     return () => ro.disconnect();
   }, [inline, sig, caps]);
 
+  // A mouse click right after hover opened the panel keeps it open (menuOpenStep); keyboard and touch toggle.
   const toggle = (id: string) => {
-    clearTimer();
-    setOpenId((cur) => (cur === id ? null : id));
+    const mouse = pressedWith.current === 'mouse';
+    pressedWith.current = '';
+    dispatch({ type: 'toggle', id, mouse });
   };
 
   const onEnter = (id: string, hasPanel: boolean) => (e: PointerEvent) => {
-    // A plain link leaves a pending close of the open item running.
-    if (e.pointerType !== 'mouse' || !hasPanel) return;
-    clearTimer();
-    timer.current = window.setTimeout(() => setOpenId(id), OPEN_DELAY);
+    if (e.pointerType === 'mouse') dispatch({ type: 'enter', id, hasPanel });
   };
   const onLeave = (id: string) => (e: PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    clearTimer();
-    timer.current = window.setTimeout(() => setOpenId((cur) => (cur === id ? null : cur)), CLOSE_DELAY);
+    if (e.pointerType === 'mouse') dispatch({ type: 'leave', id });
   };
   const onToggleKey = (id: string) => (e: KeyboardEvent) => {
+    pressedWith.current = '';
     if (e.key !== 'ArrowDown') return;
     e.preventDefault();
-    clearTimer();
     if (shown === id || (id === MORE && moreOpen)) {
       focusableLinks(document.getElementById(panelId(id)))[0]?.focus();
       return;
     }
     focusFirst.current = id;
-    setOpenId(id);
+    dispatch({ type: 'open', id });
   };
   // Focus moving to another item (Tab) closes this one; focus going nowhere (a click on panel text) does not.
   const onBlur = (id: string) => (e: FocusEvent<HTMLLIElement>) => {
     const next = e.relatedTarget as Node | null;
-    if (next && !e.currentTarget.contains(next)) setOpenId((cur) => (cur === id ? null : cur));
+    if (next && !e.currentTarget.contains(next)) dispatch({ type: 'close', id });
   };
   const onPanelKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -151,7 +155,7 @@ export function MenuBar({
   const onRootKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || openId === null) return;
     const id = openId;
-    setOpenId(null);
+    dispatch({ type: 'close' });
     rootRef.current?.querySelector<HTMLElement>(`[data-kh-toggle="${id}"]`)?.focus();
   };
 
@@ -163,6 +167,9 @@ export function MenuBar({
       aria-controls={panelId(id)}
       aria-label={withText ? undefined : `${label} menu`}
       data-kh-toggle={id}
+      onPointerDown={(e) => {
+        pressedWith.current = e.pointerType;
+      }}
       onClick={() => toggle(id)}
       onKeyDown={onToggleKey(id)}
     >
