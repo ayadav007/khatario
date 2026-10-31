@@ -57,7 +57,22 @@ export function shopTheLookItems(
   return items;
 }
 
-/** What "Add all to bag" adds: the list prices of the items that can be added straight from the section. */
+/**
+ * The products "Add all to bag" adds: those that can be added straight from the section, once each (the same
+ * product pinned twice counts once; the first hotspot wins).
+ */
+export function addableProducts(items: LookItem[]): StoreItem[] {
+  const seen = new Set<string>();
+  const out: StoreItem[] = [];
+  for (const i of items) {
+    if (i.soldOut || i.hasOptions || seen.has(i.product.id)) continue;
+    seen.add(i.product.id);
+    out.push(i.product);
+  }
+  return out;
+}
+
+/** What "Add all to bag" adds: the list prices of the addable products, each counted once. */
 export function lookTotal(items: LookItem[]): number {
-  return items.reduce((sum, i) => (i.soldOut || i.hasOptions ? sum : sum + i.product.selling_price), 0);
+  return addableProducts(items).reduce((sum, p) => sum + p.selling_price, 0);
 }

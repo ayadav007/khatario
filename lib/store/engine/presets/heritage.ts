@@ -1,12 +1,16 @@
-import type { ThemeData } from '../types';
+import type { PageTemplate, ThemeData } from '../types';
 import type { PresetContext } from './index';
 import { block, onScheme, presetSettings, section, template } from './shared';
 import { studioFooter } from './studio';
 import { defaultTemplate } from './templates';
+import { pageKey } from '../shared';
 
 /** Heritage Couture's sample pictures: Khatario-made SVGs (no text) that the owner replaces with their own. */
 const IMG = '/store-presets/heritage';
 const img = (name: string) => `${IMG}/${name}.svg`;
+
+/** The handle the preset's "Our story" links point at; `about` is reserved, so the preset ships its own page. */
+const STORY_HANDLE = 'our-story';
 
 const NEUTRAL_LINE = 'Discover festive and bridal pieces, chosen with care.';
 
@@ -17,7 +21,7 @@ const MAIN_MENU: { label: string; link: string }[] = [
   { label: 'Sarees', link: '/catalog' },
   { label: 'Bridal', link: '/catalog' },
   { label: 'Jewellery', link: '/catalog' },
-  { label: 'Our story', link: '/pages/about' },
+  { label: 'Our story', link: `/pages/${STORY_HANDLE}` },
 ];
 
 // Placeholder copy: each line tells the merchant what to write, so the preset promises nothing on their behalf.
@@ -34,6 +38,23 @@ const PROMO_CARDS = [
   { eyebrow: 'Fine pieces', heading: 'Jewellery', image: 'gallery-3' },
   { eyebrow: 'For every occasion', heading: 'Gifting', image: 'gallery-4' },
 ];
+
+/** The custom page the "Our story" links open: the About starter's two sections, with copy that tells the merchant what to write. */
+function ourStoryPage(): PageTemplate {
+  return {
+    title: 'Our story',
+    ...template([
+      section('image-with-text', { image_side: 'left' }, [
+        block('heading', { text: 'Our story' }),
+        block('text', { content: '<p>Tell shoppers where your pieces are made and who makes them.</p>' }),
+      ]),
+      section('rich-text', { align: 'center' }, [
+        block('heading', { text: 'What we stand for' }),
+        block('text', { content: '<p>Share what makes your boutique different.</p>' }),
+      ]),
+    ]),
+  };
+}
 
 /**
  * Heritage Couture: an ivory, crimson and gold boutique for fashion, couture and jewellery. Built only from
@@ -76,7 +97,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
             button_text: 'Explore the collection',
             link: '/catalog',
             button_2_text: 'Our story',
-            link_2: '/pages/about',
+            link_2: `/pages/${STORY_HANDLE}`,
           },
           [1, 2, 3].map((n) => block('image_tile', { image: img(`hero-${n}`) })),
         ),
@@ -97,14 +118,14 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
         }),
         section('image-with-text', { image: img('story'), image_side: 'left' }, [
           block('eyebrow', { text: 'Our craft' }),
-          block('heading', { text: 'Made by hand, for keeps' }),
+          block('heading', { text: 'Tell the story of your craft' }),
           block('text', { content: '<p>Tell shoppers how your pieces are made, who makes them and why they last.</p>' }),
           block('quote', { text: 'A line from your founder', attribution: 'Founder' }),
           block('checklist_item', { title: 'Considered materials', text: 'Say what each piece is made of.' }),
           block('checklist_item', { title: 'Finished with care', text: 'Describe how it is checked before it ships.' }),
           block('checklist_item', { title: 'Made to be worn', text: 'Share how to keep it looking its best.' }),
-          block('button', { label: 'Read our story', link: '/pages/about' }),
-          block('highlight_card', { eyebrow: 'Our promise', title: 'Every piece documented', text: 'Add the promise you make with every order.' }),
+          block('button', { label: 'Read our story', link: `/pages/${STORY_HANDLE}` }),
+          block('highlight_card', { eyebrow: 'Your promise', title: 'Add the one promise you make', text: 'One sentence shoppers can hold you to.' }),
         ]),
         section('shop-the-look', { image: img('look'), show_list: true, eyebrow: 'The edit', heading: 'Shop the look' }),
         section('testimonials', { show_summary: false }, [
@@ -120,7 +141,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
           { layout: 'grid', columns: 4 },
           [1, 2, 3, 4].map((n) => block('image', { image: img(`gallery-${n}`), subcaption: '@yourstore' })),
         ),
-        section('newsletter', { heading: 'Private previews', text: 'Be first to see new pieces and festive edits.' }),
+        section('newsletter', { heading: 'Stay in touch', text: 'Say what shoppers get when they sign up.' }),
       ]),
       product: template([
         section('main-product', {}, [
@@ -138,6 +159,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
         section('recently-viewed', {}),
       ]),
       catalog,
+      [pageKey(STORY_HANDLE)]: ourStoryPage(),
     },
   };
 }

@@ -262,10 +262,22 @@ describe('heritage preset', () => {
 
   it('builds the collage from the business name and tagline with three sample tiles', () => {
     const c = home().sections.collage;
-    expect(c.settings).toMatchObject({ layout: 'text-left', feature_tile: 'first', heading: 'Welcome to Rose Mart', text: '<p>Fresh finds, fast delivery</p>', button_text: 'Explore the collection', link: '/catalog', button_2_text: 'Our story', link_2: '/pages/about' });
+    expect(c.settings).toMatchObject({ layout: 'text-left', feature_tile: 'first', heading: 'Welcome to Rose Mart', text: '<p>Fresh finds, fast delivery</p>', button_text: 'Explore the collection', link: '/catalog', button_2_text: 'Our story', link_2: '/pages/our-story' });
     expect(c.block_order.map((id) => c.blocks[id].settings.image)).toEqual([1, 2, 3].map((n) => `/store-presets/heritage/hero-${n}.svg`));
     const bare = heritagePreset({ businessName: 'X', tagline: '' }).templates.home.sections.collage;
     expect(String(bare.settings.text)).toMatch(/^<p>.+<\/p>$/);
+  });
+
+  it('ships an Our story page template, so the three Our story links never dead-end', () => {
+    const t = heritagePreset(CTX);
+    const page = t.templates['page.our-story'];
+    expect(page.title).toBe('Our story');
+    expect(page.order.map((id) => page.sections[id].type)).toEqual(['image-with-text', 'rich-text']);
+    expect(JSON.stringify(page.sections['image-with-text'].blocks)).toContain('Tell shoppers where your pieces are made and who makes them.');
+    expect(sanitizeThemeData(t).templates['page.our-story']).toEqual(page);
+    const links = JSON.stringify(t).match(/\/pages\/[a-z-]+/g) ?? [];
+    expect(links).toHaveLength(3);
+    for (const l of links) expect(l).toBe('/pages/our-story');
   });
 
   it('points every sample image at a file that ships', () => {
@@ -292,7 +304,7 @@ describe('heritage preset', () => {
       { label: 'Sarees', link: '/catalog' },
       { label: 'Bridal', link: '/catalog' },
       { label: 'Jewellery', link: '/catalog' },
-      { label: 'Our story', link: '/pages/about' },
+      { label: 'Our story', link: '/pages/our-story' },
     ]);
     const f = p.footer_group.sections.footer;
     expect(f.color_scheme).toBe('scheme-4');
@@ -313,7 +325,7 @@ describe('heritage preset', () => {
     for (const l of logos) expect(l.image).toBeUndefined();
     // No service claim the merchant never made, in any context.
     const json = JSON.stringify([heritagePreset(CTX), heritagePreset({ businessName: 'X', tagline: '' })]);
-    for (const claim of ['Complimentary shipping', '15,000', 'Insured delivery', 'insured until', 'Certified materials', 'described as they are', 'on request', 'Personal concierge', 'As featured in']) {
+    for (const claim of ['Complimentary shipping', '15,000', 'Insured delivery', 'insured until', 'Certified materials', 'described as they are', 'on request', 'Personal concierge', 'As featured in', 'Made by hand, for keeps', 'Every piece documented', 'Private previews', 'Be first to see new pieces']) {
       expect(json).not.toContain(claim);
     }
     const cols = Object.values(h.sections.multicolumn.blocks).map((b) => b.settings.title);

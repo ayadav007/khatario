@@ -488,6 +488,8 @@ test.describe('Store theme library', () => {
       await expect(heritage).toHaveCount(1);
       await expect(heritage.getByText('Premium', { exact: true })).toBeVisible();
       await heritage.click();
+      // The modal sends no name when the field is empty (the server then says "Untitled theme"), so type one.
+      await dialog.getByLabel(/^Name/).fill('Heritage Couture');
       await dialog.getByRole('button', { name: 'Add theme', exact: true }).click();
       await expect(dialog).toBeHidden({ timeout: SLOW });
 

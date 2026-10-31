@@ -1,4 +1,4 @@
-import { lookTotal, shopTheLookItems, type LookItem } from '@/lib/store/engine/shop-the-look-map';
+import { addableProducts, lookTotal, shopTheLookItems, type LookItem } from '@/lib/store/engine/shop-the-look-map';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import type { Block, Section } from '@/lib/store/engine/types';
 
@@ -62,5 +62,15 @@ describe('lookTotal', () => {
         { ...base, hasOptions: true, product: { ...itemB, selling_price: 999 } },
       ]),
     ).toBe(250);
+  });
+
+  it('counts a product pinned twice once, and adds it once', () => {
+    const items = [
+      { ...base, id: 'h1', product: { ...itemA, selling_price: 400 } },
+      { ...base, id: 'h2', n: 2, product: { ...itemB, selling_price: 250 } },
+      { ...base, id: 'h3', n: 3, product: { ...itemA, selling_price: 999 } },
+    ];
+    expect(lookTotal(items)).toBe(650);
+    expect(addableProducts(items).map((p) => [p.id, p.selling_price])).toEqual([[A, 400], [B, 250]]);
   });
 });

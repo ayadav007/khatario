@@ -23,7 +23,12 @@ export async function GET(request: NextRequest) {
   try {
     const [themes, premium_enabled] = await Promise.all([
       listThemes(tenant.businessId),
-      premiumThemesEnabled(tenant.businessId),
+      // The picker only needs the flag to hide or show premium themes: a failed read (say the column is missing
+      // before migration 459 runs) reads as off instead of failing the list. POST keeps failing closed.
+      premiumThemesEnabled(tenant.businessId).catch((error) => {
+        console.error('themes GET premium flag:', error);
+        return false;
+      }),
     ]);
     return NextResponse.json({ themes, premium_enabled });
   } catch (error) {

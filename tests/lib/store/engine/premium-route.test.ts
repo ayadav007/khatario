@@ -80,4 +80,13 @@ describe('themes GET', () => {
     mockPremium.mockResolvedValue(true);
     expect((await (await GET(new NextRequest(URL_))).json()).premium_enabled).toBe(true);
   });
+
+  it('reads the flag as off when it cannot be read, and still lists the themes', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockPremium.mockRejectedValue(new Error('column "premium_themes_enabled" does not exist'));
+    const res = await GET(new NextRequest(URL_));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ themes: [], premium_enabled: false });
+    spy.mockRestore();
+  });
 });

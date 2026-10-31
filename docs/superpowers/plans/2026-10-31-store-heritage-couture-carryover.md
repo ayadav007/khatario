@@ -37,6 +37,7 @@ Branch `claude/heritage-couture` (worktree), base `658369e2` (plan 1 merged to `
 - **Phone strip is 2.2 items per view.** In Image gallery's scrolling strip on phones each item is `calc(100%/2.2)` (the next picture peeking) whatever Columns says; desktop keeps `calc(100%/Columns)`. The spec's "or the strip" left the phone count open, and four per view was unreadable. *Cost:* a CSS tweak if the owner wants otherwise.
 - **Briefs vs spec §6:** the brief governs where they differ (one quote and summary off, empty logo captions, `studioFooter()` for the footer).
 - **No log or roadmap entry on the branch** (see Owed at merge).
+- **Final-review fix wave (rulings 1 to 4).** (1) **Our story page:** `about` is a reserved page handle (`RESERVED_PAGE_HANDLES`), so `/pages/about` always 404s; the preset ships a custom page template `page.our-story` (title "Our story", the About starter's two sections with instruction copy) and the menu link, the Collage's second button and the Image with text button all point to `/pages/our-story`. (2) **Remaining claim copy made instructional:** the story heading is "Tell the story of your craft", the highlight card is "Your promise / Add the one promise you make / One sentence shoppers can hold you to.", the newsletter is "Stay in touch / Say what shoppers get when they sign up."; the three old strings are in the banned-claims test. (3) **Flag-on e2e names the draft:** the modal sends no name when the field is empty (the server says "Untitled theme"), so the scenario and checklist section 1 type "Heritage Couture" first. (4) **Fix-now minors:** Add all and `lookTotal` dedupe by product id (first hotspot wins); the themes GET reads `premium_enabled` as false if the flag read throws (POST still fails closed); checklist and carry-over wording corrected.
 
 ## Open items
 
@@ -69,7 +70,7 @@ One line each, by task.
 - The open card is rendered after all pins (keyboard order), and focus does not move into the card.
 - A pin's name is its label only; "Added" has no `aria-live`.
 - Esc always refocuses the pin; the outside-close on `pointerdown` can fire on a touch scroll.
-- The same product in two hotspots is added twice by Add all (the loader dedupes ids, the mapper does not).
+- The same product in two hotspots is added twice by Add all (fixed in the final-review fix wave: `addableProducts` dedupes by product id).
 - A card on a pin near x 30 or 70 can overhang the photo on narrow phones; the photo has no reserved aspect; the pin size assumes border-box.
 - The full `StoreItem` is serialised per hotspot into the client component (brief-mandated type).
 - The CSS variables are `--c-btn` / `--c-btn-text` (the brief said `--c-button`). With Show product list off and Add all on, only the Add all button shows (accepted).
@@ -88,7 +89,7 @@ One line each, by task.
 - The tagline appears three times (announcement, collage text, footer about).
 - The same four pictures serve both the promo cards and the gallery.
 - "Add your press mentions" sits over placeholder names; the gallery SVGs sit on a parchment ground.
-- Shop the look with no hotspots shows the editor-only note and an empty list heading (staging check). The header search default comes from the header schema (`show_search` default true).
+- Shop the look with no hotspots shows the editor-only note, and shoppers see the photo and heading but no list (staging check). The header search default comes from the header schema (`show_search` default true).
 
 **Task 6, premium flag**
 - The premium check in POST sits outside the route's try/catch: a DB error there gives a 500 without a JSON body (it fails closed).
@@ -100,3 +101,6 @@ One line each, by task.
 - The Collage and Image gallery scenarios assume the starter presets add three image tiles and four image blocks and that tiles and images with no picture are not drawn.
 - The library scenarios restore the flag in `finally` and again in `afterAll` from the value read at the start; the existing `restore()` does not cover `store_premium_themes`.
 - The Add theme modal's option label nests the "Premium" pill inside the label span, so `getByText('Heritage Couture', { exact: true })` (what `addTheme` uses) does not match it; the new scenarios select it by `label` plus `hasText`. Extend `addTheme` if more premium presets get scenarios.
+
+**Final review, deferred**
+- A stale "Saved" pill waits in the e2e scenarios: they read or act while the editor's Saved indicator may still show an earlier save, so a wait on it can pass too early.

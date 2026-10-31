@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useStore } from '@/lib/store/store-context';
 import { engineProductHref } from '@/lib/store/engine/links';
-import { lookTotal, type LookItem } from '@/lib/store/engine/shop-the-look-map';
+import { addableProducts, lookTotal, type LookItem } from '@/lib/store/engine/shop-the-look-map';
 import { rupees } from '@/components/store/studio-theme/StudioSections';
 import { useFollowLink } from '../EngineViews';
 
@@ -95,7 +95,7 @@ export function ShopTheLookClient({
     flash(i.id);
   };
   const addAll = () => {
-    for (const i of items) if (addable(i)) put(i.product);
+    for (const p of addableProducts(items)) put(p);
     flash(ADD_ALL);
   };
 
