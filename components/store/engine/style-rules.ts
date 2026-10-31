@@ -11,7 +11,10 @@ export const STYLE_RULES =
   // A thin accent border, with a faint inner line, on cards and images. Product cards are article.g-surface (the
   // theme's card style uses the same selector); .product is the Studio-markup card.
   `${R}.eng-frame-accent :is(.product,main article.g-surface,.heroImg,.eng-promo,.eng-collection-img){border:1px solid var(--c-accent,var(--primary));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c-accent,var(--primary)) 25%,transparent)}` +
-  // Textures sit on each section (.eng-sec), over the section's background colour.
-  `${R}.eng-texture-dots .eng-sec{background-image:radial-gradient(${ink} .75px,transparent .75px);background-size:16px 16px}` +
-  `${R}.eng-texture-linen .eng-sec{background-image:repeating-linear-gradient(0deg,${ink} 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,${ink} 0 1px,transparent 1px 3px)}` +
-  `${R}.eng-texture-grid .eng-sec{background-image:linear-gradient(${ink} 1px,transparent 1px),linear-gradient(90deg,${ink} 1px,transparent 1px);background-size:24px 24px}`;
+  // Textures sit on each section (.eng-sec), over the section's background colour. A section with a chosen scheme or
+  // custom colours paints itself with an inline `background` shorthand (render-helpers sectionFrameStyle), which resets
+  // background-image and background-size; a stylesheet rule only wins over it with !important. The shorthand's colour
+  // is left alone, so the pattern draws on top of it.
+  `${R}.eng-texture-dots .eng-sec{background-image:radial-gradient(${ink} .75px,transparent .75px)!important;background-size:16px 16px!important}` +
+  `${R}.eng-texture-linen .eng-sec{background-image:repeating-linear-gradient(0deg,${ink} 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,${ink} 0 1px,transparent 1px 3px)!important}` +
+  `${R}.eng-texture-grid .eng-sec{background-image:linear-gradient(${ink} 1px,transparent 1px),linear-gradient(90deg,${ink} 1px,transparent 1px)!important;background-size:24px 24px!important}`;
