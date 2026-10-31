@@ -54,4 +54,32 @@ describe('premium section rules', () => {
   it('a tile with no picture has a dark background so its white caption stays readable', () => {
     expect(ruleBody('.st-root.eng-root .eng-collage-tile')).toContain('background:#2b2b2b');
   });
+
+  it('shop the look: photo 7 / list 5 on wide screens, stacked photo then list on phones, image-right swaps order', () => {
+    const wideAt = PREMIUM_SECTION_RULES.lastIndexOf('@container store (min-width:641px)');
+    const base = PREMIUM_SECTION_RULES.slice(0, wideAt);
+    const wide = PREMIUM_SECTION_RULES.slice(wideAt);
+    expect(ruleBody('.st-root.eng-root .eng-look')).toContain('grid-template-columns:minmax(0,1fr)');
+    expect(base).not.toContain('7fr');
+    expect(wide).toContain('grid-template-columns:minmax(0,7fr) minmax(0,5fr)');
+    expect(wide).toContain('.eng-look--right .eng-look-photo{order:2}');
+    expect(base).not.toContain('.eng-look--right');
+  });
+
+  it('shop the look: pins are 28px circles in the button colours and the card sits on the card colours', () => {
+    const pin = ruleBody('.st-root.eng-root .eng-look-pin');
+    expect(pin).toContain('width:28px');
+    expect(pin).toContain('height:28px');
+    expect(pin).toContain('border-radius:50%');
+    expect(pin).toContain('var(--c-btn');
+    expect(pin).toContain('var(--c-btn-text');
+    const card = ruleBody('.st-root.eng-root .eng-look-card');
+    expect(card).toContain('var(--c-card');
+    expect(card).toContain('var(--c-border');
+    expect(card).toContain('box-shadow');
+  });
+
+  it('shop the look: the empty-state note is for the editor only', () => {
+    expect(ruleBody('.st-root.eng-root:not(.eng-editor) .eng-look-empty')).toContain('display:none');
+  });
 });
