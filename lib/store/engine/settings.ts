@@ -1,4 +1,5 @@
 import sanitizeHtml from 'sanitize-html';
+import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
@@ -10,7 +11,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const SCHEME_ID_RE = /^[a-z0-9_-]{1,32}$/;
 const VIDEO_HOSTS = new Set(VIDEO_HOST_LIST);
-const FONTS = ['inter', 'nunito', 'outfit', 'fraunces', 'playfair', 'cormorant', 'source-serif'];
+const FONTS: readonly string[] = STORE_FONT_FAMILIES.filter((f) => f !== 'system');
 const LIST_MAX = 50;
 const RICHTEXT_MAX = 5000;
 

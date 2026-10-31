@@ -89,6 +89,12 @@ export const STORE_FONT_FAMILIES = [
   'outfit',
   'cormorant',
   'source-serif',
+  'cinzel',
+  'newsreader',
+  'manrope',
+  'dm-serif',
+  'lora',
+  'poppins',
 ] as const;
 
 export type StoreFontFamily = (typeof STORE_FONT_FAMILIES)[number];
@@ -574,6 +580,18 @@ export function storeFontStack(family: StoreFontFamily): string {
       return 'var(--font-store-cormorant), Georgia, serif';
     case 'source-serif':
       return 'var(--font-store-source-serif), Georgia, serif';
+    case 'cinzel':
+      return 'var(--font-store-cinzel), Georgia, serif';
+    case 'newsreader':
+      return 'var(--font-store-newsreader), Georgia, serif';
+    case 'manrope':
+      return 'var(--font-store-manrope), system-ui, sans-serif';
+    case 'dm-serif':
+      return 'var(--font-store-dm-serif), Georgia, serif';
+    case 'lora':
+      return 'var(--font-store-lora), Georgia, serif';
+    case 'poppins':
+      return 'var(--font-store-poppins), system-ui, sans-serif';
     default:
       return 'system-ui, sans-serif';
   }

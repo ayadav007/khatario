@@ -129,3 +129,9 @@ describe('sanitizeSettings and defaultSettings', () => {
     expect(defaultSettings(schemas)).toEqual({ title: 'Hello' });
   });
 });
+
+it('accepts the new fonts and rejects unknown ones', () => {
+  const font = { id: 'f', type: 'font', label: 'F' } as const;
+  expect(sanitizeSettingValue(font, 'newsreader')).toBe('newsreader');
+  expect(sanitizeSettingValue(font, 'comic-sans')).toBeUndefined();
+});

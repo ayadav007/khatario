@@ -186,10 +186,12 @@ export function listLimit(schema: SettingSchema): number {
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/[-_]/g, ' ');
 
+const FONT_LABELS: Record<string, string> = { 'dm-serif': 'DM Serif Display' };
+
 /** Store fonts the engine accepts ('system' is old-Studio only). */
 export const FONT_OPTIONS: { value: string; label: string }[] = STORE_FONT_FAMILIES.filter((f) => f !== 'system').map((f) => ({
   value: f,
-  label: titleCase(f),
+  label: FONT_LABELS[f] ?? titleCase(f),
 }));
 
 export const ICON_OPTIONS: { value: string; label: string }[] = STUDIO_USP_ICONS.map((i) => ({ value: i, label: titleCase(i) }));
