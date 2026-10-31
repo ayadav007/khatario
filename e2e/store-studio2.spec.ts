@@ -235,6 +235,27 @@ async function editFeaturedHeading(page: Page, text: string): Promise<void> {
   await heading.fill(text);
 }
 
+type BlockedSection = { block_order: string[]; blocks: Record<string, { type: string; disabled?: boolean }> };
+
+/** The block types of one home section, in saved order. */
+async function blockTypes(page: Page, id: string, sectionId: string): Promise<string[]> {
+  const section = (await savedTheme(page, id)).data.templates.home.sections[sectionId] as unknown as BlockedSection | undefined;
+  return (section?.block_order ?? []).map((b) => section!.blocks[b].type);
+}
+
+/** The disabled flag of each block of one home section, in saved order. */
+async function blockDisabled(page: Page, id: string, sectionId: string): Promise<boolean[]> {
+  const section = (await savedTheme(page, id)).data.templates.home.sections[sectionId] as unknown as BlockedSection | undefined;
+  return (section?.block_order ?? []).map((b) => !!section!.blocks[b].disabled);
+}
+
+/** Open a section's block list in the tree (a no-op when it is already open). */
+async function expandSection(page: Page, label: string): Promise<void> {
+  const open = sectionsNav(page).getByRole('button', { name: `Expand ${label}`, exact: true });
+  if (await open.isVisible()) await open.click();
+  await expect(sectionsNav(page).getByRole('button', { name: `Collapse ${label}`, exact: true })).toBeVisible();
+}
+
 // ---- tests --------------------------------------------------------------------------------------
 
 test.describe('Studio 2 store design editor', () => {
@@ -536,6 +557,167 @@ test.describe('Studio 2 store design editor', () => {
       await expect(shop.locator('[data-section-group="header"]').first()).toBeVisible();
     } finally {
       await shopper.close();
+    }
+  });
+
+  // ---- premium theme foundations (written, not run: they need the local test DB like the rest) --------
+
+  test('content blocks: add, reorder, disable, save, reload', async ({ page }) => {
+    const id = snap!.working.id;
+    await openEditor(page, id);
+
+    // Add an Image with text under the first home section. Its starter preset brings its own blocks; the test
+    // reads them back rather than assuming which, and builds its expectation on top.
+    const add = preview(page).getByRole('button', { name: 'Add section here' });
+    await expect(add.first()).toBeVisible({ timeout: 30_000 });
+    await add.nth(1).click();
+    const dialog = page.getByRole('dialog', { name: 'Add section' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /^Image with text/ }).first().click();
+    await expect(dialog).toBeHidden();
+
+    await expect
+      .poll(async () => {
+        const home = (await savedTheme(page, id)).data.templates.home;
+        return home.sections[home.order[1]]?.type;
+      }, { timeout: 30_000 })
+      .toBe('image-with-text');
+    const sectionId = (await savedTheme(page, id)).data.templates.home.order[1];
+    const initial = await blockTypes(page, id, sectionId);
+
+    // Open the section's block list, then add an eyebrow, a quote, a checklist item and two buttons.
+    await expandSection(page, 'Image with text');
+    for (const name of ['Eyebrow', 'Quote', 'Checklist item', 'Button', 'Button']) {
+      await page.getByRole('button', { name: 'Add block', exact: true }).click();
+      await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click();
+      await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    }
+    const added = [...initial, 'eyebrow', 'quote', 'checklist_item', 'button', 'button'];
+    await expect.poll(() => blockTypes(page, id, sectionId), { timeout: 30_000 }).toEqual(added);
+
+    // Drag the quote onto the first text block's row: the quote takes the text's place, the text moves down.
+    const row = (label: string) => sectionsNav(page).locator(`li:has(> button[title="${label}"])`);
+    const text = row('Text').first();
+    const quote = row('Quote').first();
+    await expect(text).toBeVisible();
+    const handle = quote.getByRole('button', { name: 'Drag to reorder' });
+    const from = (await handle.boundingBox())!;
+    const to = (await text.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 10, { steps: 3 });
+    await page.mouse.move(from.x + from.width / 2, to.y + 2, { steps: 15 });
+    await page.mouse.up();
+
+    const reordered = added.filter((_, i) => i !== added.indexOf('quote'));
+    reordered.splice(added.indexOf('text'), 0, 'quote');
+    await expect.poll(() => blockTypes(page, id, sectionId), { timeout: 30_000 }).toEqual(reordered);
+
+    // Disable the second button (the last block): its eye turns into "Show Button".
+    await sectionsNav(page).getByRole('button', { name: 'Hide Button' }).last().click();
+    await expect(sectionsNav(page).getByRole('button', { name: 'Show Button' })).toHaveCount(1);
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    const onlyLastOff = reordered.map((_, i) => i === reordered.length - 1);
+    await expect.poll(() => blockDisabled(page, id, sectionId), { timeout: 30_000 }).toEqual(onlyLastOff);
+    // The preview follows: the section is there.
+    await expect(preview(page).locator(`[data-section-group="template"][data-section-id="${sectionId}"]`)).toBeVisible({ timeout: 30_000 });
+
+    // Reload: same order, same disabled flag, and the tree lists the quote above the text.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForEditor(page);
+    await expandSection(page, 'Image with text');
+    await expect(sectionsNav(page).getByRole('button', { name: 'Show Button' })).toHaveCount(1);
+    await expect.poll(() => blockTypes(page, id, sectionId)).toEqual(reordered);
+    await expect.poll(() => blockDisabled(page, id, sectionId)).toEqual(onlyLastOff);
+    const labels = await sectionsNav(page)
+      .locator('li:has(> button[title="Quote"])')
+      .first()
+      .locator('xpath=ancestor::ul[1]/li/button[@title]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('title')));
+    expect(labels.indexOf('Quote')).toBeLessThan(labels.indexOf('Text'));
+  });
+
+  test('style settings: spaced capitals, thin accent border and dots reach the preview root', async ({ page }) => {
+    const id = snap!.working.id;
+    await openEditor(page, id);
+    await sectionsNav(page).getByRole('button', { name: 'Theme settings' }).click();
+
+    await page.getByLabel('Label style', { exact: true }).selectOption('caps');
+    await page.getByLabel('Frame style', { exact: true }).selectOption('accent');
+    await page.getByLabel('Background texture', { exact: true }).selectOption('dots');
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+    const root = preview(page).locator('.eng-root').first();
+    await expect(root).toHaveClass(/eng-labels-caps eng-frame-accent eng-texture-dots/, { timeout: 30_000 });
+    await expect
+      .poll(async () => {
+        const data = (await savedTheme(page, id)).data as unknown as { settings: Record<string, unknown> };
+        return [data.settings.label_style, data.settings.frame_style, data.settings.texture];
+      }, { timeout: 30_000 })
+      .toEqual(['caps', 'accent', 'dots']);
+
+    // Back to the defaults: the three classes go away.
+    await page.getByLabel('Label style', { exact: true }).selectOption('normal');
+    await page.getByLabel('Frame style', { exact: true }).selectOption('none');
+    await page.getByLabel('Background texture', { exact: true }).selectOption('none');
+    await expect(root).not.toHaveClass(/eng-labels-caps|eng-frame-accent|eng-texture-/, { timeout: 30_000 });
+  });
+
+  test('card switches: Show tagline and Show colour swatches draw .ptag and .pswatches', async ({ page }) => {
+    const id = snap!.working.id;
+    const tagline = `E2E tagline ${Date.now()}`;
+    // Give the store's visible items a tagline and two swatches; every value is put back afterwards.
+    const visible = `business_id = $1 AND (show_in_store = true OR featured_in_store = true)`;
+    const before = await withDb(async (db) => {
+      const rows = (
+        await db.query<{ id: string; store_badge: string | null; store_tagline: string | null; store_swatches: unknown }>(
+          `SELECT id, store_badge, store_tagline, store_swatches FROM items WHERE ${visible}`,
+          [BUSINESS_ID],
+        )
+      ).rows;
+      await db.query(`UPDATE items SET store_tagline = $2, store_swatches = $3::jsonb WHERE ${visible}`, [
+        BUSINESS_ID,
+        tagline,
+        JSON.stringify([{ hex: '#b94717', name: 'Rust' }, { hex: '#1f3a5f', name: 'Navy' }]),
+      ]);
+      return rows;
+    });
+    expect(before.length).toBeGreaterThan(0);
+    try {
+      await openEditor(page, id);
+      await treeButton(page, 'Featured products').click();
+      const grid = preview(page).locator('[data-section-id="featured-products"]');
+      // Off by default: the cards carry neither line.
+      await expect(grid.locator('.pname').first()).toBeVisible({ timeout: SLOW });
+      await expect(grid.locator('.ptag')).toHaveCount(0);
+      await expect(grid.locator('.pswatches')).toHaveCount(0);
+
+      await page.getByLabel('Show tagline', { exact: true }).check();
+      await page.getByLabel('Show colour swatches', { exact: true }).check();
+      await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+      await expect(grid.locator('.ptag').first()).toHaveText(tagline, { timeout: 30_000 });
+      await expect(grid.locator('.pswatches').first()).toBeVisible();
+      await expect(grid.locator('.pswatches').first().locator('span')).toHaveCount(2);
+
+      // Both switches survive a reload.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForEditor(page);
+      await treeButton(page, 'Featured products').click();
+      await expect(page.getByLabel('Show tagline', { exact: true })).toBeChecked();
+      await expect(page.getByLabel('Show colour swatches', { exact: true })).toBeChecked();
+      await expect(grid.locator('.ptag').first()).toHaveText(tagline, { timeout: 30_000 });
+    } finally {
+      await withDb(async (db) => {
+        for (const r of before) {
+          await db.query(`UPDATE items SET store_badge = $2, store_tagline = $3, store_swatches = $4::jsonb WHERE id = $1`, [
+            r.id,
+            r.store_badge,
+            r.store_tagline,
+            JSON.stringify(r.store_swatches ?? []),
+          ]);
+        }
+      });
     }
   });
 });

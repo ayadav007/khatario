@@ -82,6 +82,8 @@ const newsreader = Newsreader({
   variable: '--font-store-newsreader',
   display: 'swap',
   preload: false,
+  // Next 14.2 has no fallback-metric entry for Newsreader and fails the build looking for one.
+  adjustFontFallback: false,
 });
 
 const manrope = Manrope({
