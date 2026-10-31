@@ -1,5 +1,6 @@
 import {
   MENU_CLOSED,
+  categoryIdOfLink,
   foldMenu,
   menuFooterColumns,
   menuItemKind,
@@ -247,5 +248,19 @@ describe('menuOpenStep', () => {
   });
   it('keyboard open opens and cancels a pending step', () => {
     expect(run([{ type: 'leave', id: 'a' }, { type: 'open', id: 'a' }, { type: 'fire' }], openA)).toEqual(openA);
+  });
+});
+
+describe('categoryIdOfLink', () => {
+  it('reads the id of a picker category link, decoded, ignoring a query or hash', () => {
+    expect(categoryIdOfLink('/catalog/abc-1')).toBe('abc-1');
+    expect(categoryIdOfLink(`/catalog/${encodeURIComponent('a b/c')}`)).toBe('a b/c');
+    expect(categoryIdOfLink('/catalog/abc?sort=new')).toBe('abc');
+    expect(categoryIdOfLink('/catalog/abc#top')).toBe('abc');
+  });
+  it('is null for other links and broken encodings', () => {
+    for (const l of ['', '/catalog', '/catalog/', '/catalog/a/b', '/pages/about', 'https://x.com/catalog/a', '/catalog/%E0%A4']) {
+      expect(categoryIdOfLink(l)).toBeNull();
+    }
   });
 });

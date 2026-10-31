@@ -111,6 +111,15 @@ describe('menus: add, rename, remove', () => {
 });
 
 describe('menu items', () => {
+  it('findMenuItem gives an item and its level, or null', () => {
+    const items = [it_('a', [it_('b', [it_('c')])]), it_('d')];
+    expect(m.findMenuItem(items, 'a')).toEqual({ item: items[0], level: 1 });
+    expect(m.findMenuItem(items, 'b')?.level).toBe(2);
+    expect(m.findMenuItem(items, 'c')).toEqual({ item: items[0].children![0].children![0], level: 3 });
+    expect(m.findMenuItem(items, 'd')?.level).toBe(1);
+    expect(m.findMenuItem(items, 'zz')).toBeNull();
+  });
+
   it('addMenuItem appends a New link at top or under a parent', () => {
     const t = base([{ id: 'main', name: 'Main', items: [it_('a', [it_('a1')])] }]);
     const top = m.addMenuItem(t, 'main', null, mk());

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Trash2 } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import {
   OP_ERROR_TEXT,
@@ -40,14 +40,13 @@ import { useStudio2 } from './Studio2Editor';
 import { ColorInput, FieldShell, SchemePicker, SettingField } from './fields/SettingField';
 import { inputCls } from './fields/pickers';
 import { PageSettings } from './PageSettings';
+import { PanelHeader, actionBtn, dangerBtn } from './panel-ui';
+import { MenusPanel } from './menus/MenusPanel';
+import { MenuEditor } from './menus/MenuEditor';
+import { MenuItemForm } from './menus/MenuItemForm';
 
 const STRUCTURAL = { mergeKey: null, immediate: true } as const;
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
-
-const actionBtn =
-  'inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40';
-const dangerBtn =
-  'inline-flex items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40';
 
 export function SettingsPanel({ preset }: { preset?: ThemePreset } = {}) {
   const { theme, templateKey, selection, readOnly } = useStudio2();
@@ -56,8 +55,16 @@ export function SettingsPanel({ preset }: { preset?: ThemePreset } = {}) {
   let body: ReactNode = !selection && pageHandle(templateKey) ? <PageSettings key={templateKey} pageKey={templateKey} /> : <Empty />;
   if (selection?.kind === 'theme') {
     body = <ThemePanel preset={preset} />;
-  } else if (selection && (selection.kind === 'section' || selection.kind === 'block')) {
-    // The Menus editor (kind 'menus' / 'menu') has its own panel.
+  } else if (selection?.kind === 'menus') {
+    body = <MenusPanel />;
+  } else if (selection?.kind === 'menu') {
+    const menu = (Array.isArray(theme.settings.menus) ? theme.settings.menus : []).find((m) => m.id === selection.menuId);
+    if (menu && selection.itemId === null) {
+      body = <MenuEditor key={menu.id} menu={menu} />;
+    } else if (menu && selection.itemId !== null) {
+      body = <MenuItemForm key={`${menu.id}:${selection.itemId}`} menu={menu} itemId={selection.itemId} />;
+    }
+  } else if (selection) {
     const g = getGroup(theme, templateKey, selection.ref.group);
     const section = hasOwn(g.sections, selection.ref.id) ? g.sections[selection.ref.id] : null;
     const key = `${selection.ref.group}:${selection.ref.id}`;
@@ -99,21 +106,6 @@ function useActions() {
       return id;
     },
   };
-}
-
-function PanelHeader({ title, subtitle, back }: { title: string; subtitle?: string; back?: { label: string; onClick(): void } }) {
-  return (
-    <div className="border-b border-gray-200 px-4 py-3">
-      {back && (
-        <button type="button" onClick={back.onClick} className="mb-1 inline-flex items-center gap-0.5 text-xs text-gray-500 hover:text-gray-800">
-          <ChevronLeft className="h-3.5 w-3.5" />
-          {back.label}
-        </button>
-      )}
-      <h2 className="truncate text-sm font-semibold text-gray-900">{title}</h2>
-      {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
-    </div>
-  );
 }
 
 /** One generated field per visible setting, each edit merged under its own key. */

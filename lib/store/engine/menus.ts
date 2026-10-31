@@ -44,7 +44,7 @@ export function pickMenu(menus: Menu[], id: unknown, fallbackId: 'main' | 'foote
 }
 
 /** The category id of a link written by the editor's link picker (`/catalog/<encoded id>`), else null. */
-function categoryIdOfLink(link: string): string | null {
+export function categoryIdOfLink(link: string): string | null {
   const m = /^\/catalog\/([^/?#]+)(?:[?#].*)?$/.exec(link);
   if (!m) return null;
   try {

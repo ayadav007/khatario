@@ -122,6 +122,12 @@ function editMenu(
   return out.id === undefined ? { ok: true, theme: withMenus(theme, next) } : { ok: true, theme: withMenus(theme, next), id: out.id };
 }
 
+/** An item and its level (1 = top) in a menu's items, or null when it is not there. */
+export function findMenuItem(items: MenuItem[], id: string): { item: MenuItem; level: number } | null {
+  const loc = locate(items, id);
+  return loc ? { item: loc.item, level: levelOf(loc) } : null;
+}
+
 // ---- menus -----------------------------------------------------------------------------------
 
 /** True when a header or footer section (disabled ones too) points at this menu, by setting or by default. */
