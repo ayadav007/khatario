@@ -6,13 +6,18 @@ import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
 import { CategorySizeChartEditor } from '@/components/store/admin/CategorySizeChartEditor';
 import { validateProductExtras, videoEmbed } from '@/lib/store/product-extras';
-import type { SizeChart, StoreTab } from '@/lib/store/product-extras';
+import type { SizeChart, StoreSwatch, StoreTab } from '@/lib/store/product-extras';
 import { TABS_MAX, emptyChart, moveTab } from '@/lib/store/size-chart-grid';
+
+const SWATCHES_MAX = 6;
 
 export type ItemStorePageValue = {
   video_url: string;
   store_tabs: StoreTab[];
   size_chart: SizeChart | null;
+  store_badge: string;
+  store_tagline: string;
+  store_swatches: StoreSwatch[];
 };
 
 interface Props {
@@ -60,6 +65,9 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
     video_url: value.video_url,
     store_tabs: value.store_tabs,
     size_chart: value.size_chart,
+    store_badge: value.store_badge,
+    store_tagline: value.store_tagline,
+    store_swatches: value.store_swatches,
   });
   const error = check.ok ? null : check.error;
   const embed = videoEmbed(value.video_url);
@@ -69,8 +77,84 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
   const setTab = (i: number, patch: Partial<StoreTab>) =>
     set({ store_tabs: value.store_tabs.map((t, ti) => (ti === i ? { ...t, ...patch } : t)) });
 
+  const setSwatch = (i: number, patch: Partial<StoreSwatch>) =>
+    set({ store_swatches: value.store_swatches.map((s, si) => (si === i ? { ...s, ...patch } : s)) });
+
   return (
     <div className="space-y-6">
+      <div className="space-y-4">
+        <span className="type-label block">Card</span>
+        <div>
+          <label htmlFor="store-badge" className="type-label mb-1.5 block">Badge on the photo</label>
+          <input
+            id="store-badge"
+            className="input w-full"
+            maxLength={24}
+            placeholder="e.g. Bestseller"
+            value={value.store_badge}
+            onChange={(e) => set({ store_badge: e.target.value })}
+          />
+          <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+            Replaces the automatic New / % off badge. Leave empty to keep those.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="store-tagline" className="type-label mb-1.5 block">Tagline above the name</label>
+          <input
+            id="store-tagline"
+            className="input w-full"
+            maxLength={60}
+            placeholder="e.g. Hand-block printed cotton"
+            value={value.store_tagline}
+            onChange={(e) => set({ store_tagline: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="type-label">Colour swatches</span>
+            <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              {value.store_swatches.length} of {SWATCHES_MAX}
+            </span>
+          </div>
+          {value.store_swatches.map((swatch, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="color"
+                className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1 dark:border-border-dark"
+                aria-label={`Swatch ${i + 1} colour`}
+                value={swatch.hex}
+                onChange={(e) => setSwatch(i, { hex: e.target.value })}
+              />
+              <input
+                className="input min-w-0 flex-1"
+                placeholder="Colour name, e.g. Indigo"
+                aria-label={`Swatch ${i + 1} name`}
+                maxLength={30}
+                value={swatch.name}
+                onChange={(e) => setSwatch(i, { name: e.target.value })}
+              />
+              <button
+                type="button"
+                className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                aria-label="Remove swatch"
+                onClick={() => set({ store_swatches: value.store_swatches.filter((_, si) => si !== i) })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={value.store_swatches.length >= SWATCHES_MAX}
+            onClick={() => set({ store_swatches: [...value.store_swatches, { name: '', hex: '#000000' }] })}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add colour
+          </Button>
+        </div>
+      </div>
+
       <div>
         <label htmlFor="store-video-url" className="type-label mb-1.5 block">Product video</label>
         <input

@@ -35,7 +35,7 @@ import { CategoryCombobox } from '@/components/items/CategoryCombobox';
 import { ItemStorePageFields } from '@/components/store/admin/ItemStorePageFields';
 import type { ItemStorePageValue } from '@/components/store/admin/ItemStorePageFields';
 import { validateProductExtras } from '@/lib/store/product-extras';
-import type { SizeChart, StoreTab } from '@/lib/store/product-extras';
+import type { SizeChart, StoreSwatch, StoreTab } from '@/lib/store/product-extras';
 import { extrasChanged } from '@/lib/store/size-chart-grid';
 
 interface Supplier {
@@ -51,7 +51,14 @@ interface ItemCategory {
   size_chart?: SizeChart | null;
 }
 
-const EMPTY_STORE_PAGE: ItemStorePageValue = { video_url: '', store_tabs: [], size_chart: null };
+const EMPTY_STORE_PAGE: ItemStorePageValue = {
+  video_url: '',
+  store_tabs: [],
+  size_chart: null,
+  store_badge: '',
+  store_tagline: '',
+  store_swatches: [],
+};
 
 const ITEM_TYPES = [
   { value: 'goods', label: 'Goods', hint: 'Physical products. Stock is tracked.' },
@@ -502,6 +509,11 @@ export default function NewItemPage() {
                 ? ((item as { store_tabs: StoreTab[] }).store_tabs)
                 : [],
               size_chart: ((item as { size_chart?: SizeChart | null }).size_chart as SizeChart | null) ?? null,
+              store_badge: (item as { store_badge?: string | null }).store_badge ?? '',
+              store_tagline: (item as { store_tagline?: string | null }).store_tagline ?? '',
+              store_swatches: Array.isArray((item as { store_swatches?: unknown }).store_swatches)
+                ? ((item as { store_swatches: StoreSwatch[] }).store_swatches)
+                : [],
             };
             setStorePage(loadedExtras);
             setLoadedStorePage(loadedExtras);
@@ -819,6 +831,9 @@ export default function NewItemPage() {
         video_url: storePage.video_url,
         store_tabs: storePage.store_tabs,
         size_chart: storePage.size_chart,
+        store_badge: storePage.store_badge,
+        store_tagline: storePage.store_tagline,
+        store_swatches: storePage.store_swatches,
       });
       if (!extrasCheck.ok) {
         setStorePageError(extrasCheck.error);
@@ -836,6 +851,15 @@ export default function NewItemPage() {
       }
       if (extrasChanged(storePage.size_chart, loadedStorePage.size_chart)) {
         storePagePayload.size_chart = extrasCheck.value.size_chart ?? null;
+      }
+      if (extrasChanged(storePage.store_badge.trim(), loadedStorePage.store_badge.trim())) {
+        storePagePayload.store_badge = extrasCheck.value.store_badge ?? null;
+      }
+      if (extrasChanged(storePage.store_tagline.trim(), loadedStorePage.store_tagline.trim())) {
+        storePagePayload.store_tagline = extrasCheck.value.store_tagline ?? null;
+      }
+      if (extrasChanged(storePage.store_swatches, loadedStorePage.store_swatches)) {
+        storePagePayload.store_swatches = extrasCheck.value.store_swatches ?? [];
       }
 
       const basePayload = {
