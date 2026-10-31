@@ -14,4 +14,32 @@ describe('editor ops client safety', () => {
       expect(require('@/lib/store/engine/registry').SECTION_SCHEMAS['rich-text']).toBeDefined();
     });
   });
+
+  it('library.ts and the library fetch client load with pg, sanitize-html and crypto throwing', () => {
+    jest.isolateModules(() => {
+      for (const m of ['sanitize-html', 'pg', 'crypto']) {
+        jest.doMock(m, () => {
+          throw new Error('server-only');
+        });
+      }
+      const lib = require('@/lib/store/engine/library');
+      expect(lib.PRESET_CHOICES).toHaveLength(5);
+      const api = require('@/components/store/library/api');
+      for (const k of [
+        'listThemes',
+        'createTheme',
+        'renameTheme',
+        'deleteTheme',
+        'resetWorkingDraft',
+        'listVersions',
+        'restoreVersion',
+        'versionPreviewLink',
+        'publishTheme',
+        'previewLink',
+        'openWorkingDraft',
+      ]) {
+        expect(typeof api[k]).toBe('function');
+      }
+    });
+  });
 });

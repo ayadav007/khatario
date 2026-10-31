@@ -30,24 +30,54 @@ export function backupKey(businessId: string, themeId: string): string {
   return `${BACKUP_PREFIX}${businessId}:${themeId}`;
 }
 
+/** Backups older than this are dropped by the sweep (D51). */
+export const BACKUP_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** True when an unsaved-changes backup is stored for this theme (the library badge, D51). */
+export function hasBackup(storage: Pick<Storage, 'getItem'> | null, businessId: string, themeId: string): boolean {
+  if (!storage) return false;
+  try {
+    return storage.getItem(backupKey(businessId, themeId)) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Drops this business's backups for other themes (ones that went live, or were left after a lock) and
- * any legacy business-less key. Other businesses' backups stay.
+ * Drops this business's backups that are no longer useful (D51): ones whose theme is not in `keepThemeIds`
+ * (only when a list is given), ones with no readable `savedAt` or older than `maxAgeMs`, and any legacy
+ * business-less key. Other businesses' backups stay.
  */
-export function sweepOtherBackups(
-  storage: Pick<Storage, 'length' | 'key' | 'removeItem'> | null,
+export function sweepBackups(
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem' | 'getItem'> | null,
   businessId: string,
-  keepThemeId: string,
+  opts: { keepThemeIds?: string[]; now: number; maxAgeMs?: number },
 ): void {
   if (!storage) return;
   try {
     const prefix = backupKey(businessId, '');
-    const keep = backupKey(businessId, keepThemeId);
+    const maxAge = opts.maxAgeMs ?? BACKUP_MAX_AGE_MS;
+    const keep = opts.keepThemeIds ? new Set(opts.keepThemeIds) : null;
     const stale: string[] = [];
     for (let i = 0; i < storage.length; i++) {
       const k = storage.key(i);
-      if (!k || k === keep) continue;
-      if (k.startsWith(prefix) || LEGACY_BACKUP_RE.test(k)) stale.push(k);
+      if (!k) continue;
+      if (LEGACY_BACKUP_RE.test(k)) {
+        stale.push(k);
+        continue;
+      }
+      if (!k.startsWith(prefix)) continue;
+      if (keep && !keep.has(k.slice(prefix.length))) {
+        stale.push(k);
+        continue;
+      }
+      let savedAt: unknown;
+      try {
+        savedAt = JSON.parse(storage.getItem(k) ?? 'null')?.savedAt;
+      } catch {
+        savedAt = undefined;
+      }
+      if (typeof savedAt !== 'number' || opts.now - savedAt > maxAge) stale.push(k);
     }
     stale.forEach((k) => storage.removeItem(k));
   } catch {
@@ -243,7 +273,7 @@ export class SaveQueue {
     try {
       this.deps.storage?.setItem(
         backupKey(this.businessId, this.themeId),
-        JSON.stringify({ data, base: this.serverUpdatedAt }),
+        JSON.stringify({ data, base: this.serverUpdatedAt, savedAt: Date.now() }),
       );
     } catch {
       /* storage unavailable or full: keep working without it */

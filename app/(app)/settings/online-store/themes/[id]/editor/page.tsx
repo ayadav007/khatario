@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
-import { backupKey, readBackup, sweepOtherBackups } from '@/lib/store/engine/editor/save-queue';
+import { backupKey, readBackup, sweepBackups } from '@/lib/store/engine/editor/save-queue';
 import { Studio2Editor } from '@/components/store/studio2/Studio2Editor';
 import { editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
 
@@ -82,7 +82,7 @@ export default function Studio2EditorPage() {
           return;
         }
         const storage = localStore();
-        sweepOtherBackups(storage, business.id, theme.id);
+        sweepBackups(storage, business.id, { now: Date.now() });
         const backup = usefulBackup(storage, business.id, theme);
         setLoaded({
           theme,

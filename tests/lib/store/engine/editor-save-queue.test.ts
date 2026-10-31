@@ -4,7 +4,8 @@ import {
   SaveQueue,
   backupKey,
   readBackup,
-  sweepOtherBackups,
+  hasBackup,
+  sweepBackups,
   type PutResult,
   type SaveStatus,
 } from '@/lib/store/engine/editor/save-queue';
@@ -154,6 +155,7 @@ describe('SaveQueue', () => {
     expect(JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string)).toEqual({
       data: d(2),
       base: 'v0',
+      savedAt: expect.any(Number),
     });
     q.retry();
     await tick();
@@ -392,7 +394,7 @@ describe('readBackup', () => {
   });
 });
 
-describe('sweepOtherBackups', () => {
+describe('sweepBackups', () => {
   function listStorage(seed: Record<string, string>) {
     const s = memStorage(seed);
     return {
@@ -404,29 +406,80 @@ describe('sweepOtherBackups', () => {
     };
   }
   const uuid = '0f8b2c4e-1d2a-4b3c-9e8f-123456789abc';
+  const now = 1_800_000_000_000;
+  const DAY = 24 * 60 * 60 * 1000;
+  const bk = (savedAt: number) => JSON.stringify({ data: {}, base: 'v', savedAt });
 
-  it("drops this business's other backups and legacy keys, keeping the open theme and other businesses", () => {
+  it("with a list, drops this business's other themes and legacy keys, keeping the listed theme and other businesses", () => {
     const s = listStorage({
-      'kh-theme-unsaved:b1:t1': 'keep',
-      'kh-theme-unsaved:b1:t2': 'drop',
-      'kh-theme-unsaved:b2:t3': 'other business',
+      'kh-theme-unsaved:b1:A': bk(now),
+      'kh-theme-unsaved:b1:B': bk(now),
+      'kh-theme-unsaved:b2:C': bk(now),
       [`kh-theme-unsaved:${uuid}`]: 'legacy',
       'kh-theme-unsaved:not-a-uuid': 'unknown',
       'something-else': 'x',
     });
-    sweepOtherBackups(s, 'b1', 't1');
+    sweepBackups(s, 'b1', { keepThemeIds: ['A'], now });
     expect(Array.from(s.m.keys()).sort()).toEqual(
-      ['kh-theme-unsaved:b1:t1', 'kh-theme-unsaved:b2:t3', 'kh-theme-unsaved:not-a-uuid', 'something-else'].sort(),
+      ['kh-theme-unsaved:b1:A', 'kh-theme-unsaved:b2:C', 'kh-theme-unsaved:not-a-uuid', 'something-else'].sort(),
     );
   });
 
+  it('without a list, drops only backups older than 14 days and legacy keys', () => {
+    const s = listStorage({
+      'kh-theme-unsaved:b1:new': bk(now - 13 * DAY),
+      'kh-theme-unsaved:b1:old': bk(now - 15 * DAY),
+      'kh-theme-unsaved:b2:old': bk(now - 15 * DAY),
+      [`kh-theme-unsaved:${uuid}`]: 'legacy',
+    });
+    sweepBackups(s, 'b1', { now });
+    expect(Array.from(s.m.keys()).sort()).toEqual(['kh-theme-unsaved:b1:new', 'kh-theme-unsaved:b2:old']);
+  });
+
+  it('honours maxAgeMs', () => {
+    const s = listStorage({ 'kh-theme-unsaved:b1:t': bk(now - 2 * DAY) });
+    sweepBackups(s, 'b1', { now, maxAgeMs: DAY });
+    expect(s.m.size).toBe(0);
+  });
+
+  it('removes a malformed value, and one without a numeric savedAt', () => {
+    const s = listStorage({
+      'kh-theme-unsaved:b1:a': '{nope',
+      'kh-theme-unsaved:b1:b': JSON.stringify({ data: {}, base: 'v' }),
+    });
+    sweepBackups(s, 'b1', { now });
+    expect(s.m.size).toBe(0);
+  });
+
   it('copes with missing or failing storage', () => {
-    expect(() => sweepOtherBackups(null, 'b1', 't1')).not.toThrow();
+    expect(() => sweepBackups(null, 'b1', { now })).not.toThrow();
     const boom = () => {
       throw new Error('denied');
     };
     expect(() =>
-      sweepOtherBackups({ length: 1, key: boom, removeItem: boom } as unknown as Storage, 'b1', 't1'),
+      sweepBackups({ length: 1, key: boom, removeItem: boom, getItem: boom } as unknown as Storage, 'b1', { now }),
     ).not.toThrow();
+  });
+});
+
+describe('hasBackup', () => {
+  it('is true only for a stored key', () => {
+    const s = memStorage({ 'kh-theme-unsaved:b1:t1': '{}' });
+    expect(hasBackup(s, 'b1', 't1')).toBe(true);
+    expect(hasBackup(s, 'b1', 't2')).toBe(false);
+    expect(hasBackup(s, 'b2', 't1')).toBe(false);
+    expect(hasBackup(null, 'b1', 't1')).toBe(false);
+  });
+});
+
+describe('backup JSON', () => {
+  it('carries a numeric savedAt', () => {
+    const put = jest.fn(() => new Promise<PutResult>(() => {}));
+    const { storage, q } = setup(put as unknown as jest.Mock);
+    q.schedule(d(1));
+    const parsed = JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string);
+    expect(typeof parsed.savedAt).toBe('number');
+    expect(parsed.base).toBe('v0');
+    q.dispose();
   });
 });
