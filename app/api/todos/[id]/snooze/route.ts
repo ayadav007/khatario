@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getAuthenticatedUserId, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
+import { checkInstant, isUuid, TodoInputError } from '@/lib/todo-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,21 +10,28 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const gate = await requirePortalSession(request);
-  if (gate) return gate;
-  const tenant = requireTenantBusinessId(request);
-  if (!tenant.ok) return tenant.response;
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
 
   try {
     const { id } = params;
-    const body = await request.json();
-    const { snooze_until, action_by } = body;
-
-    if (!snooze_until) {
+    const body = await request.json().catch(() => null);
+    if (!body?.snooze_until) {
       return NextResponse.json({ error: 'Snooze until time is required' }, { status: 400 });
     }
+    let snooze_until: string;
+    try {
+      snooze_until = checkInstant('snooze_until', body.snooze_until);
+    } catch (error) {
+      if (error instanceof TodoInputError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
 
-    const todo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
+    const todo = isUuid(id)
+      ? await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, session.businessId])
+      : null;
     if (!todo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -42,14 +50,14 @@ export async function POST(
        SET reminder_time = $1,
            reminder_sent = false,
            updated_at = NOW()
-       WHERE id = $2
+       WHERE id = $2 AND business_id = $3
        RETURNING *`,
-      [snooze_until, id]
+      [snooze_until, id, session.businessId]
     );
 
     await query(
       `SELECT create_todo_history($1, 'snoozed', $2, $3, $4)`,
-      [id, todo.reminder_time?.toString() || null, snooze_until.toString(), getAuthenticatedUserId(request)]
+      [id, todo.reminder_time?.toString() || null, snooze_until, session.userId]
     );
 
     try {

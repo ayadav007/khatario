@@ -182,7 +182,7 @@ describe('stock transfer delivery challan', () => {
     challanId = c[0].id;
     expect(c[0]).toMatchObject({
       business_id: B, branch_id: BR, status: 'sent', challan_kind: 'supply', reason_for_transportation: 'own_use',
-      warehouse_id: W1, consignee_branch: BR2, d: '2026-10-31',
+      warehouse_id: W1, to_warehouse_id: W2, consignee_branch: BR2, d: '2026-10-31',
     });
     expect(c[0].challan_number).toBeTruthy();
     expect(Number(c[0].subtotal)).toBe(720);
@@ -217,6 +217,40 @@ describe('stock transfer delivery challan', () => {
       const { issueTransferChallan } = await import('@/lib/stock-transfers/transfer-challan');
       const t = (await client.query(`SELECT * FROM stock_transfers WHERE id = $1`, [TRANSFER])).rows[0];
       expect(await issueTransferChallan(client, t, { date: '2026-10-31' })).toBe(challanId);
+    } finally {
+      client.release();
+    }
+  });
+
+  test('a transfer to a branch on another GSTIN gets no challan (it is billed by inter-branch invoice)', async () => {
+    const BR3 = randomUUID();
+    const W3 = randomUUID();
+    const T2 = randomUUID();
+    await pool.query(
+      `INSERT INTO branches (id, business_id, name, gstin, state, state_code, is_primary, is_default, is_active)
+       VALUES ($1, $2, 'Hosur shop', '33ADVFS4469F1ZJ', 'Tamil Nadu', '33', false, false, true)`,
+      [BR3, B]
+    );
+    await pool.query(
+      `INSERT INTO warehouses (id, business_id, branch_id, name, warehouse_type, is_active, address_line1, city, state, pincode)
+       VALUES ($1, $2, $3, 'Hosur godown', 'physical', true, 'SIPCOT Phase 1', 'Hosur', 'Tamil Nadu', '635126')`,
+      [W3, B, BR3]
+    );
+    await pool.query(
+      `INSERT INTO stock_transfers (id, business_id, transfer_number, transfer_date, status, from_location_id, to_location_id)
+       VALUES ($1, $2, $3, '2026-10-30', 'pending', $4, $5)`,
+      [T2, B, `TR2-${tag}`, W1, W3]
+    );
+    await pool.query(
+      `INSERT INTO stock_transfer_items (transfer_id, item_id, qty, unit, quantity_requested, quantity_dispatched, cost_snapshot)
+       VALUES ($1, $2, 1, 'PCS', 1, 0, 120)`,
+      [T2, ITEM]
+    );
+    const client = await pool.connect();
+    try {
+      const { issueTransferChallan } = await import('@/lib/stock-transfers/transfer-challan');
+      const t = (await client.query(`SELECT * FROM stock_transfers WHERE id = $1`, [T2])).rows[0];
+      expect(await issueTransferChallan(client, t, { date: '2026-10-31' })).toBeNull();
     } finally {
       client.release();
     }

@@ -226,18 +226,32 @@ export async function resolveGstScheme(
  * the head office, and a branch with a separate GSTIN only with branches holding that GSTIN.
  */
 export async function registrationBranchIds(db: Queryable, businessId: string, branchId: string): Promise<string[]> {
+  const keys = await branchRegistrationKeys(db, businessId);
+  if (!keys.has(branchId)) return [branchId];
+  const key = keys.get(branchId);
+  return Array.from(keys).filter(([, k]) => k === key).map(([id]) => id);
+}
+
+/**
+ * Branch id → the GSTIN it files under ('' for branches trading under the business registration,
+ * whatever that is). Branches with equal keys share one return and one invoice series space.
+ */
+export async function branchRegistrationKeys(db: Queryable, businessId: string): Promise<Map<string, string>> {
   const res = await db.query<{ id: string; gstin: string | null; b_gstin: string | null }>(
     `SELECT br.id, br.gstin, b.gstin AS b_gstin
        FROM branches br JOIN businesses b ON b.id = br.business_id
       WHERE br.business_id = $1`,
     [businessId],
   );
-  const ownGstin = (r: { gstin: string | null; b_gstin: string | null }) => {
+  const keys = new Map<string, string>();
+  for (const r of res.rows) {
     const g = r.gstin?.trim().toUpperCase() || null;
-    return g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : null;
-  };
-  const target = res.rows.find((r) => r.id === branchId);
-  if (!target) return [branchId];
-  const key = ownGstin(target);
-  return res.rows.filter((r) => ownGstin(r) === key).map((r) => r.id);
+    keys.set(r.id, g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : '');
+  }
+  return keys;
+}
+
+/** GSTIN a branch files its returns under ('' when the business has no GSTIN): the key for per-return records. */
+export async function registrationGstinKey(db: Queryable, businessId: string, branchId: string | null | undefined): Promise<string> {
+  return (await resolveSupplierRegistration(db, businessId, branchId)).gstin ?? '';
 }

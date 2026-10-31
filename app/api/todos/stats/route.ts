@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getUserIdFromRequest,
-  getBusinessIdFromRequest,
-  requirePortalSession,
-} from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
@@ -11,16 +7,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
-    const { searchParams } = new URL(request.url);
-    const business_id = getBusinessIdFromRequest(request);
-    const user_id = getUserIdFromRequest(request);
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
+    const business_id = session.businessId;
+    const user_id = session.userId;
 
     // Check Todo feature access
     try {

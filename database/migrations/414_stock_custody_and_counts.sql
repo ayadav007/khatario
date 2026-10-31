@@ -38,9 +38,21 @@ ALTER TABLE delivery_challans
     CHECK (close_reason IS NULL OR close_reason IN ('returned', 'invoiced', 'written_off', 'mixed'));
 
 ALTER TABLE delivery_challans DROP CONSTRAINT IF EXISTS check_challan_reference;
-ALTER TABLE delivery_challans ADD CONSTRAINT check_challan_reference CHECK (
-  invoice_id IS NOT NULL OR sales_order_id IS NOT NULL OR customer_id IS NOT NULL OR supplier_id IS NOT NULL
-);
+-- Re-running this after migration 455 must keep its stock-transfer challans valid.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'delivery_challans' AND column_name = 'stock_transfer_id') THEN
+    ALTER TABLE delivery_challans ADD CONSTRAINT check_challan_reference CHECK (
+      invoice_id IS NOT NULL OR sales_order_id IS NOT NULL OR customer_id IS NOT NULL OR supplier_id IS NOT NULL
+      OR stock_transfer_id IS NOT NULL
+    );
+  ELSE
+    ALTER TABLE delivery_challans ADD CONSTRAINT check_challan_reference CHECK (
+      invoice_id IS NOT NULL OR sales_order_id IS NOT NULL OR customer_id IS NOT NULL OR supplier_id IS NOT NULL
+    );
+  END IF;
+END $$;
 
 ALTER TABLE delivery_challans DROP CONSTRAINT IF EXISTS chk_returnable_challan_purpose;
 ALTER TABLE delivery_challans ADD CONSTRAINT chk_returnable_challan_purpose CHECK (

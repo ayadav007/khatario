@@ -151,7 +151,7 @@ export async function PATCH(
 
     // The dispatch challan goes with the transfer; it never moved stock itself.
     await client.query(
-      `UPDATE delivery_challans SET status = 'cancelled', cancelled_at = NOW()
+      `UPDATE delivery_challans SET status = 'cancelled', cancelled_at = NOW(), updated_at = CURRENT_TIMESTAMP
         WHERE stock_transfer_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
       [params.id, transfer.business_id]
     );

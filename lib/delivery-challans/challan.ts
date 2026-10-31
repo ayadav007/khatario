@@ -1,4 +1,5 @@
 ﻿import { resolveGstScheme, resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { computeChallanLines, type ChallanLineInput } from '@/lib/delivery-challans/challan-math';
 import {
@@ -46,6 +47,10 @@ export interface ChallanWriteInput {
   purpose?: string | null;
   /** Godown the goods leave from (warehouse mode). */
   warehouse_id?: string | null;
+  /** Stock transfer between godowns on one GSTIN: no party, no tax, the transfer moves the stock. */
+  stock_transfer_id?: string | null;
+  /** Godown the goods go to (stock transfers). */
+  to_warehouse_id?: string | null;
   expected_return_date?: string | null;
   /** Job work only: inputs come back within 1 year, capital goods within 3 (s.143). */
   job_work_goods?: string | null;
@@ -81,7 +86,7 @@ export async function writeChallan(
   if (kind === 'returnable' && !input.customer_id && !input.supplier_id) {
     throw new ChallanInputError('Select the supplier or customer who will hold the goods');
   }
-  if (!input.customer_id && !input.supplier_id && !input.invoice_id && !input.sales_order_id) {
+  if (!input.customer_id && !input.supplier_id && !input.invoice_id && !input.sales_order_id && !input.stock_transfer_id) {
     throw new ChallanInputError('Select a customer, or link an invoice or sales order');
   }
   if (input.expected_return_date && input.challan_date && input.expected_return_date < input.challan_date) {
@@ -101,6 +106,8 @@ export async function writeChallan(
     resolveSupplierRegistration(client as any, businessId, branchId),
     resolveGstScheme(client as any, businessId, branchId),
   ]);
+  const godownMismatch = await findWarehouseStateMismatch(client as any, businessId, registration, [input.warehouse_id]);
+  if (godownMismatch) throw new ChallanInputError(warehouseStateMismatchMessage(godownMismatch));
 
   let posCode = input.place_of_supply_state_code ? String(input.place_of_supply_state_code).padStart(2, '0') : null;
   if (!posCode && input.customer_id) {
@@ -115,7 +122,8 @@ export async function writeChallan(
 
   const { lines, totals } = computeChallanLines(input.items || [], {
     interState,
-    chargeTax: scheme === 'regular',
+    // Moving goods within one GSTIN is not a supply, so the challan carries value but no tax.
+    chargeTax: scheme === 'regular' && !input.stock_transfer_id,
   });
   if (lines.length === 0) throw new ChallanInputError('Add at least one item with a quantity');
 
@@ -188,10 +196,11 @@ export async function writeChallan(
          e_way_bill_number, vehicle_number, transporter_name, transporter_gstin, shipping_address,
          billing_address, place_of_delivery, dispatch_from_address, reason_for_transportation, notes, terms,
          branch_id, place_of_supply_state_code, subtotal, cgst_total, sgst_total, igst_total, tax_total,
-         grand_total, challan_kind, purpose, supplier_id, warehouse_id, expected_return_date, job_work_goods, created_by, status
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+         grand_total, challan_kind, purpose, supplier_id, warehouse_id, expected_return_date, job_work_goods, created_by, status,
+         stock_transfer_id, to_warehouse_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
        RETURNING *`,
-      [...values, input.created_by || null, status]
+      [...values, input.created_by || null, status, input.stock_transfer_id || null, input.to_warehouse_id || null]
     );
     challan = res.rows[0];
   }

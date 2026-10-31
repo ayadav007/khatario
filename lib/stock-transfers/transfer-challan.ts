@@ -77,6 +77,8 @@ export async function issueTransferChallan(
     shipping_address: godownAddress(to),
     place_of_delivery: to.city || to.name,
     warehouse_id: from.id,
+    stock_transfer_id: transfer.id,
+    to_warehouse_id: to.id,
     notes: `Stock transfer ${transfer.transfer_number} from ${from.name} to ${to.name}. Movement between places of business on the same GSTIN, not a supply; no tax charged.`,
     items: lines.map((l) => ({
       item_id: l.item_id,
@@ -91,6 +93,5 @@ export async function issueTransferChallan(
     status: 'sent',
     created_by: opts.createdBy ?? null,
   });
-  await client.query(`UPDATE delivery_challans SET stock_transfer_id = $1 WHERE id = $2`, [transfer.id, challan.id]);
   return challan.id;
 }

@@ -1,7 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, queryRows, query } from '@/lib/db';
+import { queryOne, queryRows, getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getAuthenticatedUserId, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
+import { computeSmartReminderUtc } from '@/lib/todo-reminder-defaults';
+import {
+  TodoInputError,
+  TODO_PRIORITIES,
+  TODO_REMINDER_TYPES,
+  TODO_STATUSES,
+  checkAssignee,
+  checkChannels,
+  checkInstant,
+  checkOneOf,
+  checkTitle,
+  isUuid,
+} from '@/lib/todo-input';
+
+/** The todo, only when it belongs to the session's business (otherwise treated as not found). */
+async function findSessionTodo(id: string, businessId: string) {
+  if (!isUuid(id)) return null;
+  return queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, businessId]);
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -10,18 +29,13 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
-    const tenant = requireTenantBusinessId(request);
-    if (!tenant.ok) return tenant.response;
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
     const { id } = params;
     
     // Get todo with history
-    const todo = await queryOne(
-      `SELECT * FROM todos WHERE id = $1 AND business_id = $2`,
-      [id, tenant.businessId]
-    );
+    const todo = await findSessionTodo(id, session.businessId);
 
     if (!todo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
@@ -57,29 +71,28 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
-    const tenant = requireTenantBusinessId(request);
-    if (!tenant.ok) return tenant.response;
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
     const { id } = params;
-    const body = await request.json();
+    let body: Record<string, any>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
     const { 
-      title, 
       description, 
-      due_date, 
-      priority, 
-      status,
-      reminder_type,
-      reminder_time,
-      reminder_channels,
-      assigned_to,
-      action_by,
       reason // For rescheduling
     } = body;
+    // History is recorded against the signed-in user, never a body action_by.
+    const action_by = session.userId;
 
     // Get current todo to compare changes
-    const currentTodo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
+    const currentTodo = await findSessionTodo(id, session.businessId);
     if (!currentTodo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -92,6 +105,44 @@ export async function PATCH(
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    let title, due_date, priority, status, reminder_type, reminder_time, reminder_channels, assigned_to;
+    try {
+      if (body.title !== undefined) title = checkTitle(body.title);
+      if (body.due_date !== undefined) due_date = checkInstant('due_date', body.due_date);
+      if (body.priority !== undefined) priority = checkOneOf('priority', body.priority, TODO_PRIORITIES);
+      if (body.status !== undefined) status = checkOneOf('status', body.status, TODO_STATUSES);
+      if (body.reminder_type !== undefined) {
+        reminder_type = checkOneOf('reminder_type', body.reminder_type, TODO_REMINDER_TYPES);
+      }
+      if (body.reminder_time !== undefined && body.reminder_time !== null && body.reminder_time !== '') {
+        reminder_time = checkInstant('reminder_time', body.reminder_time);
+      }
+      if (body.reminder_channels !== undefined) reminder_channels = checkChannels(body.reminder_channels);
+      if (description !== undefined && description !== null && typeof description !== 'string') {
+        throw new TodoInputError('description must be text');
+      }
+      if (body.assigned_to !== undefined) {
+        assigned_to = await checkAssignee(session.businessId, body.assigned_to);
+      }
+    } catch (error) {
+      if (error instanceof TodoInputError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
+
+    // A reminder needs a time: turning reminders on without one gets the Todo page's smart default.
+    const effectiveType = reminder_type ?? currentTodo.reminder_type;
+    if (
+      reminder_type !== undefined &&
+      reminder_type !== 'none' &&
+      reminder_time === undefined &&
+      !currentTodo.reminder_time
+    ) {
+      const due = new Date(due_date ?? currentTodo.due_date);
+      reminder_time = computeSmartReminderUtc(due, new Date()).toISOString();
     }
 
     // Build update query dynamically
@@ -108,11 +159,11 @@ export async function PATCH(
     
     if (description !== undefined) {
       fields.push(`description = $${paramIndex++}`);
-      values.push(description);
+      values.push(description || null);
     }
     
     if (due_date !== undefined) {
-      const oldDueDate = currentTodo.due_date;
+      const oldDueDate = currentTodo.due_date ? new Date(currentTodo.due_date).toISOString() : null;
       const newDueDate = due_date;
       if (oldDueDate !== newDueDate) {
         fields.push(`due_date = $${paramIndex++}`);
@@ -121,7 +172,7 @@ export async function PATCH(
           action: 'rescheduled', 
           old_val: oldDueDate, 
           new_val: newDueDate,
-          old_due: oldDueDate,
+          old_due: oldDueDate ?? undefined,
           new_due: newDueDate
         });
       }
@@ -138,7 +189,7 @@ export async function PATCH(
       values.push(status);
       if (status === 'completed') {
         fields.push(`completed_at = NOW()`);
-      } else if (currentTodo.status === 'completed' && status !== 'completed') {
+      } else if (currentTodo.status === 'completed') {
         fields.push(`completed_at = NULL`);
       }
       historyEntries.push({ action: 'status_changed', old_val: currentTodo.status, new_val: status });
@@ -147,12 +198,11 @@ export async function PATCH(
     if (reminder_type !== undefined) {
       fields.push(`reminder_type = $${paramIndex++}`);
       values.push(reminder_type);
-      if (reminder_type === 'none') {
-        fields.push(`reminder_time = NULL`);
-      }
     }
     
-    if (reminder_time !== undefined) {
+    if (effectiveType === 'none') {
+      if (reminder_type !== undefined) fields.push(`reminder_time = NULL`);
+    } else if (reminder_time !== undefined) {
       fields.push(`reminder_time = $${paramIndex++}`);
       values.push(reminder_time);
       fields.push(`reminder_sent = false`); // Reset reminder when time changes
@@ -163,47 +213,50 @@ export async function PATCH(
       values.push(reminder_channels);
     }
     
-    if (assigned_to) {
-      const assignee = await queryOne(
-        'SELECT id FROM users WHERE id = $1 AND business_id = $2',
-        [assigned_to, tenant.businessId]
-      );
-      if (!assignee) {
-        return NextResponse.json({ error: 'Assignee is not in this business' }, { status: 400 });
-      }
-    }
     if (assigned_to !== undefined) {
       fields.push(`assigned_to = $${paramIndex++}`);
-      values.push(assigned_to || null);
+      values.push(assigned_to);
     }
 
     if (fields.length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    values.push(id);
-    const updatedTodo = await queryOne(
-      `UPDATE todos SET ${fields.join(', ')}, updated_at = NOW() 
-       WHERE id = $${paramIndex} 
-       RETURNING *`,
-      values
-    );
-
-    // Create history entries
-    for (const entry of historyEntries) {
-      await query(
-        `SELECT create_todo_history($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          id,
-          entry.action,
-          entry.old_val?.toString() || null,
-          entry.new_val?.toString() || null,
-          getAuthenticatedUserId(request),
-          entry.old_due || null,
-          entry.new_due || null,
-          reason || null
-        ]
+    // Update and its history rows are written together.
+    const client = await getPool().connect();
+    let updatedTodo: any;
+    try {
+      await client.query('BEGIN');
+      values.push(id, session.businessId);
+      const updated = await client.query(
+        `UPDATE todos SET ${fields.join(', ')}, updated_at = NOW() 
+         WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
+         RETURNING *`,
+        values
       );
+      updatedTodo = updated.rows[0];
+
+      for (const entry of historyEntries) {
+        await client.query(
+          `SELECT create_todo_history($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            id,
+            entry.action,
+            entry.old_val?.toString() || null,
+            entry.new_val?.toString() || null,
+            action_by,
+            entry.old_due || null,
+            entry.new_due || null,
+            reason || null
+          ]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
     }
 
     // Keep BullMQ delayed job in sync with DB (exact-time reminders via worker + Redis → SSE)
@@ -217,7 +270,7 @@ export async function PATCH(
     return NextResponse.json(updatedTodo);
   } catch (error: any) {
     console.error('[PATCH /api/todos/:id] Error:', error);
-    return NextResponse.json({ error: 'Todo request failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update todo' }, { status: 500 });
   }
 }
 
@@ -226,15 +279,13 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
-    const tenant = requireTenantBusinessId(request);
-    if (!tenant.ok) return tenant.response;
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
     const { id } = params;
     
     // Get todo to check feature access
-    const todo = await queryOne('SELECT * FROM todos WHERE id = $1 AND business_id = $2', [id, tenant.businessId]);
+    const todo = await findSessionTodo(id, session.businessId);
     if (!todo) {
       return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
     }
@@ -252,8 +303,8 @@ export async function DELETE(
     // Don't actually delete - mark as cancelled or just soft delete by updating status
     // For now, we'll just mark as completed and keep history
     const deleted = await queryOne(
-      'UPDATE todos SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id',
-      ['completed', id]
+      'UPDATE todos SET status = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3 RETURNING id',
+      ['completed', id, session.businessId]
     );
 
     if (deleted) {

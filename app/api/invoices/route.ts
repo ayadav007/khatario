@@ -7,6 +7,7 @@ import { InvoiceChargeError, persistInvoiceCharges } from '@/lib/invoices/invoic
 import { computeInvoiceTotals } from '@/lib/invoices/validate-invoice-gst-payload';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
 import { queueLowStockCheck } from '@/lib/low-stock-checker';
@@ -1220,6 +1221,25 @@ export async function POST(request: NextRequest) {
     }
 
     const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    if (document_type !== 'proforma_invoice') {
+      const godownMismatch = await findWarehouseStateMismatch(
+        client,
+        business_id,
+        registration,
+        items.map((it: { location_id?: string | null }) => it.location_id)
+      );
+      if (godownMismatch) {
+        await client.query('ROLLBACK').catch(() => {});
+        return NextResponse.json(
+          {
+            error: warehouseStateMismatchMessage(godownMismatch),
+            code: 'WAREHOUSE_STATE_MISMATCH',
+            warehouse_id: godownMismatch.warehouseId,
+          },
+          { status: 400 }
+        );
+      }
+    }
     const schemeRes = await client.query<{ gst_registration_type: string | null }>(
       'SELECT gst_registration_type FROM businesses WHERE id = $1',
       [business_id]
@@ -1290,18 +1310,21 @@ export async function POST(request: NextRequest) {
     const issuedNumber = await reserveDocumentNumber(client, finalBranchId, finalDocumentType, requestedNumber);
     invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
     
-    // Check if invoice number already exists for this branch (matches database constraint)
+    // Rule 46(b): a number may be used once per GSTIN, so check every branch filing under it.
+    const { registrationBranchIds } = await import('@/lib/gst/registration');
     const existingInvoiceCheck = await client.query(
-      'SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL',
-      [invoiceNumber, finalBranchId, business_id]
+      'SELECT id, branch_id FROM invoices WHERE invoice_number = $1 AND branch_id = ANY($2::uuid[]) AND business_id = $3 AND deleted_at IS NULL',
+      [invoiceNumber, await registrationBranchIds(client, business_id, finalBranchId), business_id]
     );
     
-    // If duplicate exists for this branch, throw error before INSERT
     if (existingInvoiceCheck.rows.length > 0) {
       await client.query('ROLLBACK');
+      const sameBranch = existingInvoiceCheck.rows.some((r: { branch_id: string }) => r.branch_id === finalBranchId);
       return NextResponse.json(
         { 
-          error: `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`,
+          error: sameBranch
+            ? `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`
+            : `Invoice number ${invoiceNumber} is already used by another branch on the same GSTIN. Give this branch its own invoice prefix in Settings → Number series.`,
           code: 'DUPLICATE_INVOICE_NUMBER'
         },
         { status: 409 }

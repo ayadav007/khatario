@@ -6,6 +6,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { GSTR1Generator } from '@/lib/gst/gstr1';
 import { buildGstr1Snapshot } from '@/lib/gst/gstr1-snapshot';
 import { replaceGstr1FilingDocuments } from '@/lib/gst/gstr1-filing-documents';
+import { registrationBranchIds, registrationGstinKey } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function POST(
     }
 
     const filingRes = await client.query(
-      `SELECT id, business_id, filing_period, status, lock_date 
+      `SELECT id, business_id, gstin, filing_period, status, lock_date 
        FROM gstr1_filings 
        WHERE id = $1`,
       [filingId]
@@ -87,6 +88,18 @@ export async function POST(
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    // The lock and snapshot cover only the GSTIN this filing belongs to.
+    const filingBranchIds = await registrationBranchIds(client, filing.business_id, finalBranchId);
+    if ((await registrationGstinKey(client, filing.business_id, finalBranchId)) !== (filing.gstin ?? '')) {
+      return NextResponse.json(
+        {
+          error: `This GSTR-1 belongs to GSTIN ${filing.gstin || '(none)'}. Pick a branch on that GSTIN to mark it filed.`,
+          code: 'FILING_GSTIN_MISMATCH',
+        },
+        { status: 400 }
+      );
     }
 
     let finalLockDate: string;
@@ -159,10 +172,11 @@ export async function POST(
         `UPDATE invoices 
          SET is_editable = false 
          WHERE business_id = $1::uuid
+           AND branch_id = ANY($3::uuid[])
            AND invoice_date <= $2::date
            AND status = 'final'
            AND is_editable = true`,
-        [filing.business_id, finalLockDate]
+        [filing.business_id, finalLockDate, filingBranchIds]
       );
 
       await client.query('COMMIT');

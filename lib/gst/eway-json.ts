@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { EwayBillInputError } from '@/lib/gst/eway-bills';
-import { stateCodeFromName } from '@/lib/gst/registration';
+import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { warehouseStateCode } from '@/lib/gst/warehouse-registration';
 import { loadTransferGodown } from '@/lib/stock-transfers/godowns';
 
 /**
@@ -45,21 +46,51 @@ interface Party {
   addr2: string;
   place: string;
   pincode: number;
+  /** State of the GSTIN (fromStateCode / toStateCode). */
   state: number;
+  /** State the goods actually leave from or reach, when it differs. */
+  actState?: number;
 }
 
-async function seller(db: Queryable, businessId: string, branchId: string | null): Promise<Party> {
+/**
+ * Consignor. GSTIN and fromStateCode are the registration the document is issued under (a branch
+ * without its own GSTIN trades under the head office). The dispatch address and actFromStateCode
+ * are where the goods physically leave: the godown when one is known, else the branch's own address.
+ */
+async function seller(db: Queryable, businessId: string, branchId: string | null, warehouseId?: string | null): Promise<Party> {
+  const reg = await resolveSupplierRegistration(db as any, businessId, branchId);
+  if (!reg.gstin) throw new EwayBillInputError('Add the GSTIN of this business (or branch) before making e-way bill JSON');
   const r = await db.query(
-    `SELECT COALESCE(br.gstin, b.gstin) AS gstin, b.name,
-            COALESCE(br.address_line1, b.address_line1) AS a1, COALESCE(br.address_line2, b.address_line2) AS a2,
-            COALESCE(br.city, b.city) AS city, COALESCE(br.pincode, b.pincode) AS pin, COALESCE(br.state_code, b.state_code) AS st
-       FROM businesses b LEFT JOIN branches br ON br.id = $2 AND br.business_id = b.id
+    `SELECT b.name,
+            w.address_line1 AS w_a1, w.address_line2 AS w_a2, w.city AS w_city, w.pincode AS w_pin, w.state AS w_state, w.gstin AS w_gstin,
+            br.address_line1 AS br_a1, br.address_line2 AS br_a2, br.city AS br_city, br.pincode AS br_pin,
+            br.state AS br_state, br.state_code AS br_state_code
+       FROM businesses b
+       LEFT JOIN branches br ON br.id = $2::uuid AND br.business_id = b.id
+       LEFT JOIN warehouses w ON w.id = $3::uuid AND w.business_id = b.id
       WHERE b.id = $1`,
-    [businessId, branchId]
+    [businessId, branchId, warehouseId ?? null]
   );
-  const x = r.rows[0];
-  if (!x?.gstin) throw new EwayBillInputError('Add the GSTIN of this business (or branch) before making e-way bill JSON');
-  return { gstin: x.gstin, name: cut(x.name, 100), addr1: cut(x.a1, 120), addr2: cut(x.a2, 120), place: cut(x.city, 50), pincode: PIN(x.pin), state: STATE(x.st) };
+  const x = r.rows[0] ?? {};
+  const regState = STATE(reg.stateCode);
+  let place = { a1: reg.addressLine1, a2: reg.addressLine2, city: reg.city, pin: reg.pincode, st: regState };
+  if (x.w_a1 || x.w_pin) {
+    const st = warehouseStateCode({ gstin: x.w_gstin, state: x.w_state });
+    place = { a1: x.w_a1, a2: x.w_a2, city: x.w_city, pin: x.w_pin, st: st ? STATE(st) : regState };
+  } else if (x.br_a1 || x.br_pin) {
+    const st = x.br_state_code?.trim() || stateCodeFromName(x.br_state);
+    place = { a1: x.br_a1, a2: x.br_a2, city: x.br_city, pin: x.br_pin, st: st ? STATE(st) : regState };
+  }
+  return {
+    gstin: reg.gstin,
+    name: cut(x.name, 100),
+    addr1: cut(place.a1, 120),
+    addr2: cut(place.a2, 120),
+    place: cut(place.city, 50),
+    pincode: PIN(place.pin),
+    state: regState,
+    actState: place.st,
+  };
 }
 
 async function party(db: Queryable, businessId: string, kind: 'customer' | 'supplier', id: string | null, shipTo?: string | null): Promise<Party> {
@@ -85,8 +116,9 @@ async function party(db: Queryable, businessId: string, kind: 'customer' | 'supp
 }
 
 /**
- * Both ends of a stock transfer's challan: the godowns' own addresses, each under the GSTIN of the
- * branch it belongs to (the same GSTIN at both ends, since only those transfers get a challan).
+ * Both ends of a stock transfer's challan: each godown's own address, under the GSTIN of the branch
+ * it belongs to (the same GSTIN at both ends, since only those transfers get a challan). The
+ * godowns come from the transfer, so challans made before `to_warehouse_id` was set work too.
  */
 async function transferParties(db: Queryable, businessId: string, transferId: string): Promise<{ from: Party; to: Party } | null> {
   const t = (
@@ -96,19 +128,11 @@ async function transferParties(db: Queryable, businessId: string, transferId: st
   const end = async (warehouseId: string): Promise<Party> => {
     const w = await loadTransferGodown(db, businessId, warehouseId);
     if (!w) throw new EwayBillInputError('Transfer godown not found', 404);
-    const s = await seller(db, businessId, w.branch_id);
     if (!w.address_line1 || !PIN(w.pincode)) {
       throw new EwayBillInputError(`Add the address and PIN code of the ${w.name} godown before making e-way bill JSON`);
     }
-    return {
-      ...s,
-      name: cut(`${s.name} (${w.name})`, 100),
-      addr1: cut(w.address_line1, 120),
-      addr2: cut(w.address_line2, 120),
-      place: cut(w.city, 50),
-      pincode: PIN(w.pincode),
-      state: STATE(stateCodeFromName(w.state)) || s.state,
-    };
+    const s = await seller(db, businessId, w.branch_id, w.id);
+    return { ...s, name: cut(`${s.name} (${w.name})`, 100) };
   };
   return { from: await end(t.from_location_id), to: await end(t.to_location_id) };
 }
@@ -147,7 +171,7 @@ function bill(p: {
     fromAddr2: p.from.addr2,
     fromPlace: p.from.place,
     fromPincode: p.from.pincode,
-    actFromStateCode: p.from.state,
+    actFromStateCode: p.from.actState ?? p.from.state,
     fromStateCode: p.from.state,
     toGstin: p.to.gstin,
     toTrdName: p.to.name,
@@ -155,7 +179,7 @@ function bill(p: {
     toAddr2: p.to.addr2,
     toPlace: p.to.place,
     toPincode: p.to.pincode,
-    actToStateCode: p.to.state,
+    actToStateCode: p.to.actState ?? p.to.state,
     toStateCode: p.to.state,
     transactionType: 1,
     otherValue: 0,
@@ -217,7 +241,9 @@ export async function ewayBulkJson(
         [sourceId]
       )
     ).rows;
+    // A stock transfer on one GSTIN ships to ourselves: same GSTIN, godown to godown.
     const transferEnds = c.stock_transfer_id ? await transferParties(db, businessId, c.stock_transfer_id) : null;
+    const from = transferEnds ? transferEnds.from : await seller(db, businessId, c.branch_id, c.warehouse_id);
     const to = transferEnds
       ? transferEnds.to
       : c.supplier_id
@@ -228,7 +254,7 @@ export async function ewayBulkJson(
       billLists: [
         bill({
           docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
-          from: transferEnds ? transferEnds.from : await seller(db, businessId, c.branch_id), to, lines, distanceKm: opts.distanceKm,
+          from, to, lines, distanceKm: opts.distanceKm,
           vehicle: c.vehicle_number, transporterGstin: c.transporter_gstin, transporterName: c.transporter_name,
         }),
       ],
@@ -250,7 +276,7 @@ export async function ewayBulkJson(
     billLists: [
       bill({
         docType: inv.document_type === 'bill_of_supply' ? 'BIL' : 'INV', docNo: inv.invoice_number, docDate: inv.invoice_date,
-        sub: { code: inv.export_type ? 3 : 1, desc: '' }, from: await seller(db, businessId, inv.branch_id),
+        sub: { code: inv.export_type ? 3 : 1, desc: '' }, from: await seller(db, businessId, inv.branch_id, lines.find((l: any) => l.location_id)?.location_id),
         to: await party(db, businessId, 'customer', inv.customer_id, inv.shipping_address), lines, distanceKm: opts.distanceKm,
       }),
     ],
