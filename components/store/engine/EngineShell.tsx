@@ -16,6 +16,7 @@ import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
 // Preset layers (D27): each is scoped to .st-root.eng-root.eng-preset-<preset>, so loading all three is safe.
 import { EngineCardContext } from './EngineCardContext';
+import { STYLE_RULES } from './style-rules';
 import './presets/quick.css';
 import './presets/grocery.css';
 import './presets/khatario.css';
@@ -232,6 +233,7 @@ export function EngineShell({
     phoneKit: settings.phone_kit === true,
     editor,
     schemeBackground: settings.color_schemes?.[0]?.background,
+    style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
   });
   const { kit, quick } = root;
   const cardLook = useMemo(() => ({ quick, phoneKit: kit }), [quick, kit]);
@@ -312,7 +314,7 @@ export function EngineShell({
         data-store={subdomain}
         data-card={settings.card_style}
       >
-        <style dangerouslySetInnerHTML={{ __html: THEME_RULES }} />
+        <style dangerouslySetInnerHTML={{ __html: THEME_RULES + STYLE_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}
         {storeCss ? <style dangerouslySetInnerHTML={{ __html: storeCss }} /> : null}
         <div className="st-sticky st-cq">{header}</div>

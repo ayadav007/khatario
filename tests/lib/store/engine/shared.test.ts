@@ -35,7 +35,8 @@ describe('client-safe shared module', () => {
 });
 
 describe('THEME_SETTINGS_SCHEMA', () => {
-  const ids = THEME_SETTINGS_SCHEMA.map((s) => s.id);
+  // A `header` entry is a group heading in the editor, not a setting.
+  const ids = THEME_SETTINGS_SCHEMA.filter((s) => s.type !== 'header').map((s) => s.id);
 
   it('ids cover every ThemeSettings key except color_schemes and menus', () => {
     const preset = presetSettings({ accent: '#111111' } as never);

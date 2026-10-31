@@ -324,3 +324,10 @@ describe('duplicate ids and per-type limits', () => {
     expect(data.footer_group.order).toEqual(['ok']);
   });
 });
+
+it('keeps valid style settings and defaults the rest', () => {
+  const t = sanitizeThemeData({ settings: { label_style: 'caps', frame_style: 'accent', texture: 'linen' } });
+  expect(t.settings).toMatchObject({ label_style: 'caps', frame_style: 'accent', texture: 'linen' });
+  const d = sanitizeThemeData({ settings: { label_style: 'CAPS', texture: 'stripes' } });
+  expect(d.settings).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
+});

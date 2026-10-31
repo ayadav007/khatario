@@ -11,6 +11,14 @@ export { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES };
 
 const THEME_CSS_MAX = 8000;
 const CARD_STYLES = ['plain', 'bordered', 'shadow'] as const;
+const LABEL_STYLES = ['normal', 'caps'] as const;
+const FRAME_STYLES = ['none', 'accent'] as const;
+const TEXTURES = ['none', 'dots', 'linen', 'grid'] as const;
+
+/** `value` when it is one of `allowed`, else `fallback`. */
+function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return (allowed as readonly unknown[]).includes(value) ? (value as T) : fallback;
+}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -144,6 +152,9 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
     font_body: (sanitizeSettingValue(FONT_SCHEMA, r.font_body) as string | undefined) ?? 'inter',
     button_radius: radius,
     card_style: (CARD_STYLES as readonly unknown[]).includes(r.card_style) ? (r.card_style as ThemeSettings['card_style']) : 'bordered',
+    label_style: pick(r.label_style, LABEL_STYLES, 'normal'),
+    frame_style: pick(r.frame_style, FRAME_STYLES, 'none'),
+    texture: pick(r.texture, TEXTURES, 'none'),
     phone_kit: typeof r.phone_kit === 'boolean' ? r.phone_kit : true,
     logo_url: image(r.logo_url),
     favicon_url: image(r.favicon_url),

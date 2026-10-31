@@ -11,6 +11,9 @@ export interface PresetLook {
   font_body: string;
   button_radius: number;
   card_style: ThemeSettings['card_style'];
+  label_style: ThemeSettings['label_style'];
+  frame_style: ThemeSettings['frame_style'];
+  texture: ThemeSettings['texture'];
 }
 
 const STUDIO_LOOK: PresetLook = {
@@ -20,15 +23,18 @@ const STUDIO_LOOK: PresetLook = {
   font_body: 'inter',
   button_radius: 10,
   card_style: 'bordered',
+  label_style: 'normal',
+  frame_style: 'none',
+  texture: 'none',
 };
 
 /** D26: each old pack's paper, accent, fonts, corners and cards. */
 export const PRESET_LOOK: Record<ThemePreset, PresetLook> = {
   studio: STUDIO_LOOK,
   blank: STUDIO_LOOK,
-  quick: { canvas: PACK_CANVAS.quick, accent: STORE_THEME_PRESETS.quick.accent, font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow' },
-  grocery: { canvas: PACK_CANVAS.grocery, accent: STORE_THEME_PRESETS.grocery.accent, font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered' },
-  khatario: { canvas: PACK_CANVAS.khatario, accent: STORE_THEME_PRESETS.khatario.accent, font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain' },
+  quick: { canvas: PACK_CANVAS.quick, accent: STORE_THEME_PRESETS.quick.accent, font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow', label_style: 'normal', frame_style: 'none', texture: 'none' },
+  grocery: { canvas: PACK_CANVAS.grocery, accent: STORE_THEME_PRESETS.grocery.accent, font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' },
+  khatario: { canvas: PACK_CANVAS.khatario, accent: STORE_THEME_PRESETS.khatario.accent, font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' },
 };
 
 const RGB_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -141,6 +147,9 @@ export function presetSettings(ctx: PresetContext, preset: ThemePreset = 'studio
     font_body: look.font_body,
     button_radius: look.button_radius,
     card_style: look.card_style,
+    label_style: look.label_style,
+    frame_style: look.frame_style,
+    texture: look.texture,
     phone_kit: true,
     logo_url: ctx.logoUrl ?? '',
     favicon_url: '',

@@ -78,6 +78,9 @@ export interface ThemeSettings {
   font_body: string;
   button_radius: number;
   card_style: 'plain' | 'bordered' | 'shadow';
+  label_style: 'normal' | 'caps'; // 'caps' = spaced capitals on small labels, buttons and menu links
+  frame_style: 'none' | 'accent'; // 'accent' = a thin accent border on cards and images
+  texture: 'none' | 'dots' | 'linen' | 'grid'; // a faint pattern behind every section
   phone_kit: boolean;
   logo_url: string;
   favicon_url: string;

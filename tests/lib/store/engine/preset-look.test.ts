@@ -1,4 +1,4 @@
-import { contrastRatio, mixHex, PRESET_LOOK, readableAccent, schemesFor } from '@/lib/store/engine/presets/look';
+import { contrastRatio, mixHex, PRESET_LOOK, presetSettings, readableAccent, schemesFor } from '@/lib/store/engine/presets/look';
 import { presetContextFromRow } from '@/lib/store/engine/preset-context';
 import { sanitizeColorSchemes } from '@/lib/store/engine/color-schemes';
 import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema';
@@ -24,11 +24,11 @@ describe('mixHex', () => {
 
 describe('PRESET_LOOK', () => {
   it('holds the D26 table', () => {
-    expect(PRESET_LOOK.studio).toEqual({ canvas: '#fbf8f3', accent: '#b94717', font_heading: 'outfit', font_body: 'inter', button_radius: 10, card_style: 'bordered' });
+    expect(PRESET_LOOK.studio).toEqual({ canvas: '#fbf8f3', accent: '#b94717', font_heading: 'outfit', font_body: 'inter', button_radius: 10, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' });
     expect(PRESET_LOOK.blank).toEqual(PRESET_LOOK.studio);
-    expect(PRESET_LOOK.quick).toEqual({ canvas: '#f3f5f7', accent: '#0f7a5c', font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow' });
-    expect(PRESET_LOOK.grocery).toEqual({ canvas: '#f6f7f4', accent: '#176b45', font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered' });
-    expect(PRESET_LOOK.khatario).toEqual({ canvas: '#f4f5f7', accent: '#00897b', font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain' });
+    expect(PRESET_LOOK.quick).toEqual({ canvas: '#f3f5f7', accent: '#0f7a5c', font_heading: 'inter', font_body: 'inter', button_radius: 14, card_style: 'shadow', label_style: 'normal', frame_style: 'none', texture: 'none' });
+    expect(PRESET_LOOK.grocery).toEqual({ canvas: '#f6f7f4', accent: '#176b45', font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' });
+    expect(PRESET_LOOK.khatario).toEqual({ canvas: '#f4f5f7', accent: '#00897b', font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' });
   });
 });
 
@@ -116,4 +116,8 @@ describe('presetContextFromRow', () => {
 it('the theme card_style setting explains its reach', () => {
   const s = THEME_SETTINGS_SCHEMA.find((x) => x.id === 'card_style');
   expect(s?.info).toBe('Product grid and rail sections keep their own card style');
+});
+
+it('every preset starts with the default style', () => {
+  for (const p of PRESETS) expect(presetSettings({ businessName: 'X', tagline: '' }, p)).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
 });
