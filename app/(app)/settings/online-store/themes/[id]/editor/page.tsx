@@ -9,9 +9,11 @@ import { usePermissions } from '@/hooks/usePermissions';
 import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
 import { backupKey, readBackup, sweepBackups } from '@/lib/store/engine/editor/save-queue';
 import { Studio2Editor } from '@/components/store/studio2/Studio2Editor';
-import { editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
+import { ThemeGoneError, editorPath, fetchTheme, openWorkingDraft } from '@/components/store/studio2/api';
+import { LIBRARY_PATH } from '@/lib/store/engine/library';
 
 const NARROW_QUERY = '(max-width: 1023px)';
+const GONE_TEXT = 'This theme no longer exists.';
 
 interface Loaded {
   theme: ThemeRow;
@@ -91,7 +93,10 @@ export default function Studio2EditorPage() {
           staleBackup: backup?.stale ? backup.data : null,
         });
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load theme');
+        if (cancelled) return;
+        // D50: a deleted theme (or a stale link) says so plainly; the link below goes back to the library.
+        if (e instanceof ThemeGoneError) setError(GONE_TEXT);
+        else setError(e instanceof Error && e.message ? e.message : 'Failed to load theme');
       }
     })();
     return () => {
@@ -112,8 +117,8 @@ export default function Studio2EditorPage() {
       <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-white p-6 text-center text-sm">
         <p className="text-gray-700">You can&apos;t edit the store design: changing it needs permission to update settings.</p>
         <p className="text-gray-500">Ask an admin for that permission.</p>
-        <Link href="/settings/online-store" className="text-gray-700 underline">
-          Back to Online store
+        <Link href={LIBRARY_PATH} className="text-gray-700 underline">
+          Back to themes
         </Link>
       </div>
     );
@@ -122,8 +127,8 @@ export default function Studio2EditorPage() {
     return (
       <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-white p-6 text-sm">
         <p className="text-red-600">{error}</p>
-        <Link href="/settings/online-store" className="text-gray-700 underline">
-          Back to Online store
+        <Link href={LIBRARY_PATH} className="text-gray-700 underline">
+          Back to themes
         </Link>
       </div>
     );

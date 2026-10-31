@@ -1,6 +1,6 @@
 // Client-safe helpers for the Studio 2 editor shell (selection, save status, shortcuts).
 // Pure: no React, no DOM globals. Imports only ops (types + getGroup).
-import type { ThemeData } from '../types';
+import type { ThemeData, ThemeRole } from '../types';
 import { getGroup, type SectionRef } from './ops';
 import type { SaveStatus } from './save-queue';
 
@@ -49,8 +49,23 @@ export function saveStatusLabel(status: SaveStatus, message?: string): string {
     case 'error':
       return message ? `Error ${message}` : 'Error';
     default:
-      return 'Not saved'; // conflict / locked: the banner explains
+      return 'Not saved'; // conflict / locked / gone: the banner or the move to the working copy explains
   }
+}
+
+/**
+ * What another tab did to the open theme, from a re-check GET (D50). `remote` is null when the GET was a 404.
+ * - gone: deleted; live: published; changed: the server moved on while nothing of ours was unsaved;
+ * - same: otherwise, including a newer updated_at while our own save is pending or in flight.
+ */
+export function remoteThemeState(
+  local: { updatedAt: string; status: SaveStatus },
+  remote: { role: ThemeRole; updated_at: string } | null,
+): 'same' | 'gone' | 'live' | 'changed' {
+  if (!remote) return 'gone';
+  if (remote.role === 'live') return 'live';
+  if (remote.updated_at !== local.updatedAt && local.status === 'saved') return 'changed';
+  return 'same';
 }
 
 /** Edits that are not on the server yet. */

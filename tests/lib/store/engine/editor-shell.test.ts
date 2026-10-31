@@ -9,6 +9,7 @@ import {
   shouldWarnOnLeave,
   toSelection,
   resolvePendingScroll,
+  remoteThemeState,
 } from '@/lib/store/engine/editor/shell';
 import type { Section, ThemeData } from '@/lib/store/engine/types';
 
@@ -36,6 +37,7 @@ describe('editor shell helpers', () => {
     expect(saveStatusLabel('error')).toBe('Error');
     expect(saveStatusLabel('conflict', 'x')).toBe('Not saved');
     expect(saveStatusLabel('locked')).toBe('Not saved');
+    expect(saveStatusLabel('gone')).toBe('Not saved');
   });
 
   it('warns on leave only while edits are not on the server', () => {
@@ -144,5 +146,33 @@ describe('pending scroll after a save', () => {
     const pending = { ref, afterRev: 0 };
     expect(resolvePendingScroll(pending, null)).toEqual({ resend: null, pending });
     expect(resolvePendingScroll(null, 5)).toEqual({ resend: null, pending: null });
+  });
+});
+
+describe('remoteThemeState (another tab)', () => {
+  const local = (status: 'saved' | 'pending' | 'saving') => ({ updatedAt: 'v1', status });
+  const remote = (role: 'live' | 'draft', updated_at: string) => ({ role, updated_at });
+
+  it('is gone when the theme no longer exists', () => {
+    expect(remoteThemeState(local('saved'), null)).toBe('gone');
+    expect(remoteThemeState(local('pending'), null)).toBe('gone');
+  });
+
+  it('is live when the theme was published', () => {
+    expect(remoteThemeState(local('saved'), remote('live', 'v2'))).toBe('live');
+    expect(remoteThemeState(local('saved'), remote('live', 'v1'))).toBe('live');
+  });
+
+  it('is changed when the server moved on while nothing of ours is unsaved', () => {
+    expect(remoteThemeState(local('saved'), remote('draft', 'v2'))).toBe('changed');
+  });
+
+  it('is the same while our own save is pending or in flight', () => {
+    expect(remoteThemeState(local('pending'), remote('draft', 'v2'))).toBe('same');
+    expect(remoteThemeState(local('saving'), remote('draft', 'v2'))).toBe('same');
+  });
+
+  it('is the same for an equal updated_at', () => {
+    expect(remoteThemeState(local('saved'), remote('draft', 'v1'))).toBe('same');
   });
 });

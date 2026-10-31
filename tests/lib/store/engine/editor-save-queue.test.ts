@@ -354,6 +354,70 @@ describe('SaveQueue', () => {
     spy.mockRestore();
   });
 
+  it('a 404 not_found stops as gone, keeps the backup and releases a flush', async () => {
+    const put = jest.fn().mockResolvedValue({ status: 404, body: { error: 'Theme not found', code: 'not_found' } });
+    const { q, storage, statuses } = setup(put);
+    q.schedule(d(1));
+    const flushed = q.flush();
+    await tick();
+    await expect(flushed).resolves.toBeUndefined();
+    expect(statuses[statuses.length - 1]).toEqual(['gone', 'Theme not found']);
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string).data).toEqual(d(1));
+    await expect(q.flush()).resolves.toBeUndefined();
+  });
+
+  it('after gone, schedule and retry do not PUT', async () => {
+    const put = jest.fn().mockResolvedValue({ status: 404, body: { code: 'not_found' } });
+    const { q, storage, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1][0]).toBe('gone');
+    q.schedule(d(2), true);
+    jest.advanceTimersByTime(10000);
+    await tick();
+    q.retry();
+    await tick();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(statuses[statuses.length - 1][0]).toBe('gone');
+    expect(JSON.parse(storage.m.get('kh-theme-unsaved:b1:t1') as string).data).toEqual(d(2));
+  });
+
+  it('a 404 without a code is still an error', async () => {
+    const put = jest.fn().mockResolvedValue({ status: 404, body: { error: 'Not here' } });
+    const { q, statuses } = setup(put);
+    q.schedule(d(1), true);
+    await tick();
+    expect(statuses[statuses.length - 1]).toEqual(['error', 'Not here']);
+    q.retry();
+    await tick();
+    expect(put).toHaveBeenCalledTimes(2);
+  });
+
+  it('markConflict stops the queue with the conflict status', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q, statuses } = setup(put);
+    q.markConflict();
+    expect(statuses[statuses.length - 1][0]).toBe('conflict');
+    q.schedule(d(1), true);
+    jest.advanceTimersByTime(10000);
+    await tick();
+    q.retry();
+    await tick();
+    expect(put).not.toHaveBeenCalled();
+    await expect(q.flush()).resolves.toBeUndefined();
+  });
+
+  it('markConflict cancels a pending debounced save', async () => {
+    const put = jest.fn().mockResolvedValue(ok('v1'));
+    const { q, statuses } = setup(put);
+    q.schedule(d(1));
+    q.markConflict();
+    jest.advanceTimersByTime(10000);
+    await tick();
+    expect(put).not.toHaveBeenCalled();
+    expect(statuses[statuses.length - 1][0]).toBe('conflict');
+  });
+
   it('keeps the original message when scheduling after a stop', async () => {
     const put = jest
       .fn()

@@ -23,10 +23,20 @@ function themeOf(body: Record<string, unknown>): ThemeRow | null {
   return t && typeof t === 'object' && typeof t.id === 'string' ? t : null;
 }
 
+/** The theme does not exist (deleted, or never this business's): GET answered 404. */
+export class ThemeGoneError extends Error {
+  constructor(message = 'This theme no longer exists.') {
+    super(message);
+    this.name = 'ThemeGoneError';
+  }
+}
+
+/** Throws ThemeGoneError on a 404, and a plain Error on any other failure (network included). */
 export async function fetchTheme(businessId: string, id: string): Promise<ThemeRow> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}?business_id=${encodeURIComponent(businessId)}`, {
     credentials: 'include',
   });
+  if (res.status === 404) throw new ThemeGoneError();
   const body = await readJson(res);
   const theme = res.ok ? themeOf(body) : null;
   if (!theme) throw new Error(errorOf(body, 'Failed to load theme'));

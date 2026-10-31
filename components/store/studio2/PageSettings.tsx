@@ -15,9 +15,12 @@ const dangerBtn =
 
 type MetaField = 'title' | 'seo_title' | 'seo_description';
 
-/** D22: the open custom page's title, SEO title and SEO description, and "Delete page". The handle is fixed. */
+/**
+ * D22: the open custom page's title, SEO title and SEO description, and "Delete page". The handle is fixed.
+ * Read-only (publishing or leaving, D50) disables every input and "Delete page" (M3 Minor 5).
+ */
 export function PageSettings({ pageKey }: { pageKey: string }) {
-  const { theme, apply, switchTemplate } = useStudio2();
+  const { theme, apply, switchTemplate, readOnly } = useStudio2();
   const toast = useToastContext();
   const page = theme.templates[pageKey];
   const handle = pageHandle(pageKey);
@@ -25,17 +28,29 @@ export function PageSettings({ pageKey }: { pageKey: string }) {
   const base = `s2-page-${handle}`;
 
   const set = (field: MetaField, value: string) => {
+    if (readOnly) return;
     const err = apply((t) => setPageMeta(t, pageKey, { [field]: value }), { mergeKey: `page:${pageKey}:${field}`, immediate: false });
     if (err) toast.error(OP_ERROR_TEXT[err]);
   };
 
   const remove = () => {
+    if (readOnly) return;
     if (!window.confirm(`Delete the page "${templateTitle(theme, pageKey)}"? You can undo this.`)) return;
-    const err = apply((t) => removePage(t, pageKey), { mergeKey: null, immediate: true });
+    let removed = false;
+    const err = apply(
+      (t) => {
+        const r = removePage(t, pageKey);
+        removed = r.ok;
+        return r;
+      },
+      { mergeKey: null, immediate: true },
+    );
     if (err) {
       toast.error(OP_ERROR_TEXT[err]);
       return;
     }
+    // apply also answers null when it refused the edit (the editor turned read-only during the confirm).
+    if (!removed) return;
     switchTemplate('home');
   };
 
@@ -53,6 +68,7 @@ export function PageSettings({ pageKey }: { pageKey: string }) {
             value={page.title ?? ''}
             maxLength={PAGE_META_CAPS.title}
             placeholder={handle}
+            disabled={readOnly}
             onChange={(e) => set('title', e.target.value)}
           />
         </FieldShell>
@@ -68,6 +84,7 @@ export function PageSettings({ pageKey }: { pageKey: string }) {
             value={page.seo_title ?? ''}
             maxLength={PAGE_META_CAPS.seo_title}
             placeholder={page.title ?? handle}
+            disabled={readOnly}
             onChange={(e) => set('seo_title', e.target.value)}
           />
         </FieldShell>
@@ -82,11 +99,12 @@ export function PageSettings({ pageKey }: { pageKey: string }) {
             className={inputCls}
             value={page.seo_description ?? ''}
             maxLength={PAGE_META_CAPS.seo_description}
+            disabled={readOnly}
             onChange={(e) => set('seo_description', e.target.value)}
           />
         </FieldShell>
         <div className="border-t border-gray-100 pt-4">
-          <button type="button" className={dangerBtn} onClick={remove}>
+          <button type="button" className={dangerBtn} onClick={remove} disabled={readOnly}>
             <Trash2 className="h-3.5 w-3.5" />
             Delete page
           </button>

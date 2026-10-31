@@ -3,7 +3,8 @@ import type { ThemeData, ThemeRow } from '@/lib/store/engine/types';
 export const AUTOSAVE_MS = 1000;
 export const RETRY_MS = 5000;
 
-export type SaveStatus = 'saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'locked' | 'error';
+/** `gone`: the theme was deleted elsewhere (PUT 404 not_found); the edits stay queued and in the backup (D50). */
+export type SaveStatus = 'saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'locked' | 'gone' | 'error';
 
 export interface PutResult {
   status: number;
@@ -111,7 +112,7 @@ export class SaveQueue {
   /** The newest schedule() asked to save now (undo, a structural change), so a chained save skips the debounce. */
   private queuedImmediate = false;
   private inFlight = false;
-  private stopped: 'conflict' | 'locked' | null = null;
+  private stopped: 'conflict' | 'locked' | 'gone' | null = null;
   private disposed = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -158,6 +159,18 @@ export class SaveQueue {
     if (this.disposed || this.stopped) return;
     if (this.status !== 'offline' && this.status !== 'error') return;
     if (this.queued && !this.inFlight) void this.run();
+  }
+
+  /**
+   * The theme changed on the server while nothing here was unsaved (an idle tab's re-check, D50): stop
+   * saving, as a 409 conflict would, so a stale copy never overwrites it.
+   */
+  markConflict(message?: string): void {
+    if (this.disposed || this.stopped) return;
+    this.clearTimers();
+    this.stopped = 'conflict';
+    this.setStatus('conflict', message);
+    this.release();
   }
 
   dispose(): void {
@@ -235,6 +248,11 @@ export class SaveQueue {
     } else if (res.status === 409 && code === 'live_locked') {
       this.stopped = 'locked';
       this.setStatus('locked', body.error);
+    } else if (res.status === 404 && code === 'not_found') {
+      // Deleted elsewhere: keep the edits (queued and backed up) so the editor can carry them on.
+      if (!this.queued) this.queued = data;
+      this.stopped = 'gone';
+      this.setStatus('gone', body.error);
     } else {
       if (!this.queued) this.queued = data;
       this.setStatus('error', body.error);
