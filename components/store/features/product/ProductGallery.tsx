@@ -30,6 +30,15 @@ type Props = {
 const HOVER_ZOOM = '(hover: hover) and (pointer: fine) and (min-width: 1024px)';
 const cssUrl = (src: string) => `url("${src.replace(/["\\\n]/g, encodeURIComponent)}")`;
 
+// The photo sits on a card in the section's own card and border colours (Studio 2 colour schemes), so it
+// blends with a coloured section instead of a hard grey square; outside a scheme, white with a faint edge.
+const CARD_BG = 'var(--c-card, #fff)';
+const CARD: React.CSSProperties = {
+  background: CARD_BG,
+  border: '1px solid var(--c-border, rgba(0,0,0,.08))',
+  boxShadow: '0 12px 32px -20px rgba(0,0,0,.4)',
+};
+
 /** Product photos (and an optional video, always last) with swipe, hover zoom and a lightbox. */
 export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Props) {
   const pics = useMemo(() => images.filter(Boolean), [images]);
@@ -64,7 +73,10 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
 
   if (!current) {
     return (
-      <div className="flex aspect-square max-h-[70vh] w-full flex-col items-center justify-center gap-2 bg-gray-50 text-gray-400">
+      <div
+        className="flex aspect-square max-h-[70vh] w-full flex-col items-center justify-center gap-2 rounded-2xl text-gray-400"
+        style={CARD}
+      >
         <ImageIcon className="h-10 w-10" aria-hidden />
         <span className="text-sm">No photo</span>
       </div>
@@ -91,10 +103,10 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
           aria-label={`${alt} photos`}
           tabIndex={0}
           className={clsx(
-            'group relative aspect-square max-h-[70vh] w-full select-none overflow-hidden bg-gray-50 outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]',
+            'group relative aspect-square max-h-[70vh] w-full select-none overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]',
             isImage && 'cursor-zoom-in',
           )}
-          style={{ touchAction: 'pan-y' }}
+          style={{ ...CARD, touchAction: 'pan-y' }}
           onPointerDown={(e) => {
             // Video controls (seek bar scrubbing) must not flip the slide; dots, thumbs and arrows leave it.
             if (e.pointerType === 'mouse' || !isImage) return;
@@ -147,8 +159,9 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
               {zoomAtPos ? (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute inset-0 bg-gray-50 bg-no-repeat"
+                  className="pointer-events-none absolute inset-0 bg-no-repeat"
                   style={{
+                    backgroundColor: CARD_BG,
                     backgroundImage: cssUrl(current.src),
                     backgroundSize: '200%',
                     backgroundPosition: zoomAtPos,
@@ -253,9 +266,10 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
                 setIndex(i);
               }}
               className={clsx(
-                'relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 bg-gray-50',
+                'relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2',
                 i === at ? 'border-[var(--primary)]' : 'border-gray-200 hover:border-gray-400',
               )}
+              style={{ background: CARD_BG }}
             >
               {s.kind === 'image' ? (
                 // eslint-disable-next-line @next/next/no-img-element
