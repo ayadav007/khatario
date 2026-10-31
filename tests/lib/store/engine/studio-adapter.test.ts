@@ -1,11 +1,9 @@
 import {
   announcementSettings,
   bannerSettings,
-  imageWithTextSettings,
   marqueeSettings,
   multicolumnSettings,
   productSectionSettings,
-  richTextSettings,
   slideshowSettings,
   testimonialItems,
   toStudioBox,
@@ -127,22 +125,12 @@ describe('studio adapter', () => {
     expect(out).toMatchObject({ title: 'Hi', eyebrow: 'E', source: 'new', limit: 6, columns: 3, cardStyle: 'shadow', showRating: false, showBadges: false });
   });
 
-  it('banner, image-with-text, rich-text, announcement', () => {
+  it('banner and announcement', () => {
     expect(bannerSettings(sec('image-banner', { heading: 'B', description: 'D', button_text: 'Go', text_position: 'center' }))).toMatchObject({
       title: 'B',
       text: 'D',
       button: 'Go',
       textAlign: 'center',
-    });
-    expect(imageWithTextSettings(sec('image-with-text', { heading: 'H', description: '<p>Hi &amp; bye</p>', image_side: 'right' }))).toMatchObject({
-      heading: 'H',
-      description: 'Hi & bye',
-      layout: 'text-image',
-    });
-    expect(richTextSettings(sec('rich-text', { heading: 'R', content: '<p>One</p><p>Two</p>', align: 'left' }))).toMatchObject({
-      title: 'R',
-      text: 'One\nTwo',
-      textAlign: 'left',
     });
     expect(announcementSettings(sec('announcement', { text: 'Hello', link: '/x' }))).toMatchObject({ text: 'Hello', link: '/x', textAlign: 'center' });
   });

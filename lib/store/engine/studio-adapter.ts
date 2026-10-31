@@ -34,22 +34,6 @@ function pick<T extends string>(v: unknown, allowed: readonly T[]): T | undefine
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : undefined;
 }
 
-/** Studio components render plain text, so drop tags and entities from rich text. */
-function plainText(html: string): string {
-  return html
-    .replace(/<\/(p|h[2-4]|li)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 export function toStudioBox(section: Section): Pick<StudioSettings, 'spacingTop' | 'spacingBottom'> {
   const s = settingsOf(section);
   const box: Pick<StudioSettings, 'spacingTop' | 'spacingBottom'> = {};
@@ -164,29 +148,6 @@ export function bannerSettings(section: Section): StudioSettings {
     link: str(s.link),
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
     textAlign: pick(s.text_position, ['left', 'center', 'right'] as const) ?? 'left',
-  };
-}
-
-export function imageWithTextSettings(section: Section): StudioSettings {
-  const s = settingsOf(section);
-  return {
-    ...toStudioBox(section),
-    image: str(s.image),
-    heading: str(s.heading),
-    description: plainText(str(s.description)),
-    buttonText: str(s.button_text),
-    link: str(s.link),
-    layout: s.image_side === 'right' ? 'text-image' : 'image-text',
-  };
-}
-
-export function richTextSettings(section: Section): StudioSettings {
-  const s = settingsOf(section);
-  return {
-    ...toStudioBox(section),
-    title: str(s.heading),
-    text: plainText(str(s.content)),
-    textAlign: pick(s.align, ['left', 'center', 'right'] as const) ?? 'center',
   };
 }
 

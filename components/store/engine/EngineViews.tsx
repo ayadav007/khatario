@@ -186,10 +186,10 @@ export function EngineBanner({ s }: { s: StudioSettings }) {
 }
 
 /** Studio's `.st-btn` that follows a link. */
-export function EngineCtaButton({ label, link }: { label: string; link: string }) {
+export function EngineCtaButton({ label, link, style = 'filled' }: { label: string; link: string; style?: 'filled' | 'outline' }) {
   const follow = useFollowLink();
   return (
-    <button type="button" className="st-btn" onClick={() => follow(link || CATALOG_LINK)}>
+    <button type="button" className="st-btn eng-cta" data-style={style} onClick={() => follow(link || CATALOG_LINK)}>
       {label} →
     </button>
   );

@@ -1,23 +1,38 @@
-import { imageWithTextSettings } from '@/lib/store/engine/studio-adapter';
+import { contentBlocksOf } from '@/lib/store/engine/content-blocks-map';
 import type { EngineSectionProps } from '../registry';
-import { EngineCtaButton } from '../EngineViews';
-import { richtextHtml } from './shared';
+import { ContentBlocks } from './ContentBlocks';
+import { blockSettings, str, withDefaults } from './shared';
 
-/** One still slide in Studio's hero markup; the description is the merchant's sanitised rich text. */
+/** One still image beside the section's content blocks, in Studio's hero markup. */
 export function ImageWithText({ section }: EngineSectionProps) {
-  const s = imageWithTextSettings(section);
-  const html = richtextHtml(section.type, 'description', section.settings.description);
+  const s = withDefaults(section);
+  const blocks = contentBlocksOf(section, (b) => blockSettings(section.type, b));
+  const image = str(s.image);
+  const card = blocks.find((b) => b.type === 'highlight_card');
+  const copy = blocks.filter((b) => b.type !== 'highlight_card');
+  const heading = blocks.find((b) => b.type === 'heading');
+  const classes = [
+    'hero',
+    s.image_side === 'right' ? 'text-image' : 'image-text',
+    'medium',
+    s.image_width === 'narrow' ? 'eng-iwt-narrow' : '',
+    s.text_align === 'center' ? 'eng-iwt-center' : '',
+  ].filter(Boolean);
   return (
-    <div className={`hero ${s.layout ?? 'image-text'} medium`} style={{ paddingTop: 0, paddingBottom: 0 }}>
+    <div className={classes.join(' ')} style={{ paddingTop: 0, paddingBottom: 0 }}>
       <div className="heroCopy">
-        {s.heading ? <h2 className="eng-heroTitle">{s.heading}</h2> : null}
-        {html ? <div className="eng-rt" dangerouslySetInnerHTML={{ __html: html }} /> : null}
-        {s.buttonText ? <EngineCtaButton label={s.buttonText} link={s.link ?? ''} /> : null}
+        <ContentBlocks blocks={copy} />
       </div>
-      <div className="heroImg" role="img" aria-label={s.heading ?? ''}>
-        {s.image ? (
-          <div className="heroSlideImg on" style={{ backgroundImage: `url(${JSON.stringify(s.image)})` }} />
+      <div className="heroImg">
+        {image ? (
+          <div
+            className="heroSlideImg on"
+            role="img"
+            aria-label={heading?.type === 'heading' ? heading.text : ''}
+            style={{ backgroundImage: `url(${JSON.stringify(image)})` }}
+          />
         ) : null}
+        {card ? <ContentBlocks blocks={[card]} /> : null}
       </div>
     </div>
   );
