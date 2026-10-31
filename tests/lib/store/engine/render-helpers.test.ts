@@ -108,6 +108,14 @@ describe('sectionFrameStyle', () => {
     expect(s.color).toBe('#f9fafb');
   });
 
+  it('paints the hero panel, banner and tiles from a chosen scheme, not on Default', () => {
+    const s = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3' }));
+    expect(s['--st-soft']).toBe('color-mix(in srgb, #f9fafb 4%, #111827)');
+    expect(s['--st-tile']).toBe('color-mix(in srgb, #f9fafb 7%, #111827)');
+    expect(s['--st-banner']).toBe('color-mix(in srgb, #60a5fa 14%, #111827)');
+    expect(sectionFrameStyle(settings, sec())['--st-soft']).toBeUndefined();
+  });
+
   it('falls back to scheme 1 for an unknown scheme', () => {
     const s = sectionFrameStyle(settings, sec({ color_scheme: 'nope' }));
     expect(s['--c-bg']).toBe('#ffffff');

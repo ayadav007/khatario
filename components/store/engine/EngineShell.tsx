@@ -43,6 +43,7 @@ const THEME_RULES =
   // A section with its own scheme: the announcement bar and footer take the scheme's paint (the frame) instead of
   // their own fixed accent / dark colours; the low-stock note stays orange but readable on any paper.
   '.st-root.eng-root .eng-sec[data-scheme] :is(.announce,.st-footer){background:transparent;color:inherit}' +
+  '.st-root.eng-root .eng-sec[data-scheme] .qk-top{background:var(--paper)}' +
   '.st-root.eng-root .plow{color:color-mix(in srgb,#ea580c 72%,var(--text))}' +
   '.st-root.eng-root .eng-sec :is(.text-gray-900,.text-gray-800,.text-gray-700,.text-black){color:var(--text)}' +
   '.st-root.eng-root .eng-sec :is(.text-gray-600,.text-gray-500,.text-gray-400){color:var(--st-muted)}' +

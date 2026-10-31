@@ -58,6 +58,11 @@ export function sectionFrameStyle(settings: ThemeSettings, section: Section): St
   const style: Style = scheme ? { ...schemeCssVars(scheme, index <= 0) } : {};
   if (scheme && index >= 0) {
     Object.assign(style, studioSchemeVars(scheme, true));
+    // A chosen scheme paints the whole section: the surfaces Studio tints from a fixed beige (hero panel, banner,
+    // category tiles) come from the scheme too. On Default the preset keeps its own panels.
+    style['--st-soft'] = `color-mix(in srgb, ${scheme.text} 4%, ${scheme.background})`;
+    style['--st-tile'] = `color-mix(in srgb, ${scheme.text} 7%, ${scheme.background})`;
+    style['--st-banner'] = `color-mix(in srgb, ${scheme.accent} 14%, ${scheme.background})`;
     style.background = scheme.background;
     style.color = scheme.text;
   }

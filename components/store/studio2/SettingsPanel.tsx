@@ -246,6 +246,10 @@ function SectionColours({ sref, section }: { sref: SectionRef; section: Section 
       <FieldShell label="Colours">
         <SchemePicker allowNone value={section.color_scheme ?? ''} schemes={schemes} onChange={setScheme} />
       </FieldShell>
+      <p className="text-[11px] text-gray-500">
+        Default keeps the theme style&apos;s own look. A scheme paints the whole section in its colours; “{schemes[0]?.name} · theme”
+        is the theme colours.
+      </p>
       <button
         type="button"
         aria-expanded={editing}

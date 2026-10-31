@@ -477,13 +477,13 @@ export function SchemePicker({
           Default
         </button>
       )}
-      {schemes.map((s) => (
+      {schemes.map((s, i) => (
         <button
           key={s.id}
           type="button"
           role="radio"
           aria-checked={value === s.id}
-          title={s.name}
+          title={i === 0 ? `${s.name}: the theme colours` : s.name}
           onClick={() => onChange(s.id)}
           className={clsx(
             'flex h-14 flex-col items-start justify-between overflow-hidden rounded-md border p-1.5 text-left',
@@ -493,7 +493,7 @@ export function SchemePicker({
         >
           <span className="text-sm font-semibold leading-none">Aa</span>
           <span className="flex w-full items-center justify-between gap-1">
-            <span className="truncate text-[10px]">{s.name}</span>
+            <span className="truncate text-[10px]">{i === 0 ? `${s.name} · theme` : s.name}</span>
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.button }} />
           </span>
         </button>
