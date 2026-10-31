@@ -47,8 +47,15 @@ export async function listThemes(businessId: string): Promise<ThemeListRow[]> {
   );
 }
 
+/** The row with its data sanitised, so a theme stored in an older shape (header and footer links before menus) reaches the editor converted. */
+function cleanRow(row: ThemeRow): ThemeRow {
+  return { ...row, data: sanitizeThemeData(row.data) };
+}
+
+/** One theme, its data sanitised (`cleanRow`): the Studio opens what this returns, never a stored older shape. */
 export async function getTheme(businessId: string, id: string): Promise<ThemeRow | null> {
-  return queryOne<ThemeRow>(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND id = $2`, [businessId, id]);
+  const row = await queryOne<ThemeRow>(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND id = $2`, [businessId, id]);
+  return row ? cleanRow(row) : null;
 }
 
 export async function getLiveTheme(businessId: string): Promise<ThemeRow | null> {
@@ -179,7 +186,7 @@ async function createThemeLocked(
         input.duplicateOf,
       ]);
       if (src.rows.length === 0) return fail<ThemeRow>('not_found');
-      data = src.rows[0].data as ThemeData;
+      data = sanitizeThemeData(src.rows[0].data);
       preset = src.rows[0].preset as ThemePreset;
       if (!name) name = `Copy of ${src.rows[0].name as string}`;
     } else {
@@ -255,7 +262,7 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
     await lockBusinessThemes(client, businessId);
 
     const existing = await client.query(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND is_working`, [businessId]);
-    if (existing.rows.length > 0) return good(existing.rows[0] as ThemeRow);
+    if (existing.rows.length > 0) return good(cleanRow(existing.rows[0] as ThemeRow));
 
     let live: { name: string; preset: ThemePreset; data: ThemeData } | undefined = (
       await client.query(`SELECT name, preset, data FROM store_themes WHERE business_id = $1 AND role = 'live'`, [businessId])
@@ -280,6 +287,8 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
     }
 
     const name = workingDraftName(live.name);
+    // The stored copy is the live data as it is, so the draft shows no changes until edited (has_changes, D40);
+    // the returned row is sanitised like getTheme's.
     const res = await client.query(
       `INSERT INTO store_themes (business_id, name, role, preset, data, updated_by, is_working)
        SELECT $1, $2, 'draft', $3, $4::jsonb, $5, true
@@ -288,7 +297,7 @@ async function insertWorkingDraft(businessId: string, userId: string): Promise<R
       [businessId, name, live.preset, JSON.stringify(live.data), userId, ENGINE_LIMITS.themesPerBusiness],
     );
     if (res.rows.length === 0) return fail<ThemeRow>('limit');
-    return good(res.rows[0] as ThemeRow);
+    return good(cleanRow(res.rows[0] as ThemeRow));
   });
 }
 
@@ -301,7 +310,7 @@ export async function getOrCreateWorkingDraft(businessId: string, userId: string
     const e = err as { code?: string; constraint?: string };
     if (e.code === '23505' && e.constraint === 'store_themes_one_working') {
       const existing = await queryOne<ThemeRow>(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND is_working`, [businessId]);
-      if (existing) return good(existing);
+      if (existing) return good(cleanRow(existing));
     }
     throw err;
   }

@@ -642,5 +642,56 @@ d('Store themes repository (real DB)', () => {
       expect(header.settings.menu).toBe('main');
       expect(header.block_order).toEqual([]);
     });
+
+    /** Rewrites a theme row in place to the pre-menus shape: no `settings.menus`, header `menu_link` and footer `link_column` blocks. */
+    const makeOldShape = async (biz: string, id: string) => {
+      const row = await pool.query(`SELECT data FROM store_themes WHERE business_id = $1 AND id = $2`, [biz, id]);
+      const raw = row.rows[0].data as Record<string, any>;
+      delete raw.settings.menus;
+      const header = raw.header_group.order.map((k: string) => raw.header_group.sections[k]).find((s: any) => s.type === 'header');
+      header.blocks = { l1: { type: 'menu_link', settings: { label: 'Shop all', link: '/catalog' } } };
+      header.block_order = ['l1'];
+      delete header.settings.menu;
+      const footer = raw.footer_group.order.map((k: string) => raw.footer_group.sections[k]).find((s: any) => s.type === 'footer');
+      footer.blocks = { c1: { type: 'link_column', settings: { heading: 'Help', links: 'FAQ|/pages/faq' } } };
+      footer.block_order = ['c1'];
+      delete footer.settings.menu;
+      await pool.query(`UPDATE store_themes SET data = $3::jsonb WHERE business_id = $1 AND id = $2`, [biz, id, JSON.stringify(raw)]);
+      return raw;
+    };
+
+    const expectConverted = (data: ThemeData) => {
+      expect(data.settings.menus.find((m) => m.id === 'main')!.items.map((i) => i.label)).toEqual(['Shop all']);
+      expect(data.settings.menus.find((m) => m.id === 'footer')!.items[0].children!.map((c) => c.label)).toEqual(['FAQ']);
+      const hid = data.header_group.order.find((k) => data.header_group.sections[k].type === 'header')!;
+      expect(data.header_group.sections[hid].settings.menu).toBe('main');
+      expect(data.header_group.sections[hid].block_order).toEqual([]);
+    };
+
+    it('getTheme (the editor GET) returns an old-shape stored theme already converted', async () => {
+      const biz = await newBiz();
+      ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const draft = ok(await createTheme(biz, USER, { name: 'Old', preset: 'studio', ctx }));
+      const raw = await makeOldShape(biz, draft.id);
+      const loaded = (await getTheme(biz, draft.id))!;
+      expectConverted(loaded.data);
+      expect(loaded.data).toEqual(sanitizeThemeData(raw));
+    });
+
+    it('the working draft of an old-shape live theme opens converted, and a duplicate is stored converted', async () => {
+      const biz = await newBiz();
+      const liveRow = ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      await makeOldShape(biz, liveRow.id);
+      const w = ok(await getOrCreateWorkingDraft(biz, USER));
+      expectConverted(w.data);
+      expectConverted(ok(await getOrCreateWorkingDraft(biz, USER)).data);
+      // The stored copy still equals the live row, so the working draft shows no changes until edited.
+      expect((await listThemes(biz)).find((t) => t.id === w.id)?.has_changes).toBe(false);
+
+      const copy = ok(await createTheme(biz, USER, { name: '', duplicateOf: liveRow.id, ctx }));
+      expectConverted(copy.data);
+      const stored = await pool.query(`SELECT data FROM store_themes WHERE id = $1`, [copy.id]);
+      expectConverted(stored.rows[0].data as ThemeData);
+    });
   });
 });

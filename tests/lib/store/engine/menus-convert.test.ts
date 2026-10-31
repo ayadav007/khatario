@@ -116,14 +116,68 @@ describe('convertLegacyMenus / sanitizeThemeData', () => {
     ]);
   });
 
-  it('leaves a theme with a menus array alone', () => {
+  it('leaves a theme with menus and no old blocks alone', () => {
     const mine = [{ id: 'nav', name: 'Nav', items: [{ id: 'z', label: 'Mine', link: '/mine' }] }];
-    const out = sanitizeThemeData(legacyTheme(mine));
+    const raw = legacyTheme(mine) as any;
+    raw.header_group.sections.header.blocks = {};
+    raw.header_group.sections.header.block_order = [];
+    raw.footer_group.sections.footer.blocks = {};
+    raw.footer_group.sections.footer.block_order = [];
+    const out = convertLegacyMenus(raw) as any;
     expect(out.settings.menus).toEqual(mine);
+    expect(out.header_group).toBe(raw.header_group);
+    expect(out.footer_group).toBe(raw.footer_group);
+  });
+
+  it('legacy blocks + a user menu keeps the links', () => {
+    // A theme saved before menus, opened in the editor, and a menu added before the first save.
+    const mine = [{ id: 'menu-x', name: 'Promo', items: [{ id: 'z', label: 'Mine', link: '/mine' }] }];
+    const out = sanitizeThemeData(legacyTheme(mine));
+    expect(out.settings.menus.map((m) => m.id)).toEqual(['menu-x', 'main', 'footer']);
+    expect(out.settings.menus[0]).toEqual(mine[0]);
+    expect(out.settings.menus[1].items.map((i) => i.label)).toEqual(['Sale', 'All']);
+    expect(out.settings.menus[2].items[0].children!.map((c) => c.label)).toEqual(['Contact', 'FAQ']);
     const header = out.header_group.sections.header;
+    expect(header.settings.menu).toBe('main');
     expect(header.blocks).toEqual({});
-    expect(header.settings.menu).toBeUndefined();
-    expect(out.footer_group.sections.footer.blocks).toEqual({});
+    expect(header.block_order).toEqual([]);
+    const footer = out.footer_group.sections.footer;
+    expect(footer.settings.menu).toBe('footer');
+    expect(footer.blocks).toEqual({});
+    expect(sanitizeThemeData(out)).toEqual(out);
+  });
+
+  it('legacy blocks next to taken main and footer ids get fresh menu ids, and a chosen menu stays', () => {
+    const mine = [
+      { id: 'main', name: 'Mine', items: [{ id: 'z', label: 'Mine', link: '/mine' }] },
+      { id: 'footer', name: 'My footer', items: [] },
+    ];
+    const raw = legacyTheme(mine) as any;
+    raw.header_group.sections.header.settings.menu = 'main';
+    const out = sanitizeThemeData(raw);
+    const ids = out.settings.menus.map((m) => m.id);
+    expect(ids.slice(0, 2)).toEqual(['main', 'footer']);
+    expect(ids).toHaveLength(4);
+    const [, , headerMenu, footerMenu] = out.settings.menus;
+    expect(headerMenu.id).not.toBe('main');
+    expect(footerMenu.id).not.toBe('footer');
+    expect(headerMenu.items.map((i) => i.label)).toEqual(['Sale', 'All']);
+    expect(footerMenu.items[0].label).toBe('Help');
+    // The header already chose a menu, so it keeps it; the footer had none and gets the converted links.
+    expect(out.header_group.sections.header.settings.menu).toBe('main');
+    expect(out.footer_group.sections.footer.settings.menu).toBe(footerMenu.id);
+    expect(out.header_group.sections.header.blocks).toEqual({});
+    expect(sanitizeThemeData(out)).toEqual(out);
+  });
+
+  it('a footer column without a heading keeps its links as top-level links', () => {
+    const raw = legacyTheme() as any;
+    raw.footer_group.sections.footer.blocks.x.settings.heading = '  ';
+    const footerMenu = sanitizeThemeData(raw).settings.menus.find((m) => m.id === 'footer')!;
+    expect(footerMenu.items.map((i) => [i.label, i.link, i.children])).toEqual([
+      ['Contact', '/pages/contact', undefined],
+      ['FAQ', '/pages/faq', undefined],
+    ]);
   });
 
   it('does not change its input', () => {
