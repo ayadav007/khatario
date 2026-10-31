@@ -467,3 +467,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** A section can carry `custom_colors` (any of the seven scheme colours as hex), sanitised to known fields and valid hex (`sanitizeCustomColors`); the frame paints them over the section's scheme (scheme 1 on Default) exactly like a chosen scheme (`sectionFrameStyle`, `data-scheme="custom"`), so text, accent, buttons, cards, borders, hero panel, banner and tiles all follow. In the editor the Colours block has a Custom tile after the schemes: picking it copies the colours the section shows now, then seven fields (hex text or colour picker) edit this section only; picking a scheme tile or Default clears them.
 - **Shipped:** this commit. Store tests 1080 pass, `tsc` clean. Not deployed.
 - **Open:** none new.
+
+## 2026-10-31: Slideshow text colour and photo darkening
+- **Asked:** where to set the colour of the slide heading ("Welcome to Shalini Traders"), which was white and unreadable over the uploaded photo.
+- **Decided:** The slide photo now shows on staging after re-uploading (the 55b9d73c fix works). On a Full image slide Studio forces the copy to white, and the engine slideshow had no text colour or darkening setting (the hero supports `overlay`, never mapped). Added slideshow settings Text colour (`text_color`, empty keeps white on a photo / the section colours otherwise; applied to heading, description, eyebrow and benefits on any layout via `.heroCopy.customText` and `--hero-text`) and Darken photo (`overlay`, 0–80%, a dark layer over the photo).
+- **Shipped:** this commit. Store tests pass, `tsc` clean. Not deployed.
+- **Open:** a photo that already carries its own text and artwork (like Shalini's) clashes with any overlaid heading; the Image then text layout or an empty heading suits it better.

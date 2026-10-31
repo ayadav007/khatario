@@ -88,6 +88,8 @@ export function slideshowSettings(section: Section): StudioSettings {
     autoplay: bool(s.autoplay, true) ? speed : 0,
     layout: pick(s.layout, ['full', 'image-text', 'text-image'] as const) ?? 'image-text',
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
+    overlay: Math.min(80, Math.max(0, num(s.overlay) ?? 0)),
+    ...(typeof s.text_color === 'string' && /^#[0-9a-f]{3,8}$/i.test(s.text_color) ? { textColor: s.text_color } : {}),
     ...(first ?? {}),
   };
   const slides = rest.slice(0, MAX_EXTRA_SLIDES);

@@ -30,6 +30,8 @@ export const slideshow: SectionSchema = {
         { value: 'text-image', label: 'Text then image' },
       ],
     },
+    { id: 'text_color', type: 'color', label: 'Text colour', default: '', info: 'Heading, description and eyebrow. Empty: white on a full photo, else the section colours.' },
+    { id: 'overlay', type: 'range', label: 'Darken photo (%)', min: 0, max: 80, step: 5, default: 0, info: 'A dark layer over the photo so text on it stays readable' },
   ],
   blocks: [
     {

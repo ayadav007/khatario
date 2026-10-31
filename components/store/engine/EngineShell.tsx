@@ -71,6 +71,8 @@ const THEME_RULES =
   '.st-root.eng-root .eng-cats--circles .cat :is(img,.catMark){width:min(100%,120px);height:auto;aspect-ratio:1;border-radius:50%;margin:0 auto}' +
   '.st-root.eng-root .eng-cats--circles .cat :is(b,small){padding-inline:4px}' +
   '.st-root.eng-root .eng-cats--cards .cat{background:var(--st-card,#fff);border:1px solid rgba(0,0,0,.08);box-shadow:0 2px 8px rgba(0,0,0,.06)}' +
+  // Slideshow text colour (any layout, over the full-photo white).
+  '.st-root.eng-root .hero .heroCopy.customText :is(h1,p,.eyebrow,.benefits){color:var(--hero-text)}' +
   '.st-root.eng-root .hero.noImg:not(.full){grid-template-columns:1fr}' +
   '.st-root.eng-root .hero.noImg:not(.full) .heroImg{display:none}' +
   // A product grid's "Columns on phone" beats each preset's phone default (Quick's 3, the others' 2).

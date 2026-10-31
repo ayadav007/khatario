@@ -46,6 +46,16 @@ describe('studio adapter', () => {
     expect(slideshowSettings(sec('slideshow', { autoplay: false }, blocks)).autoplay).toBe(0);
   });
 
+  it('slideshow: text colour and photo darkening', () => {
+    const blocks: BlockSpec[] = [['a', 'slide', { heading: 'H' }]];
+    const out = slideshowSettings(sec('slideshow', { text_color: '#1c1917', overlay: 40 }, blocks));
+    expect(out.textColor).toBe('#1c1917');
+    expect(out.overlay).toBe(40);
+    const plain = slideshowSettings(sec('slideshow', {}, blocks));
+    expect(plain.textColor).toBeUndefined();
+    expect(plain.overlay).toBe(0);
+  });
+
   it('respects block_order and skips ids missing from blocks', () => {
     const s = sec('marquee', {}, [
       ['a', 'item', { text: 'One' }],

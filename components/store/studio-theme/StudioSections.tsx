@@ -312,7 +312,11 @@ export function StudioHero({
       }}
       aria-roledescription={many ? 'carousel' : undefined}
     >
-      <div className="heroCopy" style={{ textAlign: s.align, alignItems }} key={many ? `copy-${active}` : 'copy'}>
+      <div
+        className={s.textColor ? 'heroCopy customText' : 'heroCopy'}
+        style={{ textAlign: s.align, alignItems, ...(s.textColor ? { ['--hero-text' as string]: s.textColor } : {}) }}
+        key={many ? `copy-${active}` : 'copy'}
+      >
         {s.eyebrow ? <small className="eyebrow">{s.eyebrow}</small> : null}
         <h1>{slide.heading}</h1>
         {slide.description ? <p>{slide.description}</p> : null}
