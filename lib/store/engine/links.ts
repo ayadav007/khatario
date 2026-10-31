@@ -51,6 +51,21 @@ export function engineCatalogHref(
   return `/catalog${next.categoryId ? `/${encodeURIComponent(next.categoryId)}` : ''}${qs ? `?${qs}` : ''}`;
 }
 
+/**
+ * An internal link (`/path?query#hash`) with the current preview params added where the link does not set them,
+ * so a button or menu link inside a theme preview stays in the preview. Any other link is returned unchanged.
+ */
+export function withPreviewParams(currentSearch: string, href: string): string {
+  if (!/^\/(?!\/)/.test(href)) return href;
+  const kept = keptParams(currentSearch);
+  if (![...kept.keys()].length) return href;
+  const u = new URL(href, 'https://store.invalid');
+  kept.forEach((v, k) => {
+    if (!u.searchParams.has(k)) u.searchParams.set(k, v);
+  });
+  return `${u.pathname}${u.search}${u.hash}`;
+}
+
 /** A product page URL that keeps preview params, as engineCatalogHref does. */
 export function engineProductHref(currentSearch: string, productId: string): string {
   const qs = keptParams(currentSearch).toString();

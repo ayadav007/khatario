@@ -718,7 +718,13 @@ export function StudioBanner({ s, onCta }: { s: StudioSettings; onCta?: () => vo
     : {};
   const eyebrow = studioEyebrow('banner', s.eyebrow);
   return (
-    <div className={`banner ${s.image ? 'hasImage' : ''}`} style={boxStyle(s, bg)}>
+    // `bh-*` / `ta-*`: the engine banner's height and text position (styled by EngineShell only).
+    <div
+      className={['banner', s.image ? 'hasImage' : '', s.height ? `bh-${s.height}` : '', s.textAlign ? `ta-${s.textAlign}` : '']
+        .filter(Boolean)
+        .join(' ')}
+      style={boxStyle(s, bg)}
+    >
       <div>
         {eyebrow ? <small className="eyebrow">{eyebrow}</small> : null}
         <h2>{s.title}</h2>
@@ -856,18 +862,44 @@ export function StudioRichText({ s }: { s: StudioSettings }) {
   );
 }
 
-export function StudioFooter({ s, links, badge }: { s: StudioSettings; links: StudioLink[]; badge?: string }) {
+export function StudioFooter({
+  s,
+  links,
+  columns,
+  badge,
+}: {
+  s: StudioSettings;
+  links: StudioLink[];
+  /** Engine footer: link columns under their headings, then `links` (social) as a last column. */
+  columns?: { heading: string; links: StudioLink[] }[];
+  badge?: string;
+}) {
   return (
     <footer className="st-footer" style={boxStyle(s)}>
       <div className="footerBrand">
         <b>{s.brand || 'My store'}</b>
         {s.tagline ? <span>{s.tagline}</span> : null}
       </div>
-      <nav className="footerLinks">
-        {links.map((l) => (
-          <Lnk key={l.label} link={l} />
-        ))}
-      </nav>
+      {columns ? (
+        <div className="footerCols">
+          {[...columns, { heading: '', links }]
+            .filter((c) => c.links.length > 0)
+            .map((c, i) => (
+              <nav key={i} className="footerLinks footerCol" aria-label={c.heading || undefined}>
+                {c.heading ? <b>{c.heading}</b> : null}
+                {c.links.map((l) => (
+                  <Lnk key={l.label} link={l} />
+                ))}
+              </nav>
+            ))}
+        </div>
+      ) : (
+        <nav className="footerLinks">
+          {links.map((l) => (
+            <Lnk key={l.label} link={l} />
+          ))}
+        </nav>
+      )}
       {badge ? <div className="footerBadge">{badge}</div> : null}
     </footer>
   );

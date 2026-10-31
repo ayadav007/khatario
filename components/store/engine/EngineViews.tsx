@@ -10,7 +10,7 @@ import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
 import { useIsPhone } from '@/lib/store/phone-kit';
 import { pickSlidesForDevice } from '@/lib/store/engine/shared';
-import { catalogHref, ctaTarget, engineCatalogHref, engineProductHref } from '@/lib/store/engine/links';
+import { catalogHref, ctaTarget, engineCatalogHref, engineProductHref, withPreviewParams } from '@/lib/store/engine/links';
 import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogAnchorId } from '@/lib/store/engine/anchors';
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
@@ -47,7 +47,7 @@ export function useFollowLink() {
     (link: string) => {
       const t = ctaTarget(link);
       if (t.kind === 'anchor') scrollToId(t.id);
-      else if (t.kind === 'internal') router.push(t.href);
+      else if (t.kind === 'internal') router.push(withPreviewParams(window.location.search, t.href));
       else if (t.kind === 'external') window.location.assign(t.href);
     },
     [router],
@@ -344,9 +344,12 @@ function CategoryTiles({
 
 export function EngineCategoryGrid({
   sectionId,
+  className,
   ...props
 }: {
   sectionId: string;
+  /** The circles / cards look (`categoryGridClass`). */
+  className?: string;
   s: StudioSettings;
   categories: StudioTileCategory[];
   style: StoreCategoryStyle;
@@ -355,7 +358,7 @@ export function EngineCategoryGrid({
   marks?: Record<string, string>;
 }) {
   return (
-    <div id={categoriesAnchor(sectionId)} data-eng-anchor={ANCHOR_KIND.categories}>
+    <div id={categoriesAnchor(sectionId)} data-eng-anchor={ANCHOR_KIND.categories} className={className}>
       <Suspense fallback={null}>
         <CategoryTiles {...props} />
       </Suspense>

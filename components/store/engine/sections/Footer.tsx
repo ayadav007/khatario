@@ -9,7 +9,8 @@ const SOCIAL_LABELS = { instagram: 'Instagram', whatsapp: 'WhatsApp', facebook: 
 
 export function Footer({ section, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
-  const links: StudioLink[] = footerColumns(section).flatMap((c) => c.links);
+  const columns = footerColumns(section);
+  const links: StudioLink[] = [];
   if (v.show_social !== false) {
     for (const key of Object.keys(SOCIAL_LABELS) as (keyof typeof SOCIAL_LABELS)[]) {
       const href = theme.settings.social?.[key];
@@ -21,6 +22,7 @@ export function Footer({ section, store, theme }: EngineSectionProps) {
     <>
       <StudioFooter
         s={{ brand: store.name, tagline: str(v.about) || store.store_tagline || '' }}
+        columns={columns}
         links={links}
         badge={showBadge ? 'Powered by Khatario' : undefined}
       />

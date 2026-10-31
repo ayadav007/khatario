@@ -1,4 +1,4 @@
-import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch } from '@/lib/store/engine/links';
+import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch, withPreviewParams } from '@/lib/store/engine/links';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 
 describe('engineCatalogHref', () => {
@@ -119,5 +119,21 @@ describe('isEditorFrameSearch', () => {
     expect(isEditorFrameSearch('?editor=1')).toBe(false);
     expect(isEditorFrameSearch('?preview_theme=t1&editor=1')).toBe(false);
     expect(isEditorFrameSearch('')).toBe(false);
+  });
+});
+
+describe('withPreviewParams', () => {
+  const PREVIEW = '?preview_theme=T&pt=P&utm=x';
+  it('adds the preview to an internal link, keeping its own path, query and hash', () => {
+    expect(withPreviewParams(PREVIEW, '/catalog?qx=1')).toBe('/catalog?qx=1&preview_theme=T&pt=P');
+    expect(withPreviewParams(PREVIEW, '/pages/about#team')).toBe('/pages/about?preview_theme=T&pt=P#team');
+    expect(withPreviewParams(PREVIEW, '/')).toBe('/?preview_theme=T&pt=P');
+  });
+  it('leaves a link that sets its own preview params, external links, anchors and non-preview pages alone', () => {
+    expect(withPreviewParams(PREVIEW, '/x?preview_theme=OTHER')).toBe('/x?preview_theme=OTHER&pt=P');
+    expect(withPreviewParams(PREVIEW, 'https://example.com/a')).toBe('https://example.com/a');
+    expect(withPreviewParams(PREVIEW, '//evil.example/a')).toBe('//evil.example/a');
+    expect(withPreviewParams(PREVIEW, '#catalog')).toBe('#catalog');
+    expect(withPreviewParams('?utm=x', '/catalog')).toBe('/catalog');
   });
 });

@@ -79,10 +79,19 @@ export function pickCategories<T extends { id: string }>(all: T[], picked: unkno
   return out;
 }
 
-/** Engine category-grid style to the Studio tile style. Emoji tiles are icon tiles whose mark is the emoji. */
+/**
+ * Engine category-grid style to the Studio tile style. Emoji tiles are icon tiles whose mark is the emoji, even
+ * when categories have photos; the other styles show photos when there are any.
+ */
 export function engineCategoryStyle(style: unknown, hasImages: boolean): StoreCategoryStyle {
+  if (style === 'emoji') return 'icon';
   if (hasImages) return 'photo';
-  return style === 'cards' || style === 'emoji' ? 'icon' : 'letter';
+  return style === 'cards' ? 'icon' : 'letter';
+}
+
+/** Wrapper class for the circles and cards looks (EngineShell styles them); tiles and emoji need none. */
+export function categoryGridClass(style: unknown): string | undefined {
+  return style === 'circles' || style === 'cards' ? `eng-cats--${style}` : undefined;
 }
 
 /**

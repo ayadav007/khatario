@@ -1,7 +1,7 @@
 import { getSectionSchema, sectionsForTemplate } from '@/lib/store/engine/registry';
 import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
 import { pickSlidesForDevice } from '@/lib/store/engine/shared';
-import { categoryImageMap, categoryMarks, engineCategoryStyle } from '@/lib/store/engine/render-helpers';
+import { categoryGridClass, categoryImageMap, categoryMarks, engineCategoryStyle } from '@/lib/store/engine/render-helpers';
 import { slideshowDevices } from '@/lib/store/engine/studio-adapter';
 import type { Section } from '@/lib/store/engine/types';
 
@@ -143,8 +143,18 @@ describe('category tiles', () => {
     expect(categoryMarks([{ id: 'a', name: 'Fresh Vegetables' }], 'tiles')).toEqual({});
   });
 
-  it('maps the emoji style to icon tiles', () => {
+  it('maps the emoji style to icon tiles, photos or not; the others show photos when there are any', () => {
     expect(engineCategoryStyle('emoji', false)).toBe('icon');
-    expect(engineCategoryStyle('emoji', true)).toBe('photo');
+    expect(engineCategoryStyle('emoji', true)).toBe('icon');
+    expect(engineCategoryStyle('cards', false)).toBe('icon');
+    expect(engineCategoryStyle('circles', false)).toBe('letter');
+    for (const style of ['tiles', 'circles', 'cards']) expect(engineCategoryStyle(style, true)).toBe('photo');
+  });
+
+  it('gives circles and cards their wrapper class', () => {
+    expect(categoryGridClass('circles')).toBe('eng-cats--circles');
+    expect(categoryGridClass('cards')).toBe('eng-cats--cards');
+    expect(categoryGridClass('tiles')).toBeUndefined();
+    expect(categoryGridClass('emoji')).toBeUndefined();
   });
 });

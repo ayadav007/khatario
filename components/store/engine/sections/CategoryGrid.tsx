@@ -1,4 +1,4 @@
-import { categoryImageMap, categoryMarks, engineCategoryStyle, pickCategories } from '@/lib/store/engine/render-helpers';
+import { categoryGridClass, categoryImageMap, categoryMarks, engineCategoryStyle, pickCategories } from '@/lib/store/engine/render-helpers';
 import type { EngineSectionProps } from '../registry';
 import { EngineCategoryGrid } from '../EngineViews';
 import { noBox, str, withDefaults } from './shared';
@@ -21,6 +21,7 @@ export function CategoryGrid({ id, section, data }: EngineSectionProps) {
       style={engineCategoryStyle(v.style, Object.keys(images).length > 0)}
       images={images}
       marks={categoryMarks(categories, v.style)}
+      className={categoryGridClass(v.style)}
     />
   );
 }

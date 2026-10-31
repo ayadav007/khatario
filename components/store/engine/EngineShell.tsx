@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store/store-context';
 import { previewStoreCss } from '@/lib/store/section-css';
 import { setStoreFavicon } from '@/lib/store/store-favicon';
 import { findAnchor } from '@/lib/store/engine/anchors';
+import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { engineRootClass } from '@/lib/store/engine/root-class';
@@ -36,6 +37,27 @@ const THEME_RULES =
   '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   // A hero with no image on any slide: copy only, full width (the old Grocery and Khatario heroes had no empty panel).
+  // Testimonials: star rating above the quote, photo beside the name.
+  '.st-root.eng-root .quotes .eng-stars{display:block;color:#f59e0b;font:14px/1 Inter,sans-serif;letter-spacing:2px;margin-bottom:10px}' +
+  '.st-root.eng-root .quotes .eng-stars-off{opacity:.25}' +
+  '.st-root.eng-root .quotes .eng-quote-by{display:flex;align-items:center;gap:8px;margin-top:14px}' +
+  '.st-root.eng-root .quotes .eng-quote-by b{margin-top:0}' +
+  '.st-root.eng-root .quotes .eng-quote-by img{width:32px;height:32px;border-radius:50%;object-fit:cover}' +
+  // Footer link columns, each under its heading.
+  '.st-root.eng-root .footerCols{margin-left:auto;display:flex;gap:36px;flex-wrap:wrap}' +
+  '.st-root.eng-root .footerCols .footerCol{margin-left:0;flex-direction:column;gap:8px}' +
+  '.st-root.eng-root .footerCol>b{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}' +
+  '@container store (max-width:640px){.st-root.eng-root .footerCols{margin-left:0;gap:24px}}' +
+  // Image banner height and text position.
+  '.st-root.eng-root .banner.bh-small{padding-block:22px}' +
+  '.st-root.eng-root .banner.bh-large{min-height:360px}' +
+  '.st-root.eng-root .banner.ta-center{justify-content:center;text-align:center}' +
+  '.st-root.eng-root .banner.ta-right{justify-content:flex-end;text-align:right}' +
+  // Category grid styles: circles (round photos or marks), cards (raised tiles). Tiles is the default look.
+  '.st-root.eng-root .eng-cats--circles .cat{background:none;text-align:center;box-shadow:none}' +
+  '.st-root.eng-root .eng-cats--circles .cat :is(img,.catMark){width:min(100%,120px);height:auto;aspect-ratio:1;border-radius:50%;margin:0 auto}' +
+  '.st-root.eng-root .eng-cats--circles .cat :is(b,small){padding-inline:4px}' +
+  '.st-root.eng-root .eng-cats--cards .cat{background:var(--st-card,#fff);border:1px solid rgba(0,0,0,.08);box-shadow:0 2px 8px rgba(0,0,0,.06)}' +
   '.st-root.eng-root .hero.noImg:not(.full){grid-template-columns:1fr}' +
   '.st-root.eng-root .hero.noImg:not(.full) .heroImg{display:none}' +
   // A product grid's "Columns on phone" beats each preset's phone default (Quick's 3, the others' 2).
@@ -194,6 +216,25 @@ export function EngineShell({
   const { kit, quick } = root;
   const cardLook = useMemo(() => ({ quick, phoneKit: kit }), [quick, kit]);
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
+
+  // In a theme preview, a plain store link (menu, footer, pill) gets the preview params before the browser follows it,
+  // so the visitor stays in the theme being previewed.
+  useEffect(() => {
+    if (!preview) return;
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.('a[href]');
+      if (!(a instanceof HTMLAnchorElement) || a.origin !== window.location.origin) return;
+      const raw = a.getAttribute('href') ?? '';
+      const next = withPreviewParams(window.location.search, raw);
+      if (next !== raw) a.setAttribute('href', next);
+    };
+    window.addEventListener('click', onClick, true);
+    window.addEventListener('auxclick', onClick, true);
+    return () => {
+      window.removeEventListener('click', onClick, true);
+      window.removeEventListener('auxclick', onClick, true);
+    };
+  }, [preview]);
 
   // The engine renders this page: the old store theme's CSS, font and favicon stay off (D11).
   useEffect(() => {
