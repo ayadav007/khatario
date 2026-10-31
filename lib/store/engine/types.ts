@@ -73,3 +73,19 @@ export interface ThemeRow {
   updated_at: string;
   is_working: boolean;
 }
+
+/** One published version in the business's timeline (D46). No user ids and no data. */
+export interface ThemeVersionSummary {
+  id: string;
+  theme_id: string | null;
+  theme_name: string;
+  preset: ThemePreset;
+  published_at: string;
+  published_by_name: string | null;
+  theme_exists: boolean;
+}
+
+export interface ThemeVersionRow extends ThemeVersionSummary {
+  business_id: string;
+  data: ThemeData;
+}

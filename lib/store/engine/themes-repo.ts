@@ -6,6 +6,7 @@ import { presetTheme, type PresetContext } from './presets';
 import { presetContextFor } from './preset-context';
 import { migrateStoreTheme, type MigrationContext } from './migrate';
 import { migrationInputFor } from './migrate-runner';
+import { insertVersionLocked } from './versions-repo';
 
 export type RepoResult<T> =
   | { ok: true; value: T }
@@ -99,7 +100,10 @@ export async function insertMigratedLiveLocked(
     [businessId, result.name.slice(0, NAME_MAX), result.preset, JSON.stringify(data), userId, ENGINE_LIMITS.themesPerBusiness],
   );
   if (res.rows.length === 0) return null;
-  return { theme: res.rows[0] as ThemeRow, warnings: result.warnings };
+  const theme = res.rows[0] as ThemeRow;
+  // D49: the store's pre-engine design is its first version, so it can be restored after the first publish.
+  await insertVersionLocked(client, businessId, theme, userId);
+  return { theme, warnings: result.warnings };
 }
 
 // Serialise creates per business so the 20-theme limit and "first theme is live" cannot race.
@@ -260,7 +264,7 @@ export async function deleteTheme(businessId: string, id: string): Promise<RepoR
 }
 
 /**
- * Puts a draft live, recording a version (the newest 30 are kept).
+ * Puts a draft live, recording a version of the live row (the business keeps its newest 30).
  * - The working draft (R11): its data is copied onto the live theme, and it stays the working draft
  *   with the same id, so the editor keeps editing it and no rows pile up.
  * - Any other draft (the theme library): roles swap; the old live theme becomes a draft.
@@ -301,17 +305,7 @@ export async function publishTheme(businessId: string, userId: string, id: strin
       );
       row = published.rows[0] as ThemeRow;
     }
-    await client.query(
-      `INSERT INTO store_theme_versions (theme_id, business_id, data, published_by) VALUES ($1, $2, $3::jsonb, $4)`,
-      [row.id, businessId, JSON.stringify(row.data), userId],
-    );
-    await client.query(
-      `DELETE FROM store_theme_versions
-       WHERE business_id = $1 AND id NOT IN (
-         SELECT id FROM store_theme_versions WHERE business_id = $1 ORDER BY published_at DESC, id DESC LIMIT $2
-       )`,
-      [businessId, ENGINE_LIMITS.versionsKept],
-    );
+    await insertVersionLocked(client, businessId, row, userId);
     return good(row);
   });
 }
