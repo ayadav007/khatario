@@ -25,9 +25,11 @@ import {
   type StudioTileCategory,
 } from '../studio-theme/StudioSections';
 import { useEngineCart } from './EngineShell';
+import { MenuBar } from './menu/MenuBar';
 import { useEngineCardLook } from './EngineCardContext';
 import { QuickSheet } from '../quick-theme/QuickChrome';
 import { activeQuickCategory, quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
+import type { ResolvedItem } from '@/lib/store/engine/menus';
 import { cleanPincode, pincodeLine, pincodeServiceable, storePinKey } from '@/lib/store/store-pincode';
 
 /**
@@ -259,7 +261,7 @@ function CategoryChips({ chips }: { chips: Chip[] }) {
 export function EngineHeader({
   s,
   logoUrl,
-  nav,
+  menu,
   subdomain,
   searchPlaceholder,
   chips,
@@ -267,7 +269,8 @@ export function EngineHeader({
 }: {
   s: StudioSettings;
   logoUrl: string | null;
-  nav: StudioLink[];
+  /** The header's resolved menu, its layout and whether top items are in capitals. */
+  menu: { items: ResolvedItem[]; layout: 'below' | 'inline'; caps: boolean };
   subdomain: string;
   searchPlaceholder: string;
   /** Category chips under the header row (All, then each category). */
@@ -287,11 +290,13 @@ export function EngineHeader({
       <span>{searchPlaceholder}</span>
     </div>
   );
+  const bar = menu.items.length ? <MenuBar items={menu.items} layout={menu.layout} caps={menu.caps} /> : null;
   const header = (
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
-      nav={nav}
+      menuSlot={menu.layout === 'below' ? bar : null}
+      inlineSlot={menu.layout === 'inline' ? bar : undefined}
       search={
         <Suspense fallback={fallback}>
           <HeaderSearchBox subdomain={subdomain} placeholder={searchPlaceholder} />

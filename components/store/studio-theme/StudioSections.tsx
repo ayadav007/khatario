@@ -153,6 +153,9 @@ export function StudioHeader({
   onCart,
   accountHref,
   homeHref,
+  menuSlot,
+  inlineSlot,
+  menuButton,
 }: {
   s: StudioSettings;
   logoUrl?: string | null;
@@ -163,6 +166,12 @@ export function StudioHeader({
   onCart?: () => void;
   accountHref?: string;
   homeHref?: string;
+  /** Store menu bar under the header row, drawn instead of the `nav` links when given (null draws nothing). */
+  menuSlot?: ReactNode;
+  /** Store menu in the header row, between the logo and the search. */
+  inlineSlot?: ReactNode;
+  /** Phone menu button, before the logo. */
+  menuButton?: ReactNode;
 }) {
   const highlight = (s.highlightLink ?? '').trim().toLowerCase();
   const links: StudioLink[] =
@@ -172,7 +181,8 @@ export function StudioHeader({
   const count = cartCount ?? 3;
   return (
     <div className="headerBlock" style={boxStyle(s)}>
-      <div className={`header ${s.iconsPosition === 'left' ? 'iconsLeft' : ''}`}>
+      <div className={['header', s.iconsPosition === 'left' ? 'iconsLeft' : '', inlineSlot ? 'hasInline' : ''].filter(Boolean).join(' ')}>
+        {menuButton}
         <a className="logo" href={homeHref}>
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -183,6 +193,7 @@ export function StudioHeader({
             {s.tagline ? <small>{s.tagline}</small> : null}
           </span>
         </a>
+        {inlineSlot}
         {s.showSearch !== false
           ? search ?? (
               <div className="search">
@@ -209,7 +220,9 @@ export function StudioHeader({
           </div>
         ) : null}
       </div>
-      {s.showNav !== false && links.length ? (
+      {menuSlot !== undefined ? (
+        menuSlot
+      ) : s.showNav !== false && links.length ? (
         <nav className="nav">
           {links.map((l) => (
             <Lnk

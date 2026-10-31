@@ -1,11 +1,16 @@
+import { pickMenu, resolveMenu } from '@/lib/store/engine/menus';
 import type { EngineSectionProps } from '../registry';
 import { EngineHeader } from '../EngineViews';
 import { str, withDefaults } from './shared';
 
 export function Header({ section, data, store, theme }: EngineSectionProps) {
   const v = withDefaults(section);
-  // Real menus arrive with the menu components (Tasks 4 and 5); until then the header shows no links.
-  const links: { label: string; href: string; highlight: boolean }[] = [];
+  // Categories with products feed the automatic categories item and hide links to deleted ones; null = lookup failed.
+  const categories = data?.categories
+    ? data.categories.filter((c) => c.item_count > 0).map((c) => ({ id: c.id, name: c.name, image_url: c.image_url }))
+    : null;
+  const items = resolveMenu(pickMenu(theme.settings.menus ?? [], v.menu, 'main'), categories);
+  const links = items.map((i) => ({ label: i.label, href: i.href, highlight: i.highlight }));
   return (
     <EngineHeader
       s={{
@@ -16,11 +21,9 @@ export function Header({ section, data, store, theme }: EngineSectionProps) {
         showCart: v.show_cart !== false,
         showCartCount: v.show_cart_count !== false,
         iconsPosition: v.icons_position === 'left' ? 'left' : 'right',
-        showNav: links.length > 0,
-        highlightLink: links.find((l) => l.highlight)?.label,
       }}
       logoUrl={str(v.logo_url) || theme.settings.logo_url || store.logo_url || null}
-      nav={links.map((l) => ({ label: l.label, href: l.href }))}
+      menu={{ items, layout: v.menu_layout === 'inline' ? 'inline' : 'below', caps: v.menu_caps === true }}
       subdomain={store.store_subdomain}
       searchPlaceholder={str(v.search_placeholder) || 'Search products'}
       chips={
