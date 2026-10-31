@@ -695,6 +695,12 @@ test.describe('Studio 2 store design editor', () => {
       await page.getByLabel('Show tagline', { exact: true }).check();
       await page.getByLabel('Show colour swatches', { exact: true }).check();
       await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+      await expect
+        .poll(async () => {
+          const section = (await savedTheme(page, id)).data.templates.home.sections['featured-products'];
+          return [section?.settings.show_tagline, section?.settings.show_swatches];
+        }, { timeout: 30_000 })
+        .toEqual([true, true]);
 
       await expect(grid.locator('.ptag').first()).toHaveText(tagline, { timeout: 30_000 });
       await expect(grid.locator('.pswatches').first()).toBeVisible();

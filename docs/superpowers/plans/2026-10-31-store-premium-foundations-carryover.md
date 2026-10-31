@@ -19,6 +19,12 @@ Branch `claude/premium-foundations` (worktree), commits `2aefae0a..7daec744` plu
 | 9 | Testimonials (`title`, `location`, `purchased`, `show_summary`), Logo list (`name`, `caption`), Promo cards 4 columns, Multicolumn column `image` | `7daec744` |
 | 10 | Three e2e scenarios, `next build` check, this document | this commit |
 
+## Owed at merge
+
+- **Project log and roadmap are not written on this branch.** By controller ruling, the `docs/project.log.md` entry (required by AGENTS.md) and the `docs/roadmap.md` card ("foundations built, Heritage Couture plan next") are written by the controller in the main checkout at merge time, because the main checkout's copies already carry other sessions' entries and would conflict. If that does not happen, the AGENTS.md requirement is silently lost.
+- **Numbers for the log entry:** jest `tests/lib/store` plus the two DB suites on `kh_phase2_test`: 112 suites, 1211 tests, all pass; `npx tsc --noEmit -p .` clean; `npx next build` passed on the second run, after the first failed on Newsreader's font fallback metrics and was fixed with `adjustFontFallback: false` (Task 10 commit). Decisions to log: `preload: false` on all non-Inter store fonts; the `productsById` shape (`SectionData.productsById`, per-section, only that section's valid ids, in order); the custom badge replaces only the "% OFF" badge (the struck MRP stays); texture rules use `!important`. Open: plan 2 (Heritage Couture) next; migration 458 applied to the test DB only, staging needs the owner; nothing pushed.
+- **The three new e2e scenarios assume the ganesh fixture** and were written without a browser: the section card named exactly "Image with text" (`/^Image with text/` in the Add section dialog), the Featured products section having the id `featured-products` with its visible items showing, and the second "Add section here" button (`add.nth(1)`) landing at home position 1. If the fixture changes, adjust those first.
+
 ## Before deploying (owner approval required)
 
 **Migration `database/migrations/458_store_product_card_fields.sql` has only ever run on the disposable DB `kh_phase2_test`.** The owner runs it on staging; agents never do. It is idempotent (`ADD COLUMN IF NOT EXISTS`) and adds `items.store_badge varchar(24)`, `items.store_tagline varchar(60)`, `items.store_swatches jsonb NOT NULL DEFAULT '[]'`.
