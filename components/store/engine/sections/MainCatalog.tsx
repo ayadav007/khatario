@@ -35,6 +35,7 @@ export function MainCatalog({ section, route }: EngineSectionProps) {
         columnsMobile: clamp(s.columns_mobile, 1, 3, 2),
         showFilters: s.show_filters !== false,
         showSort: s.show_sort !== false,
+        showCount: s.show_count !== false,
         fullWidth: s.full_width === true,
       }}
       promos={promos}

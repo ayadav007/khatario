@@ -28,6 +28,7 @@ export interface MainCatalogSettings {
   columnsMobile: number;
   showFilters: boolean;
   showSort: boolean;
+  showCount: boolean;
   fullWidth: boolean;
 }
 
@@ -115,7 +116,7 @@ function MainCatalogBody({
   }, [catalog.facets, catalog.categories, value, categoryId]);
 
   const filterCount = activeFilterCount(value);
-  const slots = useMemo(() => interleavePromos(items, promos), [items, promos]);
+  const slots = useMemo(() => interleavePromos(items, promos, !hasMore), [items, promos, hasMore]);
   const open = (id: string) => router.push(engineProductHref(window.location.search, id));
 
   const toolbar = (
@@ -127,9 +128,11 @@ function MainCatalogBody({
             {filterCount > 0 ? `Filters (${filterCount})` : 'Filters'}
           </button>
         ) : null}
-        <p className="text-sm" style={{ opacity: 0.65 }} aria-live="polite">
-          {loading && items.length === 0 ? '' : `${total} ${total === 1 ? 'product' : 'products'}`}
-        </p>
+        {settings.showCount ? (
+          <p className="text-sm" style={{ opacity: 0.65 }} aria-live="polite">
+            {loading && items.length === 0 ? '' : `${total} ${total === 1 ? 'product' : 'products'}`}
+          </p>
+        ) : null}
         {settings.showSort ? (
           <div className="ml-auto">
             <CatalogSortSelect value={value.sort} onChange={(sort) => filters.set({ sort })} />
