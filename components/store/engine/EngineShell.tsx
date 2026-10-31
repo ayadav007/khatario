@@ -17,6 +17,7 @@ import '../studio-theme/studio-theme.css';
 // Preset layers (D27): each is scoped to .st-root.eng-root.eng-preset-<preset>, so loading all three is safe.
 import { EngineCardContext } from './EngineCardContext';
 import { STYLE_RULES } from './style-rules';
+import { CONTENT_BLOCK_RULES } from './content-block-rules';
 import './presets/quick.css';
 import './presets/grocery.css';
 import './presets/khatario.css';
@@ -86,44 +87,6 @@ const THEME_RULES =
   '.st-root.eng-root.eng-root .eng-sec .productGrid.mcols-2:not(.carousel){grid-template-columns:repeat(2,minmax(0,1fr))}' +
   '.st-root.eng-root.eng-root .eng-sec .productGrid.mcols-3:not(.carousel){grid-template-columns:repeat(3,minmax(0,1fr))}' +
   '}' +
-  // Content blocks (Image with text, Rich text): each block is its own small rule, spaced by a shared bottom margin.
-  '.st-root.eng-root .eng-cb{margin:0 0 12px}' +
-  '.st-root.eng-root .eng-cb:last-child{margin-bottom:0}' +
-  '.st-root.eng-root .eng-cb-heading{font-weight:700;line-height:1.15;overflow-wrap:anywhere}' +
-  '.st-root.eng-root .eng-cb-size-small{font-size:clamp(18px,3cqi,24px)}' +
-  '.st-root.eng-root .eng-cb-size-medium{font-size:clamp(22px,3.4cqi,32px)}' +
-  '.st-root.eng-root .eng-cb-size-large{font-size:clamp(28px,5cqi,44px)}' +
-  '.st-root.eng-root .eng-cb-quote{padding:2px 0 2px 16px;border-left:3px solid var(--c-accent,var(--primary));font-style:italic;font-size:1.15em;line-height:1.5;overflow-wrap:anywhere}' +
-  '.st-root.eng-root .eng-cb-quote p{margin:0}' +
-  '.st-root.eng-root .eng-cb-quote footer{margin-top:6px;font-size:.8em;font-style:normal;opacity:.7}' +
-  '.st-root.eng-root .eng-cb-check{display:flex;align-items:flex-start;gap:12px;text-align:left}' +
-  '.st-root.eng-root .eng-cb-tick{flex:0 0 auto;width:22px;height:22px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;background:var(--c-accent,var(--primary));color:var(--c-bg,#fff);font-size:13px;font-weight:700}' +
-  '.st-root.eng-root .eng-cb-check div{min-width:0;overflow-wrap:anywhere}' +
-  '.st-root.eng-root .eng-cb-check b{display:block}' +
-  '.st-root.eng-root .eng-cb-check span:not(.eng-cb-tick){display:block;opacity:.75}' +
-  '.st-root.eng-root .eng-cb-buttons{display:flex;flex-wrap:wrap;gap:12px}' +
-  '.st-root.eng-root .eng-cta[data-style=outline]{background:transparent;color:var(--c-btn,var(--primary));border:1px solid var(--c-btn,var(--primary))}' +
-  '.st-root.eng-root .eng-cb-highlight{position:absolute;left:16px;right:16px;bottom:16px;z-index:1;display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:var(--btn-radius,10px);background:var(--c-card,var(--st-card,#fff));border:1px solid var(--c-border,rgba(0,0,0,.1));box-shadow:0 6px 18px rgba(0,0,0,.12);margin:0;overflow-wrap:anywhere}' +
-  '.st-root.eng-root .eng-cb-highlight .eyebrow{margin:0}' +
-  '.st-root.eng-root .eng-cb-highlight span{opacity:.75;font-size:.9em}' +
-  '@container store (min-width:641px){' +
-  '.st-root.eng-root .hero.image-text .eng-cb-highlight{right:auto;left:16px;max-width:min(260px,70%)}' +
-  '.st-root.eng-root .hero.text-image .eng-cb-highlight{left:auto;right:16px;max-width:min(260px,70%)}' +
-  '}' +
-  // On phones the image stacks above the copy; the card stacks under the image instead of overlapping it.
-  '@container store (max-width:640px){' +
-  '.st-root.eng-root .hero .heroImg:has(.eng-cb-highlight){display:flex;flex-direction:column;min-height:0}' +
-  '.st-root.eng-root .hero .heroImg:has(.eng-cb-highlight) .heroSlideImg{position:relative;inset:auto;flex:0 0 auto;height:240px}' +
-  '.st-root.eng-root .eng-cb-highlight{position:static;margin:12px 16px 16px;max-width:none}' +
-  '}' +
-  // Narrow image: the hero is a grid, so the width is the grid column (wide screens only; narrower ones stack or split evenly).
-  '.st-root.eng-root .eng-iwt-narrow .heroImg{flex-basis:40%}' +
-  '@container store (min-width:901px){' +
-  '.st-root.eng-root .hero.eng-iwt-narrow.image-text{grid-template-columns:40% 60%}' +
-  '.st-root.eng-root .hero.eng-iwt-narrow.text-image{grid-template-columns:60% 40%}' +
-  '}' +
-  '.st-root.eng-root .eng-iwt-center .heroCopy{text-align:center}' +
-  '.st-root.eng-root .eng-iwt-center .eng-cb-buttons{justify-content:center}' +
   // Full width (eng-sec--full): the section's content drops its side gutter and centred width caps.
   '.st-root.eng-root .eng-sec--full :is(.eng-html,.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding-left:0;padding-right:0}' +
   '.st-root.eng-root .eng-sec--full :is(.eng-faq,.eng-video-frame,.rich p){max-width:none}' +
@@ -350,7 +313,7 @@ export function EngineShell({
         data-store={subdomain}
         data-card={settings.card_style}
       >
-        <style dangerouslySetInnerHTML={{ __html: THEME_RULES + STYLE_RULES }} />
+        <style dangerouslySetInnerHTML={{ __html: THEME_RULES + CONTENT_BLOCK_RULES + STYLE_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}
         {storeCss ? <style dangerouslySetInnerHTML={{ __html: storeCss }} /> : null}
         <div className="st-sticky st-cq">{header}</div>
