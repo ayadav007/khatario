@@ -8,11 +8,14 @@ export function StoreImageField({
   hint,
   value,
   onChange,
+  uploadUrl,
 }: {
   label: string;
   hint?: string;
   value: string;
   onChange: (url: string) => void;
+  /** Upload route that stores the file and returns its URL (Studio 2); the default returns a data URL. */
+  uploadUrl?: string;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +29,7 @@ export function StoreImageField({
       formData.append('file', file);
       formData.append('type', 'promo');
       formData.append('folder', 'store');
-      const res = await fetch('/api/upload/image', { method: 'POST', body: formData });
+      const res = await fetch(uploadUrl ?? '/api/upload/image', { method: 'POST', body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       onChange(data.url);
@@ -53,7 +56,7 @@ export function StoreImageField({
           )}
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept={uploadUrl ? 'image/jpeg,image/png,image/webp,image/avif' : 'image/jpeg,image/png,image/webp,image/gif'}
             className="hidden"
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
@@ -75,7 +78,7 @@ export function StoreImageField({
               Remove
             </button>
           ) : (
-            <p className="mt-1 text-[11px] text-gray-400">JPEG, PNG, WebP · max 2 MB</p>
+            <p className="mt-1 text-[11px] text-gray-400">JPEG, PNG, WebP · max {uploadUrl ? 5 : 2} MB</p>
           )}
           {error ? <p className="mt-1 text-[11px] text-red-600">{error}</p> : null}
         </div>

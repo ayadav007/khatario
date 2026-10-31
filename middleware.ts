@@ -137,6 +137,7 @@ function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith('/wa-shop/')) return true;
   if (pathname.startsWith('/media/marketing/')) return true;
   if (pathname.startsWith('/media/store-reviews/')) return true;
+  if (pathname.startsWith('/media/store-theme/')) return true;
   if (pathname.startsWith('/media/marketing-creatives/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
   if (isPublicBusinessEmployeePath(pathname)) return true;
@@ -262,8 +263,10 @@ export async function middleware(request: NextRequest) {
 
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
-    // Review photos are served as-is on store hosts (not rewritten under /store).
-    if (pathname.startsWith('/media/store-reviews/')) return nextWithoutSpoofedIdentity(request);
+    // Review and theme photos are served as-is on store hosts (not rewritten under /store).
+    if (pathname.startsWith('/media/store-reviews/') || pathname.startsWith('/media/store-theme/')) {
+      return nextWithoutSpoofedIdentity(request);
+    }
     const url = request.nextUrl.clone();
     // Store hosts never carry a merchant session, and many handlers still fall back to
     // client-supplied user_id/business_id when the session headers are absent.

@@ -224,7 +224,12 @@ export function SettingField(props: SettingFieldProps) {
       // StoreImageField has its own label; the shell only adds the info line.
       return (
         <div className="space-y-1.5">
-          <StoreImageField label={schema.label} value={str(value)} onChange={(url) => onChange(encodeImageUrl(url))} />
+          <StoreImageField
+            label={schema.label}
+            value={str(value)}
+            uploadUrl="/api/settings/online-store/media"
+            onChange={(url) => onChange(encodeImageUrl(url))}
+          />
           {schema.info && <p className="text-[11px] text-gray-500">{schema.info}</p>}
         </div>
       );
