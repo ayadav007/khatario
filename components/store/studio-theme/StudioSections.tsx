@@ -231,6 +231,7 @@ export function heroSlides(s: StudioSettings): StudioSlide[] {
   return [
     {
       image: s.image ?? '',
+      ...(s.mobileImage ? { mobileImage: s.mobileImage } : {}),
       heading: s.heading ?? '',
       description: s.description ?? '',
       buttonText: s.buttonText ?? '',
@@ -253,6 +254,23 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+/**
+ * `natural` fit: an invisible copy of the active slide's image sets the hero's height to the image's
+ * own shape; the phone copy takes over in studio-theme.css's phone container query.
+ */
+function HeroSizer({ slide, fallback }: { slide: StudioSlide; fallback: StudioSlide }) {
+  const desk = slide.image || fallback.image || '';
+  const phone = slide.mobileImage || fallback.mobileImage || '';
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {desk ? <img className="heroSizer desk" src={desk} alt="" aria-hidden loading="lazy" /> : null}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {phone ? <img className="heroSizer phone" src={phone} alt="" aria-hidden loading="lazy" /> : null}
+    </>
+  );
+}
+
 export function StudioHero({
   s,
   onCta,
@@ -273,7 +291,9 @@ export function StudioHero({
   const slides = heroSlides(s);
   const many = slides.length > 1;
   // `noImg`: no slide has an image. Engine pages drop the empty image panel (EngineShell); the old store does not.
-  const noImg = slides.every((sl) => !sl.image);
+  const noImg = slides.every((sl) => !sl.image && !sl.mobileImage);
+  const fit = s.imageFit ?? 'cover';
+  const hasPhoneImg = slides.some((sl) => sl.mobileImage);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const reduced = usePrefersReducedMotion();
@@ -296,7 +316,7 @@ export function StudioHero({
 
   return (
     <div
-      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''} ${noImg ? 'noImg' : ''}`}
+      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''} ${noImg ? 'noImg' : ''} ${fit === 'cover' ? '' : `fit-${fit}`} ${hasPhoneImg ? 'hasPhoneImg' : ''}`}
       style={boxStyle(s)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
@@ -334,15 +354,24 @@ export function StudioHero({
         ) : null}
       </div>
       <div className="heroImg" role="img" aria-label="">
-        {slides.map((sl, i) => (
-          <div
-            key={i}
-            className={`heroSlideImg ${i === active ? 'on' : ''}`}
-            style={{
-              backgroundImage: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(sl.image || slides[0].image || '')})`,
-            }}
-          />
-        ))}
+        {fit === 'natural' ? <HeroSizer slide={slide} fallback={slides[0]} /> : null}
+        {slides.map((sl, i) => {
+          const desk = sl.image || slides[0].image || '';
+          const phone = sl.mobileImage || slides[0].mobileImage || '';
+          return (
+            <div
+              key={i}
+              className={`heroSlideImg ${i === active ? 'on' : ''} ${phone ? 'hasPhone' : ''}`}
+              style={{
+                backgroundImage: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(desk)})`,
+                // A phone image swaps in through studio-theme.css's phone container query.
+                ...(phone
+                  ? { ['--hero-phone-img' as string]: `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(phone)})` }
+                  : {}),
+              }}
+            />
+          );
+        })}
       </div>
       {many ? (
         <>

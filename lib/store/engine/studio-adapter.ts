@@ -63,6 +63,7 @@ export function toStudioBox(section: Section): Pick<StudioSettings, 'spacingTop'
 function toSlide(b: Raw): StudioSlide {
   return {
     image: str(b.image),
+    ...(str(b.mobile_image) ? { mobileImage: str(b.mobile_image) } : {}),
     heading: str(b.heading),
     description: str(b.description),
     buttonText: str(b.button_text),
@@ -88,6 +89,7 @@ export function slideshowSettings(section: Section): StudioSettings {
     autoplay: bool(s.autoplay, true) ? speed : 0,
     layout: pick(s.layout, ['full', 'image-text', 'text-image'] as const) ?? 'image-text',
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
+    imageFit: pick(s.image_fit, ['cover', 'contain', 'natural'] as const) ?? 'cover',
     overlay: Math.min(80, Math.max(0, num(s.overlay) ?? 0)),
     ...(typeof s.text_color === 'string' && /^#[0-9a-f]{3,8}$/i.test(s.text_color) ? { textColor: s.text_color } : {}),
     ...(first ?? {}),

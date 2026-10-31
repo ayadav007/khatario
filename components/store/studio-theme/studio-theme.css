@@ -60,6 +60,12 @@
 .st-root .heroImg{position:relative;min-height:100%;overflow:hidden}
 .st-root .heroSlideImg{position:absolute;inset:0;background-position:center;background-size:cover;opacity:0;transform:scale(1.04);transition:opacity .9s ease,transform 6s ease-out}
 .st-root .heroSlideImg.on{opacity:1;transform:scale(1)}
+/* Image fit: `contain` letterboxes on the section colour; `natural` lets an invisible copy of the image set the height. */
+.st-root .hero:is(.fit-contain,.fit-natural) .heroSlideImg{background-size:contain;background-repeat:no-repeat;transform:none}
+.st-root .hero.fit-natural,.st-root .hero.fit-natural .heroImg{min-height:0!important}
+.st-root .hero.fit-natural .heroImg{height:auto!important}
+.st-root .heroSizer{display:block;width:100%;height:auto;visibility:hidden;pointer-events:none}
+.st-root .heroSizer.phone{display:none}
 .st-root .hero.slideshow .heroCopy{animation:st-rise .6s cubic-bezier(.2,.7,.2,1) both}
 @keyframes st-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .st-root .heroArrow{position:absolute;top:50%;transform:translateY(-50%);z-index:4;width:40px;height:40px;border-radius:50%;border:0;background:color-mix(in srgb,#fff 82%,transparent);color:#1c1917;display:flex;align-items:center;justify-content:center;padding:0;opacity:0;transition:opacity .2s;box-shadow:0 6px 18px -10px rgba(0,0,0,.45)}
@@ -239,6 +245,9 @@
 .st-root .heroCopy p{font-size:14px}
 .st-root .hero.full .heroCopy{padding:24px 18px}
 .st-root .hero.full .heroImg{min-height:300px}
+.st-root .heroSlideImg.hasPhone{background-image:var(--hero-phone-img)!important}
+.st-root .heroImg:has(.heroSizer.phone) .heroSizer.desk{display:none}
+.st-root .heroSizer.phone{display:block}
 .st-root .benefits{margin-top:16px}
 .st-root .st-section{padding:22px 14px}
 .st-root .sectionTitle{flex-wrap:wrap;align-items:flex-start}

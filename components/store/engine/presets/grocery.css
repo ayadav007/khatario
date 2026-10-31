@@ -90,6 +90,10 @@
   .st-root.eng-root.eng-preset-grocery .eng-sec .hero:not(.full) .heroImg {
     display: none;
   }
+  /* A slide given its own phone image shows it above the copy. */
+  .st-root.eng-root.eng-preset-grocery .eng-sec .hero.hasPhoneImg:not(.full) .heroImg {
+    display: block;
+  }
   .st-root.eng-root.eng-preset-grocery .eng-sec .hero:not(.full) .heroCopy {
     grid-area: auto;
     position: static;

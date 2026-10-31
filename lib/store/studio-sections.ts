@@ -34,6 +34,8 @@ export const STUDIO_PRODUCT_SOURCES: StudioProductSource[] = [
 /** Extra hero slides after the first one, which keeps using the hero's own fields. */
 export interface StudioSlide {
   image: string;
+  /** Shown on phones instead of `image` (engine slideshow only). */
+  mobileImage?: string;
   heading: string;
   description: string;
   buttonText: string;
@@ -84,8 +86,12 @@ export interface StudioSettings {
   description?: string;
   buttonText?: string;
   image?: string;
+  /** Hero slide one's phone image (engine slideshow only). */
+  mobileImage?: string;
   align?: 'left' | 'center' | 'right';
   height?: 'small' | 'medium' | 'large';
+  /** Hero: `cover` crops to the height, `contain` shows the whole image, `natural` sizes the hero to the image. */
+  imageFit?: 'cover' | 'contain' | 'natural';
   overlay?: number;
   title?: string;
   columns?: number;
@@ -225,8 +231,10 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   description: { kind: 'text', max: 400 },
   buttonText: { kind: 'text', max: 40 },
   image: { kind: 'url' },
+  mobileImage: { kind: 'url' },
   align: { kind: 'enum', values: ['left', 'center', 'right'] },
   height: { kind: 'enum', values: ['small', 'medium', 'large'] },
+  imageFit: { kind: 'enum', values: ['cover', 'contain', 'natural'] },
   overlay: { kind: 'num', min: 0, max: 90 },
   title: { kind: 'text', max: 120 },
   columns: { kind: 'num', min: 2, max: 8 },

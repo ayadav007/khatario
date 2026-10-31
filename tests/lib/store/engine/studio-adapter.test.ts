@@ -56,6 +56,18 @@ describe('studio adapter', () => {
     expect(plain.overlay).toBe(0);
   });
 
+  it('slideshow: image fit and phone images', () => {
+    const blocks: BlockSpec[] = [
+      ['a', 'slide', { image: '/d1.webp', mobile_image: '/m1.webp' }],
+      ['b', 'slide', { image: '/d2.webp' }],
+    ];
+    const out = slideshowSettings(sec('slideshow', { image_fit: 'natural' }, blocks));
+    expect(out.imageFit).toBe('natural');
+    expect(out.mobileImage).toBe('/m1.webp');
+    expect(out.slides?.[0]).not.toHaveProperty('mobileImage');
+    expect(slideshowSettings(sec('slideshow', { image_fit: 'stretch' }, blocks)).imageFit).toBe('cover');
+  });
+
   it('respects block_order and skips ids missing from blocks', () => {
     const s = sec('marquee', {}, [
       ['a', 'item', { text: 'One' }],

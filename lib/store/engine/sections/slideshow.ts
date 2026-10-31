@@ -20,6 +20,18 @@ export const slideshow: SectionSchema = {
       ],
     },
     {
+      id: 'image_fit',
+      type: 'select',
+      label: 'Image fit',
+      default: 'cover',
+      options: [
+        { value: 'cover', label: 'Fill the space (edges may be cut)' },
+        { value: 'contain', label: 'Show the whole image' },
+        { value: 'natural', label: "Match the image's shape" },
+      ],
+      info: "The slideshow changes shape with the screen, so Fill trims some edge: keep text in the middle. Match the image's shape never cuts and ignores Height.",
+    },
+    {
       id: 'layout',
       type: 'select',
       label: 'Layout',
@@ -39,7 +51,20 @@ export const slideshow: SectionSchema = {
       name: 'Slide',
       limit: 6,
       settings: [
-        { id: 'image', type: 'image', label: 'Image', default: '' },
+        {
+          id: 'image',
+          type: 'image',
+          label: 'Image',
+          default: '',
+          info: 'Best size: 1920 × 640 px (3:1) for Full image, 1200 × 800 px beside text.',
+        },
+        {
+          id: 'mobile_image',
+          type: 'image',
+          label: 'Phone image (optional)',
+          default: '',
+          info: 'Shown on phones instead of the image above. Best size: 1080 × 1080 px (square).',
+        },
         { id: 'heading', type: 'text', label: 'Heading', default: '', max_length: 120 },
         { id: 'description', type: 'textarea', label: 'Description', default: '', max_length: 300 },
         { id: 'button_text', type: 'text', label: 'Button text', default: 'Shop now', max_length: 30 },

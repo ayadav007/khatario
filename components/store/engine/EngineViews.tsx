@@ -77,7 +77,8 @@ function slidesForDevice(s: StudioSettings, devices: string[] | undefined, phone
   const picked = pickSlidesForDevice(devices.slice(0, all.length), phone).filter((i) => i < all.length);
   if (picked.length === 0 || picked.length === all.length) return s;
   const [first, ...rest] = picked.map((i) => all[i]);
-  const out: StudioSettings = { ...s, ...first };
+  // Slide one's phone image belongs to slide one, not to whichever slide now leads.
+  const out: StudioSettings = { ...s, mobileImage: undefined, ...first };
   if (rest.length) out.slides = rest;
   else delete out.slides;
   return out;
