@@ -80,6 +80,7 @@ function migrateSettings(t: StoreTheme, ctx: MigrationContext, w: Warnings): The
       facebook: '',
       youtube: '',
     },
+    menus: [],
   };
 }
 

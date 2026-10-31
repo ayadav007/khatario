@@ -146,5 +146,6 @@ export function presetSettings(ctx: PresetContext, preset: ThemePreset = 'studio
     favicon_url: '',
     custom_css: '',
     social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
+    menus: [],
   };
 }

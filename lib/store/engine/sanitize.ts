@@ -3,6 +3,7 @@ import type { SettingSchema } from './schema-types';
 import { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, PAGE_META_CAPS, RESERVED_PAGE_HANDLES } from './shared';
 import { getSectionSchema } from './registry';
 import { sanitizeSettingValue, sanitizeSettings } from './settings';
+import { sanitizeMenus } from './menus-sanitize';
 import { sanitizeColorSchemes, sanitizeCustomColors } from './color-schemes';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
 
@@ -153,6 +154,7 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
       facebook: url(social.facebook),
       youtube: url(social.youtube),
     },
+    menus: sanitizeMenus(r.menus),
   };
 }
 

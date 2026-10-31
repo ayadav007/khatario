@@ -48,6 +48,30 @@ export interface ColorScheme {
 /** A colour scheme's seven colours, without its id and name. */
 export type SchemeColors = Omit<ColorScheme, 'id' | 'name'>;
 
+export interface MenuPicture {
+  image: string;
+  caption: string; // <= 60 characters
+  link: string;
+}
+
+export interface MenuItem {
+  id: string;
+  label: string; // 1..40 characters
+  link: string; // '' = no link (a group heading)
+  children?: MenuItem[]; // 3 levels at most: top -> group -> link
+  // Top items only (dropped below the top level by the sanitiser):
+  highlight?: boolean;
+  source?: 'links' | 'categories'; // 'categories' = automatic; its children are ignored
+  category_photos?: boolean; // with source 'categories'
+  picture?: MenuPicture;
+}
+
+export interface Menu {
+  id: string;
+  name: string; // <= 40 characters
+  items: MenuItem[];
+}
+
 export interface ThemeSettings {
   color_schemes: ColorScheme[];
   font_heading: string;
@@ -59,6 +83,7 @@ export interface ThemeSettings {
   favicon_url: string;
   custom_css: string;
   social: { instagram: string; whatsapp: string; facebook: string; youtube: string };
+  menus: Menu[];
 }
 
 export interface ThemeData {

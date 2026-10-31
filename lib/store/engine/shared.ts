@@ -8,6 +8,7 @@ export const ENGINE_LIMITS = {
   themeBytes: 524288,
   themesPerBusiness: 20,
   versionsKept: 30,
+  menus: { menus: 10, itemsPerLevel: 12, depth: 3, label: 40, name: 40, caption: 60 },
 };
 
 export const ID_RE = /^[a-z0-9_-]{1,32}$/;

@@ -37,11 +37,11 @@ describe('client-safe shared module', () => {
 describe('THEME_SETTINGS_SCHEMA', () => {
   const ids = THEME_SETTINGS_SCHEMA.map((s) => s.id);
 
-  it('ids cover every ThemeSettings key except color_schemes', () => {
+  it('ids cover every ThemeSettings key except color_schemes and menus', () => {
     const preset = presetSettings({ accent: '#111111' } as never);
     const expected: string[] = [];
     for (const [k, v] of Object.entries(preset)) {
-      if (k === 'color_schemes') continue;
+      if (k === 'color_schemes' || k === 'menus') continue;
       if (k === 'social') for (const sk of Object.keys(v as object)) expected.push(`social.${sk}`);
       else expected.push(k);
     }

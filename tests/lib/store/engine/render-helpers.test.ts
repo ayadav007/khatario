@@ -20,6 +20,7 @@ const settings: ThemeSettings = {
   favicon_url: '',
   custom_css: '',
   social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
+  menus: [],
 };
 
 function sec(over: Partial<Section> = {}): Section {
