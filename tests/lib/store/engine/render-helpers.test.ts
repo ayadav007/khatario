@@ -96,11 +96,11 @@ describe('sectionFrameStyle', () => {
     expect(s['--paper']).toBeUndefined();
   });
 
-  it('applies a chosen scheme as vars and paint, without moving --primary', () => {
+  it('applies a chosen scheme as vars and paint, its accent as --primary', () => {
     const s = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3' }));
     expect(s['--c-bg']).toBe('#111827');
     expect(s['--c-text']).toBe('#f9fafb');
-    expect(s['--primary']).toBeUndefined();
+    expect(s['--primary']).toBe('#60a5fa');
     expect(s['--paper']).toBe('#111827');
     expect(s['--text']).toBe('#f9fafb');
     expect(s['--st-card']).toBe('#1f2937');

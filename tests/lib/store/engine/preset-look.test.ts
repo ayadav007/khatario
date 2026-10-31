@@ -1,4 +1,4 @@
-import { mixHex, PRESET_LOOK, schemesFor } from '@/lib/store/engine/presets/look';
+import { contrastRatio, mixHex, PRESET_LOOK, readableAccent, schemesFor } from '@/lib/store/engine/presets/look';
 import { presetContextFromRow } from '@/lib/store/engine/preset-context';
 import { sanitizeColorSchemes } from '@/lib/store/engine/color-schemes';
 import { THEME_SETTINGS_SCHEMA } from '@/lib/store/engine/theme-settings-schema';
@@ -55,10 +55,25 @@ describe('schemesFor', () => {
     expect(schemesFor('quick', undefined)[0].accent).toBe('#0f7a5c');
   });
 
-  it('keeps schemes 2, 3 and 5 at their defaults', () => {
+  it('gives Soft, Dark and Cream the store accent, readable on their paper', () => {
     const d = sanitizeColorSchemes(undefined);
     const s = schemesFor('khatario', '#00897b');
-    expect([s[1], s[2], s[4]]).toEqual([d[1], d[2], d[4]]);
+    for (const i of [1, 2, 4]) {
+      expect(s[i].background).toBe(d[i].background);
+      expect(contrastRatio(s[i].accent, s[i].background)).toBeGreaterThanOrEqual(3);
+    }
+    expect(s[1].accent).toBe('#00897b');
+    expect(s[1].button).toBe(d[1].button);
+    expect(s[2].button).toBe(s[2].accent);
+    expect(s[2].button_text).toBe(chowkOnAccent(s[2].accent));
+  });
+
+  it('readableAccent keeps a readable accent and lightens or darkens one that is not', () => {
+    expect(readableAccent('#00897b', '#ffffff')).toBe('#00897b');
+    const onDark = readableAccent('#1e3a8a', '#111827');
+    expect(contrastRatio(onDark, '#111827')).toBeGreaterThanOrEqual(3);
+    const onLight = readableAccent('#fde68a', '#faf5eb');
+    expect(contrastRatio(onLight, '#faf5eb')).toBeGreaterThanOrEqual(3);
   });
 
   it('reads on a dark canvas', () => {

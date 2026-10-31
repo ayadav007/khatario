@@ -48,8 +48,8 @@ export function sectionFrameClass(settings: Record<string, unknown>): string {
 
 /**
  * A section's own style: its colour scheme as `--c-*` variables (scheme 1 when unset or unknown),
- * repainted with the scheme when one was chosen, plus its top/bottom spacing.
- * `--primary` stays scheme 1's accent unless the section uses scheme 1.
+ * repainted with the scheme when one was chosen (background, text, cards and the scheme's accent as
+ * `--primary`), plus its top/bottom spacing.
  */
 export function sectionFrameStyle(settings: ThemeSettings, section: Section): Style {
   const schemes = settings.color_schemes;
@@ -57,7 +57,7 @@ export function sectionFrameStyle(settings: ThemeSettings, section: Section): St
   const scheme = schemes[index >= 0 ? index : 0];
   const style: Style = scheme ? { ...schemeCssVars(scheme, index <= 0) } : {};
   if (scheme && index >= 0) {
-    Object.assign(style, studioSchemeVars(scheme, index === 0));
+    Object.assign(style, studioSchemeVars(scheme, true));
     style.background = scheme.background;
     style.color = scheme.text;
   }

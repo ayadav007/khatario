@@ -230,6 +230,10 @@ export function SettingField(props: SettingFieldProps) {
             uploadUrl="/api/settings/online-store/media"
             onChange={(url) => onChange(encodeImageUrl(url))}
           />
+          {/* A photo picked before uploads were stored as files: the server never kept it. */}
+          {str(value).startsWith('data:') && (
+            <p className="text-[11px] font-medium text-red-600">This photo was not saved. Remove it and upload it again.</p>
+          )}
           {schema.info && <p className="text-[11px] text-gray-500">{schema.info}</p>}
         </div>
       );

@@ -34,7 +34,7 @@ import { getSectionSchema } from '@/lib/store/engine/registry';
 import { THEME_SETTINGS_SCHEMA, lockedThemeSettings } from '@/lib/store/engine/theme-settings-schema';
 import { pageHandle } from '@/lib/store/engine/shared';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
-import type { Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
+import type { ColorScheme, Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
 import { SECTION_CSS_MAX } from '@/lib/store/studio-sections';
 import { useStudio2 } from './Studio2Editor';
 import { ColorInput, FieldShell, SchemePicker, SettingField } from './fields/SettingField';
@@ -205,6 +205,7 @@ function SectionPanel({ sref, section }: { sref: SectionRef; section: Section })
           values={(s) => settingValue(section.settings, s)}
           onSet={(key, value) => (t) => setSectionSetting(t, templateKey, sref, key, value)}
         />
+        <SectionColours sref={sref} section={section} />
         <Advanced sref={sref} section={section} />
         <div className="flex gap-2 border-t border-gray-100 pt-4">
           <button type="button" className={actionBtn} onClick={duplicate}>
@@ -221,12 +222,57 @@ function SectionPanel({ sref, section }: { sref: SectionRef; section: Section })
   );
 }
 
-function Advanced({ sref, section }: { sref: SectionRef; section: Section }) {
+/**
+ * The section's colour scheme, out in the open: the scheme tiles, and the chosen scheme's own colours (scheme 1,
+ * the theme colours, for Default) editable in place. A scheme is shared, so the note says what else changes.
+ */
+function SectionColours({ sref, section }: { sref: SectionRef; section: Section }) {
   const { apply, templateKey, theme } = useStudio2();
+  const toast = useToastContext();
+  const [editing, setEditing] = useState(false);
+  const schemes = theme.settings.color_schemes;
+  const chosen = schemes.find((c) => c.id === section.color_scheme) ?? null;
+  const shown = chosen ?? schemes[0];
+  const setScheme = (value: string) => {
+    const err = apply((t) => updateSection(t, templateKey, sref, { color_scheme: value }), {
+      mergeKey: settingMergeKey({ kind: 'section', ref: sref }, 'color_scheme'),
+      immediate: false,
+    });
+    if (err) toast.error(OP_ERROR_TEXT[err]);
+  };
+  if (!shown) return null;
+  return (
+    <div className="space-y-2 border-t border-gray-100 pt-4">
+      <FieldShell label="Colours">
+        <SchemePicker allowNone value={section.color_scheme ?? ''} schemes={schemes} onChange={setScheme} />
+      </FieldShell>
+      <button
+        type="button"
+        aria-expanded={editing}
+        onClick={() => setEditing((o) => !o)}
+        className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900"
+      >
+        {editing ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {chosen ? `Edit “${chosen.name}” colours` : 'Edit theme colours'}
+      </button>
+      {editing && (
+        <div className="space-y-3 rounded-md border border-gray-200 p-3">
+          <p className="text-[11px] text-gray-500">
+            {chosen ? `Changes every section that uses “${chosen.name}”.` : 'Changes the whole store and every section on Default.'}
+          </p>
+          <SchemeColorFields scheme={shown} apply={apply} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Advanced({ sref, section }: { sref: SectionRef; section: Section }) {
+  const { apply, templateKey } = useStudio2();
   const toast = useToastContext();
   const [open, setOpen] = useState(false);
   const base = `s2-adv-${sref.group}-${sref.id}`;
-  const set = (key: 'color_scheme' | 'css_class' | 'custom_css', value: string) => {
+  const set = (key: 'css_class' | 'custom_css', value: string) => {
     const err = apply((t) => updateSection(t, templateKey, sref, { [key]: value }), {
       mergeKey: settingMergeKey({ kind: 'section', ref: sref }, key),
       immediate: false,
@@ -247,9 +293,6 @@ function Advanced({ sref, section }: { sref: SectionRef; section: Section }) {
       </button>
       {open && (
         <div className="mt-3 space-y-4">
-          <FieldShell label="Colour scheme">
-            <SchemePicker allowNone value={section.color_scheme ?? ''} schemes={theme.settings.color_schemes} onChange={(v) => set('color_scheme', v)} />
-          </FieldShell>
           <FieldShell label="CSS class" htmlFor={`${base}-class`}>
             <input
               id={`${base}-class`}
@@ -347,28 +390,41 @@ function ThemePanel({ preset }: { preset?: ThemePreset }) {
     <div>
       <PanelHeader title="Theme settings" subtitle="Applies to the whole store" />
       <div className="space-y-6 p-4">
-        <SettingsForm
-          schemas={THEME_SETTINGS_SCHEMA}
-          scope={{ kind: 'theme' }}
-          target={{ kind: 'theme' }}
-          values={(s) => themeSettingValue(theme.settings, s)}
-          onSet={(key, value) => (t) => setThemeSetting(t, key, value)}
-          locked={lockedThemeSettings(preset)}
-        />
-        <div className="space-y-3 border-t border-gray-100 pt-4">
+        <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Colour schemes</h3>
-          {theme.settings.color_schemes.map((scheme) => (
-            <SchemeEditor key={scheme.id} schemeId={scheme.id} apply={apply} />
+          <p className="text-[11px] text-gray-500">
+            The first scheme is the store&apos;s own colours. Each section picks a scheme under Colours.
+          </p>
+          {theme.settings.color_schemes.map((scheme, i) => (
+            <SchemeEditor key={scheme.id} schemeId={scheme.id} apply={apply} defaultOpen={i === 0} />
           ))}
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <SettingsForm
+            schemas={THEME_SETTINGS_SCHEMA}
+            scope={{ kind: 'theme' }}
+            target={{ kind: 'theme' }}
+            values={(s) => themeSettingValue(theme.settings, s)}
+            onSet={(key, value) => (t) => setThemeSetting(t, key, value)}
+            locked={lockedThemeSettings(preset)}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function SchemeEditor({ schemeId, apply }: { schemeId: string; apply: ReturnType<typeof useStudio2>['apply'] }) {
+function SchemeEditor({
+  schemeId,
+  apply,
+  defaultOpen = false,
+}: {
+  schemeId: string;
+  apply: ReturnType<typeof useStudio2>['apply'];
+  defaultOpen?: boolean;
+}) {
   const { theme } = useStudio2();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const scheme = theme.settings.color_schemes.find((s) => s.id === schemeId);
   if (!scheme) return null;
   return (
@@ -389,20 +445,29 @@ function SchemeEditor({ schemeId, apply }: { schemeId: string; apply: ReturnType
       </button>
       {open && (
         <div className="space-y-3 border-t border-gray-100 p-3">
-          {SCHEME_COLOR_FIELDS.map((f) => {
-            const id = `s2-scheme-${scheme.id}-${f.key}`;
-            return (
-              <FieldShell key={f.key} label={f.label} htmlFor={id}>
-                <ColorInput
-                  id={id}
-                  value={scheme[f.key]}
-                  onChange={(hex) => apply((t) => setSchemeColor(t, scheme.id, f.key, hex), { mergeKey: schemeMergeKey(scheme.id, f.key), immediate: false })}
-                />
-              </FieldShell>
-            );
-          })}
+          <SchemeColorFields scheme={scheme} apply={apply} />
         </div>
       )}
     </div>
+  );
+}
+
+/** A scheme's seven colours, each with a picker. */
+function SchemeColorFields({ scheme, apply }: { scheme: ColorScheme; apply: ReturnType<typeof useStudio2>['apply'] }) {
+  return (
+    <>
+      {SCHEME_COLOR_FIELDS.map((f) => {
+        const id = `s2-scheme-${scheme.id}-${f.key}`;
+        return (
+          <FieldShell key={f.key} label={f.label} htmlFor={id}>
+            <ColorInput
+              id={id}
+              value={scheme[f.key]}
+              onChange={(hex) => apply((t) => setSchemeColor(t, scheme.id, f.key, hex), { mergeKey: schemeMergeKey(scheme.id, f.key), immediate: false })}
+            />
+          </FieldShell>
+        );
+      })}
+    </>
   );
 }

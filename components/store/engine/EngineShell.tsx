@@ -36,6 +36,18 @@ const THEME_RULES =
   '.st-root.eng-root .addBtn:not(:disabled){border-color:var(--c-btn,var(--primary));color:var(--c-btn,var(--primary))}' +
   '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
   '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
+  // Muted text and hairlines come from the section's own text colour: declared once on .st-root they would keep the
+  // theme's text colour, so a dark section's secondary text stayed dark grey. Shared components' fixed Tailwind greys
+  // (catalog filters, product page) follow the section's text, muted text, card and line colours too.
+  '.st-root.eng-root .eng-sec{--st-line:var(--c-border,color-mix(in srgb,var(--text) 14%,transparent));--st-muted:color-mix(in srgb,var(--text) 62%,transparent);--qk-card:var(--st-card)}' +
+  // A section with its own scheme: the announcement bar and footer take the scheme's paint (the frame) instead of
+  // their own fixed accent / dark colours; the low-stock note stays orange but readable on any paper.
+  '.st-root.eng-root .eng-sec[data-scheme] :is(.announce,.st-footer){background:transparent;color:inherit}' +
+  '.st-root.eng-root .plow{color:color-mix(in srgb,#ea580c 72%,var(--text))}' +
+  '.st-root.eng-root .eng-sec :is(.text-gray-900,.text-gray-800,.text-gray-700,.text-black){color:var(--text)}' +
+  '.st-root.eng-root .eng-sec :is(.text-gray-600,.text-gray-500,.text-gray-400){color:var(--st-muted)}' +
+  '.st-root.eng-root .eng-sec :is(.bg-white,.bg-gray-50){background-color:var(--st-card)}' +
+  '.st-root.eng-root .eng-sec :is(.border-gray-100,.border-gray-200,.border-gray-300){border-color:var(--st-line)}' +
   // A hero with no image on any slide: copy only, full width (the old Grocery and Khatario heroes had no empty panel).
   // Testimonials: star rating above the quote, photo beside the name.
   '.st-root.eng-root .quotes .eng-stars{display:block;color:#f59e0b;font:14px/1 Inter,sans-serif;letter-spacing:2px;margin-bottom:10px}' +

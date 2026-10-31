@@ -51,6 +51,31 @@ export function mixHex(a: string, b: string, weightA: number): string {
     .join('')}`;
 }
 
+/** WCAG contrast ratio of two #rgb / #rrggbb colours. */
+export function contrastRatio(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = rgb(hex).map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const x = lum(a);
+  const y = lum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** The brand accent, moved toward white (dark paper) or black (light paper) until it reads at 3:1 on `paper`. */
+export function readableAccent(accent: string, paper: string): string {
+  if (contrastRatio(accent, paper) >= 3) return accent;
+  const toward = contrastRatio('#ffffff', paper) > contrastRatio('#000000', paper) ? '#ffffff' : '#000000';
+  for (let w = 0.9; w > 0; w -= 0.1) {
+    const c = mixHex(accent, toward, w);
+    if (contrastRatio(c, paper) >= 3) return c;
+  }
+  return toward;
+}
+
 function validRgb(v: string | undefined): v is string {
   return typeof v === 'string' && RGB_RE.test(v) && isHexColor(v);
 }
@@ -75,6 +100,13 @@ export function schemesFor(preset: ThemePreset, accent: string | undefined, canv
     border: mixHex(text, bg, 0.12),
     card: dark ? mixHex('#ffffff', bg, 0.06) : '#ffffff',
   };
+  // Soft, Dark and Cream take the store's accent (made readable on their paper) instead of a generic blue, so a
+  // section on one of them keeps the brand colour on its eyebrows, links and highlights.
+  for (const i of [1, 2, 4]) {
+    const accentOn = readableAccent(a, out[i].background);
+    out[i] = { ...out[i], accent: accentOn };
+    if (i !== 1) out[i] = { ...out[i], button: accentOn, button_text: chowkOnAccent(accentOn) };
+  }
   out[3] = {
     ...out[3],
     background: a,
