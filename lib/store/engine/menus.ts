@@ -44,7 +44,7 @@ export function pickMenu(menus: Menu[], id: unknown, fallbackId: 'main' | 'foote
 }
 
 /** The category id of a link written by the editor's link picker (`/catalog/<encoded id>`), else null. */
-function categoryIdOfLink(link: string): string | null {
+export function categoryIdOfLink(link: string): string | null {
   const m = /^\/catalog\/([^/?#]+)(?:[?#].*)?$/.exec(link);
   if (!m) return null;
   try {
@@ -113,12 +113,16 @@ export function resolveMenu(menu: Menu | null, categories: MenuCategory[] | null
   return resolveItems(menu.items, categories, known, true);
 }
 
-/** Footer columns: each top item is a heading, its children the links, third-level links right after their group. */
+/**
+ * Footer columns: each top item is a heading, its children the links, third-level links right after their group. An
+ * automatic categories item lists the store's categories.
+ */
 export function menuFooterColumns(
   items: ResolvedItem[],
 ): { heading: string; href: string; links: { label: string; href: string }[] }[] {
   return items.map((top) => {
     const links: { label: string; href: string }[] = [];
+    for (const c of top.categories ?? []) links.push({ label: c.name, href: `${CATALOG}/${encodeURIComponent(c.id)}` });
     for (const child of top.children) {
       links.push({ label: child.label, href: child.href });
       for (const grand of child.children) links.push({ label: grand.label, href: grand.href });
@@ -139,4 +143,54 @@ export function foldMenu(widths: number[], available: number, moreWidth: number)
     else break;
   }
   return keep;
+}
+
+/**
+ * Which desktop menu item is open, and the one delayed step waiting on a timer (hover opens after a short delay and
+ * closes after a grace period). `hoverOpened` remembers that hover opened the item, so a mouse click on its ▾ that
+ * follows keeps it open instead of closing it.
+ */
+export interface MenuOpenState {
+  open: string | null;
+  hoverOpened: string | null;
+  pending: { kind: 'open'; id: string } | { kind: 'close' } | null;
+}
+
+export type MenuOpenEvent =
+  | { type: 'enter'; id: string; hasPanel: boolean }
+  | { type: 'leave'; id: string }
+  /** The pending step's timer ran out. */
+  | { type: 'fire' }
+  | { type: 'toggle'; id: string; mouse: boolean }
+  /** Keyboard open (ArrowDown). */
+  | { type: 'open'; id: string }
+  /** Esc or outside click (no id), or focus leaving that item (id). */
+  | { type: 'close'; id?: string };
+
+export const MENU_CLOSED: MenuOpenState = { open: null, hoverOpened: null, pending: null };
+
+export function menuOpenStep(s: MenuOpenState, e: MenuOpenEvent): MenuOpenState {
+  switch (e.type) {
+    case 'enter':
+      // A plain link leaves a pending close of the open item running.
+      if (!e.hasPanel) return s;
+      if (s.open === e.id) return s.pending ? { ...s, pending: null } : s;
+      return { ...s, pending: { kind: 'open', id: e.id } };
+    case 'leave':
+      if (s.open !== null) return s.pending?.kind === 'close' ? s : { ...s, pending: { kind: 'close' } };
+      return s.pending?.kind === 'open' && s.pending.id === e.id ? { ...s, pending: null } : s;
+    case 'fire':
+      if (!s.pending) return s;
+      return s.pending.kind === 'open'
+        ? { open: s.pending.id, hoverOpened: s.pending.id, pending: null }
+        : MENU_CLOSED;
+    case 'toggle':
+      if (e.mouse && s.open === e.id && s.hoverOpened === e.id) return { open: e.id, hoverOpened: null, pending: null };
+      return { open: s.open === e.id ? null : e.id, hoverOpened: null, pending: null };
+    case 'open':
+      return s.open === e.id && !s.pending && !s.hoverOpened ? s : { open: e.id, hoverOpened: null, pending: null };
+    case 'close':
+      if (e.id !== undefined && s.open !== e.id) return s;
+      return s.open === null && !s.pending ? s : MENU_CLOSED;
+  }
 }

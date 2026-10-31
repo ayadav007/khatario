@@ -1,6 +1,7 @@
 import {
   editorFrameSrc,
   isEditableTarget,
+  menuHoldItemId,
   pruneSelection,
   saveStatusLabel,
   selectionRef,
@@ -53,6 +54,8 @@ describe('editor shell helpers', () => {
     expect(selectionRef({ kind: 'section', ref })).toEqual(ref);
     expect(selectionRef({ kind: 'block', ref, blockId: 'b1' })).toEqual(ref);
     expect(selectionRef({ kind: 'theme' })).toBeNull();
+    expect(selectionRef({ kind: 'menus' })).toBeNull();
+    expect(selectionRef({ kind: 'menu', menuId: 'main', itemId: null })).toBeNull();
     expect(selectionRef(null)).toBeNull();
   });
 
@@ -70,6 +73,59 @@ describe('editor shell helpers', () => {
     const th = { kind: 'theme' as const };
     expect(pruneSelection(theme, 'home', th)).toBe(th);
     expect(pruneSelection(theme, 'home', null)).toBeNull();
+  });
+
+  it('holds a top item of the menu the header uses, and nothing else', () => {
+    const item = (id: string, children?: { id: string; label: string; link: string }[]) => ({ id, label: id, link: '', children });
+    const withHeader = (menu?: string): ThemeData => ({
+      ...theme,
+      header_group: {
+        order: ['hd'],
+        sections: { hd: { ...section(), type: 'header', settings: menu === undefined ? {} : { menu } } },
+      },
+      settings: {
+        menus: [
+          { id: 'main', name: 'Main', items: [item('shop', [{ id: 'kid', label: 'Kid', link: '/' }]), item('about')] },
+          { id: 'sale', name: 'Sale', items: [item('deals')] },
+        ],
+      } as unknown as ThemeData['settings'],
+    });
+    const pick = (menuId: string, itemId: string | null) => ({ kind: 'menu' as const, menuId, itemId });
+    // The header uses main by default (and when its setting names a menu that is gone).
+    expect(menuHoldItemId(withHeader(), pick('main', 'shop'))).toBe('shop');
+    expect(menuHoldItemId(withHeader('gone'), pick('main', 'about'))).toBe('about');
+    // A nested item, the whole menu, another menu, a missing item and other selections release it.
+    expect(menuHoldItemId(withHeader(), pick('main', 'kid'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('main', null))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('sale', 'deals'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), pick('main', 'gone'))).toBeNull();
+    expect(menuHoldItemId(withHeader(), { kind: 'menus' })).toBeNull();
+    expect(menuHoldItemId(withHeader(), null)).toBeNull();
+    // Following the header's own menu setting.
+    expect(menuHoldItemId(withHeader('sale'), pick('sale', 'deals'))).toBe('deals');
+    expect(menuHoldItemId(withHeader('sale'), pick('main', 'shop'))).toBeNull();
+    // No header section or no menus list is safe.
+    expect(menuHoldItemId(theme, pick('main', 'shop'))).toBeNull();
+  });
+
+  it('prunes a menu selection whose menu or item no longer exists', () => {
+    const withMenus: ThemeData = {
+      ...theme,
+      settings: {
+        menus: [{ id: 'main', name: 'Main', items: [{ id: 'a', label: 'A', link: '', children: [{ id: 'a1', label: 'A1', link: '' }] }] }],
+      } as unknown as ThemeData['settings'],
+    };
+    const menus = { kind: 'menus' as const };
+    expect(pruneSelection(withMenus, 'home', menus)).toBe(menus);
+    const whole = { kind: 'menu' as const, menuId: 'main', itemId: null };
+    expect(pruneSelection(withMenus, 'home', whole)).toBe(whole);
+    const item = { kind: 'menu' as const, menuId: 'main', itemId: 'a1' };
+    expect(pruneSelection(withMenus, 'home', item)).toBe(item);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: 'main', itemId: 'gone' })).toEqual(whole);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: 'gone', itemId: 'a' })).toEqual(menus);
+    expect(pruneSelection(withMenus, 'home', { kind: 'menu', menuId: '__proto__', itemId: null })).toEqual(menus);
+    // A theme with no menus list at all still prunes safely.
+    expect(pruneSelection(theme, 'home', whole)).toEqual(menus);
   });
 
   it('reads undo and redo shortcuts', () => {

@@ -37,6 +37,17 @@ describe('bridge parsers', () => {
     });
   });
 
+  it('parses menu-hold with an item id or null, and nothing else', () => {
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: 'shop' })).toEqual({ source: S, type: 'menu-hold', itemId: 'shop' });
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: null })).toEqual({ source: S, type: 'menu-hold', itemId: null });
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: 'x', junk: 1 })).toEqual({ source: S, type: 'menu-hold', itemId: 'x' });
+    expect(parseEditorMessage({ source: S, type: 'menu-hold' })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: 'Bad Id' })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: 5 })).toBeNull();
+    expect(parseEditorMessage({ source: S, type: 'menu-hold', itemId: 'a'.repeat(33) })).toBeNull();
+    expect(parsePreviewMessage({ source: S, type: 'menu-hold', itemId: 'shop' })).toBeNull();
+  });
+
   it('drops unknown keys and returns a fresh object', () => {
     const input = { source: S, type: 'select', template, ref: { ...ref, extra: 1 }, junk: true };
     const out = parseEditorMessage(input);

@@ -112,22 +112,22 @@
         "name": "Footer menu",
         "items": [
           {
-            "id": "m1",
+            "id": "m4",
             "label": "Help",
             "link": "",
             "children": [
               {
-                "id": "m2",
+                "id": "m1",
                 "label": "Contact",
                 "link": "/contact"
               },
               {
-                "id": "m3",
+                "id": "m2",
                 "label": "Refund policy",
                 "link": "/refund"
               },
               {
-                "id": "m4",
+                "id": "m3",
                 "label": "Terms",
                 "link": "/terms"
               }

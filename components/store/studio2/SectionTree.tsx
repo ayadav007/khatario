@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, MoreVertical, Palette, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Menu as MenuIcon, MoreVertical, Palette, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useToastContext } from '@/contexts/ToastContext';
 import {
@@ -59,7 +59,7 @@ const revealOnHover = 'opacity-0 focus:opacity-100 group-hover:opacity-100 [@med
 
 const sameRef = (a: SectionRef | null | undefined, b: SectionRef) => !!a && a.group === b.group && a.id === b.id;
 
-function usePointerAndKeyboardSensors() {
+export function usePointerAndKeyboardSensors() {
   return useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -67,7 +67,7 @@ function usePointerAndKeyboardSensors() {
 }
 
 /** Runs an op that creates something and returns its new id (or shows the op error). */
-function useEdit() {
+export function useEdit() {
   const { apply } = useStudio2();
   const toast = useToastContext();
   return useMemo(() => {
@@ -107,6 +107,17 @@ export function SectionTree() {
         >
           <Palette className="h-4 w-4 text-gray-500" aria-hidden />
           Theme settings
+        </button>
+        <button
+          type="button"
+          onClick={() => select({ kind: 'menus' })}
+          className={clsx(
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-gray-800 hover:bg-gray-100',
+            (selection?.kind === 'menus' || selection?.kind === 'menu') && 'bg-blue-50 text-blue-800 hover:bg-blue-50',
+          )}
+        >
+          <MenuIcon className="h-4 w-4 text-gray-500" aria-hidden />
+          Menus
         </button>
       </div>
       {TREE_GROUPS.map((g) =>
@@ -541,7 +552,7 @@ interface TriggerProps {
 }
 
 /** A small click-to-open menu that closes on outside click or Escape. */
-function Dropdown({
+export function Dropdown({
   trigger,
   children,
   disabled,
@@ -593,7 +604,7 @@ function Dropdown({
   );
 }
 
-function MenuItem({
+export function MenuItem({
   children,
   onSelect,
   danger,

@@ -104,8 +104,13 @@ function enabledBlocks(section: RawSection, type: string): Record<string, unknow
   return out;
 }
 
-/** The section without its blocks of `legacyType`, and with `menu` set. Other blocks stay (the sanitiser handles them). */
-function withMenu(section: RawSection, legacyType: string, menuId: string): RawSection {
+/** Whether the section still holds any block of `legacyType` (enabled or not). */
+function hasBlocks(section: RawSection, legacyType: string): boolean {
+  return isObject(section.blocks) && Object.values(section.blocks).some((b) => isObject(b) && b.type === legacyType);
+}
+
+/** The section without its blocks of `legacyType`, and with `menu` set when `menuId` is given. Other blocks stay (the sanitiser handles them). */
+function withMenu(section: RawSection, legacyType: string, menuId: string | null): RawSection {
   const blocks = isObject(section.blocks) ? section.blocks : {};
   const order = Array.isArray(section.block_order) ? section.block_order : [];
   const keptOrder = order.filter((id) => typeof id === 'string' && !(isObject(blocks[id]) && (blocks[id] as RawSection).type === legacyType));
@@ -113,9 +118,10 @@ function withMenu(section: RawSection, legacyType: string, menuId: string): RawS
   for (const [id, b] of Object.entries(blocks)) {
     if (!(isObject(b) && b.type === legacyType)) keptBlocks[id] = b;
   }
+  const settings = isObject(section.settings) ? section.settings : {};
   return {
     ...section,
-    settings: { ...(isObject(section.settings) ? section.settings : {}), menu: menuId },
+    settings: menuId ? { ...settings, menu: menuId } : settings,
     blocks: keptBlocks,
     block_order: keptOrder,
   };
@@ -136,15 +142,24 @@ function footerLinks(raw: unknown): { label: string; link: string }[] {
 }
 
 /**
- * Turn the old header `menu_link` blocks and footer `link_column` blocks of a RAW theme into the `main` and `footer` menus.
- * Applies when the theme has no usable menus yet (`settings.menus` is missing, not an array, or holds nothing valid; a
- * preset or a migrated store arrives with `[]`); a theme with menus is returned unchanged. After one run both menus
- * exist, so a second run changes nothing. Returns a new object; the input is untouched. Must run before the header and
- * footer are sanitised, because their schemas no longer declare the old block types.
+ * Turn the old header `menu_link` blocks and footer `link_column` blocks of a RAW theme into menus. Runs when the theme
+ * has no usable menus yet (`settings.menus` is missing, not an array, or holds nothing valid; a preset or a migrated
+ * store arrives with `[]`): both `main` and `footer` are created, even empty. It also runs when the header or footer
+ * still holds old blocks next to existing menus (a theme saved before menus, given a menu before its first save): the
+ * menus stay, and a menu is added for each side that has old blocks, as `main` / `footer` when free (else a fresh id).
+ * A section is pointed at its new menu unless it already names an existing one. Afterwards no old blocks remain and
+ * menus exist, so a second run changes nothing. Returns a new object; the input is untouched. Must run before the
+ * header and footer are sanitised, because their schemas no longer declare the old block types.
  */
 export function convertLegacyMenus(raw: Record<string, unknown>): Record<string, unknown> {
   const settings = isObject(raw.settings) ? raw.settings : {};
-  if (sanitizeMenus(settings.menus).length > 0) return { ...raw };
+  const existing = sanitizeMenus(settings.menus);
+  const header = findSection(raw.header_group, 'header');
+  const footer = findSection(raw.footer_group, 'footer');
+  const fresh = existing.length === 0;
+  const convertHeader = fresh || (!!header && hasBlocks(header[1], LEGACY_HEADER_BLOCK));
+  const convertFooter = fresh || (!!footer && hasBlocks(footer[1], LEGACY_FOOTER_BLOCK));
+  if (!convertHeader && !convertFooter) return { ...raw };
 
   const out: Record<string, unknown> = { ...raw };
 
@@ -152,7 +167,6 @@ export function convertLegacyMenus(raw: Record<string, unknown>): Record<string,
   const nextId = () => `m${++n}`;
 
   const mainItems: MenuItem[] = [];
-  const header = findSection(raw.header_group, 'header');
   if (header) {
     for (const b of enabledBlocks(header[1], LEGACY_HEADER_BLOCK)) {
       const label = typeof b.label === 'string' ? b.label : 'All Products';
@@ -165,30 +179,53 @@ export function convertLegacyMenus(raw: Record<string, unknown>): Record<string,
 
   n = 0;
   const footerItems: MenuItem[] = [];
-  const footer = findSection(raw.footer_group, 'footer');
   if (footer) {
     for (const b of enabledBlocks(footer[1], LEGACY_FOOTER_BLOCK)) {
-      const item: MenuItem = { id: nextId(), label: typeof b.heading === 'string' ? b.heading : 'Shop', link: '' };
       const links = footerLinks(b.links).map((l) => ({ id: nextId(), label: l.label, link: l.link }));
+      const heading = typeof b.heading === 'string' ? b.heading.trim() : 'Shop';
+      // A column without a heading: its links become top-level links (the footer draws those as a heading-less column).
+      if (!heading) {
+        footerItems.push(...links);
+        continue;
+      }
+      const item: MenuItem = { id: nextId(), label: heading, link: '' };
       if (links.length > 0) item.children = links;
       footerItems.push(item);
     }
   }
 
-  out.settings = {
-    ...settings,
-    menus: sanitizeMenus([
-      { id: 'main', name: 'Main menu', items: mainItems },
-      { id: 'footer', name: 'Footer menu', items: footerItems },
-    ]),
+  const taken = new Set(existing.map((m) => m.id));
+  const freeId = (base: string): string => {
+    let id = base;
+    for (let i = 2; taken.has(id); i++) id = `${base}-${i}`;
+    taken.add(id);
+    return id;
   };
+  const added: Menu[] = [];
+  const mainId = convertHeader ? freeId('main') : null;
+  if (mainId) added.push({ id: mainId, name: 'Main menu', items: mainItems });
+  const footerId = convertFooter ? freeId('footer') : null;
+  if (footerId) added.push({ id: footerId, name: 'Footer menu', items: footerItems });
 
-  const swap = (groupKey: 'header_group' | 'footer_group', found: [string, RawSection] | null, legacyType: string, menuId: string) => {
-    if (!found) return;
+  const menus = sanitizeMenus([...existing, ...added]);
+  out.settings = { ...settings, menus };
+
+  const before = new Set(existing.map((m) => m.id));
+  const after = new Set(menus.map((m) => m.id));
+  const swap = (groupKey: 'header_group' | 'footer_group', found: [string, RawSection] | null, legacyType: string, menuId: string | null) => {
+    if (!found || !menuId) return;
+    const current = isObject(found[1].settings) ? found[1].settings.menu : undefined;
+    const keepsOwn = typeof current === 'string' && before.has(current);
     const group = raw[groupKey] as Record<string, unknown>;
-    out[groupKey] = { ...group, sections: { ...(group.sections as Record<string, unknown>), [found[0]]: withMenu(found[1], legacyType, menuId) } };
+    out[groupKey] = {
+      ...group,
+      sections: {
+        ...(group.sections as Record<string, unknown>),
+        [found[0]]: withMenu(found[1], legacyType, !keepsOwn && after.has(menuId) ? menuId : null),
+      },
+    };
   };
-  swap('header_group', header, LEGACY_HEADER_BLOCK, 'main');
-  swap('footer_group', footer, LEGACY_FOOTER_BLOCK, 'footer');
+  swap('header_group', header, LEGACY_HEADER_BLOCK, mainId);
+  swap('footer_group', footer, LEGACY_FOOTER_BLOCK, footerId);
   return out;
 }

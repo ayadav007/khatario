@@ -9,6 +9,7 @@ import { parseCatalogFilters, toApiParams } from '@/components/store/features/ca
 import { themeDemoStore } from '@/lib/store/theme-demo';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { Section, Template } from '@/lib/store/engine/types';
+import { menuCategories } from '@/components/store/engine/sections/shared';
 import { ctx, namedGrocery, studioDerived } from './fixtures/store-themes';
 
 const queryMock = queryRows as jest.Mock;
@@ -36,9 +37,16 @@ describe('I1: a failed category lookup keeps the header', () => {
       group({ g: section('category-grid') }),
     ]);
     const out = await resolveSectionData(store, requests);
-    expect(out.h).toEqual({ categories: [] });
+    expect(out.h).toEqual({ categories: [], categoriesFailed: true });
     expect(out.h.error).toBeUndefined();
     expect(out.g.error).toMatch(/timeout/);
+  });
+
+  it('a failed lookup gives the menu null categories, so its hand-picked category links stay', async () => {
+    queryMock.mockRejectedValue(new Error('canceling statement due to statement timeout'));
+    const out = await resolveSectionData(store, collectDataRequests([group({ h: section('header') })]));
+    expect(out.h.categoriesFailed).toBe(true);
+    expect(menuCategories(out.h)).toBeNull();
   });
 
   it('still gives the header its categories when the lookup works', async () => {
@@ -48,6 +56,8 @@ describe('I1: a failed category lookup keeps the header', () => {
       collectDataRequests([group({ h: section('header', { show_category_chips: true }) })]),
     );
     expect(out.h.categories).toEqual([{ id: 'c1', name: 'Fruits', item_count: 3, image_url: null }]);
+    expect(out.h.categoriesFailed).toBeUndefined();
+    expect(menuCategories(out.h)).toEqual([{ id: 'c1', name: 'Fruits', image_url: null }]);
   });
 });
 

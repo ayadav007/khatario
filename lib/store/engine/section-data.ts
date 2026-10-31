@@ -18,6 +18,8 @@ export interface SectionData {
   categories?: SectionCategory[];
   /** The products a section asked for by id: only those found, in the order asked. */
   productsById?: Record<string, StoreItem>;
+  /** An optional categories lookup failed: `categories` is `[]` so the section still renders, but it is not the truth. */
+  categoriesFailed?: true;
   /** Category shelves: one entry per category with products, in category order. */
   shelves?: Array<{ category: SectionCategory; products: StoreItem[] }>;
   error?: string;
@@ -327,9 +329,11 @@ export async function resolveSectionData(
     }
     if (req.categories && categoriesJob) {
       const r = await categoriesJob;
-      // Optional categories (the header's chips) degrade to none, so the section still renders.
-      if (r.error && req.categoriesOptional) data.categories = [];
-      else if (r.error) data.error = data.error ?? r.error;
+      // Optional categories (the header's chips) degrade to none, so the section still renders; menus read the flag.
+      if (r.error && req.categoriesOptional) {
+        data.categories = [];
+        data.categoriesFailed = true;
+      } else if (r.error) data.error = data.error ?? r.error;
       else data.categories = r.items;
     }
     const plan = shelfPlans.get(id);

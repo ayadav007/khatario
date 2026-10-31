@@ -33,6 +33,20 @@ describe('Quick header', () => {
     expect(chips[3]).toMatchObject({ href: '/catalog?disc=10' });
   });
 
+  it('marks a pill from a menu item with children so it opens the side panel', () => {
+    const chips = quickChips(
+      [
+        { label: 'Shop', href: '/catalog', highlight: false, itemId: 'm1', hasChildren: true },
+        { label: 'About', href: '/about', highlight: false, itemId: 'm2', hasChildren: false },
+        { label: 'Deals', href: '', highlight: true, itemId: 'm3', hasChildren: true },
+      ],
+      [],
+    );
+    expect(chips[0].menuItemId).toBe('m1');
+    expect(chips[1]).not.toHaveProperty('menuItemId');
+    expect(chips[2]).toMatchObject({ offers: true, menuItemId: 'm3' });
+  });
+
   it('knows the category from the catalog path or the home ?cat', () => {
     expect(activeQuickCategory('/catalog/abc', null)).toBe('abc');
     expect(activeQuickCategory('/', 'xyz')).toBe('xyz');

@@ -13,6 +13,7 @@ import { previewPath } from '@/lib/store/engine/preview-path';
 import {
   acceptsEdits,
   isEditableTarget,
+  menuHoldItemId,
   pruneSelection,
   remoteThemeState,
   resolvePendingScroll,
@@ -296,6 +297,16 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, c
     [post],
   );
 
+  // The preview holds the selected top menu item's dropdown open; sent when that changes (selection, the Header's menu,
+  // or the item going away). A fresh frame gets it again on 'ready'.
+  const holdSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    const itemId = menuHoldItemId(history.present, selection);
+    if (itemId === holdSentRef.current) return;
+    holdSentRef.current = itemId;
+    post({ source: BRIDGE_SOURCE, type: 'menu-hold', itemId });
+  }, [history.present, selection, post]);
+
   // Undo, redo or a remove can take away what is selected.
   useEffect(() => {
     const cur = selectionRefState.current;
@@ -479,6 +490,8 @@ export function Studio2Editor({ businessId, theme: row, initialData, restored, c
         case 'ready':
           // A fresh frame (or one that finished an older refresh) learns the selection, and catches up.
           post({ source: BRIDGE_SOURCE, type: 'select', template, ref: selectionRef(selectionRefState.current) });
+          // The dropdown held open for the selected menu item (a reload forgets it).
+          post({ source: BRIDGE_SOURCE, type: 'menu-hold', itemId: menuHoldItemId(historyRef.current.present, selectionRefState.current) });
           // A reloaded frame (rev null) may have missed a refresh sent while it was loading.
           if (revRef.current > 0 && (msg.rev === null || msg.rev < revRef.current)) {
             post({ source: BRIDGE_SOURCE, type: 'refresh', rev: revRef.current });

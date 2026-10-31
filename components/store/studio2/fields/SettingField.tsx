@@ -19,6 +19,7 @@ import {
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { SimpleRichTextEditor } from '@/components/email/SimpleRichTextEditor';
 import { CategoryList, CategorySelect, LinkPicker, ProductPicker, inputCls } from './pickers';
+import { useStudio2 } from '../Studio2Editor';
 
 export interface SettingFieldProps {
   schema: SettingSchema;
@@ -275,6 +276,9 @@ export function SettingField(props: SettingFieldProps) {
     case 'category':
       return shell(<CategorySelect id={fieldId} value={str(value)} categories={categories} onChange={onChange} />);
 
+    case 'menu':
+      return shell(<MenuSelect id={fieldId} value={str(value)} onChange={onChange} />);
+
     case 'category_list':
       return shell(<CategoryList value={strList(value)} categories={categories} max={listLimit(schema)} onChange={onChange} />, {
         noFor: true,
@@ -283,6 +287,31 @@ export function SettingField(props: SettingFieldProps) {
     default:
       return null;
   }
+}
+
+/** The theme's menus by name, plus a way into the Menus editor. */
+function MenuSelect({ id, value, onChange }: { id: string; value: string; onChange(v: string): void }) {
+  const { theme, select } = useStudio2();
+  const menus = Array.isArray(theme.settings.menus) ? theme.settings.menus : [];
+  return (
+    <div className="flex items-center gap-2">
+      <select id={id} className={inputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+        {!menus.some((m) => m.id === value) && <option value={value}>{value ? 'Missing menu' : 'Choose…'}</option>}
+        {menus.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => select({ kind: 'menus' })}
+        className="shrink-0 whitespace-nowrap text-xs font-medium text-blue-700 hover:underline"
+      >
+        Edit menus
+      </button>
+    </div>
+  );
 }
 
 /**

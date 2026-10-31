@@ -34,9 +34,13 @@ export type OpError =
   | 'page_limit'
   | 'handle_invalid'
   | 'handle_reserved'
-  | 'handle_taken';
+  | 'handle_taken'
+  | 'menu_limit'
+  | 'menu_item_limit'
+  | 'menu_depth'
+  | 'menu_in_use';
 export type OpResult = { ok: true; theme: ThemeData; id?: string } | { ok: false; reason: OpError };
-type MakeId = (prefix?: string) => string;
+export type MakeId = (prefix?: string) => string;
 
 export const OP_ERROR_TEXT: Record<OpError, string> = {
   unknown_type: 'This section type is not available',
@@ -51,6 +55,10 @@ export const OP_ERROR_TEXT: Record<OpError, string> = {
   handle_invalid: 'Use lowercase letters, numbers and hyphens',
   handle_reserved: 'That address is used by the store',
   handle_taken: 'Another page already uses this address',
+  menu_limit: `A theme can have up to ${ENGINE_LIMITS.menus.menus} menus`,
+  menu_item_limit: `A menu level can have up to ${ENGINE_LIMITS.menus.itemsPerLevel} items`,
+  menu_depth: 'Menus go three levels deep',
+  menu_in_use: 'Used by the Header or Footer. Pick another menu there first.',
 };
 
 const fail = (reason: OpError): OpResult => ({ ok: false, reason });
@@ -92,7 +100,7 @@ function allSectionIds(theme: ThemeData): Set<string> {
   return used;
 }
 
-function uniqueId(makeId: MakeId, prefix: string, used: ReadonlySet<string>): string {
+export function uniqueId(makeId: MakeId, prefix: string, used: ReadonlySet<string>): string {
   for (let i = 0; i < 20; i++) {
     const id = makeId(prefix);
     if (ID_RE.test(id) && !used.has(id)) return id;

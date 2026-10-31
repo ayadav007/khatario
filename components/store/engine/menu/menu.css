@@ -1,0 +1,122 @@
+/* Store menus: desktop header bar and its dropdown, mega and category panels (MenuBar.tsx), phone side panel (MenuDrawer.tsx). */
+.st-root .kh-menu{font-size:13px}
+/* The nav row scrolls sideways for the old links; the menu's panels must not be clipped, so it wraps instead. */
+.st-root .nav.kh-menu{overflow:visible;position:relative}
+.st-root .kh-menu-list{list-style:none;margin:0;padding:0;display:flex;align-items:center;gap:22px}
+.st-root .kh-menu-below .kh-menu-list{flex-wrap:wrap;justify-content:inherit;row-gap:6px}
+.st-root .kh-menu-item{display:flex;align-items:center;gap:2px}
+.st-root .kh-menu-item[hidden]{display:none}
+.st-root .kh-menu-item.kh-drop{position:relative}
+.st-root .kh-menu .kh-top{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;padding:2px 0;border:0;border-bottom:2px solid transparent;background:none;color:inherit;font:inherit;line-height:inherit;letter-spacing:inherit}
+.st-root .kh-menu .kh-top.offers{color:var(--primary);font-weight:700}
+.st-root .kh-menu .kh-toggle{display:inline-flex;align-items:center;justify-content:center;padding:2px;border:0;border-radius:4px;background:none;color:inherit}
+.st-root .kh-menu .kh-top svg,.st-root .kh-menu .kh-toggle svg{width:14px;height:14px;flex:0 0 auto;transition:transform .15s}
+.st-root .kh-menu [aria-expanded='true'] svg{transform:rotate(180deg)}
+.st-root .kh-menu :focus-visible{outline:2px solid var(--c-accent,var(--primary));outline-offset:2px;border-radius:4px}
+/* Also matches the hidden measuring copy, so folding sees the capitalised widths. */
+.st-root .kh-menu-caps .kh-menu-list > .kh-menu-item > .kh-top{text-transform:uppercase;letter-spacing:.08em}
+
+/* All on one line: the menu takes the room between the logo and a narrower search; mega panels span the header row. */
+.st-root .header.hasInline{position:relative}
+.st-root .header.hasInline .search{flex:0 1 260px;min-width:150px}
+.st-root .kh-menu-inline{flex:1 1 0;min-width:0}
+.st-root .kh-menu-inline .kh-menu-list{gap:20px;flex-wrap:nowrap}
+.st-root .kh-menu-inline:not(.kh-ready) .kh-menu-list{overflow-x:clip}
+/* The measuring copy sits in a zero-size clipping box, so its max-content width never makes the page scroll sideways. */
+.st-root .kh-measure-box{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none}
+.st-root .kh-measure{width:max-content}
+.st-root .kh-measure > li{flex:0 0 auto}
+
+/* Panels */
+.st-root .kh-menu .kh-panel{position:absolute;z-index:40;top:100%;background:var(--c-card,var(--st-card,#fff));color:var(--c-text,var(--text));border:1px solid var(--c-border,var(--st-line));box-shadow:0 18px 40px -18px rgba(0,0,0,.35);font-size:14px;line-height:1.35;text-align:left;white-space:normal;letter-spacing:normal;text-transform:none}
+.st-root .kh-menu .kh-panel[hidden]{display:none}
+.st-root .kh-menu .kh-panel ul{list-style:none;margin:0;padding:0}
+.st-root .kh-menu .kh-panel a,.st-root .kh-menu .kh-panel span{white-space:normal;border:0;padding:0}
+.st-root .kh-menu .kh-panel a:hover{color:var(--c-accent,var(--primary))}
+.st-root .kh-panel-body{display:flex;gap:28px;align-items:flex-start}
+.st-root .kh-panel-main{flex:1 1 auto;min-width:0}
+.st-root .kh-menu .kh-panel .kh-viewall{display:block;font-weight:700;padding:4px 0 10px;margin-bottom:10px;border-bottom:1px solid var(--c-border,var(--st-line))}
+
+/* Simple dropdown: a small card under its item (the last item's card opens to the left). */
+.st-root .kh-menu .kh-panel-dropdown{top:calc(100% + 8px);left:0;min-width:200px;max-width:min(520px,90vw);border-radius:10px;padding:12px 14px}
+.st-root .kh-menu-item:last-child > .kh-panel-dropdown{left:auto;right:0}
+.st-root .kh-drop-list li + li,.st-root .kh-more-list li + li{margin-top:2px}
+.st-root .kh-menu .kh-drop-list a,.st-root .kh-menu .kh-drop-list span{display:block;padding:5px 0}
+.st-root .kh-panel-dropdown .kh-pic{flex:0 0 160px}
+
+/* More: the folded items, their children listed under them. */
+.st-root .kh-more-list{min-width:200px}
+.st-root .kh-menu .kh-more-list a,.st-root .kh-menu .kh-more-list span{display:block;padding:4px 0}
+.st-root .kh-menu .kh-more-list .kh-more-top{font-weight:600}
+.st-root .kh-menu .kh-more-list ul{padding-left:12px;margin-bottom:6px}
+
+/* Mega and automatic categories: full width of the header, content kept to the page width. */
+.st-root .kh-menu .kh-panel-mega,.st-root .kh-menu .kh-panel-categories{left:0;right:0;border-left:0;border-right:0;border-radius:0 0 12px 12px;max-height:70vh;overflow-y:auto}
+.st-root .kh-panel-mega > .kh-panel-body,.st-root .kh-panel-categories > .kh-panel-body{max-width:1316px;margin:0 auto;padding:22px 38px}
+.st-root .kh-mega-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px 28px}
+.st-root .kh-menu .kh-mega-head{display:block;font-weight:700;margin-bottom:8px}
+.st-root .kh-menu .kh-mega-col li a,.st-root .kh-menu .kh-mega-col li span{display:block;padding:4px 0}
+.st-root .kh-cats{columns:180px auto;column-gap:24px}
+.st-root .kh-cats li{break-inside:avoid}
+.st-root .kh-menu .kh-cats a{display:flex;align-items:center;gap:10px;padding:5px 0}
+.st-root .kh-menu .kh-cats .kh-cat-pic{width:30px;height:30px;flex:0 0 30px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:color-mix(in srgb,var(--c-accent,var(--primary)) 12%,var(--c-card,var(--st-card,#fff)));color:var(--c-accent,var(--primary))}
+
+/* Picture at the right of a panel. */
+.st-root .kh-pic{flex:0 0 240px;display:flex;flex-direction:column;gap:8px}
+.st-root .kh-pic img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;display:block}
+.st-root .kh-menu .kh-pic span{font-size:13px;font-weight:600}
+
+@container store (max-width: 900px){
+.st-root .kh-menu .kh-menu-list{gap:16px}
+.st-root .kh-panel-mega > .kh-panel-body,.st-root .kh-panel-categories > .kh-panel-body{padding:18px 22px}
+.st-root .kh-pic{flex-basis:180px}
+}
+/* Phones get the side panel instead of the bar: ☰ before the logo (before left icons too). */
+.st-root .kh-burger{display:none;align-items:center;justify-content:center;width:38px;height:38px;margin:-4px 0 -4px -6px;padding:0;border:0;border-radius:8px;background:none;color:inherit;flex:0 0 auto}
+.st-root .kh-burger svg{width:22px;height:22px}
+.st-root .kh-burger:focus-visible{outline:2px solid var(--c-accent,var(--primary));outline-offset:2px}
+@container store (max-width: 640px){
+.st-root nav.kh-menu{display:none}
+.st-root .header.hasInline .search{flex:1 1 100%;min-width:0}
+.st-root .kh-burger{display:inline-flex;order:-2}
+}
+
+/* Side panel: fixed over the page (above the sticky header, bottom tabs and cart bar), in the header's colours. Once
+   mounted it lives in a <body> wrapper (`st-root kh-drawer-host`, no `st-cq`) so the viewport is its containing block. */
+.st-root.kh-drawer-host{background:none;min-height:0}
+.st-root .kh-drawer-wrap{position:fixed;inset:0;z-index:55}
+.st-root .kh-drawer-wrap[hidden]{display:none}
+.st-root .kh-drawer-scrim{position:absolute;inset:0;background:rgba(15,23,42,.45);animation:kh-fade .2s ease-out}
+.st-root .kh-drawer{position:absolute;left:0;top:0;bottom:0;width:min(360px,86vw);display:flex;flex-direction:column;background:var(--c-card,var(--st-card,#fff));color:var(--c-text,var(--text));box-shadow:18px 0 40px -18px rgba(0,0,0,.45);font-size:15px;line-height:1.35;text-align:left;padding-bottom:env(safe-area-inset-bottom);animation:kh-drawer-in .22s cubic-bezier(.2,.8,.2,1)}
+.st-root .kh-drawer-head{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 10px 18px;border-bottom:1px solid var(--c-border,var(--st-line))}
+.st-root .kh-drawer-head b{font-size:16px}
+.st-root .kh-drawer-close,.st-root .kh-drawer-exp{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:44px;height:44px;padding:0;border:0;border-radius:8px;background:none;color:inherit}
+.st-root .kh-drawer-close svg{width:20px;height:20px}
+.st-root .kh-drawer-nav{position:relative;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 18px}
+.st-root .kh-drawer ul{list-style:none;margin:0;padding:0}
+.st-root .kh-drawer-item{border-bottom:1px solid var(--c-border,var(--st-line))}
+.st-root .kh-drawer-link{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:48px;padding:0 18px;border:0;background:none;color:inherit;font:inherit;font-weight:600;text-align:left}
+.st-root .kh-drawer-split{display:flex;align-items:center;padding-right:6px}
+.st-root .kh-drawer-split .kh-drawer-link{flex:1 1 auto;min-width:0;padding-right:4px}
+.st-root .kh-drawer .offers{color:var(--c-accent,var(--primary))}
+.st-root .kh-drawer-link svg,.st-root .kh-drawer-exp svg{width:18px;height:18px;flex:0 0 auto;transition:transform .15s}
+.st-root .kh-drawer [aria-expanded='true'] svg{transform:rotate(180deg)}
+.st-root .kh-drawer-sub{padding:0 18px 14px 30px}
+.st-root .kh-drawer-sub[hidden]{display:none}
+.st-root .kh-drawer-links a,.st-root .kh-drawer-links span{display:block;padding:9px 0}
+.st-root .kh-drawer-links .kh-drawer-group{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.65;padding:12px 0 2px}
+.st-root .kh-drawer-groupItem:first-child .kh-drawer-group{padding-top:4px}
+.st-root .kh-drawer-cats a{display:flex;align-items:center;gap:10px;padding:7px 0}
+.st-root .kh-drawer .kh-cat-pic{width:32px;height:32px;flex:0 0 32px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:color-mix(in srgb,var(--c-accent,var(--primary)) 12%,var(--c-card,var(--st-card,#fff)));color:var(--c-accent,var(--primary))}
+.st-root .kh-drawer .kh-pic{margin-top:12px}
+.st-root .kh-drawer .kh-pic span{display:block;padding:0;font-size:13px;font-weight:600}
+.st-root .kh-drawer :focus-visible{outline:2px solid var(--c-accent,var(--primary));outline-offset:-2px;border-radius:6px}
+@keyframes kh-drawer-in{from{transform:translateX(-100%)}}
+@keyframes kh-fade{from{opacity:0}}
+@media (prefers-reduced-motion: reduce){
+.st-root .kh-drawer,.st-root .kh-drawer-scrim{animation:none}
+}
+
+/* Quick: a pill with children opens the side panel. */
+.st-root .qk-chips .kh-pill-menu{display:inline-flex;align-items:center;gap:3px}
+.st-root .qk-chips .kh-pill-menu svg{width:13px;height:13px}

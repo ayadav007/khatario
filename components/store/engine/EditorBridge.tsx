@@ -11,6 +11,7 @@ import {
 import type { GroupKey, SectionRef } from '@/lib/store/engine/editor/ops';
 import { insertionPoints } from '@/lib/store/engine/editor/overlay';
 import { ID_RE } from '@/lib/store/engine/shared';
+import { MENU_HOLD_EVENT } from './menu/events';
 
 const ACCENT = 'var(--primary, #2563eb)';
 const READY_EVERY_MS = 500;
@@ -185,6 +186,10 @@ export function EditorBridge({ templateKey }: { templateKey: string }) {
         case 'scroll-to':
           if (msg.template !== templateRef.current) break;
           sectionEl(msg.ref)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          break;
+        case 'menu-hold':
+          // MenuBar listens for this; no template check, the header is on every page.
+          window.dispatchEvent(new CustomEvent(MENU_HOLD_EVENT, { detail: { itemId: msg.itemId } }));
           break;
         case 'refresh':
           pendingRev.current = msg.rev;
