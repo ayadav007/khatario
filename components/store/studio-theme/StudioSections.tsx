@@ -24,6 +24,7 @@ import {
 import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-theme';
 import type { StudioBadge, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
+import { tileBadges } from '@/lib/store/engine/card-badges';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import { isVideoUrl } from '@/lib/store/theme-media-url';
@@ -578,6 +579,7 @@ export function StudioProductTile({
   add,
   tagline,
   swatches,
+  hideDiscountBadge,
 }: {
   name: string;
   unit?: string;
@@ -604,13 +606,15 @@ export function StudioProductTile({
   tagline?: string | null;
   /** Colour dots under the price. */
   swatches?: StoreSwatch[];
+  /** Leaves out the "% OFF" badge (a product's own badge replaces it); the struck-through MRP stays. */
+  hideDiscountBadge?: boolean;
 }) {
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
   const [broken, setBroken] = useState(false);
   const [altBroken, setAltBroken] = useState(false);
   useEffect(() => setBroken(false), [image]);
   useEffect(() => setAltBroken(false), [hoverImage]);
-  const allBadges: StudioBadge[] = [...(off > 0 ? [{ label: `${off}% OFF`, tone: 'sale' as const }] : []), ...badges];
+  const { badges: allBadges, struck } = tileBadges(off, badges, hideDiscountBadge);
   const showAlt = !!hoverImage && hoverImage !== image && !broken && !altBroken;
   return (
     <article className={`product ${showAlt ? 'hasAlt' : ''}`}>
@@ -661,7 +665,7 @@ export function StudioProductTile({
       {showPrice ? (
         <div className="price">
           {rupees(price)}
-          {off > 0 && mrp ? <del>{rupees(mrp)}</del> : null}
+          {struck && mrp ? <del>{rupees(mrp)}</del> : null}
         </div>
       ) : null}
       {swatches?.length ? (

@@ -20,3 +20,16 @@ export function cardBadges(
     hideDiscount: false,
   };
 }
+
+/**
+ * The badge row and the strike-through decision of a Studio tile. `off` is the discount percent; the "% OFF" badge
+ * comes first, and `hideDiscountBadge` drops only that badge: the struck-through MRP follows `off` alone.
+ */
+export function tileBadges(
+  off: number,
+  badges: StudioBadge[],
+  hideDiscountBadge = false,
+): { badges: StudioBadge[]; struck: boolean } {
+  const sale: StudioBadge[] = off > 0 && !hideDiscountBadge ? [{ label: `${off}% OFF`, tone: 'sale' }] : [];
+  return { badges: [...sale, ...badges], struck: off > 0 };
+}

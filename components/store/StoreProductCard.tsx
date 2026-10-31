@@ -297,7 +297,8 @@ function ProductCard({
         image={gallery[0] ?? product.image_url}
         hoverImage={gallery[1]}
         href={`/products/${product.id}`}
-        discount={hideDiscount ? 0 : discount}
+        discount={discount}
+        hideDiscountBadge={hideDiscount}
         badges={badges}
         tagline={tagline}
         swatches={swatches}
