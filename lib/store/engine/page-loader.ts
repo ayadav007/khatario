@@ -87,6 +87,7 @@ export async function loadEnginePage(
     const engine = await loadEngineTheme(store, {
       preview_theme: first(searchParams.preview_theme),
       pt: first(searchParams.pt),
+      engine: first(searchParams.engine),
     });
     if (!engine) return null;
 
@@ -101,7 +102,8 @@ export async function loadEnginePage(
       categoryId: narrow?.categoryId ?? null,
       search: narrow?.search ?? null,
     });
-    const editor = preview && first(searchParams.editor) === '1';
+    // A demo theme is never stored, so it can never be edited.
+    const editor = preview && !engine.demo && first(searchParams.editor) === '1';
     return { theme, preview, editor, template, data };
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;

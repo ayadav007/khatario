@@ -58,7 +58,7 @@ describe('loadEngineHome', () => {
     loadMock.mockResolvedValue({ theme, preview: true });
     resolveMock.mockResolvedValue({ s1: { products: [] } });
     const out = await loadEngineHome(store, { preview_theme: ['p1', 'p2'], pt: 'tok', cat: 'nope', q: '  rice ' });
-    expect(loadMock).toHaveBeenCalledWith(store, { preview_theme: 'p1', pt: 'tok' });
+    expect(loadMock).toHaveBeenCalledWith(store, { preview_theme: 'p1', pt: 'tok', engine: null });
     expect(resolveMock).toHaveBeenCalledWith(store, expect.any(Map), { categoryId: null, search: 'rice' });
     expect(out).toEqual({ theme, preview: true, editor: false, template: null, data: { s1: { products: [] } } });
 
