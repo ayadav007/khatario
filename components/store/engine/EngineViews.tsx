@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, MapPin, Search, ShoppingCart, User } from 'lucide-react';
 import type { StoreCategoryStyle } from '@/lib/store/store-theme';
@@ -27,7 +27,7 @@ import {
 import { useEngineCart } from './EngineShell';
 import { useEngineCardLook } from './EngineCardContext';
 import { QuickSheet } from '../quick-theme/QuickChrome';
-import { quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
+import { activeQuickCategory, quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
 import { cleanPincode, pincodeLine, pincodeServiceable, storePinKey } from '@/lib/store/store-pincode';
 
 /**
@@ -215,7 +215,12 @@ function HeaderSearchBox({
         onPick={(p: SearchPick) => go({ categoryId: p.id })}
         placeholder={placeholder}
         inputId="store-search"
-        className="h-full min-w-0 flex-1 [&_input]:!min-h-0 [&_input]:!shadow-none [&_input]:!ring-0"
+        // Quick's box sizes the input itself (quick-theme.css); the Studio header needs it shrunk to its row.
+        className={
+          className === 'qk-search'
+            ? 'h-full min-w-0 flex-1 [&_input]:!shadow-none'
+            : 'h-full min-w-0 flex-1 [&_input]:!min-h-0 [&_input]:!shadow-none [&_input]:!ring-0'
+        }
       />
     </div>
   );
@@ -657,7 +662,6 @@ function EngineQuickHeader({
               value={pincode}
               onChange={(e) => savePin(e.target.value)}
               placeholder="6-digit pincode"
-              maxLength={6}
               autoFocus
             />
           </label>
@@ -707,11 +711,12 @@ function QuickPills({
 
 function QuickPillsLive({ chips }: { chips: QuickPill[] }) {
   const params = useSearchParams();
+  const pathname = usePathname();
   const go = useCatalogNav();
   return (
     <QuickPills
       chips={chips}
-      activeCat={params.get('cat')}
+      activeCat={activeQuickCategory(pathname, params.get('cat'))}
       offersOn={!!params.get('disc')}
       onCategory={(id) => go({ categoryId: id })}
     />

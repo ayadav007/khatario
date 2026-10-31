@@ -1,11 +1,13 @@
-import { quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
+import { activeQuickCategory, quickChips, quickDeliveryLine, quickSearchHints } from '@/lib/store/engine/quick-header';
 import { cleanPincode, pincodeLine, pincodeServiceable } from '@/lib/store/store-pincode';
 
 describe('Quick header', () => {
-  it('reads a delivery time as "Delivery …" and other text as written', () => {
+  it('reads a delivery time as "Delivery …", keeps a "Deliver…" line, else shows the store name', () => {
     expect(quickDeliveryLine('in 30 minutes', 'Shop')).toBe('Delivery in 30 minutes');
     expect(quickDeliveryLine('10 mins', 'Shop')).toBe('Delivery 10 mins');
-    expect(quickDeliveryLine('Fresh Groceries delivered', 'Shop')).toBe('Fresh Groceries delivered');
+    expect(quickDeliveryLine('Delivery by 7 pm', 'Shop')).toBe('Delivery by 7 pm');
+    expect(quickDeliveryLine('Fresh Groceries delivered', 'Shop')).toBe('Shop');
+    expect(quickDeliveryLine('Khatario theme preview', 'Quick preview')).toBe('Quick preview');
     expect(quickDeliveryLine('  ', 'Shop')).toBe('Shop');
   });
 
@@ -29,6 +31,13 @@ describe('Quick header', () => {
     ]);
     expect(chips[2]).toMatchObject({ categoryId: 'v' });
     expect(chips[3]).toMatchObject({ href: '/catalog?disc=10' });
+  });
+
+  it('knows the category from the catalog path or the home ?cat', () => {
+    expect(activeQuickCategory('/catalog/abc', null)).toBe('abc');
+    expect(activeQuickCategory('/', 'xyz')).toBe('xyz');
+    expect(activeQuickCategory('/catalog', null)).toBeNull();
+    expect(activeQuickCategory('/products/p1', '')).toBeNull();
   });
 
   it('cycles category hints, or keeps the placeholder', () => {

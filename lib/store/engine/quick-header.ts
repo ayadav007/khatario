@@ -11,13 +11,14 @@ export interface QuickChip {
 }
 
 /**
- * First line of the location button: "Delivery in 30 minutes" for a delivery time, else the text as written,
- * else the store name.
+ * First line of the location button: "Delivery in 30 minutes" for a delivery time, a line that already starts
+ * with "Deliver…" as written, else the store name (a tagline carried into the field is not a delivery time).
  */
 export function quickDeliveryLine(eta: string, storeName: string): string {
   const t = eta.trim();
-  if (!t) return storeName;
-  return /^(in|within|under)\b|^\d/i.test(t) ? `Delivery ${t}` : t;
+  if (/^(in|within|under)\b|^\d/i.test(t)) return `Delivery ${t}`;
+  if (/^deliver/i.test(t)) return t;
+  return storeName;
 }
 
 /**
@@ -44,4 +45,11 @@ export function quickChips(
 export function quickSearchHints(placeholder: string, categories: Array<{ name: string }>): string[] {
   const names = categories.slice(0, 8).map((c) => c.name).filter(Boolean);
   return names.length ? names.map((n) => `Search “${n}”`) : [placeholder];
+}
+
+/** The category a page shows: `/catalog/<id>` or the home grid's `?cat=<id>`; null otherwise. */
+export function activeQuickCategory(pathname: string, cat: string | null): string | null {
+  const m = /^\/catalog\/([^/?#]+)/.exec(pathname);
+  if (m) return decodeURIComponent(m[1]);
+  return cat || null;
 }

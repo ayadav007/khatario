@@ -92,6 +92,8 @@
 .st-root.store-quick .addBtn svg{display:none}
 .st-root.store-quick .addBtn:hover{background:color-mix(in srgb,var(--primary) 8%,var(--st-card));color:var(--primary)}
 .st-root.store-quick .addBtn:disabled{background:var(--st-card);box-shadow:none;font-weight:600}
+/* Out of stock: the image's "Out of stock" label says it; the disabled button on the same corner would overlap it. */
+.st-root.store-quick .product:has(.out) .addWrap:has(.addBtn:disabled){display:none}
 .st-root.store-quick .stepper{height:32px;min-width:84px;border-radius:9px;box-shadow:0 3px 10px -4px rgba(15,23,42,.35)}
 .st-root.store-quick .stepper button{width:28px;height:32px}
 .st-root.store-quick .pimg .fav{width:28px;height:28px;right:6px;top:6px}
