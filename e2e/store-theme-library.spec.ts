@@ -210,6 +210,26 @@ async function latestVersion(page: Page): Promise<VersionApiRow> {
 
 const historyDrawer = (page: Page): Locator => page.getByRole('dialog', { name: 'Version history' });
 
+// ---- the per-store premium themes flag (business_settings.store_premium_themes) --------------------
+
+let originalPremium = false;
+
+async function readPremium(): Promise<boolean> {
+  return withDb(async (db) => {
+    const r = await db.query<{ on: boolean | null }>(
+      `SELECT store_premium_themes AS on FROM business_settings WHERE business_id = $1`,
+      [BUSINESS_ID],
+    );
+    if (!r.rows[0]) throw new Error('ganesh settings row not found');
+    return r.rows[0].on === true;
+  });
+}
+
+/** Flip the flag for the E2E store (through the test-DB helper, so it only ever touches kh_phase2_test). */
+async function setPremium(on: boolean): Promise<void> {
+  await withDb((db) => db.query(`UPDATE business_settings SET store_premium_themes = $2 WHERE business_id = $1`, [BUSINESS_ID, on]));
+}
+
 // ---- tests --------------------------------------------------------------------------------------
 
 test.describe('Store theme library', () => {
@@ -220,6 +240,7 @@ test.describe('Store theme library', () => {
   test.beforeAll(async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
     snap = await takeSnapshot();
+    originalPremium = await readPremium();
     await restore(snap, true);
     await login(browser, baseURL ?? 'http://localhost:3015');
   });
@@ -231,6 +252,7 @@ test.describe('Store theme library', () => {
 
   test.afterAll(async () => {
     if (snap) await restore(snap, snap.storeEngine);
+    await setPremium(originalPremium);
   });
 
   test('library shows live card and working copy', async ({ page }) => {
@@ -421,5 +443,64 @@ test.describe('Store theme library', () => {
     expect(restored.role).toBe('draft');
     expect(restored.is_working).toBe(false);
     expect(restored.preset).toBe('grocery');
+  });
+  // ---- premium presets (written, not run) ----------------------------------------------------------
+
+  test('flag off: Add theme lists five presets, no Premium pill, and a direct POST is refused', async ({ page }) => {
+    await setPremium(false);
+    await openLibrary(page);
+    await page.getByRole('button', { name: 'Add theme', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add theme' });
+    await expect(dialog).toBeVisible();
+    // Five presets (Studio, Quick, Premium Grocery, Khatario, Blank) plus "Your current store design".
+    await expect(dialog.getByRole('radio')).toHaveCount(6);
+    const values = () => dialog.locator('input[type="radio"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+    expect(await values()).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'migrated']);
+    await expect(dialog.locator('label', { hasText: 'Heritage Couture' })).toHaveCount(0);
+    await expect(dialog.getByText('Premium', { exact: true })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    // The server refuses too, whatever the modal shows.
+    const list = await page.request.get('/api/settings/online-store/themes');
+    expect(list.ok()).toBeTruthy();
+    expect((await list.json()).premium_enabled).toBe(false);
+    const before = await themeCount();
+    const res = await page.request.post('/api/settings/online-store/themes', { data: { preset: 'heritage' } });
+    expect(res.status()).toBe(403);
+    expect((await res.json()).code).toBe('premium_locked');
+    expect(await themeCount()).toBe(before);
+  });
+
+  test('flag on: Heritage Couture shows a Premium pill and creates a draft that starts with a Collage', async ({ page }) => {
+    try {
+      await setPremium(true);
+      await openLibrary(page);
+      await page.getByRole('button', { name: 'Add theme', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Add theme' });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('radio')).toHaveCount(7);
+      await expect(dialog.locator('input[type="radio"][value="heritage"]')).toHaveCount(1);
+      const heritage = dialog.locator('label', { hasText: 'Heritage Couture' });
+      await expect(heritage).toHaveCount(1);
+      await expect(heritage.getByText('Premium', { exact: true })).toBeVisible();
+      await heritage.click();
+      await dialog.getByRole('button', { name: 'Add theme', exact: true }).click();
+      await expect(dialog).toBeHidden({ timeout: SLOW });
+
+      const row = draftNamed(page, 'Heritage Couture');
+      await expect(row).toBeVisible({ timeout: SLOW });
+      expect(await themeCount()).toBe(snap!.themes.length + 1);
+      const id = await row.getAttribute('data-theme-id');
+      expect(id).toBeTruthy();
+      const theme = await savedTheme(page, id!);
+      expect(theme.preset).toBe('heritage');
+      expect(theme.role).toBe('draft');
+      expect(theme.is_working).toBe(false);
+      const home = (theme.data as { templates: { home: { order: string[]; sections: Record<string, { type: string }> } } }).templates.home;
+      expect(home.sections[home.order[0]].type).toBe('collage');
+    } finally {
+      await setPremium(originalPremium);
+    }
   });
 });

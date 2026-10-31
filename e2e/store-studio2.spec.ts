@@ -17,7 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from 'dotenv';
 import { Client } from 'pg';
-import { test, expect, type Browser, type FrameLocator, type Page } from '@playwright/test';
+import { test, expect, type Browser, type FrameLocator, type Locator, type Page } from '@playwright/test';
 
 config({ path: '.env' });
 
@@ -254,6 +254,72 @@ async function expandSection(page: Page, label: string): Promise<void> {
   const open = sectionsNav(page).getByRole('button', { name: `Expand ${label}`, exact: true });
   if (await open.isVisible()) await open.click();
   await expect(sectionsNav(page).getByRole('button', { name: `Collapse ${label}`, exact: true })).toBeVisible();
+}
+
+// ---- helpers for the Collage, Shop the look and Image gallery scenarios ------------------------------
+
+const SAMPLE_IMAGE = (name: string) => `/store-presets/heritage/${name}.svg`;
+
+/** A product the store sells (so the section data loader finds it); `addable` also needs stock and no options. */
+async function storeProduct(addable: boolean): Promise<{ id: string; name: string }> {
+  const row = await withDb(async (db) =>
+    (
+      await db.query<{ id: string; name: string }>(
+        `SELECT id, name FROM items
+         WHERE business_id = $1 AND show_in_store = true AND (is_active IS NULL OR is_active = true) AND deleted_at IS NULL
+           ${addable ? 'AND COALESCE(has_variants, false) = false AND COALESCE(current_stock, 0) > 0' : ''}
+         ORDER BY name LIMIT 1`,
+        [BUSINESS_ID],
+      )
+    ).rows[0],
+  );
+  expect(row, 'the test store needs a product that is shown in the store').toBeTruthy();
+  return row;
+}
+
+/**
+ * Add a section under the first home section from the preview's "+" (the second "+" sits under it, so the new
+ * section lands at position 1), wait for the save, select it in the tree and return its id.
+ */
+async function addHomeSection(page: Page, themeId: string, card: RegExp, type: string, treeLabel: string): Promise<string> {
+  const add = preview(page).getByRole('button', { name: 'Add section here' });
+  await expect(add.first()).toBeVisible({ timeout: 30_000 });
+  await add.nth(1).click();
+  const dialog = page.getByRole('dialog', { name: 'Add section' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: card }).first().click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(async () => {
+      const home = (await savedTheme(page, themeId)).data.templates.home;
+      return home.sections[home.order[1]]?.type;
+    }, { timeout: 30_000 })
+    .toBe(type);
+  const sectionId = (await savedTheme(page, themeId)).data.templates.home.order[1];
+  await treeButton(page, treeLabel).click();
+  return sectionId;
+}
+
+type SavedBlock = { type: string; settings?: Record<string, unknown> };
+
+/** One home section's blocks in saved order, with their settings. */
+async function savedBlocks(page: Page, themeId: string, sectionId: string): Promise<SavedBlock[]> {
+  const section = (await savedTheme(page, themeId)).data.templates.home.sections[sectionId] as unknown as
+    | { block_order: string[]; blocks: Record<string, SavedBlock> }
+    | undefined;
+  return (section?.block_order ?? []).map((b) => section!.blocks[b]);
+}
+
+/** Open the nth block of a type in the tree (blocks of one type share a title). */
+const selectBlock = (page: Page, title: string, n: number) => sectionsNav(page).locator(`button[title="${title}"]`).nth(n).click();
+
+/** Fill the selected block's or section's Image field with a sample picture (the paste box; no upload). */
+const setImage = (page: Page, src: string) => page.getByPlaceholder(/Or paste https/).fill(src);
+
+/** Search the Product field of the selected block and pick the matching result. */
+async function pickProduct(page: Page, name: string): Promise<void> {
+  await page.getByLabel('Product', { exact: true }).fill(name);
+  await page.getByRole('button', { name, exact: true }).first().click();
 }
 
 // ---- tests --------------------------------------------------------------------------------------
@@ -725,5 +791,145 @@ test.describe('Studio 2 store design editor', () => {
         }
       });
     }
+  });
+
+  // ---- Heritage Couture sections (written, not run) -------------------------------------------------
+
+  test('collage: an image tile and a product tile survive save and reload', async ({ page }) => {
+    const id = snap!.working.id;
+    const product = await storeProduct(false);
+    await openEditor(page, id);
+    const sectionId = await addHomeSection(page, id, /^Collage/, 'collage', 'Collage');
+
+    // The starter has three image tiles. Give the first a picture, then add a fourth tile: a product.
+    await expandSection(page, 'Collage');
+    await selectBlock(page, 'Image tile', 0);
+    await setImage(page, SAMPLE_IMAGE('hero-1'));
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+    await page.getByRole('button', { name: 'Add block', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Product tile/ }).click();
+    await pickProduct(page, product.name);
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+    await expect
+      .poll(async () => {
+        const blocks = await savedBlocks(page, id, sectionId);
+        return [blocks.map((b) => b.type), blocks[0]?.settings?.image, blocks[3]?.settings?.product];
+      }, { timeout: 30_000 })
+      .toEqual([['image_tile', 'image_tile', 'image_tile', 'product_tile'], SAMPLE_IMAGE('hero-1'), product.id]);
+
+    // Tiles with no picture are skipped, so the preview draws exactly the two that are filled in.
+    const collage = preview(page).locator(`[data-section-id="${sectionId}"]`);
+    const tiles = async () => {
+      await expect(collage.locator('.eng-collage-tile[data-kind="image"]')).toHaveCount(1, { timeout: 30_000 });
+      await expect(collage.locator('.eng-collage-tile[data-kind="product"]')).toHaveCount(1);
+      await expect(collage.locator('.eng-collage-tile[data-kind="product"]')).toContainText(product.name);
+    };
+    await tiles();
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForEditor(page);
+    await tiles();
+    expect((await savedBlocks(page, id, sectionId)).map((b) => b.type)).toEqual(['image_tile', 'image_tile', 'image_tile', 'product_tile']);
+  });
+
+  test('shop the look: the pin sits at x 30 / y 40 and opens a card with Add to bag', async ({ page, browser, baseURL }) => {
+    const id = snap!.working.id;
+    const product = await storeProduct(true);
+    await openEditor(page, id);
+    const sectionId = await addHomeSection(page, id, /^Shop the look/, 'shop-the-look', 'Shop the look');
+
+    await setImage(page, SAMPLE_IMAGE('look'));
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+
+    // One hotspot: pick the product, then place it with the two position boxes.
+    await expandSection(page, 'Shop the look');
+    await page.getByRole('button', { name: 'Add block', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Hotspot/ }).click();
+    await pickProduct(page, product.name);
+    for (const [label, value] of [['Horizontal position (%)', '30'], ['Vertical position (%)', '40']]) {
+      const box = page.getByRole('spinbutton', { name: label });
+      await box.fill(value);
+      await box.press('Enter');
+    }
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    await expect
+      .poll(async () => {
+        const hotspot = (await savedBlocks(page, id, sectionId))[0];
+        return [hotspot?.type, hotspot?.settings?.product, hotspot?.settings?.x, hotspot?.settings?.y];
+      }, { timeout: 30_000 })
+      .toEqual(['hotspot', product.id, 30, 40]);
+
+    // In the editor preview: one pin at 30% / 40% of the photo (its centre, within two points).
+    const placed = async (look: Locator) => {
+      const pin = look.locator('.eng-look-pin');
+      await expect(pin).toHaveCount(1, { timeout: 30_000 });
+      await expect(pin).toHaveAttribute('style', /left:\s*30%/);
+      await expect(pin).toHaveAttribute('style', /top:\s*40%/);
+      await pin.scrollIntoViewIfNeeded();
+      const [p, photo] = [await pin.boundingBox(), await look.locator('.eng-look-photo').boundingBox()];
+      expect(p && photo).toBeTruthy();
+      expect(Math.abs(((p!.x + p!.width / 2 - photo!.x) / photo!.width) * 100 - 30)).toBeLessThan(2);
+      expect(Math.abs(((p!.y + p!.height / 2 - photo!.y) / photo!.height) * 100 - 40)).toBeLessThan(2);
+    };
+    await placed(preview(page).locator(`[data-section-id="${sectionId}"]`));
+
+    // The editor's click guard swallows clicks in the preview, so open the pin as a shopper: publish first.
+    await page.getByRole('button', { name: 'Publish', exact: true }).click();
+    const confirm = page.getByRole('dialog', { name: 'Publish this theme? Shoppers will see it now.' });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect(page.getByText('Published', { exact: true })).toBeVisible({ timeout: SLOW });
+
+    const shopper = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    try {
+      const shop = await shopper.newPage();
+      await shop.goto(`${storeOrigin(baseURL)}/`, { waitUntil: 'domcontentloaded', timeout: SLOW });
+      const look = shop.locator('.eng-look').first();
+      await expect(look.locator('.eng-look-pin')).toBeVisible({ timeout: SLOW });
+      await placed(look);
+
+      // Clicking a pin before the page hydrates does nothing, so retry until the card opens.
+      const card = look.locator('.eng-look-card');
+      await expect(async () => {
+        await look.locator('.eng-look-pin').click();
+        await expect(card).toBeVisible({ timeout: 2_000 });
+      }).toPass({ timeout: 30_000 });
+      await expect(card).toContainText(product.name);
+      const addToBag = card.getByRole('button', { name: 'Add to bag' });
+      await expect(addToBag).toBeVisible();
+      await addToBag.click();
+      await expect(card.getByRole('button', { name: 'Added' })).toBeVisible();
+    } finally {
+      await shopper.close();
+    }
+  });
+
+  test('image gallery: two pictures as a scrolling strip', async ({ page }) => {
+    const id = snap!.working.id;
+    await openEditor(page, id);
+    const sectionId = await addHomeSection(page, id, /^Image gallery/, 'image-gallery', 'Image gallery');
+
+    // Layout first (the section's own settings), then the pictures. The starter has four image blocks; only the
+    // two given a picture are drawn.
+    await page.getByLabel('Layout', { exact: true }).selectOption('strip');
+    await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    await expandSection(page, 'Image gallery');
+    for (const [n, name] of [[0, 'gallery-1'], [1, 'gallery-2']] as const) {
+      await selectBlock(page, 'Image', n);
+      await setImage(page, SAMPLE_IMAGE(name));
+      await expect(status(page)).toHaveText('Saved', { timeout: 30_000 });
+    }
+    await expect
+      .poll(async () => {
+        const section = (await savedTheme(page, id)).data.templates.home.sections[sectionId];
+        return [section?.settings.layout, (await savedBlocks(page, id, sectionId)).map((b) => b.settings?.image ?? '')];
+      }, { timeout: 30_000 })
+      .toEqual(['strip', [SAMPLE_IMAGE('gallery-1'), SAMPLE_IMAGE('gallery-2'), '', '']]);
+
+    const gallery = preview(page).locator(`[data-section-id="${sectionId}"] .eng-gallery`);
+    await expect(gallery).toHaveClass(/eng-gallery--strip/, { timeout: 30_000 });
+    await expect(gallery.locator('.eng-gallery-item')).toHaveCount(2);
   });
 });
