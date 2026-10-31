@@ -6,7 +6,7 @@ import { getTheme } from '@/lib/store/engine/themes-repo';
 import { PREVIEW_TTL, signThemePreview } from '@/lib/store/engine/preview-token';
 import { isPreviewPath } from '@/lib/store/engine/preview-path';
 import { isUuid, notFound } from '@/lib/store/engine/route-utils';
-import { storeHostSuffix, storePublicHostname } from '@/lib/store/subdomain';
+import { storePreviewUrl } from '@/lib/store/engine/preview-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,14 +40,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const subdomain = settings?.store_subdomain;
     if (!subdomain) return NextResponse.json({ error: 'Set a store URL under Store setup first.' }, { status: 409 });
 
-    const hostHeader = request.headers.get('x-forwarded-host') || request.headers.get('host') || request.nextUrl.host;
-    const [appHostname, appPort] = hostHeader.split(',')[0].trim().split(':');
-    const proto = (request.headers.get('x-forwarded-proto') || request.nextUrl.protocol.replace(':', '')).split(',')[0].trim();
-    const port = storeHostSuffix(appHostname) === '.localhost' && appPort ? `:${appPort}` : '';
-
     const ttl = PREVIEW_TTL[body.kind];
     const token = signThemePreview(tenant.businessId, theme.id, ttl);
-    const url = `${proto}://${storePublicHostname(subdomain, appHostname)}${port}${path}?preview_theme=${theme.id}&pt=${encodeURIComponent(token)}`;
+    const url = storePreviewUrl(request, subdomain, path, theme.id, token);
     return NextResponse.json({ url, expires_at: new Date(Date.now() + ttl).toISOString() });
   } catch (error) {
     console.error('themes/[id]/preview-link POST:', error);

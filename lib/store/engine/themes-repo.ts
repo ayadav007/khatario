@@ -7,7 +7,7 @@ import { presetTheme, type PresetContext } from './presets';
 import { presetContextFor, presetContextFromRow } from './preset-context';
 import { migrateStoreTheme } from './migrate';
 import { migrationInputFor, type MigrationInput } from './migration-input';
-import { insertVersionLocked } from './versions-repo';
+import { getVersion, insertVersionLocked } from './versions-repo';
 
 export type { MigrationInput } from './migration-input';
 
@@ -190,24 +190,50 @@ async function createThemeLocked(
   }
 }
 
-/** Caller holds the business advisory lock. The first theme is live, any other a draft; `limit` at 20 themes. */
+/**
+ * Caller holds the business advisory lock. The first theme is live, any other a draft (`draftOnly`: always a draft);
+ * `limit` at 20 themes.
+ */
 async function insertThemeLocked(
   client: PoolClient,
   businessId: string,
   userId: string,
   theme: { name: string; preset: ThemePreset; data: ThemeData },
+  draftOnly = false,
 ): Promise<RepoResult<ThemeRow>> {
   const res = await client.query(
     `INSERT INTO store_themes (business_id, name, role, preset, data, updated_by)
      SELECT $1, $2,
-            CASE WHEN EXISTS (SELECT 1 FROM store_themes WHERE business_id = $1 AND role = 'live') THEN 'draft' ELSE 'live' END,
+            CASE WHEN $7::boolean OR EXISTS (SELECT 1 FROM store_themes WHERE business_id = $1 AND role = 'live') THEN 'draft' ELSE 'live' END,
             $3, $4::jsonb, $5
      WHERE (SELECT count(*) FROM store_themes WHERE business_id = $1) < $6
      RETURNING ${ROW_COLS}`,
-    [businessId, theme.name.slice(0, NAME_MAX), theme.preset, JSON.stringify(theme.data), userId, ENGINE_LIMITS.themesPerBusiness],
+    [businessId, theme.name.slice(0, NAME_MAX), theme.preset, JSON.stringify(theme.data), userId, ENGINE_LIMITS.themesPerBusiness, draftOnly],
   );
   if (res.rows.length === 0) return fail<ThemeRow>('limit');
   return good(res.rows[0] as ThemeRow);
+}
+
+const RESTORED_PREFIX = 'Restored: ';
+
+/**
+ * D48 Restore as draft. Under the business lock and the same 20-theme INSERT check as every create, a published
+ * version of this business becomes a new draft: "Restored: <theme name>" (cut to 60), the version's preset, and its
+ * data sanitised again (schemas may have changed since the publish). It never goes live and never writes a version.
+ * `not_found` for an unknown or another business's version, `limit` at 20 themes, `too_large` over the cap.
+ * (It lives here, not in versions-repo, because the lock and the limit INSERT do; versions-repo stays import-free of
+ * this module, so there is no cycle.)
+ */
+export async function restoreVersion(businessId: string, userId: string, versionId: string): Promise<RepoResult<ThemeRow>> {
+  return inTransaction(async (client) => {
+    await lockBusinessThemes(client, businessId);
+    const version = await getVersion(businessId, versionId, client);
+    if (!version) return fail<ThemeRow>('not_found');
+    const data = sanitizeThemeData(version.data);
+    if (themeTooLarge(data)) return fail<ThemeRow>('too_large');
+    const name = `${RESTORED_PREFIX}${version.theme_name}`.slice(0, NAME_MAX);
+    return insertThemeLocked(client, businessId, userId, { name, preset: version.preset, data }, true);
+  });
 }
 
 const EDITING_SUFFIX = ' (editing)';

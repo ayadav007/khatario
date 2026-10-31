@@ -15,7 +15,8 @@ jest.mock('@/lib/subscription/feature-access', () => ({ hasFeatureAccess: jest.f
 
 import { getPool, closePool } from '@/lib/db';
 import { createTheme, getLiveTheme } from '@/lib/store/engine/themes-repo';
-import { signThemePreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
+import { signThemePreview, signVersionPreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
+import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
 import { loadEngineTheme } from '@/lib/store/engine/load-theme';
 import { loadEnginePage } from '@/lib/store/engine/page-loader';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
@@ -72,6 +73,7 @@ d('Storefront theme loading (real DB)', () => {
     else process.env.JWT_SECRET = savedSecret;
     if (!pool) return;
     const ids = [[BIZ, OTHER, EMPTY]];
+    await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, ids);
     await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, ids);
     await pool.query(`DELETE FROM business_settings WHERE business_id = ANY($1)`, ids);
     await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, ids);
@@ -225,5 +227,84 @@ d('Storefront theme loading (real DB)', () => {
     expect(demo.is_demo).toBe(true);
     const pt = signThemePreview(demo.business_id, draft.id, PREVIEW_TTL.editor);
     expect(await resolveOfflineStoreForPreview(slug, draft.id, pt)).toBeNull();
+  });
+
+  describe('version previews (M5 D47)', () => {
+    let vid: string;
+    let otherVid: string;
+    const addVersion = async (theme: ThemeRow, name: string) =>
+      (
+        await pool.query(
+          `INSERT INTO store_theme_versions (theme_id, business_id, data, preset, theme_name, published_by)
+           SELECT id, business_id, data, preset, $2, NULL FROM store_themes WHERE id = $1 RETURNING id`,
+          [theme.id, name],
+        )
+      ).rows[0].id as string;
+
+    beforeAll(async () => {
+      vid = await addVersion(draft, 'Old look');
+      otherVid = await addVersion(otherDraft, 'Other old look');
+    });
+
+    it("a version token opens the version's data read-only, even when the flag is off", async () => {
+      await setFlag(BIZ, false);
+      const pt = signVersionPreview(BIZ, vid, PREVIEW_TTL.version);
+      const out = await loadEngineTheme(storeOf(BIZ), { preview_theme: vid, pt });
+      expect(out?.preview).toBe(true);
+      expect(out?.version).toBe(true);
+      expect(out?.theme).toMatchObject({ id: vid, name: 'Old look', preset: draft.preset, role: 'draft', is_working: false });
+      expect(out?.theme.data).toEqual(sanitizeThemeData(draft.data));
+      // A theme preview carries no version flag.
+      const themeOut = await loadEngineTheme(storeOf(BIZ), { preview_theme: draft.id, pt: signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor) });
+      expect(themeOut?.version).toBeUndefined();
+    });
+
+    it('a version is never in editor mode, even with editor=1', async () => {
+      await setFlag(BIZ, false);
+      const pt = signVersionPreview(BIZ, vid, PREVIEW_TTL.version);
+      const page = await loadEnginePage(storeOf(BIZ), { preview_theme: vid, pt, editor: '1' }, 'home');
+      expect(page?.preview).toBe(true);
+      expect(page?.theme.id).toBe(vid);
+      expect(page?.editor).toBe(false);
+      // The same request for a theme token is editor mode, so the flag is what turns it off.
+      const themePt = signThemePreview(BIZ, draft.id, PREVIEW_TTL.editor);
+      expect((await loadEnginePage(storeOf(BIZ), { preview_theme: draft.id, pt: themePt, editor: '1' }, 'home'))?.editor).toBe(true);
+    });
+
+    it('token kinds never cross: a version token with a theme id, and a theme token with a version id, do not resolve', async () => {
+      await setFlag(BIZ, false);
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: draft.id, pt: signVersionPreview(BIZ, draft.id, PREVIEW_TTL.version) })).toBeNull();
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: vid, pt: signThemePreview(BIZ, vid, PREVIEW_TTL.editor) })).toBeNull();
+      // A genuine version token for another version id of this business does not open this one.
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: draft.id, pt: signVersionPreview(BIZ, vid, PREVIEW_TTL.version) })).toBeNull();
+    });
+
+    it('a version token signed for another business does not resolve, with either version id', async () => {
+      await setFlag(BIZ, false);
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: otherVid, pt: signVersionPreview(OTHER, otherVid, PREVIEW_TTL.version) })).toBeNull();
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: vid, pt: signVersionPreview(OTHER, vid, PREVIEW_TTL.version) })).toBeNull();
+      // Signed for this business but naming the other business's version: the lookup is scoped, so still nothing.
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: otherVid, pt: signVersionPreview(BIZ, otherVid, PREVIEW_TTL.version) })).toBeNull();
+      // An expired version token.
+      const expired = signVersionPreview(BIZ, vid, PREVIEW_TTL.version, Date.now() - 3 * 3600_000);
+      expect(await loadEngineTheme(storeOf(BIZ), { preview_theme: vid, pt: expired })).toBeNull();
+    });
+
+    it('an unlaunched store resolves for a version token and not for a tampered one', async () => {
+      await setFlag(BIZ, false);
+      expect(await resolveStoreBySubdomain(SUB)).toBeNull();
+      const pt = signVersionPreview(BIZ, vid, PREVIEW_TTL.version);
+      const store = await resolveOfflineStoreForPreview(SUB, vid.toUpperCase(), pt);
+      expect(store?.business_id).toBe(BIZ);
+      const out = await loadEngineTheme(store!, { preview_theme: vid, pt });
+      expect(out?.version).toBe(true);
+      expect(out?.theme.id).toBe(vid);
+
+      const [body, sig] = pt.split('.');
+      const flip = (s: string, i: number) => `${s.slice(0, i)}${s[i] === 'A' ? 'B' : 'A'}${s.slice(i + 1)}`;
+      expect(await resolveOfflineStoreForPreview(SUB, vid, `${body}.${flip(sig, sig.length >> 1)}`)).toBeNull();
+      expect(await resolveOfflineStoreForPreview(SUB, vid, signThemePreview(BIZ, vid, PREVIEW_TTL.editor))).toBeNull();
+      expect(await resolveOfflineStoreForPreview(SUB, otherVid, signVersionPreview(OTHER, otherVid, PREVIEW_TTL.version))).toBeNull();
+    });
   });
 });

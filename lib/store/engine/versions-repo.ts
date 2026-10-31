@@ -28,12 +28,14 @@ export async function listVersions(businessId: string): Promise<ThemeVersionSumm
   );
 }
 
-/** One version with its data; null for an unknown id or another business's version. */
-export async function getVersion(businessId: string, versionId: string): Promise<ThemeVersionRow | null> {
-  return queryOne<ThemeVersionRow>(
-    `SELECT ${SUMMARY_COLS}, v.business_id, v.data ${FROM} WHERE v.business_id = $1 AND v.id = $2`,
-    [businessId, versionId],
-  );
+/**
+ * One version with its data; null for an unknown id or another business's version. With `client`, the read goes
+ * through that connection (a caller holding the business lock does no nested pool read).
+ */
+export async function getVersion(businessId: string, versionId: string, client?: PoolClient): Promise<ThemeVersionRow | null> {
+  const sql = `SELECT ${SUMMARY_COLS}, v.business_id, v.data ${FROM} WHERE v.business_id = $1 AND v.id = $2`;
+  if (client) return ((await client.query(sql, [businessId, versionId])).rows[0] as ThemeVersionRow | undefined) ?? null;
+  return queryOne<ThemeVersionRow>(sql, [businessId, versionId]);
 }
 
 /** A version shown as a read-only theme (D47): its own id, a draft that is never the working draft. Pure. */

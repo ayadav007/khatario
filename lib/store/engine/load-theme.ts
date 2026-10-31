@@ -3,27 +3,12 @@ import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { filterDemoCatalog } from '@/lib/store/theme-demo';
 import { migrateStoreTheme } from './migrate';
 import { sanitizeThemeData } from './sanitize';
-import { getLiveTheme, getTheme } from './themes-repo';
-import { verifyThemePreview } from './preview-token';
+import { getLiveTheme } from './themes-repo';
+import { resolvePreviewTarget } from './preview-target';
 import type { ThemeRow } from './types';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function clean(row: ThemeRow): ThemeRow {
   return { ...row, data: sanitizeThemeData(row.data) };
-}
-
-/** A preview needs a genuine token for this business, for exactly the requested theme, which must still exist. */
-async function previewTheme(store: StoreBusinessContext, previewId: string | null | undefined, token: string | null | undefined) {
-  if (!previewId || !token || !UUID.test(previewId)) return null;
-  let verified: string | null = null;
-  try {
-    verified = verifyThemePreview(token, store.business_id);
-  } catch {
-    return null; // no signing secret configured: treat as no valid preview
-  }
-  if (!verified || verified.toLowerCase() !== previewId.toLowerCase()) return null;
-  return getTheme(store.business_id, previewId);
 }
 
 /** The fixed id of a demo store's migrated theme; it is never stored. */
@@ -61,15 +46,16 @@ export function demoEngineTheme(store: StoreBusinessContext): ThemeRow {
 export async function loadEngineTheme(
   store: StoreBusinessContext,
   params: { preview_theme?: string | null; pt?: string | null; engine?: string | null },
-): Promise<{ theme: ThemeRow; preview: boolean; demo?: true } | null> {
+): Promise<{ theme: ThemeRow; preview: boolean; demo?: true; version?: true } | null> {
   // Demo stores touch no database: `?engine=1` shows their migrated theme as a preview, anything else the old store.
   // Real stores ignore `engine`.
   if (store.is_demo) {
     return params.engine === '1' ? { theme: demoEngineTheme(store), preview: true, demo: true } : null;
   }
 
-  const previewed = await previewTheme(store, params.preview_theme, params.pt);
-  if (previewed) return { theme: clean(previewed), preview: true };
+  // A genuine token for this business naming exactly this theme or version (D47); a version is read-only.
+  const previewed = await resolvePreviewTarget(store.business_id, params.preview_theme, params.pt);
+  if (previewed) return { theme: clean(previewed.theme), preview: true, ...(previewed.version ? { version: true as const } : {}) };
 
   const flag = await queryOne<{ store_engine: boolean | null }>(
     `SELECT store_engine FROM business_settings WHERE business_id = $1`,

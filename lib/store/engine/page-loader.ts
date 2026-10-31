@@ -8,7 +8,7 @@ export type HomeSearchParams = Record<string, string | string[] | undefined>;
 export interface EnginePage {
   theme: ThemeRow;
   preview: boolean;
-  /** Studio 2 editor mode: a verified preview opened with `editor=1`. */
+  /** Studio 2 editor mode: a verified theme preview (never a version) opened with `editor=1`. */
   editor: boolean;
   /** The requested template, or null when the theme has no template under that key. */
   template: PageTemplate | null;
@@ -103,8 +103,8 @@ export async function loadEnginePage(
       search: narrow?.search ?? null,
       ...(narrow?.minDiscountPct ? { minDiscountPct: narrow.minDiscountPct } : {}),
     });
-    // A demo theme is never stored, so it can never be edited.
-    const editor = preview && !engine.demo && first(searchParams.editor) === '1';
+    // A demo theme is never stored, and a published version is read-only (D47), so neither can ever be edited.
+    const editor = preview && !engine.demo && !engine.version && first(searchParams.editor) === '1';
     return { theme, preview, editor, template, data };
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;
