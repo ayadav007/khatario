@@ -91,23 +91,24 @@ const HERITAGE_INK = '#1c1c18';
 const HERITAGE_GOLD = '#c89d53';
 const HERITAGE_CRIMSON = '#7a0c1e';
 
+/** Ivory, Parchment and Cream: ink on paper, with the gold moved toward black until it reads at 3:1 on that paper. */
 function heritageLight(id: string, name: string, background: string): ColorScheme {
   return {
     id,
     name,
     background,
     text: HERITAGE_INK,
-    accent: HERITAGE_GOLD,
+    accent: readableAccent(HERITAGE_GOLD, background),
     button: HERITAGE_CRIMSON,
     button_text: '#ffffff',
-    border: mixHex(HERITAGE_INK, '#fcf9f3', 0.12),
+    border: mixHex(HERITAGE_INK, background, 0.12),
     card: '#ffffff',
   };
 }
 
 /**
- * Presets whose six schemes are a fixed table rather than derived from a paper and an accent. The store's accent
- * still lands on `schemesFor`'s output: see `heritageSchemes`.
+ * Presets whose six schemes are a fixed table rather than derived from a paper and an accent. `schemesFor` returns
+ * the table as it is, whatever the store's accent: the merchant edits the schemes in Studio 2 for their own colour.
  */
 export const PRESET_SCHEMES: Partial<Record<ThemePreset, ColorScheme[]>> = {
   heritage: [
@@ -150,20 +151,10 @@ export const PRESET_SCHEMES: Partial<Record<ThemePreset, ColorScheme[]>> = {
   ],
 };
 
-/** The fixed table, with the store's accent as the button on Ivory, Parchment and Cream and the paper of Crimson. */
-function heritageSchemes(table: ColorScheme[], accent: string | undefined): ColorScheme[] {
-  const out = table.map((s) => ({ ...s }));
-  if (!validRgb(accent)) return out;
-  const onAccent = chowkOnAccent(accent);
-  for (const i of [0, 1, 4]) out[i] = { ...out[i], button: accent, button_text: contrastRatio(out[i].button_text, accent) >= 3 ? out[i].button_text : onAccent };
-  out[2] = { ...out[2], background: accent, text: contrastRatio(out[2].text, accent) >= 3 ? out[2].text : onAccent };
-  return out;
-}
-
 /** The six colour schemes of a preset (D26), built from its paper and the store's accent. */
 export function schemesFor(preset: ThemePreset, accent: string | undefined, canvas?: string): ColorScheme[] {
   const fixed = PRESET_SCHEMES[preset];
-  if (fixed) return heritageSchemes(fixed, accent);
+  if (fixed) return fixed.map((c) => ({ ...c }));
   const look = PRESET_LOOK[preset] ?? STUDIO_LOOK;
   const a = validRgb(accent) ? accent : look.accent;
   const bg = validRgb(canvas) ? canvas : look.canvas;

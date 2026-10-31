@@ -221,7 +221,8 @@ describe('heritage preset', () => {
   const home = () => heritagePreset(CTX).templates.home;
 
   it('passes the sanitiser unchanged and uses only registered sections and blocks', () => {
-    for (const c of [CTX, { businessName: 'X', tagline: '' }]) {
+    const long = { businessName: 'A & B <Couture>', tagline: `Silk & <zari> ${'x'.repeat(600)}` };
+    for (const c of [CTX, { businessName: 'X', tagline: '' }, long]) {
       const p = presetTheme('heritage', c);
       expect(sanitizeThemeData(p)).toEqual(p);
     }
@@ -285,7 +286,7 @@ describe('heritage preset', () => {
     const a = p.header_group.sections.announcement;
     expect(a.color_scheme).toBe('scheme-3');
     expect(a.settings.text).toBe('Fresh finds, fast delivery');
-    expect(presetTheme('heritage', { businessName: 'X', tagline: '' }).header_group.sections.announcement.settings.text).toBe('Complimentary shipping on orders over ₹15,000');
+    expect(presetTheme('heritage', { businessName: 'Rose Mart', tagline: '' }).header_group.sections.announcement.settings.text).toBe('Welcome to Rose Mart');
     expect(p.settings.menus.find((m) => m.id === 'main')!.items.map(({ label, link }) => ({ label, link }))).toEqual([
       { label: 'New in', link: '/catalog' },
       { label: 'Sarees', link: '/catalog' },
@@ -306,8 +307,16 @@ describe('heritage preset', () => {
     expect(quotes).toHaveLength(1);
     expect(quotes[0].settings).toMatchObject({ text: 'Tell shoppers what a customer said about you.', name: 'A customer' });
     expect(quotes[0].settings.photo).toBeUndefined();
+    expect(h.sections['logo-list'].settings.heading).toBe('Add your press mentions');
     const logos = Object.values(h.sections['logo-list'].blocks).map((b) => b.settings);
     expect(logos.map((l) => l.name)).toEqual(['Your press mention', 'Another publication', 'A magazine']);
     for (const l of logos) expect(l.image).toBeUndefined();
+    // No service claim the merchant never made, in any context.
+    const json = JSON.stringify([heritagePreset(CTX), heritagePreset({ businessName: 'X', tagline: '' })]);
+    for (const claim of ['Complimentary shipping', '15,000', 'Insured delivery', 'insured until', 'Certified materials', 'described as they are', 'on request', 'Personal concierge', 'As featured in']) {
+      expect(json).not.toContain(claim);
+    }
+    const cols = Object.values(h.sections.multicolumn.blocks).map((b) => b.settings.title);
+    expect(cols).toEqual(['Delivery', 'Materials', 'Made to measure', 'Personal service']);
   });
 });

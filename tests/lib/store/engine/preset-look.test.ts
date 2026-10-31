@@ -124,23 +124,18 @@ it('every preset but Heritage starts with the default style', () => {
 });
 
 describe('heritage schemes', () => {
-  it('heritage uses its fixed six schemes and the store accent replaces the button colour', () => {
+  it('heritage uses its fixed six schemes', () => {
     const s = schemesFor('heritage', undefined);
     expect(s.map((x) => x.name)).toEqual(['Ivory', 'Parchment', 'Crimson', 'Dark', 'Cream', 'Gold']);
     expect(s.map((x) => x.id)).toEqual(['scheme-1', 'scheme-2', 'scheme-3', 'scheme-4', 'scheme-5', 'scheme-6']);
-    expect(s[0]).toMatchObject({ background: '#fcf9f3', accent: '#c89d53', button: '#7a0c1e' });
+    expect(s[0]).toMatchObject({ background: '#fcf9f3', button: '#7a0c1e' });
     expect(s[3].background).toBe('#1b1514');
-    expect(schemesFor('heritage', '#004537')[0].button).toBe('#004537');
   });
 
-  it('puts the store accent on Ivory, Parchment and Cream buttons and the Crimson background only', () => {
+  it('ignores the store accent: any accent, valid or not, returns the same table', () => {
     const base = schemesFor('heritage', undefined);
-    const s = schemesFor('heritage', '#004537');
-    for (const i of [0, 1, 4]) expect(s[i].button).toBe('#004537');
-    expect(s[2].background).toBe('#004537');
-    expect(s[3]).toEqual(base[3]);
-    expect(s[5]).toEqual(base[5]);
-    expect(s[2].button).toBe(base[2].button);
+    for (const accent of ['#004537', '#b94717', '#7a0c1e', 'nope', '']) expect(schemesFor('heritage', accent)).toEqual(base);
+    expect(schemesFor('heritage', '#004537', '#101010')).toEqual(base);
   });
 
   it('returns a fresh copy of the table every call', () => {
@@ -149,14 +144,34 @@ describe('heritage schemes', () => {
     expect(schemesFor('heritage', undefined)[0].button).toBe('#7a0c1e');
   });
 
-  it('holds the brief colours', () => {
+  it('holds the brief colours, with a readable gold on the light papers', () => {
     const s = schemesFor('heritage', undefined);
-    expect(s[0]).toEqual({ id: 'scheme-1', name: 'Ivory', background: '#fcf9f3', text: '#1c1c18', accent: '#c89d53', button: '#7a0c1e', button_text: '#ffffff', border: mixHex('#1c1c18', '#fcf9f3', 0.12), card: '#ffffff' });
-    expect(s[1]).toMatchObject({ background: '#f4ece0', text: '#1c1c18' });
+    const light = (i: number, bg: string) => ({
+      id: `scheme-${i + 1}`, background: bg, text: '#1c1c18', accent: readableAccent('#c89d53', bg), button: '#7a0c1e', button_text: '#ffffff', border: mixHex('#1c1c18', bg, 0.12), card: '#ffffff',
+    });
+    expect(s[0]).toMatchObject({ name: 'Ivory', ...light(0, '#fcf9f3') });
+    expect(s[1]).toMatchObject({ name: 'Parchment', ...light(1, '#f4ece0') });
+    expect(s[4]).toMatchObject({ name: 'Cream', ...light(4, '#faf5ed') });
     expect(s[2]).toMatchObject({ background: '#7a0c1e', text: '#fcf9f3', accent: '#c89d53', button: '#c89d53', button_text: '#1c1c18' });
     expect(s[3]).toMatchObject({ background: '#1b1514', text: '#fbf8f5', accent: '#c89d53', button: '#c89d53', button_text: '#1b1514', border: '#3d3230', card: '#2a2220' });
-    expect(s[4]).toMatchObject({ background: '#faf5ed', text: '#1c1c18' });
     expect(s[5]).toMatchObject({ background: '#c89d53', text: '#1c1c18', accent: '#7a0c1e', button: '#7a0c1e', button_text: '#ffffff' });
+    // Gold stays as given where it already reads; the light papers get a darker gold.
+    for (const i of [2, 3]) expect(s[i].accent).toBe('#c89d53');
+    for (const i of [0, 1, 4]) expect(s[i].accent).not.toBe('#c89d53');
+  });
+
+  it('every scheme accent and button reads on its own background (3:1)', () => {
+    for (const x of schemesFor('heritage', undefined)) {
+      expect(contrastRatio(x.accent, x.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(x.button_text, x.button)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('Parchment and Cream compute their border against their own paper', () => {
+    const s = schemesFor('heritage', undefined);
+    expect(s[1].border).toBe(mixHex('#1c1c18', '#f4ece0', 0.12));
+    expect(s[4].border).toBe(mixHex('#1c1c18', '#faf5ed', 0.12));
+    expect(s[1].border).not.toBe(s[0].border);
   });
 
   it('presetSettings gives Heritage its fonts, corners and style fields', () => {

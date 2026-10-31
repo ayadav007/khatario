@@ -9,7 +9,6 @@ const IMG = '/store-presets/heritage';
 const img = (name: string) => `${IMG}/${name}.svg`;
 
 const NEUTRAL_LINE = 'Discover festive and bridal pieces, chosen with care.';
-const DEFAULT_ANNOUNCEMENT = 'Complimentary shipping on orders over ₹15,000';
 
 const escapeHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -21,11 +20,12 @@ const MAIN_MENU: { label: string; link: string }[] = [
   { label: 'Our story', link: '/pages/about' },
 ];
 
+// Placeholder copy: each line tells the merchant what to write, so the preset promises nothing on their behalf.
 const PROMISES = [
-  { icon: 'truck', title: 'Insured delivery', text: 'Every parcel is insured until it reaches you' },
-  { icon: 'shield', title: 'Certified materials', text: 'Fabrics and metals described as they are' },
-  { icon: 'return', title: 'Made to measure', text: 'Alterations and fittings on request' },
-  { icon: 'badge', title: 'Personal concierge', text: 'Help choosing, from first look to gift wrap' },
+  { icon: 'truck', title: 'Delivery', text: 'Say how you pack, insure and ship orders' },
+  { icon: 'shield', title: 'Materials', text: 'Say what your fabrics and metals are' },
+  { icon: 'return', title: 'Made to measure', text: 'Say whether you offer fittings or alterations' },
+  { icon: 'badge', title: 'Personal service', text: 'Say how you help shoppers choose' },
 ];
 
 const PROMO_CARDS = [
@@ -59,7 +59,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
   return {
     settings: presetSettings(ctx, 'heritage'),
     header_group: template([
-      onScheme(section('announcement', { text: tagline.slice(0, 200).trim() || DEFAULT_ANNOUNCEMENT }), 'scheme-3'),
+      onScheme(section('announcement', { text: (tagline || (name ? `Welcome to ${name}` : 'Welcome')).slice(0, 200).trim() }), 'scheme-3'),
       section('header', headerSettings, MAIN_MENU.map((m) => block('menu_link', m))),
     ]),
     footer_group: template([onScheme(footer, 'scheme-4')]),
@@ -110,7 +110,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
         section('testimonials', { show_summary: false }, [
           block('quote', { text: 'Tell shoppers what a customer said about you.', name: 'A customer' }),
         ]),
-        section('logo-list', { heading: 'As featured in' }, [
+        section('logo-list', { heading: 'Add your press mentions' }, [
           block('logo', { name: 'Your press mention', caption: '' }),
           block('logo', { name: 'Another publication', caption: '' }),
           block('logo', { name: 'A magazine', caption: '' }),
