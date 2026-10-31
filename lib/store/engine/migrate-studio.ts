@@ -95,11 +95,11 @@ export function labelLink(label: string, ctx: MigrationContext, w: Warnings, whe
     case 'category':
       return `/catalog/${target.id}`;
     default: {
-      // Only same-store links are kept: a typed absolute address is dropped, so a menu never points off the store
-      // without the merchant re-adding it in Studio 2.
-      const href = target.href.startsWith('/') ? engineUrl(target.href) : '';
+      // A typed address is kept when the engine's link rule takes it (same-store or https), as the old store
+      // linked it; an http or malformed one is dropped.
+      const href = engineUrl(target.href);
       if (href) return href;
-      w.add(`The ${where} link "${label.slice(0, 80)}" was dropped: only links within the store are carried over.`);
+      w.add(`The ${where} link "${label.slice(0, 80)}" was dropped: the new theme only takes https or same-store links.`);
       return null;
     }
   }

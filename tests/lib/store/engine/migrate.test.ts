@@ -236,10 +236,11 @@ describe('hostile', () => {
     expect(r.warnings.some((w) => /6 saved Studio sections/.test(w))).toBe(true);
   });
 
-  it('drops the off-store nav link with a warning', () => {
+  it('keeps a typed https nav link as the old store did, and drops an http one with a warning', () => {
     const links = blocks(r.data.header_group.sections.header, 'menu_link').map((b) => b.settings.link);
-    expect(links).toEqual([`/catalog/${CAT_FRUITS}`]);
-    expect(r.warnings.some((w) => /evil\.com/.test(w))).toBe(true);
+    expect(links).toEqual([`/catalog/${CAT_FRUITS}`, 'https://evil.com/x']);
+    expect(r.warnings.some((w) => /plain\.example/.test(w))).toBe(true);
+    expect(r.warnings.some((w) => /evil\.com/.test(w))).toBe(false);
   });
 
   it('copies the store CSS with a warning', () => {

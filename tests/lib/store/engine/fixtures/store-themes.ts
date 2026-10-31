@@ -166,7 +166,7 @@ export const hostile = {
   custom_css: HOSTILE_CSS,
   studio_sections: [
     { id: 'ANNOUNCE', type: 'announcement', name: 'A', enabled: true, settings: { text: 'Hi', link: 'javascript:alert(1)' } },
-    { id: 'HEADER', type: 'header', name: 'H', enabled: true, settings: { navLinks: 'Fruits, https://evil.com/x' } },
+    { id: 'HEADER', type: 'header', name: 'H', enabled: true, settings: { navLinks: 'Fruits, https://evil.com/x, http://plain.example/y' } },
     { id: 'HERO', type: 'hero', name: 'Hero', enabled: true, settings: { image: 'http://insecure.example.com/h.jpg', heading: 'Hi' } },
     ...Array.from({ length: 27 }, (_, i) => ({
       id: `TEXT-${i + 1}`,
