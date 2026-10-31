@@ -3,11 +3,9 @@
 import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { MENU_CLOSED, foldMenu, menuOpenStep, type ResolvedItem } from '@/lib/store/engine/menus';
+import { MENU_HOLD_EVENT } from './events';
 import { MenuLink, MenuPanel } from './MenuPanel';
 import './menu.css';
-
-/** The editor asks the preview to hold a top item's dropdown open (`itemId: null` releases it). */
-export const MENU_HOLD_EVENT = 'kh-menu-hold';
 
 /** Open-state id of the "More" item; never a valid item id (those match `^[a-z0-9_-]+$`). */
 const MORE = '#more';
@@ -83,6 +81,21 @@ export function MenuBar({
     return () => document.removeEventListener('pointerdown', onDown);
   }, [openId]);
 
+  // Esc closes an open panel wherever focus is (a hover-opened panel has none inside the menu); focus goes back to its
+  // toggle only when it was inside the menu.
+  useEffect(() => {
+    if (openId === null) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const root = rootRef.current;
+      const inside = !!root && root.contains(document.activeElement);
+      dispatch({ type: 'close' });
+      if (inside) root.querySelector<HTMLElement>(`[data-kh-toggle="${openId}"]`)?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [openId]);
+
   // Opened from the keyboard with ArrowDown: move focus to the panel's first link.
   useEffect(() => {
     if (!shown || focusFirst.current !== shown) return;
@@ -91,7 +104,7 @@ export function MenuBar({
   });
 
   // Inline layout: measure every top item (an invisible copy) and fold what does not fit into "More".
-  const sig = items.map((i) => `${i.label}${i.kind === 'link' ? '' : i.href ? '▾' : '▿'}`).join('|');
+  const sig = items.map((i) => `${i.label}${i.kind === 'link' ? '' : i.href ? '▾' : '▿'}${i.highlight ? '!' : ''}`).join('|');
   useIsoLayoutEffect(() => {
     if (!inline) return;
     const root = rootRef.current;
@@ -152,12 +165,6 @@ export function MenuBar({
     const next = e.key === 'ArrowDown' ? Math.min(at + 1, links.length - 1) : Math.max(at - 1, 0);
     links[next]?.focus();
   };
-  const onRootKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || openId === null) return;
-    const id = openId;
-    dispatch({ type: 'close' });
-    rootRef.current?.querySelector<HTMLElement>(`[data-kh-toggle="${id}"]`)?.focus();
-  };
 
   const toggleButton = (id: string, label: string, open: boolean, withText: boolean, extra = '') => (
     <button
@@ -188,7 +195,7 @@ export function MenuBar({
     .join(' ');
 
   return (
-    <nav ref={rootRef} className={rootClass} aria-label="Main" onKeyDown={onRootKey}>
+    <nav ref={rootRef} className={rootClass} aria-label="Main">
       <ul className="kh-menu-list">
         {items.map((item, i) => {
           const hasPanel = item.kind !== 'link';
@@ -263,33 +270,39 @@ export function MenuBar({
         ) : null}
       </ul>
       {inline ? (
-        <ul ref={measureRef} className="kh-menu-list kh-measure" aria-hidden="true">
-          {items.map((item) => (
-            <li key={item.id} className="kh-menu-item">
-              {item.kind !== 'link' && !item.href ? (
-                <span className="kh-top kh-toggle-label">
-                  {item.label}
-                  <ChevronDown />
-                </span>
-              ) : (
-                <>
-                  <span className="kh-top">{item.label}</span>
-                  {item.kind === 'link' ? null : (
-                    <span className="kh-toggle">
+        // A zero-size clipping box, so the max-content measuring list never widens the page.
+        <div className="kh-measure-box" aria-hidden="true">
+          <ul ref={measureRef} className="kh-menu-list kh-measure">
+            {items.map((item) => {
+              const extra = item.highlight ? ' offers' : '';
+              return (
+                <li key={item.id} className="kh-menu-item">
+                  {item.kind !== 'link' && !item.href ? (
+                    <span className={`kh-top kh-toggle-label${extra}`}>
+                      {item.label}
                       <ChevronDown />
                     </span>
+                  ) : (
+                    <>
+                      <span className={`kh-top${extra}`}>{item.label}</span>
+                      {item.kind === 'link' ? null : (
+                        <span className="kh-toggle">
+                          <ChevronDown />
+                        </span>
+                      )}
+                    </>
                   )}
-                </>
-              )}
+                </li>
+              );
+            })}
+            <li className="kh-menu-item">
+              <span className="kh-top kh-toggle-label">
+                More
+                <ChevronDown />
+              </span>
             </li>
-          ))}
-          <li className="kh-menu-item">
-            <span className="kh-top kh-toggle-label">
-              More
-              <ChevronDown />
-            </span>
-          </li>
-        </ul>
+          </ul>
+        </div>
       ) : null}
     </nav>
   );

@@ -1,5 +1,5 @@
 // Client-safe helpers for the Studio 2 editor shell (selection, save status, shortcuts).
-// Pure: no React, no DOM globals. Imports only ops (types + getGroup).
+// Pure: no React, no DOM globals. Imports only types, ops (getGroup) and ../menus (pickMenu).
 import type { MenuItem, ThemeData, ThemeRole } from '../types';
 import { pickMenu } from '../menus';
 import { getGroup, type SectionRef } from './ops';

@@ -22,7 +22,9 @@
 .st-root .kh-menu-inline{flex:1 1 0;min-width:0}
 .st-root .kh-menu-inline .kh-menu-list{gap:20px;flex-wrap:nowrap}
 .st-root .kh-menu-inline:not(.kh-ready) .kh-menu-list{overflow-x:clip}
-.st-root .kh-measure{position:absolute;left:0;top:0;width:max-content;height:0;overflow:hidden;visibility:hidden;pointer-events:none}
+/* The measuring copy sits in a zero-size clipping box, so its max-content width never makes the page scroll sideways. */
+.st-root .kh-measure-box{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none}
+.st-root .kh-measure{width:max-content}
 .st-root .kh-measure > li{flex:0 0 auto}
 
 /* Panels */

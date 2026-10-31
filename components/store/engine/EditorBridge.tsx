@@ -11,7 +11,7 @@ import {
 import type { GroupKey, SectionRef } from '@/lib/store/engine/editor/ops';
 import { insertionPoints } from '@/lib/store/engine/editor/overlay';
 import { ID_RE } from '@/lib/store/engine/shared';
-import { MENU_HOLD_EVENT } from './menu/MenuBar';
+import { MENU_HOLD_EVENT } from './menu/events';
 
 const ACCENT = 'var(--primary, #2563eb)';
 const READY_EVERY_MS = 500;
