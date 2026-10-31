@@ -10,8 +10,12 @@ function clamp(v: unknown, min: number, max: number, fallback: number): number {
  * `main-catalog` (D14, D18): settings and enabled promo blocks mapped on the server; the products,
  * filters and sort load in the browser, locked to the route's category on `/catalog/[category]`.
  */
-export function MainCatalog({ section, route }: EngineSectionProps) {
+export function MainCatalog({ section, route, data }: EngineSectionProps) {
   const s = withDefaults(section);
+  const rail = str(s.layout) === 'rail';
+  const railCategories = rail
+    ? (data?.categories ?? []).filter((c) => c.item_count > 0).map((c) => ({ id: c.id, name: c.name, image: c.image_url ?? '' }))
+    : [];
   const promos: CatalogPromo[] = [];
   for (const id of section.block_order) {
     const block = section.blocks[id];
@@ -37,8 +41,10 @@ export function MainCatalog({ section, route }: EngineSectionProps) {
         showSort: s.show_sort !== false,
         showCount: s.show_count !== false,
         fullWidth: s.full_width === true,
+        rail,
       }}
       promos={promos}
+      railCategories={railCategories}
     />
   );
 }

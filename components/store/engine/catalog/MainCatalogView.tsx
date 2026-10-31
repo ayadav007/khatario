@@ -4,7 +4,7 @@ import { Suspense, useMemo, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, SlidersHorizontal } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { ctaTarget, engineProductHref } from '@/lib/store/engine/links';
+import { ctaTarget, engineCatalogHref, engineProductHref } from '@/lib/store/engine/links';
 import { StoreProductCard } from '@/components/store/StoreProductCard';
 import { ActiveFilterChips, CatalogFilterPanel, CatalogSortSelect } from '@/components/store/features/catalog';
 import { useCatalogFilters } from '@/components/store/features/catalog/useCatalogFilters';
@@ -12,6 +12,7 @@ import { useCatalogData } from '@/components/store/features/catalog/useCatalogDa
 import { activeFilterCount, toApiParams } from '@/components/store/features/catalog/catalog-filters';
 import { removeFilterChip, withSelectedFacets } from '@/components/store/features/catalog/catalog-mount';
 import { interleavePromos } from './promo-slots';
+import { CategoryRail, RAIL_CSS, useStickyHeaderHeight, type RailCategory } from './CategoryRail';
 
 export interface CatalogPromo {
   id: string;
@@ -30,6 +31,8 @@ export interface MainCatalogSettings {
   showSort: boolean;
   showCount: boolean;
   fullWidth: boolean;
+  /** Categories down the left (`layout: rail`); falls back to the plain grid when there are none. */
+  rail: boolean;
 }
 
 // Columns follow the store container (the engine root is `container: store`), like the other engine sections.
@@ -87,10 +90,12 @@ function MainCatalogBody({
   categoryId,
   settings,
   promos,
+  railCategories,
 }: {
   categoryId: string | null;
   settings: MainCatalogSettings;
   promos: CatalogPromo[];
+  railCategories: RailCategory[];
 }) {
   const { store, selectedBranchId } = useStore();
   const router = useRouter();
@@ -109,11 +114,23 @@ function MainCatalogBody({
 
   const catalog = useCatalogData(store?.store_subdomain ?? null, apiParams, selectedBranchId);
   const { items, total, loading, hasMore } = catalog;
+  const rail = settings.rail && railCategories.length > 0;
+  const railTop = useStickyHeaderHeight();
   const facets = useMemo(() => {
     const all = withSelectedFacets(catalog.facets, value, catalog.categories);
-    // A locked category has no category facet.
-    return categoryId ? { ...all, categories: [] } : all;
-  }, [catalog.facets, catalog.categories, value, categoryId]);
+    // A locked category has no category facet, and the rail is the category picker.
+    return categoryId || rail ? { ...all, categories: [] } : all;
+  }, [catalog.facets, catalog.categories, value, categoryId, rail]);
+  // The rail shows one category at a time: the route's, else the single `cat` filter, else "All".
+  const railSelected = categoryId ?? (filters.value.categoryIds.length === 1 ? filters.value.categoryIds[0] : null);
+  const railName = railCategories.find((c) => c.id === railSelected)?.name ?? 'All products';
+  const pickCategory = (id: string | null) => {
+    // On /catalog/[category] the category is the route, so another one is another page.
+    if (categoryId) router.push(engineCatalogHref(window.location.search, { categoryId: id }));
+    else filters.set({ categoryIds: id ? [id] : [] });
+    const top = document.querySelector('.eng-rail')?.getBoundingClientRect().top;
+    if (top !== undefined && top < railTop) window.scrollBy({ top: top - railTop });
+  };
 
   const filterCount = activeFilterCount(value);
   const slots = useMemo(() => interleavePromos(items, promos, !hasMore), [items, promos, hasMore]);
@@ -121,14 +138,19 @@ function MainCatalogBody({
 
   const toolbar = (
     <div className="mb-4 space-y-3">
+      {rail ? (
+        <p className="text-sm font-semibold">
+          {settings.showCount && !(loading && items.length === 0) ? `${total} ${total === 1 ? 'item' : 'items'} in ${railName}` : railName}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {settings.showFilters ? (
-          <button type="button" onClick={() => setFiltersOpen(true)} className={`${BUTTON} lg:hidden`}>
+          <button type="button" onClick={() => setFiltersOpen(true)} className={`${BUTTON} ${rail ? '' : 'lg:hidden'}`}>
             <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
             {filterCount > 0 ? `Filters (${filterCount})` : 'Filters'}
           </button>
         ) : null}
-        {settings.showCount ? (
+        {settings.showCount && !rail ? (
           <p className="text-sm" style={{ opacity: 0.65 }} aria-live="polite">
             {loading && items.length === 0 ? '' : `${total} ${total === 1 ? 'product' : 'products'}`}
           </p>
@@ -188,6 +210,49 @@ function MainCatalogBody({
     );
   }
 
+  const more =
+    hasMore && !catalog.error && items.length > 0 ? (
+      <div className="mt-8 flex justify-center">
+        <button type="button" onClick={catalog.loadMore} disabled={loading} className={`${BUTTON} px-5 disabled:opacity-50`}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Loading" /> : 'Load more'}
+        </button>
+      </div>
+    ) : null;
+  const filterSheet = settings.showFilters ? (
+    <CatalogFilterPanel
+      facets={facets}
+      value={value}
+      onChange={filters.set}
+      layout="sheet"
+      open={filtersOpen}
+      onClose={() => setFiltersOpen(false)}
+    />
+  ) : null;
+
+  if (rail) {
+    return (
+      <div
+        className="eng-rail"
+        style={
+          {
+            '--eng-cols-d': Math.min(settings.columnsDesktop, 4),
+            '--eng-cols-m': Math.min(settings.columnsMobile, 2),
+            '--eng-rail-top': `${railTop}px`,
+          } as CSSProperties
+        }
+      >
+        <style dangerouslySetInnerHTML={{ __html: GRID_CSS + RAIL_CSS }} />
+        <CategoryRail categories={railCategories} selected={railSelected} onPick={pickCategory} />
+        <div className="eng-rail-main">
+          {toolbar}
+          {grid}
+          {more}
+        </div>
+        {filterSheet}
+      </div>
+    );
+  }
+
   return (
     <div
       className={settings.fullWidth ? 'px-4 sm:px-8' : 'mx-auto max-w-6xl px-4 sm:px-8'}
@@ -203,25 +268,10 @@ function MainCatalogBody({
         ) : null}
         <div className="min-w-0 flex-1">
           {grid}
-          {hasMore && !catalog.error && items.length > 0 ? (
-            <div className="mt-8 flex justify-center">
-              <button type="button" onClick={catalog.loadMore} disabled={loading} className={`${BUTTON} px-5 disabled:opacity-50`}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Loading" /> : 'Load more'}
-              </button>
-            </div>
-          ) : null}
+          {more}
         </div>
       </div>
-      {settings.showFilters ? (
-        <CatalogFilterPanel
-          facets={facets}
-          value={value}
-          onChange={filters.set}
-          layout="sheet"
-          open={filtersOpen}
-          onClose={() => setFiltersOpen(false)}
-        />
-      ) : null}
+      {filterSheet}
     </div>
   );
 }
@@ -230,7 +280,12 @@ function MainCatalogBody({
  * The catalog grid (D14, D18): project C's filters, sort and data hooks over the URL, with the route's
  * category forced into the query, promo tiles placed after product N, and "Load more" paging.
  */
-export function MainCatalogView(props: { categoryId: string | null; settings: MainCatalogSettings; promos: CatalogPromo[] }) {
+export function MainCatalogView(props: {
+  categoryId: string | null;
+  settings: MainCatalogSettings;
+  promos: CatalogPromo[];
+  railCategories: RailCategory[];
+}) {
   // The filters live in the URL (useSearchParams), which needs a Suspense boundary.
   return (
     <Suspense fallback={null}>

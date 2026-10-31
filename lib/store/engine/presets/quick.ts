@@ -35,7 +35,8 @@ export function quickPreset(ctx: PresetContext): ThemeData {
         section('featured-products', { heading: 'Handpicked for you', source: 'all', limit: 24, columns: 6, ...tight }),
       ]),
       product: defaultTemplate('product'),
-      catalog: defaultTemplate('catalog'),
+      // The old Quick store's category view: categories down the left, products beside them (its own heading).
+      catalog: template([section('main-catalog', { layout: 'rail' })]),
     },
   };
 }

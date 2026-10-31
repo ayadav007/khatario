@@ -2,7 +2,8 @@ import type { SectionSchema } from '../schema-types';
 
 /**
  * Product grid (D14, D18): the store's products with filters and sort held in the URL, locked to the
- * route's category on `/catalog/[category]`. Promo tiles are blocks placed after product N.
+ * route's category on `/catalog/[category]`. Promo tiles are blocks placed after product N. The `rail`
+ * layout puts the categories, with photos, in a column beside the products (the old Quick category view).
  */
 export const mainCatalog: SectionSchema = {
   type: 'main-catalog',
@@ -11,6 +12,17 @@ export const mainCatalog: SectionSchema = {
   templates: ['catalog'],
   limit: 1,
   settings: [
+    {
+      id: 'layout',
+      type: 'select',
+      label: 'Layout',
+      default: 'grid',
+      options: [
+        { value: 'grid', label: 'Grid with filters' },
+        { value: 'rail', label: 'Categories down the left' },
+      ],
+      info: 'Categories down the left: a picture list of categories beside the products, like a quick-delivery app.',
+    },
     { id: 'columns_desktop', type: 'range', label: 'Columns on desktop', min: 2, max: 5, step: 1, default: 4 },
     { id: 'columns_mobile', type: 'range', label: 'Columns on mobile', min: 1, max: 3, step: 1, default: 2 },
     { id: 'show_filters', type: 'checkbox', label: 'Show filters', default: true },
@@ -40,5 +52,7 @@ export const mainCatalog: SectionSchema = {
       ],
     },
   ],
+  // The rail lists the store's categories with a photo each; a failed lookup just leaves the rail out.
+  data: (settings) => (settings.layout === 'rail' ? { categories: true, categoriesOptional: true } : {}),
   presets: [{ name: 'Product grid' }],
 };
