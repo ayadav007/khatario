@@ -73,6 +73,67 @@ export function methodBody(v: ReturnMethodForm): Record<string, unknown> {
   return { method: v.method };
 }
 
+/** Where the courier collects the parcel and how big it is: the customer's address, PIN, phone and weight. */
+export function PickupFields({
+  value,
+  onChange,
+  blank,
+}: {
+  value: ReturnMethodForm;
+  onChange: (next: ReturnMethodForm) => void;
+  /** Placeholder for fields the server fills in when left empty. */
+  blank?: string;
+}) {
+  const set = (patch: Partial<ReturnMethodForm>) => onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-2 pt-1">
+      <label className="block text-xs text-slate-500">
+        Pick up from (the customer&apos;s address)
+        <textarea
+          className={`${input} mt-1`}
+          rows={2}
+          placeholder={blank}
+          value={value.address}
+          onChange={(e) => set({ address: e.target.value })}
+        />
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="block text-xs text-slate-500">
+          PIN code
+          <input
+            className={`${input} mt-1`}
+            inputMode="numeric"
+            maxLength={6}
+            placeholder={blank}
+            value={value.pincode}
+            onChange={(e) => set({ pincode: e.target.value.replace(/\D/g, '') })}
+          />
+        </label>
+        <label className="block text-xs text-slate-500">
+          Phone
+          <input
+            className={`${input} mt-1`}
+            inputMode="tel"
+            placeholder={blank}
+            value={value.phone}
+            onChange={(e) => set({ phone: e.target.value })}
+          />
+        </label>
+        <label className="block text-xs text-slate-500">
+          Weight (kg)
+          <input
+            className={`${input} mt-1`}
+            inputMode="decimal"
+            placeholder={blank}
+            value={value.weightKg}
+            onChange={(e) => set({ weightKg: e.target.value })}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 /** "How does it come back?": the three ways, with the pickup address, phone and weight, or the customer's instructions. */
 export function ReturnMethodFields({
   value,
@@ -119,53 +180,7 @@ export function ReturnMethodFields({
         </p>
       ) : null}
 
-      {value.method === 'courier_pickup' ? (
-        <div className="space-y-2 pt-1">
-          <label className="block text-xs text-slate-500">
-            Pick up from (the customer&apos;s address)
-            <textarea
-              className={`${input} mt-1`}
-              rows={2}
-              placeholder={blank}
-              value={value.address}
-              onChange={(e) => set({ address: e.target.value })}
-            />
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            <label className="block text-xs text-slate-500">
-              PIN code
-              <input
-                className={`${input} mt-1`}
-                inputMode="numeric"
-                maxLength={6}
-                placeholder={blank}
-                value={value.pincode}
-                onChange={(e) => set({ pincode: e.target.value.replace(/\D/g, '') })}
-              />
-            </label>
-            <label className="block text-xs text-slate-500">
-              Phone
-              <input
-                className={`${input} mt-1`}
-                inputMode="tel"
-                placeholder={blank}
-                value={value.phone}
-                onChange={(e) => set({ phone: e.target.value })}
-              />
-            </label>
-            <label className="block text-xs text-slate-500">
-              Weight (kg)
-              <input
-                className={`${input} mt-1`}
-                inputMode="decimal"
-                placeholder={blank}
-                value={value.weightKg}
-                onChange={(e) => set({ weightKg: e.target.value })}
-              />
-            </label>
-          </div>
-        </div>
-      ) : null}
+      {value.method === 'courier_pickup' ? <PickupFields value={value} onChange={onChange} blank={blank} /> : null}
 
       {value.method === 'customer_sends' ? (
         <label className="block pt-1 text-xs text-slate-500">

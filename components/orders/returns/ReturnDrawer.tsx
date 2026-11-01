@@ -308,7 +308,7 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
               ) : null}
 
               {r.status === 'approved' && r.method === 'courier_pickup' ? (
-                <ReturnPickupCard ret={r} busy={busy} onAction={(body) => void act(body)} />
+                <ReturnPickupCard ret={r} pickup={r.pickup} busy={busy} onAction={(body) => void act(body)} />
               ) : null}
 
               {r.status === 'approved' && r.method && r.method !== 'courier_pickup' ? (

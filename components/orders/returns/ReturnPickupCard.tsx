@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { ExternalLink, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { initialMethodForm, methodBody, methodFormError, PickupFields, type ReturnMethodForm, type SavedPickup } from './ReturnMethodFields';
 import { PICKUP_STATUS_LABELS, type PickupStatus } from '@/lib/returns/labels';
 
 /** The pickup fields of a return (from GET /api/returns/:id). */
@@ -33,16 +35,23 @@ const TONE: Record<PickupStatus, string> = {
 /** Courier pickup of an approved return: where it stands, the AWB, Track, and the ways to fix or change it. */
 export function ReturnPickupCard({
   ret,
+  pickup,
   onAction,
   busy,
 }: {
   ret: ReturnPickupInfo;
+  /** The saved pickup details, so a failed booking can be corrected before booking again. */
+  pickup?: SavedPickup | null;
   onAction: (body: Record<string, unknown>) => void;
   busy?: boolean;
 }) {
   const status = ret.pickup_status;
   const live = hasLivePickup(ret);
   const onItsWay = status === 'in_transit' || status === 'arrived';
+  const openForm = () => ({ ...initialMethodForm({ shiprocketConnected: true, pickup }), method: 'courier_pickup' as const });
+  // A booking that failed usually needs a corrected PIN or address, so the details open for editing.
+  const [form, setForm] = useState<ReturnMethodForm | null>(() => (ret.pickup_error && !live && !onItsWay ? openForm() : null));
+  const formError = form ? methodFormError(form) : null;
 
   return (
     <section className="space-y-2.5 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
@@ -79,11 +88,28 @@ export function ReturnPickupCard({
 
       {ret.pickup_error ? <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{ret.pickup_error}</div> : null}
 
+      {!live && !onItsWay && form ? (
+        <div className="space-y-2">
+          <PickupFields value={form} onChange={setForm} />
+          {formError ? <p className="text-xs text-red-600">{formError}</p> : null}
+        </div>
+      ) : null}
+
       {!onItsWay ? (
         <div className="flex flex-wrap gap-2">
           {!live ? (
-            <Button size="sm" isLoading={busy} onClick={() => onAction({ action: 'book_pickup' })}>
+            <Button
+              size="sm"
+              isLoading={busy}
+              disabled={Boolean(formError)}
+              onClick={() => onAction(form ? { action: 'book_pickup', pickup: methodBody(form).pickup } : { action: 'book_pickup' })}
+            >
               Book again
+            </Button>
+          ) : null}
+          {!live ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setForm(form ? null : openForm())}>
+              {form ? 'Close details' : 'Edit details'}
             </Button>
           ) : null}
           {live ? (
