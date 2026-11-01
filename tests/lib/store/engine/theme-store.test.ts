@@ -1,5 +1,6 @@
 import { THEME_CATALOG, type CatalogTheme } from '@/lib/store/engine/theme-catalog';
-import { applyHref, categoryCounts, filterThemes, popularityOrder, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
+import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
+import { applyHref, categoryCounts, filterThemes, popularityOrder, previewPath, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
 
 const popularity = { grocery: 9, studio: 4, heritage: 4 };
 const today = '2026-11-01';
@@ -96,5 +97,14 @@ describe('popularityOrder', () => {
     expect(order.heritage).toBeGreaterThan(order.quick!);
     expect(Object.values(order)).not.toContain(9);
     expect(popularityOrder({})).toEqual({});
+  });
+});
+
+describe('previewPath', () => {
+  it('home, catalog and the first product of the theme catalogue', () => {
+    expect(previewPath('home', 'jewellery')).toBe('/');
+    expect(previewPath('catalog', 'grocery')).toBe('/catalog');
+    expect(previewPath('product', 'jewellery')).toBe(`/products/${DEMO_CATALOGS.jewellery.products[0].id}`);
+    expect(previewPath('product', 'general')).toMatch(/^\/products\/ge-/);
   });
 });

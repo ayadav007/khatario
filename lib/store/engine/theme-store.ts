@@ -1,6 +1,7 @@
 // Client-safe, pure: the public theme store's search, tabs, sorting and category counts, and the name a theme
 // gets when it is added to a library.
-import { THEME_CATEGORIES, type CatalogTheme, type ThemeCategoryId } from './theme-catalog';
+import { DEMO_CATALOGS } from './demo-catalogs';
+import { THEME_CATEGORIES, type CatalogTheme, type DemoCatalogId, type ThemeCategoryId } from './theme-catalog';
 import type { ThemePreset } from './types';
 
 export type ThemeTab = 'all' | 'popular' | 'new' | 'free' | 'premium';
@@ -96,4 +97,11 @@ export function popularityOrder(counts: Partial<Record<ThemePreset, number>>): P
   const out: Partial<Record<ThemePreset, number>> = {};
   for (const [preset, n] of Object.entries(counts) as [ThemePreset, number][]) out[preset] = steps.length - steps.indexOf(n);
   return out;
+}
+
+/** The demo store page a theme page shows: home, the catalog, or the catalogue's first product. */
+export function previewPath(page: 'home' | 'catalog' | 'product', catalog: DemoCatalogId): string {
+  if (page === 'catalog') return '/catalog';
+  if (page === 'product') return `/products/${DEMO_CATALOGS[catalog].products[0].id}`;
+  return '/';
 }
