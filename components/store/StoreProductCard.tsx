@@ -224,6 +224,22 @@ function ProductCard({
     [product, addToCart, onViewDetail, onOptions],
   );
 
+  // Buy now, as on the product page (StoreKhatarioProductView.buyNow): put one in the cart unless it is already there, then
+  // go to checkout. A product with options opens the option chooser first, as Add does.
+  const handleBuy = useCallback(
+    (e: React.MouseEvent) => {
+      if (product.has_variants) {
+        handleAdd(e);
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (!cartItem) handleAdd(e);
+      window.location.href = '/checkout';
+    },
+    [product.has_variants, cartItem, handleAdd],
+  );
+
   const handleIncrement = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -291,6 +307,26 @@ function ProductCard({
     const tagline = designed ? product.store_tagline : (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
     const swatches = designed ? product.store_swatches : (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
+    // A card design draws its own buttons from these (its button style, Buy now, the stepper); Theme's own gets none of it.
+    const designedExtras = designed
+      ? {
+          card: designed,
+          brand: product.brand,
+          images: gallery,
+          placeholderLogo: store?.logo_url ?? null,
+          actions: add
+            ? {
+                inCart,
+                hasOptions: product.has_variants,
+                canInc: !!cartItem && cartItem.quantity < cartItem.maxStock,
+                onAdd: handleAdd,
+                onBuy: handleBuy,
+                onInc: handleIncrement,
+                onDec: handleDecrement,
+              }
+            : undefined,
+        }
+      : {};
     const tile = (
       <StudioProductTile
         name={product.name}
@@ -312,7 +348,7 @@ function ProductCard({
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}
         add={add}
-        {...(designed ? { card: designed, brand: product.brand } : {})}
+        {...designedExtras}
       />
     );
     return tile;

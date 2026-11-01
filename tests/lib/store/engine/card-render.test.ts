@@ -1,8 +1,10 @@
 import {
   cardBadgeList,
   cardBadgeRow,
+  cardButtonPlan,
   cardDiscount,
   cardOutOfStock,
+  cardPhotoState,
   cardRating,
   cardUnits,
   designedCardRoot,
@@ -151,6 +153,102 @@ describe('cardOutOfStock', () => {
     expect(cardOutOfStock(look({ oos_look: 'soldout_button', button_style: 'none' }), true, true)).toEqual(label);
     const noButtons = CARD_DESIGNS.boutique.lines;
     expect(cardOutOfStock(look({ oos_look: 'soldout_button', button_style: 'full', lines: noButtons }), true, true)).toEqual(label);
+  });
+});
+
+describe('cardPhotoState', () => {
+  const photo = (over: Partial<ResolvedCardLook>, images: Array<string | null | undefined>, hasLogo = false) =>
+    cardPhotoState(images, look(over), hasLogo);
+
+  it('one photo: no swipe dots and no hover swap, whatever the settings', () => {
+    const s = photo({ image_swipe: true, image_hover: 'second' }, ['a.jpg']);
+    expect(s).toEqual({ photos: ['a.jpg'], swipe: false, hover: null, zoom: false, placeholder: null });
+  });
+
+  it('a repeated photo counts once', () => {
+    const s = photo({ image_swipe: true, image_hover: 'second' }, ['a.jpg', 'a.jpg', null, '']);
+    expect(s.photos).toEqual(['a.jpg']);
+    expect(s.swipe).toBe(false);
+    expect(s.hover).toBeNull();
+  });
+
+  it('no photo: the chosen placeholder; logo without a store logo falls back to the initial', () => {
+    expect(photo({ placeholder: 'initial' }, []).placeholder).toBe('initial');
+    expect(photo({ placeholder: 'icon' }, [null, undefined]).placeholder).toBe('icon');
+    expect(photo({ placeholder: 'logo' }, [], true).placeholder).toBe('logo');
+    expect(photo({ placeholder: 'logo' }, [], false).placeholder).toBe('initial');
+    expect(photo({ placeholder: 'icon' }, []).photos).toEqual([]);
+    expect(photo({ image_swipe: true, image_hover: 'second' }, []).swipe).toBe(false);
+  });
+
+  it('many photos with swipe: every photo in the track', () => {
+    const s = photo({ image_swipe: true }, ['a', 'b', 'c']);
+    expect(s.swipe).toBe(true);
+    expect(s.photos).toEqual(['a', 'b', 'c']);
+  });
+
+  it('many photos without swipe: only the first', () => {
+    const s = photo({ image_swipe: false }, ['a', 'b', 'c']);
+    expect(s.swipe).toBe(false);
+    expect(s.photos).toEqual(['a']);
+  });
+
+  it('hover second uses the second photo; zoom zooms; none does neither', () => {
+    expect(photo({ image_hover: 'second' }, ['a', 'b'])).toMatchObject({ hover: 'b', zoom: false });
+    expect(photo({ image_hover: 'second', image_swipe: true }, ['a', 'b'])).toMatchObject({ hover: 'b', swipe: true });
+    expect(photo({ image_hover: 'zoom' }, ['a', 'b'])).toMatchObject({ hover: null, zoom: true });
+    expect(photo({ image_hover: 'zoom' }, [])).toMatchObject({ zoom: false });
+    expect(photo({ image_hover: 'none' }, ['a', 'b'])).toMatchObject({ hover: null, zoom: false });
+  });
+});
+
+describe('cardButtonPlan', () => {
+  const inStock = { outOfStock: false, hasAdd: true, inCart: 0, hasOptions: false };
+  const plan = (over: Partial<ResolvedCardLook>, state: Partial<typeof inStock> = {}) => cardButtonPlan(look(over), { ...inStock, ...state });
+
+  it('full: one button in the details doing the chosen action', () => {
+    expect(plan({ button_style: 'full' })).toEqual({ place: 'body', main: { control: 'add', shape: 'full' }, side: null });
+    expect(plan({ button_style: 'full', button_action: 'buy' })).toEqual({ place: 'body', main: { control: 'buy', shape: 'full' }, side: null });
+  });
+
+  it('pill_on_photo and icon sit on the photo', () => {
+    expect(plan({ button_style: 'pill_on_photo' })).toEqual({ place: 'photo', main: { control: 'add', shape: 'pill' }, side: null });
+    expect(plan({ button_style: 'icon' })).toEqual({ place: 'photo', main: { control: 'add', shape: 'icon' }, side: null });
+    expect(plan({ button_style: 'icon', button_action: 'buy' })?.main.control).toBe('buy');
+  });
+
+  it('icon_full: the full button does the action and the icon does the other', () => {
+    expect(plan({ button_style: 'icon_full', button_action: 'add' })).toEqual({ place: 'body', main: { control: 'add', shape: 'full' }, side: 'buy' });
+    expect(plan({ button_style: 'icon_full', button_action: 'buy' })).toEqual({ place: 'body', main: { control: 'buy', shape: 'full' }, side: 'add' });
+  });
+
+  it('after_add stepper turns the add control into - 1 + once in the cart', () => {
+    expect(plan({ button_style: 'full', after_add: 'stepper' }, { inCart: 2 })?.main.control).toBe('stepper');
+    expect(plan({ button_style: 'pill_on_photo', after_add: 'stepper' }, { inCart: 1 })?.main).toEqual({ control: 'stepper', shape: 'pill' });
+    expect(plan({ button_style: 'icon_full', button_action: 'buy', after_add: 'stepper' }, { inCart: 1 })).toMatchObject({ main: { control: 'buy' }, side: 'stepper' });
+    // Buy stays Buy now; after_add button keeps the add button; a product with options never gets a stepper.
+    expect(plan({ button_style: 'full', button_action: 'buy', after_add: 'stepper' }, { inCart: 1 })?.main.control).toBe('buy');
+    expect(plan({ button_style: 'full', after_add: 'button' }, { inCart: 3 })?.main.control).toBe('add');
+    expect(plan({ button_style: 'full', after_add: 'stepper' }, { inCart: 3, hasOptions: true })?.main.control).toBe('add');
+  });
+
+  it('none, the buttons line off, or listing buttons off: no button (tapping the card opens the product)', () => {
+    expect(plan({ button_style: 'none' })).toBeNull();
+    expect(plan({ button_style: 'full', lines: CARD_DESIGNS.boutique.lines })).toBeNull();
+    expect(plan({ button_style: 'full' }, { hasAdd: false })).toBeNull();
+  });
+
+  it('out of stock: label keeps a disabled button in the details and none on the photo', () => {
+    expect(plan({ button_style: 'full', oos_look: 'label' }, { outOfStock: true })).toEqual({ place: 'body', main: { control: 'out', shape: 'full' }, side: null });
+    expect(plan({ button_style: 'icon_full', oos_look: 'label' }, { outOfStock: true })?.side).toBeNull();
+    expect(plan({ button_style: 'pill_on_photo', oos_look: 'label' }, { outOfStock: true })).toBeNull();
+    expect(plan({ button_style: 'icon', oos_look: 'label' }, { outOfStock: true })).toBeNull();
+  });
+
+  it('out of stock: faded has no button; soldout_button shows Sold out where the button sits', () => {
+    expect(plan({ button_style: 'full', oos_look: 'faded' }, { outOfStock: true })).toBeNull();
+    expect(plan({ button_style: 'icon_full', oos_look: 'soldout_button' }, { outOfStock: true })).toEqual({ place: 'body', main: { control: 'soldout', shape: 'full' }, side: null });
+    expect(plan({ button_style: 'icon', oos_look: 'soldout_button' }, { outOfStock: true })).toEqual({ place: 'photo', main: { control: 'soldout', shape: 'pill' }, side: null });
   });
 });
 

@@ -9,11 +9,15 @@ import {
   Clock,
   Gift,
   Heart,
+  ImageIcon,
   Leaf,
+  Minus,
   Phone,
+  Plus,
   RotateCcw,
   Search,
   ShieldCheck,
+  ShoppingBag,
   ShoppingCart,
   Star,
   Tag,
@@ -25,7 +29,19 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
-import { cardBadgeRow, cardDiscount, cardOutOfStock, cardRating, cardUnits, designedCardRoot, isDesignedCard } from '@/lib/store/engine/card-render';
+import {
+  cardBadgeRow,
+  cardButtonPlan,
+  cardDiscount,
+  cardOutOfStock,
+  cardPhotoState,
+  cardRating,
+  cardUnits,
+  designedCardRoot,
+  isDesignedCard,
+  type CardButtonPlan,
+  type CardControl,
+} from '@/lib/store/engine/card-render';
 import type { ResolvedCardLook } from '@/lib/store/engine/product-card';
 import type { ColorScheme } from '@/lib/store/engine/types';
 import { heroGridClass } from '@/lib/store/engine/hero-layout';
@@ -744,6 +760,26 @@ export interface StudioProductTileProps {
    * own draws the designed card; without it, or with Theme's own, the tile is exactly today's.
    */
   card?: { look: ResolvedCardLook; schemes: ColorScheme[] };
+  /** Card design: every photo of the product, in order (swipe and the hover photo). Falls back to `image` / `hoverImage`. */
+  images?: string[];
+  /** Card design: the store logo for the `logo` placeholder. */
+  placeholderLogo?: string | null;
+  /** Card design: what the buttons do; the design's button style draws them. Without it the card shows `add` as given. */
+  actions?: StudioCardActions;
+}
+
+/** A designed card's buttons: add, buy now and the − 1 + stepper. Handlers are optional (previews draw them inert). */
+export interface StudioCardActions {
+  /** Units in the cart (all options together for a product with options). */
+  inCart: number;
+  /** The product has options: add and buy open the option chooser. */
+  hasOptions: boolean;
+  /** The stepper's + can add one more. */
+  canInc: boolean;
+  onAdd?: (e: React.MouseEvent) => void;
+  onBuy?: (e: React.MouseEvent) => void;
+  onInc?: (e: React.MouseEvent) => void;
+  onDec?: (e: React.MouseEvent) => void;
 }
 
 export function StudioProductTile(props: StudioProductTileProps) {
@@ -858,7 +894,8 @@ const BADGE_ICONS: Record<Exclude<ResolvedCardLook['badge_icon'], 'none'>, strin
 /**
  * The tile when a card design is active (spec §4): the root carries `pc-on`, the look's classes and variables and its
  * colour scheme; the details (`.pc-body`) follow `look.lines`. Styles: components/store/engine/product-card.css. The photo
- * and the buttons keep today's markup (`.pimg`, `.addWrap`) for the photo and button settings to style.
+ * (`.pimg`: shape, fit, swipe with dots, hover, placeholder, wishlist) and the buttons (`.addWrap`, in the details or on
+ * the photo) follow the photo and button settings.
  */
 function DesignedProductTile({
   name,
@@ -868,6 +905,8 @@ function DesignedProductTile({
   mrp,
   image,
   hoverImage,
+  images,
+  placeholderLogo,
   href,
   showPrice = true,
   discount,
@@ -879,6 +918,7 @@ function DesignedProductTile({
   fav,
   onFav,
   add,
+  actions,
   tagline,
   swatches,
   hideDiscountBadge,
@@ -886,17 +926,27 @@ function DesignedProductTile({
 }: StudioProductTileProps & { card: NonNullable<StudioProductTileProps['card']> }) {
   const { look, schemes } = card;
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
-  const [broken, setBroken] = useState(false);
-  const [altBroken, setAltBroken] = useState(false);
-  useEffect(() => setBroken(false), [image]);
-  useEffect(() => setAltBroken(false), [hoverImage]);
+  // Photos that failed to load drop out (the next one, or the placeholder, takes their place).
+  const gallery = images?.length ? images : [image, hoverImage];
+  const galleryKey = gallery.join('\n');
+  const [broken, setBroken] = useState<string[]>([]);
+  const [logoBroken, setLogoBroken] = useState(false);
+  useEffect(() => setBroken([]), [galleryKey]);
+  useEffect(() => setLogoBroken(false), [placeholderLogo]);
+  const drop = (src: string) => setBroken((b) => (b.includes(src) ? b : [...b, src]));
+  const photo = cardPhotoState(
+    gallery.filter((u) => !u || !broken.includes(u)),
+    look,
+    !!placeholderLogo && !logoBroken,
+  );
+  const slide = useSlideIndex(photo.swipe, photo.photos.length);
   // The discount beside the price, when the price line shows; it then replaces the automatic "% OFF" badge.
   const priceShown = showPrice && look.lines.some((l) => l.id === 'price' && l.on);
   const saving = priceShown ? cardDiscount(look.discount_style, price, mrp, off) : null;
   const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving });
-  const showAlt = !!hoverImage && hoverImage !== image && !broken && !altBroken;
-  const oos = cardOutOfStock(look, outOfStock, !!add);
-  const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: showAlt });
+  const hasAdd = !!add || !!actions;
+  const oos = cardOutOfStock(look, outOfStock, hasAdd);
+  const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: !!photo.hover });
   const icon =
     look.badge_icon === 'none' ? null : (
       <svg className="pc-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -904,14 +954,21 @@ function DesignedProductTile({
       </svg>
     );
   const stars = cardRating(look.rating_style, rating, ratingCount);
-  const button =
-    oos.button === 'none' ? null : oos.button === 'soldout' ? (
+  // With actions the design's button style draws the buttons; without (a preview given only `add`) `add` shows as given.
+  const plan = actions
+    ? cardButtonPlan(look, { outOfStock, hasAdd, inCart: actions.inCart, hasOptions: actions.hasOptions })
+    : null;
+  const legacyButton =
+    actions || oos.button === 'none' ? null : oos.button === 'soldout' ? (
       <button type="button" className="addBtn pc-soldout" disabled>
         Sold out
       </button>
     ) : (
       add
     );
+  const controls = plan && actions ? <DesignedCardButtons plan={plan} actions={actions} /> : null;
+  const bodyButtons = plan?.place === 'body' ? controls : legacyButton ? <div className="addWrap">{legacyButton}</div> : null;
+  const photoButtons = plan?.place === 'photo' ? controls : null;
   const low = lowStock && !outOfStock ? <div className="plow">Only {lowStock} left</div> : null;
 
   const nameLine = (
@@ -987,27 +1044,64 @@ function DesignedProductTile({
         return (
           <Fragment key={u}>
             {low}
-            {button ? <div className="addWrap">{button}</div> : null}
+            {bodyButtons}
           </Fragment>
         );
     }
   });
 
+  const placeholder =
+    photo.placeholder === 'logo' && placeholderLogo ? (
+      <span className="ph pc-ph-logo">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={placeholderLogo} alt="" onError={() => setLogoBroken(true)} />
+      </span>
+    ) : photo.placeholder === 'icon' ? (
+      <span className="ph pc-ph-icon">
+        <ImageIcon aria-hidden="true" />
+      </span>
+    ) : (
+      <span className="ph">{name.charAt(0).toUpperCase()}</span>
+    );
+  const first = photo.photos[0];
+  const pimgClass = ['pimg', photo.swipe && slide.index > 0 ? 'pc-slid' : '', oos.label ? 'pc-has-out' : ''].filter(Boolean).join(' ');
+
   return (
     <article className={root.className} style={root.style as CSSProperties}>
-      <div className="pimg">
-        <a href={href} style={{ display: 'block', width: '100%', height: '100%' }}>
-          {image && !broken ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="main" src={image} alt={name} loading="lazy" onError={() => setBroken(true)} />
+      <div className={pimgClass}>
+        <a href={href} aria-label={first ? undefined : name} style={{ display: 'block', width: '100%', height: '100%' }}>
+          {!first ? (
+            placeholder
+          ) : photo.swipe ? (
+            <div className="pc-track" ref={slide.ref}>
+              {photo.photos.map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={src}
+                  className={i === 0 ? 'main' : 'pc-more'}
+                  src={src}
+                  alt={i === 0 ? name : ''}
+                  loading="lazy"
+                  onError={() => drop(src)}
+                />
+              ))}
+            </div>
           ) : (
-            <span className="ph">{name.charAt(0).toUpperCase()}</span>
-          )}
-          {showAlt ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img className="alt" src={hoverImage!} alt="" loading="lazy" aria-hidden="true" onError={() => setAltBroken(true)} />
+            <img className="main" src={first} alt={name} loading="lazy" onError={() => drop(first)} />
+          )}
+          {photo.hover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="alt" src={photo.hover} alt="" loading="lazy" aria-hidden="true" onError={() => drop(photo.hover!)} />
           ) : null}
         </a>
+        {photo.swipe ? (
+          <div className="pc-dots" aria-hidden="true">
+            {photo.photos.map((src, i) => (
+              <i key={src} className={i === slide.index ? 'on' : undefined} />
+            ))}
+          </div>
+        ) : null}
         {shownBadges.length ? (
           <div className="badges">
             {shownBadges.map((b) => (
@@ -1018,21 +1112,115 @@ function DesignedProductTile({
             ))}
           </div>
         ) : null}
-        <button
-          type="button"
-          className={`fav ${fav ? 'on' : ''}`}
-          aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
-          onClick={onFav}
-        >
-          <Heart />
-        </button>
+        {look.wishlist === 'off' ? null : (
+          <button
+            type="button"
+            className={`fav ${fav ? 'on' : ''}`}
+            aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
+            onClick={onFav}
+          >
+            <Heart />
+          </button>
+        )}
         {oos.label ? <span className="out">Out of stock</span> : null}
+        {photoButtons}
       </div>
       <div className="pc-body">
         {lines}
         {units.includes('buttons') ? null : low}
       </div>
     </article>
+  );
+}
+
+/** Swipe track: a ref for the scroller and the photo in view, kept by a passive scroll listener (removed on cleanup). */
+function useSlideIndex(active: boolean, count: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!active || !el) {
+      setIndex(0);
+      return;
+    }
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const w = el.clientWidth;
+      // Math.abs: a right-to-left page scrolls to negative offsets.
+      setIndex(w ? Math.round(Math.abs(el.scrollLeft) / w) : 0);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    update();
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [active, count]);
+  return { ref, index: Math.min(index, Math.max(0, count - 1)) };
+}
+
+/** One control of a designed card: a full button, a pill or a round icon, the − 1 + stepper, or a disabled button. */
+function designedCardControl(control: CardControl, shape: 'full' | 'pill' | 'icon' | 'side', actions: StudioCardActions): ReactNode {
+  if (control === 'stepper') {
+    return (
+      <div className={`stepper pc-ctl-${shape}`}>
+        <button type="button" onClick={actions.onDec} aria-label="Decrease quantity">
+          <Minus strokeWidth={2.4} />
+        </button>
+        <b aria-live="polite">{actions.inCart}</b>
+        <button type="button" onClick={actions.onInc} disabled={!actions.canInc} aria-label="Increase quantity">
+          <Plus strokeWidth={2.4} />
+        </button>
+      </div>
+    );
+  }
+  if (control === 'soldout' || control === 'out') {
+    return (
+      <button type="button" className={`addBtn pc-ctl-${shape} ${control === 'soldout' ? 'pc-soldout' : 'pc-outbtn'}`} disabled>
+        {control === 'soldout' ? 'Sold out' : 'Out of stock'}
+      </button>
+    );
+  }
+  const buy = control === 'buy';
+  const label = buy ? 'Buy now' : actions.hasOptions ? 'Choose options' : 'Add to cart';
+  const count = !buy && actions.inCart > 0 ? actions.inCart : 0;
+  const iconOnly = shape === 'icon' || shape === 'side';
+  // The pill reads ADD / BUY; its spoken name starts with that word.
+  const spoken = shape === 'pill' ? (buy ? 'Buy now' : actions.hasOptions ? 'Add, choose options' : 'Add to cart') : label;
+  const Icon = buy ? ShoppingBag : shape === 'side' ? ShoppingCart : Plus;
+  return (
+    <button
+      type="button"
+      className={`addBtn pc-ctl-${shape} pc-do-${control}`}
+      onClick={buy ? actions.onBuy : actions.onAdd}
+      aria-label={iconOnly || shape === 'pill' || count ? (count ? `${spoken}, ${count} in cart` : spoken) : undefined}
+    >
+      {iconOnly ? <Icon aria-hidden="true" /> : shape === 'pill' ? (buy ? 'BUY' : 'ADD') : label}
+      {count ? (
+        <span className="pc-count" aria-hidden="true">
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+/**
+ * A designed card's buttons (`cardButtonPlan`): in the details (`.pc-btnrow`, the full button and, for `icon_full`, the
+ * icon doing the other action) or on the photo's corner (`.pc-onphoto`). `pc-hold` keeps a stepper in view under
+ * `button_reveal: hover`.
+ */
+function DesignedCardButtons({ plan, actions }: { plan: CardButtonPlan; actions: StudioCardActions }) {
+  const hold = plan.main.control === 'stepper' || plan.side === 'stepper';
+  return (
+    <div className={['addWrap', plan.place === 'photo' ? 'pc-onphoto' : 'pc-btnrow', hold ? 'pc-hold' : ''].filter(Boolean).join(' ')}>
+      {designedCardControl(plan.main.control, plan.main.shape, actions)}
+      {plan.side ? designedCardControl(plan.side, 'side', actions) : null}
+    </div>
   );
 }
 
