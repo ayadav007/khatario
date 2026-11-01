@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, MapPin, Menu as MenuIcon, Search, ShoppingCart, User } from 'lucide-react';
@@ -21,6 +21,7 @@ import {
   StudioHero,
   StudioProductsSection,
   heroSlides,
+  logoSizeClass,
   type StudioLink,
   type StudioTileCategory,
 } from '../studio-theme/StudioSections';
@@ -263,6 +264,8 @@ export function EngineHeader({
   s,
   logoUrl,
   menu,
+  layoutClass,
+  logoStyle,
   subdomain,
   searchPlaceholder,
   chips,
@@ -272,6 +275,10 @@ export function EngineHeader({
   logoUrl: string | null;
   /** The header's resolved menu, its layout and whether top items are in capitals. */
   menu: { items: ResolvedItem[]; layout: 'below' | 'inline'; caps: boolean };
+  /** Logo position and separator classes (`headerLayoutClasses`); empty for today's layout. */
+  layoutClass?: string;
+  /** Logo width variables (`logoWidthStyle`); empty keeps the automatic size. */
+  logoStyle?: Record<string, string>;
   subdomain: string;
   searchPlaceholder: string;
   /** Category chips under the header row (All, then each category). */
@@ -283,12 +290,15 @@ export function EngineHeader({
   const { openCart } = useEngineCart();
   const look = useEngineCardLook();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Automatic size (no variables): no style attribute at all, as before.
+  const sizedLogo = logoStyle && Object.keys(logoStyle).length ? logoStyle : undefined;
   if (look?.quick && quick) {
     return (
       <EngineQuickHeader
         {...quick}
         menuItems={menu.items}
         logoUrl={logoUrl}
+        logoStyle={sizedLogo}
         subdomain={subdomain}
         placeholder={searchPlaceholder}
       />
@@ -325,6 +335,8 @@ export function EngineHeader({
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
+      layoutClass={layoutClass}
+      logoStyle={sizedLogo as CSSProperties | undefined}
       menuSlot={menu.layout === 'below' ? bar : null}
       inlineSlot={menu.layout === 'inline' ? bar : undefined}
       menuButton={menuButton}
@@ -593,9 +605,17 @@ function EngineQuickHeader({
   showCart,
   menuItems,
   logoUrl,
+  logoStyle,
   subdomain,
   placeholder,
-}: QuickHeaderProps & { menuItems: ResolvedItem[]; logoUrl: string | null; subdomain: string; placeholder: string }) {
+}: QuickHeaderProps & {
+  menuItems: ResolvedItem[];
+  logoUrl: string | null;
+  /** Logo width variables only; Quick keeps its own header layout. */
+  logoStyle?: Record<string, string>;
+  subdomain: string;
+  placeholder: string;
+}) {
   const { cartCount, branches, selectedBranchId, selectBranch, store } = useStore();
   const { openCart } = useEngineCart();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -629,7 +649,12 @@ function EngineQuickHeader({
         <div className="qk-row">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img className="qk-logo" src={logoUrl} alt={name} />
+            <img
+              className={logoSizeClass('qk-logo', logoStyle)}
+              src={logoUrl}
+              alt={name}
+              style={logoStyle as CSSProperties | undefined}
+            />
           ) : null}
           <button type="button" className="qk-loc" onClick={() => setSheetOpen(true)} aria-label="Change delivery location">
             <b>{quickDeliveryLine(eta, name)}</b>

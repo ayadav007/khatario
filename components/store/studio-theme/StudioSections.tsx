@@ -146,6 +146,12 @@ export function StudioAnnouncement({ s, live = false }: { s: StudioSettings; liv
   );
 }
 
+/** A logo's class plus `logo-w` / `logo-wm` when its style sets the desktop / phone width variable (`logoWidthStyle`). */
+export function logoSizeClass(base: string, style?: CSSProperties | Record<string, string>): string {
+  const vars = (style ?? {}) as Record<string, unknown>;
+  return [base, vars['--logo-w'] ? 'logo-w' : '', vars['--logo-w-m'] ? 'logo-wm' : ''].filter(Boolean).join(' ');
+}
+
 export function StudioHeader({
   s,
   logoUrl,
@@ -158,9 +164,18 @@ export function StudioHeader({
   menuSlot,
   inlineSlot,
   menuButton,
+  layoutClass,
+  logoStyle,
 }: {
   s: StudioSettings;
   logoUrl?: string | null;
+  /**
+   * Engine header layout classes (`headerLayoutClasses`) on the header root. `hdr-logo-center` puts the logo between
+   * a left and a right group: search (or the inline menu) on the left, icons (and search after an inline menu) right.
+   */
+  layoutClass?: string;
+  /** Logo width variables (`--logo-w`, `--logo-w-m`) on the logo link; absent keeps the automatic size. */
+  logoStyle?: CSSProperties;
   /** Live search field; the editor shows a static placeholder. */
   search?: ReactNode;
   nav?: StudioLink[];
@@ -181,46 +196,68 @@ export function StudioHeader({
   const showAccount = s.showAccount !== false;
   const showCart = s.showCart !== false;
   const count = cartCount ?? 3;
+  const centred = (layoutClass ?? '').split(/\s+/).includes('hdr-logo-center');
+  const logo = (
+    <a className={logoSizeClass('logo', logoStyle)} href={homeHref} style={logoStyle}>
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logoUrl} alt="" />
+      ) : null}
+      <span className="logoText">
+        <b>{s.logo || 'My store'}</b>
+        {s.tagline ? <small>{s.tagline}</small> : null}
+      </span>
+    </a>
+  );
+  const searchBox =
+    s.showSearch !== false
+      ? search ?? (
+          <div className="search">
+            <Search />
+            <span>Search for products, categories...</span>
+          </div>
+        )
+      : null;
+  const icons =
+    showAccount || showCart ? (
+      <div className="icons">
+        {showAccount ? (
+          <a href={accountHref} aria-label="Account">
+            <IconGlyph svg={s.accountIconSvg} fallback={<User />} />
+          </a>
+        ) : null}
+        {showCart ? (
+          <button type="button" onClick={onCart} aria-label={count > 0 ? `Cart, ${count} items` : 'Cart'}>
+            <span className="cartIcon">
+              <IconGlyph svg={s.cartIconSvg} fallback={<ShoppingCart />} />
+              {s.showCartCount !== false && count > 0 ? <sup>{count}</sup> : null}
+            </span>
+          </button>
+        ) : null}
+      </div>
+    ) : null;
   return (
-    <div className="headerBlock" style={boxStyle(s)}>
+    <div className={['headerBlock', layoutClass].filter(Boolean).join(' ')} style={boxStyle(s)}>
       <div className={['header', s.iconsPosition === 'left' ? 'iconsLeft' : '', inlineSlot ? 'hasInline' : ''].filter(Boolean).join(' ')}>
         {menuButton}
-        <a className="logo" href={homeHref}>
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt="" />
-          ) : null}
-          <span className="logoText">
-            <b>{s.logo || 'My store'}</b>
-            {s.tagline ? <small>{s.tagline}</small> : null}
-          </span>
-        </a>
-        {inlineSlot}
-        {s.showSearch !== false
-          ? search ?? (
-              <div className="search">
-                <Search />
-                <span>Search for products, categories...</span>
-              </div>
-            )
-          : null}
-        {showAccount || showCart ? (
-          <div className="icons">
-            {showAccount ? (
-              <a href={accountHref} aria-label="Account">
-                <IconGlyph svg={s.accountIconSvg} fallback={<User />} />
-              </a>
-            ) : null}
-            {showCart ? (
-              <button type="button" onClick={onCart} aria-label={count > 0 ? `Cart, ${count} items` : 'Cart'}>
-                <span className="cartIcon">
-                  <IconGlyph svg={s.cartIconSvg} fallback={<ShoppingCart />} />
-                  {s.showCartCount !== false && count > 0 ? <sup>{count}</sup> : null}
-                </span>
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        {centred ? (
+          // Equal-width groups either side keep the logo in the middle; on phones they dissolve (display: contents).
+          <>
+            <div className="hdr-side hdr-start">{inlineSlot || searchBox}</div>
+            {logo}
+            <div className="hdr-side hdr-end">
+              {inlineSlot ? searchBox : null}
+              {icons}
+            </div>
+          </>
+        ) : (
+          <>
+            {logo}
+            {inlineSlot}
+            {searchBox}
+            {icons}
+          </>
+        )}
       </div>
       {menuSlot !== undefined ? (
         menuSlot

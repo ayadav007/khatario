@@ -3,6 +3,7 @@ import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import type { SectionData } from '@/lib/store/engine/section-data';
 import type { Template, ThemeData, ThemeRow } from '@/lib/store/engine/types';
 import type { GroupKey } from '@/lib/store/engine/editor/ops';
+import type { StickyMode } from '@/lib/store/engine/header-layout';
 import { engineRootStyle } from '@/lib/store/engine/render-helpers';
 import { EditorBridge } from './EditorBridge';
 import { EngineShell } from './EngineShell';
@@ -11,6 +12,17 @@ import { SECTION_COMPONENTS, type EngineRoute } from './registry';
 import { EngineProductProvider } from './product/EngineProductContext';
 
 const EMPTY: Template = { order: [], sections: {} };
+
+/** The first shown Header section's "Stay at top while scrolling" choice; `always` when there is none. */
+function headerStickyMode(group: Template | undefined): StickyMode {
+  for (const id of group?.order ?? []) {
+    const section = group?.sections[id];
+    if (!section || section.disabled || section.type !== 'header') continue;
+    const v = section.settings?.sticky;
+    return v === 'none' || v === 'scroll_up' || v === 'always_shrink' ? v : 'always';
+  }
+  return 'always';
+}
 
 function renderGroup(
   groupKey: GroupKey,
@@ -94,6 +106,7 @@ export function RenderTemplate({
       editor={editor}
       rootStyle={engineRootStyle(themeData.settings)}
       header={renderGroup('header', themeData.header_group, store, themeData, data, editor, route)}
+      headerSticky={headerStickyMode(themeData.header_group)}
       footer={renderGroup('footer', themeData.footer_group, store, themeData, data, editor, route)}
     >
       {route?.productId ? (

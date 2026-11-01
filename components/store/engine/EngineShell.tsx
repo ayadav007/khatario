@@ -1,12 +1,24 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { usePathname } from 'next/navigation';
 import type { ThemeRow } from '@/lib/store/engine/types';
 import { useStore } from '@/lib/store/store-context';
 import { previewStoreCss } from '@/lib/store/section-css';
 import { setStoreFavicon } from '@/lib/store/store-favicon';
 import { findAnchor } from '@/lib/store/engine/anchors';
+import { stickyHeaderState, type StickyMode } from '@/lib/store/engine/header-layout';
 import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
@@ -193,6 +205,46 @@ function focusSearch() {
   input.focus();
 }
 
+const STICKY_REST = { hidden: false, shrunk: false };
+
+/**
+ * Hidden / shrunk state of the sticky header for "comes back when scrolling up" and "logo shrinks"; the other modes
+ * never change it. One passive scroll listener and at most one decision per animation frame (stickyHeaderState).
+ */
+function useStickyHeader(mode: StickyMode, ref: RefObject<HTMLElement>) {
+  const [state, setState] = useState(STICKY_REST);
+  useEffect(() => {
+    setState(STICKY_REST);
+    if (mode !== 'scroll_up' && mode !== 'always_shrink') return;
+    let prev = STICKY_REST;
+    let lastY = Math.max(0, window.scrollY);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // iOS overscroll reports negative positions; the top of the page is 0.
+      const y = Math.max(0, window.scrollY);
+      const next = stickyHeaderState(mode, y, lastY, ref.current?.offsetHeight ?? 0, prev);
+      const changed = next.hidden !== prev.hidden || next.shrunk !== prev.shrunk;
+      // The last position moves only on a change or a move of 4px or more, so slow scrolling still adds up to one.
+      if (changed || Math.abs(y - lastY) >= 4) lastY = y;
+      if (changed) {
+        prev = next;
+        setState(next);
+      }
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [mode, ref]);
+  return state;
+}
+
 /** Scheme 6 as variables the Grocery layer paints its "deep" promo cards with. */
 function deepSchemeVars(settings: ThemeRow['data']['settings']): Record<string, string> {
   const deep = settings.color_schemes?.find((s) => s.id === 'scheme-6');
@@ -216,6 +268,7 @@ export function EngineShell({
   editor = false,
   rootStyle,
   header,
+  headerSticky = 'always',
   footer,
   children,
 }: {
@@ -227,6 +280,8 @@ export function EngineShell({
   editor?: boolean;
   rootStyle: Record<string, string | number | undefined>;
   header: ReactNode;
+  /** The header section's "Stay at top while scrolling" choice. */
+  headerSticky?: StickyMode;
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -316,6 +371,16 @@ export function EngineShell({
   // Quick mounts its own cart bar (always, as the old Quick shell did); the kit bar is for the other presets.
   const showKitBar = !quick && kit && !hideCartBar && cartCount > 0;
   const deepVars = useMemo(() => deepSchemeVars(settings), [settings]);
+  const stickyRef = useRef<HTMLDivElement>(null);
+  const sticky = useStickyHeader(headerSticky, stickyRef);
+  const stickyClass = [
+    'st-sticky st-cq',
+    headerSticky === 'none' ? 'st-sticky--none' : '',
+    sticky.hidden ? 'st-sticky--hidden' : '',
+    sticky.shrunk ? 'st-sticky--shrunk' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <EngineCartContext.Provider value={ctx}>
@@ -329,7 +394,9 @@ export function EngineShell({
         <style dangerouslySetInnerHTML={{ __html: THEME_RULES + CONTENT_BLOCK_RULES + PREMIUM_SECTION_RULES + STYLE_RULES }} />
         {/* Rebuilt rule by rule by previewStoreCss: brace-balanced, `<` removed, confined to .eng-root. */}
         {storeCss ? <style dangerouslySetInnerHTML={{ __html: storeCss }} /> : null}
-        <div className="st-sticky st-cq">{header}</div>
+        <div ref={stickyRef} className={stickyClass}>
+          {header}
+        </div>
         {quick ? (
           // Quick's shell (D29): qk-main leaves room for the cart bar and tabs; noBar on cart and checkout.
           <main className={hideCartBar ? 'qk-main noBar' : 'qk-main'}>{children}</main>
