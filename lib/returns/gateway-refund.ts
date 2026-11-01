@@ -27,7 +27,7 @@ import { lockReturn, ReturnError } from './service';
  *
  * An unclear gateway error (network, timeout, 5xx) leaves the attempt `pending` with the message as a
  * note: the refund may exist, so staff retry, Check now and the cron repeat the same key and amount.
- * A repeated Easebuzz send that is refused is looked up by its key before it may fail (Easebuzz has no
+ * An Easebuzz send that is refused is looked up by its key before it may fail (Easebuzz has no
  * idempotency header, so the refusal may be of a duplicate of a refund it already took).
  *
  * Locks are always taken return -> store order -> refund row -> credit note, so the claim, a webhook
@@ -317,6 +317,7 @@ export function isDefiniteRefusal(e: unknown): boolean {
 type SendResult = { status: 'processed' | 'pending' | 'failed'; providerRefundId: string | null; error?: string };
 
 const REPEAT_REFUSED = 'The gateway refused a repeat send; the earlier refund is being checked';
+const REFUSED_UNCHECKED = 'The gateway refused this refund but could not say whether it already has it; it is being checked';
 
 /** Asks the gateway for one open attempt (with its own key and amount) and applies the answer. */
 async function sendAttempt(
@@ -367,8 +368,8 @@ async function sendAttempt(
     });
   } catch (e) {
     const error = e instanceof Error ? e.message : 'The refund could not be sent';
-    if (isDefiniteRefusal(e) && !attempt.fresh && attempt.provider === 'easebuzz') {
-      return recheckRefusedRepeat(attempt, lookup, error, applyDetailed);
+    if (isDefiniteRefusal(e) && attempt.provider === 'easebuzz') {
+      return recheckRefusedEasebuzz(attempt, lookup, error, applyDetailed);
     }
     // Unclear: kept pending with the message as a note; the retry, Check now or the cron repeats the key.
     const applied = await applyDetailed(null, isDefiniteRefusal(e) ? 'failed' : 'pending', error);
@@ -385,13 +386,15 @@ async function sendAttempt(
 }
 
 /**
- * Easebuzz has no idempotency header, so a repeat send it turns down (a duplicate merchant refund id,
- * say) may be the copy of a refund it already took from an earlier send whose answer was lost, or from
- * a Try again racing the cron. Only its own record of our key decides: a refund there is applied, a
- * failed one fails the attempt, and no answer (nothing yet, or the lookup failed) keeps it pending.
+ * Easebuzz has no idempotency header, so a send it turns down (a duplicate merchant refund id, say) may
+ * be the copy of a refund it already took: from an earlier send whose answer was lost, a Try again
+ * racing the cron, or (for a first send) a double-click whose repeat reached it first. Only its own
+ * record of our key decides: a refund there is applied, a failed one fails the attempt, and a lookup
+ * that cannot answer keeps it pending. No refund under the key fails a first send (the refusal was
+ * about it) but keeps a repeat pending, since an earlier send may still be on its way into the list.
  */
-async function recheckRefusedRepeat(
-  attempt: { businessId: string; provider: Provider; providerPaymentId: string; idempotencyKey: string },
+async function recheckRefusedEasebuzz(
+  attempt: { businessId: string; provider: Provider; providerPaymentId: string; idempotencyKey: string; fresh: boolean },
   lookup: StatusLookup,
   error: string,
   applyDetailed: (
@@ -401,6 +404,7 @@ async function recheckRefusedRepeat(
   ) => Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }>,
 ): Promise<SendResult> {
   let found: 'processed' | 'pending' | 'failed' | null = null;
+  let unclear = false;
   try {
     found = await lookup({
       business_id: attempt.businessId,
@@ -410,12 +414,12 @@ async function recheckRefusedRepeat(
       idempotency_key: attempt.idempotencyKey,
     });
   } catch {
-    found = null;
+    unclear = true;
   }
   // Easebuzz knows a refund by our merchant refund id, which is the key.
   const refundId = easebuzzMerchantRefundId(attempt.idempotencyKey);
-  if (found === 'failed') {
-    const applied = await applyDetailed(refundId, 'failed', error);
+  if (found === 'failed' || (found === null && !unclear && attempt.fresh)) {
+    const applied = await applyDetailed(found === 'failed' ? refundId : null, 'failed', error);
     return applied.status === 'processed'
       ? { status: applied.status, providerRefundId: null }
       : { status: applied.status, providerRefundId: null, error: applied.error ?? error };
@@ -426,10 +430,11 @@ async function recheckRefusedRepeat(
       ? { status: applied.status, providerRefundId: refundId, error: applied.error }
       : { status: applied.status, providerRefundId: refundId };
   }
-  const applied = await applyDetailed(null, 'pending', REPEAT_REFUSED);
+  const note = attempt.fresh ? REFUSED_UNCHECKED : REPEAT_REFUSED;
+  const applied = await applyDetailed(null, 'pending', note);
   return applied.status === 'processed'
     ? { status: applied.status, providerRefundId: null }
-    : { status: applied.status, providerRefundId: null, error: applied.error ?? REPEAT_REFUSED };
+    : { status: applied.status, providerRefundId: null, error: applied.error ?? note };
 }
 
 function defaultRequester(provider: Provider, businessId: string): () => Promise<GatewayRequester> {

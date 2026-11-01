@@ -721,8 +721,9 @@ d('refund a return to the original payment (real DB)', () => {
     } finally {
       global.fetch = realFetch;
     }
-    // A first send under a new key: nothing can exist under it, so the refusal stands without a lookup.
-    expect(looked).toHaveLength(0);
+    // Easebuzz is asked whether it has a refund under the key; it has none, so the refusal stands.
+    const [failed0] = await refundRows(id);
+    expect(looked).toEqual([failed0.idempotency_key]);
     expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Easebuzz refund failed: Refund not allowed for this transaction' });
     const [failed] = await refundRows(id);
     expect(failed).toMatchObject({ status: 'failed', provider: 'easebuzz', provider_refund_id: null });
@@ -1000,6 +1001,92 @@ d('refund a return to the original payment (real DB)', () => {
     expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Easebuzz refund failed: Duplicate merchant refund id' });
     expect((await refundRows(id))[0]).toMatchObject({ status: 'failed', provider_refund_id: row.idempotency_key });
     expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: true, max: 118 });
+  });
+
+  test('a double-click whose repeat reaches Easebuzz first: the first send refused as a duplicate ends with the refund, not failed, and it posts once', async () => {
+    const { invoiceId } = await easebuzzOrder(1);
+    const id = await receivedReturn(invoiceId);
+    let reached!: () => void;
+    const repeatReached = new Promise<void>((r) => (reached = r));
+    let answer!: () => void;
+    const repeatAnswered = new Promise<void>((r) => (answer = r));
+    let repeat: Promise<Awaited<ReturnType<typeof refundReturnToOriginalPayment>>> | null = null;
+    const looked: string[] = [];
+
+    const first = await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        // The second click claims the same attempt and its send reaches Easebuzz first; its answer is slow.
+        repeat = refundReturnToOriginalPayment({
+          businessId: B,
+          returnId: id,
+          userId: A,
+          requestRefund: async (a) => {
+            reached();
+            await repeatAnswered;
+            return { providerRefundId: a.idempotencyKey, status: 'pending' };
+          },
+        });
+        await repeatReached;
+        // Easebuzz turns the first click's copy down as a duplicate, and that is applied first.
+        throw duplicate();
+      },
+      fetchStatus: async (r) => {
+        looked.push(r.idempotency_key);
+        return 'pending';
+      },
+    });
+    const [row] = await refundRows(id);
+    expect(looked).toEqual([row.idempotency_key]);
+    expect(first).toEqual({ status: 'pending', amount: 118, providerRefundId: row.idempotency_key });
+    answer();
+    expect(await repeat!).toMatchObject({ status: 'pending', providerRefundId: row.idempotency_key });
+
+    expect(await refundRows(id)).toHaveLength(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: row.idempotency_key });
+    expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).not.toContain('refund_failed');
+    expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: false, max: 0 });
+
+    await pool.query(`UPDATE return_gateway_refunds SET created_at = NOW() - INTERVAL '20 minutes' WHERE id = $1`, [row.id]);
+    for (let i = 0; i < 2; i++) {
+      await checkPendingReturnRefunds({
+        businessId: B,
+        returnId: id,
+        fetchStatus: async (r) => (r.provider_refund_id === row.idempotency_key ? 'processed' : null),
+        resubmit: async () => {
+          throw new TypeError('not this test');
+        },
+      });
+    }
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: row.idempotency_key });
+    expect((await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rowCount).toBe(1);
+    expect((await listReturnEvents(pool, B, id)).filter((e) => e.kind === 'refunded')).toHaveLength(1);
+  });
+
+  test('a first Easebuzz send that is refused while the lookup cannot answer stays pending, not failed', async () => {
+    const { invoiceId } = await easebuzzOrder(1);
+    const id = await receivedReturn(invoiceId);
+    const out = await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        throw duplicate();
+      },
+      fetchStatus: async () => {
+        throw new Error('Easebuzz refund lookup failed: Hash mismatch');
+      },
+    });
+    expect(out).toEqual({
+      status: 'pending',
+      amount: 118,
+      providerRefundId: null,
+      error: 'The gateway refused this refund but could not say whether it already has it; it is being checked',
+    });
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: null });
+    expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).not.toContain('refund_failed');
   });
 
   test('the claim takes the credit note lock, so credit being spent on a bill at the same time is never also refunded', async () => {
