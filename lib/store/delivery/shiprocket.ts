@@ -356,7 +356,9 @@ async function serviceability(creds: ShiprocketCreds, input: DeliveryQuoteReques
     cod: input.isCod ? '1' : '0',
   });
   const { ok, data } = await call(creds, `/courier/serviceability/?${params}`);
-  const companies = (((data.data as Json | undefined)?.available_courier_companies ?? []) as Array<{
+  const serviceData = (data.data as Json | undefined) ?? {};
+  const companies = ((serviceData.available_courier_companies ?? []) as Array<{
+    courier_company_id?: number;
     rate?: number;
     freight_charge?: number;
     etd?: string;
@@ -370,7 +372,10 @@ async function serviceability(creds: ShiprocketCreds, input: DeliveryQuoteReques
       error: typeof data.message === 'string' && data.message ? data.message : 'No courier available for this pincode',
     };
   }
-  const best = [...companies].sort((a, b) => (a.rate ?? a.freight_charge ?? 0) - (b.rate ?? b.freight_charge ?? 0))[0];
+  // Shiprocket books the courier it recommends when no courier is named, so quote that one's rate.
+  const recommendedId = Number(serviceData.recommended_courier_company_id);
+  const cheapest = [...companies].sort((a, b) => (a.rate ?? a.freight_charge ?? 0) - (b.rate ?? b.freight_charge ?? 0))[0];
+  const best = companies.find((c) => Number(c.courier_company_id) === recommendedId) ?? cheapest;
   const charge = Number(best.rate ?? best.freight_charge ?? 0) || 0;
   const eta =
     best.etd ||

@@ -2,6 +2,7 @@ import {
   cityStateFromAddress,
   clearShiprocketCache,
   createShiprocketClient,
+  createShiprocketProvider,
   shiprocketErrorMessage,
   type ShiprocketParcel,
 } from '@/lib/store/delivery/shiprocket';
@@ -179,6 +180,54 @@ describe('Shiprocket client', () => {
     expect(calls.find((c) => c.path === '/courier/generate/label')!.body).toEqual({ shipment_id: [7771] });
     expect(calls.find((c) => c.path === '/manifests/print')!.body).toEqual({ order_ids: [5551] });
     expect(calls.find((c) => c.path === '/orders/cancel')!.body).toEqual({ ids: [5551] });
+  });
+});
+
+describe('checkout quote', () => {
+  const quoteInput = { pickupPincode: '411038', deliveryPincode: '110001', weightKg: 0.5, isCod: false };
+  const courier = (courier_company_id: number, rate: number, etd: string) => ({ courier_company_id, rate, etd });
+
+  test('quote charges the recommended courier\'s rate', async () => {
+    mockFetch({
+      '/auth/login': () => ({ json: { token: 't' } }),
+      '/courier/serviceability/': () => ({
+        json: {
+          data: {
+            recommended_courier_company_id: 24,
+            available_courier_companies: [courier(10, 60, 'Nov 5'), courier(24, 85, 'Nov 4')],
+          },
+        },
+      }),
+    });
+    const result = await createShiprocketProvider(creds).quote(quoteInput);
+    expect(result).toEqual({ serviceable: true, charge: 85, etaText: 'Nov 4' });
+  });
+
+  test('without a recommended courier the quote charges the cheapest rate', async () => {
+    mockFetch({
+      '/auth/login': () => ({ json: { token: 't' } }),
+      '/courier/serviceability/': () => ({
+        json: { data: { available_courier_companies: [courier(10, 60, 'Nov 5'), courier(24, 85, 'Nov 4')] } },
+      }),
+    });
+    const result = await createShiprocketProvider(creds).quote(quoteInput);
+    expect(result).toEqual({ serviceable: true, charge: 60, etaText: 'Nov 5' });
+  });
+
+  test('a recommended courier missing from the list falls back to the cheapest rate', async () => {
+    mockFetch({
+      '/auth/login': () => ({ json: { token: 't' } }),
+      '/courier/serviceability/': () => ({
+        json: {
+          data: {
+            recommended_courier_company_id: 99,
+            available_courier_companies: [courier(10, 60, 'Nov 5'), courier(24, 85, 'Nov 4')],
+          },
+        },
+      }),
+    });
+    const result = await createShiprocketProvider(creds).quote(quoteInput);
+    expect(result).toEqual({ serviceable: true, charge: 60, etaText: 'Nov 5' });
   });
 });
 
