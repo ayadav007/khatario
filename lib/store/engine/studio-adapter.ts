@@ -146,38 +146,6 @@ export function productSectionSettings(section: Section): StudioSettings {
   return out;
 }
 
-/** Plain text from a rich text value (the hero's text block): tags removed, entities decoded. */
-function plainText(html: string): string {
-  return html
-    .replace(/<\/p>\s*<p>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .trim();
-}
-
-// Until the hero renderer reads the section directly, the banner shows its first heading, text and button blocks.
-export function bannerSettings(section: Section): StudioSettings {
-  const s = settingsOf(section);
-  const heading = blocksOf(section, 'heading')[0];
-  const body = blocksOf(section, 'text')[0];
-  const button = blocksOf(section, 'button')[0];
-  return {
-    ...toStudioBox(section),
-    image: str(s.image),
-    title: str(heading?.text),
-    text: plainText(str(body?.content)),
-    button: str(button?.label),
-    link: str(button?.link),
-    height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
-    textAlign: pick(s.align, ['left', 'center', 'right'] as const) ?? 'left',
-  };
-}
-
 export function announcementSettings(section: Section): StudioSettings {
   const s = settingsOf(section);
   return {

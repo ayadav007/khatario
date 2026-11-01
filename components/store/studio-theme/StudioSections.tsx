@@ -846,7 +846,8 @@ export function StudioBanner({ s, onCta }: { s: StudioSettings; onCta?: () => vo
     : {};
   const eyebrow = studioEyebrow('banner', s.eyebrow);
   return (
-    // `bh-*` / `ta-*`: the engine banner's height and text position (styled by EngineShell only).
+    // `bh-*` / `ta-*`: hooks for a height and text position; nothing styles them now that engine pages render the
+    // Hero banner themselves (engine/sections/ImageBanner.tsx).
     <div
       className={['banner', s.image ? 'hasImage' : '', s.height ? `bh-${s.height}` : '', s.textAlign ? `ta-${s.textAlign}` : '']
         .filter(Boolean)

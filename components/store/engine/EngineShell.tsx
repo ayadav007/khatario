@@ -81,11 +81,7 @@ const THEME_RULES =
   '.st-root.eng-root .footerCols .footerCol{margin-left:0;flex-direction:column;gap:8px}' +
   '.st-root.eng-root .footerCol>b{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}' +
   '@container store (max-width:640px){.st-root.eng-root .footerCols{margin-left:0;gap:24px}}' +
-  // Image banner height and text position.
-  '.st-root.eng-root .banner.bh-small{padding-block:22px}' +
-  '.st-root.eng-root .banner.bh-large{min-height:360px}' +
-  '.st-root.eng-root .banner.ta-center{justify-content:center;text-align:center}' +
-  '.st-root.eng-root .banner.ta-right{justify-content:flex-end;text-align:right}' +
+  // The Hero banner (image-banner) has its own stylesheet: hero.css, loaded by sections/ImageBanner.tsx.
   // Category grid styles: circles (round photos or marks), cards (raised tiles). Tiles is the default look.
   '.st-root.eng-root .eng-cats--circles .cat{background:none;text-align:center;box-shadow:none}' +
   '.st-root.eng-root .eng-cats--circles .cat :is(img,.catMark){width:min(100%,120px);height:auto;aspect-ratio:1;border-radius:50%;margin:0 auto}' +

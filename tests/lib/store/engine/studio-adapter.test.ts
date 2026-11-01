@@ -1,6 +1,5 @@
 import {
   announcementSettings,
-  bannerSettings,
   marqueeSettings,
   multicolumnSettings,
   productSectionSettings,
@@ -125,18 +124,7 @@ describe('studio adapter', () => {
     expect(out).toMatchObject({ title: 'Hi', eyebrow: 'E', source: 'new', limit: 6, columns: 3, cardStyle: 'shadow', showRating: false, showBadges: false });
   });
 
-  it('banner and announcement', () => {
-    const blocks: BlockSpec[] = [
-      ['h', 'heading', { text: 'B' }],
-      ['t', 'text', { content: '<p>D &amp; E</p>' }],
-      ['b', 'button', { label: 'Go' }],
-    ];
-    expect(bannerSettings(sec('image-banner', { align: 'center' }, blocks))).toMatchObject({
-      title: 'B',
-      text: 'D & E',
-      button: 'Go',
-      textAlign: 'center',
-    });
+  it('announcement', () => {
     expect(announcementSettings(sec('announcement', { text: 'Hello', link: '/x' }))).toMatchObject({ text: 'Hello', link: '/x', textAlign: 'center' });
   });
 

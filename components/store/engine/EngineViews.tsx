@@ -15,7 +15,6 @@ import { ANCHOR_KIND, catalogAnchor, categoriesAnchor, findAnchor, firstCatalogA
 import { StoreProductCard, type StoreProduct } from '../StoreProductCard';
 import { HeaderSearch, type SearchPick } from '../features/catalog/HeaderSearch';
 import {
-  StudioBanner,
   StudioCategoriesSection,
   StudioHeader,
   StudioHero,
@@ -182,11 +181,6 @@ export function EngineAnnouncementScroll({ items, link }: { items: string[]; lin
       {inner}
     </a>
   );
-}
-
-export function EngineBanner({ s }: { s: StudioSettings }) {
-  const follow = useFollowLink();
-  return <StudioBanner s={s} onCta={() => follow(s.link || CATALOG_LINK)} />;
 }
 
 /** Studio's `.st-btn` that follows a link. */
