@@ -4,7 +4,7 @@ import { createCreditNoteInTransaction, CreditNoteCreateError, nextCreditNoteNum
 import { refundCreditNote, refundableOnCreditNote, CreditNoteRefundError } from '@/lib/credit-notes/refund';
 import { transitionFulfilment } from '@/lib/fulfilment/service';
 import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
-import { recordReturnEvent, type ReturnEventKind } from './events';
+import { listReturnEvents, recordReturnEvent, type ReturnEventKind } from './events';
 import { abandonHalfMadeOrder, hasLivePickup, savePickupDetails, type PickupDetails } from './pickup';
 
 /**
@@ -897,6 +897,20 @@ export type ReturnListRow = {
   requested_at: string;
   received_at: string | null;
   closed_at: string | null;
+  /** How the goods come back, and the courier pickup when there is one. */
+  method: ReturnMethod | null;
+  instructions: string | null;
+  pickup_status: PickupStatus | null;
+  carrier_order_id: string | null;
+  awb: string | null;
+  courier_name: string | null;
+  tracking_url: string | null;
+  pickup_error: string | null;
+  pickup_scheduled_at: string | null;
+  picked_up_at: string | null;
+  arrived_at: string | null;
+  /** The latest refund to the original payment: pending, processed or failed. */
+  gateway_refund_status: 'pending' | 'processed' | 'failed' | null;
 };
 
 const LIST_SQL = `
@@ -906,7 +920,13 @@ const LIST_SQL = `
          r.credit_note_id, cn.credit_note_number, r.credit_amount::text, r.refunded_amount::text, r.refund_method,
          (SELECT COUNT(*)::int FROM order_return_items ri WHERE ri.return_id = r.id) AS item_count,
          (SELECT COALESCE(SUM(ri.quantity), 0)::text FROM order_return_items ri WHERE ri.return_id = r.id) AS total_qty,
-         r.requested_at, r.received_at, r.closed_at
+         r.requested_at, r.received_at, r.closed_at,
+         r.return_method AS method, r.return_instructions AS instructions,
+         r.pickup_status, r.carrier_order_id, r.awb, r.courier_name, r.tracking_url, r.pickup_error,
+         r.pickup_scheduled_at, r.picked_up_at, r.arrived_at,
+         (SELECT g.status FROM return_gateway_refunds g
+           WHERE g.order_return_id = r.id AND g.business_id = r.business_id
+           ORDER BY g.created_at DESC LIMIT 1) AS gateway_refund_status
     FROM order_returns r
     JOIN invoices i ON i.id = r.invoice_id
     LEFT JOIN customers c ON c.id = r.customer_id
@@ -917,7 +937,8 @@ export async function listReturns(
   p: {
     businessId: string;
     branchIds: string[] | null;
-    status?: ReturnStatus | 'open' | null;
+    /** `refund_pending`: a refund to the original payment is on its way. */
+    status?: ReturnStatus | 'open' | 'refund_pending' | null;
     invoiceId?: string | null;
     limit?: number;
   },
@@ -928,6 +949,9 @@ export async function listReturns(
        AND ($2::uuid[] IS NULL OR r.branch_id IS NULL OR r.branch_id = ANY($2::uuid[]))
        AND ($3::text IS NULL
             OR ($3 = 'open' AND r.status IN ('requested', 'approved', 'received'))
+            OR ($3 = 'refund_pending' AND EXISTS (
+                  SELECT 1 FROM return_gateway_refunds g
+                   WHERE g.order_return_id = r.id AND g.business_id = r.business_id AND g.status = 'pending'))
             OR r.status = $3)
        AND ($4::uuid IS NULL OR r.invoice_id = $4::uuid)
      ORDER BY CASE r.status WHEN 'requested' THEN 0 WHEN 'approved' THEN 1 WHEN 'received' THEN 2 ELSE 3 END,
@@ -938,10 +962,27 @@ export async function listReturns(
   return res.rows;
 }
 
+export type ReturnGatewayRefundState = {
+  status: 'pending' | 'processed' | 'failed';
+  amount: number;
+  /** Why it failed, or a note on a pending one (an unclear gateway answer, a posting problem). */
+  error: string | null;
+  provider_refund_id: string | null;
+  created_at: string;
+};
+
+export type ReturnDetail = ReturnListRow & {
+  lines: unknown[];
+  refunds: unknown[];
+  /** The latest refund to the original payment, or null when there has been none. */
+  gateway_refund: ReturnGatewayRefundState | null;
+  events: Awaited<ReturnType<typeof listReturnEvents>>;
+};
+
 export async function getReturn(
   client: Pick<PoolClient, 'query'>,
   p: { businessId: string; returnId: string; branchIds: string[] | null },
-): Promise<(ReturnListRow & { lines: unknown[]; refunds: unknown[] }) | null> {
+): Promise<ReturnDetail | null> {
   const res = await client.query<ReturnListRow>(
     `${LIST_SQL}
      WHERE r.business_id = $1 AND r.id = $2
@@ -961,5 +1002,12 @@ export async function getReturn(
        FROM credit_note_refunds WHERE order_return_id = $1 AND business_id = $2 ORDER BY created_at`,
     [row.id, p.businessId],
   );
-  return { ...row, lines: lines.rows, refunds: refunds.rows };
+  const gateway = await client.query<ReturnGatewayRefundState>(
+    `SELECT status, amount::float8 AS amount, failure_reason AS error, provider_refund_id, created_at
+       FROM return_gateway_refunds WHERE order_return_id = $1 AND business_id = $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [row.id, p.businessId],
+  );
+  const events = await listReturnEvents(client, p.businessId, row.id);
+  return { ...row, lines: lines.rows, refunds: refunds.rows, gateway_refund: gateway.rows[0] ?? null, events };
 }

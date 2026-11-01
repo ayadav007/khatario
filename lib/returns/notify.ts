@@ -40,7 +40,10 @@ function pickupText(v: Pick<ReturnMessageValues, 'courier' | 'awb' | 'trackingUr
 
 /** What the customer does next once a return is approved. Also fills the template's `instructions` field. */
 export function returnNextStep(v: ReturnMessageValues): string {
-  if (v.method === 'courier_pickup') return pickupText(v, 'Pickup booked');
+  if (v.method === 'courier_pickup') {
+    // Approved, but the booking has not gone through yet: the pickup notice follows once it does.
+    return clean(v.awb) ? pickupText(v, 'Pickup booked') : 'We will send you the pickup details soon.';
+  }
   if (v.method === 'customer_sends') {
     const where = clean(v.instructions);
     return where ? `Please send it to: ${where}` : '';

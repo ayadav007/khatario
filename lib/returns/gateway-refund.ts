@@ -10,6 +10,7 @@ import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payme
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { easebuzzRefundRequester, razorpayRefundRequester, StoreRefundError } from '@/lib/store/store-refund';
 import { recordReturnEvent } from './events';
+import { notifyReturnCustomer } from './notify';
 import { lockReturn, ReturnError } from './service';
 
 /**
@@ -355,7 +356,20 @@ export async function applyReturnGatewayRefundResult(input: ApplyInput): Promise
   return (await applyResult(input)).status;
 }
 
+/**
+ * Applies the gateway's answer, then (after commit) tells the customer when this call is the one that
+ * settled the money. Staff sends, Razorpay notices and the pending check all come through here, so the
+ * *refunded* message goes once whichever of them completes the refund.
+ */
 async function applyResult(input: ApplyInput): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }> {
+  const { settledReturnId, ...out } = await applyResultInTx(input);
+  if (settledReturnId) await notifyReturnCustomer(input.businessId, settledReturnId, 'refunded');
+  return out;
+}
+
+async function applyResultInTx(
+  input: ApplyInput,
+): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string; settledReturnId?: string }> {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -438,7 +452,7 @@ async function applyResult(input: ApplyInput): Promise<{ status: 'pending' | 'pr
       return { status: 'pending', error };
     }
     await client.query('COMMIT');
-    return { status: 'processed' };
+    return { status: 'processed', settledReturnId: returnId };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -587,9 +601,14 @@ async function gatewayStatus(row: PendingRow): Promise<'processed' | 'pending' |
   return found.status;
 }
 
-/** Cron and *Check now*: asks the gateway about attempts still pending after `olderThanMinutes` (10). */
+/**
+ * Cron and *Check now*: asks the gateway about attempts still pending after `olderThanMinutes` (10).
+ * *Check now* passes the session business and its return to look at that return's attempt only.
+ */
 export async function checkPendingReturnRefunds(opts?: {
   olderThanMinutes?: number;
+  businessId?: string;
+  returnId?: string;
   fetchStatus?: (row: {
     business_id: string;
     provider: Provider;
@@ -607,9 +626,11 @@ export async function checkPendingReturnRefunds(opts?: {
        FROM return_gateway_refunds
       WHERE status = 'pending' AND provider_payment_id IS NOT NULL
         AND created_at <= NOW() - make_interval(mins => $1::int)
+        AND ($2::uuid IS NULL OR business_id = $2::uuid)
+        AND ($3::uuid IS NULL OR order_return_id = $3::uuid)
       ORDER BY created_at
       LIMIT 200`,
-    [minutes],
+    [minutes, opts?.businessId ?? null, opts?.returnId ?? null],
   );
   const out = { checked: 0, processed: 0, failed: 0 };
   for (const row of rows.rows) {

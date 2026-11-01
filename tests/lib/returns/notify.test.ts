@@ -43,6 +43,15 @@ describe('buildReturnMessage', () => {
     );
   });
 
+  test('a courier pickup that is not booked yet promises the details instead', () => {
+    expect(buildReturnMessage('approved', { ...base, method: 'courier_pickup' })).toBe(
+      'Your return RET-0012 for order SO-1042 is approved. We will send you the pickup details soon.',
+    );
+    expect(buildReturnMessage('approved', { ...base, method: 'courier_pickup', courier: 'Delhivery', awb: ' ' })).toBe(
+      'Your return RET-0012 for order SO-1042 is approved. We will send you the pickup details soon.',
+    );
+  });
+
   test('pickup booked later', () => {
     expect(
       buildReturnMessage('pickup_booked', { ...base, courier: 'Delhivery', awb: 'R123', trackingUrl: 'https://t/1' }),

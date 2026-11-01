@@ -184,24 +184,31 @@ export async function cancelAbandonedOrder(
   }
 }
 
+/** Where the parcel is collected and how big it is, as saved on the return (or as it would be saved). */
+export type ResolvedPickupDetails = {
+  address: string | null;
+  pincode: string | null;
+  phone: string | null;
+  weightKg: number;
+  lengthCm: number;
+  breadthCm: number;
+  heightCm: number;
+};
+
 /**
- * Saves where the parcel is collected and how big it is. Blanks are filled from what was already
- * saved on the return, then the original order (see `orderDefaults`), then 0.5 kg and 10 cm sides.
- * A phone or PIN is stored as given; booking checks them.
- *
- * When the address, PIN, phone or package differ from what a half-made Shiprocket order (no AWB yet)
- * was created with, that order is abandoned (see `abandonHalfMadeOrder`) so Book again creates a
- * new one with the corrected details. Returns the abandoned order's id for the caller to cancel
- * after commit (`cancelAbandonedOrder`), else null.
+ * The pickup details `details` would leave on the return: blanks are filled from what was already
+ * saved, then the original order (see `orderDefaults`), then 0.5 kg and 10 cm sides.
  */
-export async function savePickupDetails(
-  client: Db,
-  p: { businessId: string; returnId: string; details?: PickupDetails | null },
-): Promise<{ abandonedOrderId: string | null }> {
-  const saved = await loadLinks(client, p.businessId, p.returnId);
-  if (!saved) return { abandonedOrderId: null };
-  const defaults = await orderDefaults(client, p.businessId, p.returnId, saved);
-  const d = p.details ?? {};
+async function resolvePickupDetails(
+  db: Db,
+  businessId: string,
+  returnId: string,
+  details?: PickupDetails | null,
+): Promise<{ saved: ReturnLinks & Record<string, unknown>; values: ResolvedPickupDetails } | null> {
+  const saved = await loadLinks(db, businessId, returnId);
+  if (!saved) return null;
+  const defaults = await orderDefaults(db, businessId, returnId, saved);
+  const d = details ?? {};
   const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
   const savedNum = (k: string) => num(saved[k]);
 
@@ -216,27 +223,60 @@ export async function savePickupDetails(
   const side = (given: number | null | undefined, savedKey: string, fromParcel: number | null) =>
     cleanDimCm(given) ?? cleanDimCm(savedNum(savedKey)) ?? fromParcel ?? DEFAULT_RETURN_SIDE_CM;
 
-  const length = side(d.lengthCm, 'pickup_length_cm', defaults.lengthCm);
-  const breadth = side(d.breadthCm, 'pickup_breadth_cm', defaults.breadthCm);
-  const height = side(d.heightCm, 'pickup_height_cm', defaults.heightCm);
+  return {
+    saved,
+    values: {
+      address,
+      pincode: pincode || null,
+      phone: phone || null,
+      weightKg: weight,
+      lengthCm: side(d.lengthCm, 'pickup_length_cm', defaults.lengthCm),
+      breadthCm: side(d.breadthCm, 'pickup_breadth_cm', defaults.breadthCm),
+      heightCm: side(d.heightCm, 'pickup_height_cm', defaults.heightCm),
+    },
+  };
+}
+
+/** What the approve form starts with: the saved pickup details, else what approving would save. Writes nothing. */
+export async function pickupDetailsFor(db: Db, businessId: string, returnId: string): Promise<ResolvedPickupDetails | null> {
+  return (await resolvePickupDetails(db, businessId, returnId, null))?.values ?? null;
+}
+
+/**
+ * Saves where the parcel is collected and how big it is (see `resolvePickupDetails` for how blanks
+ * are filled). A phone or PIN is stored as given; booking checks them.
+ *
+ * When the address, PIN, phone or package differ from what a half-made Shiprocket order (no AWB yet)
+ * was created with, that order is abandoned (see `abandonHalfMadeOrder`) so Book again creates a
+ * new one with the corrected details. Returns the abandoned order's id for the caller to cancel
+ * after commit (`cancelAbandonedOrder`), else null.
+ */
+export async function savePickupDetails(
+  client: Db,
+  p: { businessId: string; returnId: string; details?: PickupDetails | null },
+): Promise<{ abandonedOrderId: string | null }> {
+  const resolved = await resolvePickupDetails(client, p.businessId, p.returnId, p.details);
+  if (!resolved) return { abandonedOrderId: null };
+  const { saved, values: v } = resolved;
+  const savedNum = (k: string) => (saved[k] == null || saved[k] === '' ? null : Number(saved[k]));
 
   await client.query(
     `UPDATE order_returns
         SET pickup_address = $3, pickup_pincode = $4, pickup_phone = $5, pickup_weight_kg = $6,
             pickup_length_cm = $7, pickup_breadth_cm = $8, pickup_height_cm = $9, updated_at = NOW()
       WHERE id = $1 AND business_id = $2`,
-    [p.returnId, p.businessId, address, pincode || null, phone || null, weight, length, breadth, height],
+    [p.returnId, p.businessId, v.address, v.pincode, v.phone, v.weightKg, v.lengthCm, v.breadthCm, v.heightCm],
   );
 
   const halfMade = Boolean(saved.carrier_order_id) && !saved.awb;
   const changed =
-    (saved.pickup_address ?? null) !== address ||
-    (saved.pickup_pincode ?? null) !== (pincode || null) ||
-    (saved.pickup_phone ?? null) !== (phone || null) ||
-    savedNum('pickup_weight_kg') !== weight ||
-    savedNum('pickup_length_cm') !== length ||
-    savedNum('pickup_breadth_cm') !== breadth ||
-    savedNum('pickup_height_cm') !== height;
+    (saved.pickup_address ?? null) !== v.address ||
+    (saved.pickup_pincode ?? null) !== v.pincode ||
+    (saved.pickup_phone ?? null) !== v.phone ||
+    savedNum('pickup_weight_kg') !== v.weightKg ||
+    savedNum('pickup_length_cm') !== v.lengthCm ||
+    savedNum('pickup_breadth_cm') !== v.breadthCm ||
+    savedNum('pickup_height_cm') !== v.heightCm;
   if (!halfMade || !changed) return { abandonedOrderId: null };
   return { abandonedOrderId: await abandonHalfMadeOrder(client, p.businessId, p.returnId) };
 }
