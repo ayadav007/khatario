@@ -32,6 +32,7 @@ import { clsx } from 'clsx';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
 import { useOptionalLandingProduct } from '@/components/marketing/landing/LandingProductContext';
 import { getSignupHref, type ProductLine } from '@/lib/product-lines';
+import { DEFAULT_ANNOUNCEMENT, type SiteAnnouncement } from '@/lib/marketing-builder/announcement';
 
 /* Menu content ---------------------------------------------------------------- */
 
@@ -176,20 +177,26 @@ function ProductPanel({
   );
 }
 
-function AnnouncementBar() {
+function AnnouncementBar({ announcement }: { announcement: SiteAnnouncement }) {
+  const a = announcement;
+  if (!a.show || (!a.title && !a.text)) return null;
   return (
     <div className="relative z-[51] bg-primary-600 text-white">
       <div className={clsx(LANDING_PAGE_GUTTER, 'flex min-h-[2.5rem] items-center justify-center gap-3 py-2 text-center text-sm')}>
-        <span className="marketing-pill-shine rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-950">
-          New
-        </span>
+        {a.badge && (
+          <span className="marketing-pill-shine rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-950">
+            {a.badge}
+          </span>
+        )}
         <span className="text-primary-100">
-          <span className="font-semibold text-white">Online store themes are live.</span>
-          <span className="hidden sm:inline"> Put your shop online and get orders as bills.</span>
+          {a.title && <span className="font-semibold text-white">{a.title}</span>}
+          {a.text && <span className="hidden sm:inline"> {a.text}</span>}
         </span>
-        <Link href="/themes" className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-accent-300 hover:text-accent-200">
-          Explore <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-        </Link>
+        {a.linkLabel && a.href && (
+          <Link href={a.href} className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-accent-300 hover:text-accent-200">
+            {a.linkLabel} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -199,7 +206,15 @@ function AnnouncementBar() {
 
 type MenuId = ProductLine | 'resources';
 
-export function MarketingSiteHeader() {
+export function MarketingSiteHeader({
+  announcement = DEFAULT_ANNOUNCEMENT,
+  preview = false,
+}: {
+  /** The bar above the header; the home page passes what was set in the Site Builder. */
+  announcement?: SiteAnnouncement;
+  /** Inside the Site Builder canvas: not sticky, so it never covers the blocks being edited. */
+  preview?: boolean;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const product = useOptionalLandingProduct();
@@ -341,10 +356,11 @@ export function MarketingSiteHeader() {
 
   return (
     <>
-      <AnnouncementBar />
+      <AnnouncementBar announcement={announcement} />
       <header
         className={clsx(
-          'sticky top-0 z-50 border-b bg-white/85 backdrop-blur-xl transition-shadow dark:bg-slate-950/85',
+          preview ? 'relative z-50' : 'sticky top-0 z-50',
+          'border-b bg-white/85 backdrop-blur-xl transition-shadow dark:bg-slate-950/85',
           scrolled
             ? 'border-slate-200 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.18)] dark:border-slate-800'
             : 'border-transparent',

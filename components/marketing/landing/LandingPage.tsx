@@ -34,6 +34,7 @@ import {
 import { MarketingPageRenderer } from '@/components/marketing/builder/MarketingPageRenderer';
 import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import type { MarketingDocument } from '@/lib/marketing-builder/sanitize';
+import { announcementFromRootProps, type SiteAnnouncement } from '@/lib/marketing-builder/announcement';
 import type { PricingCatalog } from '@/lib/subscription/pricing-catalog';
 
 /** The coded home page; also the fallback whenever nothing has been published from the Site Builder. */
@@ -63,10 +64,12 @@ function LandingShell({
   children,
   previewBanner,
   pricingCatalog,
+  announcement,
 }: {
   children: ReactNode;
   previewBanner?: boolean;
   pricingCatalog?: PricingCatalog | null;
+  announcement?: SiteAnnouncement;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,7 +101,7 @@ function LandingShell({
             </div>
           )}
           <LandingScrollProgress />
-          <MarketingSiteHeader />
+          <MarketingSiteHeader announcement={announcement} />
           {children}
           <LandingFooter />
           <LandingScrollTrialModal />
@@ -128,7 +131,11 @@ export function LandingPage({
         </div>
       }
     >
-      <LandingShell previewBanner={preview} pricingCatalog={pricingCatalog}>
+      <LandingShell
+        previewBanner={preview}
+        pricingCatalog={pricingCatalog}
+        announcement={announcementFromRootProps(document?.root?.props)}
+      >
         {document ? <MarketingPageRenderer data={document} /> : <LandingDefaultSections />}
       </LandingShell>
     </Suspense>

@@ -87,6 +87,13 @@ import {
 import { LandingSwitchHelp, LANDING_SWITCH_HELP_DEFAULTS } from '@/components/marketing/landing/LandingSwitchHelp';
 import { LandingEverywhere, LANDING_EVERYWHERE_DEFAULTS } from '@/components/marketing/landing/LandingEverywhere';
 import { BRAND_COLOR_OPTIONS, brandStyle, HEADING_FONT_OPTIONS } from '@/lib/marketing-builder/brand';
+import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
+import { LandingFooter } from '@/components/marketing/landing/LandingFooter';
+import {
+  ANNOUNCEMENT_ROOT_KEYS,
+  announcementFromRootProps,
+  DEFAULT_ANNOUNCEMENT,
+} from '@/lib/marketing-builder/announcement';
 import { CONTENT_BLOCKS, KHATARIO_BLOCKS, LAYOUT_BLOCKS } from '@/lib/marketing-builder/block-types';
 
 /* Field helpers ------------------------------------------------------------ */
@@ -179,8 +186,20 @@ export const marketingConfig: Config = {
       ], true),
       brandColor: { type: 'select', label: 'Brand colour', options: BRAND_COLOR_OPTIONS },
       headingFont: { type: 'select', label: 'Heading font', options: HEADING_FONT_OPTIONS },
+      [ANNOUNCEMENT_ROOT_KEYS.show]: yesNo('Header: show the green announcement bar'),
+      [ANNOUNCEMENT_ROOT_KEYS.badge]: text('Announcement: small tag (e.g. New)'),
+      [ANNOUNCEMENT_ROOT_KEYS.title]: text('Announcement: bold text'),
+      [ANNOUNCEMENT_ROOT_KEYS.text]: text('Announcement: more text (hidden on phones)'),
+      [ANNOUNCEMENT_ROOT_KEYS.linkLabel]: text('Announcement: link label'),
+      [ANNOUNCEMENT_ROOT_KEYS.href]: link('Announcement: link'),
     },
     defaultProps: {
+      [ANNOUNCEMENT_ROOT_KEYS.show]: DEFAULT_ANNOUNCEMENT.show,
+      [ANNOUNCEMENT_ROOT_KEYS.badge]: DEFAULT_ANNOUNCEMENT.badge,
+      [ANNOUNCEMENT_ROOT_KEYS.title]: DEFAULT_ANNOUNCEMENT.title,
+      [ANNOUNCEMENT_ROOT_KEYS.text]: DEFAULT_ANNOUNCEMENT.text,
+      [ANNOUNCEMENT_ROOT_KEYS.linkLabel]: DEFAULT_ANNOUNCEMENT.linkLabel,
+      [ANNOUNCEMENT_ROOT_KEYS.href]: DEFAULT_ANNOUNCEMENT.href,
       title: '',
       description: '',
       ogTitle: '',
@@ -217,9 +236,22 @@ export const marketingConfig: Config = {
               }
             `}</style>
           ) : null}
+          {/* The live site draws the header and footer around the page (LandingShell); the canvas shows
+              them too so editors see the whole page. Read-only here: menus are fixed in code, and the
+              announcement bar is edited in these page settings. */}
+          {puck?.isEditing ? (
+            <div className="pointer-events-none select-none" aria-hidden>
+              <MarketingSiteHeader preview announcement={announcementFromRootProps(props as Record<string, unknown>)} />
+            </div>
+          ) : null}
           <div className="mb-page" style={brandStyle(brandColor, headingFont)}>
             {children}
           </div>
+          {puck?.isEditing ? (
+            <div className="pointer-events-none select-none" aria-hidden>
+              <LandingFooter />
+            </div>
+          ) : null}
         </MarketingEditingProvider>
       );
     },
