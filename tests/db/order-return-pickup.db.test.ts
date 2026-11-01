@@ -6,11 +6,14 @@
  */
 import { randomUUID } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { NextRequest } from 'next/server';
 
 const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
 const d = url ? describe : describe.skip;
 
+// The webhook route sends buyer messages for forward parcels; none are wanted here.
+jest.mock('@/lib/fulfilment/notify-trigger', () => ({ triggerFulfilmentNotification: jest.fn() }));
 jest.mock('next/headers', () => ({
   headers: jest.fn(async () => ({ get: () => null })),
   cookies: jest.fn(async () => ({ get: () => undefined })),
@@ -38,6 +41,8 @@ import { ensureFulfilment, setFulfilmentShipping } from '@/lib/fulfilment/servic
 import { approveReturn, createReturn, returnableLines, setReturnMethod } from '@/lib/returns/service';
 import { bookReturnPickup, cancelAbandonedOrder, cancelReturnPickup, hasLivePickup } from '@/lib/returns/pickup';
 import { listReturnEvents } from '@/lib/returns/events';
+import { hashStoreWebhookToken } from '@/lib/store/delivery/webhooks';
+import { POST as shiprocketWebhook } from '@/app/api/webhooks/store/shiprocket/route';
 import type { ShiprocketBooking, ShiprocketClient, ShiprocketReturnParcel } from '@/lib/store/delivery/shiprocket';
 
 function fakeClient(bookResults: ShiprocketBooking[] = []) {
@@ -63,7 +68,21 @@ d('return pickup booking (real DB)', () => {
   const ITEM = randomUUID();
   const tag = B.slice(0, 8);
   const PHONE = `97${String(Date.now()).slice(-8)}`;
+  const TOKEN_B = `retpick${tag}${'b'.repeat(24)}`;
+  const TOKEN_OTHER = `retother${tag}${'c'.repeat(24)}`;
   let seq = 0;
+
+  /** Posts a tracking event to the webhook route as the business that owns `token`. */
+  async function postTracking(body: Record<string, unknown>, token = TOKEN_B) {
+    const res = await shiprocketWebhook(
+      new NextRequest('http://localhost/api/webhooks/store/shiprocket', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': token },
+        body: JSON.stringify(body),
+      }),
+    );
+    return { status: res.status, json: (await res.json()) as any };
+  }
 
   async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
     const c = await pool.connect();
@@ -167,6 +186,13 @@ d('return pickup booking (real DB)', () => {
       await pool.query(
         `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, $2, $3, '27', 'regular')`,
         [id, nm, `27AABCR${id.slice(0, 4).toUpperCase()}A1Z5`],
+      );
+    }
+    for (const [biz, token] of [[B, TOKEN_B], [OTHER, TOKEN_OTHER]] as const) {
+      await pool.query(
+        `INSERT INTO business_settings (business_id, store_shiprocket_webhook_token_hash) VALUES ($1, $2)
+         ON CONFLICT (business_id) DO UPDATE SET store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
+        [biz, hashStoreWebhookToken(token)],
       );
     }
     await pool.query(
@@ -454,5 +480,140 @@ d('return pickup booking (real DB)', () => {
     expect(client.bookReturn).toHaveBeenCalledTimes(1);
     expect(client.cancelOrders).not.toHaveBeenCalled();
     expect((await returnRow(returnId)).pickup_status).toBe('booked');
+  });
+
+  describe('tracking from the Shiprocket webhook', () => {
+    /** A return with a booked pickup (AWB `RAWB<tag><n>`, Shiprocket order `7<n>`). */
+    async function bookedReturn(n: number, client = fakeClient([booked(n)])) {
+      const { returnId } = await approvedPickup();
+      await bookReturnPickup(B, returnId, { client });
+      return { returnId, client, awb: `RAWB${tag}${n}` };
+    }
+    const kinds = async (returnId: string) => (await listReturnEvents(pool, B, returnId)).map((e) => e.kind);
+
+    test("a return's DELIVERED marks the return arrived and never touches the store order", async () => {
+      const { returnId, awb } = await bookedReturn(21);
+      const ret = await returnRow(returnId);
+      // The original order was delivered earlier with its own parcel.
+      await pool.query(`UPDATE order_fulfilments SET awb = $2, status = 'delivered' WHERE id = $1`, [ret.fulfilment_id, `F1${tag}`]);
+      await pool.query(`UPDATE store_orders SET status = 'delivered' WHERE id = $1`, [ret.store_order_id]);
+      const parcelBefore = (await pool.query(`SELECT * FROM order_fulfilments WHERE id = $1`, [ret.fulfilment_id])).rows[0];
+      const orderBefore = (await pool.query(`SELECT * FROM store_orders WHERE id = $1`, [ret.store_order_id])).rows[0];
+
+      const res = await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' });
+      expect(res.status).toBe(200);
+      expect(res.json).toMatchObject({ ok: true, outcome: 'updated', returnId, to: 'arrived' });
+
+      const after = await returnRow(returnId);
+      expect(after.pickup_status).toBe('arrived');
+      expect(after.arrived_at).not.toBeNull();
+      expect((await pool.query(`SELECT * FROM order_fulfilments WHERE id = $1`, [ret.fulfilment_id])).rows[0]).toEqual(parcelBefore);
+      expect((await pool.query(`SELECT * FROM store_orders WHERE id = $1`, [ret.store_order_id])).rows[0]).toEqual(orderBefore);
+      expect(parcelBefore.status).toBe('delivered');
+      expect(orderBefore.status).toBe('delivered');
+      expect(await kinds(returnId)).toEqual(['requested', 'approved', 'pickup_booked', 'pickup_status']);
+    });
+
+    test("an event that arrives before the AWB is saved matches by Shiprocket's order id", async () => {
+      const { returnId } = await approvedPickup();
+      const client = fakeClient([{ ok: false, stage: 'return_awb', orderId: '5077', shipmentId: '5088', error: 'Wallet balance low' }]);
+      await bookReturnPickup(B, returnId, { client });
+      expect(await returnRow(returnId)).toMatchObject({ carrier_order_id: '5077', awb: null, pickup_status: null });
+
+      const res = await postTracking({ sr_order_id: 5077, is_return: 1, current_status: 'PICKUP SCHEDULED' });
+      expect(res.json).toMatchObject({ ok: true, outcome: 'updated', returnId, to: 'booked' });
+      expect((await returnRow(returnId)).pickup_status).toBe('booked');
+    });
+
+    test('the same event twice changes nothing the second time', async () => {
+      const { returnId, awb } = await bookedReturn(22);
+      const first = await postTracking({ awb, is_return: 1, current_status: 'OUT FOR PICKUP' });
+      expect(first.json).toMatchObject({ outcome: 'updated', to: 'out_for_pickup' });
+      const second = await postTracking({ awb, is_return: 1, current_status: 'OUT FOR PICKUP' });
+      expect(second.status).toBe(200);
+      expect(second.json).toMatchObject({ ok: true, outcome: 'unchanged' });
+      expect((await listReturnEvents(pool, B, returnId)).filter((e) => e.kind === 'pickup_status')).toHaveLength(1);
+    });
+
+    test('an out-of-order event is acknowledged, not applied', async () => {
+      const { returnId, awb } = await bookedReturn(23);
+      await postTracking({ awb, is_return: 1, current_status: 'IN TRANSIT' });
+      const first = await returnRow(returnId);
+      expect(first.pickup_status).toBe('in_transit');
+      expect(first.picked_up_at).not.toBeNull();
+
+      const late = await postTracking({ awb, is_return: 1, current_status: 'OUT FOR PICKUP' });
+      expect(late.status).toBe(200);
+      expect(late.json).toMatchObject({ ok: true, outcome: 'unchanged' });
+      const after = await returnRow(returnId);
+      expect(after.pickup_status).toBe('in_transit');
+      expect(after.picked_up_at).toEqual(first.picked_up_at);
+      expect((await listReturnEvents(pool, B, returnId)).filter((e) => e.kind === 'pickup_status')).toHaveLength(1);
+    });
+
+    test('a pickup issue keeps the label as the reason, and it clears when the pickup goes ahead', async () => {
+      const { returnId, awb } = await bookedReturn(24);
+      await postTracking({ awb, is_return: 1, current_status: 'PICKUP EXCEPTION' });
+      expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'pickup_issue', pickup_error: 'pickup exception' });
+      await postTracking({ awb, is_return: 1, current_status: 'OUT FOR PICKUP' });
+      expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'out_for_pickup', pickup_error: null });
+    });
+
+    test('a QC failure cancels the pickup with the reason, and Book again starts a new order', async () => {
+      const { returnId, awb, client } = await bookedReturn(25, fakeClient([booked(25), booked(26)]));
+      const number = (await returnRow(returnId)).return_number as string;
+
+      const res = await postTracking({ awb, is_return: 1, current_status: 'CANCELED', qc_failure_reason: 'Used product' });
+      expect(res.json).toMatchObject({ ok: true, outcome: 'updated', returnId, to: 'cancelled' });
+      const row = await returnRow(returnId);
+      expect(row).toMatchObject({
+        pickup_status: 'cancelled',
+        pickup_error: 'Used product',
+        pickup_attempt: 1,
+        carrier_order_id: null,
+        carrier_shipment_id: null,
+        awb: null,
+        tracking_url: null,
+        status: 'approved',
+      });
+      expect(hasLivePickup(row)).toBe(false);
+      // Shiprocket already cancelled it: no call from our side.
+      expect(client.cancelOrders).not.toHaveBeenCalled();
+
+      // The same event again finds nothing (the ids were cleared) and is ignored as a return event.
+      const again = await postTracking({ awb, is_return: 1, current_status: 'CANCELED', qc_failure_reason: 'Used product' });
+      expect(again.json).toMatchObject({ ok: true, ignored: true });
+
+      const second = await bookReturnPickup(B, returnId, { client });
+      expect(second.ok).toBe(true);
+      expect(client.bookReturn.mock.calls[1][0].ref).toBe(`${number}-2`);
+      expect(client.bookReturn.mock.calls[1][1]).toMatchObject({ orderId: null, shipmentId: null });
+      expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'booked', pickup_error: null, carrier_order_id: '726' });
+    });
+
+    test('an unknown return AWB with is_return is ignored, not applied to forward orders', async () => {
+      const { returnId } = await bookedReturn(27);
+      const ret = await returnRow(returnId);
+      await pool.query(`UPDATE order_fulfilments SET awb = $2, status = 'shipped' WHERE id = $1`, [ret.fulfilment_id, `F2${tag}`]);
+      const parcelBefore = (await pool.query(`SELECT * FROM order_fulfilments WHERE id = $1`, [ret.fulfilment_id])).rows[0];
+
+      // Even an AWB that belongs to a forward parcel is not applied when Shiprocket says it is a return.
+      const res = await postTracking({ awb: `F2${tag}`, is_return: 1, current_status: 'DELIVERED' });
+      expect(res.status).toBe(200);
+      expect(res.json).toEqual({ ok: true, ignored: true });
+      expect((await pool.query(`SELECT * FROM order_fulfilments WHERE id = $1`, [ret.fulfilment_id])).rows[0]).toEqual(parcelBefore);
+
+      // A return label never reaches the RTO handling either.
+      const rto = await postTracking({ awb: `NOPE${tag}`, is_return: 1, current_status: 'RTO IN TRANSIT' });
+      expect(rto.json).toEqual({ ok: true, ignored: true });
+    });
+
+    test("another business's token never matches this return", async () => {
+      const { returnId, awb } = await bookedReturn(28);
+      const res = await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' }, TOKEN_OTHER);
+      expect(res.json).toEqual({ ok: true, ignored: true });
+      expect((await returnRow(returnId)).pickup_status).toBe('booked');
+      expect((await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' }, 'x'.repeat(30))).status).toBe(401);
+    });
   });
 });

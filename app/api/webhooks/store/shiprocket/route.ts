@@ -7,6 +7,7 @@ import {
   applyShiprocketTrackingUpdate,
   resolveBusinessIdForShiprocketToken,
 } from '@/lib/store/order-lifecycle';
+import { applyShiprocketReturnUpdate } from '@/lib/returns/pickup';
 import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
 import { applyShiprocketFulfilmentUpdate, noteRtoInProgress } from '@/lib/fulfilment/shiprocket-booking';
 
@@ -25,6 +26,18 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const parsed = parseShiprocketWebhook(body);
+
+  // Return shipments first: their labels (DELIVERED, RTO ...) must never reach forward handling.
+  const returned = await applyShiprocketReturnUpdate({
+    businessId,
+    awb: parsed.awb,
+    srOrderId: parsed.srOrderId,
+    label: parsed.label,
+    qcFailureReason: parsed.qcFailureReason,
+  });
+  if (returned.outcome !== 'not_found') return NextResponse.json({ ok: true, ...returned });
+  if (parsed.isReturn) return NextResponse.json({ ok: true, ignored: true });
+
   if (parsed.rtoInProgress) {
     // Coming back, not back yet: nothing is cancelled or returned, the timeline just says so.
     const found = await noteRtoInProgress({

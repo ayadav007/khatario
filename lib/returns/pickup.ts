@@ -11,6 +11,7 @@ import {
   type ShiprocketReturnParcel,
 } from '@/lib/store/delivery/shiprocket';
 import { recordReturnEvent } from './events';
+import { canMovePickupStatus, parseShiprocketReturnStatus } from './pickup-status';
 import { RETURN_REASON_LABELS, type PickupStatus, type ReturnReason } from './labels';
 
 /**
@@ -562,4 +563,85 @@ export async function cancelReturnPickup(
     c.release();
   }
   return { ok: true };
+}
+
+/**
+ * A Shiprocket tracking event for a return parcel (spec section 5). Matches this business's return by
+ * AWB, else by Shiprocket's order id (events can arrive before the AWB is saved), row-locked so two
+ * deliveries of one event cannot both apply. Statuses only move forward; an out-of-order or unknown
+ * label is `unchanged`. `not_found` means the event is not for any return of this business.
+ *
+ * A cancel from Shiprocket (a failed quality check, say) clears the ids the way `cancelReturnPickup`
+ * does, without calling Shiprocket, so Book again makes a new order with the next reference.
+ */
+export async function applyShiprocketReturnUpdate(input: {
+  businessId: string;
+  awb: string;
+  srOrderId: string;
+  label: string;
+  qcFailureReason: string | null;
+}): Promise<{ outcome: 'not_found' | 'unchanged' | 'updated'; returnId?: string; to?: PickupStatus }> {
+  const awb = input.awb.trim();
+  const srOrderId = input.srOrderId.trim();
+  if (!awb && !srOrderId) return { outcome: 'not_found' };
+
+  const c = await getPool().connect();
+  try {
+    await c.query('BEGIN');
+    const find = async (column: 'awb' | 'carrier_order_id', value: string) =>
+      value
+        ? (
+            await c.query<{ id: string; pickup_status: PickupStatus | null; awb: string | null }>(
+              `SELECT id, pickup_status, awb FROM order_returns WHERE business_id = $1 AND ${column} = $2 FOR UPDATE`,
+              [input.businessId, value],
+            )
+          ).rows[0]
+        : undefined;
+    const row = (await find('awb', awb)) ?? (await find('carrier_order_id', srOrderId));
+    if (!row) {
+      await c.query('ROLLBACK');
+      return { outcome: 'not_found' };
+    }
+
+    const to = parseShiprocketReturnStatus(input.label);
+    if (!to || !canMovePickupStatus(row.pickup_status, to)) {
+      await c.query('ROLLBACK');
+      return { outcome: 'unchanged', returnId: row.id };
+    }
+
+    // The reason the pickup stopped: Shiprocket's own, else the status it sent. Moving on clears it.
+    const stopped = to === 'pickup_issue' || to === 'cancelled';
+    const error = stopped ? (input.qcFailureReason ?? input.label).slice(0, 500) : null;
+    await c.query(
+      `UPDATE order_returns
+          SET pickup_status = $3::text,
+              picked_up_at = CASE WHEN $3::text = 'in_transit' THEN COALESCE(picked_up_at, NOW()) ELSE picked_up_at END,
+              arrived_at = CASE WHEN $3::text = 'arrived' THEN COALESCE(arrived_at, NOW()) ELSE arrived_at END,
+              pickup_error = $4,
+              pickup_attempt = CASE WHEN $3::text = 'cancelled' THEN pickup_attempt + 1 ELSE pickup_attempt END,
+              carrier_order_id = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE carrier_order_id END,
+              carrier_shipment_id = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE carrier_shipment_id END,
+              awb = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE awb END,
+              courier_name = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE courier_name END,
+              tracking_url = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE tracking_url END,
+              pickup_scheduled_at = CASE WHEN $3::text = 'cancelled' THEN NULL ELSE pickup_scheduled_at END,
+              updated_at = NOW()
+        WHERE id = $1 AND business_id = $2`,
+      [row.id, input.businessId, to, error],
+    );
+    await recordReturnEvent(c, {
+      businessId: input.businessId,
+      returnId: row.id,
+      kind: 'pickup_status',
+      note: input.label.slice(0, 500) || null,
+      actorType: 'webhook',
+    });
+    await c.query('COMMIT');
+    return { outcome: 'updated', returnId: row.id, to };
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
 }
