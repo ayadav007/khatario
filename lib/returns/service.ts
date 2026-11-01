@@ -4,6 +4,8 @@ import { createCreditNoteInTransaction, CreditNoteCreateError, nextCreditNoteNum
 import { refundCreditNote, refundableOnCreditNote, CreditNoteRefundError } from '@/lib/credit-notes/refund';
 import { transitionFulfilment } from '@/lib/fulfilment/service';
 import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
+import { recordReturnEvent, type ReturnEventKind } from './events';
+import { hasLivePickup, savePickupDetails, type PickupDetails } from './pickup';
 
 /**
  * Order returns (RMA) for every channel: online store, WhatsApp, sales orders and manual bills.
@@ -12,6 +14,10 @@ import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
  *   approved  -> received                    (goods inspected; credit note posted; stock back for "restock")
  *   received  -> closed                      (refund paid, or kept as store credit)
  *   requested | approved -> cancelled
+ *
+ * Approving also chooses how the goods come back (return_method): a Shiprocket pickup (booked by the
+ * caller once the transaction has committed, see bookReturnPickup), the customer sends it, or no
+ * need to send it back (received at once, every line damaged).
  *
  * Money and stock go through the credit-note service, so GST, ledger and customer balance follow
  * the same rules as a credit note made by hand.
@@ -26,9 +32,13 @@ export {
   type ReturnStatus,
 } from './labels';
 import {
+  RETURN_METHOD_LABELS,
   RETURN_REASONS,
   RETURN_REASON_LABELS,
+  isReturnMethod,
+  type PickupStatus,
   type ReturnCondition,
+  type ReturnMethod,
   type ReturnReason,
   type ReturnRefundMethod,
   type ReturnStatus,
@@ -208,11 +218,19 @@ export type CreateReturnInput = {
   initiatedBy: 'merchant' | 'customer' | 'courier';
   userId?: string | null;
   fulfilmentId?: string | null;
+  /**
+   * How the goods come back, for returns the shop starts (they start approved). Applied as approval
+   * does; ignored for buyer requests (the shop chooses at approval) and courier returns (RTO).
+   * A courier pickup is booked by the caller after commit: check `returnNeedsPickup`.
+   */
+  method?: ReturnMethod | null;
+  instructions?: string | null;
+  pickup?: PickupDetails | null;
 };
 
 /**
  * Opens a return. Merchant and courier returns start approved (the shop already agreed);
- * buyer requests start as requested.
+ * buyer requests start as requested. Returns the new return's id.
  */
 export async function createReturn(client: PoolClient, input: CreateReturnInput): Promise<string> {
   const links = await loadInvoiceLinks(client, input.businessId, input.invoiceId);
@@ -283,7 +301,37 @@ export async function createReturn(client: PoolClient, input: CreateReturnInput)
       [returnId, line.invoice_item_id, line.item_id, line.variant_id, line.item_name, line.unit, qty, line.unit_price, line.tax_rate, i++, line.unit_factor],
     );
   }
+
+  const actorType = input.initiatedBy === 'customer' ? 'customer' : input.initiatedBy === 'merchant' ? 'staff' : 'system';
+  const actorUserId = input.initiatedBy === 'merchant' ? (input.userId ?? null) : null;
+  await recordReturnEvent(client, { businessId: input.businessId, returnId, kind: 'requested', note: input.reasonNote?.trim().slice(0, 500) || null, actorType, actorUserId });
+  if (status === 'approved') {
+    await recordReturnEvent(client, { businessId: input.businessId, returnId, kind: 'approved', note: null, actorType, actorUserId });
+    if (input.initiatedBy === 'merchant' && input.method) {
+      await applyReturnMethod(client, {
+        businessId: input.businessId,
+        returnId,
+        userId: input.userId ?? null,
+        method: input.method,
+        instructions: input.instructions,
+        pickup: input.pickup,
+      });
+    }
+  }
   return returnId;
+}
+
+/** True when the return is approved for a courier pickup that has not been booked (or must be booked again). */
+export async function returnNeedsPickup(
+  client: Pick<PoolClient, 'query'>,
+  p: { businessId: string; returnId: string },
+): Promise<boolean> {
+  const r = await client.query<{ pickup_status: PickupStatus | null; carrier_order_id: string | null }>(
+    `SELECT pickup_status, carrier_order_id FROM order_returns
+      WHERE id = $1 AND business_id = $2 AND status = 'approved' AND return_method = 'courier_pickup'`,
+    [p.returnId, p.businessId],
+  );
+  return Boolean(r.rows[0]) && !hasLivePickup(r.rows[0]) && !['in_transit', 'arrived'].includes(r.rows[0].pickup_status ?? '');
 }
 
 type ReturnRow = {
@@ -297,11 +345,15 @@ type ReturnRow = {
   status: ReturnStatus;
   reason: ReturnReason;
   credit_note_id: string | null;
+  return_method: ReturnMethod | null;
+  pickup_status: PickupStatus | null;
+  carrier_order_id: string | null;
 };
 
 async function lockReturn(client: PoolClient, businessId: string, returnId: string): Promise<ReturnRow> {
   const r = await client.query<ReturnRow>(
-    `SELECT id, business_id, branch_id, return_number, invoice_id, customer_id, fulfilment_id, status, reason, credit_note_id
+    `SELECT id, business_id, branch_id, return_number, invoice_id, customer_id, fulfilment_id, status, reason, credit_note_id,
+            return_method, pickup_status, carrier_order_id
        FROM order_returns WHERE id = $1 AND business_id = $2 FOR UPDATE`,
     [returnId, businessId],
   );
@@ -309,35 +361,209 @@ async function lockReturn(client: PoolClient, businessId: string, returnId: stri
   return r.rows[0];
 }
 
-export async function approveReturn(client: PoolClient, p: { businessId: string; returnId: string }): Promise<void> {
+/** Where to send the goods: the return's branch delivery address, else the business address. */
+export async function defaultReturnInstructions(
+  client: Pick<PoolClient, 'query'>,
+  businessId: string,
+  returnId: string,
+): Promise<string> {
+  const r = await client.query<{ branch_address: string | null; business_address: string | null }>(
+    `SELECT NULLIF(TRIM(sbd.location_address), '') AS branch_address,
+            NULLIF(CONCAT_WS(', ', NULLIF(TRIM(b.address_line1), ''), NULLIF(TRIM(b.address_line2), ''),
+                             NULLIF(TRIM(b.city), ''), NULLIF(TRIM(b.state), ''), NULLIF(TRIM(b.pincode), '')), '') AS business_address
+       FROM order_returns r
+       JOIN businesses b ON b.id = r.business_id
+       LEFT JOIN store_branch_delivery sbd ON sbd.branch_id = r.branch_id AND sbd.business_id = r.business_id
+      WHERE r.id = $1 AND r.business_id = $2`,
+    [returnId, businessId],
+  );
+  const address = r.rows[0]?.branch_address ?? r.rows[0]?.business_address;
+  return address ? `Please send it to: ${address}` : 'Please send it back to the shop.';
+}
+
+/** The goods are already on their way back (or here): the return can only be received now. */
+function assertNotPickedUp(row: ReturnRow): void {
+  if (row.pickup_status === 'in_transit' || row.pickup_status === 'arrived') {
+    throw new ReturnError(409, 'PICKED_UP', 'The parcel is already on its way back; receive it instead');
+  }
+}
+
+/** A booked pickup must be cancelled with the courier first (the route does that, then retries). */
+function assertNoLivePickup(row: ReturnRow): void {
+  if (hasLivePickup(row)) {
+    throw new ReturnError(409, 'PICKUP_LIVE', 'Cancel the courier pickup first');
+  }
+}
+
+/**
+ * Chooses how an approved return comes back. Courier pickup saves the pickup details and asks the
+ * caller to book after commit; customer sends stores the instructions; no return receives it now.
+ */
+async function applyReturnMethod(
+  client: PoolClient,
+  p: {
+    businessId: string;
+    returnId: string;
+    userId?: string | null;
+    method?: ReturnMethod | null;
+    instructions?: string | null;
+    pickup?: PickupDetails | null;
+  },
+): Promise<{ method: ReturnMethod | null; needsPickup: boolean; received?: ReceiveReturnResult }> {
+  if (!p.method) return { method: null, needsPickup: false };
+  if (!isReturnMethod(p.method)) throw new ReturnError(400, 'INVALID_METHOD', 'Choose how the goods come back');
+  if (p.method === 'no_return' && !p.userId) {
+    throw new ReturnError(400, 'USER_REQUIRED', 'Crediting a return without taking the goods back needs a signed-in user');
+  }
+
+  if (p.method === 'courier_pickup') {
+    await client.query(
+      `UPDATE order_returns SET return_method = 'courier_pickup', return_instructions = NULL, pickup_error = NULL, updated_at = NOW()
+        WHERE id = $1 AND business_id = $2`,
+      [p.returnId, p.businessId],
+    );
+    await savePickupDetails(client, { businessId: p.businessId, returnId: p.returnId, details: p.pickup });
+    return { method: p.method, needsPickup: true };
+  }
+
+  if (p.method === 'customer_sends') {
+    const instructions =
+      p.instructions?.trim().slice(0, 1000) || (await defaultReturnInstructions(client, p.businessId, p.returnId));
+    await client.query(
+      `UPDATE order_returns SET return_method = 'customer_sends', return_instructions = $3, pickup_error = NULL, updated_at = NOW()
+        WHERE id = $1 AND business_id = $2`,
+      [p.returnId, p.businessId, instructions],
+    );
+    return { method: p.method, needsPickup: false };
+  }
+
+  // no_return: the goods stay with the customer, so nothing goes back on the shelf.
+  await client.query(
+    `UPDATE order_returns SET return_method = 'no_return', return_instructions = NULL, pickup_error = NULL, updated_at = NOW()
+      WHERE id = $1 AND business_id = $2`,
+    [p.returnId, p.businessId],
+  );
+  const items = await client.query<{ id: string }>(`SELECT id FROM order_return_items WHERE return_id = $1`, [p.returnId]);
+  const received = await receiveReturn(client, {
+    businessId: p.businessId,
+    returnId: p.returnId,
+    userId: p.userId as string,
+    lines: items.rows.map((it) => ({ id: it.id, condition: 'damaged' as const })),
+  });
+  return { method: p.method, needsPickup: false, received };
+}
+
+export type ApproveReturnResult = { method: ReturnMethod | null; needsPickup: boolean; received?: ReceiveReturnResult };
+
+/**
+ * Approves a buyer's request and chooses how the goods come back. With `needsPickup` the caller
+ * books the courier (bookReturnPickup) after committing. Without a method the way back is chosen
+ * later (setReturnMethod).
+ */
+export async function approveReturn(
+  client: PoolClient,
+  p: {
+    businessId: string;
+    returnId: string;
+    userId?: string | null;
+    method?: ReturnMethod | null;
+    instructions?: string | null;
+    pickup?: PickupDetails | null;
+  },
+): Promise<ApproveReturnResult> {
   const row = await lockReturn(client, p.businessId, p.returnId);
   if (row.status !== 'requested') throw new ReturnError(409, 'INVALID_STATUS', `This return is already ${row.status}`);
+  if (p.method && !isReturnMethod(p.method)) throw new ReturnError(400, 'INVALID_METHOD', 'Choose how the goods come back');
+  if (p.method === 'no_return' && !p.userId) {
+    throw new ReturnError(400, 'USER_REQUIRED', 'Crediting a return without taking the goods back needs a signed-in user');
+  }
   await client.query(
     `UPDATE order_returns SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = $1`,
     [row.id],
   );
+  await recordReturnEvent(client, {
+    businessId: p.businessId,
+    returnId: row.id,
+    kind: 'approved',
+    note: p.method ? RETURN_METHOD_LABELS[p.method] : null,
+    actorType: 'staff',
+    actorUserId: p.userId ?? null,
+  });
+  return applyReturnMethod(client, p);
+}
+
+/**
+ * Changes how an approved return comes back, e.g. from a pickup that would not book to "customer
+ * sends it". Not while a courier pickup is live (cancel it first) or once the parcel is on its way.
+ */
+export async function setReturnMethod(
+  client: PoolClient,
+  p: {
+    businessId: string;
+    returnId: string;
+    method: ReturnMethod;
+    instructions?: string | null;
+    pickup?: PickupDetails | null;
+    userId?: string | null;
+  },
+): Promise<{ needsPickup: boolean; received?: ReceiveReturnResult }> {
+  const row = await lockReturn(client, p.businessId, p.returnId);
+  if (row.status !== 'approved') {
+    throw new ReturnError(409, 'INVALID_STATUS', 'The way back can only be changed on an approved return');
+  }
+  assertNotPickedUp(row);
+  assertNoLivePickup(row);
+  const out = await applyReturnMethod(client, p);
+  return { needsPickup: out.needsPickup, ...(out.received ? { received: out.received } : {}) };
+}
+
+async function recordEnd(
+  client: PoolClient,
+  row: ReturnRow,
+  kind: ReturnEventKind,
+  note: string | null,
+  actor: { actorType: 'customer' | 'staff' | 'system'; userId?: string | null },
+): Promise<void> {
+  await recordReturnEvent(client, {
+    businessId: row.business_id,
+    returnId: row.id,
+    kind,
+    note,
+    actorType: actor.actorType,
+    actorUserId: actor.userId ?? null,
+  });
 }
 
 export async function rejectReturn(
   client: PoolClient,
-  p: { businessId: string; returnId: string; reason?: string | null },
+  p: { businessId: string; returnId: string; reason?: string | null; userId?: string | null },
 ): Promise<void> {
   const row = await lockReturn(client, p.businessId, p.returnId);
   if (row.status !== 'requested' && row.status !== 'approved') {
     throw new ReturnError(409, 'INVALID_STATUS', `A ${row.status} return cannot be rejected`);
   }
+  assertNotPickedUp(row);
+  assertNoLivePickup(row);
+  const reason = p.reason?.trim().slice(0, 500) || null;
   await client.query(
     `UPDATE order_returns SET status = 'rejected', rejected_reason = $2, closed_at = NOW(), updated_at = NOW() WHERE id = $1`,
-    [row.id, p.reason?.trim().slice(0, 500) || null],
+    [row.id, reason],
   );
+  await recordEnd(client, row, 'rejected', reason, { actorType: 'staff', userId: p.userId });
 }
 
-export async function cancelReturn(client: PoolClient, p: { businessId: string; returnId: string }): Promise<void> {
+export async function cancelReturn(
+  client: PoolClient,
+  p: { businessId: string; returnId: string; userId?: string | null; actorType?: 'customer' | 'staff' | 'system' },
+): Promise<void> {
   const row = await lockReturn(client, p.businessId, p.returnId);
   if (row.status !== 'requested' && row.status !== 'approved') {
     throw new ReturnError(409, 'INVALID_STATUS', 'Only a return that has not been received can be cancelled');
   }
+  assertNotPickedUp(row);
+  assertNoLivePickup(row);
   await client.query(`UPDATE order_returns SET status = 'cancelled', closed_at = NOW(), updated_at = NOW() WHERE id = $1`, [row.id]);
+  await recordEnd(client, row, 'cancelled', null, { actorType: p.actorType ?? 'staff', userId: p.userId });
 }
 
 export type RefundChoice = {
@@ -459,6 +685,14 @@ export async function receiveReturn(client: PoolClient, input: ReceiveReturnInpu
       WHERE id = $1`,
     [row.id, creditNote.id, creditAmount],
   );
+  await recordReturnEvent(client, {
+    businessId: input.businessId,
+    returnId: row.id,
+    kind: 'received',
+    note: `Credit note ${creditNoteNumber}`,
+    actorType: 'staff',
+    actorUserId: input.userId,
+  });
 
   // A return on a bill that was not fully paid first reduces what is due; only the rest is owed back.
   const room = await refundableOnCreditNote(client, input.businessId, creditNote.id);
@@ -499,9 +733,9 @@ export async function settleReturn(
     return 'closed';
   }
 
-  // Refunds to the original payment arrive with the gateway refund release.
+  // Refunds to the original payment go through the gateway, not through this cash-book path.
   if (p.method === 'original_payment') {
-    throw new ReturnError(400, 'UNSUPPORTED_REFUND_METHOD', 'Refunds to the original payment are not available yet');
+    throw new ReturnError(409, 'USE_GATEWAY_REFUND', 'Refund to the original payment from the refund step');
   }
 
   try {

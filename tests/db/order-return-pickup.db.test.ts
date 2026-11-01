@@ -1,0 +1,381 @@
+/**
+ * Return pickup booking: approving a return with a courier pickup books it with Shiprocket from the
+ * customer's address, a failed step keeps Shiprocket's ids so "Book again" continues, a cancel and
+ * re-book gets a new reference, and nothing crosses businesses.
+ * Runs only when PHASE2_TEST_DATABASE_URL points at a disposable database.
+ */
+import { randomUUID } from 'crypto';
+import type { Pool, PoolClient } from 'pg';
+
+const url = process.env.PHASE2_TEST_DATABASE_URL;
+if (url) process.env.DATABASE_URL = url;
+const d = url ? describe : describe.skip;
+
+jest.mock('next/headers', () => ({
+  headers: jest.fn(async () => ({ get: () => null })),
+  cookies: jest.fn(async () => ({ get: () => undefined })),
+}));
+jest.mock('@/lib/credit-alerts', () => ({ checkAndSendCreditAlerts: jest.fn() }));
+jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
+jest.mock('@/lib/authorization', () => ({
+  ...jest.requireActual('@/lib/authorization'),
+  authorize: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('@/lib/enforce-access', () => ({
+  ...jest.requireActual('@/lib/enforce-access'),
+  enforceAccess: jest.fn().mockResolvedValue(undefined),
+  enforceAccessErrorResponse: jest.fn(() => null),
+}));
+jest.mock('@/lib/subscription/feature-access', () => ({
+  ...jest.requireActual('@/lib/subscription/feature-access'),
+  assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { getPool, closePool } from '@/lib/db';
+import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
+import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
+import { ensureFulfilment, setFulfilmentShipping } from '@/lib/fulfilment/service';
+import { approveReturn, createReturn, returnableLines } from '@/lib/returns/service';
+import { bookReturnPickup, cancelReturnPickup, hasLivePickup } from '@/lib/returns/pickup';
+import { listReturnEvents } from '@/lib/returns/events';
+import type { ShiprocketBooking, ShiprocketClient, ShiprocketReturnParcel } from '@/lib/store/delivery/shiprocket';
+
+function fakeClient(bookResults: ShiprocketBooking[] = []) {
+  const bookReturn = jest.fn(
+    async (_p: ShiprocketReturnParcel, _e?: { orderId?: string | null; shipmentId?: string | null }) => {
+      const next = bookResults.shift();
+      if (!next) throw new Error('unexpected bookReturn call');
+      return next;
+    },
+  );
+  const client = { bookReturn, cancelOrders: jest.fn(async (_ids: string[]) => undefined) };
+  return client as typeof client & ShiprocketClient;
+}
+
+d('return pickup booking (real DB)', () => {
+  jest.setTimeout(120000);
+
+  let pool: Pool;
+  const B = randomUUID();
+  const OTHER = randomUUID();
+  const BR = randomUUID();
+  const A = randomUUID();
+  const ITEM = randomUUID();
+  const tag = B.slice(0, 8);
+  const PHONE = `97${String(Date.now()).slice(-8)}`;
+  let seq = 0;
+
+  async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const out = await fn(c);
+      await c.query('COMMIT');
+      return out;
+    } catch (e) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
+  /**
+   * A billed store order of `qty` widgets (₹100 + 18% GST) whose parcel was sent to a Pune
+   * address, with a customer-requested return of `returnQty` approved with a courier pickup.
+   */
+  async function approvedPickup(opts: { qty?: number; returnQty?: number; parcelPhone?: string } = {}) {
+    const qty = opts.qty ?? 1;
+    const id = randomUUID();
+    seq += 1;
+    await pool.query(
+      `INSERT INTO store_orders
+         (id, business_id, branch_id, order_number, customer_name, customer_phone,
+          status, payment_status, subtotal, tax_total, delivery_charge, discount_amount, grand_total, delivery_mode)
+       VALUES ($1,$2,$3,$4,'Asha Rao',$5,'confirmed','cod',$6,$7,0,0,$8,'delivery')`,
+      [id, B, BR, `RP-${tag}-${seq}`, `+91 ${PHONE}`, qty * 100, qty * 18, qty * 118],
+    );
+    await pool.query(
+      `INSERT INTO store_order_items (order_id, item_id, item_name, quantity, unit, unit_price, tax_rate, line_total)
+       VALUES ($1,$2,'Widget',$3,'PCS',100,18,$4)`,
+      [id, ITEM, qty, qty * 118],
+    );
+    const invoiceId = (await createInvoiceForStoreOrder(id, B, A))!;
+    await tx(async (c) => {
+      const { row } = await ensureFulfilment(c, {
+        businessId: B,
+        channel: 'online_store',
+        storeOrderId: id,
+        invoiceId,
+        branchId: BR,
+        buyerName: 'Asha Rao',
+        buyerPhone: `+91 ${PHONE}`,
+        status: 'confirmed',
+        method: 'own_rider',
+        codAmount: 0,
+        actorType: 'staff',
+        actorUserId: A,
+      });
+      // The bill may already have its parcel (made with the order), so set the phone on whichever row it is.
+      if (opts.parcelPhone) await c.query(`UPDATE order_fulfilments SET buyer_phone = $2 WHERE id = $1`, [row.id, opts.parcelPhone]);
+      await setFulfilmentShipping(c, {
+        businessId: B,
+        fulfilmentId: row.id,
+        address: '12 MG Road, Kothrud, Pune, Maharashtra',
+        pincode: '411038',
+        weightKg: 1.2,
+        lengthCm: 20,
+        breadthCm: 15,
+        heightCm: 8,
+      });
+    });
+    const [line] = await returnableLines(pool, B, invoiceId);
+    const returnId = await tx((c) =>
+      createReturn(c, {
+        businessId: B,
+        invoiceId,
+        lines: [{ invoice_item_id: line.invoice_item_id, quantity: opts.returnQty ?? qty }],
+        reason: 'size_fit',
+        initiatedBy: 'customer',
+      }),
+    );
+    const approved = await tx((c) =>
+      approveReturn(c, { businessId: B, returnId, userId: A, method: 'courier_pickup' }),
+    );
+    expect(approved).toMatchObject({ method: 'courier_pickup', needsPickup: true });
+    return { returnId, invoiceId };
+  }
+
+  async function returnRow(id: string) {
+    return (await pool.query(`SELECT * FROM order_returns WHERE id = $1`, [id])).rows[0];
+  }
+
+  const booked = (n: number, extra: Partial<ShiprocketBooking> = {}): ShiprocketBooking => ({
+    ok: true,
+    orderId: `7${n}`,
+    shipmentId: `8${n}`,
+    awb: `RAWB${tag}${n}`,
+    courierName: 'Delhivery',
+    trackingUrl: `https://shiprocket.co/tracking/RAWB${tag}${n}`,
+    pickupScheduledAt: '2026-11-04 11:00:00',
+    ...extra,
+  });
+
+  beforeAll(async () => {
+    pool = getPool();
+    for (const [id, nm] of [[B, `Pickup ${tag}`], [OTHER, `Other ${tag}`]] as const) {
+      await pool.query(
+        `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, $2, $3, '27', 'regular')`,
+        [id, nm, `27AABCR${id.slice(0, 4).toUpperCase()}A1Z5`],
+      );
+    }
+    await pool.query(
+      `INSERT INTO branches (id, business_id, name, state_code, is_primary, is_default, is_active)
+       VALUES ($1, $2, 'Main', '27', true, true, true)`,
+      [BR, B],
+    );
+    await pool.query(`INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Clerk', $3, true)`, [
+      A,
+      B,
+      `95${PHONE}`,
+    ]);
+    await pool.query(`SELECT create_default_chart_of_accounts($1)`, [B]);
+    await pool.query(`SELECT ensure_standard_account_heads($1)`, [B]);
+    await pool.query(
+      `INSERT INTO items (id, business_id, name, item_type, unit, selling_price, purchase_price, tax_rate, hsn_sac, current_stock)
+       VALUES ($1, $2, 'Widget', 'goods', 'PCS', 100, 40, 18, '847130', 50)`,
+      [ITEM, B],
+    );
+    await pool.query(
+      `INSERT INTO branch_item_stock (business_id, branch_id, item_id, quantity) VALUES ($1,$2,$3,50)
+       ON CONFLICT (business_id, branch_id, item_id) DO UPDATE SET quantity = 50`,
+      [B, BR, ITEM],
+    );
+  });
+
+  afterAll(async () => {
+    if (!pool) return;
+    try {
+      await pool.query(`DELETE FROM order_returns WHERE business_id = $1`, [B]);
+      await pool.query(`DELETE FROM store_orders WHERE business_id = $1`, [B]);
+      await tx(async (c) => {
+        await withLedgerDelete(c, 'tenant_purge', A, async () => {
+          await c.query(`DELETE FROM businesses WHERE id = ANY($1::uuid[])`, [[B, OTHER]]);
+        });
+      });
+      await pool.query(`DELETE FROM ledger_entry_deletions WHERE business_id = $1`, [B]).catch(() => {});
+    } finally {
+      await closePool();
+    }
+  });
+
+  test("approving with courier pickup books it with the parcel's address and the return number", async () => {
+    const { returnId } = await approvedPickup();
+    const before = await returnRow(returnId);
+    expect(before).toMatchObject({
+      status: 'approved',
+      return_method: 'courier_pickup',
+      pickup_pincode: '411038',
+      pickup_address: '12 MG Road, Kothrud, Pune, Maharashtra',
+    });
+    expect(before.pickup_phone).toContain(PHONE);
+
+    const client = fakeClient([booked(1)]);
+    const res = await bookReturnPickup(B, returnId, { client, actorUserId: A });
+    expect(res).toMatchObject({ ok: true, courierName: 'Delhivery' });
+
+    const [parcel, existing] = client.bookReturn.mock.calls[0];
+    expect(parcel).toMatchObject({
+      ref: before.return_number,
+      customerName: 'Asha Rao',
+      customerPhone: PHONE,
+      pincode: '411038',
+      address: '12 MG Road, Kothrud, Pune, Maharashtra',
+      weightKg: 1.2,
+      lengthCm: 20,
+      breadthCm: 15,
+      heightCm: 8,
+      subTotal: 118,
+    });
+    expect(parcel.ref).toMatch(/^RET-\d{4}$/);
+    expect(parcel.items).toEqual([expect.objectContaining({ name: 'Widget', units: 1, price: 118, reason: 'Size or fit' })]);
+    expect(existing).toMatchObject({ orderId: null, shipmentId: null });
+
+    const row = await returnRow(returnId);
+    expect(row).toMatchObject({
+      awb: `RAWB${tag}1`,
+      pickup_status: 'booked',
+      carrier_order_id: '71',
+      carrier_shipment_id: '81',
+      courier_name: 'Delhivery',
+      pickup_error: null,
+      status: 'approved',
+    });
+    expect(row.pickup_scheduled_at).not.toBeNull();
+    expect(hasLivePickup(row)).toBe(true);
+    const events = await listReturnEvents(pool, B, returnId);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'approved', 'pickup_booked']);
+  });
+
+  test("a part return uses the default package, not the whole parcel's", async () => {
+    const { returnId } = await approvedPickup({ qty: 2, returnQty: 1 });
+    const row = await returnRow(returnId);
+    expect(Number(row.pickup_weight_kg)).toBe(0.5);
+    expect(Number(row.pickup_length_cm)).toBe(10);
+    expect(Number(row.pickup_height_cm)).toBe(10);
+  });
+
+  test("a failed AWB step keeps Shiprocket's ids and Book again continues", async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([
+      { ok: false, stage: 'return_awb', orderId: '77', shipmentId: '88', error: 'Wallet balance low' },
+      booked(2, { orderId: '77', shipmentId: '88' }),
+    ]);
+    const first = await bookReturnPickup(B, returnId, { client });
+    expect(first).toMatchObject({ ok: false, code: 'BOOKING_FAILED', error: 'Wallet balance low' });
+    const failed = await returnRow(returnId);
+    expect(failed).toMatchObject({
+      pickup_error: 'Wallet balance low',
+      status: 'approved',
+      carrier_order_id: '77',
+      carrier_shipment_id: '88',
+      awb: null,
+      pickup_status: null,
+    });
+    expect(hasLivePickup(failed)).toBe(false);
+
+    const second = await bookReturnPickup(B, returnId, { client });
+    expect(second.ok).toBe(true);
+    expect(client.bookReturn.mock.calls[1][1]).toMatchObject({ orderId: '77', shipmentId: '88' });
+    expect(client.bookReturn.mock.calls[1][0].ref).toBe(client.bookReturn.mock.calls[0][0].ref);
+    const row = await returnRow(returnId);
+    expect(row).toMatchObject({ pickup_status: 'booked', pickup_error: null });
+  });
+
+  test('a pickup Shiprocket could not request is kept as a warning on a booked return', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([booked(3, { stage: 'pickup', error: 'Pickup slot unavailable' })]);
+    const res = await bookReturnPickup(B, returnId, { client });
+    expect(res).toMatchObject({ ok: true, warning: expect.stringContaining('Pickup slot unavailable') });
+    expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'booked', pickup_error: 'Pickup slot unavailable' });
+  });
+
+  test('a live pickup is not booked twice', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([booked(4)]);
+    await bookReturnPickup(B, returnId, { client });
+    const again = await bookReturnPickup(B, returnId, { client });
+    expect(again).toMatchObject({ ok: true, awb: `RAWB${tag}4` });
+    expect(client.bookReturn).toHaveBeenCalledTimes(1);
+  });
+
+  test('cancel then re-book uses RET-xxxx-2', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([booked(5), booked(6)]);
+    await bookReturnPickup(B, returnId, { client });
+    const number = (await returnRow(returnId)).return_number as string;
+
+    expect(await cancelReturnPickup(B, returnId, { client, actorUserId: A })).toEqual({ ok: true });
+    expect(client.cancelOrders).toHaveBeenCalledWith(['75']);
+    const cancelled = await returnRow(returnId);
+    expect(cancelled).toMatchObject({
+      pickup_status: 'cancelled',
+      pickup_attempt: 1,
+      carrier_order_id: null,
+      carrier_shipment_id: null,
+      awb: null,
+      tracking_url: null,
+    });
+    expect(hasLivePickup(cancelled)).toBe(false);
+    expect(await cancelReturnPickup(B, returnId, { client })).toMatchObject({ ok: false, status: 409 });
+
+    const second = await bookReturnPickup(B, returnId, { client });
+    expect(second.ok).toBe(true);
+    expect(client.bookReturn.mock.calls[0][0].ref).toBe(number);
+    expect(client.bookReturn.mock.calls[1][0].ref).toBe(`${number}-2`);
+    expect(client.bookReturn.mock.calls[1][1]).toMatchObject({ orderId: null, shipmentId: null });
+    const events = await listReturnEvents(pool, B, returnId);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'approved', 'pickup_booked', 'pickup_cancelled', 'pickup_booked']);
+  });
+
+  test('Shiprocket not connected leaves the return approved with a reason', async () => {
+    const { returnId } = await approvedPickup();
+    const res = await bookReturnPickup(B, returnId);
+    expect(res).toMatchObject({ ok: false, code: 'NOT_CONFIGURED' });
+    const row = await returnRow(returnId);
+    expect(row.status).toBe('approved');
+    expect(row.pickup_error).toMatch(/^Connect Shiprocket/);
+
+    const client = fakeClient([booked(7)]);
+    expect((await bookReturnPickup(B, returnId, { client })).ok).toBe(true);
+    expect((await returnRow(returnId)).pickup_error).toBeNull();
+  });
+
+  test('a phone with fewer than 10 digits is refused', async () => {
+    const { returnId } = await approvedPickup({ parcelPhone: '98765' });
+    const client = fakeClient();
+    const res = await bookReturnPickup(B, returnId, { client });
+    expect(res).toMatchObject({ ok: false, code: 'NO_PHONE' });
+    expect(client.bookReturn).not.toHaveBeenCalled();
+    expect((await returnRow(returnId)).pickup_error).toMatch(/phone/i);
+  });
+
+  test('a return that is not approved for courier pickup cannot be booked', async () => {
+    const { returnId } = await approvedPickup();
+    await pool.query(`UPDATE order_returns SET return_method = 'customer_sends' WHERE id = $1`, [returnId]);
+    expect(await bookReturnPickup(B, returnId, { client: fakeClient() })).toMatchObject({ ok: false, code: 'NOT_APPROVED' });
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', status = 'cancelled' WHERE id = $1`, [returnId]);
+    expect(await bookReturnPickup(B, returnId, { client: fakeClient() })).toMatchObject({ ok: false, code: 'NOT_APPROVED' });
+  });
+
+  test("another business cannot book or cancel this return's pickup", async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([booked(8)]);
+    await bookReturnPickup(B, returnId, { client });
+    expect(await bookReturnPickup(OTHER, returnId, { client })).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(await cancelReturnPickup(OTHER, returnId, { client })).toMatchObject({ ok: false, status: 404 });
+    expect(client.bookReturn).toHaveBeenCalledTimes(1);
+    expect(client.cancelOrders).not.toHaveBeenCalled();
+    expect((await returnRow(returnId)).pickup_status).toBe('booked');
+  });
+});

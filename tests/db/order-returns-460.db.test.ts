@@ -133,7 +133,10 @@ d('order returns 460 (real DB)', () => {
 
   async function newReturn(): Promise<string> {
     const { invoiceId } = await billedOrder(1);
-    return tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    // createReturn writes its own timeline; these tests record events by hand on a clean one.
+    await pool.query(`DELETE FROM order_return_events WHERE return_id = $1`, [id]);
+    return id;
   }
 
   test('recordReturnEvent then listReturnEvents returns the events oldest first', async () => {

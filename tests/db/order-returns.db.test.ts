@@ -37,13 +37,17 @@ import { createInvoiceForStoreOrder, fulfillStoreOrderPayment } from '@/lib/stor
 import { ensureFulfilment, transitionFulfilment } from '@/lib/fulfilment/service';
 import {
   approveReturn,
+  cancelReturn,
   createReturn,
   ensureReturnForReturnedFulfilment,
   receiveReturn,
+  rejectReturn,
   returnableLines,
   ReturnError,
+  setReturnMethod,
   settleReturn,
 } from '@/lib/returns/service';
+import { listReturnEvents } from '@/lib/returns/events';
 
 d('order returns (real DB)', () => {
   jest.setTimeout(120000);
@@ -302,5 +306,116 @@ d('order returns (real DB)', () => {
     expect(r).toMatchObject({ status: 'approved', fulfilment_id: fulfilmentId, store_order_id: orderId });
     const qty = (await pool.query(`SELECT SUM(quantity)::float8 AS q FROM order_return_items WHERE return_id = $1`, [returnId])).rows[0].q;
     expect(qty).toBe(3);
+  });
+
+  test('customer sends it stores the shop address as instructions', async () => {
+    // No store branch address yet: the business address is used.
+    await pool.query(`UPDATE businesses SET address_line1 = '5 Market Road', city = 'Pune', state = 'Maharashtra' WHERE id = $1`, [B]);
+    const first = await billedOrder(1);
+    const r1 = await tx((c) => createReturn(c, { businessId: B, invoiceId: first.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    const out = await tx((c) => approveReturn(c, { businessId: B, returnId: r1, userId: A, method: 'customer_sends' }));
+    expect(out).toEqual({ method: 'customer_sends', needsPickup: false });
+    expect(await returnRow(r1)).toMatchObject({
+      status: 'approved',
+      return_method: 'customer_sends',
+      return_instructions: 'Please send it to: 5 Market Road, Pune, Maharashtra',
+    });
+
+    // The branch's delivery address wins over the business address.
+    await pool.query(
+      `INSERT INTO store_branch_delivery (business_id, branch_id, location_address) VALUES ($1, $2, 'Shop 3, Station Road, Pune 411001')
+       ON CONFLICT (business_id, branch_id) DO UPDATE SET location_address = EXCLUDED.location_address`,
+      [B, BR],
+    );
+    const second = await billedOrder(1);
+    const r2 = await tx((c) => createReturn(c, { businessId: B, invoiceId: second.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    await tx((c) => approveReturn(c, { businessId: B, returnId: r2, userId: A, method: 'customer_sends' }));
+    expect((await returnRow(r2)).return_instructions).toBe('Please send it to: Shop 3, Station Road, Pune 411001');
+
+    // The shop's own wording is kept as typed.
+    const third = await billedOrder(1);
+    const r3 = await tx((c) => createReturn(c, { businessId: B, invoiceId: third.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    await tx((c) =>
+      approveReturn(c, { businessId: B, returnId: r3, userId: A, method: 'customer_sends', instructions: 'Post it to our Pune shop, ask for Ravi' }),
+    );
+    expect((await returnRow(r3)).return_instructions).toBe('Post it to our Pune shop, ask for Ravi');
+  });
+
+  test('no need to send it back credits the bill without restocking', async () => {
+    const { invoiceId } = await billedOrder(2);
+    const before = await stock();
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'damaged', initiatedBy: 'customer' }));
+    const out = await tx((c) => approveReturn(c, { businessId: B, returnId: id, userId: A, method: 'no_return' }));
+    expect(out).toMatchObject({ method: 'no_return', needsPickup: false });
+    expect(out.received).toMatchObject({ creditAmount: 236 });
+    expect(await stock()).toBe(before);
+    const row = await returnRow(id);
+    expect(row).toMatchObject({ return_method: 'no_return', status: 'closed' });
+    expect(row.credit_note_id).toBe(out.received!.creditNoteId);
+    const lines = (await pool.query(`SELECT condition, received_qty::float8 AS q FROM order_return_items WHERE return_id = $1`, [id])).rows;
+    expect(lines).toEqual([{ condition: 'damaged', q: 2 }]);
+    expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).toEqual(['requested', 'approved', 'received']);
+  });
+
+  test('no need to send it back needs the user who credits the bill', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'damaged', initiatedBy: 'customer' }));
+    await expect(tx((c) => approveReturn(c, { businessId: B, returnId: id, method: 'no_return' }))).rejects.toMatchObject({ code: 'USER_REQUIRED' });
+    expect((await returnRow(id)).status).toBe('requested');
+  });
+
+  test('a picked-up return cannot be rejected or cancelled', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'in_transit' WHERE id = $1`, [id]);
+    await expect(tx((c) => rejectReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKED_UP' });
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKED_UP' });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'arrived' WHERE id = $1`, [id]);
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ code: 'PICKED_UP' });
+    expect((await returnRow(id)).status).toBe('approved');
+  });
+
+  test('a return with a live pickup must have the pickup cancelled before it is rejected or cancelled', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'booked', carrier_order_id = '123' WHERE id = $1`, [id]);
+    await expect(tx((c) => rejectReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKUP_LIVE' });
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKUP_LIVE' });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'cancelled', carrier_order_id = NULL WHERE id = $1`, [id]);
+    await tx((c) => cancelReturn(c, { businessId: B, returnId: id }));
+    expect((await returnRow(id)).status).toBe('cancelled');
+  });
+
+  test('a merchant-started return applies its way back, and the way back can change until a pickup is live', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) =>
+      createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A, method: 'customer_sends', instructions: 'Send it to us' }),
+    );
+    expect(await returnRow(id)).toMatchObject({ status: 'approved', return_method: 'customer_sends', return_instructions: 'Send it to us' });
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'booked', carrier_order_id = '55' WHERE id = $1`, [id]);
+    await expect(tx((c) => setReturnMethod(c, { businessId: B, returnId: id, method: 'customer_sends' }))).rejects.toMatchObject({
+      status: 409,
+      code: 'PICKUP_LIVE',
+    });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'cancelled', carrier_order_id = NULL WHERE id = $1`, [id]);
+    const out = await tx((c) =>
+      setReturnMethod(c, { businessId: B, returnId: id, method: 'courier_pickup', pickup: { address: '9 Lane, Pune', pincode: '411001', phone: '9876543210', weightKg: 2 } }),
+    );
+    expect(out.needsPickup).toBe(true);
+    expect(await returnRow(id)).toMatchObject({
+      return_method: 'courier_pickup',
+      pickup_address: '9 Lane, Pune',
+      pickup_pincode: '411001',
+      pickup_phone: '9876543210',
+    });
+  });
+
+  test('a refund to the original payment is not settled here', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'wrong_item', initiatedBy: 'merchant', userId: A }));
+    await tx((c) => receiveReturn(c, { businessId: B, returnId: id, userId: A }));
+    await expect(
+      tx((c) => settleReturn(c, { businessId: B, returnId: id, userId: A, method: 'original_payment' })),
+    ).rejects.toMatchObject({ status: 409, code: 'USE_GATEWAY_REFUND', message: 'Refund to the original payment from the refund step' });
   });
 });
