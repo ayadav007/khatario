@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { getInboxViewer, UNOWNED_SQL, visibilityClause } from '@/lib/whatsapp/inbox-ownership';
+import { getInboxViewer, UNOWNED_SQL, visibilityClause, WAITING_SINCE_SQL } from '@/lib/whatsapp/inbox-ownership';
 import { dueFollowupSql } from '@/lib/whatsapp/followups';
 
 export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
@@ -169,6 +169,7 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ re
         c.handoff_requested_at,
         c.inbox_state,
         c.requested_at,
+        ${WAITING_SINCE_SQL('c')} AS waiting_since,
         c.intervened_at,
         (NOT ${UNOWNED_SQL('c')}) AS is_owned,
         COALESCE(cust.name, c.whatsapp_display_name, NULL) as customer_name,

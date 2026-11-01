@@ -520,6 +520,7 @@ export async function storeIncomingMessage(
     // Emit WebSocket events to notify connected clients
     try {
       // Get full conversation data for the update event
+      const { WAITING_SINCE_SQL } = await import('@/lib/whatsapp/inbox-ownership');
       const conversationData = await db.queryOne<any>(`
         SELECT 
           c.id,
@@ -534,7 +535,8 @@ export async function storeIncomingMessage(
           c.lead_status,
           c.is_group,
           c.group_name,
-          u.name as assigned_agent_name
+          u.name as assigned_agent_name,
+          ${WAITING_SINCE_SQL('c')} AS waiting_since
         FROM whatsapp_conversations c
         LEFT JOIN users u ON c.assigned_to = u.id
         WHERE c.id = $1 AND c.business_id = $2
@@ -781,6 +783,7 @@ export async function storeOutgoingMessage(
     // Emit WebSocket events to notify connected clients
     try {
       // Get full conversation data for the update event
+      const { WAITING_SINCE_SQL } = await import('@/lib/whatsapp/inbox-ownership');
       const conversationData = await db.queryOne<any>(`
         SELECT 
           c.id,
@@ -795,7 +798,8 @@ export async function storeOutgoingMessage(
           c.lead_status,
           c.is_group,
           c.group_name,
-          u.name as assigned_agent_name
+          u.name as assigned_agent_name,
+          ${WAITING_SINCE_SQL('c')} AS waiting_since
         FROM whatsapp_conversations c
         LEFT JOIN users u ON c.assigned_to = u.id
         WHERE c.id = $1 AND c.business_id = $2

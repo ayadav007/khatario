@@ -38,6 +38,8 @@ export interface Conversation {
   bot_paused_reason?: string | null;
   handoff_requested_at?: string | null;
   requested_at?: string | null;
+  /** Customer's first message since a person last replied (null once answered); set by the list API. */
+  waiting_since?: string | null;
   inbox_state?: InboxState;
   /** Intervened by an active team member (an orphaned "intervened" chat counts as Requesting). */
   is_owned?: boolean;
@@ -543,7 +545,21 @@ export function ConversationList({
                         {formatLastMessage(conv.last_message_text, conv.last_message_direction)}
                       </p>
                       {!conv.is_group && effectiveInboxState(conv) === 'requesting' && (() => {
-                        const waited = waitingLabel(conv.requested_at || conv.handoff_requested_at, now);
+                        const since = conv.waiting_since !== undefined
+                          ? conv.waiting_since
+                          : conv.requested_at || conv.handoff_requested_at;
+                        // Answered (e.g. from the shop's phone) but nobody has taken the chat in the inbox.
+                        if (conv.waiting_since === null && conv.last_message_direction === 'outgoing') {
+                          return (
+                            <span
+                              className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600"
+                              title="Your team replied. Click Intervene to take this chat."
+                            >
+                              Replied
+                            </span>
+                          );
+                        }
+                        const waited = waitingLabel(since, now);
                         return (
                           <span
                             className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
