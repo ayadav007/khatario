@@ -11,6 +11,7 @@ import {
   type ShiprocketReturnParcel,
 } from '@/lib/store/delivery/shiprocket';
 import { recordReturnEvent } from './events';
+import { notifyMerchantReturn } from './notify';
 import { canMovePickupStatus, parseShiprocketReturnStatus } from './pickup-status';
 import { RETURN_REASON_LABELS, type PickupStatus, type ReturnReason } from './labels';
 
@@ -637,6 +638,8 @@ export async function applyShiprocketReturnUpdate(input: {
       actorType: 'webhook',
     });
     await c.query('COMMIT');
+    // Only the update that moved it to arrived tells the shop; a repeated event stops above as unchanged.
+    if (to === 'arrived') await notifyMerchantReturn(input.businessId, row.id, 'arrived');
     return { outcome: 'updated', returnId: row.id, to };
   } catch (e) {
     await c.query('ROLLBACK').catch(() => {});

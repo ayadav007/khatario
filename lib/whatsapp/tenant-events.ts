@@ -20,6 +20,11 @@ export const TENANT_WA_EVENT_KEYS = [
   'order_delivery_failed',
   'order_delayed',
   'order_cancelled',
+  'return_approved',
+  'return_pickup_booked',
+  'return_rejected',
+  'return_received',
+  'return_refunded',
   'merchant_new_order',
   'merchant_dispatch_overdue',
   'merchant_new_enquiry',
@@ -68,6 +73,9 @@ export const TENANT_WA_FIELDS = {
   item_names: { label: 'Items in the cart', sample: 'Basmati rice 5 kg, Ghee 1 L' },
   cart_link: { label: 'Cart link', sample: 'https://sharma.khatario.com/cart' },
   settlement_day: { label: 'Settlement day', sample: '5th of every month' },
+  return_number: { label: 'Return number', sample: 'RET-0012' },
+  instructions: { label: 'What to do next', sample: 'Please send it to: Shop 4, MG Road, Pune' },
+  credit_note_number: { label: 'Credit note number', sample: 'CN-0042' },
 } as const;
 
 export type TenantWaFieldKey = keyof typeof TENANT_WA_FIELDS;
@@ -132,6 +140,14 @@ const DELIVERY_FIELDS: TenantWaFieldKey[] = [
   'refund_note',
 ];
 
+const RETURN_FIELDS: TenantWaFieldKey[] = [
+  ...DELIVERY_FIELDS,
+  'return_number',
+  'instructions',
+  'credit_note_number',
+  'amount',
+];
+
 function deliveryEvent(
   key: TenantWaEventKey,
   label: string,
@@ -139,6 +155,7 @@ function deliveryEvent(
   name: string,
   body: string,
   variableMap: TenantWaFieldKey[],
+  fields: TenantWaFieldKey[] = DELIVERY_FIELDS,
 ): TenantWaEvent {
   return {
     key,
@@ -147,7 +164,7 @@ function deliveryEvent(
     description,
     recipient: 'customer',
     categories: ['UTILITY'],
-    fields: DELIVERY_FIELDS,
+    fields,
     suggested: { name, category: 'UTILITY', body, variableMap },
   };
 }
@@ -304,6 +321,51 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
     'khatario_order_cancelled',
     'Hi {{1}}, your order {{2}} with {{3}} has been cancelled. {{4}} Reply here if you have any questions.',
     ['customer_name', 'order_number', 'business_name', 'refund_note'],
+  ),
+  deliveryEvent(
+    'return_approved',
+    'Return approved',
+    'Sent when you approve a return, with how the item comes back: pickup details, where to send it, or nothing to send.',
+    'khatario_return_approved',
+    'Hi {{1}}, your return {{2}} for order {{3}} is approved. {{4}} Reply here if you have any questions.',
+    ['customer_name', 'return_number', 'order_number', 'instructions'],
+    RETURN_FIELDS,
+  ),
+  deliveryEvent(
+    'return_pickup_booked',
+    'Return pickup booked',
+    'Sent when a courier pickup is booked for a return after approval, for example with Book again.',
+    'khatario_return_pickup_booked',
+    'Hi {{1}}, pickup for your return {{2}} is booked with {{3}}, AWB {{4}}. Track it here: {{5}} Reply here for any help.',
+    ['customer_name', 'return_number', 'courier', 'awb', 'tracking_url'],
+    RETURN_FIELDS,
+  ),
+  deliveryEvent(
+    'return_rejected',
+    'Return not accepted',
+    'Sent when you decline a return, with your reason.',
+    'khatario_return_rejected',
+    'Hi {{1}}, sorry, your return {{2}} was not accepted: {{3}} Reply here if you have any questions.',
+    ['customer_name', 'return_number', 'reason'],
+    RETURN_FIELDS,
+  ),
+  deliveryEvent(
+    'return_received',
+    'Return received',
+    'Sent when the returned goods reach the shop, with the credit note.',
+    'khatario_return_received',
+    'Hi {{1}}, we received your return {{2}}. Credit note {{3}} for ₹{{4}}. Reply here if you have any questions.',
+    ['customer_name', 'return_number', 'credit_note_number', 'amount'],
+    RETURN_FIELDS,
+  ),
+  deliveryEvent(
+    'return_refunded',
+    'Refund sent',
+    'Sent when the refund for a return is settled, saying where the money went.',
+    'khatario_return_refunded',
+    'Hi {{1}}, about your return {{2}}: {{3}} Reply here if you have any questions.',
+    ['customer_name', 'return_number', 'refund_note'],
+    RETURN_FIELDS,
   ),
   {
     key: 'merchant_dispatch_overdue',

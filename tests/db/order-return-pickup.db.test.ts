@@ -514,6 +514,27 @@ d('return pickup booking (real DB)', () => {
       expect(await kinds(returnId)).toEqual(['requested', 'approved', 'pickup_booked', 'pickup_status']);
     });
 
+    test('arrival notifies the shop once', async () => {
+      const { returnId, awb } = await bookedReturn(29);
+      const rows = async () =>
+        (await pool.query(`SELECT * FROM notifications WHERE business_id = $1 AND reference_type = 'order_return' AND reference_id = $2`, [B, returnId])).rows;
+
+      await postTracking({ awb, is_return: 1, current_status: 'IN TRANSIT' });
+      expect(await rows()).toHaveLength(0);
+
+      await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' });
+      const number = (await returnRow(returnId)).return_number as string;
+      const first = await rows();
+      expect(first).toHaveLength(1);
+      expect(first[0]).toMatchObject({ title: 'Return arrived at shop', is_read: false });
+      expect(first[0].message).toBe(`${number} for order RP-${tag}-${seq}`);
+
+      // The same event again is acknowledged without a second notification.
+      const again = await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' });
+      expect(again.json).toMatchObject({ outcome: 'unchanged' });
+      expect(await rows()).toHaveLength(1);
+    });
+
     test("an event that arrives before the AWB is saved matches by Shiprocket's order id", async () => {
       const { returnId } = await approvedPickup();
       const client = fakeClient([{ ok: false, stage: 'return_awb', orderId: '5077', shipmentId: '5088', error: 'Wallet balance low' }]);
