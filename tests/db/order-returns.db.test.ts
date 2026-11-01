@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { NextRequest } from 'next/server';
 
 const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
@@ -26,12 +27,28 @@ jest.mock('@/lib/enforce-access', () => ({
   enforceAccess: jest.fn().mockResolvedValue(undefined),
   enforceAccessErrorResponse: jest.fn(() => null),
 }));
+jest.mock('@/lib/auth-helpers', () => ({
+  ...jest.requireActual('@/lib/auth-helpers'),
+  // Session checks hit the users table; the headers a request carries are what the middleware would set.
+  requireStrictSession: jest.fn(async (request: any) => ({
+    ok: true,
+    userId: request.headers.get('x-authenticated-user-id'),
+    businessId: request.headers.get('x-authenticated-business-id'),
+  })),
+}));
+jest.mock('@/lib/rag/tenant-reindex', () => ({ noteShopChanged: jest.fn() }));
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
+  hasFeatureAccess: jest.fn().mockResolvedValue(true),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'order-returns-test-secret';
+
 import { getPool, closePool } from '@/lib/db';
+import { signStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
+import { GET as getStoreReturn, POST as postStoreReturn } from '@/app/api/public/store/[subdomain]/orders/[id]/return/route';
+import { PATCH as patchItem } from '@/app/api/items/[id]/route';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { createInvoiceForStoreOrder, fulfillStoreOrderPayment } from '@/lib/store/fulfill-paid-order';
 import { ensureFulfilment, transitionFulfilment } from '@/lib/fulfilment/service';
@@ -417,5 +434,119 @@ d('order returns (real DB)', () => {
     await expect(
       tx((c) => settleReturn(c, { businessId: B, returnId: id, userId: A, method: 'original_payment' })),
     ).rejects.toMatchObject({ status: 409, code: 'USE_GATEWAY_REFUND', message: 'Refund to the original payment from the refund step' });
+  });
+
+  describe('not returnable products and the return clock', () => {
+    const SUB = `rt-${tag}`;
+    const SHOPPER = randomUUID();
+
+    beforeAll(async () => {
+      await pool.query(
+        `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_return_window_days) VALUES ($1, $2, true, 7)
+         ON CONFLICT (business_id) DO UPDATE SET store_subdomain = EXCLUDED.store_subdomain, store_enabled = true, store_return_window_days = 7`,
+        [B, SUB],
+      );
+      await pool.query(`INSERT INTO store_customers (id, business_id, phone, name) VALUES ($1, $2, $3, 'Shopper')`, [SHOPPER, B, `98${phone}`]);
+    });
+
+    const ctx = (id: string) => ({ params: { subdomain: SUB, id } });
+    const asShopper = (id: string, body?: unknown) =>
+      new NextRequest(`http://localhost/api/public/store/${SUB}/orders/${id}/return`, {
+        method: body ? 'POST' : 'GET',
+        headers: { 'content-type': 'application/json', cookie: `${STORE_CUSTOMER_COOKIE}=${signStoreCustomer(B, SHOPPER)}` },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+    /** A billed order of the shopper's whose parcel was delivered just now. */
+    async function deliveredOrder(qty: number): Promise<{ orderId: string; invoiceId: string; fulfilmentId: string }> {
+      const { orderId, invoiceId } = await billedOrder(qty);
+      await pool.query(`UPDATE store_orders SET store_customer_id = $2 WHERE id = $1`, [orderId, SHOPPER]);
+      const fulfilmentId = await tx(async (c) => {
+        const { row } = await ensureFulfilment(c, {
+          businessId: B,
+          channel: 'online_store',
+          storeOrderId: orderId,
+          invoiceId,
+          branchId: BR,
+          buyerName: 'Buyer',
+          buyerPhone: phone,
+          status: 'confirmed',
+          method: 'own_rider',
+          codAmount: 0,
+          actorType: 'staff',
+          actorUserId: A,
+        });
+        for (const to of ['packed', 'shipped', 'delivered'] as const) {
+          const moved = await transitionFulfilment(c, { businessId: B, fulfilmentId: row.id, to, actorType: 'staff', actorUserId: A, skipPaymentGate: true });
+          expect(moved.ok).toBe(true);
+        }
+        return row.id;
+      });
+      return { orderId, invoiceId, fulfilmentId };
+    }
+
+    test('a not-returnable product is shown but cannot be asked for', async () => {
+      const { orderId, invoiceId } = await deliveredOrder(2);
+      await pool.query(`UPDATE items SET store_returnable = false WHERE id = $1`, [ITEM]);
+      try {
+        const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+        expect(got.lines).toHaveLength(1);
+        expect(got.lines[0]).toMatchObject({ item_name: 'Widget', returnable: false });
+        expect(got).toMatchObject({ can_return: false, reason: "Items on this order can't be returned" });
+
+        const lineId = got.lines[0].invoice_item_id as string;
+        const res = await postStoreReturn(asShopper(orderId, { lines: [{ invoice_item_id: lineId, quantity: 1 }], reason: 'wrong_item' }), ctx(orderId));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: "Widget can't be returned", code: 'NOT_RETURNABLE' });
+        expect((await pool.query(`SELECT 1 FROM order_returns WHERE store_order_id = $1`, [orderId])).rowCount).toBe(0);
+
+        // The shop itself may still return anything.
+        const id = await tx((c) =>
+          createReturn(c, { businessId: B, invoiceId, lines: [{ invoice_item_id: lineId, quantity: 1 }], reason: 'wrong_item', initiatedBy: 'merchant', userId: A }),
+        );
+        expect(id).toBeTruthy();
+      } finally {
+        await pool.query(`UPDATE items SET store_returnable = true WHERE id = $1`, [ITEM]);
+      }
+    });
+
+    test('a returnable product on an order can still be asked for', async () => {
+      const { orderId } = await deliveredOrder(1);
+      const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+      expect(got).toMatchObject({ can_return: true });
+      expect(got.lines[0]).toMatchObject({ returnable: true });
+    });
+
+    test('an edit after delivery does not restart the return window', async () => {
+      const { orderId, fulfilmentId } = await deliveredOrder(1);
+      await pool.query(`UPDATE order_fulfilments SET delivered_at = NULL WHERE id = $1`, [fulfilmentId]);
+      await pool.query(
+        `UPDATE order_fulfilment_events SET created_at = NOW() - INTERVAL '10 days' WHERE fulfilment_id = $1 AND status = 'delivered'`,
+        [fulfilmentId],
+      );
+      await pool.query(`UPDATE store_orders SET updated_at = NOW() WHERE id = $1`, [orderId]);
+      const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+      expect(got).toMatchObject({ can_return: false, reason: 'Returns are accepted within 7 days of delivery' });
+    });
+
+    test('the item API saves store_returnable', async () => {
+      const patch = (body: unknown) =>
+        patchItem(
+          new NextRequest(`http://localhost/api/items/${ITEM}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json', 'x-authenticated-user-id': A, 'x-authenticated-business-id': B },
+            body: JSON.stringify({ name: 'Widget', unit: 'PCS', selling_price: 100, ...(body as object) }),
+          }),
+          { params: { id: ITEM } },
+        );
+      const column = async () => (await pool.query(`SELECT store_returnable FROM items WHERE id = $1`, [ITEM])).rows[0].store_returnable;
+      const res = await patch({ store_returnable: false });
+      expect(res.status).toBe(200);
+      expect(await column()).toBe(false);
+      expect((await patch({ store_returnable: 'no' })).status).toBe(400);
+      expect(await column()).toBe(false);
+      expect((await patch({ store_returnable: true })).status).toBe(200);
+      expect(await column()).toBe(true);
+    });
   });
 });

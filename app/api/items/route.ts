@@ -421,7 +421,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
-    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches'].some((k) =>
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -589,6 +589,10 @@ export async function POST(request: NextRequest) {
         if (v.store_swatches !== undefined) {
           vals.push(JSON.stringify(v.store_swatches));
           sets.push(`store_swatches = $${vals.length}::jsonb`);
+        }
+        if (v.store_returnable !== undefined) {
+          vals.push(v.store_returnable);
+          sets.push(`store_returnable = $${vals.length}`);
         }
         if (sets.length > 0) {
           vals.push(item.id, business_id);

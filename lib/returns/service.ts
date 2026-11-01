@@ -82,6 +82,8 @@ export type ReturnableLine = {
   returnable_qty: number;
   unit_price: number;
   tax_rate: number;
+  /** The product's "customers can return this online" switch (true when the line has no product). */
+  store_returnable: boolean;
 };
 
 /** Bill lines with how much can still be returned (sold minus quantities already in open returns). */
@@ -105,6 +107,7 @@ export async function returnableLines(
     discount_amount: string | null;
     tax_rate: string | null;
     in_returns: string;
+    store_returnable: boolean;
   }>(
     `SELECT ii.id, ii.item_id, ii.variant_id, ii.item_name, ii.description, ii.unit, ii.unit_factor::text,
             ii.quantity::text, ii.taxable_value::text, ii.unit_price::text, ii.discount_amount::text, ii.tax_rate::text,
@@ -116,9 +119,11 @@ export async function returnableLines(
                  AND r.business_id = $1
                  AND r.status = ANY($3::varchar[])
                  AND ($4::uuid IS NULL OR r.id <> $4::uuid)
-            ), 0)::text AS in_returns
+            ), 0)::text AS in_returns,
+            COALESCE(it.store_returnable, true) AS store_returnable
        FROM invoice_items ii
        JOIN invoices i ON i.id = ii.invoice_id
+       LEFT JOIN items it ON it.id = ii.item_id AND it.business_id = i.business_id
       WHERE i.business_id = $1 AND ii.invoice_id = $2
       ORDER BY ii.sort_order, ii.id`,
     [businessId, invoiceId, OPEN_STATUSES, excludeReturnId ?? null],
@@ -140,6 +145,7 @@ export async function returnableLines(
       returnable_qty: Math.max(0, qty - (Number(r.in_returns) || 0)),
       unit_price: qty > 0 ? Math.round((taxable / qty) * 10000) / 10000 : 0,
       tax_rate: Number(r.tax_rate) || 0,
+      store_returnable: r.store_returnable !== false,
     };
   });
 }

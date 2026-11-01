@@ -10,6 +10,7 @@ export type ProductExtrasValue = {
   store_badge?: string | null;
   store_tagline?: string | null;
   store_swatches?: StoreSwatch[];
+  store_returnable?: boolean;
 };
 
 export type ProductExtrasResult = { ok: true; value: ProductExtrasValue } | { ok: false; error: string };
@@ -190,6 +191,13 @@ export function validateProductExtras(body: unknown): ProductExtrasResult {
     const r = validateSwatches(src.store_swatches ?? []);
     if ('error' in r) return { ok: false, error: r.error };
     value.store_swatches = r.value;
+  }
+
+  if ('store_returnable' in src) {
+    if (typeof src.store_returnable !== 'boolean') {
+      return { ok: false, error: 'Returnable must be true or false.' };
+    }
+    value.store_returnable = src.store_returnable;
   }
 
   return { ok: true, value };

@@ -79,6 +79,8 @@ export interface StoreItem {
   sold_count: number;
   store_badge: string | null;
   store_tagline: string | null;
+  /** False when the shop marked the product as not returnable online. */
+  returnable?: boolean;
   store_swatches: StoreSwatch[];
   variants: Array<{
     id: string;
@@ -115,6 +117,7 @@ export function mapStoreItemRow(r: Record<string, unknown>): StoreItem {
     sold_count: parseFloat(r.sold_count as string) || 0,
     store_badge: (r.store_badge as string) || null,
     store_tagline: (r.store_tagline as string) || null,
+    returnable: r.store_returnable !== false,
     store_swatches: Array.isArray(r.store_swatches) ? r.store_swatches : [],
     variants: Array.isArray(r.variants) ? r.variants : [],
   };

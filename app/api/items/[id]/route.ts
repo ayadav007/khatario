@@ -369,7 +369,7 @@ export async function PATCH(
       const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
       galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
     }
-    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches'].some((k) =>
+    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extrasPatched: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -458,6 +458,11 @@ export async function PATCH(
         if (v.store_swatches !== undefined) {
           parts.push(`, store_swatches = $${idx}::jsonb`);
           extra.push(JSON.stringify(v.store_swatches));
+          idx += 1;
+        }
+        if (v.store_returnable !== undefined) {
+          parts.push(`, store_returnable = $${idx}`);
+          extra.push(v.store_returnable);
           idx += 1;
         }
       }

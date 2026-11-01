@@ -53,10 +53,17 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   }
   const lines = (await returnableLines(pool, who.businessId, eligible.invoiceId))
     .filter((l) => l.returnable_qty > 0)
-    .map((l) => ({ invoice_item_id: l.invoice_item_id, item_name: l.item_name, unit: l.unit, returnable_qty: l.returnable_qty }));
+    .map((l) => ({
+      invoice_item_id: l.invoice_item_id,
+      item_name: l.item_name,
+      unit: l.unit,
+      returnable_qty: l.returnable_qty,
+      returnable: l.store_returnable,
+    }));
+  const canReturn = lines.some((l) => l.returnable);
   return NextResponse.json({
-    can_return: lines.length > 0,
-    reason: lines.length > 0 ? null : 'Everything on this order has already been returned',
+    can_return: canReturn,
+    reason: canReturn ? null : lines.length > 0 ? "Items on this order can't be returned" : 'Everything on this order has already been returned',
     window_days: eligible.windowDays,
     reasons: RETURN_REASONS.filter((r) => r !== 'not_delivered').map((r) => ({ value: r, label: RETURN_REASON_LABELS[r] })),
     lines,
@@ -92,6 +99,13 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!eligible.ok) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: eligible.error }, { status: eligible.status });
+    }
+    const blocked = (await returnableLines(client, who.businessId, eligible.invoiceId)).filter(
+      (l) => !l.store_returnable && lines.some((w) => w.invoice_item_id === l.invoice_item_id),
+    );
+    if (blocked[0]) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: `${blocked[0].item_name} can't be returned`, code: 'NOT_RETURNABLE' }, { status: 400 });
     }
     const open = await client.query(
       `SELECT 1 FROM order_returns WHERE business_id = $1 AND store_order_id = $2 AND status = 'requested' LIMIT 1`,
