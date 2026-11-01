@@ -4,8 +4,9 @@
  * bank account the online payment settled in. Pending refunds wait for the notice or the check.
  * Runs only when PHASE2_TEST_DATABASE_URL points at a disposable database.
  */
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { NextRequest } from 'next/server';
 
 const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
@@ -39,6 +40,9 @@ import { listReturnEvents } from '@/lib/returns/events';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { StoreRefundError } from '@/lib/store/store-refund';
 import { applyCustomerCredit, listAvailableCustomerCredits } from '@/lib/credit-notes/customer-credit';
+import * as providerConfig from '@/lib/payments/business-provider-config';
+import * as gatewayRefund from '@/lib/returns/gateway-refund';
+import { POST as razorpayWebhook } from '@/app/api/webhooks/store/razorpay/route';
 import {
   applyReturnGatewayRefundResult,
   checkPendingReturnRefunds,
@@ -192,6 +196,7 @@ d('refund a return to the original payment (real DB)', () => {
       await pool.query(`DELETE FROM return_gateway_refunds WHERE business_id = ANY($1::uuid[])`, [[B, B2]]);
       await pool.query(`DELETE FROM credit_note_refunds WHERE business_id = $1`, [B]);
       await pool.query(`DELETE FROM order_returns WHERE business_id = $1`, [B]);
+      await pool.query(`DELETE FROM store_payment_refunds WHERE business_id = $1`, [B]);
       await pool.query(`DELETE FROM store_orders WHERE business_id = $1`, [B]);
       await tx(async (c) => {
         await withLedgerDelete(c, 'tenant_purge', A, async () => {
@@ -677,5 +682,258 @@ d('refund a return to the original payment (real DB)', () => {
     expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: refundId, failure_reason: null });
     expect((await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rowCount).toBe(1);
     expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  describe('Razorpay refund notices and the pending-refund cron', () => {
+    const WEBHOOK_SECRET = `whsec_returns_${tag}`;
+    let cfgSpy: jest.SpyInstance;
+
+    beforeAll(() => {
+      cfgSpy = jest.spyOn(providerConfig, 'getBusinessPaymentProviderConfig').mockImplementation(async (businessId) =>
+        businessId === B ? { clientId: 'rzp_test_returns', clientSecret: 'key_secret_returns', webhookSecret: WEBHOOK_SECRET } : null,
+      );
+    });
+    afterAll(() => cfgSpy.mockRestore());
+
+    function payId(orderId: string): string {
+      return `pay_${orderId.slice(0, 12)}`;
+    }
+
+    /** A Razorpay refund notice signed with the store's webhook secret, posted to the store webhook. */
+    async function notice(event: string, entity: { id: string; payment_id: string; amount: number }) {
+      const body = JSON.stringify({ event, payload: { refund: { entity: { entity: 'refund', currency: 'INR', ...entity } } } });
+      const signature = createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
+      const res = await razorpayWebhook(
+        new NextRequest('http://localhost/api/webhooks/store/razorpay', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-razorpay-signature': signature },
+          body,
+        }),
+      );
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    }
+
+    async function receiptReversals(orderId: string): Promise<number> {
+      const r = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM ledger_entry_reversals
+          WHERE voucher_type = 'payment' AND business_id = $2
+            AND voucher_id = (SELECT receipt_payment_id FROM store_orders WHERE id = $1)`,
+        [orderId, B],
+      );
+      return r.rows[0].n as number;
+    }
+
+    async function cancellationRefunds(orderId: string): Promise<number> {
+      return (await pool.query(`SELECT 1 FROM store_payment_refunds WHERE order_id = $1`, [orderId])).rowCount ?? 0;
+    }
+
+    async function noteRefunds(returnId: string): Promise<number> {
+      return (await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [returnId])).rowCount ?? 0;
+    }
+
+    async function paymentStatus(orderId: string): Promise<string> {
+      return (await pool.query(`SELECT payment_status FROM store_orders WHERE id = $1`, [orderId])).rows[0].payment_status;
+    }
+
+    /** An attempt whose gateway call never answered: pending, no refund id. */
+    async function unansweredAttempt(returnId: string) {
+      await refundReturnToOriginalPayment({
+        businessId: B,
+        returnId,
+        userId: A,
+        requestRefund: async () => {
+          throw new TypeError('fetch failed');
+        },
+      });
+      return (await refundRows(returnId)).at(-1)!;
+    }
+
+    test('a Razorpay refund.processed notice completes the matching return refund', async () => {
+      // No delivery fee: the full return refund equals grand_total, which must not read as a cancellation.
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const gw = fakeGateway('pending');
+      await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+      expect(await paymentStatus(orderId)).toBe('paid');
+
+      const res = await notice('refund.processed', { id: gw.refundId, payment_id: payId(orderId), amount: 11800 });
+      expect(res.status).toBe(200);
+      expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: gw.refundId });
+      expect((await returnRow(id)).status).toBe('closed');
+      expect(await noteRefunds(id)).toBe(1);
+      expect(await receiptReversals(orderId)).toBe(0);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+      expect(await paymentStatus(orderId)).toBe('refunded');
+    });
+
+    test('a notice that arrives before the refund id is saved matches by amount', async () => {
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const refundId = `rfnd_early_${tag}`;
+      let early: { status: number } | null = null;
+      const out = await refundReturnToOriginalPayment({
+        businessId: B,
+        returnId: id,
+        userId: A,
+        requestRefund: async () => {
+          early = await notice('refund.processed', { id: refundId, payment_id: payId(orderId), amount: 11800 });
+          return { providerRefundId: refundId, status: 'pending' };
+        },
+      });
+      expect(early).toMatchObject({ status: 200 });
+      expect(out.status).toBe('processed');
+      expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: refundId });
+      expect(await noteRefunds(id)).toBe(1);
+      expect(await receiptReversals(orderId)).toBe(0);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+    });
+
+    test('the same notice twice posts once', async () => {
+      // Half the order comes back: the notice amount differs from grand_total.
+      const { orderId, invoiceId } = await billedOrder(2, true);
+      const id = await receivedReturn(invoiceId, 1);
+      const gw = fakeGateway('pending');
+      await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+      for (let i = 0; i < 2; i++) {
+        const res = await notice('refund.processed', { id: gw.refundId, payment_id: payId(orderId), amount: 11800 });
+        expect(res.status).toBe(200);
+      }
+      expect(await noteRefunds(id)).toBe(1);
+      expect((await listReturnEvents(pool, B, id)).filter((e) => e.kind === 'refunded')).toHaveLength(1);
+      expect((await returnRow(id)).refunded_amount).toBe('118.00');
+      expect(await paymentStatus(orderId)).toBe('paid');
+      expect(await cancellationRefunds(orderId)).toBe(0);
+    });
+
+    test('a refund.failed notice marks the attempt failed', async () => {
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const gw = fakeGateway('pending');
+      await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+      const res = await notice('refund.failed', { id: gw.refundId, payment_id: payId(orderId), amount: 11800 });
+      expect(res.status).toBe(200);
+      expect((await refundRows(id))[0].status).toBe('failed');
+      expect((await returnRow(id)).status).toBe('received');
+      expect(await noteRefunds(id)).toBe(0);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+    });
+
+    test('an unmatched partial refund notice is acknowledged with 200, not retried', async () => {
+      const { orderId } = await billedOrder(2, true);
+      const res = await notice('refund.processed', { id: `rfnd_partial_${tag}`, payment_id: payId(orderId), amount: 5000 });
+      expect(res.status).toBe(200);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+      expect(await receiptReversals(orderId)).toBe(0);
+      expect(await paymentStatus(orderId)).toBe('paid');
+    });
+
+    test('an unrelated notice with the same amount does not complete an attempt when two could match', async () => {
+      const { orderId, invoiceId } = await billedOrder(2, true);
+      const first = await unansweredAttempt(await receivedReturn(invoiceId, 1));
+      const second = await unansweredAttempt(await receivedReturn(invoiceId, 1));
+      expect([first.amount, second.amount]).toEqual(['118.00', '118.00']);
+
+      expect(await matchReturnRefundNotice({ businessId: B, storeOrderId: orderId, providerRefundId: 'rfnd_unrelated', amountInr: 118 })).toBeNull();
+      const res = await notice('refund.processed', { id: `rfnd_unrelated_${tag}`, payment_id: payId(orderId), amount: 11800 });
+      expect(res.status).toBe(200);
+      for (const row of [first, second]) {
+        expect((await pool.query(`SELECT status, provider_refund_id FROM return_gateway_refunds WHERE id = $1`, [row.id])).rows[0]).toEqual({
+          status: 'pending',
+          provider_refund_id: null,
+        });
+      }
+      expect(await cancellationRefunds(orderId)).toBe(0);
+    });
+
+    test('a refund id that belongs to a cancellation refund or another attempt never matches by amount', async () => {
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const open = await unansweredAttempt(id);
+      const cancelId = `rfnd_cancel_${tag}`;
+      const order = (await pool.query(`SELECT receipt_payment_id, provider_payment_id FROM store_orders WHERE id = $1`, [orderId])).rows[0];
+      await pool.query(
+        `INSERT INTO store_payment_refunds (business_id, order_id, payment_id, provider, provider_payment_id, provider_refund_id,
+                                            idempotency_key, amount, status, actor_type)
+         VALUES ($1, $2, $3, 'razorpay', $4, $5, $6, 118, 'pending', 'razorpay_webhook')`,
+        [B, orderId, order.receipt_payment_id, order.provider_payment_id, cancelId, randomUUID()],
+      );
+      expect(await matchReturnRefundNotice({ businessId: B, storeOrderId: orderId, providerRefundId: cancelId, amountInr: 118 })).toBeNull();
+
+      // The id is already another order's return refund.
+      const other = await billedOrder(1, true);
+      const otherReturn = await receivedReturn(other.invoiceId);
+      const otherGw = fakeGateway('processed', `rfnd_other_${tag}`);
+      await refundReturnToOriginalPayment({ businessId: B, returnId: otherReturn, userId: A, requestRefund: otherGw.requester });
+      expect(await matchReturnRefundNotice({ businessId: B, storeOrderId: orderId, providerRefundId: otherGw.refundId, amountInr: 118 })).toBeNull();
+
+      // A fresh id still matches the one open attempt.
+      expect(await matchReturnRefundNotice({ businessId: B, storeOrderId: orderId, providerRefundId: `rfnd_fresh_${tag}`, amountInr: 118 })).toBe(open.id);
+    });
+
+    test('a full-amount notice that matches no attempt is not taken for a cancellation while a return refund is open', async () => {
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const gw = fakeGateway('pending');
+      await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+      const res = await notice('refund.processed', { id: `rfnd_stray_${tag}`, payment_id: payId(orderId), amount: 11800 });
+      expect(res.status).toBe(200);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+      expect(await receiptReversals(orderId)).toBe(0);
+      expect(await paymentStatus(orderId)).toBe('paid');
+      expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: gw.refundId });
+    });
+
+    test('a processed notice whose posting fails is acknowledged and keeps the refund id', async () => {
+      const { orderId, invoiceId } = await billedOrder(1, true);
+      const id = await receivedReturn(invoiceId);
+      const gw = fakeGateway('pending');
+      await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+      const settlement = (
+        await pool.query(
+          `SELECT p.settlement_account_id FROM store_orders o JOIN payments p ON p.id = o.receipt_payment_id WHERE o.id = $1`,
+          [orderId],
+        )
+      ).rows[0].settlement_account_id as string;
+      await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [settlement]);
+      const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await notice('refund.processed', { id: gw.refundId, payment_id: payId(orderId), amount: 11800 });
+        expect(res.status).toBe(200);
+      } finally {
+        quiet.mockRestore();
+        await pool.query(`UPDATE accounts SET is_active = true WHERE id = $1`, [settlement]);
+      }
+      const [row] = await refundRows(id);
+      expect(row).toMatchObject({ status: 'pending', provider_refund_id: gw.refundId });
+      expect(row.failure_reason).toMatch(/^Refunded at the gateway; posting failed: /);
+      expect(await noteRefunds(id)).toBe(0);
+      expect(await cancellationRefunds(orderId)).toBe(0);
+      expect(await receiptReversals(orderId)).toBe(0);
+    });
+
+    test('the cron rejects calls without the cron secret', async () => {
+      const { GET, POST } = await import('@/app/api/cron/return-refunds/route');
+      const saved = process.env.CRON_SECRET;
+      process.env.CRON_SECRET = `cron_${tag}`;
+      const check = jest.spyOn(gatewayRefund, 'checkPendingReturnRefunds').mockResolvedValue({ checked: 3, processed: 1, failed: 1 });
+      try {
+        const call = (handler: typeof GET, auth?: string) =>
+          handler(new NextRequest('http://localhost/api/cron/return-refunds', { headers: auth ? { authorization: auth } : {} }));
+        expect((await call(POST)).status).toBe(401);
+        expect((await call(GET, 'Bearer wrong')).status).toBe(401);
+        expect(check).not.toHaveBeenCalled();
+
+        for (const handler of [GET, POST]) {
+          const res = await call(handler, `Bearer cron_${tag}`);
+          expect(res.status).toBe(200);
+          expect(await res.json()).toEqual({ checked: 3, processed: 1, failed: 1 });
+        }
+        expect(check).toHaveBeenCalledTimes(2);
+      } finally {
+        check.mockRestore();
+        if (saved === undefined) delete process.env.CRON_SECRET;
+        else process.env.CRON_SECRET = saved;
+      }
+    });
   });
 });

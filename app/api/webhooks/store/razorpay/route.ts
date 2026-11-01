@@ -7,6 +7,8 @@ import {
 } from '@/lib/payments/providers/razorpay-payment-provider';
 import { fulfillStoreOrderPayment, recordStorePaymentFailure } from '@/lib/store/fulfill-paid-order';
 import { confirmStoreRefundFromProvider } from '@/lib/store/store-refund';
+import { applyReturnGatewayRefundResult, matchReturnRefundNotice } from '@/lib/returns/gateway-refund';
+import { ReturnError } from '@/lib/returns/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,7 @@ export const dynamic = 'force-dynamic';
  * Razorpay payment and refund notices for store orders.
  * The order is the one whose payment link or captured payment id matches.
  * Notes in the payload are not used to choose the business or the user.
+ * A refund notice completes a return refund of that order when one matches, else the cancellation refund.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -50,6 +53,36 @@ export async function POST(request: NextRequest) {
 
   const refund = readRazorpayRefundNotice(parsed);
   if (refund.event.startsWith('refund.') && refund.providerPaymentId && refund.providerRefundId && refund.status) {
+    // A return refund first: a full return refund has the order's full amount and must never be
+    // taken for a cancellation (that would reverse the receipt on top of the credit-note refund).
+    try {
+      const returnRefundId = await matchReturnRefundNotice({
+        businessId: order.business_id,
+        storeOrderId: order.id,
+        providerRefundId: refund.providerRefundId,
+        amountInr: refund.amountInr,
+      });
+      if (returnRefundId) {
+        const status = await applyReturnGatewayRefundResult({
+          businessId: order.business_id,
+          refundRowId: returnRefundId,
+          providerRefundId: refund.providerRefundId,
+          providerStatus:
+            refund.event === 'refund.processed' ? 'processed' : refund.event === 'refund.failed' ? 'failed' : 'pending',
+          failureReason: refund.event === 'refund.failed' ? 'Razorpay could not complete this refund' : null,
+          actor: 'webhook',
+        });
+        return NextResponse.json({ ok: true, returnRefund: status });
+      }
+    } catch (err) {
+      if (err instanceof ReturnError) {
+        // A definite answer about this notice (e.g. the attempt has a different refund): retrying will not change it.
+        console.error('[store razorpay return refund webhook]', err.code, err.message);
+        return NextResponse.json({ ok: true, ignored: true });
+      }
+      console.error('[store razorpay return refund webhook]', err);
+      return NextResponse.json({ error: 'Refund confirmation failed' }, { status: 500 });
+    }
     try {
       const result = await confirmStoreRefundFromProvider({
         businessId: order.business_id,

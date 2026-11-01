@@ -189,6 +189,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
 0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
 30 */3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron-staging.log 2>&1
+*/30 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/return-refunds >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron-staging.log 2>&1
@@ -208,6 +209,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
 0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
 30 */3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron.log 2>&1
+*/30 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/return-refunds >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron.log 2>&1
@@ -235,6 +237,8 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 `/api/cron/order-dispatch-alerts` WhatsApps the owner when paid orders have waited longer than the dispatch time set on the Orders page (only for businesses that switched the alert on). Each business gets at most one alert every 20 hours, so the hourly schedule is safe.
 
 `/api/cron/stuck-parcels` tells the buyer once when a shipped parcel has not moved for the shop's "delay notice" days (Orders & delivery > Buyer updates, default 3, 0 = off). Each parcel is claimed before the message goes, so repeated runs never message twice.
+
+`/api/cron/return-refunds` confirms return refunds still on their way to the customer's original payment. Attempts pending for over 10 minutes are checked with the gateway (Razorpay by refund id, Easebuzz by our refund id); a Razorpay attempt that never got an answer is sent again with the same idempotency key, so the gateway refunds once. A processed refund is posted against the credit note once, so repeated runs are safe; the Razorpay refund webhook usually confirms first.
 
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
 

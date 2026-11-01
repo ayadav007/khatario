@@ -210,6 +210,8 @@ export async function applyStoreRefundResult(input: {
  * Apply a provider refund notice. `businessId` and `orderId` are the store order whose
  * webhook signature was verified: the refund is looked up only inside that order, so a
  * notice signed with one store's secret can never refund another store's payment.
+ * Return refunds are matched first by the webhook (matchReturnRefundNotice); a notice for any amount
+ * other than the order's full refund is acknowledged as `ignored`.
  */
 export async function confirmStoreRefundFromProvider(input: {
   businessId: string;
@@ -239,7 +241,9 @@ export async function confirmStoreRefundFromProvider(input: {
     refund = opened;
   }
   if (input.amountInr != null && Math.round(input.amountInr * 100) !== Math.round(parseFloat(refund.amount) * 100)) {
-    throw new StoreRefundError('Refund amount does not match the store payment', 409, 'REFUND_AMOUNT_MISMATCH');
+    // Not this order's cancellation refund: acknowledged, never applied to it.
+    console.warn('[store refund] unmatched partial refund', input.orderId, input.providerRefundId, input.amountInr);
+    return { status: 'ignored' };
   }
   const applied = await applyStoreRefundResult({
     businessId: refund.business_id,
@@ -463,8 +467,23 @@ async function openWebhookRefund(input: {
       return null;
     }
     const amount = parseFloat(row.grand_total) || 0;
+    // A partial refund (a return refund, or one made in the gateway dashboard) is not a cancellation:
+    // acknowledged and left alone, so the gateway does not retry it for days.
     if (input.amountInr != null && Math.round(input.amountInr * 100) !== Math.round(amount * 100)) {
-      throw new StoreRefundError('Refund amount does not match the store payment', 409, 'REFUND_AMOUNT_MISMATCH');
+      await client.query('ROLLBACK');
+      console.warn('[store refund] unmatched partial refund', row.id, input.providerRefundId, input.amountInr);
+      return null;
+    }
+    // Money already went back for returns on this order, so a full refund cannot be this order's cancellation.
+    const returned = await client.query(
+      `SELECT 1 FROM return_gateway_refunds
+        WHERE store_order_id = $1 AND business_id = $2 AND status IN ('pending', 'processed') LIMIT 1`,
+      [row.id, row.business_id],
+    );
+    if (returned.rows.length > 0) {
+      await client.query('ROLLBACK');
+      console.warn('[store refund] unmatched refund on an order with return refunds', row.id, input.providerRefundId);
+      return null;
     }
     const refundId = randomUUID();
     const key = input.providerRefundId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);

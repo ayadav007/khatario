@@ -522,7 +522,9 @@ async function postProcessedRefund(
 /**
  * The open attempt a gateway refund notice is about, inside the store order whose notice was verified:
  * by gateway refund id, else (the notice can arrive before the id is saved) the order's pending attempt
- * with no id yet and the same amount in paise. Null = not a return refund.
+ * with no id yet and the same amount in paise. The amount match is used only when exactly one attempt
+ * fits and the refund id is not already another attempt's or a cancellation refund's, so an unrelated
+ * refund of the same amount never completes the wrong attempt. Null = not a return refund.
  */
 export async function matchReturnRefundNotice(input: {
   businessId: string;
@@ -539,14 +541,22 @@ export async function matchReturnRefundNotice(input: {
   );
   if (byId.rows[0]) return byId.rows[0].id;
   if (input.amountInr == null || !Number.isFinite(input.amountInr)) return null;
+  const known = await pool.query(
+    `SELECT 1 FROM return_gateway_refunds WHERE business_id = $1 AND provider_refund_id = $2
+     UNION ALL
+     SELECT 1 FROM store_payment_refunds WHERE business_id = $1 AND provider_refund_id = $2
+     LIMIT 1`,
+    [input.businessId, input.providerRefundId],
+  );
+  if (known.rows.length > 0) return null;
   const byAmount = await pool.query<{ id: string }>(
     `SELECT id FROM return_gateway_refunds
       WHERE business_id = $1 AND store_order_id = $2 AND status = 'pending' AND provider_refund_id IS NULL
         AND ROUND(amount * 100) = $3
-      ORDER BY created_at LIMIT 1`,
+      LIMIT 2`,
     [input.businessId, input.storeOrderId, Math.round(input.amountInr * 100)],
   );
-  return byAmount.rows[0]?.id ?? null;
+  return byAmount.rows.length === 1 ? byAmount.rows[0].id : null;
 }
 
 type PendingRow = {
