@@ -664,6 +664,9 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
   /// What the gateway can still take back, from the order's online payment.
   Map<String, dynamic> get _original => _mapOf(_ret?['original_refund']);
   bool get _originalAllowed => _original['allowed'] == true;
+
+  /// Back to the original payment is a choice once received with room left, or at the receive step when the order was paid online.
+  bool get _originalOffered => _originalAllowed || (_ret?['status'] == 'approved' && _original['eligible'] == true);
   Map<String, dynamic>? get _gateway => _ret?['gateway_refund'] is Map ? _mapOf(_ret!['gateway_refund']) : null;
 
   void _apply(Map<String, dynamic> body) {
@@ -675,8 +678,8 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
         _condition[l['id'].toString()] = l['condition']?.toString() ?? 'restock';
         _got[l['id'].toString()] = toNum(l['received_qty'] ?? l['quantity']);
       }
-      // Back to the original payment is first and preselected when the order was paid online.
-      if (_originalAllowed) {
+      // Back to the original payment is first and preselected when the order was paid online, from the receive step on.
+      if (_originalOffered) {
         _method = 'original_payment';
       } else if (_method == 'original_payment') {
         _method = 'cash';
@@ -890,7 +893,26 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
                         const SizedBox(height: 4),
                         Text('It closes by itself when the payment gateway confirms.', style: AppText.caption),
                         const SizedBox(height: AppSpace.md),
-                        KButton.secondary(label: 'Check now', icon: LucideIcons.refreshCw, expand: false, height: 44, loading: _busy, onPressed: () => _act({'action': 'check_refund'})),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            // The send never got an answer: Try again repeats the same attempt (same key), so it cannot refund twice.
+                            if ((gateway['provider_refund_id'] ?? '').toString().isEmpty && (gateway['error'] ?? '').toString().isNotEmpty)
+                              KButton(
+                                label: 'Try again',
+                                icon: LucideIcons.rotateCcw,
+                                expand: false,
+                                height: 44,
+                                loading: _busy,
+                                onPressed: () => _act({
+                                  'action': 'settle',
+                                  'refund': {'method': 'original_payment'},
+                                }),
+                              ),
+                            KButton.secondary(label: 'Check now', icon: LucideIcons.refreshCw, expand: false, height: 44, loading: _busy, onPressed: () => _act({'action': 'check_refund'})),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -954,7 +976,12 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
   /// The refund choices: back to the original payment first when the order was paid online.
   Widget _refundPicker(String status) {
     final max = toNum(_original['max']);
-    final choices = [if (_originalAllowed) 'original_payment', 'cash', 'upi', 'bank', 'store_credit'];
+    final choices = [if (_originalOffered) 'original_payment', 'cash', 'upi', 'bank', 'store_credit'];
+    // Before the goods are in, the most that can go back is an estimate (the return's value, capped by the online payment left).
+    final estimate = _original['estimated_max'];
+    final upTo = status == 'approved'
+        ? (estimate == null ? '' : ' · Up to about ${orderMoney(toNum(estimate))}')
+        : ' · Up to ${orderMoney(max)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -965,7 +992,7 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
         ),
         const SizedBox(height: 6),
         if (_method == 'original_payment') ...[
-          Text('Goes back to the UPI or card the customer paid with · Up to ${orderMoney(max)}. It reaches them in 5 to 7 working days.', style: AppText.caption),
+          Text('Goes back to the UPI or card the customer paid with$upTo. It reaches them in 5 to 7 working days.', style: AppText.caption),
           if (status == 'received') ...[
             const SizedBox(height: AppSpace.md),
             TextField(controller: _amount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount')),

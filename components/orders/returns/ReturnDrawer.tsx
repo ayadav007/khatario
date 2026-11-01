@@ -62,8 +62,14 @@ interface ReturnDetail extends ReturnPickupInfo {
   pickup: SavedPickup | null;
   shiprocket_connected: boolean;
   default_instructions: string;
-  original_refund: { allowed: boolean; max: number; reason: string | null };
-  gateway_refund: { status: 'pending' | 'processed' | 'failed'; amount: number; error: string | null } | null;
+  /** allowed / max: refundable now (received). eligible / estimated_max: paid online, so offered at the receive step. */
+  original_refund: { allowed: boolean; max: number; reason: string | null; eligible?: boolean; estimated_max?: number | null };
+  gateway_refund: {
+    status: 'pending' | 'processed' | 'failed';
+    amount: number;
+    error: string | null;
+    provider_refund_id?: string | null;
+  } | null;
   events: ReturnEventRow[];
 }
 
@@ -80,6 +86,11 @@ const WHO: Record<ReturnDetail['initiated_by'], string> = {
   customer: 'Asked by the customer',
   courier: 'Came back with the courier',
 };
+
+/** Back to the original payment is a choice once received with room left, or at the receive step when the order was paid online. */
+function offersOriginal(r: ReturnDetail): boolean {
+  return Boolean(r.original_refund?.allowed || (r.status === 'approved' && r.original_refund?.eligible));
+}
 
 /** One return: approve or reject a request, receive the goods (restock or damaged), and pay back. */
 export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
@@ -113,8 +124,9 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
         defaultInstructions: r.instructions || r.default_instructions,
       }),
     );
-    // Back to the original payment is first and preselected when the order was paid online.
-    setMethod((prev) => (r.original_refund?.allowed ? 'original_payment' : prev === 'original_payment' ? 'cash' : prev));
+    // Back to the original payment is first and preselected when the order was paid online, from the receive step on.
+    const offered = offersOriginal(r);
+    setMethod((prev) => (offered ? 'original_payment' : prev === 'original_payment' ? 'cash' : prev));
   }, []);
 
   const load = useCallback(async () => {
@@ -177,9 +189,17 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
   const accounts = (data?.payment_accounts ?? []).filter((a) => (method === 'cash' ? a.kind === 'cash' : a.kind === 'bank'));
   const original = r?.original_refund;
   const gateway = r?.gateway_refund ?? null;
-  const refundChoices: ReturnRefundMethod[] = original?.allowed
-    ? ['original_payment', 'cash', 'upi', 'bank', 'store_credit']
-    : ['cash', 'upi', 'bank', 'store_credit'];
+  const refundChoices: ReturnRefundMethod[] =
+    r && offersOriginal(r) ? ['original_payment', 'cash', 'upi', 'bank', 'store_credit'] : ['cash', 'upi', 'bank', 'store_credit'];
+  // Before the goods are in, the most that can go back is an estimate (the return's value, capped by the online payment left).
+  const originalUpTo =
+    r?.status === 'approved'
+      ? original?.estimated_max != null
+        ? ` · Up to about ${inr(original.estimated_max)}`
+        : ''
+      : original
+        ? ` · Up to ${inr(original.max)}`
+        : '';
   const wayError = way ? methodFormError(way) : null;
 
   const refundPicker = (
@@ -216,7 +236,7 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
         <div className="space-y-2">
           <p className="text-xs text-slate-500">
             Goes back to the UPI or card the customer paid with
-            {original ? ` · Up to ${inr(original.max)}` : ''}. It reaches them in 5 to 7 working days.
+            {originalUpTo}. It reaches them in 5 to 7 working days.
           </p>
           {r?.status === 'received' ? (
             <input className={input} inputMode="decimal" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -489,7 +509,7 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                         })
                       }
                     >
-                      Receive &amp; post credit note
+                      {method === 'original_payment' ? <>Receive &amp; refund</> : <>Receive &amp; post credit note</>}
                     </Button>
                     <Button variant="ghost" disabled={busy} onClick={() => void act({ action: 'cancel' })}>
                       Cancel return
@@ -512,9 +532,21 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                       </div>
                       {gateway.error ? <p className="text-xs">{gateway.error}</p> : null}
                       <p className="text-xs">It closes by itself when the payment gateway confirms.</p>
-                      <Button size="sm" variant="outline" isLoading={busy} onClick={() => void act({ action: 'check_refund' })}>
-                        Check now
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {/* The send never got an answer: Try again repeats the same attempt (same key), so it cannot refund twice. */}
+                        {!gateway.provider_refund_id && gateway.error ? (
+                          <Button
+                            size="sm"
+                            isLoading={busy}
+                            onClick={() => void act({ action: 'settle', refund: { method: 'original_payment' } })}
+                          >
+                            Try again
+                          </Button>
+                        ) : null}
+                        <Button size="sm" variant="outline" isLoading={busy} onClick={() => void act({ action: 'check_refund' })}>
+                          Check now
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <>

@@ -159,6 +159,58 @@ void main() {
     expect(api.patches.single, {'action': 'check_refund'});
   });
 
+  testWidgets('at the receive step an online-paid order has back to the original payment preselected', (tester) async {
+    final api = _ReturnApi(_return({
+      'status': 'approved',
+      'method': 'customer_sends',
+      'original_refund': {'allowed': false, 'max': 0, 'reason': 'Receive the goods before refunding', 'eligible': true, 'estimated_max': 1050},
+    }));
+    await _open(tester, api);
+    expect(find.text('Back to original payment'), findsOneWidget);
+    expect(find.textContaining('Up to about ₹1,050'), findsOneWidget);
+    await tester.tap(find.text('Receive & refund'));
+    await tester.pumpAndSettle();
+    expect(api.patches.single, {
+      'action': 'receive',
+      'lines': [
+        {'id': 'l1', 'received_qty': 2, 'condition': 'restock'},
+      ],
+      'refund': {'method': 'original_payment'},
+    });
+  });
+
+  testWidgets('a COD order at the receive step starts on cash', (tester) async {
+    final api = _ReturnApi(_return({'status': 'approved', 'method': 'customer_sends'}));
+    await _open(tester, api);
+    expect(find.text('Back to original payment'), findsNothing);
+    expect(find.text('Receive & post credit'), findsOneWidget);
+  });
+
+  testWidgets('a refund whose send got no answer offers Try again next to Check now', (tester) async {
+    final api = _ReturnApi(_return({
+      'status': 'received',
+      'gateway_refund': {'status': 'pending', 'amount': 1000, 'error': 'fetch failed', 'provider_refund_id': null},
+    }));
+    await _open(tester, api);
+    expect(find.text('Check now'), findsOneWidget);
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(api.patches.single, {
+      'action': 'settle',
+      'refund': {'method': 'original_payment'},
+    });
+  });
+
+  testWidgets('a refund the gateway has taken offers only Check now', (tester) async {
+    final api = _ReturnApi(_return({
+      'status': 'received',
+      'gateway_refund': {'status': 'pending', 'amount': 1000, 'error': 'Refunded at the gateway; posting failed: x', 'provider_refund_id': 'rfnd_1'},
+    }));
+    await _open(tester, api);
+    expect(find.text('Check now'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+  });
+
   testWidgets('a failed refund shows its error and the other methods', (tester) async {
     final api = _ReturnApi(_return({
       'status': 'received',
