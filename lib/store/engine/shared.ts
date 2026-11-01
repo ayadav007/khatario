@@ -13,6 +13,37 @@ export const ENGINE_LIMITS = {
 
 export const ID_RE = /^[a-z0-9_-]{1,32}$/;
 
+const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** `#abc`, `#aabbcc` or `#aabbccdd`. */
+export function isHexColor(value: string): boolean {
+  return COLOR_RE.test(value);
+}
+
+export function parseHttps(value: string): URL | null {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'https:' ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isRootRelative(value: string): boolean {
+  // No whitespace/control chars: browsers strip tab/newline, so "/\t/evil.com" would become "//evil.com".
+  return /^\/(?!\/)[^\s\\\x00-\x1f]*$/.test(value);
+}
+
+/** An `image` setting: '' (none), a site-relative path or an https link; anything else is undefined. */
+export function sanitizeImageLink(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim();
+  if (v === '') return '';
+  if (v.length > 2000) return undefined;
+  if (isRootRelative(v)) return v;
+  return parseHttps(v) ? v : undefined;
+}
+
 export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 export const RESERVED_PAGE_HANDLES: readonly string[] = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
 

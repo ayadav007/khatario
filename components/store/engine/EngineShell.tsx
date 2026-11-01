@@ -23,7 +23,8 @@ import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { engineRootClass } from '@/lib/store/engine/root-class';
-import { PRESET_CARD_FIELDS } from '@/lib/store/engine/card-look';
+import { PRESET_CARD_FIELDS, type EngineCardLook } from '@/lib/store/engine/card-look';
+import { resolveCardLook, sanitizeProductCard } from '@/lib/store/engine/product-card';
 import { BROWSE_CATEGORIES_EVENT, QuickCartBar, QuickTabs } from '../quick-theme/QuickChrome';
 import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
@@ -297,9 +298,17 @@ export function EngineShell({
   });
   const { kit, quick } = root;
   const cardFields = PRESET_CARD_FIELDS[theme.preset] ?? PRESET_CARD_FIELDS.studio;
-  const cardLook = useMemo(
-    () => ({ quick, phoneKit: kit, tagline: cardFields.tagline, swatches: cardFields.swatches }),
-    [quick, kit, cardFields],
+  const storeCard = useMemo(() => sanitizeProductCard(settings.product_card), [settings.product_card]);
+  const cardLook = useMemo<EngineCardLook>(
+    () => ({
+      quick,
+      phoneKit: kit,
+      tagline: cardFields.tagline,
+      swatches: cardFields.swatches,
+      storeCard,
+      card: resolveCardLook(storeCard, undefined, {}),
+    }),
+    [quick, kit, cardFields, storeCard],
   );
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 

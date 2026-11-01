@@ -1,4 +1,5 @@
 import type { SectionDataRequest, SectionSchema, SettingSchema } from '../schema-types';
+import { CARD_DESIGN_IDS, CARD_DESIGN_LABELS } from '../product-card';
 
 type ProductsRequest = NonNullable<SectionDataRequest['products']>;
 
@@ -11,6 +12,18 @@ export const PRODUCT_SOURCE_OPTIONS = [
   { value: 'category', label: 'Category' },
   { value: 'price_max', label: 'Under a price' },
 ];
+
+/** The section's Card choice: the store's card design (Theme settings), or one of the ten designs just here. */
+export const CARD_DESIGN_SETTING: SettingSchema = {
+  id: 'card_design',
+  type: 'select',
+  label: 'Card',
+  default: 'store',
+  options: [
+    { value: 'store', label: "Store's card design" },
+    ...CARD_DESIGN_IDS.map((id) => ({ value: id, label: CARD_DESIGN_LABELS[id] })),
+  ],
+};
 
 /** Product-source settings shared by featured-products and product-rail. */
 export function productSettings(withColumns: boolean): SettingSchema[] {
@@ -43,12 +56,14 @@ export function productSettings(withColumns: boolean): SettingSchema[] {
       type: 'select',
       label: 'Card style',
       default: 'bordered',
+      info: "Applies when the store uses Theme's own card",
       options: [
         { value: 'bordered', label: 'Bordered' },
         { value: 'shadow', label: 'Shadow' },
         { value: 'minimal', label: 'Minimal' },
       ],
     },
+    CARD_DESIGN_SETTING,
     { id: 'show_rating', type: 'checkbox', label: 'Show rating', default: true },
     { id: 'show_badges', type: 'checkbox', label: 'Show badges', default: true },
     { id: 'show_tagline', type: 'checkbox', label: 'Show tagline', default: false },

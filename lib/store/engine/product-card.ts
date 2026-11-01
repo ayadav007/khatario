@@ -1,8 +1,6 @@
 // Client-safe: no server imports. The store product card: settings, defaults, sanitiser, the ten designs and the
 // pure helpers the cards and the editor share (spec: docs/superpowers/specs/2026-11-01-store-product-cards-design.md).
-import { isHexColor, sanitizeSettingValue } from './settings';
-import type { SettingSchema } from './schema-types';
-import { ID_RE, normaliseLineList } from './shared';
+import { ID_RE, isHexColor, normaliseLineList, sanitizeImageLink } from './shared';
 
 export const CARD_LINE_IDS = ['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'swatches', 'buttons'] as const;
 export type CardLineId = (typeof CARD_LINE_IDS)[number];
@@ -192,7 +190,6 @@ const RANGES = {
   padding: [0, 24],
 } as const;
 
-const IMAGE_SCHEMA: SettingSchema = { id: 'image', type: 'image', label: 'Image' };
 const SCHEME_ID_RE = ID_RE;
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -217,7 +214,7 @@ export function sanitizeProductCard(raw: unknown, schemeIds?: ReadonlySet<string
   }
   if (r.name_lines === 1 || r.name_lines === 2) out.name_lines = r.name_lines;
   if (typeof r.image_bg === 'string' && (r.image_bg === '' || isHexColor(r.image_bg))) out.image_bg = r.image_bg;
-  const picture = sanitizeSettingValue(IMAGE_SCHEMA, r.background_image);
+  const picture = sanitizeImageLink(r.background_image);
   if (typeof picture === 'string') out.background_image = picture;
   if (typeof r.color_scheme === 'string' && (r.color_scheme === '' || (SCHEME_ID_RE.test(r.color_scheme) && (!schemeIds || schemeIds.has(r.color_scheme))))) {
     out.color_scheme = r.color_scheme;

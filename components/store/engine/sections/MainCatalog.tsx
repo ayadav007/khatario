@@ -1,4 +1,5 @@
 import type { EngineSectionProps } from '../registry';
+import { CardLookScope } from '../CardLookScope';
 import { MainCatalogView, type CatalogPromo } from '../catalog/MainCatalogView';
 import { blockSettings, str, withDefaults } from './shared';
 
@@ -32,19 +33,21 @@ export function MainCatalog({ section, route, data }: EngineSectionProps) {
     });
   }
   return (
-    <MainCatalogView
-      categoryId={route?.categoryId ?? null}
-      settings={{
-        columnsDesktop: clamp(s.columns_desktop, 2, 5, 4),
-        columnsMobile: clamp(s.columns_mobile, 1, 3, 2),
-        showFilters: s.show_filters !== false,
-        showSort: s.show_sort !== false,
-        showCount: s.show_count !== false,
-        fullWidth: s.full_width === true,
-        rail,
-      }}
-      promos={promos}
-      railCategories={railCategories}
-    />
+    <CardLookScope design={str(s.card_design)}>
+      <MainCatalogView
+        categoryId={route?.categoryId ?? null}
+        settings={{
+          columnsDesktop: clamp(s.columns_desktop, 2, 5, 4),
+          columnsMobile: clamp(s.columns_mobile, 1, 3, 2),
+          showFilters: s.show_filters !== false,
+          showSort: s.show_sort !== false,
+          showCount: s.show_count !== false,
+          fullWidth: s.full_width === true,
+          rail,
+        }}
+        promos={promos}
+        railCategories={railCategories}
+      />
+    </CardLookScope>
   );
 }

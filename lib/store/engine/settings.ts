@@ -3,12 +3,21 @@ import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
-import { ID_RE, VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings, normaliseLineList, type LineItem } from './shared';
+import {
+  ID_RE,
+  VIDEO_HOSTS as VIDEO_HOST_LIST,
+  defaultSettings,
+  isHexColor,
+  isRootRelative,
+  normaliseLineList,
+  parseHttps,
+  sanitizeImageLink,
+  type LineItem,
+} from './shared';
 
-export { defaultSettings };
+export { defaultSettings, isHexColor };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const SCHEME_ID_RE = /^[a-z0-9_-]{1,32}$/;
 const VIDEO_HOSTS = new Set(VIDEO_HOST_LIST);
 const FONTS: readonly string[] = STORE_FONT_FAMILIES.filter((f) => f !== 'system');
@@ -22,28 +31,9 @@ const RICHTEXT_OPTIONS: sanitizeHtml.IOptions = {
   allowProtocolRelative: false,
 };
 
-/** `#abc`, `#aabbcc` or `#aabbccdd`. */
-export function isHexColor(value: string): boolean {
-  return COLOR_RE.test(value);
-}
-
 function clipText(raw: unknown, max: number): string | undefined {
   if (typeof raw !== 'string') return undefined;
   return raw.trim().slice(0, max);
-}
-
-function parseHttps(value: string): URL | null {
-  try {
-    const u = new URL(value);
-    return u.protocol === 'https:' ? u : null;
-  } catch {
-    return null;
-  }
-}
-
-function isRootRelative(value: string): boolean {
-  // No whitespace/control chars: browsers strip tab/newline, so "/\t/evil.com" would become "//evil.com".
-  return /^\/(?!\/)[^\s\\\x00-\x1f]*$/.test(value);
 }
 
 function sanitizeNumber(schema: SettingSchema, raw: unknown, round: boolean): number | undefined {
@@ -94,14 +84,8 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
       return typeof raw === 'string' && (raw === '' || isHexColor(raw)) ? raw : undefined;
     case 'color_scheme':
       return typeof raw === 'string' && SCHEME_ID_RE.test(raw) ? raw : undefined;
-    case 'image': {
-      if (typeof raw !== 'string') return undefined;
-      const v = raw.trim();
-      if (v === '') return '';
-      if (v.length > 2000) return undefined;
-      if (isRootRelative(v)) return v;
-      return parseHttps(v) ? v : undefined;
-    }
+    case 'image':
+      return sanitizeImageLink(raw);
     case 'url': {
       if (typeof raw !== 'string') return undefined;
       const v = raw.trim();

@@ -1,4 +1,5 @@
 import type { SectionSchema } from '../schema-types';
+import { CARD_DESIGN_SETTING } from './featured-products';
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback;
@@ -13,6 +14,7 @@ export const categoryShelves: SectionSchema = {
   settings: [
     { id: 'max_categories', type: 'range', label: 'Categories', min: 1, max: 12, step: 1, default: 6 },
     { id: 'per_shelf', type: 'range', label: 'Products per shelf', min: 4, max: 12, step: 1, default: 8 },
+    CARD_DESIGN_SETTING,
     { id: 'show_view_all', type: 'checkbox', label: 'Show "View all"', default: true },
   ],
   presets: [{ name: 'Category shelves', settings: { max_categories: 6, per_shelf: 8, show_view_all: true } }],

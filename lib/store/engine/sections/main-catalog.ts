@@ -1,4 +1,5 @@
 import type { SectionSchema } from '../schema-types';
+import { CARD_DESIGN_SETTING } from './featured-products';
 
 /**
  * Product grid (D14, D18): the store's products with filters and sort held in the URL, locked to the
@@ -25,6 +26,7 @@ export const mainCatalog: SectionSchema = {
     },
     { id: 'columns_desktop', type: 'range', label: 'Columns on desktop', min: 2, max: 5, step: 1, default: 4 },
     { id: 'columns_mobile', type: 'range', label: 'Columns on mobile', min: 1, max: 3, step: 1, default: 2 },
+    CARD_DESIGN_SETTING,
     { id: 'show_filters', type: 'checkbox', label: 'Show filters', default: true },
     { id: 'show_sort', type: 'checkbox', label: 'Show sort', default: true },
     { id: 'show_count', type: 'checkbox', label: 'Show product count', default: true, info: 'The "12 products" line above the grid' },
