@@ -15,6 +15,11 @@ export const RAIL_CSS =
   '.eng-rail{display:grid;grid-template-columns:84px minmax(0,1fr);align-items:start}' +
   '.eng-rail-nav{position:sticky;top:var(--eng-rail-top,0px);max-height:calc(100vh - var(--eng-rail-top,0px));overflow-y:auto;scrollbar-width:none;background:var(--c-card,var(--st-card,#fff));border-right:1px solid var(--c-border,var(--st-line,rgba(0,0,0,.08)));padding:4px 0 120px}' +
   '.eng-rail-nav::-webkit-scrollbar{display:none}' +
+  // A header that does not stay (EngineShell `st-sticky--none`) or is hidden while scrolling down
+  // (`st-sticky--hidden`, still its full height) leaves no band to pin under: the rail goes to the top.
+  '.eng-rail-nav{transition:top .25s ease,max-height .25s ease}' +
+  '.st-root.eng-root:has(>.st-sticky--none) .eng-rail-nav,.st-root.eng-root:has(>.st-sticky--hidden:not(:focus-within)) .eng-rail-nav{top:0;max-height:100vh}' +
+  '@media (prefers-reduced-motion: reduce){.eng-rail-nav{transition:none}}' +
   '.eng-rail-nav button{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;border:0;background:none;color:inherit;padding:10px 4px;cursor:pointer;text-align:center}' +
   '.eng-rail-pic{width:52px;height:52px;border-radius:14px;object-fit:cover;background:color-mix(in srgb,var(--c-accent,var(--primary)) 10%,var(--c-card,var(--st-card,#fff)));display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--c-accent,var(--primary));transition:transform .2s}' +
   '.eng-rail-pic svg{width:24px;height:24px}' +

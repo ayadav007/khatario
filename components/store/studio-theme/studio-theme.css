@@ -42,6 +42,10 @@
 /* Engine header choices (headerLayoutClasses, logoWidthStyle, EngineShell sticky); none of these classes is set on the
    old Studio store. Centred logo: equal-width groups either side, search left, icons right (search too after an
    inline menu); the menu row stays centred at every desktop width. */
+/* Three tracks: the left group never below 80px (room for "More ▾"; the inline menu folds into its track), the right
+   group never below its content (search minimum plus icons), and the logo takes what is left (its text ellipsises),
+   so nothing can slide over the logo at any width; with room to spare both groups are equal and the logo is centred. */
+.st-root .hdr-logo-center .header{display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,auto) minmax(min-content,1fr)}
 .st-root .hdr-side{display:flex;align-items:center;gap:20px;flex:1 1 0;min-width:0}
 .st-root .hdr-end{justify-content:flex-end}
 .st-root .hdr-start .search{flex:0 1 320px}
@@ -245,6 +249,8 @@
 @container store (max-width: 900px){
 .st-root .header{padding:12px 22px;gap:16px}
 .st-root .nav{padding:10px 22px;justify-content:flex-start;gap:16px}
+/* Centred logo with the inline menu on tablets: a narrower search keeps the logo near the middle for longer. */
+.st-root .hdr-logo-center .header.hasInline .search{min-width:110px}
 .st-root .hero,.st-root .hero.text-image,.st-root .hero.image-text{grid-template-columns:1fr 1fr}
 .st-root .heroCopy{padding:36px 28px}
 .st-root .heroCopy h1{font-size:clamp(26px,5.2cqi,40px)}
@@ -269,6 +275,8 @@
 .st-root .search{flex:1 1 100%;order:3}
 .st-root .nav{padding:8px 14px;gap:14px}
 /* Engine header on phones: the centred-logo groups dissolve into today's row; logo width from the phone setting only. */
+.st-root .hdr-logo-center .header{display:flex}
+.st-root .hdr-logo-center .header.hasInline .search{min-width:0}
 .st-root .hdr-side{display:contents}
 .st-root .hdr-start .search{flex:1 1 100%}
 .st-root .header.iconsLeft .hdr-end .icons{order:-1}
