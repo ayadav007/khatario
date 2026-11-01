@@ -13,11 +13,11 @@ Use the E2E store on staging (staging E2E keys in `.env`: `E2E_TEST_PHONE`, `E2E
 2. - [ ] **Check Shiprocket's return field names.** From the repo root, with the owner's Shiprocket API login in the environment (set `SHIPROCKET_EMAIL` and `SHIPROCKET_PASSWORD`; never paste them into chat or a file):
    `node scripts/check-shiprocket-return.mjs`
    It creates a dummy return order `RET-CHECK-<timestamp>` from the account's primary pickup address back to itself, prints Shiprocket's answer, then cancels it. If Shiprocket rejects a field name, the fix is in `createReturnOrder` in `lib/store/delivery/shiprocket.ts` (the script says which). Do this before the journey: every pickup booking depends on it.
-3. - [ ] **Razorpay webhook, per store.** In each store's Razorpay dashboard, open the webhook that points at the store webhook and tick **`refund.processed`** and **`refund.failed`** (the existing payment events stay ticked). Without them the cron (step 4) still confirms refunds, but only every 30 minutes.
-4. - [ ] **Cron.** Add the `/api/cron/return-refunds` line to the staging crontab (every 30 minutes). The exact line is already in `docs/SERVER_INFRASTRUCTURE.md` (staging block). It needs `CRON_SECRET` in the clone's `.env.production`.
-   - [ ] After the first run, the log `/var/log/khatario-cron-staging.log` shows a 200 with no error.
-5. - [ ] Deploy the code to staging (see `docs/SERVER_INFRASTRUCTURE.md`). Production is **not** part of this checklist.
-6. - [ ] Shiprocket tracking: no new webhook. Return shipments post to the same tracking URL with `is_return = 1`. The journey below confirms it with one real staging return.
+3. - [ ] **Cron line.** Add the `/api/cron/return-refunds` line to the staging crontab (every 30 minutes). The exact line is already in `docs/SERVER_INFRASTRUCTURE.md` (staging block). It needs `CRON_SECRET` in the clone's `.env.production`. The endpoint does not exist until step 4, so do not expect a good answer from it yet.
+4. - [ ] **Deploy the code to staging** (see `docs/SERVER_INFRASTRUCTURE.md`). Production is **not** part of this checklist.
+5. - [ ] **Razorpay webhook, per store, after the deploy.** In each store's Razorpay dashboard, open the webhook that points at the store webhook and tick **`refund.processed`** and **`refund.failed`** (the existing payment events stay ticked). Why after the deploy: the old handler already treats every `refund.*` notice as a confirmation of the whole-order cancellation refund and answers 500 (so Razorpay keeps retrying) when the amount does not match one. No return refund can exist before the deploy, so ticking earlier is harmless, but the new handler is what routes a partial return refund correctly. Without the two events the cron (below) still confirms refunds, only every 30 minutes.
+6. - [ ] **Cron check.** After the first run following the deploy, `/var/log/khatario-cron-staging.log` shows a 200 with no error.
+7. - [ ] Shiprocket tracking: no new webhook. Return shipments post to the same tracking URL with `is_return = 1`. The journey below confirms it with one real staging return.
 
 ## B. Set-up checks
 

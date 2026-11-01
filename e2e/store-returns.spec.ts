@@ -63,6 +63,18 @@ let returnId = '';
 let awb = '';
 
 const gate = configBlock();
+/** Set by the first test when it cannot sign in; every later (serial) test then skips instead of failing. */
+let runtimeBlock: string | null = null;
+
+/** The order's card on the store account page, matched on the exact order number. */
+const orderCard = () => customerPage.locator('li').filter({ has: customerPage.getByText(orderNumber, { exact: true }) }).first();
+
+/** A progress step is done when it has the tick (not the empty circle) and the dark text. */
+async function expectStepDone(card: ReturnType<typeof orderCard>, label: string) {
+  const step = card.locator('ol li').filter({ hasText: label });
+  await expect(step).toHaveClass(/text-gray-900/);
+  await expect(step.locator('svg')).toBeVisible();
+}
 
 test.beforeAll(async ({ browser }) => {
   if (gate) return;
@@ -78,7 +90,7 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(() => {
-  test.skip(Boolean(gate), gate || undefined);
+  test.skip(Boolean(gate || runtimeBlock), gate || runtimeBlock || undefined);
 });
 
 /** The return the shop sees, through its own session (never an id typed by hand). */
@@ -107,11 +119,14 @@ test('customer asks for a return from the store account', async () => {
     const dev = await customerPage.getByText(/Dev code:/i).textContent({ timeout: 10_000 }).catch(() => null);
     code = dev?.replace(/\D/g, '') ?? '';
   }
-  test.skip(code.length !== 6, 'BLOCKED: no sign-in code (set E2E_STORE_CUSTOMER_OTP)');
+  if (code.length !== 6) {
+    runtimeBlock = 'BLOCKED: no sign-in code (set E2E_STORE_CUSTOMER_OTP)';
+    test.skip(true, runtimeBlock);
+  }
   const boxes = customerPage.locator('input[maxlength="1"]');
   for (let i = 0; i < 6; i += 1) await boxes.nth(i).fill(code[i]);
 
-  const card = customerPage.locator('li', { hasText: orderNumber }).first();
+  const card = orderCard();
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.getByRole('button', { name: /return items/i }).click();
 
@@ -158,10 +173,11 @@ test('the shop approves it with a courier pickup', async () => {
 
 test('the customer sees the approval and the pickup', async () => {
   await customerPage.goto('/account', { waitUntil: 'domcontentloaded' });
-  const card = customerPage.locator('li', { hasText: orderNumber }).first();
-  await expect(card.getByText(/Approved/).first()).toBeVisible({ timeout: 30_000 });
-  await expect(card.getByText('Picked up')).toBeVisible();
-  await expect(card.getByRole('link', { name: /track/i }).first()).toBeVisible();
+  const card = orderCard();
+  await expect(card.getByText(/Return RET-\d+: Approved/)).toBeVisible({ timeout: 30_000 });
+  await expectStepDone(card, 'Approved');
+  await expect(card.getByText(/Pickup booked/)).toBeVisible();
+  await expect(card.getByRole('link', { name: new RegExp(`Track pickup \(AWB ${awb}\)`) })).toBeVisible();
 });
 
 test('Shiprocket tracking reaches the return, not the store order', async () => {
@@ -203,7 +219,8 @@ test('the shop receives the goods and refunds to the original payment', async ()
 
 test('the customer sees the return as refunded', async () => {
   await customerPage.goto('/account', { waitUntil: 'domcontentloaded' });
-  const card = customerPage.locator('li', { hasText: orderNumber }).first();
-  await expect(card.getByText(/Completed/i).first()).toBeVisible({ timeout: 30_000 });
-  await expect(card.getByText('Refunded').first()).toBeVisible();
+  const card = orderCard();
+  await expect(card.getByText(/Return RET-\d+: Completed/)).toBeVisible({ timeout: 30_000 });
+  await expectStepDone(card, 'Refunded');
+  await expect(card.getByText(/refunded to your original payment/i)).toBeVisible();
 });
