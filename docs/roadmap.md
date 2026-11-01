@@ -5,6 +5,7 @@
 ## Now
 - Staging QA run: apply migration 432 (HR monthly limits, needs owner approval), then attendance, payroll and payslips [[docs/qa/staging-scenario-results.md]]
 - Orders and delivery: close the fulfilment gaps [[docs/plan/ORDERS_FULFILMENT_GAPS.md]]
+- Order returns release 1: Shiprocket return pickup on approval, refund to original payment, return WhatsApp messages, not-returnable products, five Shiprocket/return fixes; spec approved, 14-task plan written; next: owner picks the execution method, then build (migration 460, test DB only) [[docs/superpowers/plans/2026-11-01-order-returns-pickup-refund.md]] [[docs/superpowers/specs/2026-11-01-order-returns-pickup-refund-design.md]]
 - Store khata: built, checked in the browser on the test DB and committed; next migration 444 on staging (owner approval) and the khata-statements cron line at deploy [[docs/plan/STORE_KHATA.md]]
 
 ## Next
