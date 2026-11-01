@@ -30,6 +30,6 @@ describe('product sections: Card choice', () => {
 
   it.each(['featured-products', 'product-rail'] as const)('%s says its Card style applies to the theme\'s own card', (type) => {
     const style = getSectionSchema(type)!.settings.find((s) => s.id === 'card_style');
-    expect(style?.info).toBe("Applies when the store uses Theme's own card");
+    expect(style?.info).toBe("Applies when this section's card is Theme's own");
   });
 });

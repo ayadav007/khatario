@@ -262,11 +262,27 @@ describe('designedCardRoot', () => {
   });
 
   it('marks a boxed card (border, shadow or own scheme) apart from a plain one', () => {
-    const cls = (over: Partial<ResolvedCardLook>) => designedCardRoot(look(over), [], { outOfStock: false, hasAlt: false }).className.split(' ');
+    const cls = (over: Partial<ResolvedCardLook>) =>
+      designedCardRoot(look(over), DEFAULT_COLOR_SCHEMES, { outOfStock: false, hasAlt: false }).className.split(' ');
     expect(cls({ border: 1, shadow: 'none' })).toContain('pc-box');
     expect(cls({ border: 0, shadow: 'soft' })).toContain('pc-box');
     expect(cls({ border: 0, shadow: 'none', color_scheme: 'scheme-3' })).toContain('pc-box');
     expect(cls({ border: 0, shadow: 'none' })).toContain('pc-plain');
+  });
+
+  it('paints its own scheme (pc-scheme, pc-box) only when the theme has that scheme', () => {
+    const cls = (over: Partial<ResolvedCardLook>, schemes = DEFAULT_COLOR_SCHEMES) =>
+      designedCardRoot(look({ border: 0, shadow: 'none', ...over }), schemes, { outOfStock: false, hasAlt: false }).className.split(' ');
+    expect(cls({ color_scheme: 'scheme-3' })).toEqual(expect.arrayContaining(['pc-scheme', 'pc-box']));
+    // A scheme the theme lacks (e.g. Dark's scheme-3 picked through a section in a theme without it): section colours, no box.
+    for (const c of [cls({ color_scheme: 'scheme-9' }), cls({ color_scheme: 'scheme-3' }, [])]) {
+      expect(c).not.toContain('pc-scheme');
+      expect(c).not.toContain('pc-box');
+      expect(c).toContain('pc-plain');
+    }
+    expect(cls({ color_scheme: 'scheme-9', border: 1 })).toEqual(expect.arrayContaining(['pc-box']));
+    expect(cls({ color_scheme: '' })).not.toContain('pc-scheme');
+    expect(cardLookClasses(look({ color_scheme: 'scheme-3' }))).not.toContain('pc-scheme');
   });
 
   it('adds hasAlt and pc-out when they apply', () => {

@@ -90,6 +90,22 @@
 .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-layout-row .pc-body {
   padding-top: 0;
 }
+/* A grid of photo-left cards: one card per row on phones, columns of at least 300px on wider screens (whatever the
+   section's columns); a carousel's cards get wider too. Only a grid holding such a card matches (Theme's own never). */
+.st-root.eng-root :is(.productGrid, .eng-catalog-grid):is(.productGrid, .eng-catalog-grid):not(.carousel):has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.st-root.eng-root .productGrid.productGrid.carousel:has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+  grid-auto-columns: min(100%, 340px);
+}
+@container store (max-width: 640px) {
+  .st-root.eng-root :is(.productGrid, .eng-catalog-grid):is(.productGrid, .eng-catalog-grid):not(.carousel):has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .st-root.eng-root .productGrid.productGrid.carousel:has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+    grid-auto-columns: calc(100% - 36px);
+  }
+}
 /* Background picture: behind the details. */
 .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-bgimg .pc-body {
   background: var(--pc-bg-image) center / cover no-repeat;
@@ -354,8 +370,9 @@
 .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-natural .pimg :is(.main, .pc-more) {
   height: auto;
 }
-/* The hover photo covers the photo inside the padding. */
+/* The hover photo covers the photo inside the padding; pointer events pass through to the swipe track below it. */
 .st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .alt {
+  pointer-events: none;
   position: absolute;
   top: var(--pc-img-padding, 0px);
   left: var(--pc-img-padding, 0px);

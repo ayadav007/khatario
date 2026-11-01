@@ -264,11 +264,12 @@ export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; o
                         style={{ background: rootStyle.backgroundColor as string | undefined }}
                         onClick={() => setSelected(id)}
                       >
-                        {/* A one-column product grid, as a product section draws it with its default (bordered) card style. */}
+                        {/* A one-column product grid, as a product section draws it with its default (bordered) card style.
+                            The List card spans two tiles and fills them, as the store gives it a full phone row or a 300px+ column. */}
                         <div
                           aria-hidden="true"
                           ref={(el) => el?.setAttribute('inert', '')}
-                          className={clsx('productGrid pointer-events-none', wide ? 'mx-auto max-w-sm' : '')}
+                          className="productGrid pointer-events-none"
                           style={GRID_ONE}
                         >
                           {tile(id)}

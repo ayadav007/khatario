@@ -506,7 +506,7 @@ export function cardLookClasses(look: ResolvedCardLook): string {
   if (!look.show_mrp) c.push('pc-nomrp');
   if (look.image_bg) c.push('pc-imgbg');
   if (look.background_image) c.push('pc-bgimg');
-  if (look.color_scheme) c.push('pc-scheme');
+  // `pc-scheme` (the card's own colour scheme) is added by `designedCardRoot`, which knows whether the theme has it.
   if (nameAndPriceInRow(look)) c.push('pc-row-np');
   return c.join(' ');
 }

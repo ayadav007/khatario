@@ -179,24 +179,28 @@ export function cardButtonPlan(
 }
 
 /**
- * The card root of a designed card: `product pc-on`, the look's classes, `pc-box` (a card with a border, shadow or its
- * own scheme paints a box) or `pc-plain`, plus `hasAlt` and `pc-out`; the look's variables and its colour scheme's.
+ * The card root of a designed card: `product pc-on`, the look's classes, `pc-scheme` when its own colour scheme is one
+ * the theme has, `pc-box` (a card with a border, shadow or such a scheme paints a box) or `pc-plain`, plus `hasAlt` and
+ * `pc-out`; the look's variables and its colour scheme's. A scheme the theme lacks leaves the section's colours.
  */
 export function designedCardRoot(
   look: ResolvedCardLook,
   schemes: readonly ColorScheme[],
   state: { outOfStock?: boolean; hasAlt: boolean },
 ): { className: string; style: Record<string, string> } {
-  const boxed = look.border > 0 || look.shadow !== 'none' || !!look.color_scheme;
+  const schemeVars = cardSchemeVars(look.color_scheme, schemes);
+  const ownScheme = Object.keys(schemeVars).length > 0;
+  const boxed = look.border > 0 || look.shadow !== 'none' || ownScheme;
   const className = [
     'product',
     'pc-on',
     cardLookClasses(look),
+    ownScheme ? 'pc-scheme' : '',
     boxed ? 'pc-box' : 'pc-plain',
     state.hasAlt ? 'hasAlt' : '',
     state.outOfStock ? 'pc-out' : '',
   ]
     .filter(Boolean)
     .join(' ');
-  return { className, style: { ...cardLookVars(look), ...cardSchemeVars(look.color_scheme, schemes) } };
+  return { className, style: { ...cardLookVars(look), ...schemeVars } };
 }

@@ -931,7 +931,7 @@ function DesignedProductTile({
   const galleryKey = gallery.join('\n');
   const [broken, setBroken] = useState<string[]>([]);
   const [logoBroken, setLogoBroken] = useState(false);
-  useEffect(() => setBroken([]), [galleryKey]);
+  useEffect(() => setBroken((b) => (b.length ? [] : b)), [galleryKey]);
   useEffect(() => setLogoBroken(false), [placeholderLogo]);
   const drop = (src: string) => setBroken((b) => (b.includes(src) ? b : [...b, src]));
   const photo = cardPhotoState(
@@ -1073,7 +1073,7 @@ function DesignedProductTile({
           {!first ? (
             placeholder
           ) : photo.swipe ? (
-            <div className="pc-track" ref={slide.ref}>
+            <div className="pc-track" ref={slide.ref} tabIndex={-1}>
               {photo.photos.map((src, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -1192,11 +1192,14 @@ function designedCardControl(control: CardControl, shape: 'full' | 'pill' | 'ico
   // The pill reads ADD / BUY; its spoken name starts with that word.
   const spoken = shape === 'pill' ? (buy ? 'Buy now' : actions.hasOptions ? 'Add, choose options' : 'Add to cart') : label;
   const Icon = buy ? ShoppingBag : shape === 'side' ? ShoppingCart : Plus;
+  // An add button that stays a button (no stepper) stops at the stock limit, as the stepper's + does.
+  const atLimit = !buy && !actions.hasOptions && actions.inCart > 0 && !actions.canInc;
   return (
     <button
       type="button"
       className={`addBtn pc-ctl-${shape} pc-do-${control}`}
       onClick={buy ? actions.onBuy : actions.onAdd}
+      disabled={atLimit}
       aria-label={iconOnly || shape === 'pill' || count ? (count ? `${spoken}, ${count} in cart` : spoken) : undefined}
     >
       {iconOnly ? <Icon aria-hidden="true" /> : shape === 'pill' ? (buy ? 'BUY' : 'ADD') : label}

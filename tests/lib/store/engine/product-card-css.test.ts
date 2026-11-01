@@ -62,4 +62,13 @@ describe('product-card.css', () => {
       expect(sel).toMatch(/\.product\.pc-on\.pc-on\.pc-on(?![\w-])/);
     }
   });
+
+  it('changes a grid or carousel only when it holds a photo-left (row) card', () => {
+    // Rules whose subject is the grid itself (not a card inside it).
+    const gridRules = all.filter((sel) => /(productGrid|eng-catalog-grid)[^ ]*$/.test(sel.replace(/:has\([^)]*\)/, '')));
+    expect(gridRules.length).toBeGreaterThanOrEqual(4);
+    for (const sel of gridRules) expect(sel).toMatch(/:has\(> \.product\.pc-on\.pc-on\.pc-on\.pc-layout-row\)$/);
+    expect(css).toMatch(/grid-template-columns: repeat\(auto-fill, minmax\(min\(100%, 300px\), 1fr\)\)/);
+    expect(css).toMatch(/@container store \(max-width: 640px\) \{[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  });
 });

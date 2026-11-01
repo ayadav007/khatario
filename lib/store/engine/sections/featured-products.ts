@@ -56,7 +56,7 @@ export function productSettings(withColumns: boolean): SettingSchema[] {
       type: 'select',
       label: 'Card style',
       default: 'bordered',
-      info: "Applies when the store uses Theme's own card",
+      info: "Applies when this section's card is Theme's own",
       options: [
         { value: 'bordered', label: 'Bordered' },
         { value: 'shadow', label: 'Shadow' },
