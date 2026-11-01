@@ -14,6 +14,7 @@ Map<String, dynamic> itemCreateBody({
   String description = '',
   bool showInStore = false,
   bool featuredInStore = false,
+  bool storeReturnable = true,
 }) {
   final service = itemType == 'service';
   final selling = num.tryParse(sellingPrice);
@@ -35,6 +36,7 @@ Map<String, dynamic> itemCreateBody({
     'gst_included': false,
     'show_in_store': showInStore,
     'featured_in_store': featuredInStore,
+    'store_returnable': storeReturnable,
     'country_of_origin': 'IN',
   };
   return body;
@@ -61,6 +63,7 @@ Map<String, dynamic> itemUpdateBody({
   String description = '',
   bool showInStore = false,
   bool featuredInStore = false,
+  bool storeReturnable = true,
 }) {
   final body = itemCreateBody(
     name: name,
@@ -75,6 +78,7 @@ Map<String, dynamic> itemUpdateBody({
     description: description,
     showInStore: showInStore,
     featuredInStore: featuredInStore,
+    storeReturnable: storeReturnable,
   );
   body.remove('has_variants');
   body.remove('variants');

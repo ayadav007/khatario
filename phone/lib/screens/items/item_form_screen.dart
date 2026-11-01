@@ -39,6 +39,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   String _unit = 'PCS';
   bool _store = false;
   bool _featured = false;
+  bool _returnable = true;
   bool _saving = false;
   bool _loading = false;
   bool _missing = false;
@@ -79,8 +80,9 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
       _unit = unit.isEmpty ? 'PCS' : unit;
       _store = row['show_in_store'] == true;
       _featured = row['featured_in_store'] == true;
+      _returnable = row['store_returnable'] != false;
       _complex = _set(row['has_variants']) || _set(row['is_bundle']);
-      _more = _code.text.isNotEmpty || _purchase.text.isNotEmpty || _hsn.text.isNotEmpty || _description.text.isNotEmpty || _store || _featured;
+      _more = _code.text.isNotEmpty || _purchase.text.isNotEmpty || _hsn.text.isNotEmpty || _description.text.isNotEmpty || _store || _featured || !_returnable;
     } catch (_) {
       _missing = true;
     } finally {
@@ -126,6 +128,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
         description: _description.text,
         showInStore: _store,
         featuredInStore: _featured,
+        storeReturnable: _returnable,
       );
       if (widget.editing) {
         final existing = _existing;
@@ -144,6 +147,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           description: fields.description,
           showInStore: fields.showInStore,
           featuredInStore: fields.featuredInStore,
+          storeReturnable: fields.storeReturnable,
         ));
       } else {
         await widget.session.api.postJson('/api/items', itemCreateBody(
@@ -160,6 +164,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           description: fields.description,
           showInStore: fields.showInStore,
           featuredInStore: fields.featuredInStore,
+          storeReturnable: fields.storeReturnable,
         ));
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -302,6 +307,13 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                                   title: Text('Show in online store', style: AppText.body),
                                   value: _store,
                                   onChanged: (v) => setState(() => _store = v),
+                                ),
+                                SwitchListTile.adaptive(
+                                  contentPadding: EdgeInsets.zero,
+                                  activeTrackColor: AppColors.brand,
+                                  title: Text('Customers can return this online', style: AppText.body),
+                                  value: _returnable,
+                                  onChanged: (v) => setState(() => _returnable = v),
                                 ),
                                 SwitchListTile.adaptive(
                                   contentPadding: EdgeInsets.zero,

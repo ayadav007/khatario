@@ -245,7 +245,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return [
       KChipBar<String>(
         value: _returnFilter,
-        options: const [('open', 'Open'), ('requested', 'Requested'), ('approved', 'Awaiting goods'), ('received', 'Refund due'), ('closed', 'Closed'), ('', 'All')],
+        options: const [('open', 'Open'), ('requested', 'Requested'), ('approved', 'Awaiting goods'), ('received', 'Refund due'), ('refund_pending', 'Refund pending'), ('closed', 'Closed'), ('', 'All')],
         onChanged: (v) {
           setState(() => _returnFilter = v);
           _loadReturns();
@@ -278,6 +278,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         final (tone, label) = returnTone(r['status'].toString());
                         return KPill(label: label, tone: tone);
                       }),
+                      ReturnChips(r),
                     ],
                   ),
                   onTap: () => _openReturn(r['id'].toString()),

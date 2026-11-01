@@ -560,10 +560,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 KListRow(
                   title: r['return_number'].toString(),
                   subtitle: '${enIn(toNum(r['total_qty']))} item(s)${toNum(r['credit_amount']) > 0 ? ' · ${orderMoney(r['credit_amount'])}' : ''}',
-                  trailing: Builder(builder: (_) {
-                    final (t, l) = returnTone(r['status'].toString());
-                    return KPill(label: l, tone: t);
-                  }),
+                  trailing: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Builder(builder: (_) {
+                        final (t, l) = returnTone(r['status'].toString());
+                        return KPill(label: l, tone: t);
+                      }),
+                      ReturnChips(r),
+                    ],
+                  ),
                   onTap: () async {
                     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReturnDetailScreen(session: widget.session, id: r['id'].toString())));
                     _load();
