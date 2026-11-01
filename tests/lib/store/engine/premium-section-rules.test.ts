@@ -125,3 +125,19 @@ describe('premium section rules', () => {
     expect(PREMIUM_SECTION_RULES.indexOf('calc(100%/2.2)')).toBeGreaterThan(PREMIUM_SECTION_RULES.indexOf('calc(100%/var(--eng-cols))'));
   });
 });
+
+describe('premium section gutters', () => {
+  const S = ':is(.eng-collage,.eng-look-sec,.eng-gallery)';
+  const at = (query: string, rule: string) => `@container store (${query}){${rule}}`;
+
+  it('keeps Collage, Shop the look and Image gallery off the store edges like the other sections (38 / 22 / 14 px)', () => {
+    expect(ruleBody(`.st-root.eng-root ${S}`)).toContain('padding-inline:38px');
+    expect(PREMIUM_SECTION_RULES).toContain(at('max-width:900px', `.st-root.eng-root ${S}{padding-inline:22px}`));
+    expect(PREMIUM_SECTION_RULES).toContain(at('max-width:640px', `.st-root.eng-root ${S}{padding-inline:14px}`));
+  });
+
+  it('centres them in the 1240px column on wide Studio-based stores, and Full width drops the gutter', () => {
+    expect(PREMIUM_SECTION_RULES).toContain(at('min-width:1320px', `.st-root.eng-root.store-studio ${S}{padding-inline:calc((100cqw - 1240px) / 2)}`));
+    expect(PREMIUM_SECTION_RULES).toContain(`.st-root.eng-root .eng-sec--full ${S}{padding-inline:0}`);
+  });
+});

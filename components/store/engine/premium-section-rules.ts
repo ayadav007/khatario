@@ -121,4 +121,12 @@ export const PREMIUM_SECTION_RULES =
   `@media (hover:none){${R} .eng-gallery-cap{opacity:1}}` +
   // Phones: two columns (!important beats the inline variable); the strip shows about two cards with the next one peeking, whatever its columns.
   `@container store (max-width:640px){${R} .eng-gallery:not(.eng-gallery--strip){--eng-cols:2!important}` +
-  `${R} .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/2.2)}}`;
+  `${R} .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/2.2)}}` +
+  // Side gutters, as .st-section has them (38 / 22 / 14 px, centred at 1240px on wide Studio-based stores), so these
+  // sections line up with the rest of the page instead of touching the store's edges; Full width drops them (last, so
+  // it wins the equal-specificity rules above).
+  `${R} :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:38px}` +
+  `@container store (max-width:900px){${R} :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:22px}}` +
+  `@container store (max-width:640px){${R} :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:14px}}` +
+  `@container store (min-width:1320px){${R}.store-studio :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:calc((100cqw - 1240px) / 2)}}` +
+  `${R} .eng-sec--full :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:0}`;
