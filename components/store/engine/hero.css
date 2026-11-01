@@ -10,6 +10,11 @@
    which stays so; Large is the old bh-large height. The card keeps its side padding. */
 .st-root.eng-root .banner.eng-hero{padding-top:0;padding-bottom:0}
 .st-root.eng-root .eng-hero.hb-h-large{min-height:360px}
+/* A picture with no words: nothing in flow holds the card open, so the height comes from the setting (Large keeps its
+   360px). Converted banners always have their label, so they never get here. Only a phone picture: phones only. */
+.st-root.eng-root .eng-hero.hb-bare.hb-h-small{min-height:240px}
+.st-root.eng-root .eng-hero.hb-bare.hb-h-medium{min-height:360px}
+@container store (min-width:641px){.st-root.eng-root .eng-hero.hb-phone-only{display:none}}
 
 /* Pictures: behind the words, filling the card's padding box; two pictures share the width. */
 .st-root.eng-root .eng-hero-media{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:minmax(0,1fr)}
@@ -40,6 +45,9 @@
 .st-root.eng-root .eng-hero .eng-cb-eyebrow{font-size:11px;line-height:1.75;opacity:1}
 .st-root.eng-root .eng-hero :is(.eng-cb-eyebrow,.eng-cb-heading):not(:last-child){margin-bottom:8px}
 .st-root.eng-root .eng-hero .eng-cb-text:not(:last-child){margin-bottom:16px}
+/* Subtitle text: .banner p pins paragraphs to 14px at .85 opacity, which would cancel the style's larger, lighter look;
+   body text keeps the old 14px. */
+.st-root.eng-root .eng-hero .eng-cb-text-subtitle p{font-size:inherit;opacity:1}
 /* Quick sizes .banner h2 itself (quick-theme.css), which keeps its old banner heading at Medium; the other sizes
    (content-block-rules.ts values) still apply there. */
 .st-root.eng-root .eng-hero h2.eng-cb-size-small{font-size:clamp(18px,3cqi,24px)}
@@ -76,6 +84,7 @@
 }
 @container store (max-width:640px){
 .st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:22px 18px}
+.st-root.eng-root .eng-hero.hb-bare:is(.hb-h-small,.hb-h-medium){min-height:180px}
 .st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:22px}
 /* The phone picture replaces the others; two pictures stack, or only the first shows. */
 .st-root.eng-root .eng-hero.hb-has-phone .eng-hero-pic:not(.phone){display:none}

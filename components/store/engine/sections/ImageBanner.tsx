@@ -29,6 +29,7 @@ export function ImageBanner({ section }: EngineSectionProps) {
     textBelowMobile: s.text_below_mobile === true,
     twoImagesMobile: str(s.two_images_mobile),
     alignMobile: str(s.align_mobile),
+    words: blocks.length > 0,
     layers,
   });
   const flags = state.split(' ');

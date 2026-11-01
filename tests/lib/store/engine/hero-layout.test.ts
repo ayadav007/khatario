@@ -72,6 +72,7 @@ describe('heroRootClasses', () => {
     textBelowMobile: false,
     twoImagesMobile: 'stack',
     alignMobile: 'left',
+    words: true,
     layers: [main],
   };
   const classes = (o: Partial<typeof base>) => heroRootClasses({ ...base, ...o }).split(' ');
@@ -126,6 +127,22 @@ describe('heroRootClasses', () => {
     expect(classes({ motion: 'fixed' })).toContain('hb-motion-fixed');
     expect(classes({ motion: 'spin' }).some((c) => c.startsWith('hb-motion'))).toBe(false);
     expect(classes({ motion: 'none' }).some((c) => c.startsWith('hb-motion'))).toBe(false);
+  });
+
+  it('a picture without words keeps a height (hb-bare), except when the picture sets it', () => {
+    expect(heroRootClasses({ ...base, words: false })).toBe('hb-h-medium hb-white hb-white-m hb-bare hb-malign-left');
+    expect(classes({ words: false, height: 'small' })).toContain('hb-bare');
+    expect(classes({ words: false, height: 'large' })).toContain('hb-bare');
+    expect(classes({ words: false, height: 'adapt' })).not.toContain('hb-bare');
+    expect(classes({ words: true })).not.toContain('hb-bare');
+    // Nothing at all: no picture to show (the renderer draws nothing then).
+    expect(classes({ words: false, layers: [] })).not.toContain('hb-bare');
+  });
+
+  it('only a phone picture and no words: nothing to show on desktop (hb-phone-only)', () => {
+    expect(classes({ words: false, layers: [phone] })).toEqual(expect.arrayContaining(['hb-bare', 'hb-phone-only']));
+    expect(classes({ words: true, layers: [phone] })).not.toContain('hb-phone-only');
+    expect(classes({ words: false, layers: [main, phone] })).not.toContain('hb-phone-only');
   });
 
   it('phone alignment, unknown → left', () => {

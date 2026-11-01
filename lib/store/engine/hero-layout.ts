@@ -40,7 +40,9 @@ export function heroImageLayers(o: { image: string; image2: string; mobileImage:
 /**
  * The hero's state classes (hero.css): height, box, text colour, white words over a picture (desktop `hb-white`,
  * phones `hb-white-m`), two pictures and their phone layout, the phone picture, words under the picture on phones,
- * movement and phone alignment. Without any picture there is nothing to fit, move or put words under.
+ * movement and phone alignment. Without any picture there is nothing to fit, move or put words under. A picture with no
+ * words (`hb-bare`) gets a height of its own, since nothing else holds the card open (not with `adapt`, where the
+ * picture sets it); with only a phone picture it shows on phones only (`hb-phone-only`).
  */
 export function heroRootClasses(o: {
   height: string;
@@ -50,6 +52,8 @@ export function heroRootClasses(o: {
   textBelowMobile: boolean;
   twoImagesMobile: string;
   alignMobile: string;
+  /** The hero has content blocks to show. */
+  words: boolean;
   layers: HeroLayer[];
 }): string {
   const has = (slot: HeroSlot) => o.layers.some((l) => l.slot === slot);
@@ -61,6 +65,7 @@ export function heroRootClasses(o: {
   const plain = !o.box && !o.textColor;
   const two = has('main') && has('second');
   const motion = onPhone ? MOTION_CLASS[o.motion] : undefined;
+  const bare = !o.words && onPhone;
   return [
     `hb-h-${height}`,
     o.box ? 'hb-box' : '',
@@ -72,6 +77,8 @@ export function heroRootClasses(o: {
     phonePic ? 'hb-has-phone' : '',
     below ? 'hb-below-m' : '',
     motion ? `hb-motion-${motion}` : '',
+    bare && height !== 'adapt' ? 'hb-bare' : '',
+    bare && !desk ? 'hb-phone-only' : '',
     `hb-malign-${alignOf(o.alignMobile)}`,
   ]
     .filter(Boolean)
