@@ -769,11 +769,13 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
   Future<void> _chooseWay({required String action, required String title, required String confirm}) async {
     final r = _ret;
     if (r == null) return;
+    // Made once: the sheet's builder re-runs when the keyboard opens or closes, and must not start the form over.
+    final form = _wayForm(r);
     final picked = await showKSheet<ReturnWayForm>(
       context,
       title: title,
       scrollable: true,
-      builder: (ctx) => _WaySheet(form: _wayForm(r), connected: r['shiprocket_connected'] == true, confirmLabel: confirm),
+      builder: (ctx) => _WaySheet(form: form, connected: r['shiprocket_connected'] == true, confirmLabel: confirm),
     );
     if (picked != null) await _act({'action': action, ...picked.body});
   }

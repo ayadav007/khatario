@@ -183,4 +183,44 @@ void main() {
     expect(find.text('Return requested'), findsOneWidget);
     expect(find.text('Approved'), findsOneWidget);
   });
+
+  testWidgets('the sheet keeps the chosen method and typed text when the keyboard opens and closes', (tester) async {
+    final api = _ReturnApi(_return({}));
+    await _open(tester, api);
+    await tester.tap(find.text('Approve'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Customer sends it'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Send it to 12 MG Road'), 'Post it to Pune');
+    await tester.pumpAndSettle();
+
+    // The keyboard opens: the sheet's builder runs again.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextField, 'Post it to Pune'), findsOneWidget);
+    await tester.tap(find.text('Approve').last);
+    await tester.pumpAndSettle();
+    expect(api.patches.single, {'action': 'approve', 'method': 'customer_sends', 'instructions': 'Post it to Pune'});
+  });
+
+  testWidgets('pickup details typed in the sheet are what is sent after a keyboard rebuild', (tester) async {
+    final api = _ReturnApi(_return({}));
+    await _open(tester, api);
+    await tester.tap(find.text('Approve'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '411001'), '560001');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextField, '560001'), findsOneWidget);
+    await tester.tap(find.text('Approve').last);
+    await tester.pumpAndSettle();
+    expect(api.patches.single['method'], 'courier_pickup');
+    expect(api.patches.single['pickup']['pincode'], '560001');
+  });
 }
