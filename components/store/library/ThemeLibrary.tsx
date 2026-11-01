@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Palette, Plus } from 'lucide-react';
+import { ArrowLeft, Copy, Loader2, Palette, Store } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -13,9 +13,12 @@ import {
   DISCARD_CONFIRM,
   ENGINE_OFF_NOTICE,
   HISTORY_HIGHLIGHT_MS,
+  LIMIT_NOTICE,
+  MIGRATED_CHOICE,
   NARROW_EDITOR_NOTICE,
   NO_EDIT_NOTICE,
   PREVIEW_COPIED,
+  canAddTheme,
   customiseOpensWorkingDraft,
   deleteConfirmText,
   publishConfirmText,
@@ -35,7 +38,6 @@ import {
   resetWorkingDraft,
 } from './api';
 import { ThemeRowCard, type RowKind } from './ThemeRowCard';
-import { AddThemeModal } from './AddThemeModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RenameDialog } from './RenameDialog';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
@@ -68,7 +70,6 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
   const router = useRouter();
   const toast = useToastContext();
   const [rows, setRows] = useState<ThemeListRow[] | null>(null);
-  const [premiumEnabled, setPremiumEnabled] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [backups, setBackups] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
@@ -76,14 +77,13 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
   const busyRef = useRef(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [renaming, setRenaming] = useState<ThemeListRow | null>(null);
-  const [adding, setAdding] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const { themes: list, premium_enabled } = await listThemes();
+      const { themes: list } = await listThemes();
       const storage = localStore();
       const t = Date.now();
       // D51: drop this store's backups of themes that are gone or two weeks old; badge the rest.
@@ -95,7 +95,6 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       });
       setBackups(new Set(list.filter((r) => hasBackup(storage, businessId, r.id)).map((r) => r.id)));
       setRows(list);
-      setPremiumEnabled(premium_enabled);
       loadedRef.current = true;
       setNow(t);
       setLoadError(null);
@@ -238,7 +237,6 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
 
   const closeConfirm = useCallback(() => setConfirm(null), []);
   const closeRename = useCallback(() => setRenaming(null), []);
-  const closeAdd = useCallback(() => setAdding(false), []);
   const closeHistory = useCallback(() => setHistoryOpen(false), []);
   const onRestored = useCallback(
     (theme: ThemeRow) => {
@@ -252,6 +250,19 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
 
   const split = useMemo(() => splitLibrary(rows ?? []), [rows]);
   const count = rows?.length ?? 0;
+
+  /** "Your current store design" as a new draft (what the Add theme pop-up offered before the theme store). */
+  const copyCurrentDesign = () =>
+    run(
+      { id: 'copy-current', action: 'duplicate' },
+      async () => {
+        const theme = await createTheme({ source: 'migrated' });
+        setHighlight(theme.id);
+        toast.success(`Added '${theme.name}'`);
+        await load();
+      },
+      'Failed to copy the store design',
+    );
 
   const renderRow = (row: ThemeListRow, kind: RowKind) => (
     <ThemeRowCard
@@ -277,15 +288,25 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
         Online store
       </Link>
       {canEdit && rows ? (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Add theme
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => void copyCurrentDesign()}
+            disabled={busy !== null || !canAddTheme(count)}
+            title={canAddTheme(count) ? MIGRATED_CHOICE.description : LIMIT_NOTICE}
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <Copy className="h-3.5 w-3.5" aria-hidden />
+            Copy current store design
+          </button>
+          <Link
+            href="/themes"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+          >
+            <Store className="h-3.5 w-3.5" aria-hidden />
+            Explore themes
+          </Link>
+        </>
       ) : null}
     </div>
   );
@@ -402,19 +423,6 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
         />
       ) : null}
       <VersionHistoryDrawer open={historyOpen} onClose={closeHistory} canEdit={canEdit} onRestored={onRestored} />
-      {adding ? (
-        <AddThemeModal
-          count={count}
-          premiumEnabled={premiumEnabled}
-          onClose={closeAdd}
-          onCreated={(theme) => {
-            setAdding(false);
-            setHighlight(theme.id);
-            toast.success(`Added '${theme.name}'`);
-            void load();
-          }}
-        />
-      ) : null}
     </SettingsPageShell>
   );
 }

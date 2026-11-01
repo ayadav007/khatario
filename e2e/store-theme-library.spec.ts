@@ -162,15 +162,20 @@ async function themeCount(): Promise<number> {
   );
 }
 
-/** Add a theme from the modal: a preset label ("Premium Grocery") or "Your current store design". */
+const PRESET_OF: Record<string, string> = { Studio: 'studio', Quick: 'quick', 'Premium Grocery': 'grocery', Khatario: 'khatario', Blank: 'blank' };
+
+/**
+ * Add a theme: "Your current store design" with the library's Copy current store design button; a preset label
+ * ("Premium Grocery") through the API (presets are added from the theme store's Apply page), then the library reloads.
+ */
 async function addTheme(page: Page, choice: string, name?: string): Promise<void> {
-  await page.getByRole('button', { name: 'Add theme', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Add theme' });
-  await expect(dialog).toBeVisible();
-  await dialog.getByText(choice, { exact: true }).click();
-  if (name !== undefined) await dialog.getByLabel(/^Name/).fill(name);
-  await dialog.getByRole('button', { name: 'Add theme', exact: true }).click();
-  await expect(dialog).toBeHidden({ timeout: SLOW });
+  if (choice === 'Your current store design') {
+    await page.getByRole('button', { name: 'Copy current store design', exact: true }).click();
+    return;
+  }
+  const res = await page.request.post('/api/settings/online-store/themes', { data: { preset: PRESET_OF[choice], ...(name ? { name } : {}) } });
+  expect(res.ok()).toBeTruthy();
+  await page.reload();
 }
 
 async function savedTheme(page: Page, id: string): Promise<{ id: string; role: string; preset: string; is_working: boolean; data: unknown }> {
@@ -452,19 +457,10 @@ test.describe('Store theme library', () => {
   // Premium presets are free for every store until pricing is decided (PREMIUM_THEMES_FREE in lib/store/engine/premium.ts):
   // the stored column no longer hides or refuses them. When pricing lands, this scenario goes back to expecting six
   // radios, no pill, `premium_enabled: false` and a 403 `premium_locked` from the POST.
-  test('stored switch off: premium presets are still free, so Heritage Couture is listed and a direct POST succeeds', async ({ page }) => {
+  test('stored switch off: premium presets are still free, so the Apply page offers Heritage Couture and a direct POST succeeds', async ({ page }) => {
     await setPremium(false);
-    await openLibrary(page);
-    await page.getByRole('button', { name: 'Add theme', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Add theme' });
-    await expect(dialog).toBeVisible();
-    // Six presets (Studio, Quick, Premium Grocery, Khatario, Blank, Heritage Couture) plus "Your current store design".
-    await expect(dialog.getByRole('radio')).toHaveCount(7);
-    const values = () => dialog.locator('input[type="radio"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-    expect(await values()).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'migrated']);
-    await expect(dialog.locator('label', { hasText: 'Heritage Couture' }).getByText('Premium', { exact: true })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(dialog).toBeHidden();
+    await page.goto('/settings/online-store/themes/apply/heritage-couture');
+    await expect(page.getByRole('button', { name: 'Add and customise', exact: true })).toBeVisible({ timeout: SLOW });
 
     const list = await page.request.get('/api/settings/online-store/themes');
     expect(list.ok()).toBeTruthy();
@@ -478,23 +474,13 @@ test.describe('Store theme library', () => {
     if (createdId) await page.request.delete(`/api/settings/online-store/themes/${encodeURIComponent(createdId)}`);
   });
 
-  test('flag on: Heritage Couture shows a Premium pill and creates a draft that starts with a Collage', async ({ page }) => {
+  test('flag on: Apply adds Heritage Couture under its own name and opens the editor on a draft that starts with a Collage', async ({ page }) => {
     try {
       await setPremium(true);
+      await page.goto('/settings/online-store/themes/apply/heritage-couture');
+      await page.getByRole('button', { name: 'Add and customise', exact: true }).click();
+      await page.waitForURL(/\/settings\/online-store\/themes\/[0-9a-f-]+\/editor/, { timeout: SLOW });
       await openLibrary(page);
-      await page.getByRole('button', { name: 'Add theme', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Add theme' });
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('radio')).toHaveCount(7);
-      await expect(dialog.locator('input[type="radio"][value="heritage"]')).toHaveCount(1);
-      const heritage = dialog.locator('label', { hasText: 'Heritage Couture' });
-      await expect(heritage).toHaveCount(1);
-      await expect(heritage.getByText('Premium', { exact: true })).toBeVisible();
-      await heritage.click();
-      // The modal sends no name when the field is empty (the server then says "Untitled theme"), so type one.
-      await dialog.getByLabel(/^Name/).fill('Heritage Couture');
-      await dialog.getByRole('button', { name: 'Add theme', exact: true }).click();
-      await expect(dialog).toBeHidden({ timeout: SLOW });
 
       const row = draftNamed(page, 'Heritage Couture');
       await expect(row).toBeVisible({ timeout: SLOW });
