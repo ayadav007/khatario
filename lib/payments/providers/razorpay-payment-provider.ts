@@ -255,6 +255,24 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     const status = json.status === 'processed' ? 'processed' : 'pending';
     return { providerRefundId, status };
   }
+
+  /** GET /v1/payments/{pid}/refunds/{rid}: where a refund we asked for has got to. */
+  async fetchRefund(params: {
+    providerPaymentId: string;
+    providerRefundId: string;
+  }): Promise<{ status: 'processed' | 'pending' | 'failed' }> {
+    this.ensureCredentials();
+    const res = await fetch(
+      `${this.baseUrl}/v1/payments/${encodeURIComponent(params.providerPaymentId)}/refunds/${encodeURIComponent(params.providerRefundId)}`,
+      { method: 'GET', headers: { Authorization: this.authHeader() } },
+    );
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new Error(`Razorpay refund lookup failed: ${res.status}`);
+    }
+    const status = json.status === 'processed' ? 'processed' : json.status === 'failed' ? 'failed' : 'pending';
+    return { status };
+  }
 }
 
 export function readRazorpayRefundNotice(body: Record<string, unknown>): {

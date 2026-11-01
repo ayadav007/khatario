@@ -285,7 +285,7 @@ export async function refundStoreOrder(input: {
   return { status: applied.status, providerRefundId: result.providerRefundId };
 }
 
-async function razorpayRefundRequester(businessId: string) {
+export async function razorpayRefundRequester(businessId: string) {
   const cfg = await getBusinessPaymentProviderConfig(businessId, 'razorpay');
   if (!cfg) throw new StoreRefundError('Online payment is not configured', 409, 'PAYMENT_NOT_CONFIGURED');
   const provider = new RazorpayPaymentProvider(cfg);
@@ -297,7 +297,7 @@ async function razorpayRefundRequester(businessId: string) {
  * Easebuzz has no idempotency header, so a retry first asks Refund Status for our
  * merchant_refund_id and only raises a new refund when Easebuzz has none.
  */
-async function easebuzzRefundRequester(businessId: string) {
+export async function easebuzzRefundRequester(businessId: string) {
   const cfg = await getBusinessPaymentProviderConfig(businessId, 'easebuzz');
   if (!cfg) throw new StoreRefundError('Online payment is not configured', 409, 'PAYMENT_NOT_CONFIGURED');
   const provider = new EasebuzzPaymentProvider(cfg);

@@ -350,7 +350,7 @@ type ReturnRow = {
   carrier_order_id: string | null;
 };
 
-async function lockReturn(client: PoolClient, businessId: string, returnId: string): Promise<ReturnRow> {
+export async function lockReturn(client: PoolClient, businessId: string, returnId: string): Promise<ReturnRow> {
   const r = await client.query<ReturnRow>(
     `SELECT id, business_id, branch_id, return_number, invoice_id, customer_id, fulfilment_id, status, reason, credit_note_id,
             return_method, pickup_status, carrier_order_id
@@ -742,6 +742,15 @@ export async function settleReturn(
   const row = await lockReturn(client, p.businessId, p.returnId);
   if (row.status !== 'received') throw new ReturnError(409, 'INVALID_STATUS', 'Receive the goods before settling the refund');
   if (!row.credit_note_id) throw new ReturnError(409, 'NO_CREDIT_NOTE', 'This return has no credit note');
+
+  // Paying another way while a gateway refund is on its way would pay the customer twice.
+  const pending = await client.query(
+    `SELECT 1 FROM return_gateway_refunds WHERE order_return_id = $1 AND business_id = $2 AND status = 'pending' LIMIT 1`,
+    [row.id, p.businessId],
+  );
+  if (pending.rows.length > 0) {
+    throw new ReturnError(409, 'GATEWAY_REFUND_PENDING', 'A refund to the original payment is on its way. Check it before paying another way');
+  }
 
   if (p.method === 'store_credit') {
     await client.query(
