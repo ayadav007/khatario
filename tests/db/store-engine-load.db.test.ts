@@ -307,4 +307,21 @@ d('Storefront theme loading (real DB)', () => {
       expect(await resolveOfflineStoreForPreview(SUB, otherVid, signVersionPreview(OTHER, otherVid, PREVIEW_TTL.version))).toBeNull();
     });
   });
+  describe('theme demo stores (demo-<slug>)', () => {
+    it('resolve without a database row and draw their own theme and catalogue', async () => {
+      const store = (await resolveStoreBySubdomain('demo-premium-grocery'))!;
+      expect(store).toMatchObject({ name: 'FreshMart', is_demo: true, demo_preset: 'grocery', demo_catalog: 'grocery' });
+      const page = (await loadEnginePage(store, {}, 'home'))!;
+      expect(page.theme.preset).toBe('grocery');
+      expect(page.editor).toBe(false);
+      const ids = Object.values(page.data).flatMap((d) => ((d as { products?: { id: string }[] }).products ?? []).map((p) => p.id));
+      expect(ids.length).toBeGreaterThan(0);
+      expect(ids.every((id) => id.startsWith('gr-'))).toBe(true);
+    });
+
+    it('an old theme-* demo store still needs ?engine=1', async () => {
+      const old = (await resolveStoreBySubdomain('theme-studio'))!;
+      expect(await loadEngineTheme(old, {})).toBeNull();
+    });
+  });
 });

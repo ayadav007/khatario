@@ -130,9 +130,9 @@ async function loadProducts(
   const input = queryInput(store, p, opts);
 
   if (store.is_demo) {
-    const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
+    const { filterDemoCatalog, demoCatalogOptions } = await import('@/lib/store/theme-demo');
     return filterDemoCatalog({
-      pack: store.store_theme?.pack,
+      ...demoCatalogOptions(store),
       categoryId: input.categoryId,
       search: input.search,
       page: 1,
@@ -185,8 +185,8 @@ export async function storeCategories(
 
 async function loadCategories(store: StoreBusinessContext, opts: ResolveOptions): Promise<SectionCategory[]> {
   if (store.is_demo) {
-    const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
-    const demo = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 500 });
+    const { filterDemoCatalog, demoCatalogOptions } = await import('@/lib/store/theme-demo');
+    const demo = filterDemoCatalog({ ...demoCatalogOptions(store), page: 1, limit: 500 });
     const byName = [...demo.items].sort((a, b) => a.name.localeCompare(b.name));
     return demo.categories.map((c) => ({
       id: c.id,
@@ -206,8 +206,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export async function catalogCategoryName(store: StoreBusinessContext, categoryId: string): Promise<string | null> {
   if (store.is_demo) {
-    const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
-    const cats = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 1 }).categories;
+    const { filterDemoCatalog, demoCatalogOptions } = await import('@/lib/store/theme-demo');
+    const cats = filterDemoCatalog({ ...demoCatalogOptions(store), page: 1, limit: 1 }).categories;
     return cats.find((c) => c.id === categoryId)?.name ?? null;
   }
   if (!UUID_RE.test(categoryId)) return null;
@@ -241,9 +241,9 @@ export function collectProductIds(requests: Map<string, SectionDataRequest>): st
 
 async function loadProductsById(store: StoreBusinessContext, ids: string[], opts: ResolveOptions): Promise<StoreItem[]> {
   if (store.is_demo) {
-    const { themeDemoProducts } = await import('@/lib/store/theme-demo');
+    const { themeDemoProducts, demoCatalogOptions } = await import('@/lib/store/theme-demo');
     const wanted = new Set(ids);
-    return themeDemoProducts(store.store_theme?.pack).filter((p) => wanted.has(p.id)) as unknown as StoreItem[];
+    return themeDemoProducts(store.store_theme?.pack, demoCatalogOptions(store).catalog).filter((p) => wanted.has(p.id)) as unknown as StoreItem[];
   }
   // The store items query already hides products that are not shown in the store, inactive or deleted.
   const q = buildStoreItemsQuery({

@@ -3,6 +3,8 @@ import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { DEFAULT_HOMEPAGE_SECTIONS, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 import type { StoreSwatch } from '@/lib/store/product-extras';
+import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
+import type { DemoCatalogId } from '@/lib/store/engine/theme-catalog';
 
 export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset, 'custom'>; pack: StoreThemePack }> = {
   'theme-studio': { preset: 'studio', pack: 'studio' },
@@ -122,7 +124,9 @@ function groceryDemoProducts(): StoreProduct[] {
 }
 
 /** Every demo product across all packs, for id lookups on detail routes. */
-export function themeDemoProducts(pack?: StoreThemePack | null): StoreProduct[] {
+/** A demo store's products: its own catalogue (`catalog`, the theme demo stores), else the old packs' lists. */
+export function themeDemoProducts(pack?: StoreThemePack | null, catalog?: DemoCatalogId): StoreProduct[] {
+  if (catalog) return DEMO_CATALOGS[catalog].products;
   if (pack === 'grocery' || pack === 'quick') return groceryDemoProducts();
   if (pack) return apparelDemoProducts();
   return [...apparelDemoProducts(), ...groceryDemoProducts()];
@@ -196,8 +200,15 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   };
 }
 
+/** Which sample catalogue a demo store reads: a theme demo store's own (`catalog`), else its old pack. */
+export function demoCatalogOptions(store: StoreBusinessContext): { pack?: StoreThemePack; catalog?: DemoCatalogId } {
+  return { pack: store.store_theme?.pack, catalog: store.demo_catalog };
+}
+
 export function filterDemoCatalog(opts: {
   pack?: StoreThemePack | null;
+  /** A theme demo store's catalogue; wins over `pack`. */
+  catalog?: DemoCatalogId;
   categoryId?: string | null;
   search?: string | null;
   page: number;
@@ -210,8 +221,9 @@ export function filterDemoCatalog(opts: {
   sort?: 'name' | 'new' | 'bestsellers';
 }) {
   const grocery = opts.pack === 'grocery' || opts.pack === 'quick';
-  const all = grocery ? groceryDemoProducts() : apparelDemoProducts();
-  const categories = (grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
+  const own = opts.catalog ? DEMO_CATALOGS[opts.catalog] : null;
+  const all = own ? own.products : grocery ? groceryDemoProducts() : apparelDemoProducts();
+  const categories = (own ? own.categories : grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
     ...c,
     item_count: all.filter((i) => i.category_id === c.id).length,
   }));

@@ -5,6 +5,7 @@ import { migrateStoreTheme } from './migrate';
 import { sanitizeThemeData } from './sanitize';
 import { getLiveTheme } from './themes-repo';
 import { resolvePreviewTarget } from './preview-target';
+import { demoThemeData } from './demo-stores';
 import type { ThemeRow } from './types';
 
 function clean(row: ThemeRow): ThemeRow {
@@ -43,6 +44,20 @@ export function demoEngineTheme(store: StoreBusinessContext): ThemeRow {
   });
 }
 
+/** A theme demo store's theme (lib/store/engine/demo-stores.ts), never stored. */
+export function demoPresetTheme(store: StoreBusinessContext): ThemeRow {
+  return clean({
+    id: DEMO_ENGINE_THEME_ID,
+    business_id: store.business_id,
+    name: store.name,
+    role: 'live',
+    preset: store.demo_preset ?? 'studio',
+    data: demoThemeData(store),
+    updated_at: '1970-01-01T00:00:00.000Z',
+    is_working: false,
+  });
+}
+
 export async function loadEngineTheme(
   store: StoreBusinessContext,
   params: { preview_theme?: string | null; pt?: string | null; engine?: string | null },
@@ -50,6 +65,8 @@ export async function loadEngineTheme(
   // Demo stores touch no database: `?engine=1` shows their migrated theme as a preview, anything else the old store.
   // Real stores ignore `engine`.
   if (store.is_demo) {
+    // A theme demo store (demo-<slug>) always draws its theme; the old theme-* stores only with `?engine=1`.
+    if (store.demo_preset) return { theme: demoPresetTheme(store), preview: true, demo: true };
     return params.engine === '1' ? { theme: demoEngineTheme(store), preview: true, demo: true } : null;
   }
 

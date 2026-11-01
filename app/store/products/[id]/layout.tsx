@@ -23,7 +23,8 @@ export async function generateMetadata({
 
   if (store.is_demo) {
     const { themeDemoProducts } = await import('@/lib/store/theme-demo');
-    const product = themeDemoProducts().find((p) => p.id === params.id);
+    // A theme demo store finds only its own catalogue's products; the old demo stores keep every sample.
+    const product = themeDemoProducts(undefined, store.demo_catalog).find((p) => p.id === params.id);
     if (!product) return { title: 'Product' };
     const seo = resolveItemSeo(product);
     return {

@@ -84,10 +84,10 @@ export async function GET(
     const offset = (page - 1) * limit;
 
     if (store.is_demo) {
-      const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
+      const { filterDemoCatalog, demoCatalogOptions } = await import('@/lib/store/theme-demo');
       return NextResponse.json(
         filterDemoCatalog({
-          pack: store.store_theme?.pack,
+          ...demoCatalogOptions(store),
           categoryId,
           search,
           page,

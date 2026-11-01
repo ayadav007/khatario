@@ -14,7 +14,8 @@ export async function GET(
 
   if (store.is_demo) {
     const { themeDemoProducts } = await import('@/lib/store/theme-demo');
-    const product = themeDemoProducts().find((p) => p.id === params.id);
+    // A theme demo store finds only its own catalogue's products; the old demo stores keep every sample.
+    const product = themeDemoProducts(undefined, store.demo_catalog).find((p) => p.id === params.id);
     if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     return NextResponse.json(product);
   }

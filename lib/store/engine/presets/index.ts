@@ -14,6 +14,8 @@ export interface PresetContext {
   accent?: string;
   logoUrl?: string;
   heroUrl?: string;
+  /** Replacements for a preset's own sample pictures, by name (Heritage's hero-1, gallery-2, story…); demo stores use it. */
+  images?: Record<string, string>;
 }
 
 function buildPreset(preset: ThemePreset, ctx: PresetContext): ThemeData {

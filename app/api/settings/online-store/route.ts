@@ -5,6 +5,7 @@ import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
 import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { reservedStoreUrlChange } from '@/lib/store/resolve-store';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
@@ -168,13 +169,12 @@ export async function PATCH(request: NextRequest) {
         { status: 400 },
       );
     }
-    // Reserved subdomains
-    const reserved = new Set([
-      'www', 'staging', 'app', 'api', 'admin', 'mail', 'cdn',
-      'assets', 'static', 'status', 'help', 'support', 'docs',
-      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether', 'theme-grocery', 'theme-studio',
-    ]);
-    if (reserved.has(sd)) {
+    // Reserved subdomains (resolve-store.ts, which also reserves every demo- address); a store keeps its current URL.
+    const current = await queryOne<{ store_subdomain: string | null }>(
+      `SELECT store_subdomain FROM business_settings WHERE business_id = $1`,
+      [businessId],
+    );
+    if (reservedStoreUrlChange(sd, current?.store_subdomain ?? null)) {
       return NextResponse.json(
         { error: `"${sd}" is reserved. Choose a different store URL.` },
         { status: 400 },

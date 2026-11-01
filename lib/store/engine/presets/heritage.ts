@@ -64,6 +64,8 @@ function ourStoryPage(): PageTemplate {
 export function heritagePreset(ctx: PresetContext): ThemeData {
   const name = ctx.businessName.trim();
   const tagline = ctx.tagline.trim();
+  // A demo store swaps the pattern pictures for its own photos.
+  const pic = (name: string) => ctx.images?.[name] ?? img(name);
 
   const headerSettings: Record<string, unknown> = {};
   if (ctx.logoUrl) headerSettings.logo_url = ctx.logoUrl;
@@ -99,13 +101,13 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
             button_2_text: 'Our story',
             link_2: `/pages/${STORY_HANDLE}`,
           },
-          [1, 2, 3].map((n) => block('image_tile', { image: img(`hero-${n}`) })),
+          [1, 2, 3].map((n) => block('image_tile', { image: pic(`hero-${n}`) })),
         ),
         section('multicolumn', {}, PROMISES.map((p) => block('column', p))),
         section(
           'promo-cards',
           { style: 'overlay', columns: 4 },
-          PROMO_CARDS.map((c) => block('card', { eyebrow: c.eyebrow, heading: c.heading, button_text: 'Shop now', link: '/catalog', image: img(c.image) })),
+          PROMO_CARDS.map((c) => block('card', { eyebrow: c.eyebrow, heading: c.heading, button_text: 'Shop now', link: '/catalog', image: pic(c.image) })),
         ),
         section('featured-products', {
           heading: 'Signature pieces',
@@ -116,7 +118,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
           show_tagline: true,
           show_swatches: true,
         }),
-        section('image-with-text', { image: img('story'), image_side: 'left' }, [
+        section('image-with-text', { image: pic('story'), image_side: 'left' }, [
           block('eyebrow', { text: 'Our craft' }),
           block('heading', { text: 'Tell the story of your craft' }),
           block('text', { content: '<p>Tell shoppers how your pieces are made, who makes them and why they last.</p>' }),
@@ -127,7 +129,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
           block('button', { label: 'Read our story', link: `/pages/${STORY_HANDLE}` }),
           block('highlight_card', { eyebrow: 'Your promise', title: 'Add the one promise you make', text: 'One sentence shoppers can hold you to.' }),
         ]),
-        section('shop-the-look', { image: img('look'), show_list: true, eyebrow: 'The edit', heading: 'Shop the look' }),
+        section('shop-the-look', { image: pic('look'), show_list: true, eyebrow: 'The edit', heading: 'Shop the look' }),
         section('testimonials', { show_summary: false }, [
           block('quote', { text: 'Tell shoppers what a customer said about you.', name: 'A customer' }),
         ]),
@@ -139,7 +141,7 @@ export function heritagePreset(ctx: PresetContext): ThemeData {
         section(
           'image-gallery',
           { layout: 'grid', columns: 4 },
-          [1, 2, 3, 4].map((n) => block('image', { image: img(`gallery-${n}`), subcaption: '@yourstore' })),
+          [1, 2, 3, 4].map((n) => block('image', { image: pic(`gallery-${n}`), subcaption: '@yourstore' })),
         ),
         section('newsletter', { heading: 'Stay in touch', text: 'Say what shoppers get when they sign up.' }),
       ]),

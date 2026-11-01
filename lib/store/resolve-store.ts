@@ -8,6 +8,8 @@ import {
 import { sanitizeStoreTheme, type StoreTheme } from '@/lib/store/store-theme';
 import { getPreferredConfiguredProvider } from '@/lib/payments/business-provider-config';
 import { getBusinessUpiVpa } from '@/lib/payments/upi-pay-link';
+import type { ThemePreset } from '@/lib/store/engine/types';
+import type { DemoCatalogId } from '@/lib/store/engine/theme-catalog';
 
 export const STORE_GATEWAY_PROVIDERS = ['razorpay', 'easebuzz'] as const;
 
@@ -35,6 +37,9 @@ export interface StoreBusinessContext {
   upi_pay_enabled: boolean;
   store_promo_sheet: StorePromoSheetConfig;
   is_demo?: boolean;
+  /** A theme demo store (demo-<slug>, lib/store/engine/demo-stores.ts): the preset it draws and its sample catalogue. */
+  demo_preset?: ThemePreset;
+  demo_catalog?: DemoCatalogId;
 }
 
 export interface StoreBranch {
@@ -66,8 +71,17 @@ const RESERVED_SUBDOMAINS = new Set([
   'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether', 'theme-grocery', 'theme-studio',
 ]);
 
+/** Store URLs merchants cannot take: the fixed list, and every `demo-` address (the theme demo stores). */
 export function isReservedStoreSubdomain(subdomain: string): boolean {
-  return RESERVED_SUBDOMAINS.has(subdomain.toLowerCase());
+  const sd = subdomain.trim().toLowerCase();
+  return RESERVED_SUBDOMAINS.has(sd) || sd.startsWith('demo-');
+}
+
+/** True when a store would move to a reserved URL; a store keeps the URL it already has, reserved or not. */
+export function reservedStoreUrlChange(next: string, current: string | null): boolean {
+  const sd = next.trim().toLowerCase();
+  if (current && current.trim().toLowerCase() === sd) return false;
+  return isReservedStoreSubdomain(sd);
 }
 
 export function isValidStoreSubdomain(subdomain: string): boolean {
@@ -81,6 +95,9 @@ export async function resolveStoreBySubdomain(
   const { themeDemoStore } = await import('@/lib/store/theme-demo');
   const demo = themeDemoStore(subdomain);
   if (demo) return demo;
+  const { engineDemoStore } = await import('@/lib/store/engine/demo-stores');
+  const engineDemo = engineDemoStore(subdomain);
+  if (engineDemo) return engineDemo;
 
   const row = await queryOne<{
     business_id: string;
