@@ -307,4 +307,17 @@ describe('EasebuzzPaymentProvider refunds', () => {
       amount: 118,
     });
   });
+
+  it('a lookup answered with a page that is not JSON, or with status false, is unclear: it throws, never "no refund"', async () => {
+    stub('<html>Down for maintenance</html>');
+    await expect(provider.fetchRefundStatus('E2409040A97T7L', 'key-1234567890')).rejects.toThrow(
+      'Easebuzz refund lookup failed: the reply was not JSON',
+    );
+    // Easebuzz answers an error (a bad hash, an unknown key...) with status false; a payment with no
+    // refunds is status true with no matching refund, so status false is never read as "no refund".
+    for (const body of [{ status: false, error: 'Hash mismatch' }, { status: 0, message: 'Invalid key' }, { status: false }]) {
+      stub(body);
+      await expect(provider.fetchRefundStatus('E2409040A97T7L', 'key-1234567890')).rejects.toThrow(/^Easebuzz refund lookup failed: /);
+    }
+  });
 });

@@ -421,9 +421,11 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
   }
 
   /**
-   * Refund Status API, filtered to one merchant_refund_id. Null when Easebuzz has no such refund.
-   * Throws when Easebuzz cannot answer (HTTP error), so a failed lookup is never read as "no refund"
-   * and the refund is not raised a second time.
+   * Refund Status API, filtered to one merchant_refund_id. Null only when Easebuzz answers (status
+   * true) and lists no refund with that id. Throws when it cannot answer: an HTTP error, a reply that
+   * is not JSON (a maintenance page), or `status: false`, which is how Easebuzz reports an error such
+   * as a bad hash and cannot be told apart from anything else. A failed lookup is never read as
+   * "no refund", so the refund is not raised a second time.
    */
   async fetchRefundStatus(
     easebuzzId: string,
@@ -443,8 +445,17 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
       }),
     });
     if (!res.ok) throw new Error(`Easebuzz refund lookup failed: HTTP ${res.status}`);
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!(json.status === true || json.status === 1)) return null;
+    const parsed = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (parsed == null || typeof parsed !== 'object') throw new Error('Easebuzz refund lookup failed: the reply was not JSON');
+    const json = parsed;
+    if (!(json.status === true || json.status === 1)) {
+      const reason =
+        (typeof json.error === 'string' && json.error) ||
+        (typeof json.message === 'string' && json.message) ||
+        (typeof json.reason === 'string' && json.reason) ||
+        'Easebuzz did not answer';
+      throw new Error(`Easebuzz refund lookup failed: ${reason}`);
+    }
     const refunds = Array.isArray(json.refunds) ? (json.refunds as Record<string, unknown>[]) : [];
     const match = refunds.find((r) => r.merchant_refund_id === merchantRefundId);
     if (!match) return null;

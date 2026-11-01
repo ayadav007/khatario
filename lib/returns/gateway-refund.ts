@@ -6,7 +6,7 @@ import { listCashBankAccounts } from '@/lib/accounting/contra';
 import { CreditNoteRefundError, refundCreditNote, refundableOnCreditNote } from '@/lib/credit-notes/refund';
 import { getBusinessPaymentProviderConfig } from '@/lib/payments/business-provider-config';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
-import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+import { EasebuzzPaymentProvider, easebuzzMerchantRefundId } from '@/lib/payments/providers/easebuzz-payment-provider';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { easebuzzRefundRequester, razorpayRefundRequester, StoreRefundError } from '@/lib/store/store-refund';
 import { recordReturnEvent } from './events';
@@ -27,6 +27,8 @@ import { lockReturn, ReturnError } from './service';
  *
  * An unclear gateway error (network, timeout, 5xx) leaves the attempt `pending` with the message as a
  * note: the refund may exist, so staff retry, Check now and the cron repeat the same key and amount.
+ * A repeated Easebuzz send that is refused is looked up by its key before it may fail (Easebuzz has no
+ * idempotency header, so the refusal may be of a duplicate of a refund it already took).
  *
  * Locks are always taken return -> store order -> refund row -> credit note, so the claim, a webhook
  * and the pending check serialise per order and two clicks cannot both claim room beyond the cap. The
@@ -43,6 +45,15 @@ export type GatewayRequester = (args: {
 
 type Db = Pick<PoolClient, 'query'>;
 type Provider = 'razorpay' | 'easebuzz';
+
+/** Where the gateway says an attempt has got to; null = it has no such refund. Throws when it cannot answer. */
+export type StatusLookup = (row: {
+  business_id: string;
+  provider: Provider;
+  provider_payment_id: string;
+  provider_refund_id: string | null;
+  idempotency_key: string;
+}) => Promise<'processed' | 'pending' | 'failed' | null>;
 
 export type OriginalRefundRoom = {
   allowed: boolean;
@@ -305,10 +316,21 @@ export function isDefiniteRefusal(e: unknown): boolean {
 
 type SendResult = { status: 'processed' | 'pending' | 'failed'; providerRefundId: string | null; error?: string };
 
+const REPEAT_REFUSED = 'The gateway refused a repeat send; the earlier refund is being checked';
+
 /** Asks the gateway for one open attempt (with its own key and amount) and applies the answer. */
 async function sendAttempt(
-  attempt: { businessId: string; rowId: string; providerPaymentId: string; amount: number; idempotencyKey: string; fresh: boolean },
+  attempt: {
+    businessId: string;
+    rowId: string;
+    provider: Provider;
+    providerPaymentId: string;
+    amount: number;
+    idempotencyKey: string;
+    fresh: boolean;
+  },
   getRequester: () => Promise<GatewayRequester>,
+  lookup: StatusLookup,
   actor: 'staff' | 'system',
   actorUserId: string | null,
 ): Promise<SendResult> {
@@ -345,16 +367,69 @@ async function sendAttempt(
     });
   } catch (e) {
     const error = e instanceof Error ? e.message : 'The refund could not be sent';
+    if (isDefiniteRefusal(e) && !attempt.fresh && attempt.provider === 'easebuzz') {
+      return recheckRefusedRepeat(attempt, lookup, error, applyDetailed);
+    }
     // Unclear: kept pending with the message as a note; the retry, Check now or the cron repeats the key.
-    const status = await apply(null, isDefiniteRefusal(e) ? 'failed' : 'pending', error);
+    const applied = await applyDetailed(null, isDefiniteRefusal(e) ? 'failed' : 'pending', error);
     // A notice may have confirmed the attempt meanwhile; then there is no error to show.
-    return status === 'processed' ? { status, providerRefundId: null } : { status, providerRefundId: null, error };
+    return applied.status === 'processed'
+      ? { status: applied.status, providerRefundId: null }
+      : { status: applied.status, providerRefundId: null, error: applied.error ?? error };
   }
   // Posting can fail after the gateway refunded: the attempt stays pending and the reason comes back.
   const applied = await applyDetailed(result.providerRefundId, result.status);
   return applied.error
     ? { status: applied.status, providerRefundId: result.providerRefundId, error: applied.error }
     : { status: applied.status, providerRefundId: result.providerRefundId };
+}
+
+/**
+ * Easebuzz has no idempotency header, so a repeat send it turns down (a duplicate merchant refund id,
+ * say) may be the copy of a refund it already took from an earlier send whose answer was lost, or from
+ * a Try again racing the cron. Only its own record of our key decides: a refund there is applied, a
+ * failed one fails the attempt, and no answer (nothing yet, or the lookup failed) keeps it pending.
+ */
+async function recheckRefusedRepeat(
+  attempt: { businessId: string; provider: Provider; providerPaymentId: string; idempotencyKey: string },
+  lookup: StatusLookup,
+  error: string,
+  applyDetailed: (
+    providerRefundId: string | null,
+    providerStatus: 'processed' | 'pending' | 'failed',
+    failureReason?: string | null,
+  ) => Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }>,
+): Promise<SendResult> {
+  let found: 'processed' | 'pending' | 'failed' | null = null;
+  try {
+    found = await lookup({
+      business_id: attempt.businessId,
+      provider: attempt.provider,
+      provider_payment_id: attempt.providerPaymentId,
+      provider_refund_id: null,
+      idempotency_key: attempt.idempotencyKey,
+    });
+  } catch {
+    found = null;
+  }
+  // Easebuzz knows a refund by our merchant refund id, which is the key.
+  const refundId = easebuzzMerchantRefundId(attempt.idempotencyKey);
+  if (found === 'failed') {
+    const applied = await applyDetailed(refundId, 'failed', error);
+    return applied.status === 'processed'
+      ? { status: applied.status, providerRefundId: null }
+      : { status: applied.status, providerRefundId: null, error: applied.error ?? error };
+  }
+  if (found) {
+    const applied = await applyDetailed(refundId, found);
+    return applied.error
+      ? { status: applied.status, providerRefundId: refundId, error: applied.error }
+      : { status: applied.status, providerRefundId: refundId };
+  }
+  const applied = await applyDetailed(null, 'pending', REPEAT_REFUSED);
+  return applied.status === 'processed'
+    ? { status: applied.status, providerRefundId: null }
+    : { status: applied.status, providerRefundId: null, error: applied.error ?? REPEAT_REFUSED };
 }
 
 function defaultRequester(provider: Provider, businessId: string): () => Promise<GatewayRequester> {
@@ -373,6 +448,7 @@ export async function refundReturnToOriginalPayment(input: {
   userId: string;
   amount?: number | string | null;
   requestRefund?: GatewayRequester;
+  fetchStatus?: StatusLookup;
 }): Promise<{ status: 'processed' | 'pending' | 'failed'; amount: number; providerRefundId: string | null; error?: string }> {
   const claim = await claimGatewayRefund(input);
   const given = input.requestRefund;
@@ -380,12 +456,14 @@ export async function refundReturnToOriginalPayment(input: {
     {
       businessId: input.businessId,
       rowId: claim.rowId,
+      provider: claim.provider,
       providerPaymentId: claim.providerPaymentId,
       amount: claim.amount,
       idempotencyKey: claim.idempotencyKey,
       fresh: claim.fresh,
     },
     given ? async () => given : defaultRequester(claim.provider, input.businessId),
+    input.fetchStatus ?? gatewayStatus,
     'staff',
     input.userId,
   );
@@ -446,8 +524,10 @@ type ApplyInput = {
 
 /**
  * Records what the gateway said about one attempt. Idempotent: a processed attempt stays processed
- * and is posted once; a failed attempt stays failed. When the gateway has refunded but the books
- * cannot post it (locked period, closed account...), the attempt stays pending with its refund id
+ * and is posted once; a failed attempt stays failed. An attempt that has a gateway refund id fails
+ * only on an answer about that refund id (a notice or a status check), never on a send refused
+ * without one, so the hold on the credit note is not released while the refund may exist. When the
+ * gateway has refunded but the books cannot post it (locked period, closed account...), the attempt stays pending with its refund id
  * and a note, so later checks look it up instead of sending it again.
  */
 export async function applyReturnGatewayRefundResult(input: ApplyInput): Promise<'pending' | 'processed' | 'failed'> {
@@ -517,6 +597,17 @@ async function applyResultInTx(
       }
       await client.query('COMMIT');
       return { status: 'pending' };
+    }
+
+    if (input.providerStatus === 'failed' && row.provider_refund_id && !input.providerRefundId) {
+      // A refusal that does not name the refund (a repeat send turned down) says nothing about the refund
+      // the gateway already took: it stays open, holding its amount, until checked by its refund id.
+      await client.query(
+        `UPDATE return_gateway_refunds SET failure_reason = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
+        [input.refundRowId, input.businessId, REPEAT_REFUSED],
+      );
+      await client.query('COMMIT');
+      return { status: 'pending', error: REPEAT_REFUSED };
     }
 
     if (input.providerStatus === 'failed') {
@@ -682,7 +773,7 @@ type PendingRow = {
 };
 
 /** Default status lookup: Razorpay by refund id, Easebuzz by our merchant refund id (the key). */
-async function gatewayStatus(row: PendingRow): Promise<'processed' | 'pending' | 'failed' | null> {
+async function gatewayStatus(row: Parameters<StatusLookup>[0]): Promise<'processed' | 'pending' | 'failed' | null> {
   if (row.provider === 'easebuzz') {
     const cfg = await getBusinessPaymentProviderConfig(row.business_id, 'easebuzz');
     if (!cfg) return null;
@@ -707,13 +798,7 @@ export async function checkPendingReturnRefunds(opts?: {
   olderThanMinutes?: number;
   businessId?: string;
   returnId?: string;
-  fetchStatus?: (row: {
-    business_id: string;
-    provider: Provider;
-    provider_payment_id: string;
-    provider_refund_id: string | null;
-    idempotency_key: string;
-  }) => Promise<'processed' | 'pending' | 'failed' | null>;
+  fetchStatus?: StatusLookup;
   /**
    * Re-sends an attempt that never got a refund id (Razorpay always; Easebuzz when it has no refund
    * under our key); defaults to the business's gateway keys.
@@ -740,12 +825,14 @@ export async function checkPendingReturnRefunds(opts?: {
       {
         businessId: row.business_id,
         rowId: row.id,
+        provider: row.provider,
         providerPaymentId: row.provider_payment_id,
         amount: Number(row.amount),
         idempotencyKey: row.idempotency_key,
         fresh: false,
       },
       given ? async () => given : defaultRequester(row.provider, row.business_id),
+      fetchStatus,
       'system',
       null,
     );
