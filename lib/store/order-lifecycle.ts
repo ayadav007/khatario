@@ -249,6 +249,8 @@ export async function applyShiprocketTrackingUpdate(input: {
   businessId: string;
   awb: string;
   orderRef: string;
+  /** Shiprocket's own order id; matches `carrier_order_id` when the awb and our reference miss. */
+  srOrderId?: string;
   status: StoreFulfillmentStatus;
   fulfilmentStatus?: FulfilmentStatus | null;
 }): Promise<ShiprocketTrackingOutcome> {
@@ -259,11 +261,13 @@ export async function applyShiprocketTrackingUpdate(input: {
       `SELECT id, status
          FROM store_orders
         WHERE business_id = $1
-          AND (($2 <> '' AND awb = $2) OR ($3 <> '' AND (shipment_id = $3 OR order_number = $3)))
-        ORDER BY ($2 <> '' AND awb = $2) DESC, created_at DESC
+          AND (($2 <> '' AND awb = $2)
+            OR ($3 <> '' AND (shipment_id = $3 OR order_number = $3))
+            OR ($4 <> '' AND carrier_order_id = $4))
+        ORDER BY ($2 <> '' AND awb = $2) DESC, ($3 <> '' AND order_number = $3) DESC, created_at DESC
         LIMIT 1
         FOR UPDATE`,
-      [input.businessId, input.awb, input.orderRef],
+      [input.businessId, input.awb, input.orderRef, input.srOrderId ?? ''],
     );
     const order = found.rows[0];
     if (!order) {

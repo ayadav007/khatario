@@ -17,22 +17,42 @@ export function hashStoreWebhookToken(token: string): string {
 
 export function parseShiprocketWebhook(body: Record<string, unknown>): {
   awb: string;
+  /** Our reference (`order_id`), never Shiprocket's own id. */
   orderRef: string;
+  /** Shiprocket's own order id (`sr_order_id`). */
+  srOrderId: string;
+  /** True for a return shipment (`is_return` 1, "1" or true). */
+  isReturn: boolean;
+  qcFailureReason: string | null;
   /** Coarse store order status. */
   status: StoreFulfillmentStatus | null;
   /** Finer delivery status for order_fulfilments. */
   fulfilmentStatus: FulfilmentStatus | null;
+  /** A parcel on its way back to the shop (any RTO label except RTO DELIVERED): no status change. */
+  rtoInProgress: boolean;
+  /** Trimmed, lowercased status label as Shiprocket sent it. */
+  label: string;
 } {
   const awb = String(body.awb || body.awb_code || '');
-  const orderRef = String(body.order_id || body.sr_order_id || '');
-  const current = String(body.current_status || body.shipment_status || '').toLowerCase();
+  const orderRef = String(body.order_id || '');
+  const srOrderId = String(body.sr_order_id || '');
+  const isReturn = body.is_return === true || body.is_return === 1 || body.is_return === '1';
+  const qcFailureReason = String(body.qc_failure_reason || '').trim() || null;
+  const label = String(body.current_status || body.shipment_status || '').trim().toLowerCase();
+  const current = label;
 
   let status: StoreFulfillmentStatus | null = null;
   let fulfilmentStatus: FulfilmentStatus | null = null;
+  let rtoInProgress = false;
   // "RTO DELIVERED", "OUT FOR DELIVERY" and "UNDELIVERED" all contain "deliver", so test them first.
   if (current.includes('rto')) {
-    status = 'cancelled';
-    fulfilmentStatus = 'returned';
+    // Only the parcel actually reaching the shop is "returned"; until then the bill stays as it is.
+    if (/rto[\s_-]*delivered/.test(current)) {
+      status = 'cancelled';
+      fulfilmentStatus = 'returned';
+    } else {
+      rtoInProgress = true;
+    }
   } else if (current.includes('out for delivery')) {
     status = 'ready';
     fulfilmentStatus = 'out_for_delivery';
@@ -53,5 +73,5 @@ export function parseShiprocketWebhook(body: Record<string, unknown>): {
     fulfilmentStatus = 'confirmed';
   }
 
-  return { awb, orderRef, status, fulfilmentStatus };
+  return { awb, orderRef, srOrderId, isReturn, qcFailureReason, status, fulfilmentStatus, rtoInProgress, label };
 }

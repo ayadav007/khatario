@@ -138,11 +138,45 @@ describe('Shiprocket webhook mapping', () => {
     expect(parseShiprocketWebhook({ current_status: 'Delivered', awb: 'A1' }).status).toBe(
       'delivered',
     );
-    expect(parseShiprocketWebhook({ shipment_status: 'RTO', awb: 'A2' }).status).toBe(
+    expect(parseShiprocketWebhook({ current_status: 'RTO DELIVERED', awb: 'A2' }).status).toBe(
       'cancelled',
     );
     expect(parseShiprocketWebhook({ current_status: 'In Transit', awb: 'A3' }).status).toBe(
       'ready',
     );
+  });
+
+  it.each(['RTO INITIATED', 'RTO IN TRANSIT', 'RTO OFD', 'RTO NDR', 'RTO'])(
+    '%s is a parcel on its way back: no status change, only a note',
+    (label) => {
+      const r = parseShiprocketWebhook({ current_status: label, awb: 'A1' });
+      expect(r.status).toBeNull();
+      expect(r.fulfilmentStatus).toBeNull();
+      expect(r.rtoInProgress).toBe(true);
+    },
+  );
+
+  it('RTO DELIVERED is the only RTO label that means the parcel is back', () => {
+    const r = parseShiprocketWebhook({ current_status: 'RTO DELIVERED', awb: 'A1' });
+    expect(r).toMatchObject({ status: 'cancelled', fulfilmentStatus: 'returned', rtoInProgress: false });
+  });
+
+  it('keeps our reference and Shiprocket order id apart, and reads the return fields', () => {
+    expect(
+      parseShiprocketWebhook({ order_id: 'SO-12', sr_order_id: 987, is_return: 1, qc_failure_reason: 'Used product' }),
+    ).toMatchObject({ orderRef: 'SO-12', srOrderId: '987', isReturn: true, qcFailureReason: 'Used product' });
+    expect(parseShiprocketWebhook({ sr_order_id: 987 })).toMatchObject({
+      orderRef: '',
+      srOrderId: '987',
+      isReturn: false,
+      qcFailureReason: null,
+    });
+    expect(parseShiprocketWebhook({ is_return: '1' }).isReturn).toBe(true);
+    expect(parseShiprocketWebhook({ is_return: true }).isReturn).toBe(true);
+    expect(parseShiprocketWebhook({ is_return: 0 }).isReturn).toBe(false);
+  });
+
+  it('trims and lowercases the status label', () => {
+    expect(parseShiprocketWebhook({ current_status: '  Out For Delivery ' }).label).toBe('out for delivery');
   });
 });

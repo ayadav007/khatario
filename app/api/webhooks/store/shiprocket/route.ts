@@ -8,7 +8,7 @@ import {
   resolveBusinessIdForShiprocketToken,
 } from '@/lib/store/order-lifecycle';
 import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
-import { applyShiprocketFulfilmentUpdate } from '@/lib/fulfilment/shiprocket-booking';
+import { applyShiprocketFulfilmentUpdate, noteRtoInProgress } from '@/lib/fulfilment/shiprocket-booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,17 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const parsed = parseShiprocketWebhook(body);
-  if (!parsed.status || (!parsed.awb && !parsed.orderRef)) {
+  if (parsed.rtoInProgress) {
+    // Coming back, not back yet: nothing is cancelled or returned, the timeline just says so.
+    const found = await noteRtoInProgress({
+      businessId,
+      awb: parsed.awb,
+      srOrderId: parsed.srOrderId,
+      label: parsed.label,
+    });
+    return NextResponse.json({ ok: true, outcome: found ? 'rto_noted' : 'not_found' });
+  }
+  if (!parsed.status || (!parsed.awb && !parsed.orderRef && !parsed.srOrderId)) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
@@ -33,6 +43,7 @@ export async function POST(request: NextRequest) {
     businessId,
     awb: parsed.awb,
     orderRef: parsed.orderRef,
+    srOrderId: parsed.srOrderId,
     status: parsed.status,
     fulfilmentStatus: parsed.fulfilmentStatus,
   });
@@ -40,7 +51,7 @@ export async function POST(request: NextRequest) {
     const other = await applyShiprocketFulfilmentUpdate({
       businessId,
       awb: parsed.awb,
-      orderRef: parsed.orderRef,
+      srOrderId: parsed.srOrderId,
       fulfilmentStatus: parsed.fulfilmentStatus,
     });
     if (other.outcome === 'updated') triggerFulfilmentNotification(businessId, other.fulfilment ?? null);
