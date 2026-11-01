@@ -10,6 +10,8 @@ describe('content blocks', () => {
     expect(setting('heading', 'text')?.max_length).toBe(120);
     expect(setting('heading', 'size')).toMatchObject({ type: 'select', default: 'medium' });
     expect(setting('heading', 'size')?.options?.map((o) => o.value)).toEqual(['small', 'medium', 'large', 'xl', 'xxl']);
+    expect(setting('heading', 'size')?.options?.map((o) => o.label)).toEqual(['Small', 'Medium', 'Large', 'Extra large', 'Extra extra large']);
+    expect(setting('text', 'style')?.options?.map((o) => o.label)).toEqual(['Normal', 'Subtitle', 'CAPITALS']);
     expect(setting('text', 'content')?.type).toBe('richtext');
     expect(setting('text', 'style')).toMatchObject({ type: 'select', default: 'body' });
     expect(setting('text', 'style')?.options?.map((o) => o.value)).toEqual(['body', 'subtitle', 'caps']);
