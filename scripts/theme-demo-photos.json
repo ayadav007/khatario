@@ -1,0 +1,464 @@
+[
+  {
+    "file": "jewellery/necklace-beaded-purple.webp",
+    "url": "https://images.unsplash.com/photo-1601121141461-9d6647bca1ed?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1601121141461-9d6647bca1ed",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold and purple beaded necklace"
+  },
+  {
+    "file": "jewellery/pendant-gold.webp",
+    "url": "https://images.unsplash.com/photo-1569397288884-4d43d6738fbd?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1569397288884-4d43d6738fbd",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold-coloured pendant necklace"
+  },
+  {
+    "file": "jewellery/chain-gold.webp",
+    "url": "https://images.unsplash.com/photo-1611107683227-e9060eccd846?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1611107683227-e9060eccd846",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold chain necklace"
+  },
+  {
+    "file": "jewellery/necklace-beaded-red.webp",
+    "url": "https://images.unsplash.com/photo-1600862754152-80a263dd564f?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1600862754152-80a263dd564f",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold and red beaded necklace"
+  },
+  {
+    "file": "jewellery/necklace-pearl.webp",
+    "url": "https://images.unsplash.com/photo-1721103418312-b0057a8c31c2?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1721103418312-b0057a8c31c2",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold necklace with pearls"
+  },
+  {
+    "file": "jewellery/ring-gold.webp",
+    "url": "https://images.unsplash.com/photo-1598560917807-1bae44bd2be8?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1598560917807-1bae44bd2be8",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold ring"
+  },
+  {
+    "file": "jewellery/rings-box.webp",
+    "url": "https://images.unsplash.com/photo-1631982690223-8aa4be0a2497?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1631982690223-8aa4be0a2497",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Three gold rings in a box"
+  },
+  {
+    "file": "jewellery/ring-diamond.webp",
+    "url": "https://images.unsplash.com/photo-1611955167811-4711904bb9f8?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1611955167811-4711904bb9f8",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold diamond-studded ring"
+  },
+  {
+    "file": "jewellery/ring-gemstone.webp",
+    "url": "https://images.unsplash.com/photo-1603561596973-8166e9e089d1?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1603561596973-8166e9e089d1",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold and purple gemstone ring"
+  },
+  {
+    "file": "jewellery/earrings-red.webp",
+    "url": "https://images.unsplash.com/photo-1653227907864-560dce4c252d?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1653227907864-560dce4c252d",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Red and gold earrings on a stand"
+  },
+  {
+    "file": "jewellery/earrings-gold.webp",
+    "url": "https://images.unsplash.com/photo-1727990865600-91f8cb8b0168?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1727990865600-91f8cb8b0168",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Pair of gold earrings"
+  },
+  {
+    "file": "jewellery/earrings-drop.webp",
+    "url": "https://images.unsplash.com/photo-1701777892740-88419a701472?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1701777892740-88419a701472",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Pair of earrings on white cloth"
+  },
+  {
+    "file": "jewellery/bangles-ornate.webp",
+    "url": "https://images.unsplash.com/photo-1758995116383-f51775896add?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1758995116383-f51775896add",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Stack of ornate gold bangles"
+  },
+  {
+    "file": "jewellery/bracelets-velvet.webp",
+    "url": "https://images.unsplash.com/photo-1728381031272-ba3f537feadd?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1728381031272-ba3f537feadd",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold bracelets on a velvet cushion"
+  },
+  {
+    "file": "jewellery/bracelet-diamond.webp",
+    "url": "https://images.unsplash.com/photo-1611598935678-c88dca238fce?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1611598935678-c88dca238fce",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold and diamond bracelet"
+  },
+  {
+    "file": "jewellery/set-stands.webp",
+    "url": "https://images.unsplash.com/photo-1758995115857-2de1eb6283d0?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1758995115857-2de1eb6283d0",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold necklace and earrings on stands"
+  },
+  {
+    "file": "jewellery/set-matching.webp",
+    "url": "https://images.unsplash.com/photo-1758995115682-1452a1a9e35b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1758995115682-1452a1a9e35b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gold necklace and matching earrings"
+  },
+  {
+    "file": "fashion/merino-crew.webp",
+    "url": "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1434389677669-e08b4cac3105",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Knit sweater"
+  },
+  {
+    "file": "fashion/cotton-tee.webp",
+    "url": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Cotton t-shirt"
+  },
+  {
+    "file": "fashion/tote.webp",
+    "url": "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1590874103328-eac38a683ce7",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Tote bag"
+  },
+  {
+    "file": "fashion/gift-box.webp",
+    "url": "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1549465220-1a8b9238cd48",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Gift box"
+  },
+  {
+    "file": "fashion/slip-on.webp",
+    "url": "https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Canvas slip-on shoes"
+  },
+  {
+    "file": "fashion/sneakers-white.webp",
+    "url": "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1544441893-675973e31985",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "White low-top sneakers"
+  },
+  {
+    "file": "fashion/tee-boots.webp",
+    "url": "https://images.unsplash.com/photo-1467043237213-65f2da53396f?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1467043237213-65f2da53396f",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "White t-shirt and leather boots"
+  },
+  {
+    "file": "fashion/knit-set.webp",
+    "url": "https://images.unsplash.com/photo-1614676471928-2ed0ad1061a4?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1614676471928-2ed0ad1061a4",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Brown knitwear and boots"
+  },
+  {
+    "file": "fashion/jeans-belt.webp",
+    "url": "https://images.unsplash.com/photo-1617178388553-a9d022974a5c?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1617178388553-a9d022974a5c",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Denim jeans and leather belt"
+  },
+  {
+    "file": "fashion/vneck-shirts.webp",
+    "url": "https://images.unsplash.com/photo-1548768041-2fceab4c0b85?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1548768041-2fceab4c0b85",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Three V-neck shirts"
+  },
+  {
+    "file": "fashion/cardigan-outfit.webp",
+    "url": "https://images.unsplash.com/photo-1516762689617-e1cffcef479d?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1516762689617-e1cffcef479d",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Grey cardigan, jeans and heeled shoes"
+  },
+  {
+    "file": "fashion/pouch.webp",
+    "url": "https://images.unsplash.com/photo-1523754182607-2ff5903ec1e2?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1523754182607-2ff5903ec1e2",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Pink pouch and sunglasses"
+  },
+  {
+    "file": "grocery/tomatoes.webp",
+    "url": "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1546094096-0df4bcaaa337",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Fresh tomatoes"
+  },
+  {
+    "file": "grocery/bananas.webp",
+    "url": "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Bananas"
+  },
+  {
+    "file": "grocery/milk.webp",
+    "url": "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1563636619-e9143da7973b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Milk"
+  },
+  {
+    "file": "grocery/eggs.webp",
+    "url": "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Brown eggs"
+  },
+  {
+    "file": "grocery/chips.webp",
+    "url": "https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1566478989037-eec170784d0b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Potato chips"
+  },
+  {
+    "file": "grocery/orange-juice.webp",
+    "url": "https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1600271886742-f049cd451bba",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Orange juice"
+  },
+  {
+    "file": "grocery/rice.webp",
+    "url": "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1586201375761-83865001e31c",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Basmati rice"
+  },
+  {
+    "file": "grocery/apples.webp",
+    "url": "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Red apples"
+  },
+  {
+    "file": "grocery/spinach.webp",
+    "url": "https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1576045057995-568f588f82fb",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Baby spinach"
+  },
+  {
+    "file": "grocery/yogurt.webp",
+    "url": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1488477181946-6428a0291777",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Yogurt"
+  },
+  {
+    "file": "grocery/limes.webp",
+    "url": "https://images.unsplash.com/photo-1757366471921-1549d75b1b63?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1757366471921-1549d75b1b63",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Fresh limes"
+  },
+  {
+    "file": "grocery/vegetables.webp",
+    "url": "https://images.unsplash.com/photo-1720720406887-79b2d0420cb1?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1720720406887-79b2d0420cb1",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Fresh vegetables"
+  },
+  {
+    "file": "grocery/spice-powders.webp",
+    "url": "https://images.unsplash.com/photo-1486548730767-5c679e8eda6b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1486548730767-5c679e8eda6b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Spice powders"
+  },
+  {
+    "file": "grocery/spice-jars.webp",
+    "url": "https://images.unsplash.com/photo-1757802261994-3c31584daafd?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1757802261994-3c31584daafd",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Jars of spices"
+  },
+  {
+    "file": "general/headphones-flatlay.webp",
+    "url": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Wireless headphones"
+  },
+  {
+    "file": "general/headphones-black.webp",
+    "url": "https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Black wireless headphones"
+  },
+  {
+    "file": "general/headphones-orange.webp",
+    "url": "https://images.unsplash.com/photo-1609788994700-73eda149ffb8?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1609788994700-73eda149ffb8",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "White and orange headphones"
+  },
+  {
+    "file": "general/earbuds.webp",
+    "url": "https://images.unsplash.com/photo-1718309602773-8e00d80960c2?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1718309602773-8e00d80960c2",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Earbuds"
+  },
+  {
+    "file": "general/smartwatch.webp",
+    "url": "https://images.unsplash.com/photo-1519335553051-96f1218cd5fa?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1519335553051-96f1218cd5fa",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Smartphone and smartwatch"
+  },
+  {
+    "file": "general/tablet.webp",
+    "url": "https://images.unsplash.com/photo-1548874468-025d0edfdf8b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1548874468-025d0edfdf8b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Tablet"
+  },
+  {
+    "file": "general/mouse.webp",
+    "url": "https://images.unsplash.com/photo-1622805199349-ada0338f7c0b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1622805199349-ada0338f7c0b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Cordless mouse"
+  },
+  {
+    "file": "general/gaming.webp",
+    "url": "https://images.unsplash.com/photo-1693279504914-d08266ecbe66?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1693279504914-d08266ecbe66",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Keyboard and game controller"
+  },
+  {
+    "file": "general/phones.webp",
+    "url": "https://images.unsplash.com/photo-1707485122968-56916bd2c464?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1707485122968-56916bd2c464",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Mobile phones"
+  },
+  {
+    "file": "general/coffee-grinder.webp",
+    "url": "https://images.unsplash.com/photo-1570222094114-d054a817e56b?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1570222094114-d054a817e56b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Coffee machines and grinder"
+  },
+  {
+    "file": "general/coffee-maker.webp",
+    "url": "https://images.unsplash.com/photo-1620051787208-a45bc64e32ff?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1620051787208-a45bc64e32ff",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Coffee maker"
+  },
+  {
+    "file": "general/iron.webp",
+    "url": "https://images.unsplash.com/photo-1489274495757-95c7c837b101?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1489274495757-95c7c837b101",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Steam iron"
+  },
+  {
+    "file": "general/washing-machine.webp",
+    "url": "https://images.unsplash.com/photo-1597418048367-7dd01e4404ee?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1597418048367-7dd01e4404ee",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Front-load washing machine"
+  },
+  {
+    "file": "general/oven.webp",
+    "url": "https://images.unsplash.com/photo-1586208958839-06c17cacdf08?auto=format&fit=max&w=1800&q=85",
+    "source": "https://images.unsplash.com/photo-1586208958839-06c17cacdf08",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Kitchen with a built-in oven"
+  },
+  {
+    "file": "heroes/jewellery-1.webp",
+    "url": "https://images.unsplash.com/photo-1688382654723-a7366006519b?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1688382654723-a7366006519b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Woman in a green sari wearing jewellery"
+  },
+  {
+    "file": "heroes/jewellery-2.webp",
+    "url": "https://images.unsplash.com/photo-1740431377901-c2f28d50c759?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1740431377901-c2f28d50c759",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Woman in a bridal outfit"
+  },
+  {
+    "file": "heroes/jewellery-3.webp",
+    "url": "https://images.unsplash.com/photo-1654781456542-fdd1683c79c3?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1654781456542-fdd1683c79c3",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Wall of gold jewellery"
+  },
+  {
+    "file": "heroes/fashion-1.webp",
+    "url": "https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1441984904996-e0b6ba687e04",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Clothing boutique interior"
+  },
+  {
+    "file": "heroes/fashion-2.webp",
+    "url": "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1483985988355-763728e1935b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Woman holding shopping bags"
+  },
+  {
+    "file": "heroes/grocery-1.webp",
+    "url": "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1542838132-92c53300491e",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Fresh produce in a market"
+  },
+  {
+    "file": "heroes/grocery-2.webp",
+    "url": "https://images.unsplash.com/photo-1512403762066-73452496b7db?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1512403762066-73452496b7db",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Fruit stand"
+  },
+  {
+    "file": "heroes/general-1.webp",
+    "url": "https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1546435770-a3e426bf472b",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Headphones, keyboard and mouse on a desk"
+  },
+  {
+    "file": "heroes/general-2.webp",
+    "url": "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=max&w=2400&q=85",
+    "source": "https://images.unsplash.com/photo-1556911220-bff31c812dba",
+    "licence": "Unsplash Licence (free for commercial use)",
+    "alt": "Modern white kitchen"
+  }
+]
