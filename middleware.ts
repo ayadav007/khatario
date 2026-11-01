@@ -225,6 +225,8 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/images/') ||
     pathname.startsWith('/fonts/') ||
+    // The theme demo stores' photos (public/theme-demos), on demo-<slug> hosts and the app host alike.
+    pathname.startsWith('/theme-demos/') ||
     pathname.startsWith('/favicon') ||
     pathname === '/manifest.json' ||
     pathname === '/admin/sw.js' ||
@@ -235,6 +237,7 @@ function isStaticAsset(pathname: string): boolean {
     pathname.endsWith('.ico') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.jpg') ||
+    pathname.endsWith('.webp') ||
     pathname.endsWith('.svg') ||
     pathname.endsWith('.css') ||
     pathname.endsWith('.js') ||
