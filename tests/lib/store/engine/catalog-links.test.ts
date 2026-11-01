@@ -1,4 +1,4 @@
-import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch, withPreviewParams } from '@/lib/store/engine/links';
+import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch, isEmbedSearch, withPreviewParams } from '@/lib/store/engine/links';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 
 describe('engineCatalogHref', () => {
@@ -135,5 +135,15 @@ describe('withPreviewParams', () => {
     expect(withPreviewParams(PREVIEW, '//evil.example/a')).toBe('//evil.example/a');
     expect(withPreviewParams(PREVIEW, '#catalog')).toBe('#catalog');
     expect(withPreviewParams('?utm=x', '/catalog')).toBe('/catalog');
+  });
+});
+
+describe('isEmbedSearch', () => {
+  it('is true only for embed=1', () => {
+    expect(isEmbedSearch('?embed=1')).toBe(true);
+    expect(isEmbedSearch('?x=1&embed=1')).toBe(true);
+    expect(isEmbedSearch('')).toBe(false);
+    expect(isEmbedSearch('?embed=0')).toBe(false);
+    expect(isEmbedSearch('?embed=true')).toBe(false);
   });
 });

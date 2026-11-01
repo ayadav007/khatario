@@ -144,3 +144,8 @@ export function isEditorFrameSearch(currentSearch: string): boolean {
   const q = new URLSearchParams(currentSearch);
   return Boolean(q.get('preview_theme') && q.get('pt')) && q.get('editor') === '1';
 }
+
+/** A theme demo store shown inside the theme store's preview frame (`embed=1`): it scrolls but ignores clicks. */
+export function isEmbedSearch(currentSearch: string): boolean {
+  return new URLSearchParams(currentSearch).get('embed') === '1';
+}

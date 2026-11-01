@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { storeDraftToken, useStore } from '@/lib/store/store-context';
-import { isEditorFrameSearch } from '@/lib/store/engine/links';
+import { isEditorFrameSearch, isEmbedSearch } from '@/lib/store/engine/links';
 import {
   isStorePromoActive,
   shouldShowStorePromo,
@@ -38,8 +38,9 @@ export function StorePromoSheet() {
   const promo = store?.store_promo_sheet;
 
   useEffect(() => {
-    // Never over a design being edited: the old Studio draft preview or the Studio 2 editor frame.
-    if (storeDraftToken() || isEditorFrameSearch(window.location.search)) {
+    // Never over a design being edited (the old Studio draft preview or the Studio 2 editor frame), nor over a
+    // theme demo store framed by the theme store.
+    if (storeDraftToken() || isEditorFrameSearch(window.location.search) || isEmbedSearch(window.location.search)) {
       setOpen(false);
       return;
     }

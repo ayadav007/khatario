@@ -105,6 +105,8 @@ const THEME_RULES =
   '.st-root.eng-root .eng-pay li{list-style:none;border:1px solid rgba(0,0,0,.15);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;letter-spacing:.3px;opacity:.75}' +
   // A section that rendered nothing (an empty row, a hidden failure) takes no space; separate rules so
   // a browser without :has still applies :empty.
+  // A theme demo store framed by the theme store (StoreEmbedGuard) shows no Preview pill.
+  '.eng-embed .eng-preview-pill{display:none}' +
   '.st-root.eng-root .eng-sec:empty{display:none}' +
   '.st-root.eng-root .eng-sec:not(:has(>:not(style))){display:none}' +
   // Custom HTML gets Studio's rich-text gutter and keeps its images inside the page.
@@ -434,7 +436,7 @@ export function EngineShell({
         {preview ? (
           <div
             role="status"
-            className="pointer-events-none fixed bottom-3 left-3 z-[60] rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-white shadow-lg"
+            className="eng-preview-pill pointer-events-none fixed bottom-3 left-3 z-[60] rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-white shadow-lg"
           >
             Preview
           </div>
