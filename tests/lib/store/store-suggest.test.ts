@@ -39,11 +39,20 @@ describe('store suggest', () => {
     expect(plain.products.sql).not.toContain('ovs');
     const hide = buildSuggestQuery('b1', 'milk', 'hide')!;
     expect(hide.products.sql).toContain('AND NOT (CASE WHEN COALESCE(i.has_variants, false)');
-    expect(hide.categories).toEqual(plain.categories);
     expect(hide.products.params).toEqual(plain.products.params);
     const end = buildSuggestQuery('b1', 'milk', 'end')!;
+    expect(end.categories).toEqual(plain.categories);
     expect(end.products.sql).toMatch(/ORDER BY CASE WHEN \(CASE WHEN COALESCE\(i\.has_variants, false\)[\s\S]*THEN 1 ELSE 0 END, CASE WHEN/);
     assertQueryBinds(hide.products.sql, hide.products.params);
     assertQueryBinds(end.products.sql, end.products.params);
+  });
+
+  it('under hide, suggests only categories that still have an in-stock product', () => {
+    const plain = buildSuggestQuery('b1', 'milk')!;
+    const hide = buildSuggestQuery('b1', 'milk', 'hide')!;
+    expect(plain.categories.sql).not.toContain('ovs');
+    expect(hide.categories.sql).toMatch(/AND EXISTS \(SELECT 1 FROM items i WHERE[\s\S]*?i\.deleted_at IS NULL\s+AND NOT \(CASE WHEN COALESCE\(i\.has_variants, false\)/);
+    expect(hide.categories.params).toEqual(plain.categories.params);
+    assertQueryBinds(hide.categories.sql, hide.categories.params);
   });
 });

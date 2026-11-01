@@ -25,7 +25,8 @@ export function buildSuggestQuery(
 
   // $2 prefix, $3 anywhere, $4 start of a later word.
   const productParams = [businessId, `${e}%`, `%${e}%`, `% ${e}%`];
-  // The theme's out-of-stock place applies to suggestions too (store-wide stock: suggestions have no branch).
+  // The theme's out-of-stock place applies to suggestions too (store-wide stock: suggestions have no branch);
+  // under `hide` a category is suggested only while it still shows a product.
   const hideSql = outOfStock === 'hide' ? `\n        AND NOT ${outOfStockSql(null)}` : '';
   const endSql = outOfStock === 'end' ? `CASE WHEN ${outOfStockSql(null)} THEN 1 ELSE 0 END, ` : '';
   const productSql = `
@@ -43,7 +44,7 @@ export function buildSuggestQuery(
       FROM categories c
       WHERE c.business_id = $1
         AND c.name ILIKE $2 ESCAPE '\\'
-        AND EXISTS (SELECT 1 FROM items i WHERE i.category_id = c.id AND i.business_id = $1 AND ${VISIBLE})
+        AND EXISTS (SELECT 1 FROM items i WHERE i.category_id = c.id AND i.business_id = $1 AND ${VISIBLE}${hideSql})
       ORDER BY c.name
       LIMIT 3`;
 

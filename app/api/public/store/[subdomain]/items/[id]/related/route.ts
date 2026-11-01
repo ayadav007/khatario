@@ -3,6 +3,7 @@ import { queryOne, queryRows } from '@/lib/db';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { isUuid } from '@/lib/store/review-http';
 import { buildRelatedQuery } from '@/lib/store/related-products';
+import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { mapStoreItemRow } from '@/lib/store/map-store-product';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/public/store/{subdomain}/items/{id}/related?limit=8&branch_id=...
  * Same category first, then same brand, then best sellers. Never includes the item itself.
+ * Out-of-stock products go where the engine theme says (`product_card.oos_place`), as in the items list.
  */
 export async function GET(
   request: NextRequest,
@@ -45,6 +47,7 @@ export async function GET(
       brand: item.brand,
       limit,
       branchId,
+      outOfStock: await storeOosPlace(store, searchParams),
     });
     const rows = await queryRows<Record<string, unknown>>(q.sql, q.params);
     return NextResponse.json({ items: rows.map(mapStoreItemRow) });

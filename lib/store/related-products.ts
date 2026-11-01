@@ -1,9 +1,11 @@
 import {
   assertQueryBinds,
   buildStoreItemFilters,
+  outOfStockSql,
   stockExprs,
   storeItemSelectSql,
   STORE_SOLD_JOIN_SQL,
+  type StoreItemsOutOfStock,
 } from '@/lib/store/store-items-query';
 
 export interface RelatedQueryInput {
@@ -14,15 +16,24 @@ export interface RelatedQueryInput {
   limit?: number;
   /** When set, stock is read from this branch (same as the items list). */
   branchId?: string | null;
+  /** Where out-of-stock products go, as in the items list: `stay` (default, query unchanged), `end` or `hide`. */
+  outOfStock?: StoreItemsOutOfStock;
 }
 
 /**
  * Related products: same category first, then same brand, then everything else by
- * units sold on the store. Same visibility rules and row shape as the items list.
+ * units sold on the store. Same visibility rules, row shape and out-of-stock place as the items list.
  */
 export function buildRelatedQuery(input: RelatedQueryInput): { sql: string; params: unknown[] } {
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 8), 1), 24);
-  const filters = buildStoreItemFilters({ businessId: input.businessId, limit, offset: 0 });
+  const outOfStock = input.outOfStock ?? 'stay';
+  const filters = buildStoreItemFilters({
+    businessId: input.businessId,
+    limit,
+    offset: 0,
+    outOfStock,
+    branchId: input.branchId,
+  });
   const params = [...filters.params];
   const bind = (v: unknown) => {
     params.push(v);
@@ -32,7 +43,8 @@ export function buildRelatedQuery(input: RelatedQueryInput): { sql: string; para
   const categoryIdx = bind(input.categoryId);
   const brandIdx = bind(input.brand);
   const limitIdx = bind(limit);
-  const branchIdx = input.branchId ? bind(input.branchId) : null;
+  // `hide` already bound the branch for its filter; the stock columns share that bind.
+  const branchIdx = filters.branchIdx ?? (input.branchId ? bind(input.branchId) : null);
   const stock = stockExprs(branchIdx, 'iv');
 
   const where = [...filters.conditions, `i.id <> $${itemIdx}::uuid`].join(' AND ');
@@ -41,6 +53,7 @@ export function buildRelatedQuery(input: RelatedQueryInput): { sql: string; para
           WHEN $${brandIdx}::text IS NOT NULL AND i.brand = $${brandIdx}::text THEN 1
           ELSE 2
         END`;
+  const endSql = outOfStock === 'end' ? `CASE WHEN ${outOfStockSql(branchIdx)} THEN 1 ELSE 0 END, ` : '';
 
   const sql = `
       ${storeItemSelectSql({
@@ -54,7 +67,7 @@ export function buildRelatedQuery(input: RelatedQueryInput): { sql: string; para
       ${STORE_SOLD_JOIN_SQL}
       WHERE ${where}
       GROUP BY i.id, c.name, sold.sold
-      ORDER BY ${rank}, COALESCE(sold.sold, 0) DESC, i.name ASC
+      ORDER BY ${endSql}${rank}, COALESCE(sold.sold, 0) DESC, i.name ASC
       LIMIT $${limitIdx}
     `;
 

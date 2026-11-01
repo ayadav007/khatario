@@ -205,4 +205,48 @@ describe('related vs list select', () => {
     const plain = buildRelatedQuery({ businessId: 'b1', itemId: 'i1', categoryId: null, brand: null }).sql;
     expect(plain).not.toContain('branch_item_stock');
   });
+
+  describe('out-of-stock place', () => {
+    const base = { businessId: 'b1', itemId: 'i1', categoryId: 'c1', brand: 'Acme' };
+
+    it('stay (and no option) leaves the query exactly as before', () => {
+      for (const branchId of [undefined, 'br1']) {
+        const plain = buildRelatedQuery({ ...base, branchId });
+        expect(buildRelatedQuery({ ...base, branchId, outOfStock: 'stay' })).toEqual(plain);
+        expect(plain.sql).not.toContain('ovs');
+      }
+    });
+
+    it('end lists out-of-stock products after the in-stock ones, before the related rank', () => {
+      const { sql, params } = buildRelatedQuery({ ...base, outOfStock: 'end' });
+      expect(sql).toMatch(/ORDER BY CASE WHEN \(CASE WHEN COALESCE\(i\.has_variants, false\)[\s\S]*THEN 1 ELSE 0 END, CASE\s+WHEN \$\d+::uuid IS NOT NULL/);
+      expect(sql).not.toMatch(/AND NOT \(CASE WHEN COALESCE\(i\.has_variants/);
+      expect(() => assertQueryBinds(sql, params)).not.toThrow();
+    });
+
+    it('end reads the branch stock with the one branch bind', () => {
+      const { sql, params } = buildRelatedQuery({ ...base, outOfStock: 'end', branchId: 'br1' });
+      expect(params.filter((p) => p === 'br1')).toHaveLength(1);
+      const idx = params.indexOf('br1') + 1;
+      expect(sql).toContain(`biv.branch_id = $${idx}), ovs.current_stock, 0)`);
+      expect(() => assertQueryBinds(sql, params)).not.toThrow();
+    });
+
+    it('hide drops out-of-stock products and keeps the related rank order', () => {
+      const { sql, params } = buildRelatedQuery({ ...base, outOfStock: 'hide' });
+      expect(sql).toContain('AND NOT (CASE WHEN COALESCE(i.has_variants, false)');
+      expect(sql).toMatch(/ORDER BY CASE\s+WHEN \$\d+::uuid IS NOT NULL/);
+      expect(() => assertQueryBinds(sql, params)).not.toThrow();
+    });
+
+    it('hide with a branch binds the branch once, shared by the filter and the stock columns', () => {
+      const { sql, params } = buildRelatedQuery({ ...base, outOfStock: 'hide', branchId: 'br1' });
+      expect(params.filter((p) => p === 'br1')).toHaveLength(1);
+      const idx = params.indexOf('br1') + 1;
+      expect(sql).toContain(`biv.branch_id = $${idx}), ovs.current_stock, 0)`);
+      expect(sql).toContain(`biv.branch_id = $${idx}), iv.current_stock, 0)`);
+      expect(params[params.length - 1]).toBe(8);
+      expect(() => assertQueryBinds(sql, params)).not.toThrow();
+    });
+  });
 });
