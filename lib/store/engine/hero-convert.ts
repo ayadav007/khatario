@@ -27,7 +27,8 @@ function escapeHtml(s: string): string {
 /**
  * The blocks the old banner settings stood for, in order (heading, text, button), with ids as `presets/shared.ts section()`
  * makes them. Only the values the old settings held are written, so the block schema defaults apply at render. An empty
- * value makes no block; a link without a button label makes none either.
+ * value makes no block, and so does an explicit empty button label; a missing `button_text` stands for the old default
+ * "Shop now" (existing stores look the same).
  */
 function bannerBlocks(settings: Raw): Array<{ id: string; block: Raw }> {
   const out: Array<{ id: string; block: Raw }> = [];
@@ -35,7 +36,8 @@ function bannerBlocks(settings: Raw): Array<{ id: string; block: Raw }> {
   if (heading.trim()) out.push({ id: 'heading-1', block: { type: 'heading', settings: { text: heading } } });
   const description = text(settings.description);
   if (description.trim()) out.push({ id: 'text-1', block: { type: 'text', settings: { content: `<p>${escapeHtml(description)}</p>` } } });
-  const label = text(settings.button_text);
+  // A banner that never stored `button_text` showed the old schema default, so it keeps that button; an explicit '' means none.
+  const label = has(settings, 'button_text') ? text(settings.button_text) : 'Shop now';
   if (label.trim()) {
     const link = text(settings.link);
     out.push({ id: 'button-1', block: { type: 'button', settings: link.trim() ? { label, link } : { label } } });

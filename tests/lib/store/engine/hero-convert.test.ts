@@ -37,12 +37,28 @@ describe('convertLegacyHeroSections: Hero banner', () => {
     expect(s.blocks['text-1'].settings.content).toBe('<p>&lt;b&gt;5 &amp; 6&lt;/b&gt; &quot;off&quot;</p>');
   });
 
-  it('a button without a link keeps only its label; a link without a label makes no button', () => {
+  it('a button without a link keeps only its label; a missing button text is the old default "Shop now"', () => {
     expect(section(convertLegacyHeroSections(legacy('image-banner', { button_text: 'Go' }))).blocks['button-1']).toEqual({
       type: 'button',
       settings: { label: 'Go' },
     });
-    expect(section(convertLegacyHeroSections(legacy('image-banner', { link: '/x' }))).block_order).toEqual([]);
+    expect(section(convertLegacyHeroSections(legacy('image-banner', { link: '/x' }))).blocks['button-1']).toEqual({
+      type: 'button',
+      settings: { label: 'Shop now', link: '/x' },
+    });
+    // No link stored: the button has no link key, so it falls back as before.
+    expect(section(convertLegacyHeroSections(legacy('image-banner', { heading: 'Sale' }))).blocks['button-1']).toEqual({
+      type: 'button',
+      settings: { label: 'Shop now' },
+    });
+  });
+
+  it('an explicitly empty button text means no button, and the result runs once', () => {
+    const out = convertLegacyHeroSections(legacy('image-banner', { heading: 'Sale', button_text: '' }));
+    expect(section(out).block_order).toEqual(['heading-1']);
+    expect(convertLegacyHeroSections(out)).toEqual(out);
+    const withDefault = convertLegacyHeroSections(legacy('image-banner', { heading: 'Sale' }));
+    expect(convertLegacyHeroSections(withDefault)).toEqual(withDefault);
   });
 
   it('an empty old banner gets no blocks but its position', () => {
@@ -66,7 +82,7 @@ describe('convertLegacyHeroSections: Hero banner', () => {
     const banner = { type: 'image-banner', settings: { heading: 'H' }, blocks: {}, block_order: [] };
     const tpl = { order: ['a'], sections: { a: banner } };
     const out = convertLegacyHeroSections({ header_group: tpl, footer_group: tpl, templates: { 'page.x': tpl } });
-    for (const t of [out.header_group, out.footer_group, out.templates['page.x']]) expect(t.sections.a.block_order).toEqual(['heading-1']);
+    for (const t of [out.header_group, out.footer_group, out.templates['page.x']]) expect(t.sections.a.block_order).toEqual(['heading-1', 'button-1']);
   });
 
   it('is pure: the input is untouched, and other section types pass through', () => {
