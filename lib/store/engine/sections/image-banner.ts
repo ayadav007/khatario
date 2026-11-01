@@ -118,6 +118,18 @@ export const imageBanner: SectionSchema = {
       ],
     },
     { id: 'words_header', type: 'header', label: 'Words' },
+    {
+      id: 'layout',
+      type: 'select',
+      label: 'Words over or beside the photo',
+      default: 'over',
+      options: [
+        { value: 'over', label: 'Over the photo' },
+        { value: 'image-text', label: 'Photo left, words right' },
+        { value: 'text-image', label: 'Words left, photo right' },
+      ],
+      info: 'Beside the photo, Text position places the words in their half, the photo is not darkened, and phones show the photo above the words.',
+    },
     { id: 'position', type: 'select', label: 'Text position', default: 'middle-left', options: POSITION_OPTIONS },
     { id: 'align', type: 'select', label: 'Text alignment', default: 'left', options: ALIGN_OPTIONS },
     { id: 'box', type: 'checkbox', label: 'Box behind the text', default: false, info: 'Puts the words on a card in the section colours' },

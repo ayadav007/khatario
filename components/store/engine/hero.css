@@ -74,6 +74,21 @@
 .st-root.eng-root .hb-white .eng-cta[data-style=outline]{color:#fff;border-color:#fff}
 }
 
+/* Words beside the photo (computers; phones stack them through hb-below-m): two columns, the photo running to the
+   card's edges in one and the words, on the section's colours, in the other. Text position places the words within
+   their column. The photo's height follows the Height choice; Fit the picture lets the picture set it. */
+@container store (min-width:641px){
+.st-root.eng-root .banner.eng-hero.hb-side{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);padding:0}
+.st-root.eng-root .banner.eng-hero.hb-side-photo-right{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}
+.st-root.eng-root .eng-hero.hb-side .eng-hero-media{position:relative;inset:auto;grid-area:1/1;align-self:stretch;min-height:320px}
+.st-root.eng-root .eng-hero.hb-side-photo-right .eng-hero-media{grid-area:1/2}
+.st-root.eng-root .eng-hero.hb-side.hb-h-small .eng-hero-media{min-height:240px}
+.st-root.eng-root .eng-hero.hb-side.hb-h-large .eng-hero-media{min-height:420px}
+.st-root.eng-root .eng-hero.hb-side.hb-h-adapt .eng-hero-media{min-height:0}
+.st-root.eng-root .eng-hero.hb-side .eng-hero-inner{grid-area:1/2;padding:38px 44px}
+.st-root.eng-root .eng-hero.hb-side-photo-right .eng-hero-inner{grid-area:1/1}
+}
+
 /* Movement: drift is a slow scale / pan loop, zoom follows scroll (HeroMedia sets --hb-zoom), fixed keeps the picture
    still while the page scrolls. iOS and touch screens do not keep a fixed background, so they scroll normally. */
 @keyframes eng-hb-drift{from{transform:scale(1.04) translate3d(0,0,0)}to{transform:scale(1.12) translate3d(-2%,-1.5%,0)}}

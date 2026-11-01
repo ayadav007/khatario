@@ -31,6 +31,7 @@ export function ImageBanner({ section }: EngineSectionProps) {
     alignMobile: str(s.align_mobile),
     words: blocks.length > 0,
     layers,
+    layout: str(s.layout),
   });
   const flags = state.split(' ');
   const num = (v: unknown) => (typeof v === 'number' ? v : 0);
@@ -42,7 +43,7 @@ export function ImageBanner({ section }: EngineSectionProps) {
       style={Object.keys(style).length ? (style as CSSProperties) : undefined}
     >
       {layers.length ? (
-        <HeroMedia layers={layers} shade={overlay / 100} adapt={flags.includes('hb-h-adapt')} zoom={flags.includes('hb-motion-zoom')} />
+        <HeroMedia layers={layers} shade={flags.includes('hb-side') ? 0 : overlay / 100}adapt={flags.includes('hb-h-adapt')} zoom={flags.includes('hb-motion-zoom')} />
       ) : null}
       {blocks.length ? (
         <div className="eng-hero-inner">

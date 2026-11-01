@@ -73,14 +73,18 @@ export function heroRootClasses(o: {
   /** The hero has content blocks to show. */
   words: boolean;
   layers: HeroLayer[];
+  /** `over` (default): words on the photo; `image-text` / `text-image`: photo and words side by side. */
+  layout?: string;
 }): string {
   const has = (slot: HeroSlot) => o.layers.some((l) => l.slot === slot);
   const desk = has('main') || has('second');
   const phonePic = has('phone');
   const onPhone = desk || phonePic;
   const height = HEIGHTS.includes(o.height) && (o.height !== 'adapt' || onPhone) ? o.height : 'medium';
-  const below = o.textBelowMobile && onPhone;
-  const plain = !o.box && !o.textColor;
+  // Beside the photo needs a picture; the words then sit on the section's colours, and phones stack the photo above them.
+  const side = o.layout === 'image-text' || o.layout === 'text-image' ? (desk ? o.layout : null) : null;
+  const below = (o.textBelowMobile || !!side) && onPhone;
+  const plain = !o.box && !o.textColor && !side;
   const two = has('main') && has('second');
   const motion = onPhone ? MOTION_CLASS[o.motion] : undefined;
   const bare = !o.words && onPhone;
@@ -94,6 +98,8 @@ export function heroRootClasses(o: {
     two && o.twoImagesMobile === 'first' ? 'hb-m-first' : '',
     phonePic ? 'hb-has-phone' : '',
     below ? 'hb-below-m' : '',
+    side ? 'hb-side' : '',
+    side ? (side === 'image-text' ? 'hb-side-photo-left' : 'hb-side-photo-right') : '',
     motion ? `hb-motion-${motion}` : '',
     bare && height !== 'adapt' ? 'hb-bare' : '',
     bare && !desk ? 'hb-phone-only' : '',

@@ -81,6 +81,20 @@ describe('heroRootClasses', () => {
     expect(heroRootClasses(base)).toBe('hb-h-medium hb-white hb-white-m hb-malign-left');
   });
 
+  it('words beside the photo: side classes, words on the section colours, photo above the words on phones', () => {
+    expect(heroRootClasses({ ...base, layout: 'image-text' })).toBe('hb-h-medium hb-below-m hb-side hb-side-photo-left hb-malign-left');
+    expect(classes({ layout: 'text-image' } as Partial<typeof base>)).toEqual(
+      expect.arrayContaining(['hb-side', 'hb-side-photo-right', 'hb-below-m']),
+    );
+    expect(classes({ layout: 'text-image' } as Partial<typeof base>)).not.toContain('hb-white');
+  });
+
+  it('words over the photo is the default, and beside needs a picture', () => {
+    expect(heroRootClasses({ ...base, layout: 'over' })).toBe(heroRootClasses(base));
+    expect(heroRootClasses({ ...base, layout: 'sideways' })).toBe(heroRootClasses(base));
+    expect(heroRootClasses({ ...base, layers: [], layout: 'image-text' })).toBe('hb-h-medium hb-malign-left');
+  });
+
   it('no picture: section colours, no motion, adapt falls back to medium', () => {
     expect(heroRootClasses({ ...base, layers: [], motion: 'drift', height: 'adapt' })).toBe('hb-h-medium hb-malign-left');
   });
