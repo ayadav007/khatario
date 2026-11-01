@@ -132,6 +132,7 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
   if (pathname.startsWith('/solution/')) return true;
+  if (pathname === '/themes' || pathname.startsWith('/themes/')) return true;
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return true;
   if (pathname.startsWith('/pay/upi/')) return true;
   if (pathname.startsWith('/wa-shop/')) return true;

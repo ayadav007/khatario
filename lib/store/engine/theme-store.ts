@@ -80,3 +80,20 @@ export function themeNameFor(base: string, taken: string[]): string {
     if (!used.has(candidate.toLowerCase())) return candidate;
   }
 }
+
+/** Where Apply theme goes: the app's apply page when signed in, else sign-up with a return to it. */
+export function applyHref(slug: string, signedIn: boolean): string {
+  const apply = `/settings/online-store/themes/apply/${slug}`;
+  return signedIn ? apply : `/signup?next=${apply}`;
+}
+
+/**
+ * Store counts turned into an order (higher first; equal counts share a step) so the page sends browsers the
+ * Popular order without the counts themselves.
+ */
+export function popularityOrder(counts: Partial<Record<ThemePreset, number>>): Partial<Record<ThemePreset, number>> {
+  const steps = [...new Set(Object.values(counts) as number[])].sort((a, b) => b - a);
+  const out: Partial<Record<ThemePreset, number>> = {};
+  for (const [preset, n] of Object.entries(counts) as [ThemePreset, number][]) out[preset] = steps.length - steps.indexOf(n);
+  return out;
+}

@@ -6,7 +6,7 @@ import { marketingRobots } from '@/lib/marketing-builder/seo';
 
 export const dynamic = 'force-dynamic';
 
-const STATIC_PATHS = ['/', '/blog', '/guides', '/privacy', '/terms', '/book-demo', '/solution/accounting', '/solution/inventory'];
+const STATIC_PATHS = ['/', '/blog', '/guides', '/themes', '/privacy', '/terms', '/book-demo', '/solution/accounting', '/solution/inventory'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = publicSiteUrl();

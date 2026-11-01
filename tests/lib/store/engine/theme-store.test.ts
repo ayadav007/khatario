@@ -1,5 +1,5 @@
 import { THEME_CATALOG, type CatalogTheme } from '@/lib/store/engine/theme-catalog';
-import { categoryCounts, filterThemes, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
+import { applyHref, categoryCounts, filterThemes, popularityOrder, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
 
 const popularity = { grocery: 9, studio: 4, heritage: 4 };
 const today = '2026-11-01';
@@ -76,5 +76,25 @@ describe('themeNameFor', () => {
     const long = 'x'.repeat(60);
     expect(themeNameFor(long, [long])).toHaveLength(60);
     expect(themeNameFor(long, [long]).endsWith(' 2')).toBe(true);
+  });
+});
+
+describe('applyHref', () => {
+  it('signed in: the app apply page; visitor: sign up, then back to it', () => {
+    expect(applyHref('heritage-couture', true)).toBe('/settings/online-store/themes/apply/heritage-couture');
+    expect(applyHref('heritage-couture', false)).toBe('/signup?next=/settings/online-store/themes/apply/heritage-couture');
+    // The path passes signup's same-site `next` check.
+    expect('/settings/online-store/themes/apply/heritage-couture').toMatch(/^\/(?!\/)[\w\-/]*$/);
+  });
+});
+
+describe('popularityOrder', () => {
+  it('turns counts into an order only: equal counts share a rank, no count is kept', () => {
+    const order = popularityOrder({ grocery: 9, studio: 4, heritage: 4, quick: 1 });
+    expect(order.grocery).toBeGreaterThan(order.studio!);
+    expect(order.studio).toBe(order.heritage);
+    expect(order.heritage).toBeGreaterThan(order.quick!);
+    expect(Object.values(order)).not.toContain(9);
+    expect(popularityOrder({})).toEqual({});
   });
 });

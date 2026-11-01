@@ -34,4 +34,11 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/admin/plans', 'khatario.com')).toBe(true);
     expect(isPublicMarketingSurface('/admin/login', 'khatario.com')).toBe(true);
   });
+
+  it('treats the theme store as a public page', () => {
+    expect(isPublicMarketingSurface('/themes', 'khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/themes/heritage-couture', 'staging.khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/themesx', 'khatario.com')).toBe(false);
+    expect(isPublicMarketingSurface('/settings/online-store/themes', 'khatario.com')).toBe(false);
+  });
 });

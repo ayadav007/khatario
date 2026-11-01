@@ -260,6 +260,18 @@ export function MarketingSiteHeader() {
           </div>
 
           <Link
+            href="/themes"
+            aria-current={pathname?.startsWith('/themes') ? 'page' : undefined}
+            className={clsx(
+              'rounded-lg px-5 py-3 text-lg font-medium lg:px-6 lg:py-3.5 lg:text-xl',
+              pathname?.startsWith('/themes')
+                ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-50'
+                : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800/60',
+            )}
+          >
+            Themes
+          </Link>
+          <Link
             href="/#pricing"
             className="rounded-lg px-5 py-3 text-lg font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800/60 lg:px-6 lg:py-3.5 lg:text-xl"
           >
@@ -331,6 +343,13 @@ export function MarketingSiteHeader() {
                 onClick={() => setMobileOpen(false)}
               >
                 Login
+              </Link>
+              <Link
+                href="/themes"
+                className="rounded-lg px-3 py-3 text-base font-medium text-slate-800 dark:text-slate-100"
+                onClick={() => setMobileOpen(false)}
+              >
+                Themes
               </Link>
               <Link
                 href="/#pricing"
