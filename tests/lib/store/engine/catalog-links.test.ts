@@ -1,4 +1,4 @@
-import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, isEditorFrameSearch, isEmbedSearch, withPreviewParams } from '@/lib/store/engine/links';
+import { catalogRedirect, engineCatalogHref, engineProductHref, shareUrl, embedGuardOn, isEditorFrameSearch, isEmbedSearch, withPreviewParams } from '@/lib/store/engine/links';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 
 describe('engineCatalogHref', () => {
@@ -145,5 +145,21 @@ describe('isEmbedSearch', () => {
     expect(isEmbedSearch('')).toBe(false);
     expect(isEmbedSearch('?embed=0')).toBe(false);
     expect(isEmbedSearch('?embed=true')).toBe(false);
+  });
+});
+
+describe('embedGuardOn', () => {
+  it('is on for a demo-<theme> store asked to embed, or shown inside a frame, decided from the address alone', () => {
+    expect(embedGuardOn({ host: 'demo-quick.khatario.com', search: '?embed=1', framed: false })).toBe(true);
+    // A click before the page woke up navigated the frame to a URL without embed=1: still guarded inside the frame.
+    expect(embedGuardOn({ host: 'demo-quick.staging.khatario.com', search: '', framed: true })).toBe(true);
+    expect(embedGuardOn({ host: 'demo-quick.localhost:3015', search: '', framed: true })).toBe(true);
+  });
+
+  it('is off for a demo store opened directly, and for every other store or host', () => {
+    expect(embedGuardOn({ host: 'demo-quick.khatario.com', search: '', framed: false })).toBe(false);
+    expect(embedGuardOn({ host: 'shalinitraders.khatario.com', search: '?embed=1', framed: true })).toBe(false);
+    expect(embedGuardOn({ host: 'theme-studio.khatario.com', search: '?embed=1', framed: true })).toBe(false);
+    expect(embedGuardOn({ host: 'khatario.com', search: '?embed=1', framed: true })).toBe(false);
   });
 });

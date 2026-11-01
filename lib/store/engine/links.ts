@@ -1,4 +1,6 @@
-// Client-safe: no imports, so storefront client components can use it without pulling in the sanitisers.
+// Client-safe: imports only lib/store/subdomain.ts (itself import-free), so storefront client components can use it
+// without pulling in the sanitisers.
+import { extractStoreSubdomain } from '@/lib/store/subdomain';
 
 /** Query keys a storefront link keeps: theme preview and the old Studio draft token. */
 const KEPT_PARAMS = ['preview_theme', 'pt', 'td'];
@@ -148,4 +150,14 @@ export function isEditorFrameSearch(currentSearch: string): boolean {
 /** A theme demo store shown inside the theme store's preview frame (`embed=1`): it scrolls but ignores clicks. */
 export function isEmbedSearch(currentSearch: string): boolean {
   return new URLSearchParams(currentSearch).get('embed') === '1';
+}
+
+/**
+ * Whether a page ignores clicks (StoreEmbedGuard), from the address alone so it holds from the first moment: a theme
+ * demo store (demo-<theme>) asked to embed, or shown inside a frame (a click before the page woke up may have
+ * navigated the frame to a URL without `embed=1`). A demo store opened directly, and every other store, never is.
+ */
+export function embedGuardOn(o: { host: string; search: string; framed: boolean }): boolean {
+  const sub = extractStoreSubdomain(o.host);
+  return !!sub && sub.startsWith('demo-') && (o.framed || isEmbedSearch(o.search));
 }

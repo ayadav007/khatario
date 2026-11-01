@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { StoreProvider, useStore } from '@/lib/store/store-context';
+import { StoreProvider } from '@/lib/store/store-context';
 import { StorePushRegistration } from '@/components/store/StorePushRegistration';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
 import { StoreThemeEffects } from '@/components/store/StoreThemeEffects';
@@ -39,14 +39,9 @@ export function StoreApp({
     <StoreProvider subdomain={subdomain}>
       <StoreThemeEffects />
       <StorePromoSheet />
-      <DemoEmbedGuard />
+      <StoreEmbedGuard />
       {children}
     </StoreProvider>
   );
 }
 
-/** Theme demo stores framed by the theme store (`?embed=1`) ignore clicks; see StoreEmbedGuard. */
-function DemoEmbedGuard() {
-  const { store } = useStore();
-  return <StoreEmbedGuard isDemo={store?.is_demo === true} />;
-}
