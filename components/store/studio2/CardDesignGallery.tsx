@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { createPortal } from 'react-dom';
 import { Loader2, X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -19,8 +20,12 @@ import { PRESET_CARD_FIELDS } from '@/lib/store/engine/card-look';
 import { engineRootClass, engineRootStyle } from '@/lib/store/engine/root-class';
 import type { ThemePreset } from '@/lib/store/engine/types';
 import { StudioAddButton, StudioProductTile } from '@/components/store/studio-theme/StudioSections';
-// The storefront's tile layers (EngineShell loads the same ones), each scoped to the store root.
+import { ENGINE_BASE_RULES } from '@/components/store/engine/base-rules';
+import { STYLE_RULES } from '@/components/store/engine/style-rules';
+// The storefront's tile layers (EngineShell loads the same ones; Quick's comes with QuickChrome), each scoped to the
+// store root or to Quick's own qk-* classes.
 import '@/components/store/phone-kit.css';
+import '@/components/store/quick-theme/quick-theme.css';
 import '@/components/store/engine/presets/quick.css';
 import '@/components/store/engine/presets/grocery.css';
 import '@/components/store/engine/presets/khatario.css';
@@ -30,15 +35,11 @@ import { useStudio2 } from './Studio2Editor';
 type GalleryId = CardDesignId | 'theme';
 const GALLERY_IDS: readonly GalleryId[] = ['theme', ...CARD_DESIGN_IDS];
 const REPLACE_TEXT = 'Your card settings will be replaced.';
+/** One tile per grid on every width (the grid's columns come from --columns, or --mcols on phones). */
+const GRID_ONE = { '--columns': 1, '--mcols': 1 } as CSSProperties;
 
-/** The tile rules of EngineShell's THEME_RULES (that module carries the whole storefront shell). */
-const TILE_RULES =
-  '.st-root.eng-root.store-studio :is(h1,h2,h3,.logo b){font-family:var(--font-heading)}' +
-  '.st-root.eng-root.store-studio :is(.st-btn,.addBtn){border-radius:var(--btn-radius)}' +
-  '.st-root.eng-root .addBtn:not(:disabled){border-color:var(--c-btn,var(--primary));color:var(--c-btn,var(--primary))}' +
-  '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
-  '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
-  '.st-root.eng-root .eng-sec{--st-line:var(--c-border,color-mix(in srgb,var(--text) 14%,transparent));--st-muted:color-mix(in srgb,var(--text) 62%,transparent);--qk-card:var(--st-card)}';
+/** EngineShell's base rules and the theme's Style rules (frame, labels, texture), which target the tile too. */
+const TILE_RULES = ENGINE_BASE_RULES + STYLE_RULES;
 
 /** Drawn when the store has no product with a photo (or the list could not be read): the card's photo placeholder. */
 const BUILT_IN_SAMPLE = {
@@ -53,18 +54,19 @@ const BUILT_IN_SAMPLE = {
   ratingCount: 128,
 };
 
-// One look-up per editor visit: the gallery can open many times.
-let sampleCache: Promise<CardSampleItem | null> | null = null;
+// One look-up per business per editor visit: the gallery can open many times.
+let sampleCache: { key: string; item: Promise<CardSampleItem | null> } | null = null;
 
-function loadSample(): Promise<CardSampleItem | null> {
-  if (!sampleCache) {
-    sampleCache = fetchCardSampleItem().catch(() => null);
+function loadSample(key: string): Promise<CardSampleItem | null> {
+  if (!sampleCache || sampleCache.key !== key) {
+    const entry = { key, item: fetchCardSampleItem().catch(() => null) };
+    sampleCache = entry;
     // A failed look-up is tried again next time.
-    void sampleCache.then((item) => {
-      if (!item) sampleCache = null;
+    void entry.item.then((item) => {
+      if (!item && sampleCache === entry) sampleCache = null;
     });
   }
-  return sampleCache;
+  return sampleCache.item;
 }
 
 /** The look a gallery tile draws: the design exactly as picking it would write it (Theme's own: today's tile). */
@@ -80,6 +82,7 @@ function tileLook(id: CardDesignId): ResolvedCardLook {
  */
 export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; onClose(): void }) {
   const { theme, apply, readOnly } = useStudio2();
+  const businessId = useAuth().business?.id ?? '';
   const settings = theme.settings;
   const current = useMemo(() => sanitizeProductCard(settings.product_card), [settings.product_card]);
   const edited = isCardDesignEdited(current);
@@ -91,11 +94,11 @@ export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; o
 
   useEffect(() => {
     let alive = true;
-    void loadSample().then((item) => alive && setSample(item));
+    void loadSample(businessId).then((item) => alive && setSample(item));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -239,7 +242,7 @@ export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; o
             </div>
           ) : (
             // One store root around the grid, so its width (not each tile's) picks the desktop or phone look.
-            <div className={root.className} style={rootStyle}>
+            <div className={root.className} style={rootStyle} data-card={settings.card_style}>
               <style dangerouslySetInnerHTML={{ __html: TILE_RULES }} />
               <div className="eng-sec grid grid-cols-2 gap-4 p-4 sm:grid-cols-3 lg:grid-cols-4">
                 {GALLERY_IDS.map((id) => {
@@ -261,10 +264,12 @@ export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; o
                         style={{ background: rootStyle.backgroundColor as string | undefined }}
                         onClick={() => setSelected(id)}
                       >
+                        {/* A one-column product grid, as a product section draws it with its default (bordered) card style. */}
                         <div
                           aria-hidden="true"
                           ref={(el) => el?.setAttribute('inert', '')}
-                          className={clsx('pointer-events-none', wide ? 'mx-auto max-w-sm' : '')}
+                          className={clsx('productGrid pointer-events-none', wide ? 'mx-auto max-w-sm' : '')}
+                          style={GRID_ONE}
                         >
                           {tile(id)}
                         </div>

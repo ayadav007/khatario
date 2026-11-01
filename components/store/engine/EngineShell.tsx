@@ -30,6 +30,7 @@ import '../phone-kit.css';
 import '../studio-theme/studio-theme.css';
 // Preset layers (D27): each is scoped to .st-root.eng-root.eng-preset-<preset>, so loading all three is safe.
 import { EngineCardContext } from './EngineCardContext';
+import { ENGINE_BASE_RULES } from './base-rules';
 import { STYLE_RULES } from './style-rules';
 import { CONTENT_BLOCK_RULES } from './content-block-rules';
 import { PREMIUM_SECTION_RULES } from './premium-section-rules';
@@ -44,19 +45,9 @@ export function useEngineCart() {
   return useContext(EngineCartContext);
 }
 
-// Theme fonts on headings and the theme's button radius over the Studio defaults.
+// The base rules (fonts, button radius and colours, section lines) live in ./base-rules, shared with the card gallery.
 const THEME_RULES =
-  '.st-root.eng-root.store-studio :is(h1,h2,h3,.logo b){font-family:var(--font-heading)}' +
-  '.st-root.eng-root.store-studio :is(.st-btn,.addBtn){border-radius:var(--btn-radius)}' +
-  // Buttons follow the section's colour scheme (button / button text), else the store's primary colour.
-  '.st-root.eng-root .st-btn{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
-  '.st-root.eng-root .addBtn:not(:disabled){border-color:var(--c-btn,var(--primary));color:var(--c-btn,var(--primary))}' +
-  '.st-root.eng-root .addBtn:not(:disabled):hover{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
-  '.st-root.eng-root .stepper{background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}' +
-  // Muted text and hairlines come from the section's own text colour: declared once on .st-root they would keep the
-  // theme's text colour, so a dark section's secondary text stayed dark grey. Shared components' fixed Tailwind greys
-  // (catalog filters, product page) follow the section's text, muted text, card and line colours too.
-  '.st-root.eng-root .eng-sec{--st-line:var(--c-border,color-mix(in srgb,var(--text) 14%,transparent));--st-muted:color-mix(in srgb,var(--text) 62%,transparent);--qk-card:var(--st-card)}' +
+  ENGINE_BASE_RULES +
   // A section with its own scheme: the announcement bar and footer take the scheme's paint (the frame) instead of
   // their own fixed accent / dark colours; the low-stock note stays orange but readable on any paper.
   '.st-root.eng-root .eng-sec[data-scheme] :is(.announce,.st-footer){background:transparent;color:inherit}' +
