@@ -60,11 +60,15 @@ Veg / non-veg mark, "Notify me when back", "Bought 50+ this week", quick view, c
 | | `badge_icon` | `none` \| `crown` \| `star` \| `flame` \| `sparkle` | `none` |
 | | `badge_colors` | `accent` \| `button` | `accent` |
 | Buttons | `button_style` | `full` \| `pill_on_photo` \| `icon` \| `icon_full` \| `none` | `full` |
+| | `button_fill` | `filled` \| `outline` | `filled` |
+| | `button_shape` | `rounded` \| `pill` | `rounded` |
+| | `button_reveal` | `always` \| `hover` (hover is always shown on touch screens) | `always` |
 | | `button_action` | `add` \| `buy` (the full button; with `icon_full` the icon does the other) | `add` |
 | | `after_add` | `button` \| `stepper` | `stepper` |
 | | `wishlist` | `off` \| `top-left` \| `top-right` | `top-right` |
 | | `wishlist_bg` | `plain` \| `circle` | `plain` |
-| Card | `color_scheme` | scheme id or `''` (section's colours) | `''` |
+| Card | `layout` | `stack` (photo on top) \| `row` (photo left, details right; the List design) | `stack` |
+| | `color_scheme` | scheme id or `''` (section's colours) | `''` |
 | | `border` | 0–3 | 0 |
 | | `radius` | 0–32 | 12 |
 | | `shadow` | `none` \| `soft` \| `strong` | `none` |
