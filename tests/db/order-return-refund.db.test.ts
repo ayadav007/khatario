@@ -879,7 +879,7 @@ d('refund a return to the original payment (real DB)', () => {
         throw duplicate();
       },
     });
-    expect(again).toMatchObject({ status: 'pending', providerRefundId: null });
+    expect(again).toMatchObject({ status: 'pending', providerRefundId: row.idempotency_key });
     expect(await refundRows(id)).toHaveLength(1);
     expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: row.idempotency_key });
 
@@ -965,12 +965,14 @@ d('refund a return to the original payment (real DB)', () => {
         throw new Error('Easebuzz refund lookup failed: HTTP 502');
       },
     ];
+    let sends = 0;
     for (const fetchStatus of lookups) {
       const out = await refundReturnToOriginalPayment({
         businessId: B,
         returnId: id,
         userId: A,
         requestRefund: async () => {
+          sends += 1;
           throw duplicate();
         },
         fetchStatus,
@@ -985,6 +987,8 @@ d('refund a return to the original payment (real DB)', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ id: row.id, status: 'pending', provider_refund_id: null });
     }
+    // Once Easebuzz has refused it, the attempt is only looked up, never sent again.
+    expect(sends).toBe(1);
     expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).not.toContain('refund_failed');
     expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: false, max: 0 });
 
@@ -994,11 +998,13 @@ d('refund a return to the original payment (real DB)', () => {
       returnId: id,
       userId: A,
       requestRefund: async () => {
+        sends += 1;
         throw duplicate();
       },
       fetchStatus: async () => 'failed',
     });
-    expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Easebuzz refund failed: Duplicate merchant refund id' });
+    expect(sends).toBe(1);
+    expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: row.idempotency_key, error: 'The gateway declined this refund' });
     expect((await refundRows(id))[0]).toMatchObject({ status: 'failed', provider_refund_id: row.idempotency_key });
     expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: true, max: 118 });
   });
@@ -1087,6 +1093,132 @@ d('refund a return to the original payment (real DB)', () => {
     });
     expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: null });
     expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).not.toContain('refund_failed');
+  });
+
+  /**
+   * An Easebuzz attempt with no refund id whose re-send the check sent and Easebuzz refused (lookup: no
+   * refund yet). `posts` counts every send to Easebuzz.
+   */
+  async function refusedEasebuzzAttempt(posts: { n: number }) {
+    const { invoiceId } = await easebuzzOrder(1);
+    const id = await receivedReturn(invoiceId);
+    const row = await unansweredEasebuzz(id);
+    await pool.query(`UPDATE return_gateway_refunds SET created_at = NOW() - INTERVAL '20 minutes' WHERE id = $1`, [row.id]);
+    await checkPendingReturnRefunds({
+      businessId: B,
+      returnId: id,
+      fetchStatus: async () => null,
+      resubmit: async () => {
+        posts.n += 1;
+        throw duplicate();
+      },
+    });
+    expect(posts.n).toBe(1);
+    expect((await refundRows(id))[0]).toMatchObject({
+      status: 'pending',
+      provider_refund_id: null,
+      failure_reason: 'The gateway refused a repeat send; the earlier refund is being checked',
+    });
+    return { id, row };
+  }
+
+  /** The refusal was `minutes` ago. */
+  async function refusedAgo(rowId: string, minutes: number) {
+    await pool.query(`UPDATE return_gateway_refunds SET updated_at = NOW() - make_interval(mins => $2::int) WHERE id = $1`, [rowId, minutes]);
+  }
+
+  test('an Easebuzz attempt it refused is not sent again while its refund list catches up (30 minutes)', async () => {
+    const posts = { n: 0 };
+    const { id, row } = await refusedEasebuzzAttempt(posts);
+    const post = async () => {
+      posts.n += 1;
+      throw duplicate();
+    };
+    await refusedAgo(row.id, 10);
+    const res = await checkPendingReturnRefunds({ businessId: B, returnId: id, fetchStatus: async () => null, resubmit: post });
+    expect(res).toMatchObject({ checked: 1, processed: 0, failed: 0 });
+    const again = await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: post, fetchStatus: async () => null });
+    expect(again).toMatchObject({ status: 'pending', providerRefundId: null });
+    expect(posts.n).toBe(1);
+    expect(await refundRows(id)).toHaveLength(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: null });
+    expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: false, max: 0 });
+    expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).not.toContain('refund_failed');
+  });
+
+  test('30 minutes after Easebuzz refused it, an attempt it still lists no refund for fails and frees the credit (check or Try again)', async () => {
+    for (const by of ['check', 'try again'] as const) {
+      const posts = { n: 0 };
+      const { id, row } = await refusedEasebuzzAttempt(posts);
+      await refusedAgo(row.id, 31);
+      const post = async () => {
+        posts.n += 1;
+        throw duplicate();
+      };
+      if (by === 'check') {
+        const res = await checkPendingReturnRefunds({ businessId: B, returnId: id, fetchStatus: async () => null, resubmit: post });
+        expect(res).toMatchObject({ checked: 1, failed: 1 });
+      } else {
+        const out = await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: post, fetchStatus: async () => null });
+        expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Easebuzz refused this refund' });
+      }
+      expect(posts.n).toBe(1);
+      expect((await refundRows(id))[0]).toMatchObject({ status: 'failed', provider_refund_id: null, failure_reason: 'Easebuzz refused this refund' });
+      expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).toContain('refund_failed');
+      expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: true, max: 118 });
+    }
+  });
+
+  test('30 minutes after Easebuzz refused it, a lookup that cannot answer keeps the attempt pending and sends nothing', async () => {
+    const posts = { n: 0 };
+    const { id, row } = await refusedEasebuzzAttempt(posts);
+    await refusedAgo(row.id, 31);
+    const post = async () => {
+      posts.n += 1;
+      throw duplicate();
+    };
+    const blind = async () => {
+      throw new Error('Easebuzz refund lookup failed: the reply was not JSON');
+    };
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await checkPendingReturnRefunds({ businessId: B, returnId: id, fetchStatus: blind, resubmit: post });
+    } finally {
+      quiet.mockRestore();
+    }
+    const out = await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: post, fetchStatus: blind });
+    expect(out.status).toBe('pending');
+    expect(posts.n).toBe(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'pending', provider_refund_id: null });
+    expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: false, max: 0 });
+  });
+
+  test('a gateway refund reported on an attempt already failed is logged loudly, not silently ignored', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        throw new GatewayRefundError('Razorpay refund failed: 400', 400, true);
+      },
+    });
+    const [row] = await refundRows(id);
+    const loud = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const s = await applyReturnGatewayRefundResult({
+        businessId: B,
+        refundRowId: row.id,
+        providerRefundId: `rfnd_late_${tag}`,
+        providerStatus: 'processed',
+        actor: 'webhook',
+      });
+      expect(s).toBe('failed');
+      expect(loud).toHaveBeenCalledWith('[return refund] gateway refund on a failed attempt', row.id, `rfnd_late_${tag}`, 'processed');
+    } finally {
+      loud.mockRestore();
+    }
   });
 
   test('the claim takes the credit note lock, so credit being spent on a bill at the same time is never also refunded', async () => {

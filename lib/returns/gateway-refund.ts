@@ -185,6 +185,8 @@ export async function originalRefundOffer(
 type Claim = {
   /** False when an open attempt was reused: an earlier send may already have reached the gateway. */
   fresh: boolean;
+  /** The reused attempt is one Easebuzz refused (see refusedNote): it is looked up, never sent again. */
+  refused: { note: string; aged: boolean } | null;
   rowId: string;
   idempotencyKey: string;
   amount: number;
@@ -227,17 +229,36 @@ async function claimGatewayRefund(input: {
     }
 
     // A click while an attempt is open repeats that attempt: same key and amount, so the gateway refunds once.
-    const open = await client.query<{ id: string; idempotency_key: string; amount: string; provider: Provider; provider_payment_id: string }>(
-      `SELECT id, idempotency_key, amount::text, provider, provider_payment_id
+    const open = await client.query<{
+      id: string;
+      idempotency_key: string;
+      amount: string;
+      provider: Provider;
+      provider_payment_id: string;
+      provider_refund_id: string | null;
+      failure_reason: string | null;
+      refusal_aged: boolean;
+    }>(
+      `SELECT id, idempotency_key, amount::text, provider, provider_payment_id, provider_refund_id, failure_reason,
+              updated_at <= NOW() - make_interval(mins => $3::int) AS refusal_aged
          FROM return_gateway_refunds
         WHERE order_return_id = $1 AND business_id = $2 AND status = 'pending'
         FOR UPDATE`,
-      [input.returnId, input.businessId],
+      [input.returnId, input.businessId, REFUSAL_WAIT_MINUTES],
     );
     if (open.rows[0]) {
       const o = open.rows[0];
       await client.query('COMMIT');
-      return { fresh: false, rowId: o.id, idempotencyKey: o.idempotency_key, amount: Number(o.amount), provider: o.provider, providerPaymentId: o.provider_payment_id };
+      const note = refusedNote(o);
+      return {
+        fresh: false,
+        refused: note ? { note, aged: o.refusal_aged } : null,
+        rowId: o.id,
+        idempotencyKey: o.idempotency_key,
+        amount: Number(o.amount),
+        provider: o.provider,
+        providerPaymentId: o.provider_payment_id,
+      };
     }
 
     const noteLink = await client.query<{ credit_note_id: string | null }>(
@@ -294,7 +315,7 @@ async function claimGatewayRefund(input: {
       ],
     );
     await client.query('COMMIT');
-    return { fresh: true, rowId, idempotencyKey: rowId, amount, provider: room.provider, providerPaymentId: order.rows[0].provider_payment_id };
+    return { fresh: true, refused: null, rowId, idempotencyKey: rowId, amount, provider: room.provider, providerPaymentId: order.rows[0].provider_payment_id };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -318,6 +339,27 @@ type SendResult = { status: 'processed' | 'pending' | 'failed'; providerRefundId
 
 const REPEAT_REFUSED = 'The gateway refused a repeat send; the earlier refund is being checked';
 const REFUSED_UNCHECKED = 'The gateway refused this refund but could not say whether it already has it; it is being checked';
+const EASEBUZZ_REFUSED = 'Easebuzz refused this refund';
+/** How long a refused Easebuzz attempt waits for Easebuzz's refund list to catch up before it can fail. */
+const REFUSAL_WAIT_MINUTES = 30;
+
+/**
+ * An Easebuzz attempt with no refund id whose last send Easebuzz refused carries one of the notes
+ * above; the row's updated_at is when (nothing else writes it while it waits). Null = not one.
+ */
+function refusedNote(row: { provider: Provider; provider_refund_id: string | null; failure_reason: string | null }): string | null {
+  if (row.provider !== 'easebuzz' || row.provider_refund_id) return null;
+  return row.failure_reason === REPEAT_REFUSED || row.failure_reason === REFUSED_UNCHECKED ? row.failure_reason : null;
+}
+
+type Applied = { status: 'pending' | 'processed' | 'failed'; error?: string; providerRefundId?: string | null };
+
+/** What a send comes to: the attempt's status and stored refund id, and an error unless it was processed. */
+function sendResult(applied: Applied, fallbackError?: string): SendResult {
+  const providerRefundId = applied.providerRefundId ?? null;
+  const error = applied.status === 'processed' ? undefined : applied.error ?? fallbackError;
+  return error ? { status: applied.status, providerRefundId, error } : { status: applied.status, providerRefundId };
+}
 
 /** Asks the gateway for one open attempt (with its own key and amount) and applies the answer. */
 async function sendAttempt(
@@ -372,11 +414,8 @@ async function sendAttempt(
       return recheckRefusedEasebuzz(attempt, lookup, error, applyDetailed);
     }
     // Unclear: kept pending with the message as a note; the retry, Check now or the cron repeats the key.
-    const applied = await applyDetailed(null, isDefiniteRefusal(e) ? 'failed' : 'pending', error);
     // A notice may have confirmed the attempt meanwhile; then there is no error to show.
-    return applied.status === 'processed'
-      ? { status: applied.status, providerRefundId: null }
-      : { status: applied.status, providerRefundId: null, error: applied.error ?? error };
+    return sendResult(await applyDetailed(null, isDefiniteRefusal(e) ? 'failed' : 'pending', error), error);
   }
   // Posting can fail after the gateway refunded: the attempt stays pending and the reason comes back.
   const applied = await applyDetailed(result.providerRefundId, result.status);
@@ -401,7 +440,7 @@ async function recheckRefusedEasebuzz(
     providerRefundId: string | null,
     providerStatus: 'processed' | 'pending' | 'failed',
     failureReason?: string | null,
-  ) => Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }>,
+  ) => Promise<Applied>,
 ): Promise<SendResult> {
   let found: 'processed' | 'pending' | 'failed' | null = null;
   let unclear = false;
@@ -419,22 +458,51 @@ async function recheckRefusedEasebuzz(
   // Easebuzz knows a refund by our merchant refund id, which is the key.
   const refundId = easebuzzMerchantRefundId(attempt.idempotencyKey);
   if (found === 'failed' || (found === null && !unclear && attempt.fresh)) {
-    const applied = await applyDetailed(found === 'failed' ? refundId : null, 'failed', error);
-    return applied.status === 'processed'
-      ? { status: applied.status, providerRefundId: null }
-      : { status: applied.status, providerRefundId: null, error: applied.error ?? error };
+    return sendResult(await applyDetailed(found === 'failed' ? refundId : null, 'failed', error), error);
   }
-  if (found) {
-    const applied = await applyDetailed(refundId, found);
-    return applied.error
-      ? { status: applied.status, providerRefundId: refundId, error: applied.error }
-      : { status: applied.status, providerRefundId: refundId };
-  }
+  if (found) return sendResult(await applyDetailed(refundId, found));
+  // From here the attempt counts as refused (refusedNote): it is looked up, never sent again.
   const note = attempt.fresh ? REFUSED_UNCHECKED : REPEAT_REFUSED;
-  const applied = await applyDetailed(null, 'pending', note);
-  return applied.status === 'processed'
-    ? { status: applied.status, providerRefundId: null }
-    : { status: applied.status, providerRefundId: null, error: applied.error ?? note };
+  return sendResult(await applyDetailed(null, 'pending', note), note);
+}
+
+/**
+ * An Easebuzz attempt with no refund id that Easebuzz refused is never sent again (that would only be
+ * refused again, every run, while the credit stays held). It is looked up by its key instead: a refund
+ * there is applied; none, once REFUSAL_WAIT_MINUTES have passed since the refusal (time for the list
+ * to catch up), fails it and frees the credit; a lookup that cannot answer changes nothing.
+ */
+async function settleRefusedEasebuzz(
+  attempt: { businessId: string; rowId: string; provider: Provider; providerPaymentId: string; idempotencyKey: string },
+  refused: { note: string; aged: boolean },
+  lookup: StatusLookup,
+  actor: 'staff' | 'system',
+  actorUserId: string | null,
+): Promise<SendResult> {
+  let found: 'processed' | 'pending' | 'failed' | null;
+  try {
+    found = await lookup({
+      business_id: attempt.businessId,
+      provider: attempt.provider,
+      provider_payment_id: attempt.providerPaymentId,
+      provider_refund_id: null,
+      idempotency_key: attempt.idempotencyKey,
+    });
+  } catch {
+    return { status: 'pending', providerRefundId: null, error: refused.note };
+  }
+  if (!found && !refused.aged) return { status: 'pending', providerRefundId: null, error: refused.note };
+  const reason = found === 'failed' ? 'The gateway declined this refund' : found ? null : EASEBUZZ_REFUSED;
+  const applied = await applyResult({
+    businessId: attempt.businessId,
+    refundRowId: attempt.rowId,
+    providerRefundId: found ? easebuzzMerchantRefundId(attempt.idempotencyKey) : null,
+    providerStatus: found ?? 'failed',
+    failureReason: reason,
+    actor,
+    actorUserId,
+  });
+  return sendResult(applied, reason ?? undefined);
 }
 
 function defaultRequester(provider: Provider, businessId: string): () => Promise<GatewayRequester> {
@@ -456,6 +524,17 @@ export async function refundReturnToOriginalPayment(input: {
   fetchStatus?: StatusLookup;
 }): Promise<{ status: 'processed' | 'pending' | 'failed'; amount: number; providerRefundId: string | null; error?: string }> {
   const claim = await claimGatewayRefund(input);
+  const lookup = input.fetchStatus ?? gatewayStatus;
+  if (claim.refused) {
+    const settled = await settleRefusedEasebuzz(
+      { businessId: input.businessId, rowId: claim.rowId, provider: claim.provider, providerPaymentId: claim.providerPaymentId, idempotencyKey: claim.idempotencyKey },
+      claim.refused,
+      lookup,
+      'staff',
+      input.userId,
+    );
+    return { ...settled, amount: claim.amount };
+  }
   const given = input.requestRefund;
   const sent = await sendAttempt(
     {
@@ -468,7 +547,7 @@ export async function refundReturnToOriginalPayment(input: {
       fresh: claim.fresh,
     },
     given ? async () => given : defaultRequester(claim.provider, input.businessId),
-    input.fetchStatus ?? gatewayStatus,
+    lookup,
     'staff',
     input.userId,
   );
@@ -544,7 +623,9 @@ export async function applyReturnGatewayRefundResult(input: ApplyInput): Promise
  * settled the money. Staff sends, Razorpay notices and the pending check all come through here, so the
  * *refunded* message goes once whichever of them completes the refund.
  */
-async function applyResult(input: ApplyInput): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }> {
+async function applyResult(
+  input: ApplyInput,
+): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string; providerRefundId?: string | null }> {
   const { settledReturnId, ...out } = await applyResultInTx(input);
   if (settledReturnId) await notifyReturnCustomer(input.businessId, settledReturnId, 'refunded');
   return out;
@@ -552,7 +633,7 @@ async function applyResult(input: ApplyInput): Promise<{ status: 'pending' | 'pr
 
 async function applyResultInTx(
   input: ApplyInput,
-): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string; settledReturnId?: string }> {
+): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string; settledReturnId?: string; providerRefundId?: string | null }> {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -579,8 +660,12 @@ async function applyResultInTx(
     );
     const row = locked.rows[0];
     if (row.status !== 'pending') {
+      if (row.status === 'failed' && input.providerRefundId && input.providerStatus !== 'failed') {
+        // The gateway has (or is making) a refund for an attempt we let go: staff must look at it.
+        console.error('[return refund] gateway refund on a failed attempt', input.refundRowId, input.providerRefundId, input.providerStatus);
+      }
       await client.query('COMMIT');
-      return { status: row.status };
+      return { status: row.status, providerRefundId: row.provider_refund_id };
     }
     if (row.provider_refund_id && input.providerRefundId && row.provider_refund_id !== input.providerRefundId) {
       throw new ReturnError(409, 'REFUND_CONFLICT', 'This refund attempt already has a different gateway refund');
@@ -601,7 +686,7 @@ async function applyResultInTx(
         await recordReturnEvent(client, { ...event, kind: 'refund_pending', note: `₹${inr(amount)} on its way to the original payment` });
       }
       await client.query('COMMIT');
-      return { status: 'pending' };
+      return { status: 'pending', providerRefundId: refundId };
     }
 
     if (input.providerStatus === 'failed' && row.provider_refund_id && !input.providerRefundId) {
@@ -612,7 +697,7 @@ async function applyResultInTx(
         [input.refundRowId, input.businessId, REPEAT_REFUSED],
       );
       await client.query('COMMIT');
-      return { status: 'pending', error: REPEAT_REFUSED };
+      return { status: 'pending', error: REPEAT_REFUSED, providerRefundId: row.provider_refund_id };
     }
 
     if (input.providerStatus === 'failed') {
@@ -625,7 +710,7 @@ async function applyResultInTx(
       );
       await recordReturnEvent(client, { ...event, kind: 'refund_failed', note: reason });
       await client.query('COMMIT');
-      return { status: 'failed' };
+      return { status: 'failed', providerRefundId: refundId };
     }
 
     // The money has left at the gateway. If posting fails, keep the refund id and say why.
@@ -643,10 +728,10 @@ async function applyResultInTx(
         [input.refundRowId, input.businessId, refundId, error],
       );
       await client.query('COMMIT');
-      return { status: 'pending', error };
+      return { status: 'pending', error, providerRefundId: refundId };
     }
     await client.query('COMMIT');
-    return { status: 'processed', settledReturnId: returnId };
+    return { status: 'processed', settledReturnId: returnId, providerRefundId: refundId };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -775,6 +860,9 @@ type PendingRow = {
   provider_refund_id: string | null;
   idempotency_key: string;
   amount: string;
+  failure_reason: string | null;
+  /** Last written at least REFUSAL_WAIT_MINUTES ago (for a refused Easebuzz attempt: refused that long ago). */
+  refusal_aged: boolean;
 };
 
 /** Default status lookup: Razorpay by refund id, Easebuzz by our merchant refund id (the key). */
@@ -813,7 +901,8 @@ export async function checkPendingReturnRefunds(opts?: {
   const minutes = opts?.olderThanMinutes ?? 10;
   const fetchStatus = opts?.fetchStatus ?? gatewayStatus;
   const rows = await getPool().query<PendingRow>(
-    `SELECT id, business_id, provider, provider_payment_id, provider_refund_id, idempotency_key, amount::text
+    `SELECT id, business_id, provider, provider_payment_id, provider_refund_id, idempotency_key, amount::text,
+            failure_reason, updated_at <= NOW() - make_interval(mins => $4::int) AS refusal_aged
        FROM return_gateway_refunds
       WHERE status = 'pending' AND provider_payment_id IS NOT NULL
         AND created_at <= NOW() - make_interval(mins => $1::int)
@@ -821,7 +910,7 @@ export async function checkPendingReturnRefunds(opts?: {
         AND ($3::uuid IS NULL OR order_return_id = $3::uuid)
       ORDER BY created_at
       LIMIT 200`,
-    [minutes, opts?.businessId ?? null, opts?.returnId ?? null],
+    [minutes, opts?.businessId ?? null, opts?.returnId ?? null, REFUSAL_WAIT_MINUTES],
   );
   const out = { checked: 0, processed: 0, failed: 0 };
   const resend = async (row: PendingRow) => {
@@ -847,6 +936,20 @@ export async function checkPendingReturnRefunds(opts?: {
   for (const row of rows.rows) {
     out.checked += 1;
     try {
+      const refused = refusedNote(row);
+      if (refused) {
+        // Easebuzz refused its last send: looked up, never sent again (settleRefusedEasebuzz).
+        const settled = await settleRefusedEasebuzz(
+          { businessId: row.business_id, rowId: row.id, provider: row.provider, providerPaymentId: row.provider_payment_id, idempotencyKey: row.idempotency_key },
+          { note: refused, aged: row.refusal_aged },
+          fetchStatus,
+          'system',
+          null,
+        );
+        if (settled.status === 'processed') out.processed += 1;
+        if (settled.status === 'failed') out.failed += 1;
+        continue;
+      }
       if (row.provider === 'razorpay' && !row.provider_refund_id) {
         // The first send never answered: Razorpay returns the same refund for the same key and amount,
         // so sending it again cannot refund twice.
@@ -855,8 +958,9 @@ export async function checkPendingReturnRefunds(opts?: {
       }
       const status = await fetchStatus(row);
       if (status == null && row.provider === 'easebuzz' && !row.provider_refund_id) {
-        // Easebuzz has no refund under our key, so the first send never reached it (a lookup that could
-        // not answer throws instead). The Easebuzz requester looks the key up again before sending.
+        // Easebuzz has no refund under our key and never refused this attempt, so the first send never
+        // reached it (a lookup that could not answer throws instead). The Easebuzz requester looks the key
+        // up again before sending.
         await resend(row);
         continue;
       }
