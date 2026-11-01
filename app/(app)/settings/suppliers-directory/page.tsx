@@ -15,6 +15,7 @@ import { buildApiUrl } from '@/lib/api-helpers';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { ConnectBuyerDialog } from '@/components/suppliers/hub/ConnectBuyerDialog';
+import { HubProfileImages } from '@/components/suppliers/hub/HubProfileImages';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { clsx } from 'clsx';
 
@@ -51,6 +52,13 @@ export default function SuppliersDirectorySettingsPage() {
   const [categories, setCategories] = useState('');
   const [slug, setSlug] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('hidden');
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [hubWhatsApp, setHubWhatsApp] = useState(true);
+  /** Listed in the directory but not shown yet: waiting for platform review, or hidden by it. */
+  const [listingHeld, setListingHeld] = useState<'waiting' | 'hidden' | null>(null);
+  const [savingWhatsApp, setSavingWhatsApp] = useState(false);
+  const [shortfallMode, setShortfallMode] = useState<'keep' | 'auto_return'>('keep');
+  const [savingShortfall, setSavingShortfall] = useState(false);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [incoming, setIncoming] = useState<
     Array<{ id: string; status: string; counterparty_name: string; created_at: string; message?: string | null }>
@@ -84,6 +92,17 @@ export default function SuppliersDirectorySettingsPage() {
         setCategories((disc.featured_categories || []).join(', '));
         setSlug(disc.public_slug || '');
         setVisibility(disc.visibility || 'hidden');
+        setCoverUrl(disc.cover_image_url || null);
+        setHubWhatsApp(dj.hub_whatsapp_enabled !== false);
+        setListingHeld(
+          disc.visibility === 'directory' && disc.directory_approved === false ? (disc.reviewed_at ? 'hidden' : 'waiting') : null
+        );
+      }
+
+      const sRes = await fetch('/api/settings/receipt-shortfall', { cache: 'no-store' });
+      if (sRes.ok) {
+        const sj = await sRes.json();
+        setShortfallMode(sj.mode === 'auto_return' ? 'auto_return' : 'keep');
       }
 
       const lUrl = buildApiUrl('/api/suppliers/hub/published-listings', {
@@ -149,7 +168,6 @@ export default function SuppliersDirectorySettingsPage() {
           profile_summary: summary.trim() || null,
           featured_categories: categories,
           public_slug: slug.trim() || null,
-          updated_by_user_id: user.id,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -161,6 +179,55 @@ export default function SuppliersDirectorySettingsPage() {
       load();
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Saved on its own, straight away: it is about notices, not the directory listing. */
+  async function saveHubWhatsApp(on: boolean) {
+    setSavingWhatsApp(true);
+    setHubWhatsApp(on);
+    try {
+      const res = await fetch('/api/suppliers/hub/discovery', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hub_whatsapp_enabled: on }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setHubWhatsApp(!on);
+        toast.error(j.error || 'Could not save');
+        return;
+      }
+      toast.success(on ? 'Supplier Hub updates will come on WhatsApp' : 'Supplier Hub WhatsApp updates are off');
+    } finally {
+      setSavingWhatsApp(false);
+    }
+  }
+
+  /** Saved on its own, straight away, like the WhatsApp switch. */
+  async function saveShortfallMode(mode: 'keep' | 'auto_return') {
+    const before = shortfallMode;
+    setSavingShortfall(true);
+    setShortfallMode(mode);
+    try {
+      const res = await fetch('/api/settings/receipt-shortfall', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setShortfallMode(before);
+        toast.error(j.error || 'Could not save');
+        return;
+      }
+      toast.success(
+        mode === 'auto_return'
+          ? 'Short and damaged goods will be returned to the supplier on receipt'
+          : 'Short and damaged goods will be kept for a debit note you record later'
+      );
+    } finally {
+      setSavingShortfall(false);
     }
   }
 
@@ -255,6 +322,14 @@ export default function SuppliersDirectorySettingsPage() {
         <>
           <div className={STACK_PAGE_CLASS}>
             <section>
+              <h3 className="settings-section-title">Logo and cover photo</h3>
+              <p className="type-body-secondary mb-4 max-w-2xl">
+                Shops see these on your Supplier Hub profile and in Find suppliers.
+              </p>
+              <HubProfileImages coverUrl={coverUrl} onCoverChange={setCoverUrl} />
+            </section>
+
+            <section>
               <h3 className="settings-section-title">Visibility</h3>
               <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>
                 <div className="space-y-2">
@@ -271,6 +346,13 @@ export default function SuppliersDirectorySettingsPage() {
                     </label>
                   ))}
                 </div>
+                {listingHeld && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {listingHeld === 'waiting'
+                      ? 'Your listing is waiting for a quick review by Khatario before it shows in Find suppliers.'
+                      : 'Khatario hid your listing from Find suppliers. Contact support to have it reviewed again.'}
+                  </p>
+                )}
 
                 <div>
                   <label htmlFor="profile-summary" className="type-label mb-1.5 block">
@@ -308,6 +390,67 @@ export default function SuppliersDirectorySettingsPage() {
                     </p>
                   ) : null}
                 </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="settings-section-title">WhatsApp updates</h3>
+              <label className="flex max-w-2xl cursor-pointer items-start gap-3">
+                <input
+                  id="hub-whatsapp"
+                  type="checkbox"
+                  checked={hubWhatsApp}
+                  disabled={savingWhatsApp}
+                  onChange={(e) => saveHubWhatsApp(e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                />
+                <span className="min-w-0">
+                  <span className="block font-medium text-text-primary">Send Supplier Hub updates on WhatsApp</span>
+                  <span className="type-body-secondary mt-0.5 block">
+                    New orders, orders to confirm, bills, dispatches and connection requests come to the business
+                    owner&apos;s phone from Khatario, with a link to open them. In-app notices stay on either way.
+                  </span>
+                </span>
+              </label>
+            </section>
+
+            <section id="receipt-shortfall">
+              <h3 className="settings-section-title">Short or damaged goods on a supplier&apos;s bill</h3>
+              <p className="type-body-secondary mb-3 max-w-2xl">
+                When you receive a connected supplier&apos;s bill and mark some quantity short or damaged, the purchase
+                still matches the bill. Choose who raises the debit note for that quantity.
+              </p>
+              <div className="max-w-2xl space-y-3">
+                {(
+                  [
+                    {
+                      value: 'keep',
+                      label: 'I will record the debit note later',
+                      help: 'Everything billed goes into stock. The receipt keeps what was short or damaged until you record a purchase return.',
+                    },
+                    {
+                      value: 'auto_return',
+                      label: 'Return them to the supplier when I receive the bill',
+                      help: 'A debit note is raised at once for the short and damaged quantity: it leaves stock, comes off what you owe the supplier, and reverses its GST.',
+                    },
+                  ] as const
+                ).map((o) => (
+                  <label key={o.value} className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="radio"
+                      name="receipt-shortfall"
+                      value={o.value}
+                      checked={shortfallMode === o.value}
+                      disabled={savingShortfall}
+                      onChange={() => saveShortfallMode(o.value)}
+                      className="mt-1 h-4 w-4 shrink-0 border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-text-primary">{o.label}</span>
+                      <span className="type-body-secondary mt-0.5 block">{o.help}</span>
+                    </span>
+                  </label>
+                ))}
               </div>
             </section>
 

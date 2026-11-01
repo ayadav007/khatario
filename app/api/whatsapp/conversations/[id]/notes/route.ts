@@ -1,128 +1,54 @@
 export const dynamic = 'force-dynamic';
 
 /**
- * API endpoints for conversation notes
+ * Internal notes on a chat (lib/leads/notes.ts).
+ * GET    - { notes }: the chat's notes and those of any lead linked to it, newest first, each tagged with its enquiry
+ * POST   - { note_text }: files under the chat's open lead, else a general chat note
+ * DELETE - ?note_id=: the author or a supervisor deletes a note
+ * Author and business always come from the session.
  */
 
 import { NextResponse } from 'next/server';
-import { queryRows, queryOne, query } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
+import { addChatNote, deleteNote, listChatNotes, NoteError } from '@/lib/leads/notes';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
+function failed(error: any, where: string) {
+  if (error instanceof NoteError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+  console.error(`Error ${where} note:`, error);
+  return NextResponse.json({ error: error.message }, { status: 500 });
+}
+
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, businessId, userId }) => {
   try {
-
-    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
-    if (!conversationId) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
-    }
-
-    // Fetch notes with user information
-    const notes = await queryRows(
-      `SELECT 
-        n.id,
-        n.note_text,
-        n.created_at,
-        n.user_id,
-        u.name as user_name,
-        u.email as user_email
-       FROM whatsapp_conversation_notes n
-       LEFT JOIN users u ON n.user_id = u.id
-       WHERE n.conversation_id = $1 AND n.business_id = $2
-       ORDER BY n.created_at DESC`,
-      [conversationId, businessId]
-    );
-
-    return NextResponse.json({ notes });
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    return NextResponse.json({ notes: await listChatNotes(found.viewer, found.id) });
   } catch (error: any) {
-    console.error('Error fetching notes:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return failed(error, 'fetching');
   }
 });
 
-export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, businessId, body, userId }) => {
   try {
-
-    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
-    if (!conversationId) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
-    }
-
-    const { note_text } = (body ?? {}) as Record<string, any>;
-
-    if (!note_text || typeof note_text !== 'string') {
-      return NextResponse.json({ error: 'note_text is required' }, { status: 400 });
-    }
-    const user_id = userId;
-
-    // Create note
-    const note = await queryOne<{ id: string; note_text: string; created_at: string; user_id: string }>(
-      `INSERT INTO whatsapp_conversation_notes 
-       (conversation_id, business_id, user_id, note_text)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, note_text, created_at, user_id`,
-      [conversationId, businessId, user_id, note_text]
-    );
-
-    // Fetch note with user information
-    const noteWithUser = await queryOne(
-      `SELECT 
-        n.id,
-        n.note_text,
-        n.created_at,
-        n.user_id,
-        u.name as user_name,
-        u.email as user_email
-       FROM whatsapp_conversation_notes n
-       LEFT JOIN users u ON n.user_id = u.id
-       WHERE n.id = $1`,
-      [note!.id]
-    );
-
-    return NextResponse.json({ note: noteWithUser }, { status: 201 });
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    const note = await addChatNote(found.viewer, found.id, (body as { note_text?: unknown } | null)?.note_text);
+    return NextResponse.json({ note }, { status: 201 });
   } catch (error: any) {
-    console.error('Error creating note:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return failed(error, 'creating');
   }
 });
 
 export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const noteId = searchParams.get('note_id');
-
-    if (!businessId || !noteId) {
-      return NextResponse.json(
-        { error: 'businessId and note_id are required' },
-        { status: 400 }
-      );
-    }
-
-    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
-    if (!conversationId) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
-    }
-
-    // Verify note belongs to conversation and business
-    const note = await queryOne(
-      `SELECT id FROM whatsapp_conversation_notes 
-       WHERE id = $1 AND conversation_id = $2 AND business_id = $3`,
-      [noteId, conversationId, businessId]
-    );
-
-    if (!note) {
-      return NextResponse.json({ error: 'Note not found' }, { status: 404 });
-    }
-
-    // Delete note
-    await query(
-      `DELETE FROM whatsapp_conversation_notes WHERE id = $1`,
-      [noteId]
-    );
-
+    const noteId = new URL(request.url).searchParams.get('note_id');
+    if (!noteId) return NextResponse.json({ error: 'note_id is required' }, { status: 400 });
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    await deleteNote(found.viewer, noteId);
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Error deleting note:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return failed(error, 'deleting');
   }
 });

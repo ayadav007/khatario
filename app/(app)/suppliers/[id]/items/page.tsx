@@ -18,6 +18,8 @@ type Row = {
   min_stock: string | number;
   has_variants: boolean;
   default_supplier_id: string | null;
+  backup_supplier_id?: string | null;
+  variants?: Array<{ id: string; name: string; current_stock: string | number; min_stock: string | number }> | null;
   default_supplier_name: string | null;
   last_purchased: string | null;
 };
@@ -46,6 +48,8 @@ export default function SupplierItemsPage({ params }: { params: { id: string } }
   const [saving, setSaving] = useState(false);
   // Pending edits, keyed by item id
   const [assigned, setAssigned] = useState<Record<string, boolean>>({});
+  const [backup, setBackup] = useState<Record<string, boolean>>({});
+  const [variantLevels, setVariantLevels] = useState<Record<string, string>>({});
   const [levels, setLevels] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
@@ -78,20 +82,38 @@ export default function SupplierItemsPage({ params }: { params: { id: string } }
     const assign: string[] = [];
     const unassign: string[] = [];
     const min_stock: Record<string, number> = {};
+    const backup_assign: string[] = [];
+    const backup_unassign: string[] = [];
+    const variant_min_stock: Record<string, number> = {};
     for (const r of rows) {
       const was = r.default_supplier_id === params.id;
       if (assigned[r.id] !== undefined && assigned[r.id] !== was) {
         (assigned[r.id] ? assign : unassign).push(r.id);
+      }
+      const wasBackup = r.backup_supplier_id === params.id;
+      if (backup[r.id] !== undefined && backup[r.id] !== wasBackup) {
+        (backup[r.id] ? backup_assign : backup_unassign).push(r.id);
+      }
+      for (const v of r.variants || []) {
+        if (variantLevels[v.id] === undefined) continue;
+        const next = Number(variantLevels[v.id] || 0);
+        if (Number.isFinite(next) && next >= 0 && next !== Number(v.min_stock)) variant_min_stock[v.id] = next;
       }
       if (levels[r.id] !== undefined && !r.has_variants) {
         const next = Number(levels[r.id] || 0);
         if (Number.isFinite(next) && next >= 0 && next !== Number(r.min_stock)) min_stock[r.id] = next;
       }
     }
-    return { assign, unassign, min_stock };
-  }, [rows, assigned, levels, params.id]);
+    return { assign, unassign, min_stock, backup_assign, backup_unassign, variant_min_stock };
+  }, [rows, assigned, levels, backup, variantLevels, params.id]);
 
-  const changeCount = changes.assign.length + changes.unassign.length + Object.keys(changes.min_stock).length;
+  const changeCount =
+    changes.assign.length +
+    changes.unassign.length +
+    Object.keys(changes.min_stock).length +
+    changes.backup_assign.length +
+    changes.backup_unassign.length +
+    Object.keys(changes.variant_min_stock).length;
 
   const setAllVisible = (value: boolean) => {
     setAssigned((prev) => {
@@ -114,6 +136,8 @@ export default function SupplierItemsPage({ params }: { params: { id: string } }
       toast.success('Saved');
       setAssigned({});
       setLevels({});
+      setBackup({});
+      setVariantLevels({});
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save');
@@ -210,8 +234,36 @@ export default function SupplierItemsPage({ params }: { params: { id: string } }
                     </span>
                   </label>
                   <div className="flex items-center gap-2 pl-7 sm:pl-0">
+                    {!isAssigned(r) && (
+                      <label className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                          checked={backup[r.id] ?? r.backup_supplier_id === params.id}
+                          onChange={(e) => setBackup((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                        />
+                        Backup supplier
+                      </label>
+                    )}
                     {r.has_variants ? (
-                      <span className="text-xs text-text-secondary">Reorder levels per size/colour come later</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-text-secondary">Reorder at, per size/colour:</span>
+                        {(r.variants || []).map((v) => (
+                          <label key={v.id} className="flex items-center gap-1 text-xs text-text-secondary">
+                            {v.name}
+                            <input
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              aria-label={`Reorder level for ${r.name} ${v.name}`}
+                              className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                              value={variantLevels[v.id] ?? String(Number(v.min_stock) || '')}
+                              placeholder="0"
+                              onChange={(e) => setVariantLevels((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                            />
+                          </label>
+                        ))}
+                      </div>
                     ) : (
                       <>
                         <span className="text-xs text-text-secondary">Reorder at</span>

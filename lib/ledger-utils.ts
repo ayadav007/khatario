@@ -6,7 +6,8 @@
 import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import { Account } from '@/types/database';
-import { computeGoodsCost, getInventoryModel, postCostOfGoods } from '@/lib/inventory/cogs-posting';
+import { getInventoryModel, postPerpetualGoodsCost } from '@/lib/inventory/cogs-posting';
+import { accountIdForCode, allocateByStockClass } from '@/lib/inventory/stock-class';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 import { resolveGstScheme } from '@/lib/gst/registration';
 import { recipientMayClaimItc } from '@/lib/gst/scheme-policy';
@@ -927,26 +928,20 @@ export async function createInvoiceLedgerEntries(params: {
   if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
     const lines = await ledgerQueryRows<{ item_id: string | null; quantity: string }>(
       poolClient,
-      'SELECT item_id, quantity FROM invoice_items WHERE invoice_id = $1',
+      'SELECT item_id, quantity * COALESCE(unit_factor, 1) AS quantity FROM invoice_items WHERE invoice_id = $1',
       [invoiceId]
     );
-    const cost = await computeGoodsCost(
-      poolClient,
-      businessId,
-      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
-      invoiceDate,
-      params.branchId,
-      { kind: 'invoice', docId: invoiceId }
-    );
-    await postCostOfGoods(poolClient, {
+    await postPerpetualGoodsCost(poolClient, {
       businessId,
       voucherType: 'invoice',
       voucherId: invoiceId,
-      amount: cost,
       entryDate: invoiceDate,
       reference: invoiceNumber,
       branchId: params.branchId,
       direction: 'sale',
+      lines: lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
+      asOfDate: invoiceDate,
+      target: { kind: 'invoice', docId: invoiceId },
     });
     await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'invoice', invoiceId));
   }
@@ -1263,20 +1258,48 @@ export async function createPurchaseLedgerEntries(params: {
 
   // Entry 6: Debit Inventory (if applicable). Inventory amount should already
   // be net of GST (caller passes the same value it INSERTs into items.stock).
-  if (inventoryAmount > 0 && accounts.inventory) {
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: purchaseId,
-      voucherType: 'purchase',
-      accountId: accounts.inventory.id,
-      entryDate: purchaseDate,
-      debit: inventoryAmount,
-      credit: 0,
-      narration: `Inventory addition - ${purchaseNumber}`,
-      referenceNumber: purchaseNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
+  if (inventoryAmount > 0 && accounts.inventory && accounts.purchases) {
+    const classRows = poolClient
+      ? await ledgerQueryRows<{ stock_class: string; total: string }>(
+          poolClient,
+          `SELECT COALESCE(to_jsonb(i) ->> 'stock_class', 'trading') AS stock_class,
+                  SUM(COALESCE(pi.acquisition_cost, pi.taxable_value)::numeric) AS total
+             FROM purchase_items pi
+             JOIN items i ON i.id = pi.item_id AND i.business_id = $2
+            WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+              AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+              AND pi.itc_type IS DISTINCT FROM 'capital_goods'
+            GROUP BY 1`,
+          [purchaseId, businessId],
+        )
+      : [];
+    const splits = allocateByStockClass(
+      classRows.map((row) => ({ stockClass: row.stock_class, weight: Number(row.total) || 0 })),
+      inventoryAmount,
+    );
+    for (const split of splits) {
+      const accountId = poolClient
+        ? await accountIdForCode(poolClient, businessId, split.code)
+        : split.code === '1104'
+          ? accounts.inventory.id
+          : null;
+      if (!accountId) {
+        throw new Error(`Inventory account ${split.code} not found. Set up the chart of accounts.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseId,
+        voucherType: 'purchase',
+        accountId,
+        entryDate: purchaseDate,
+        debit: split.amount,
+        credit: 0,
+        narration: `Inventory addition - ${purchaseNumber}`,
+        referenceNumber: purchaseNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
 
     // Credit Purchases by the same amount (to move from Purchases to Inventory)
     await createLedgerEntryLine({
@@ -1659,6 +1682,8 @@ export async function createCreditNoteLedgerEntries(params: {
   cessTotal?: number;
   // PHASE-5: shared transaction client (see createInvoiceLedgerEntries for why).
   poolClient?: PoolClient;
+  /** Migration 443: a post-sale discount note is narrated as such; default is a sales return. */
+  noteType?: 'sales_return' | 'post_sale_discount';
 }): Promise<void> {
   const {
     businessId,
@@ -1674,6 +1699,7 @@ export async function createCreditNoteLedgerEntries(params: {
     cessTotal = 0,
     poolClient,
   } = params;
+  const noteLabel = params.noteType === 'post_sale_discount' ? 'Post-sale discount' : 'Sales return';
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1711,8 +1737,8 @@ export async function createCreditNoteLedgerEntries(params: {
     debit: salesDebit,
     credit: 0,
     narration: useGstSplit
-      ? `Sales return (taxable) - Credit Note ${creditNoteNumber}`
-      : `Sales return - Credit Note ${creditNoteNumber}`,
+      ? `${noteLabel} (taxable) - Credit Note ${creditNoteNumber}`
+      : `${noteLabel} - Credit Note ${creditNoteNumber}`,
     referenceNumber: creditNoteNumber,
     branchId: params.branchId,
     poolClient,
@@ -1786,7 +1812,7 @@ export async function createCreditNoteLedgerEntries(params: {
     const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
       poolClient,
       // Damaged returns (restocked = false) are written off: no stock, so no cost comes back.
-      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
+      'SELECT item_id, qty * COALESCE(unit_factor, 1) AS qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
       [creditNoteId]
     );
     const [origin] = await ledgerQueryRows<{ invoice_date: string | Date; branch_id: string | null }>(
@@ -1797,23 +1823,17 @@ export async function createCreditNoteLedgerEntries(params: {
         WHERE cn.id = $1 AND cn.business_id = $2`,
       [creditNoteId, businessId]
     );
-    const cost = await computeGoodsCost(
-      poolClient,
-      businessId,
-      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
-      origin?.invoice_date ?? creditNoteDate,
-      origin ? origin.branch_id : params.branchId,
-      { kind: 'credit_note', docId: creditNoteId }
-    );
-    await postCostOfGoods(poolClient, {
+    await postPerpetualGoodsCost(poolClient, {
       businessId,
       voucherType: 'credit_note',
       voucherId: creditNoteId,
-      amount: cost,
       entryDate: creditNoteDate,
       reference: creditNoteNumber,
       branchId: params.branchId,
       direction: 'return',
+      lines: lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
+      asOfDate: origin?.invoice_date ?? creditNoteDate,
+      target: { kind: 'credit_note', docId: creditNoteId },
     });
     await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'credit_note', creditNoteId));
   }
@@ -2034,19 +2054,45 @@ export async function createPurchaseReturnLedgerEntries(params: {
   const relief = inventoryRelief ?? inventoryAmount;
   const returnsDebit = inventoryRelief == null ? inventoryAmount : purchasesCredit;
   if (relief > 0 && accounts.inventory) {
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: purchaseReturnId,
-      voucherType,
-      accountId: accounts.inventory.id,
-      entryDate: returnDate,
-      debit: 0,
-      credit: relief,
-      narration: `Inventory reduction - Purchase return ${returnNumber}`,
-      referenceNumber: returnNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
+    const classRows = poolClient
+      ? await ledgerQueryRows<{ stock_class: string; total: string }>(
+          poolClient,
+          `SELECT COALESCE(to_jsonb(i) ->> 'stock_class', 'trading') AS stock_class,
+                  SUM(pri.taxable_value::numeric) AS total
+             FROM purchase_return_items pri
+             JOIN items i ON i.id = pri.item_id AND i.business_id = $2
+            WHERE pri.return_id = $1 AND i.item_type = 'goods'
+            GROUP BY 1`,
+          [purchaseReturnId, businessId],
+        )
+      : [];
+    const splits = allocateByStockClass(
+      classRows.map((row) => ({ stockClass: row.stock_class, weight: Number(row.total) || 0 })),
+      relief,
+    );
+    for (const split of splits) {
+      const accountId = poolClient
+        ? await accountIdForCode(poolClient, businessId, split.code)
+        : split.code === '1104'
+          ? accounts.inventory.id
+          : null;
+      if (!accountId) {
+        throw new Error(`Inventory account ${split.code} not found. Set up the chart of accounts.`);
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: purchaseReturnId,
+        voucherType,
+        accountId,
+        entryDate: returnDate,
+        debit: 0,
+        credit: split.amount,
+        narration: `Inventory reduction - Purchase return ${returnNumber}`,
+        referenceNumber: returnNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
 
     if (returnsDebit > 0) {
       await createLedgerEntryLine({

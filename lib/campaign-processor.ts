@@ -6,6 +6,7 @@
 import { query, queryOne } from './db';
 import { sendWhatsAppMessage } from './whatsapp';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from './subscription';
+import { loadOutboundMedia } from '@/lib/http/outbound-media';
 
 interface Campaign {
   id: string;
@@ -168,13 +169,7 @@ export async function processCampaign(campaignId: string): Promise<{
         let media: string | Buffer | undefined = undefined;
         if ((campaign.message_type === 'image' || campaign.message_type === 'button') && campaign.media_url) {
           // Handle base64 data URLs
-          if (campaign.media_url.startsWith('data:')) {
-            // Extract base64 data
-            const base64Data = campaign.media_url.split(',')[1];
-            media = Buffer.from(base64Data, 'base64');
-          } else {
-            media = campaign.media_url;
-          }
+          media = await loadOutboundMedia(campaign.media_url);
         }
 
         // Prepare buttons for button messages (preserve type, phone, url information)

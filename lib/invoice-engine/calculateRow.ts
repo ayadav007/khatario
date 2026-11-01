@@ -34,6 +34,7 @@ export interface CalculateRowContext {
   isExport: boolean;
   exportType?: 'wop' | 'with_payment';
   documentType: 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply' | 'credit_note' | 'debit_note' | 'delivery_challan' | 'sales_order' | 'purchase_order';
+  supplyKind?: 'taxable' | 'exempt' | 'export' | 'sez';
   /** Invoice-level switch: row prices are GST-inclusive (mirrors computeLineGst on the server). */
   pricesIncludeGst?: boolean;
 }
@@ -88,18 +89,20 @@ export function calculateRow(
     placeOfSupply: context.placeOfSupply,
     isExport: context.isExport,
     exportType: context.exportType,
-    documentType: context.documentType
+    documentType: context.documentType,
+    supplyKind: context.supplyKind,
   });
   
   let cgst = 0, sgst = 0, igst = 0, taxAmt = 0;
+  const zeroRatedSupply = (context.isExport || context.supplyKind === 'sez') && context.exportType === 'wop';
 
   if (context.pricesIncludeGst) {
-    const zeroTax = taxType.isNonTaxable || (context.isExport && context.exportType === 'wop');
+    const zeroTax = taxType.isNonTaxable || zeroRatedSupply;
     const rate = zeroTax ? 0 : row.taxPercent;
     const gross = taxableAmount;
     taxableAmount = round2((gross * 100) / (100 + rate));
     taxAmt = round2(gross - taxableAmount);
-    if (!context.isExport && taxType.useCGSTSGST) {
+    if (!context.isExport && context.supplyKind !== 'sez' && taxType.useCGSTSGST) {
       cgst = round2(taxAmt / 2);
       sgst = round2(taxAmt - cgst);
     } else {
@@ -125,7 +128,7 @@ export function calculateRow(
     sgst = 0;
     igst = 0;
     taxAmt = 0;
-  } else if (context.isExport) {
+  } else if (context.isExport || context.supplyKind === 'sez') {
     // For export invoices, always use IGST
     if (context.exportType === 'wop') {
       // Export under LUT - IGST is 0%

@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { isQaTestPhone } from '@/lib/qa-test-phones';
 
 export type PlatformOtpPurpose =
   | 'signup'
@@ -24,7 +25,7 @@ function isProductionAppUrl(appUrl: string): boolean {
 /**
  * Whether an OTP may be echoed back to the client (or a fixed test code accepted) for this phone.
  * Requires a debug environment (SIGNUP_DEBUG=true or a staging URL), the phone to be listed in
- * OTP_DEBUG_PHONES (comma-separated; "*" allows any, meant for local e2e), and is always false
+ * OTP_DEBUG_PHONES (comma-separated; "*" allows any, meant for local e2e) or QA_TEST_PHONES, and is always false
  * on the production host.
  */
 export function otpDebugAllowedFor(
@@ -34,6 +35,7 @@ export function otpDebugAllowedFor(
   const appUrl = env.NEXT_PUBLIC_APP_URL || '';
   if (isProductionAppUrl(appUrl)) return false;
   if (env.SIGNUP_DEBUG !== 'true' && !appUrl.includes('staging.')) return false;
+  if (isQaTestPhone(phone, env)) return true;
   const allowed = (env.OTP_DEBUG_PHONES || '')
     .split(',')
     .map((p) => p.trim())

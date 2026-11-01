@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { checkUserBranchAccess, getUserBranches } from '@/lib/branch-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,8 +120,6 @@ export async function POST(request: NextRequest) {
       can_create_transactions, // Legacy: boolean flag
     } = body;
 
-    const business_id = getBusinessIdFromRequest(request, body); // Optional: for authorization
-
     if (!user_id || !branch_id) {
       return NextResponse.json(
         { error: 'user_id and branch_id are required' },
@@ -128,24 +127,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Authorization: Check if user has settings.create permission
-    const authUserId = resolveCreatedByUserId(request, body);
-    if (business_id && !authUserId) {
-      return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-    if (business_id) {
-      try {
-        await authorize(authUserId!, 'settings', 'create', { businessId: business_id });
-      } catch (error) {
-        if (error instanceof AuthorizationError) {
-          return error.toNextResponse();
-        }
-        throw error;
-      }
-    }
+    // Authorization: settings.create in the caller's own business (always required)
+    const access = await requireTenantPermission(request, body.business_id, 'settings', 'create');
+    if (!access.ok) return access.response;
+
 
     // Map permissions array to boolean flags if permissions array is provided
     let finalCanView = can_view;
@@ -183,7 +168,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.business_id !== branch.business_id) {
+    if (user.business_id !== access.businessId || branch.business_id !== access.businessId) {
       return NextResponse.json(
         { error: 'User and branch must belong to the same business' },
         { status: 400 }
@@ -191,7 +176,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert or update user-branch access
-    const access = await db.queryOne(`
+    const assignment = await db.queryOne(`
       INSERT INTO user_branches (
         user_id, branch_id, can_view, can_edit, can_delete, can_create_transactions
       )
@@ -206,7 +191,7 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `, [user_id, branch_id, finalCanView, finalCanEdit, finalCanDelete, finalCanCreateTransactions]);
 
-    return NextResponse.json({ access }, { status: 201 });
+    return NextResponse.json({ access: assignment }, { status: 201 });
   } catch (error: any) {
     console.error('Error assigning user to branch:', error);
     return NextResponse.json(
@@ -223,25 +208,22 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('user_id');
-    const branchId = searchParams.get('branch_id');
-    const assignmentId = searchParams.get('id'); // Support deletion by assignment ID
+    const access = await requireTenantPermission(request, null, 'settings', 'delete');
+    if (!access.ok) return access.response;
+
+    let userId = searchParams.get('user_id');
+    let branchId = searchParams.get('branch_id');
+    const assignmentId = searchParams.get('id'); // "user_id-branch_id" (two UUIDs)
 
     if (assignmentId) {
-      // Delete by assignment ID (format: "user_id-branch_id")
-      const [userIdFromId, branchIdFromId] = assignmentId.split('-');
-      if (!userIdFromId || !branchIdFromId) {
+      userId = assignmentId.slice(0, 36);
+      branchId = assignmentId.slice(37);
+      if (assignmentId[36] !== '-' || !userId || !branchId) {
         return NextResponse.json(
           { error: 'Invalid assignment ID format' },
           { status: 400 }
         );
       }
-      await db.query(`
-        DELETE FROM user_branches
-        WHERE user_id = $1 AND branch_id = $2
-      `, [userIdFromId, branchIdFromId]);
-
-      return NextResponse.json({ success: true });
     }
 
     if (!userId || !branchId) {
@@ -251,10 +233,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Only assignments whose user and branch are both in the caller's business.
     await db.query(`
-      DELETE FROM user_branches
-      WHERE user_id = $1 AND branch_id = $2
-    `, [userId, branchId]);
+      DELETE FROM user_branches ub
+      USING users u, branches b
+      WHERE ub.user_id = $1 AND ub.branch_id = $2
+        AND u.id = ub.user_id AND u.business_id = $3
+        AND b.id = ub.branch_id AND b.business_id = $3
+    `, [userId, branchId, access.businessId]);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

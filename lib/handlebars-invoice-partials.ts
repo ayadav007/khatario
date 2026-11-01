@@ -16,6 +16,8 @@ export function registerInvoiceHandlebarsPartials(): void {
     'thermal-items',
     'invoice-meta-extra',
     'bos-footer-blocks',
+    'copy-label',
+    'hsn-summary',
   ];
   for (const name of names) {
     const filePath = path.join(partialsDir, `${name}.html`);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isMarketingPageSlug, type MarketingPageSlug } from '@/lib/marketing-builder/block-types';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const MARKETING_EDIT_ROLE = 'admin';
 export const MARKETING_PUBLISH_ROLE = 'super_admin';
@@ -26,7 +27,7 @@ export async function readJson(request: NextRequest): Promise<Record<string, unk
 
 export function requestMeta(request: NextRequest): { ip?: string; userAgent?: string } {
   return {
-    ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+    ip: getClientIp(request),
     userAgent: request.headers.get('user-agent') || undefined,
   };
 }

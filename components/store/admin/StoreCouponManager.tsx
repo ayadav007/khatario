@@ -12,6 +12,9 @@ interface CouponRow {
   min_order_amount: number;
   is_active: boolean;
   used_count: number;
+  usage_cap: number | null;
+  expires_at: string | null;
+  show_in_store: boolean;
 }
 
 export function StoreCouponManager({ businessId }: { businessId: string }) {
@@ -21,6 +24,7 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
   const [value, setValue] = useState('10');
   const [type, setType] = useState<'percent' | 'flat'>('percent');
   const [minOrder, setMinOrder] = useState('0');
+  const [showInStore, setShowInStore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +65,7 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
           discount_type: type,
           discount_value: parseFloat(value) || 0,
           min_order_amount: parseFloat(minOrder) || 0,
+          show_in_store: showInStore,
         }),
       });
       const data = await res.json();
@@ -75,6 +80,28 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
     }
   };
 
+  /** The save endpoint upserts every field, so the row is sent back whole with only the flag changed. */
+  const toggleShow = async (c: CouponRow) => {
+    setCoupons((rows) => rows.map((r) => (r.id === c.id ? { ...r, show_in_store: !c.show_in_store } : r)));
+    await fetch('/api/settings/online-store/coupons', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_id: businessId,
+        code: c.code,
+        discount_type: c.discount_type,
+        discount_value: c.discount_value,
+        min_order_amount: c.min_order_amount,
+        usage_cap: c.usage_cap,
+        expires_at: c.expires_at,
+        is_active: c.is_active,
+        show_in_store: !c.show_in_store,
+      }),
+    });
+    void load();
+  };
+
   const remove = async (id: string) => {
     await fetch(`/api/settings/online-store/coupons?business_id=${businessId}&id=${id}`, {
       method: 'DELETE',
@@ -86,7 +113,9 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-900">Coupons</h3>
-      <p className="mt-1 text-xs text-gray-500">Customers can apply these at checkout.</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Customers can apply these at checkout. Ones marked “Show in cart” are listed as offers in the Quick theme’s cart.
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <input
           className="w-28 rounded-lg border px-3 py-2 text-sm uppercase"
@@ -113,6 +142,10 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
           value={minOrder}
           onChange={(e) => setMinOrder(e.target.value)}
         />
+        <label className="flex items-center gap-1.5 text-xs text-gray-600">
+          <input type="checkbox" checked={showInStore} onChange={(e) => setShowInStore(e.target.checked)} />
+          Show in store cart
+        </label>
         <Button type="button" onClick={() => void add()} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
         </Button>
@@ -137,6 +170,10 @@ export function StoreCouponManager({ businessId }: { businessId: string }) {
                   {c.used_count ? ` · used ${c.used_count}` : ''}
                 </p>
               </div>
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-500">
+                <input type="checkbox" checked={!!c.show_in_store} onChange={() => void toggleShow(c)} />
+                Show in cart
+              </label>
               <button
                 type="button"
                 className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"

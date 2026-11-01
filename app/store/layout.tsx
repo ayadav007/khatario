@@ -1,10 +1,23 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
-import { cache } from 'react';
-import { Fraunces, Inter, Nunito, Playfair_Display, Outfit, Cormorant_Garamond, Source_Serif_4 } from 'next/font/google';
+import {
+  Fraunces,
+  Inter,
+  Nunito,
+  Playfair_Display,
+  Outfit,
+  Cormorant_Garamond,
+  Source_Serif_4,
+  Cinzel,
+  Newsreader,
+  Manrope,
+  DM_Serif_Display,
+  Lora,
+  Poppins,
+} from 'next/font/google';
 import { StoreApp } from '@/components/store/StoreApp';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { currentStore } from '@/lib/store/current-store';
 import { storeAccent, storeIconUrl } from '@/lib/store/pwa';
 
 const inter = Inter({
@@ -18,24 +31,28 @@ const fraunces = Fraunces({
   axes: ['opsz'],
   variable: '--font-store-fraunces',
   display: 'swap',
+  preload: false,
 });
 
 const nunito = Nunito({
   subsets: ['latin'],
   variable: '--font-store-nunito',
   display: 'swap',
+  preload: false,
 });
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
   variable: '--font-store-playfair',
   display: 'swap',
+  preload: false,
 });
 
 const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-store-outfit',
   display: 'swap',
+  preload: false,
 });
 
 const cormorant = Cormorant_Garamond({
@@ -43,17 +60,60 @@ const cormorant = Cormorant_Garamond({
   weight: ['400', '500', '600'],
   variable: '--font-store-cormorant',
   display: 'swap',
+  preload: false,
 });
 
 const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
   variable: '--font-store-source-serif',
   display: 'swap',
+  preload: false,
 });
 
-const currentStore = cache(async () => {
-  const subdomain = extractStoreSubdomain(headers().get('host'));
-  return subdomain ? resolveStoreBySubdomain(subdomain) : null;
+const cinzel = Cinzel({
+  subsets: ['latin'],
+  variable: '--font-store-cinzel',
+  display: 'swap',
+  preload: false,
+});
+
+const newsreader = Newsreader({
+  subsets: ['latin'],
+  variable: '--font-store-newsreader',
+  display: 'swap',
+  preload: false,
+  // Next 14.2 has no fallback-metric entry for Newsreader and fails the build looking for one.
+  adjustFontFallback: false,
+});
+
+const manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-store-manrope',
+  display: 'swap',
+  preload: false,
+});
+
+const dmSerif = DM_Serif_Display({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-store-dm-serif',
+  display: 'swap',
+  preload: false,
+});
+
+const lora = Lora({
+  subsets: ['latin'],
+  variable: '--font-store-lora',
+  display: 'swap',
+  preload: false,
+});
+
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-store-poppins',
+  display: 'swap',
+  preload: false,
 });
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -89,7 +149,7 @@ export default function StoreLayout({
 }) {
   const subdomain = extractStoreSubdomain(headers().get('host'));
   return (
-    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} store-root`}>
+    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} ${cinzel.variable} ${newsreader.variable} ${manrope.variable} ${dmSerif.variable} ${lora.variable} ${poppins.variable} store-root`}>
       <StoreApp subdomain={subdomain}>{children}</StoreApp>
     </div>
   );

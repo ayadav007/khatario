@@ -77,6 +77,9 @@ type BillToProps = {
   billingAddress: string;
   setBillingAddress: (v: string) => void;
   readOnly: boolean;
+  amendBillTo?: boolean;
+  billingName?: string;
+  setBillingName?: (v: string) => void;
   credit: { available: number | null; limit: number } | null;
 };
 
@@ -92,29 +95,36 @@ export function BillToPanel({
   billingAddress,
   setBillingAddress,
   readOnly,
+  amendBillTo = false,
+  billingName,
+  setBillingName,
   credit,
 }: BillToProps) {
-  const showSearch = !readOnly && (searching || !customer);
-  const [editingAddress, setEditingAddress] = useState(false);
+  const showSearch = !readOnly && !amendBillTo && (searching || !customer);
+  const [editingAddress, setEditingAddress] = useState(amendBillTo);
 
-  useEffect(() => setEditingAddress(false), [customer?.id]);
+  useEffect(() => {
+    if (!amendBillTo) setEditingAddress(false);
+  }, [customer?.id, amendBillTo]);
 
   return (
     <div className="flex min-w-0 flex-col p-4">
       <div className="mb-3 flex h-7 items-center justify-between gap-2">
         <SectionLabel>Bill to</SectionLabel>
-        {customer && !showSearch && !readOnly && (
+        {customer && !showSearch && (!readOnly || amendBillTo) && (
           <div className="flex items-center gap-1.5">
             <HeaderButton icon={Pencil} label="Address" onClick={() => setEditingAddress((v) => !v)} />
-            <HeaderButton
-              icon={RefreshCw}
-              label="Change"
-              kbd="F2"
-              onClick={() => {
-                setSearching(true);
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-            />
+            {!amendBillTo && (
+              <HeaderButton
+                icon={RefreshCw}
+                label="Change"
+                kbd="F2"
+                onClick={() => {
+                  setSearching(true);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+              />
+            )}
           </div>
         )}
       </div>
@@ -132,14 +142,51 @@ export function BillToPanel({
           onCreateCustomer={onCreateCustomer}
         />
       ) : customer ? (
-        <CustomerCard
-          customer={customer}
-          address={billingAddress}
-          editingAddress={editingAddress}
-          onAddressChange={setBillingAddress}
-          onDoneEditing={() => setEditingAddress(false)}
-          credit={credit}
-        />
+        <>
+          {amendBillTo && setBillingName ? (
+            <label className="mb-2 block">
+              <span className="mb-1 block text-xs font-medium text-text-secondary">Name on this bill</span>
+              <input
+                type="text"
+                maxLength={255}
+                value={billingName || ''}
+                onChange={(e) => setBillingName(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-sm font-semibold text-text-primary outline-none focus:border-primary-500"
+              />
+              <span className="mt-1 block text-[11px] text-text-muted">Printed on this invoice only. The customer record is not renamed.</span>
+            </label>
+          ) : null}
+          <CustomerCard
+            customer={customer}
+            displayName={amendBillTo ? billingName || customer.name : undefined}
+            address={billingAddress}
+            editingAddress={editingAddress || amendBillTo}
+            onAddressChange={setBillingAddress}
+            onDoneEditing={() => { if (!amendBillTo) setEditingAddress(false); }}
+            credit={credit}
+            hideName={Boolean(amendBillTo)}
+          />
+        </>
+      ) : amendBillTo && setBillingName ? (
+        <div className="space-y-2">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-text-secondary">Name on this bill</span>
+            <input
+              type="text"
+              maxLength={255}
+              value={billingName || ''}
+              onChange={(e) => setBillingName(e.target.value)}
+              className="h-9 w-full rounded-lg border border-border bg-surface px-2.5 text-sm font-semibold text-text-primary outline-none focus:border-primary-500"
+            />
+          </label>
+          <textarea
+            value={billingAddress}
+            onChange={(e) => setBillingAddress(e.target.value)}
+            rows={3}
+            placeholder="Billing address"
+            className="w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-2 text-xs leading-relaxed text-text-primary outline-none focus:ring-4 focus:ring-primary-100"
+          />
+        </div>
       ) : (
         <div className="flex flex-1 items-center gap-2 rounded-xl bg-slate-50 px-3 py-4 text-sm text-text-muted dark:bg-slate-800/50">
           <UserRound className="h-4 w-4" /> Walk-in / cash sale
@@ -151,18 +198,22 @@ export function BillToPanel({
 
 function CustomerCard({
   customer,
+  displayName,
   address,
   editingAddress,
   onAddressChange,
   onDoneEditing,
   credit,
+  hideName,
 }: {
   customer: Customer;
+  displayName?: string;
   address: string;
   editingAddress: boolean;
   onAddressChange: (v: string) => void;
   onDoneEditing: () => void;
   credit: { available: number | null; limit: number } | null;
+  hideName?: boolean;
 }) {
   const overseas = isOverseasCustomer(customer);
   const outstanding = Number(customer.current_balance ?? 0);
@@ -174,9 +225,13 @@ function CustomerCard({
           {initials(customer.name)}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[17px] font-bold leading-tight text-text-primary" title={customer.name}>
-            {customer.name}
+          {hideName ? (
+            <p className="truncate text-xs text-text-secondary">{customer.phone || customer.gstin || 'Customer'}</p>
+          ) : (
+          <p className="truncate text-[17px] font-bold leading-tight text-text-primary" title={displayName || customer.name}>
+            {displayName || customer.name}
           </p>
+          )}
           <p className="mt-0.5 truncate text-xs text-text-secondary">
             {customer.company_name && customer.company_name !== customer.name ? `${customer.company_name} · ` : ''}
             {customer.phone ? (

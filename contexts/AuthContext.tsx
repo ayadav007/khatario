@@ -753,6 +753,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     sessionGenerationRef.current += 1;
     try {
+      // Android app: drop this device's push token while the session cookie is still valid.
+      const { unregisterCapacitorPush } = await import('@/lib/push/client/capacitor-push');
+      await unregisterCapacitorPush({ kind: 'business' });
+    } catch {
+      // Non-blocking
+    }
+    try {
       // Clear server-side session cookie
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     } catch {

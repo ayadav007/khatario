@@ -275,6 +275,14 @@ export async function saveProvider(businessId: string, p: ProviderPatch): Promis
     ? p.devAllowedPhones.map((x) => String(x).replace(/\D/g, '')).filter((x) => x.length >= 10).slice(0, MAX_TEST_NUMBERS)
     : null;
 
+  // A saved key belongs to the provider and URL it was entered for. Switching either without a
+  // new key drops it, so the key is never sent to a host the owner did not type it for.
+  const clearKey =
+    !!existing &&
+    !newKey &&
+    ((p.provider !== undefined && p.provider !== existing.provider) ||
+      (p.apiBaseUrl !== undefined && (p.apiBaseUrl || null) !== (existing.api_base_url || null)));
+
   if (!existing) {
     await query(
       `INSERT INTO ai_provider_config (
@@ -301,9 +309,9 @@ export async function saveProvider(businessId: string, p: ProviderPatch): Promis
     await query(
       `UPDATE ai_provider_config SET
           provider = COALESCE($2, provider),
-          api_key = CASE WHEN $3::text IS NOT NULL THEN NULL ELSE api_key END,
-          api_key_encrypted = COALESCE($3, api_key_encrypted),
-          api_key_last4 = COALESCE($4, api_key_last4),
+          api_key = CASE WHEN $3::text IS NOT NULL OR $16::boolean THEN NULL ELSE api_key END,
+          api_key_encrypted = CASE WHEN $16::boolean THEN NULL ELSE COALESCE($3, api_key_encrypted) END,
+          api_key_last4 = CASE WHEN $16::boolean THEN NULL ELSE COALESCE($4, api_key_last4) END,
           key_source = COALESCE($5, key_source),
           api_base_url = CASE WHEN $6::boolean THEN $7 ELSE api_base_url END,
           model = CASE WHEN $8::boolean THEN $9 ELSE model END,
@@ -331,6 +339,7 @@ export async function saveProvider(businessId: string, p: ProviderPatch): Promis
         p.leadAnalyzerEnabled ?? null,
         p.mode ?? null,
         normalizedPhones ? JSON.stringify(normalizedPhones) : null,
+        clearKey,
       ],
     );
   }

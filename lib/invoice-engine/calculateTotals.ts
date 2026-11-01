@@ -72,7 +72,8 @@ export function calculateTotals(input: CalculateTotalsInput): CalculateTotalsRes
     placeOfSupply: input.context.placeOfSupply,
     isExport: input.context.isExport,
     exportType: input.context.exportType,
-    documentType: input.context.documentType
+    documentType: input.context.documentType,
+    supplyKind: input.context.supplyKind,
   });
   
   let extraChargesCGST = 0;
@@ -80,9 +81,9 @@ export function calculateTotals(input: CalculateTotalsInput): CalculateTotalsRes
   let extraChargesIGST = 0;
   let extraChargesTax = 0;
   
-  const zeroRatedExport = input.context.isExport && input.context.exportType === 'wop';
+  const zeroRatedExport = (input.context.isExport || input.context.supplyKind === 'sez') && input.context.exportType === 'wop';
   if (totalExtraCharges > 0 && effectiveTaxRate > 0 && !zeroRatedExport && !taxType.isNonTaxable) {
-    if (input.context.isExport) {
+    if (input.context.isExport || input.context.supplyKind === 'sez') {
       // For export invoices, always use IGST
       extraChargesIGST = totalExtraCharges * effectiveTaxRate / 100;
       extraChargesTax = extraChargesIGST;

@@ -4,6 +4,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase Cloud Messaging needs google-services.json from the Firebase Console (one per
+// application id: com.khatario.phone and com.khatario.staff). Without the file the app still
+// builds and runs; push registration then fails softly and only the in-app list works.
+// See docs/qa/notification-audit/09-firebase-setup.md.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn("google-services.json not found: building without Firebase push")
+}
+
 android {
     namespace = "com.khatario.phone.khatario_phone"
     compileSdk = flutter.compileSdkVersion
@@ -12,6 +22,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications (push cards shown while the app is open) needs java.time on old Android.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -68,4 +80,5 @@ flutter {
 dependencies {
     // ContextCompat / ActivityCompat for the thermal printer channel (Bluetooth + USB permissions).
     implementation("androidx.core:core-ktx:1.13.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

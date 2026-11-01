@@ -3,6 +3,9 @@ import { queryOne, queryRows } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
 import { orderTrackingUrl } from '@/lib/customer-surface/urls';
+import { storeKhataStatus } from '@/lib/khata/store-view';
+import { getKhataSettings } from '@/lib/khata/service';
+import { khataPayBy, khataShortDate } from '@/lib/khata/cycle';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +63,7 @@ export async function GET(
 
   const orders = await queryRows<Record<string, unknown> & { fulfilment_id: string | null; public_token: string | null }>(
     `SELECT so.id, so.order_number, so.status, so.payment_status, so.grand_total::text,
+            so.payment_provider, so.khata_due_date::text AS khata_due_date, so.khata_approval,
             so.delivery_mode, COALESCE(f.tracking_url, so.tracking_url) AS tracking_url,
             COALESCE(f.awb, so.awb) AS awb, so.created_at,
             f.id AS fulfilment_id, f.status AS delivery_status, f.partner_name, f.public_token,
@@ -84,6 +88,21 @@ export async function GET(
       )
     : [];
 
+  const khata = await storeKhataStatus(store.business_id, customer.id).catch((err) => {
+    console.error('[store account khata]', err);
+    return { status: 'none' as const };
+  });
+  const graceDays = orders.some((o) => o.payment_provider === 'khata')
+    ? (await getKhataSettings(store.business_id)).graceDays
+    : 0;
+  const paymentLabel = (o: Record<string, unknown>): string | null => {
+    if (o.payment_provider !== 'khata') return null;
+    if (o.khata_approval === 'pending') return 'Khata, waiting for the shop to confirm';
+    if (o.khata_approval === 'rejected') return 'Khata, not approved';
+    const due = typeof o.khata_due_date === 'string' ? o.khata_due_date : null;
+    return due ? `On khata, due ${khataShortDate(khataPayBy(due, graceDays))}` : 'On khata';
+  };
+
   return NextResponse.json({
     customer: {
       id: customer.id,
@@ -92,9 +111,11 @@ export async function GET(
       email: customer.email,
       last_address: addr?.address ?? lastOrd?.customer_address ?? null,
       last_pincode: addr?.pincode ?? lastOrd?.customer_pincode ?? null,
+      khata,
     },
-    orders: orders.map(({ fulfilment_id, public_token, ...o }) => ({
+    orders: orders.map(({ fulfilment_id, public_token, payment_provider, khata_due_date, khata_approval, ...o }) => ({
       ...o,
+      payment_label: paymentLabel({ payment_provider, khata_due_date, khata_approval }),
       grand_total: parseFloat(o.grand_total as string) || 0,
       track_url: public_token ? orderTrackingUrl(public_token) : null,
       timeline: fulfilment_id

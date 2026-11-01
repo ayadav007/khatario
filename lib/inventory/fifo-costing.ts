@@ -41,12 +41,12 @@ function goodsLinesSql(table: 'invoice_items' | 'credit_note_items', docCol: str
   // Credit-note lines for damaged returns never re-enter stock.
   const kept = table === 'credit_note_items' ? ' AND COALESCE(l.restocked, true)' : '';
   return `
-    SELECT l.${docCol} AS doc_id, l.item_id, l.${qtyCol}::numeric AS qty
+    SELECT l.${docCol} AS doc_id, l.item_id, (l.${qtyCol} * COALESCE(l.unit_factor, 1))::numeric AS qty
       FROM ${table} l
       JOIN items it ON it.id = l.item_id AND it.item_type = 'goods' AND NOT COALESCE(it.is_bundle, false)
      WHERE l.item_id = ANY($2::uuid[])${kept}
     UNION ALL
-    SELECT l.${docCol}, bi.item_id, (l.${qtyCol} * bi.quantity)::numeric
+    SELECT l.${docCol}, bi.item_id, (l.${qtyCol} * COALESCE(l.unit_factor, 1) * bi.quantity)::numeric
       FROM ${table} l
       JOIN items b ON b.id = l.item_id AND b.item_type = 'goods' AND COALESCE(b.is_bundle, false)
       JOIN bundle_items bi ON bi.bundle_id = b.id
@@ -123,7 +123,7 @@ export async function loadCostMovements(
     `SELECT pi.item_id, pu.id AS doc_id, pi.id AS line_id,
             COALESCE(pu.bill_number, pu.invoice_number) AS doc_number, s.name AS party,
             ${day('pu.bill_date')} AS d, ${seq('pu.created_at')} AS s,
-            pi.quantity AS qty, COALESCE(pi.acquisition_cost, pi.taxable_value, 0) AS value
+            pi.quantity + COALESCE(pi.free_qty, 0) AS qty, COALESCE(pi.acquisition_cost, pi.taxable_value, 0) AS value
        FROM purchase_items pi
        JOIN purchases pu ON pu.id = pi.purchase_id
        JOIN items it ON it.id = pi.item_id AND it.item_type = 'goods'
@@ -249,20 +249,24 @@ export async function loadCostMovements(
     item_id: string; doc_id: string; doc_number: string | null; d: string; s: string;
     adjustment_type: string; direction: string | null; quantity_change: string | null; value_change: string | null;
     purchase_id: string | null;
+    repack: boolean;
   }>(
     client,
     `SELECT ia.item_id, ia.id AS doc_id, ia.adjustment_number AS doc_number,
             ${day('ia.adjustment_date')} AS d, ${seq('ia.created_at')} AS s,
-            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change, ia.purchase_id
+            ia.adjustment_type, ia.direction, ia.quantity_change, ia.value_change, ia.purchase_id,
+            ia.repack_id IS NOT NULL AS repack
        FROM inventory_adjustments ia
       WHERE ia.business_id = $1 AND ia.item_id = ANY($2::uuid[])
+        AND NOT EXISTS (
+              SELECT 1 FROM stock_repacks sr WHERE sr.id = ia.repack_id AND sr.status = 'cancelled')
         AND NOT EXISTS (
               SELECT 1 FROM ledger_entry_reversals r
                WHERE r.business_id = $1 AND r.voucher_type = 'stock_adjustment' AND r.voucher_id = ia.id)`,
     [businessId, ids]
   );
   for (const a of adjustments) {
-    const base = { docId: a.doc_id, docNumber: a.doc_number, date: a.d, seq: a.s };
+    const base = { docId: a.doc_id, docNumber: a.doc_number, date: a.d, seq: a.s, ...(a.repack ? { repack: true } : {}) };
     if (a.adjustment_type === 'VALUE') {
       push(a.item_id, {
         ...base,
@@ -320,23 +324,35 @@ export async function replayCostItems(
  * FIFO cost of one document's goods. `qtyByItem` is the document's goods quantity per item
  * (bundles already expanded); an item the replay did not see is costed at the next-out rate.
  */
+export async function fifoCostByItem(
+  client: Queryable,
+  businessId: string,
+  qtyByItem: Map<string, number>,
+  target: CostTarget
+): Promise<Map<string, number>> {
+  const ids = [...qtyByItem.keys()];
+  const out = new Map<string, number>();
+  if (ids.length === 0) return out;
+  await lockCostItems(client, businessId, ids);
+  const { replays, fallback } = await replayCostItems(client, businessId, ids, { target });
+  for (const [id, qty] of qtyByItem) {
+    const replay = replays.get(id);
+    const result = replay?.results.get(`${target.kind}:${target.docId}`);
+    if (result) out.set(id, result.cost);
+    else if (replay) out.set(id, qty * issueUnitCost(replay, fallback.get(id) ?? 0, qty));
+  }
+  return out;
+}
+
 export async function fifoCostForDocument(
   client: Queryable,
   businessId: string,
   qtyByItem: Map<string, number>,
   target: CostTarget
 ): Promise<number> {
-  const ids = [...qtyByItem.keys()];
-  if (ids.length === 0) return 0;
-  await lockCostItems(client, businessId, ids);
-  const { replays, fallback } = await replayCostItems(client, businessId, ids, { target });
+  const byItem = await fifoCostByItem(client, businessId, qtyByItem, target);
   let total = 0;
-  for (const [id, qty] of qtyByItem) {
-    const replay = replays.get(id);
-    const result = replay?.results.get(`${target.kind}:${target.docId}`);
-    if (result) total += result.cost;
-    else if (replay) total += qty * issueUnitCost(replay, fallback.get(id) ?? 0, qty);
-  }
+  for (const cost of byItem.values()) total += cost;
   return Math.round(total * 100) / 100;
 }
 

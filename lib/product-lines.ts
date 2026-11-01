@@ -23,10 +23,10 @@ export const LANDING_HERO_COPY: Record<
   { badges: string[]; headline: string; subhead: string; cta: string; footnote: string }
 > = {
   billing: {
-    badges: ['GST-ready invoicing', 'Offline-ready billing'],
+    badges: ['GST-ready invoicing', 'WhatsApp bills'],
     headline: 'Still billing by hand at closing time? There is a simpler way.',
     subhead:
-      'Turn every sale into a GST bill, WhatsApp share, payment update, and accurate stock movement. Keep billing at the counter when the internet drops, then sync when it returns.',
+      'Turn every sale into a GST bill, WhatsApp share, payment update, and accurate stock movement.',
     cta: 'Start Billing trial',
     footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
   },

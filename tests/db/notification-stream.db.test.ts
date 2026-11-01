@@ -69,7 +69,7 @@ d('notification stream (real DB)', () => {
     const hub = createNotificationStreamHub({
       source,
       createSubscriber: () => null,
-      publisherReady: () => true, // keep heartbeat polling out of these tests
+      publisherReady: () => true, // hints come from hub.handleMessage; the 25 s heartbeat never fires here
       random: () => 0,
       installSignalHandlers: false,
     });

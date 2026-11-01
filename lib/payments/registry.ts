@@ -66,7 +66,10 @@ export async function createPaymentProviderForBusiness(
 
 /** Default registrations — safe to call multiple times */
 export function registerBuiltinPaymentProviders(): void {
-  registerPaymentProviderFactory('mock', () => new MockPaymentProvider());
+  // The mock provider accepts a fixed webhook signature, so it must never exist in production.
+  if (process.env.NODE_ENV !== 'production') {
+    registerPaymentProviderFactory('mock', () => new MockPaymentProvider());
+  }
   registerPaymentProviderFactory(
     'cashfree',
     (config) => new CashfreePaymentProvider(config)

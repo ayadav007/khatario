@@ -102,12 +102,15 @@ export async function GET(request: NextRequest) {
         fw.name as from_warehouse_name,
         tw.name as to_warehouse_name,
         u.name as approved_by_name,
-        creator.name as created_by_name
+        creator.name as created_by_name,
+        dc.id as delivery_challan_id,
+        dc.challan_number as delivery_challan_number
       FROM stock_transfers st
       LEFT JOIN warehouses fw ON st.from_location_id = fw.id
       LEFT JOIN warehouses tw ON st.to_location_id = tw.id
       LEFT JOIN users u ON st.approved_by = u.id
       LEFT JOIN users creator ON st.created_by = creator.id
+      LEFT JOIN delivery_challans dc ON dc.stock_transfer_id = st.id AND dc.status <> 'cancelled'
       WHERE st.business_id = $1
       ${branchFilter}
       ORDER BY st.created_at DESC
@@ -217,18 +220,6 @@ export async function POST(request: NextRequest) {
       const transferInfo = await isInterBranchTransfer(from_location_id, to_location_id);
       const isInterBranch = transferInfo.isInterBranch && transferInfo.hasDifferentGstin;
 
-      // Validate e-way bill requirement for inter-state transfers
-      if (isInterBranch && transferInfo.isInterState) {
-        const transferValue = items.reduce((sum: number, item: any) => sum + (item.unit_price || 0) * (item.qty || 0), 0);
-        const ewayRequired = isEwayBillRequired(transferValue, transferInfo.isInterState);
-        
-        // Note: E-way bill validation should be done in frontend or via separate API
-        // For now, we'll just log a warning if e-way bill is required but not provided
-        if (ewayRequired && !body.eway_bill_number) {
-          console.warn(`E-way bill required for inter-state transfer > ₹50,000. Transfer value: ₹${transferValue}`);
-        }
-      }
-
       // Determine initial status based on user's approval permission
       // If user has approve permission, create as 'pending' (auto-approved)
       // Otherwise, create as 'draft' (needs approval)
@@ -271,6 +262,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Create transfer items (NO stock movement - stock will be deducted on DISPATCH)
+      let transferValue = 0;
       for (const item of items) {
         const requestedQty = parseFloat(item.qty || '0');
         
@@ -279,6 +271,7 @@ export async function POST(request: NextRequest) {
         `, [item.item_id]);
         const costSnapshot =
           Math.round((wac.get(item.item_id) || parseFloat(itemData.rows[0]?.purchase_price || '0')) * 100) / 100;
+        transferValue += costSnapshot * requestedQty;
 
         await client.query(`
           INSERT INTO stock_transfer_items (
@@ -307,7 +300,12 @@ export async function POST(request: NextRequest) {
       }
 
       await client.query('COMMIT');
-      return NextResponse.json({ transfer }, { status: 201 });
+      // Any movement over the limit needs an e-way bill, within the state too; the form warns on it.
+      const ewayBillRequired = isEwayBillRequired(transferValue);
+      return NextResponse.json(
+        { transfer, eway_bill_required: ewayBillRequired, eway_bill_missing: ewayBillRequired && !body.eway_bill_number },
+        { status: 201 }
+      );
     } catch (error: any) {
       await client.query('ROLLBACK');
       console.error('Error creating stock transfer:', error);

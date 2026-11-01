@@ -55,6 +55,10 @@ export interface Business {
   primary_module?: 'billing' | 'hr' | 'connect' | 'crm';
   iec_code?: string; // Import Export Code - Mandatory for exporters
   swift_code?: string; // SWIFT/BIC code for international wire transfers
+  udyam_number?: string | null;
+  tan?: string | null;
+  /** Director identification number of the signing director. */
+  din?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -752,6 +756,8 @@ export interface BusinessDiscovery {
   featured_categories: string[];
   public_slug?: string | null;
   directory_approved: boolean;
+  /** Supplier Hub profile cover photo (migration 420). */
+  cover_image_url?: string | null;
   updated_by_user_id?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -770,6 +776,8 @@ export interface SupplierConnectionRequest {
   supplier_business_id: string;
   status: SupplierConnectionRequestStatus;
   message?: string | null;
+  /** Buyer agreed to share low stock once accepted (migration 421) */
+  share_low_stock?: boolean;
   created_by_user_id?: string | null;
   resolved_by_user_id?: string | null;
   created_at: Date;
@@ -806,10 +814,14 @@ export interface Item {
   unit: string;
   hsn_sac?: string;
   item_type?: 'goods' | 'service';
+  /** trading = Inventory 1104. Manufacturing stock uses its own account. */
+  stock_class?: 'trading' | 'raw_material' | 'wip' | 'finished_goods';
   purchase_price: number;
   selling_price: number | null;
   mrp?: number;
   tax_rate: number;
+  /** selling_price (and variant prices) already include GST */
+  gst_included?: boolean;
   opening_stock: number;
   current_stock: number;
   min_stock: number;

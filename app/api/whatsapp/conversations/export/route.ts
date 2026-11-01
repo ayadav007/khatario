@@ -10,6 +10,7 @@ import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import ExcelJS from 'exceljs';
 import { getInboxViewer, visibilityClause } from '@/lib/whatsapp/inbox-ownership';
+import { csvSafeText } from '@/lib/csv-safe';
 
 export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: 'export' }, async ({ request, businessId, body, userId }) => {
   try {
@@ -130,7 +131,7 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermissio
       conversations.forEach((conv: any) => {
         const escapeCSV = (value: any): string => {
           if (value === null || value === undefined) return '';
-          const str = String(value);
+          const str = csvSafeText(String(value));
           if (str.includes(',') || str.includes('"') || str.includes('\n')) {
             return `"${str.replace(/"/g, '""')}"`;
           }

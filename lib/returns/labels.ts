@@ -12,7 +12,7 @@ export const RETURN_REASONS = [
 export type ReturnReason = (typeof RETURN_REASONS)[number];
 export type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'received' | 'closed' | 'cancelled';
 export type ReturnCondition = 'restock' | 'damaged';
-export type ReturnRefundMethod = 'store_credit' | 'cash' | 'upi' | 'bank';
+export type ReturnRefundMethod = 'store_credit' | 'cash' | 'upi' | 'bank' | 'original_payment';
 
 export const RETURN_REASON_LABELS: Record<ReturnReason, string> = {
   damaged: 'Damaged or defective',
@@ -38,4 +38,29 @@ export const REFUND_METHOD_LABELS: Record<ReturnRefundMethod, string> = {
   cash: 'Cash',
   upi: 'UPI',
   bank: 'Bank transfer',
+  original_payment: 'Back to original payment',
 };
+
+/** How the item comes back to the shop. */
+export type ReturnMethod = 'courier_pickup' | 'customer_sends' | 'no_return';
+/** Where a courier pickup of the returned parcel stands. */
+export type PickupStatus = 'booked' | 'out_for_pickup' | 'pickup_issue' | 'in_transit' | 'arrived' | 'cancelled';
+
+export const RETURN_METHOD_LABELS: Record<ReturnMethod, string> = {
+  courier_pickup: 'Courier pickup',
+  customer_sends: 'Customer sends it',
+  no_return: 'No need to send it back',
+};
+
+export const PICKUP_STATUS_LABELS: Record<PickupStatus, string> = {
+  booked: 'Pickup booked',
+  out_for_pickup: 'Out for pickup',
+  pickup_issue: 'Pickup problem',
+  in_transit: 'On the way back',
+  arrived: 'Arrived at shop',
+  cancelled: 'Pickup cancelled',
+};
+
+export function isReturnMethod(v: unknown): v is ReturnMethod {
+  return v === 'courier_pickup' || v === 'customer_sends' || v === 'no_return';
+}

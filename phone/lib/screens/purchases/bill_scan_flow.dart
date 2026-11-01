@@ -128,20 +128,32 @@ class BillPhoto {
   final int height;
 }
 
-/// Turns the photo upright and caps it at 2400px. Runs in an isolate.
+/// Turns the photo upright and caps it at 4000px, so a narrow till roll cropped out of it
+/// still has its full width of pixels. Runs in an isolate.
 BillPhoto normalizeBillPhoto(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) throw const FormatException('Not an image');
   var photo = img.bakeOrientation(decoded);
-  const cap = 2400;
+  const cap = 4000;
   if (math.max(photo.width, photo.height) > cap) {
     photo = photo.width >= photo.height ? img.copyResize(photo, width: cap) : img.copyResize(photo, height: cap);
   }
   return BillPhoto(bytes: img.encodeJpg(photo, quality: 90), width: photo.width, height: photo.height);
 }
 
+/// `computeInvoiceVisionTargetSize` in `lib/invoice-extract/latency/compute-vision-image-size.ts`:
+/// 1600px long side, except a long narrow bill keeps an 800px short side, up to 3200px long.
+({int width, int height}) billVisionSize(int width, int height) {
+  const maxLong = 1600, minShort = 800, tallMaxLong = 3200;
+  final long = math.max(width, height);
+  final short = math.min(width, height);
+  final scale = math.min(1.0, math.max(maxLong / long, math.min(minShort / short, tallMaxLong / long)));
+  if (scale >= 1) return (width: width, height: height);
+  return (width: math.max(1, (width * scale).round()), height: math.max(1, (height * scale).round()));
+}
+
 /// The box around the four corners, cut and sized the way the website sends a bill to be
-/// read (`prepareInvoiceVisionImageClient`: 1600px long side, JPEG 80). Runs in an isolate.
+/// read (`prepareInvoiceVisionImageClient`, JPEG 80). Runs in an isolate.
 Uint8List cropBillPhoto((Uint8List, Rect) job) {
   final (bytes, box) = job;
   final photo = img.decodeImage(bytes)!;
@@ -150,9 +162,9 @@ Uint8List cropBillPhoto((Uint8List, Rect) job) {
   final x1 = (box.right * photo.width).ceil().clamp(x0 + 1, photo.width);
   final y1 = (box.bottom * photo.height).ceil().clamp(y0 + 1, photo.height);
   var page = img.copyCrop(photo, x: x0, y: y0, width: x1 - x0, height: y1 - y0);
-  const maxSide = 1600;
-  if (math.max(page.width, page.height) > maxSide) {
-    page = page.width >= page.height ? img.copyResize(page, width: maxSide) : img.copyResize(page, height: maxSide);
+  final size = billVisionSize(page.width, page.height);
+  if (size.width != page.width || size.height != page.height) {
+    page = img.copyResize(page, width: size.width, height: size.height, interpolation: img.Interpolation.average);
   }
   return img.encodeJpg(page, quality: 80);
 }

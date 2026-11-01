@@ -14,7 +14,7 @@ Yes. Every bill carries HSN/SAC codes and works out CGST, SGST or IGST from the 
 
 ## What happens if the internet goes down at the counter?
 
-You can keep billing. Bills made offline are saved on the device and sync automatically when the connection is back, so the queue does not stop.
+Saving a bill needs an internet connection. Reconnect, then save the bill. Khatario does not keep billing while you are disconnected.
 
 ## Does it work on my phone?
 

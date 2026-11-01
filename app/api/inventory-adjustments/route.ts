@@ -11,7 +11,9 @@ import {
   ValueAdjustmentParams,
   ReasonCode
 } from '@/lib/inventory-adjustment-service';
+import { REASON_CODES } from '@/lib/inventory/adjustment-reason-codes';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { stockErrorBody } from '@/lib/inventory/godown-stock';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 
@@ -233,6 +235,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!(REASON_CODES as readonly string[]).includes(String(reason_code))) {
+      return NextResponse.json(
+        { error: `Unknown reason "${String(reason_code)}". Use one of: ${REASON_CODES.join(', ')}`, code: 'REASON_CODE_INVALID' },
+        { status: 400 }
+      );
+    }
 
     // CRITICAL: Enforce subscription feature access
     try {
@@ -324,6 +332,13 @@ export async function POST(request: NextRequest) {
           );
         }
       }
+    }
+
+    if (reason_code === 'REPACK_OUT' || reason_code === 'REPACK_IN') {
+      return NextResponse.json(
+        { error: 'Use Repack to move stock into packs', code: 'USE_REPACK' },
+        { status: 400 }
+      );
     }
 
     if (adjustment_type !== 'QUANTITY' && adjustment_type !== 'VALUE') {
@@ -425,6 +440,8 @@ export async function POST(request: NextRequest) {
       adjustment: result
     }, { status: 201 });
   } catch (error: any) {
+    const refused = stockErrorBody(error);
+    if (refused) return NextResponse.json(refused.body, { status: refused.status });
     console.error('Error creating inventory adjustment:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

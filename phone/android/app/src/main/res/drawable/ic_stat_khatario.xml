@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar small icon: white silhouette on transparent (Android tints it). Same mark as the
+     Capacitor shell: a rounded square with the Khatario "K" cut out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M6,2h12a4,4 0 0 1 4,4v12a4,4 0 0 1 -4,4H6a4,4 0 0 1 -4,-4V6a4,4 0 0 1 4,-4zM8,6.5v11h2.6v-4.2l3.8,4.2h3.4l-5.1,-5.6 4.8,-5.4h-3.3l-3.6,4.1V6.5z" />
+</vector>

@@ -1,0 +1,171 @@
+// Client-safe: no sanitize-html, no pg. Editor code may import this file.
+import type { SettingSchema } from './schema-types';
+
+export const ENGINE_LIMITS = {
+  sectionsPerTemplate: 25,
+  blocksPerSection: 50,
+  customPages: 30,
+  themeBytes: 524288,
+  themesPerBusiness: 20,
+  versionsKept: 30,
+  menus: { menus: 10, itemsPerLevel: 12, depth: 3, label: 40, name: 40, caption: 60 },
+};
+
+export const ID_RE = /^[a-z0-9_-]{1,32}$/;
+
+const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** `#abc`, `#aabbcc` or `#aabbccdd`. */
+export function isHexColor(value: string): boolean {
+  return COLOR_RE.test(value);
+}
+
+export function parseHttps(value: string): URL | null {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'https:' ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isRootRelative(value: string): boolean {
+  // No whitespace/control chars: browsers strip tab/newline, so "/\t/evil.com" would become "//evil.com".
+  return /^\/(?!\/)[^\s\\\x00-\x1f]*$/.test(value);
+}
+
+/** An `image` setting: '' (none), a site-relative path or an https link; anything else is undefined. */
+export function sanitizeImageLink(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim();
+  if (v === '') return '';
+  if (v.length > 2000) return undefined;
+  if (isRootRelative(v)) return v;
+  return parseHttps(v) ? v : undefined;
+}
+
+export const PAGE_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
+export const RESERVED_PAGE_HANDLES: readonly string[] = ['cart', 'checkout', 'account', 'products', 'catalog', 'pages', 'api', 'khata', 'wishlist', 'about', 'contact', 'privacy', 'refund', 'terms'];
+
+/** D22: caps on a custom page's title and SEO fields (the server clips to these; the editor too). */
+export const PAGE_META_CAPS = { title: 100, seo_title: 120, seo_description: 320 } as const;
+
+/** Templates every theme carries; custom pages are keyed `page.<handle>`. */
+export const CORE_TEMPLATES = ['home', 'product', 'catalog'] as const;
+
+export function pageKey(handle: string): string {
+  return `page.${handle}`;
+}
+
+/** The handle of a `page.<handle>` template key, or null for any other key or an invalid/reserved handle. */
+export function pageHandle(key: string): string | null {
+  if (!key.startsWith('page.')) return null;
+  const handle = key.slice(5);
+  return PAGE_HANDLE_RE.test(handle) && !RESERVED_PAGE_HANDLES.includes(handle) ? handle : null;
+}
+
+export interface LineItem {
+  id: string;
+  on: boolean;
+}
+
+/**
+ * An ordered on/off list as a permutation of `ids`: unknown ids and repeats (the first wins) are dropped, a missing id
+ * is appended switched off, and a bad `on` flag takes that id's value in `defaults`. Anything that is not a list, or a
+ * list holding no known id, gives `defaults` (itself completed the same way).
+ */
+export function normaliseLineList(raw: unknown, ids: readonly string[], defaults: readonly LineItem[]): LineItem[] {
+  const fallback = new Map(defaults.map((d) => [d.id, d.on]));
+  const read = (source: unknown, useFallback: boolean): LineItem[] => {
+    const out: LineItem[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(source)) {
+      for (const r of source) {
+        if (!r || typeof r !== 'object') continue;
+        const { id, on } = r as { id?: unknown; on?: unknown };
+        if (typeof id !== 'string' || !ids.includes(id) || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, on: typeof on === 'boolean' ? on : (fallback.get(id) ?? true) });
+      }
+    }
+    if (out.length === 0 && useFallback) return read(defaults, false);
+    for (const id of ids) if (!seen.has(id)) out.push({ id, on: false });
+    return out;
+  };
+  return read(raw, true);
+}
+
+/** Hosts a `video_url` setting may point at (https only); the server drops anything else. */
+export const VIDEO_HOSTS: readonly string[] = [
+  'youtube.com',
+  'www.youtube.com',
+  'youtu.be',
+  'www.youtu.be',
+  'vimeo.com',
+  'www.vimeo.com',
+  'player.vimeo.com',
+];
+
+const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+export function newId(prefix?: string): string {
+  let suffix = '';
+  for (let i = 0; i < 6; i++) suffix += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  const cleaned = (prefix ?? 'id').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return `${cleaned || 'id'}-${suffix}`.slice(0, 32);
+}
+
+export function defaultSettings(schemas: SettingSchema[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const s of schemas) {
+    if (s.type === 'header' || s.default === undefined) continue;
+    out[s.id] = s.default;
+  }
+  return out;
+}
+
+const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_HOSTS = ['youtube.com', 'www.youtube.com', 'youtu.be', 'www.youtu.be'];
+const VIMEO_HOSTS = ['vimeo.com', 'www.vimeo.com', 'player.vimeo.com'];
+
+/**
+ * The privacy-friendly embed address for a YouTube or Vimeo link, or null when the link is not https,
+ * not one of those hosts, or has no valid video id.
+ */
+export function videoEmbedUrl(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(String(url).trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:') return null;
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (YOUTUBE_HOSTS.includes(host)) {
+    let id: string | undefined;
+    if (host.endsWith('youtu.be')) id = parts[0];
+    else if (parts[0] === 'watch') id = u.searchParams.get('v') ?? undefined;
+    else if (parts[0] === 'embed' || parts[0] === 'shorts') id = parts[1];
+    return id && YOUTUBE_ID_RE.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+  }
+  if (VIMEO_HOSTS.includes(host)) {
+    const id = host === 'player.vimeo.com' ? (parts[0] === 'video' ? parts[1] : undefined) : parts[0];
+    return id && /^\d{1,12}$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
+  }
+  return null;
+}
+
+/**
+ * The indexes of the slides to show on this device: those set to it or to `both`, else all of them
+ * (the rule `resolveHeroSlides` used on the old storefront).
+ */
+export function pickSlidesForDevice(devices: string[], phone: boolean): number[] {
+  const device = phone ? 'mobile' : 'desktop';
+  const all = devices.map((_, i) => i);
+  const matching = all.filter((i) => devices[i] === 'both' || devices[i] === device);
+  return matching.length > 0 ? matching : all;
+}
+
+/** Sandbox for every embedded video iframe; the same value custom HTML iframes are forced to (html.ts). */
+export const EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';

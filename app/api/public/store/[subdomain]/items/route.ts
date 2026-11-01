@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { storeOosPlace } from '@/lib/store/engine/oos-place';
+import { storeForPublicApi } from '@/lib/store/engine/preview-access';
+import { isUuid } from '@/lib/store/review-http';
+import { parseCatalogQuery } from '@/lib/store/query-params';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +27,8 @@ interface StoreItem {
   rating_avg: number;
   rating_count: number;
   featured_in_store?: boolean;
+  created_at: string | null;
+  sold_count: number;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -39,6 +44,9 @@ interface StoreItem {
  *   ?category_id=...  — filter by category
  *   ?search=...       — search by name/code
  *   ?branch_id=...    — stock from specific branch
+ *   ?sort=new|bestsellers|price_asc|price_desc|discount|rating — default A-Z
+ *   ?cat=uuid,uuid&brand=A,B&min=&max=&stock=1&disc=10|25|50&q= — catalog filters (see parseCatalogQuery)
+ *   ?ids=uuid,uuid    — only those items, in that order; returns { items } only
  *   ?page=1&limit=40  — pagination
  */
 export async function GET(
@@ -46,32 +54,40 @@ export async function GET(
   { params }: { params: { subdomain: string } },
 ) {
   try {
-    const td = request.nextUrl.searchParams.get('td');
-    const store = await resolveStoreBySubdomain(params.subdomain, { allowOffline: Boolean(td) });
+    const store = await storeForPublicApi(params.subdomain, request.nextUrl.searchParams);
     if (!store) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }
 
     const { searchParams } = request.nextUrl;
-    const categoryId = searchParams.get('category_id');
-    const search = searchParams.get('search')?.trim();
-    const branchId = searchParams.get('branch_id');
+    const parsed = parseCatalogQuery(searchParams);
+    const categoryRaw = searchParams.get('category_id');
+    const categoryId =
+      categoryRaw && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryRaw)
+        ? categoryRaw
+        : null;
+    const search = searchParams.get('search')?.trim() || parsed.search;
+    // A non-uuid branch would be a Postgres error on a uuid column; drop it.
+    const rawBranch = searchParams.get('branch_id');
+    const branchId = isUuid(rawBranch) ? rawBranch : null;
     const featuredOnly = searchParams.get('featured') === '1';
     const discountedOnly = searchParams.get('discounted') === '1';
     const maxPriceRaw = Number(searchParams.get('max_price'));
     const maxPrice =
       Number.isFinite(maxPriceRaw) && maxPriceRaw > 0
         ? Math.min(999999, maxPriceRaw)
-        : null;
+        : (parsed.maxPrice ?? null);
+    const { parseStoreItemsSort } = await import('@/lib/store/store-items-query');
+    const sort = parseStoreItemsSort(searchParams.get('sort'));
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '40', 10)));
     const offset = (page - 1) * limit;
 
     if (store.is_demo) {
-      const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
+      const { filterDemoCatalog, demoCatalogOptions } = await import('@/lib/store/theme-demo');
       return NextResponse.json(
         filterDemoCatalog({
-          pack: store.store_theme?.pack,
+          ...demoCatalogOptions(store),
           categoryId,
           search,
           page,
@@ -79,19 +95,31 @@ export async function GET(
           featuredOnly,
           discountedOnly,
           maxPrice,
+          // The demo catalog only knows three sorts and ignores the newer filters.
+          sort: sort === 'new' || sort === 'bestsellers' ? sort : 'name',
         }),
       );
     }
 
     const { buildStoreItemsQuery } = await import('@/lib/store/store-items-query');
+    // Engine stores only: the store's theme decides where out-of-stock products go; any other store keeps them in place.
+    const outOfStock = await storeOosPlace(store, searchParams);
     const q = buildStoreItemsQuery({
       businessId: store.business_id,
       categoryId,
+      categoryIds: parsed.categoryIds,
+      brands: parsed.brands,
       search,
       branchId,
       featuredOnly,
       discountedOnly,
+      minPrice: parsed.minPrice,
       maxPrice,
+      inStockOnly: parsed.inStockOnly,
+      minDiscountPct: parsed.minDiscountPct,
+      ids: parsed.ids,
+      sort,
+      outOfStock,
       limit,
       offset,
     });
@@ -117,8 +145,12 @@ export async function GET(
       featured_in_store: !!(r as { featured_in_store?: boolean }).featured_in_store,
       tax_rate: parseFloat(r.tax_rate as string) || 0,
       gst_included: !!(r as { gst_included?: boolean }).gst_included,
+      created_at: r.created_at ? new Date(r.created_at as string).toISOString() : null,
+      sold_count: parseFloat(r.sold_count as string) || 0,
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
+
+    if (parsed.ids?.length) return NextResponse.json({ items });
 
     const categories = await queryRows<{ id: string; name: string; item_count: number }>(
       q.categorySql,

@@ -5,6 +5,7 @@ import {
   requirePortalSession,
 } from '@/lib/auth-helpers';
 import { queryRows, queryOne } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
     if (gate) return gate;
 
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
+    const activityAccess = await requireTenantPermission(request, null, 'settings', 'read');
+    if (!activityAccess.ok) return activityAccess.response;
+    const businessId = activityAccess.businessId;
     const userId = getUserIdFromRequest(request);
     const module = searchParams.get('module');
     const limit = searchParams.get('limit') || '50';

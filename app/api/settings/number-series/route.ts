@@ -4,6 +4,7 @@ import { getPool, query, queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import {
   COUNTER_SERIES,
+  findSharedSeriesPrefix,
   peekNextDocumentNumber,
   setNextDocumentNumber,
 } from '@/lib/invoices/document-counter';
@@ -311,6 +312,21 @@ export async function PUT(request: NextRequest) {
 
     if (requestedBranchIds && targetBranchIds.length !== requestedBranchIds.length) {
       return NextResponse.json({ error: 'One or more branches not found' }, { status: 404 });
+    }
+
+    // Rule 46(b) / 49: branches filing under one GSTIN must not share a tax invoice or bill of
+    // supply series, or both will issue the same numbers.
+    if (prefix && targetBranchIds.length > 0 && ['tax_invoice', 'regular', 'bill_of_supply'].includes(document_type)) {
+      const clash = await findSharedSeriesPrefix(getPool(), business_id, document_type, String(prefix), targetBranchIds);
+      if (clash) {
+        return NextResponse.json(
+          {
+            error: `Branches ${clash.join(' and ')} file under the same GSTIN and would both use the prefix "${prefix}". Give each branch its own prefix.`,
+            code: 'PREFIX_SHARED_ON_GSTIN',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     if (targetBranchIds.length > 0) {

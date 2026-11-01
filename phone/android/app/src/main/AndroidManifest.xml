@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Android 13+: push notifications need a runtime grant (asked after sign-in, lib/push/push_service.dart). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Bill screen barcode scanning. -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Thermal printers: Classic Bluetooth printers paired in Settings, USB printers on OTG. -->
@@ -34,6 +36,17 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Push (FCM): defaults for messages Android displays while the app is in the background.
+             The channel is created by lib/push/push_service.dart before the device is registered. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_khatario" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/khatario_notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="khatario_alerts" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

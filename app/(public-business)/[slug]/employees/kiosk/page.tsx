@@ -15,6 +15,30 @@ export default function EmployeePortalKioskPage() {
   const [employeeName, setEmployeeName] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deviceUnregistered, setDeviceUnregistered] = useState(false);
+  const [registering, setRegistering] = useState(false);
+
+  // A manager signed in to Khatario on this tablet registers it; employee codes work only here.
+  const registerDevice = async () => {
+    setRegistering(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/hr/kiosk-device', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        setDeviceUnregistered(false);
+        setMessage(null);
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      setMessage(
+        res.status === 401
+          ? 'Sign in to Khatario on this device as a manager, then come back to register it.'
+          : data.error ?? 'Could not register this device'
+      );
+    } finally {
+      setRegistering(false);
+    }
+  };
 
   useEffect(() => {
     if (session) return;
@@ -35,6 +59,10 @@ export default function EmployeePortalKioskPage() {
       });
       const loginData = await loginRes.json();
       if (!loginRes.ok) {
+        if (loginData.code === 'KIOSK_DEVICE_NOT_REGISTERED') {
+          setDeviceUnregistered(true);
+          return;
+        }
         setMessage(loginData.error ?? 'Invalid employee code');
         return;
       }
@@ -80,6 +108,24 @@ export default function EmployeePortalKioskPage() {
           <p className="text-sm text-text-secondary">
             Attendance kiosk has been disabled by your HR admin.
           </p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (deviceUnregistered) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <Card className="w-full max-w-sm space-y-3 p-6 text-center">
+          <h1 className="text-lg font-semibold text-text-primary">Register this kiosk</h1>
+          <p className="text-sm text-text-secondary">
+            This device is not set up as an attendance kiosk yet. A manager signed in to Khatario
+            on this device can register it.
+          </p>
+          <Button className="w-full" onClick={() => void registerDevice()} disabled={registering}>
+            {registering ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Register this device'}
+          </Button>
+          {message ? <p className="text-sm text-red-700">{message}</p> : null}
         </Card>
       </div>
     );

@@ -119,3 +119,129 @@ String ageOf(dynamic iso, {DateTime? now}) {
       'failed' => (KTone.negative, 'Payment failed'),
       final s => statusTone(s),
     };
+
+/// How a returned parcel comes back to the shop. Mirrors `lib/returns/labels.ts`.
+const returnMethodLabels = <String, String>{
+  'courier_pickup': 'Courier pickup',
+  'customer_sends': 'Customer sends it',
+  'no_return': 'No need to send it back',
+};
+
+const returnMethodHints = <String, String>{
+  'courier_pickup': 'Shiprocket collects the parcel from the customer and brings it to your shop.',
+  'customer_sends': 'The customer gets your instructions and sends or brings the parcel.',
+  'no_return': 'Nothing comes back. The credit note is posted now and no stock is added back.',
+};
+
+const pickupStatusLabels = <String, String>{
+  'booked': 'Pickup booked',
+  'out_for_pickup': 'Out for pickup',
+  'pickup_issue': 'Pickup problem',
+  'in_transit': 'On the way back',
+  'arrived': 'Arrived at shop',
+  'cancelled': 'Pickup cancelled',
+};
+
+KTone pickupTone(String status) => switch (status) {
+      'pickup_issue' => KTone.due,
+      'arrived' => KTone.positive,
+      'cancelled' => KTone.neutral,
+      _ => KTone.brand,
+    };
+
+const refundMethodLabels = <String, String>{
+  'original_payment': 'Back to original payment',
+  'cash': 'Cash',
+  'upi': 'UPI',
+  'bank': 'Bank',
+  'store_credit': 'Keep as credit',
+};
+
+const returnEventLabels = <String, String>{
+  'requested': 'Return requested',
+  'approved': 'Approved',
+  'rejected': 'Rejected',
+  'pickup_booked': 'Pickup booked',
+  'pickup_status': 'Pickup update',
+  'pickup_cancelled': 'Pickup cancelled',
+  'received': 'Received at the shop',
+  'refund_pending': 'Refund on its way',
+  'refunded': 'Refunded',
+  'refund_failed': 'Refund failed',
+  'cancelled': 'Cancelled',
+};
+
+const _livePickupStatuses = ['booked', 'out_for_pickup', 'pickup_issue'];
+
+/// True while a booked courier can still be called off (not yet picked up).
+bool hasLivePickup(Map<String, dynamic> r) {
+  final id = r['carrier_order_id']?.toString() ?? '';
+  return id.isNotEmpty && _livePickupStatuses.contains(r['pickup_status']);
+}
+
+/// What the shop types when choosing how a return comes back (approving, or starting a return).
+class ReturnWayForm {
+  ReturnWayForm({this.method = 'customer_sends', this.instructions = '', this.address = '', this.pincode = '', this.phone = '', this.weightKg = ''});
+
+  String method;
+  String instructions;
+  String address;
+  String pincode;
+  String phone;
+  String weightKg;
+
+  /// The form to start with. Courier pickup only when Shiprocket is connected and the pickup
+  /// address and PIN are known (or the server fills them in, as when starting a return).
+  factory ReturnWayForm.initial({
+    required bool shiprocketConnected,
+    Map<String, dynamic>? pickup,
+    String? defaultInstructions,
+    bool serverFillsPickup = false,
+  }) {
+    final address = pickup?['address']?.toString() ?? '';
+    final pin = pickup?['pincode']?.toString() ?? '';
+    final known = serverFillsPickup || (address.trim().isNotEmpty && RegExp(r'^\d{6}$').hasMatch(pin));
+    final weight = pickup?['weight_kg'];
+    return ReturnWayForm(
+      method: shiprocketConnected && known ? 'courier_pickup' : 'customer_sends',
+      instructions: defaultInstructions ?? '',
+      address: address,
+      pincode: pin,
+      phone: pickup?['phone']?.toString() ?? '',
+      weightKg: weight == null ? '' : plainNumber(weight),
+    );
+  }
+
+  /// Why the form cannot be sent. Only a typed PIN must be 6 digits; blanks are filled by the server.
+  String? get error {
+    if (method != 'courier_pickup') return null;
+    if (pincode.trim().isNotEmpty && !RegExp(r'^\d{6}$').hasMatch(pincode.trim())) return 'Enter a 6-digit PIN code';
+    if (weightKg.trim().isNotEmpty && !((num.tryParse(weightKg.trim()) ?? 0) > 0)) return 'Enter the parcel weight in kg';
+    return null;
+  }
+
+  /// The pickup details alone (for booking again).
+  Map<String, dynamic> get pickupBody => {
+        if (address.trim().isNotEmpty) 'address': address.trim(),
+        if (pincode.trim().isNotEmpty) 'pincode': pincode.trim(),
+        if (phone.trim().isNotEmpty) 'phone': phone.trim(),
+        if (weightKg.trim().isNotEmpty) 'weight_kg': weightKg.trim(),
+      };
+
+  /// The request fields for the chosen way back.
+  Map<String, dynamic> get body => switch (method) {
+        'courier_pickup' => {'method': method, 'pickup': pickupBody},
+        'customer_sends' => {'method': method, if (instructions.trim().isNotEmpty) 'instructions': instructions.trim()},
+        _ => {'method': method},
+      };
+}
+
+/// `"2.5"` stays, `"1.000"` or `1.0` becomes `1`.
+String plainNumber(dynamic v) {
+  final n = num.tryParse('$v');
+  if (n == null) return '$v';
+  return n == n.roundToDouble() ? '${n.toInt()}' : '$n';
+}
+
+/// The least of what is left to refund and what the gateway can still take back.
+num originalRefundAmount(num refundable, num max) => refundable < max ? refundable : max;

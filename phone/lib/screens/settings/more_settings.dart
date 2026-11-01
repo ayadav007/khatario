@@ -468,7 +468,7 @@ class HelpSettingsScreen extends StatelessWidget {
           row('Help & support', '/settings/help'),
         ]),
         SettingsSection(title: 'Diagnostics', why: 'Share these with support when something does not work.', children: [
-          row('Offline sync', '/settings/offline-sync'),
+          row('Catalog sync', '/settings/offline-sync'),
           row('Printer diagnostics', '/settings/bluetooth-printer/diagnostics'),
         ]),
       ],

@@ -112,8 +112,9 @@ class _HubDirectoryScreenState extends State<HubDirectoryScreen> {
                           leading: KAvatar(name: b['name']?.toString() ?? ''),
                           title: b['name']?.toString() ?? '',
                           subtitle: [
-                            [b['city'], b['state']].whereType<Object>().join(', '),
-                            ...(b['featured_categories'] is List ? (b['featured_categories'] as List).take(3).map((e) => e.toString()) : const <String>[]),
+                            [hubText(b['trust'] is Map ? b['trust']['district'] : null) ?? b['city'], b['state']].whereType<Object>().join(', '),
+                            ...hubTrustFacts(b['trust']).take(2),
+                            ...(b['featured_categories'] is List ? (b['featured_categories'] as List).take(2).map((e) => e.toString()) : const <String>[]),
                           ].where((s) => s.isNotEmpty).join(' · '),
                           onTap: () => Navigator.of(context).push(MaterialPageRoute(
                             builder: (_) => HubProfileScreen(session: widget.session, businessId: b['id'].toString()),
@@ -167,18 +168,33 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
 
   Future<void> _connect() async {
     final message = TextEditingController();
+    var shareLowStock = true;
     final ok = await showKSheet<bool>(
       context,
       title: 'Ask to connect',
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.md),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Once they accept, their bills come straight into your purchases and you can order from them here.', style: AppText.caption),
-          const SizedBox(height: AppSpace.sm),
-          TextField(controller: message, maxLines: 3, decoration: const InputDecoration(labelText: 'Message (optional)')),
-          const SizedBox(height: AppSpace.md),
-          KButton(label: 'Send request', onPressed: () => Navigator.pop(ctx, true)),
-        ]),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.md),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Once they accept, their bills come straight into your purchases and you can order from them here.', style: AppText.caption),
+            const SizedBox(height: AppSpace.sm),
+            TextField(controller: message, maxLines: 3, decoration: const InputDecoration(labelText: 'Message (optional)')),
+            const SizedBox(height: AppSpace.sm),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: shareLowStock,
+              onChanged: (v) => setSheet(() => shareLowStock = v),
+              title: Text('Share stock and sales with them', style: AppText.bodyStrong),
+              subtitle: Text(
+                'They are told when their items reach your reorder level and can propose an order. '
+                'Your sales of their items count in their area totals, never shown as your shop alone.',
+                style: AppText.caption,
+              ),
+            ),
+            const SizedBox(height: AppSpace.md),
+            KButton(label: 'Send request', onPressed: () => Navigator.pop(ctx, true)),
+          ]),
+        ),
       ),
     );
     if (ok == true && mounted) {
@@ -187,6 +203,7 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
         await widget.session.api.postJson('/api/suppliers/hub/connection-requests', {
           'supplier_business_id': widget.businessId,
           'message': message.text.trim(),
+          'share_low_stock': shareLowStock,
         });
         if (mounted) hubSnack(context, 'Request sent');
         await _load();
@@ -256,6 +273,7 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
               child: KInfoCard(title: 'About', rows: [
                 if ([business['city'], business['state']].any((v) => v != null)) ('Location', [business['city'], business['state']].whereType<Object>().join(', ')),
                 if (hubText(business['gstin']) != null) ('GSTIN', business['gstin'].toString()),
+                if (hubTrustFacts(p['trust']).isNotEmpty) ('Track record', hubTrustFacts(p['trust']).join(' · ')),
                 if (hubText(discovery['profile_summary']) != null) ('About', discovery['profile_summary'].toString()),
                 if (discovery['featured_categories'] is List && (discovery['featured_categories'] as List).isNotEmpty)
                   ('Sells', (discovery['featured_categories'] as List).join(', ')),

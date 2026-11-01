@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
-import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
+import { cachedThumbnail, thumbnailCacheKey } from '@/lib/template-thumbnail-cache';
 import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { injectPrintHtmlEnhancements, resolvePrintConfig } from '@/lib/print-config';
+import { attachItemTablePrintData } from '@/lib/print/item-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +151,8 @@ function getSampleRenderData(templateId: string) {
         index: 1,
         sn: 1,
         item_name: 'Premium Hydraulic Oil - Grade 68',
+        item_code: 'HO-68',
+        mrp: 520,
         hsn_sac: '27101990',
         hsn_code: '27101990',
         unit: 'Ltr',
@@ -177,6 +179,8 @@ function getSampleRenderData(templateId: string) {
         index: 2,
         sn: 2,
         item_name: 'Industrial Gear Oil - EP 90',
+        item_code: 'GO-90',
+        mrp: 610,
         hsn_sac: '27101990',
         hsn_code: '27101990',
         unit: 'Ltr',
@@ -203,6 +207,10 @@ function getSampleRenderData(templateId: string) {
         index: 3,
         sn: 3,
         item_name: 'Engine Coolant - Long Life',
+        item_code: 'EC-LL',
+        mrp: 1100,
+        case_unit: 'CASE',
+        case_factor: 12,
         hsn_sac: '38200000',
         hsn_code: '38200000',
         unit: 'Pcs',
@@ -230,7 +238,6 @@ function getSampleRenderData(templateId: string) {
 }
 
 export async function GET(request: NextRequest) {
-  let browser: any | null = null;
   try {
     const { searchParams } = new URL(request.url);
     const templateId = searchParams.get('template_id');
@@ -249,52 +256,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const defaults = getDefaultTemplateSettings(templateId);
-    const finalSettings = customSettings ? mergeTemplateSettings(customSettings, defaults) : defaults;
-
     const sample = getSampleRenderData(templateId);
-    const renderData = {
-      invoice: sample.invoice,
-      business: sample.business,
-      customer: sample.customer,
-      items: sample.items,
-      settings: finalSettings,
-    };
+    const key = thumbnailCacheKey(templateId, sample, customSettingsParam);
+    const etag = `"${key}"`;
+    if (request.headers.get('if-none-match') === etag) {
+      return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+    }
 
-    const renderer = new InvoiceRenderer();
-    const rawHtml = await renderer.renderHtml(templateId, renderData);
-    const printCfg = resolvePrintConfig(templateId, finalSettings);
-    const html = injectPrintHtmlEnhancements(rawHtml, printCfg);
+    const png = await cachedThumbnail(templateId, key, async () => {
+      const defaults = getDefaultTemplateSettings(templateId);
+      const finalSettings = customSettings ? mergeTemplateSettings(customSettings, defaults) : defaults;
+      const renderData = attachItemTablePrintData({
+        invoice: { ...sample.invoice, has_tax: Number((sample.invoice as { tax_total?: unknown }).tax_total || 0) > 0 },
+        business: sample.business,
+        customer: sample.customer,
+        items: sample.items,
+        settings: finalSettings as unknown as Record<string, unknown>,
+      }, { docType: 'tax_invoice' });
+      const rawHtml = await new InvoiceRenderer().renderHtml(templateId, renderData);
+      return injectPrintHtmlEnhancements(rawHtml, resolvePrintConfig(templateId, finalSettings));
+    });
 
-    browser = await puppeteer.launch(getPuppeteerLaunchOptions());
-    const page = await browser.newPage();
-    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
-    // Keep thumbnails consistent with PDF output (print CSS)
-    await page.emulateMediaType('print');
-
-    const png = await page.screenshot({ type: 'png' });
-    await browser.close();
-    browser = null;
-
-    return new NextResponse(png as any, {
+    return new NextResponse(png as unknown as BodyInit, {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
-        // Cache for a bit; UI adds a cache-buster when needed.
-        'Cache-Control': 'public, max-age=3600',
+        ETag: etag,
+        // The image only changes when the template does; the ETag catches that.
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
       },
     });
   } catch (error: any) {
-    if (browser) {
-      try {
-        await browser.close();
-      } catch {
-        // ignore
-      }
-    }
     console.error('Error generating template preview image:', error);
     return NextResponse.json({ error: 'Failed to generate template preview image' }, { status: 500 });
   }
 }
-

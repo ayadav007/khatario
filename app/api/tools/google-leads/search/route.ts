@@ -11,8 +11,19 @@ import { geocodeLocation, searchNearbyPlaces, getPlaceDetailsBatch } from '@/lib
 import { normalizeLeads, NormalizedLead } from '@/lib/google-leads/normalizer';
 import { deduplicateLeads } from '@/lib/google-leads/dedupe';
 import { geocodeLocationOSM, searchPlacesOSM, normalizeOSMLead, OSMNormalizedLead } from '@/lib/google-leads/osmClient';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+/** Paid Places API searches per business per hour (each search can make many billed calls). */
+const SEARCHES_PER_HOUR = 20;
 
 export async function POST(request: NextRequest) {
+  const access = await requireTenantPermission(request, null, 'tools', 'read');
+  if (!access.ok) return access.response;
+  const rl = checkRateLimit(`google-leads:${access.businessId}`, SEARCHES_PER_HOUR, 60 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Search limit reached. Try again in an hour.' }, { status: 429 });
+  }
   try {
     const body = await request.json();
     const { keyword, location, radius = 5000, maxResults = 50, useFreeAPI = false } = body;

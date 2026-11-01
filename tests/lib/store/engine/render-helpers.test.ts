@@ -1,0 +1,224 @@
+import { catalogHref, ctaTarget } from '@/lib/store/engine/links';
+import {
+  engineCategoryStyle,
+  engineRootStyle,
+  pickCategories,
+  sectionFrameClass,
+  sectionFrameStyle,
+  slideSchemeStyle,
+} from '@/lib/store/engine/render-helpers';
+import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
+import { PRODUCT_CARD_DEFAULTS } from '@/lib/store/engine/product-card';
+import type { Section, ThemeSettings } from '@/lib/store/engine/types';
+
+const settings: ThemeSettings = {
+  color_schemes: DEFAULT_COLOR_SCHEMES,
+  font_heading: 'outfit',
+  font_body: 'inter',
+  button_radius: 10,
+  card_style: 'bordered',
+  phone_kit: true,
+  logo_url: '',
+  favicon_url: '',
+  custom_css: '',
+  social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
+  menus: [],
+  product_card: PRODUCT_CARD_DEFAULTS,
+};
+
+function sec(over: Partial<Section> = {}): Section {
+  return { type: 'rich-text', settings: {}, blocks: {}, block_order: [], ...over };
+}
+
+describe('catalogHref', () => {
+  it('keeps preview and draft params and sets cat', () => {
+    expect(catalogHref('?preview_theme=abc&pt=tok&td=d&cat=old&q=x&other=1', { cat: 'c1' })).toBe(
+      '/?preview_theme=abc&pt=tok&td=d&cat=c1',
+    );
+  });
+
+  it('keeps editor only alongside a theme preview', () => {
+    expect(catalogHref('?preview_theme=abc&pt=tok&editor=1', { q: 'rice' })).toBe('/?preview_theme=abc&pt=tok&editor=1&q=rice');
+    expect(catalogHref('?editor=1', { q: 'rice' })).toBe('/?q=rice');
+    expect(catalogHref('?preview_theme=abc&editor=1', {})).toBe('/?preview_theme=abc');
+    expect(catalogHref('?pt=tok&editor=1', {})).toBe('/?pt=tok');
+  });
+
+  it('sets q and drops empty values', () => {
+    expect(catalogHref('', { q: 'rice dal', cat: '' })).toBe('/?q=rice+dal');
+  });
+
+  it('returns / when nothing is kept', () => {
+    expect(catalogHref('?cat=a&q=b', {})).toBe('/');
+  });
+
+  it('appends a hash', () => {
+    expect(catalogHref('?pt=t', { cat: 'c' }, 'catalog')).toBe('/?pt=t&cat=c#catalog');
+    expect(catalogHref('', {}, 'catalog')).toBe('/#catalog');
+  });
+});
+
+describe('ctaTarget', () => {
+  it('classifies anchors, internal and external links', () => {
+    expect(ctaTarget('#catalog')).toEqual({ kind: 'anchor', id: 'catalog' });
+    expect(ctaTarget('/contact')).toEqual({ kind: 'internal', href: '/contact' });
+    expect(ctaTarget('/#catalog')).toEqual({ kind: 'internal', href: '/#catalog' });
+    expect(ctaTarget('https://example.com/x')).toEqual({ kind: 'external', href: 'https://example.com/x' });
+  });
+
+  it('rejects anything else', () => {
+    expect(ctaTarget('')).toEqual({ kind: 'none' });
+    expect(ctaTarget('#')).toEqual({ kind: 'none' });
+    expect(ctaTarget('//evil.com')).toEqual({ kind: 'none' });
+    expect(ctaTarget('javascript:alert(1)')).toEqual({ kind: 'none' });
+    expect(ctaTarget('http://example.com')).toEqual({ kind: 'none' });
+    expect(ctaTarget('/\t/evil.com')).toEqual({ kind: 'none' });
+    expect(ctaTarget(42)).toEqual({ kind: 'none' });
+  });
+});
+
+describe('engineRootStyle', () => {
+  it('sets scheme 1 vars, studio vars and fonts', () => {
+    const s = engineRootStyle(settings);
+    expect(s['--c-bg']).toBe('#ffffff');
+    expect(s['--primary']).toBe('#2563eb');
+    expect(s['--paper']).toBe('#ffffff');
+    expect(s['--text']).toBe('#111827');
+    expect(s['--font-heading']).toContain('--font-store-outfit');
+    expect(s['--font-body']).toContain('--font-khatario-ui');
+    expect(s.fontFamily).toBe(s['--font-body']);
+    expect(s['--btn-radius']).toBe('10px');
+    expect(s.backgroundColor).toBe('#ffffff');
+  });
+});
+
+describe('sectionFrameStyle', () => {
+  it('uses scheme 1 vars without repainting when the section has no scheme', () => {
+    const s = sectionFrameStyle(settings, sec());
+    expect(s['--c-bg']).toBe('#ffffff');
+    expect(s.background).toBeUndefined();
+    expect(s['--paper']).toBeUndefined();
+  });
+
+  it('applies a chosen scheme as vars and paint, its accent as --primary', () => {
+    const s = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3' }));
+    expect(s['--c-bg']).toBe('#111827');
+    expect(s['--c-text']).toBe('#f9fafb');
+    expect(s['--primary']).toBe('#60a5fa');
+    expect(s['--paper']).toBe('#111827');
+    expect(s['--text']).toBe('#f9fafb');
+    expect(s['--st-card']).toBe('#1f2937');
+    expect(s.background).toBe('#111827');
+    expect(s.color).toBe('#f9fafb');
+  });
+
+  it('paints the hero panel, banner and tiles from a chosen scheme, not on Default', () => {
+    const s = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3' }));
+    expect(s['--st-soft']).toBe('color-mix(in srgb, #f9fafb 4%, #111827)');
+    expect(s['--st-tile']).toBe('color-mix(in srgb, #f9fafb 7%, #111827)');
+    expect(s['--st-banner']).toBe('color-mix(in srgb, #60a5fa 14%, #111827)');
+    expect(sectionFrameStyle(settings, sec())['--st-soft']).toBeUndefined();
+  });
+
+  it('paints custom colours over the section scheme (scheme 1 on Default)', () => {
+    const s = sectionFrameStyle(settings, sec({ custom_colors: { background: '#ff7028', button: '#000000' } }));
+    expect(s.background).toBe('#ff7028');
+    expect(s['--c-btn']).toBe('#000000');
+    expect(s['--c-text']).toBe('#111827');
+    // A typed background is the hero panel's exact colour.
+    expect(s['--st-soft']).toBe('#ff7028');
+    const dark = sectionFrameStyle(settings, sec({ color_scheme: 'scheme-3', custom_colors: { accent: '#ff1f8e' } }));
+    expect(dark.background).toBe('#111827');
+    expect(dark['--primary']).toBe('#ff1f8e');
+    // No typed background: the panel keeps the scheme's tint.
+    expect(dark['--st-soft']).toMatch(/^color-mix\(/);
+  });
+
+  it('pads the sides by Left and Right spacing', () => {
+    const s = sectionFrameStyle(settings, sec({ settings: { spacing_left: 16, spacing_right: 0 } }));
+    expect(s.paddingLeft).toBe(16);
+    expect(s.paddingRight).toBeUndefined();
+  });
+
+  it('falls back to scheme 1 for an unknown scheme', () => {
+    const s = sectionFrameStyle(settings, sec({ color_scheme: 'nope' }));
+    expect(s['--c-bg']).toBe('#ffffff');
+    expect(s.background).toBeUndefined();
+  });
+
+  it('adds spacing from the section settings and schema defaults', () => {
+    expect(sectionFrameStyle(settings, sec()).paddingTop).toBe(32);
+    const s = sectionFrameStyle(settings, sec({ settings: { spacing_top: 0, spacing_bottom: 48 } }));
+    expect(s.paddingTop).toBe(0);
+    expect(s.paddingBottom).toBe(48);
+    expect(sectionFrameStyle(settings, sec({ type: 'header' })).paddingTop).toBeUndefined();
+  });
+});
+
+describe('pickCategories', () => {
+  const all = [
+    { id: 'a', name: 'A', item_count: 1, image_url: null },
+    { id: 'b', name: 'B', item_count: 2, image_url: null },
+    { id: 'c', name: 'C', item_count: 3, image_url: null },
+  ];
+  it('returns all when none picked', () => {
+    expect(pickCategories(all, [])).toEqual(all);
+    expect(pickCategories(all, undefined)).toEqual(all);
+  });
+  it('keeps picked order and skips missing ids', () => {
+    expect(pickCategories(all, ['c', 'x', 'a']).map((c) => c.id)).toEqual(['c', 'a']);
+  });
+});
+
+describe('engineCategoryStyle', () => {
+  it('uses photos when any category has an image', () => {
+    expect(engineCategoryStyle('tiles', true)).toBe('photo');
+    expect(engineCategoryStyle('cards', false)).toBe('icon');
+    expect(engineCategoryStyle('tiles', false)).toBe('letter');
+    expect(engineCategoryStyle('circles', false)).toBe('letter');
+  });
+});
+
+describe('sectionFrameClass', () => {
+  it('adds the full-width modifier only when full_width is true', () => {
+    expect(sectionFrameClass({ full_width: true })).toBe('eng-sec eng-sec--full');
+    expect(sectionFrameClass({ full_width: false })).toBe('eng-sec');
+    expect(sectionFrameClass({ full_width: 'true' })).toBe('eng-sec');
+    expect(sectionFrameClass({})).toBe('eng-sec');
+  });
+
+  it('marks each spacing the merchant set, so it replaces a hero card margin on that side', () => {
+    expect(sectionFrameClass({ spacing_top: 0, spacing_left: 8 })).toBe('eng-sec eng-sp-t eng-sp-l');
+    expect(sectionFrameClass({ full_width: true, spacing_right: 0, spacing_bottom: 4 })).toBe(
+      'eng-sec eng-sec--full eng-sp-r eng-sp-b',
+    );
+    expect(sectionFrameClass({ spacing_top: '0' })).toBe('eng-sec');
+  });
+});
+
+describe('slideSchemeStyle', () => {
+  it("gives a slide its scheme's variables (engine and Studio names) for a known id", () => {
+    const dark = DEFAULT_COLOR_SCHEMES[2];
+    const style = slideSchemeStyle(DEFAULT_COLOR_SCHEMES, dark.id);
+    expect(style).toMatchObject({
+      '--c-bg': dark.background,
+      '--c-text': dark.text,
+      '--c-btn': dark.button,
+      '--c-btn-text': dark.button_text,
+      '--c-card': dark.card,
+      '--primary': dark.accent,
+      '--paper': dark.background,
+      '--text': dark.text,
+      '--st-card': dark.card,
+    });
+    expect(style?.['--st-soft']).toContain(dark.background);
+    expect(Object.values(style ?? {}).every((v) => typeof v === 'string')).toBe(true);
+  });
+
+  it("a missing, unknown or empty id gives no style, so the slideshow's own scheme applies", () => {
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, 'scheme-gone')).toBeUndefined();
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, '')).toBeUndefined();
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, undefined)).toBeUndefined();
+    expect(slideSchemeStyle([], 'scheme-1')).toBeUndefined();
+  });
+});

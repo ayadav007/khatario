@@ -53,7 +53,7 @@ function ShelfRow({
 
   if (studio) {
     return (
-      <StudioProductsSection s={{ eyebrow: '', columns: 5 }} title={shelf.title} action={null} mobileColumns={mobileColumns}>
+      <StudioProductsSection s={{ eyebrow: '', columns: 5 }} title={shelf.title} action={null} mobileColumns={mobileColumns} gridClassName="isRow">
         {items.map((item) => (
           <StoreProductCard key={`${shelf.id}-${item.id}`} product={item} onViewDetail={onViewDetail} />
         ))}

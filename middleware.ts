@@ -8,6 +8,7 @@ import {
   EMPLOYEE_PORTAL_SESSION_HEADER,
   EMPLOYEE_PORTAL_COOKIE,
 } from './lib/employee-portal';
+import { isKioskSessionApiAllowed, isKioskSessionToken } from './lib/employee-portal/ess-api-allowlist';
 import { PARTNER_SESSION_COOKIE } from './lib/partners/constants';
 import { extractStoreSubdomain } from './lib/store/subdomain';
 import { resolvePublicRequestOrigin } from './lib/http/public-request-origin';
@@ -88,6 +89,10 @@ function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/track/')) return true;
   // Rider link for the shop's own delivery rider (token-only, no login).
   if (pathname.startsWith('/r/')) return true;
+  // Connect tracked WhatsApp links and QR codes (public redirect to wa.me).
+  if (pathname.startsWith('/w/')) return true;
+  // An order a business sent to a supplier who is not on Khatario (token-only, no login).
+  if (pathname.startsWith('/so/')) return true;
   if (pathname.startsWith('/portal/')) return true;
   return false;
 }
@@ -127,10 +132,13 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
   if (pathname.startsWith('/solution/')) return true;
+  if (pathname === '/themes' || pathname.startsWith('/themes/')) return true;
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return true;
   if (pathname.startsWith('/pay/upi/')) return true;
   if (pathname.startsWith('/wa-shop/')) return true;
   if (pathname.startsWith('/media/marketing/')) return true;
+  if (pathname.startsWith('/media/store-reviews/')) return true;
+  if (pathname.startsWith('/media/store-theme/')) return true;
   if (pathname.startsWith('/media/marketing-creatives/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
   if (isPublicBusinessEmployeePath(pathname)) return true;
@@ -159,12 +167,25 @@ function isBusinessConsoleReferer(request: NextRequest): boolean {
   return !isPublicBusinessEmployeePath(url.pathname);
 }
 
-/** Allowlisted ESS APIs with employee portal cookie (session validated in route handlers). */
+const PORTAL_TOKEN_RE = /^(k_)?[0-9a-f]{64}$/;
+
+/**
+ * Allowlisted ESS APIs with employee portal cookie. The edge runtime cannot reach the database,
+ * so the session itself is validated in route handlers (resolveActorContext); no identity
+ * headers are set here, and handlers never take a user or business from the request body.
+ */
 function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | null {
   const token = request.cookies.get(EMPLOYEE_PORTAL_COOKIE)?.value;
   if (!token) return null;
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith('/api/')) return null;
+  if (!PORTAL_TOKEN_RE.test(token)) {
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+  }
+  // Kiosk punch sessions may only check in or out.
+  if (isKioskSessionToken(token) && !isKioskSessionApiAllowed(request.method, pathname)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   if (!isEssApiAllowed(request.method, pathname)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -204,6 +225,8 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/images/') ||
     pathname.startsWith('/fonts/') ||
+    // The theme demo stores' photos (public/theme-demos), on demo-<slug> hosts and the app host alike.
+    pathname.startsWith('/theme-demos/') ||
     pathname.startsWith('/favicon') ||
     pathname === '/manifest.json' ||
     pathname === '/admin/sw.js' ||
@@ -214,6 +237,7 @@ function isStaticAsset(pathname: string): boolean {
     pathname.endsWith('.ico') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.jpg') ||
+    pathname.endsWith('.webp') ||
     pathname.endsWith('.svg') ||
     pathname.endsWith('.css') ||
     pathname.endsWith('.js') ||
@@ -243,6 +267,10 @@ export async function middleware(request: NextRequest) {
 
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
+    // Review and theme photos are served as-is on store hosts (not rewritten under /store).
+    if (pathname.startsWith('/media/store-reviews/') || pathname.startsWith('/media/store-theme/')) {
+      return nextWithoutSpoofedIdentity(request);
+    }
     const url = request.nextUrl.clone();
     // Store hosts never carry a merchant session, and many handlers still fall back to
     // client-supplied user_id/business_id when the session headers are absent.

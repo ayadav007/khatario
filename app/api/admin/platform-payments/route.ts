@@ -7,6 +7,7 @@ import {
   savePlatformPaymentSettings,
   toPublicPlatformPaymentSettings,
 } from '@/lib/platform-payment-settings';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export async function PUT(request: NextRequest) {
         easebuzz_salt_changed: Boolean(eb.salt),
         easebuzz_environment: settings.easebuzz.environment,
       },
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+      getClientIp(request),
       request.headers.get('user-agent') || undefined,
     );
 

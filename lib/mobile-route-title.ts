@@ -46,6 +46,7 @@ export function getMobileRouteTitle(
   }
 
   // —— Items ——
+  if (p === '/items/cleanup') return 'Units & duplicates';
   if (p === '/items/new') return isEdit ? 'Edit item' : 'Create item';
   if (p.startsWith('/items/')) {
     if (p.includes('/edit')) return 'Edit item';
@@ -97,6 +98,16 @@ export function getMobileRouteTitle(
   if (p === '/inventory-adjustments/new') return 'New adjustment';
   if (p.startsWith('/inventory-adjustments/')) return 'Adjustment';
   if (p === '/inventory-adjustments') return 'Adjustments';
+  if (p.startsWith('/stock-counts/')) return 'Stock count';
+  if (p === '/stock-counts') return 'Stock counts';
+  if (p === '/stock-holds') return 'Held stock';
+  if (p === '/manufacturing') return 'Manufacturing';
+  if (p === '/insurance-claims') return 'Insurance claims';
+  if (p === '/eway-bills') return 'E-way bills';
+  if (p === '/reports/stock/third-party') return 'Stock with parties';
+  if (p === '/reports/stock/quantitative') return 'Quantity details';
+  if (p === '/reports/stock/bank-statement') return 'Bank stock statement';
+  if (p === '/reports/stock/job-work') return 'Job work';
   if (p.startsWith('/delivery-challans')) return 'Delivery challan';
 
   // —— Sales ——
@@ -109,6 +120,7 @@ export function getMobileRouteTitle(
   // —— Payments & accounts ——
   if (p.startsWith('/payments/in')) return 'Payments in';
   if (p.startsWith('/payments/out')) return 'Payments out';
+  if (p.startsWith('/payments/reminders')) return 'Payment reminders';
   if (p.startsWith('/payments')) return 'Payments';
   if (p.startsWith('/accounts/') && p.endsWith('/reconciliation')) return 'Reconciliation';
   if (p.startsWith('/accounts/')) return 'Account';
@@ -165,6 +177,9 @@ export function getMobileRouteTitle(
   if (p === '/whatsapp/flows') return 'Flows';
   if (p.startsWith('/whatsapp/flows/')) return 'Flow';
   if (p === '/whatsapp/dashboard') return 'CRM dashboard';
+  if (p === '/whatsapp/pipeline') return 'Pipeline';
+  if (p === '/whatsapp/leads') return 'Leads';
+  if (p === '/whatsapp/lead-sources') return 'Lead sources';
   if (p.startsWith('/whatsapp/campaigns/')) return 'Campaign';
   if (p.startsWith('/whatsapp')) return 'WhatsApp';
 

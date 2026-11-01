@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const lines = await db.queryRows(
       `
-      SELECT l.id, l.item_name, l.qty, l.confirmed_qty, l.buyer_units_per_vendor_unit AS factor,
+      SELECT l.id, l.item_name, l.option_label, l.qty, l.confirmed_qty, l.buyer_units_per_vendor_unit AS factor, l.discount_percent,
              l.buyer_item_id, l.vendor_item_id,
              ${role === 'vendor' ? 'l.buyer_stock_at_suggestion,' : ''}
              bi.name AS buyer_item_name, bi.unit AS buyer_unit,
@@ -34,17 +34,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
              vi.name AS vendor_item_name, vi.unit AS vendor_unit,
              ${
                role === 'vendor'
-                 ? 'vi.current_stock AS vendor_current_stock, vi.selling_price AS vendor_price, vi.selling_price AS unit_price'
+                 ? 'vi.current_stock AS vendor_current_stock, vi.selling_price AS vendor_price, COALESCE(l.unit_price, bp.price, vi.selling_price) AS unit_price'
                  : `${BUYER_LINE_PRICE_SQL} AS unit_price`
              }
       FROM supply_order_lines l
       LEFT JOIN items bi ON bi.id = l.buyer_item_id
       LEFT JOIN items vi ON vi.id = l.vendor_item_id
-      ${LISTING_FOR_LINE_SQL('$2')}
+      ${LISTING_FOR_LINE_SQL('$2', '$3')}
       WHERE l.order_id = $1
       ORDER BY l.sort_order
       `,
-      [order.id, order.vendor_business_id]
+      [order.id, order.vendor_business_id, order.buyer_business_id]
     );
     const names = await db.queryRows<{ id: string; name: string }>(
       `SELECT id, name FROM businesses WHERE id = ANY($1::uuid[])`,
@@ -54,6 +54,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const invoice = order.invoice_id
       ? await db.queryOne(`SELECT id, invoice_number, invoice_date, grand_total FROM invoices WHERE id = $1`, [order.invoice_id])
       : null;
+    // Backorders this order opened (what the supplier will send later).
+    const backorders = await db.queryRows<{ id: string; status: string }>(
+      `SELECT id, status FROM supply_orders WHERE parent_order_id = $1 ${role === 'buyer' ? "AND status <> 'draft'" : ''} ORDER BY created_at`,
+      [order.id]
+    );
 
     return NextResponse.json({
       role,
@@ -69,6 +74,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         supplier_name: nameOf(order.vendor_business_id),
         invoice,
         purchase_id: role === 'buyer' ? order.purchase_id : null,
+        parent_order_id: order.parent_order_id ?? null,
+        dispatched_at: order.dispatched_at ?? null,
+        dispatch_note: order.dispatch_note ?? null,
+        backorders,
       },
       lines: lines.map((l: any) => ({
         ...l,
@@ -76,6 +85,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         confirmed_qty: l.confirmed_qty == null ? null : Number(l.confirmed_qty),
         factor: Number(l.factor),
         unit_price: l.unit_price == null ? null : Number(l.unit_price),
+        discount_percent: l.discount_percent == null ? 0 : Number(l.discount_percent),
         buyer_qty: Math.round(Number(l.qty) * Number(l.factor) * 1000) / 1000,
         // The supplier sees the buyer's item only by the line's name.
         buyer_item_id: role === 'buyer' ? l.buyer_item_id : null,
@@ -91,7 +101,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 /**
  * PATCH /api/supply-orders/[id]
- * Body: { action: 'update'|'send'|'confirm'|'respond'|'decline'|'cancel', lines?: [...], note? }
+ * Body: { action: 'update'|'send'|'confirm'|'respond'|'decline'|'cancel'|'dispatch', lines?: [...], note? }
  * See lib/supply-orders transitionSupplyOrder for who may do what.
  */
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

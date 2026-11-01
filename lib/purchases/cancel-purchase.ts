@@ -12,6 +12,7 @@ import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { RULE37_REAVAIL, RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { releasePurchaseInTransit } from '@/lib/purchases/goods-in-transit';
 import { reverseHistoricalLandedCost, LandedCostError } from '@/lib/inventory/landed-cost-application';
 
 export class PurchaseCancelError extends Error {
@@ -264,6 +265,7 @@ async function reverseReceivedStock(
     label: string;
   }
 ): Promise<number> {
+  await releasePurchaseInTransit(client, p.businessId, p.purchaseId);
   let movements = (
     await client.query<StockMovement>(
       `SELECT id, item_id, quantity, unit_cost, batch_id, serial_id, location_id, variant_id

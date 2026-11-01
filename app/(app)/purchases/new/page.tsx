@@ -53,11 +53,14 @@ import {
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
 import { round2, roundRetailQty, roundExclusiveUnitPrice } from '@/lib/numeric-precision';
 import {
+  billTotalGap,
   previewPurchaseFormDocument,
   purchaseFormCanFinalize,
   purchaseFormLinesFromScan,
   purchaseSaveModes,
   scanDocumentPriceMode,
+  scanLineDisagreesWithBill,
+  scanPrintedGrandTotal,
 } from '@/lib/purchases/purchase-form-from-scan';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY, PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
@@ -71,6 +74,8 @@ interface PurchaseItem {
   cess_amount?: number;
   hsn_sac: string;
   quantity: number;
+  /** Free goods under a supplier scheme ("buy 10, get 1"): stocked at no cost. */
+  free_qty?: number;
   unit: string;
   unit_price: number;
   discount_percent: number;
@@ -106,6 +111,10 @@ interface PurchaseItem {
    * Used to show "Replace with catalogue item" only in that flow.
    */
   fromBillExtract?: boolean;
+  /** Rate still the item's purchase price from the catalogue: the supplier's last rate may replace it. */
+  rate_from_catalog?: boolean;
+  /** The last rate paid to this supplier for the item. */
+  supplier_rate_note?: string;
 }
 
 /** Snapshot after "Fill Purchase Form" for debugging extractor → form mapping. */
@@ -149,6 +158,7 @@ function purchaseLineFromCatalogPick(raw: Record<string, unknown>): PurchaseItem
     quantity: roundRetailQty(1),
     unit: String(raw.unit || (itemType === 'service' ? 'NOS' : 'pcs')),
     unit_price: roundExclusiveUnitPrice(Number(raw.purchase_price) || 0),
+    rate_from_catalog: true,
     tax_rate: round2(Number(raw.tax_rate) || 0),
     discount_percent: 0,
     discount_amount: 0,
@@ -198,6 +208,8 @@ export default function NewPurchasePage() {
     status: 'draft',
     place_of_supply_state_code: '',
     is_reverse_charge: false,
+    /** Billed but not yet arrived: stock waits in transit until it is received. */
+    goods_in_transit: false,
     supplier_registration_status: 'unknown' as 'registered' | 'unregistered' | 'unknown',
     supply_received_on: '',
     document_type: 'tax_invoice',
@@ -231,6 +243,8 @@ export default function NewPurchasePage() {
   /** Bill the desktop form was last filled from (drives the "Filled from" banner). */
   const [billSource, setBillSource] = useState<PurchaseBillSource | null>(null);
   const [fillAt, setFillAt] = useState<Date | null>(null);
+  /** Payable printed on the scanned bill; the form's total is checked against it. */
+  const [billPrintedTotal, setBillPrintedTotal] = useState<number | null>(null);
   const [fillBannerOpen, setFillBannerOpen] = useState(true);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogueBusy, setCatalogueBusy] = useState(false);
@@ -420,6 +434,7 @@ export default function NewPurchasePage() {
           item_type: item.line_item_type === 'service' ? 'service' : 'goods',
           hsn_sac: item.hsn_sac || '',
           quantity: Number(item.quantity) || 1,
+          free_qty: Number((item as { free_qty?: number }).free_qty) || 0,
           unit: item.unit || 'pcs',
           unit_price: Number(item.unit_price) || 0,
           discount_percent: Number(item.discount_percent) || 0,
@@ -894,6 +909,8 @@ export default function NewPurchasePage() {
       }));
     }
 
+    setBillPrintedTotal(scanPrintedGrandTotal(data.totals));
+
     // Fill document-level round off (if provided by extraction)
     if (data.totals && typeof data.totals.round_off === 'number') {
       setFormData((prev) => ({
@@ -1061,6 +1078,64 @@ export default function NewPurchasePage() {
     );
   }
 
+  // The last rate paid to the selected supplier for each item: shown under the rate, and used in
+  // place of the catalogue purchase price on lines nobody has typed a rate into.
+  const supplierRateKey = purchaseItems
+    .map((i) => (i.item_id ? `${i.id}:${i.item_id}:${i.rate_from_catalog ? 1 : 0}` : ''))
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const supplierId = formData.supplier_id;
+    const itemIds = [...new Set(purchaseItems.map((i) => i.item_id).filter(Boolean))];
+    if (itemIds.length === 0) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      let rates: Record<string, { exclusivePrice: number; discountPercent: number; date: string; documentNumber: string | null }> = {};
+      if (supplierId) {
+        try {
+          const res = await fetch('/api/pricing/supplier-rates', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ supplier_id: supplierId, item_ids: itemIds }),
+          });
+          if (!res.ok) return;
+          rates = (await res.json()).rates || {};
+        } catch {
+          return;
+        }
+      }
+      if (cancelled) return;
+      setPurchaseItems((prev) => {
+        let changed = false;
+        const next = prev.map((i) => {
+          const r = i.item_id ? rates[i.item_id] : undefined;
+          const note = r
+            ? `Last from this supplier ₹${r.exclusivePrice.toFixed(2)}${r.discountPercent > 0 ? ` −${r.discountPercent}%` : ''} + GST on ${r.date}${r.documentNumber ? ` (${r.documentNumber})` : ''}`
+            : undefined;
+          let unitPrice = i.unit_price;
+          if (r && i.rate_from_catalog) {
+            const rate = Number(i.tax_rate) || 0;
+            const inclusive = (i.tax_mode ?? formData.price_mode) === 'inclusive';
+            unitPrice = roundExclusiveUnitPrice(inclusive && rate > 0 ? r.exclusivePrice * (1 + rate / 100) : r.exclusivePrice);
+          }
+          if (note === i.supplier_rate_note && unitPrice === i.unit_price) return i;
+          changed = true;
+          const updated: PurchaseItem = { ...i, supplier_rate_note: note, unit_price: unitPrice };
+          if (unitPrice !== i.unit_price) delete updated.invoice_inclusive_line_total;
+          return updated;
+        });
+        return changed ? next : prev;
+      });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // Lines are read from the render that changed `supplierRateKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierRateKey, formData.supplier_id]);
+
   function updateItem(id: string, field: keyof PurchaseItem, value: any) {
     const clearsInvoiceAnchor: Partial<Record<keyof PurchaseItem, true>> = {
       quantity: true,
@@ -1103,6 +1178,7 @@ export default function NewPurchasePage() {
         }
 
         const next: PurchaseItem = { ...item, [field]: coercedValue };
+        if (field === 'unit_price') next.rate_from_catalog = false;
         if (clearsInvoiceAnchor[field]) {
           delete next.invoice_inclusive_line_total;
         }
@@ -1278,7 +1354,7 @@ export default function NewPurchasePage() {
   if (!business?.id || !user?.id) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-text-secondary">
-        <p>Session data is still loading. If this persists offline, open the app once while online.</p>
+        <p>Session data is still loading. If this keeps happening, open the app once while you have an internet connection.</p>
       </div>
     );
   }
@@ -1355,6 +1431,7 @@ export default function NewPurchasePage() {
             itc_type: item.item_type !== 'service' && item.is_capital_goods ? 'capital_goods' : undefined,
             hsn_sac: item.hsn_sac,
             quantity: item.quantity,
+            free_qty: item.item_type === 'service' ? 0 : Number(item.free_qty) || 0,
             unit: item.unit,
             unit_price: item.unit_price,
             discount_percent: c.discountPercent,
@@ -1431,7 +1508,7 @@ export default function NewPurchasePage() {
 
         if (queued) {
           toast.success(
-            'Purchase saved offline. It will finalize and update stock when you reconnect.'
+            'Purchase saved on this device. It will finalize and update stock when you reconnect.'
           );
           router.push('/purchases');
           return;
@@ -1512,6 +1589,22 @@ export default function NewPurchasePage() {
     checks.push({
       key: 'items',
       label: `${unlinkedLines.length} item${unlinkedLines.length === 1 ? '' : 's'} not in catalogue`,
+      target: 'purchase-items-card',
+    });
+  const billGap = billTotalGap(billPrintedTotal, totals.grandTotal);
+  if (billGap != null && billPrintedTotal != null)
+    checks.push({
+      key: 'bill-total',
+      label: `Bill total ₹${billPrintedTotal.toFixed(2)} · ₹${Math.abs(billGap).toFixed(2)} ${billGap > 0 ? 'over' : 'short'}`,
+      target: 'purchase-items-card',
+    });
+  const lineDisagrees = (item: PurchaseItem, idx: number) =>
+    item.fromBillExtract === true && scanLineDisagreesWithBill(item.printed_line_total, purchaseGstDoc?.lineComputeds[idx]);
+  const disagreeingLines = purchaseItems.filter(lineDisagrees).length;
+  if (disagreeingLines > 0)
+    checks.push({
+      key: 'line-amounts',
+      label: `${disagreeingLines} line${disagreeingLines === 1 ? '' : 's'} differ from the bill`,
       target: 'purchase-items-card',
     });
   if (needsWarehouse) checks.push({ key: 'warehouse', label: 'Pick a receiving warehouse', target: 'purchase-supplier-card' });
@@ -2159,6 +2252,18 @@ export default function NewPurchasePage() {
               />
               Reverse charge
             </label>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+              title="The bill is booked now; the goods count as in transit until you record them as received."
+            >
+              <input
+                type="checkbox"
+                checked={formData.goods_in_transit}
+                onChange={(e) => setFormData({ ...formData, goods_in_transit: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+              />
+              Goods not yet arrived
+            </label>
             <span className="ml-auto rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-500 dark:bg-primary-900/40 dark:text-primary-200">
               {totals.intraState ? 'Intra-state · CGST + SGST' : 'Inter-state · IGST'}
             </span>
@@ -2319,9 +2424,13 @@ export default function NewPurchasePage() {
                               />
                             </div>
                             {item.printed_line_total != null && (
-                              <p className="mt-1 text-[11px] text-text-secondary">
+                              <p
+                                className={`mt-1 text-[11px] ${lineDisagrees(item, itemIdx) ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-text-secondary'}`}
+                                title={lineDisagrees(item, itemIdx) ? 'Qty × rate on this line does not give the amount printed on the bill. Check the qty, rate and amount.' : undefined}
+                              >
                                 Printed ₹{Number(item.printed_line_total).toFixed(2)}
                                 {item.printed_rate != null ? ` at ₹${Number(item.printed_rate).toFixed(2)}` : ''}
+                                {lineDisagrees(item, itemIdx) ? ' · does not match' : ''}
                               </p>
                             )}
                             {isUnlinked && (
@@ -2354,6 +2463,20 @@ export default function NewPurchasePage() {
                             data-purchase-item-id={item.id}
                             data-field="quantity"
                           />
+                          {item.item_type !== 'service' && (
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min={0}
+                              className={`${cellInputClass} mt-1 !text-xs`}
+                              placeholder="+ free"
+                              title="Free quantity under a supplier scheme (no cost)"
+                              aria-label="Free quantity"
+                              value={item.free_qty || ''}
+                              onChange={(e) => updateItem(item.id, 'free_qty', Math.max(0, parseFloat(e.target.value) || 0))}
+                            />
+                          )}
                         </td>
                         <td className="py-2.5 align-middle">
                           <input
@@ -2364,6 +2487,9 @@ export default function NewPurchasePage() {
                             value={item.unit_price}
                             onChange={(e) => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
                           />
+                          {item.supplier_rate_note ? (
+                            <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{item.supplier_rate_note}</p>
+                          ) : null}
                         </td>
                         <td className="py-2.5 align-middle">
                           <input
@@ -2750,6 +2876,12 @@ export default function NewPurchasePage() {
             <div className="text-right">
               <p className="text-xs text-text-secondary">Grand total</p>
               <p className="text-2xl font-bold tabular-nums text-text-primary">₹{totals.grandTotal.toFixed(2)}</p>
+              {billPrintedTotal != null && (
+                <p className={`text-xs tabular-nums ${billGap != null ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-text-secondary'}`}>
+                  Bill ₹{billPrintedTotal.toFixed(2)}
+                  {billGap != null ? ` · ₹${Math.abs(billGap).toFixed(2)} ${billGap > 0 ? 'over' : 'short'}` : ' · matches'}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -2763,7 +2895,7 @@ export default function NewPurchasePage() {
               type="button"
               onClick={() => handleSubmit('final')}
               disabled={loading || !isOnline}
-              title={isOnline ? 'Finalizing updates stock and counts in your GST returns' : 'You are offline — connect to finalize'}
+              title={isOnline ? 'Finalizing updates stock and counts in your GST returns' : 'No internet connection. Connect to finalize.'}
               className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary-500 px-6 text-sm font-semibold text-white hover:bg-primary-600 disabled:opacity-60"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -2824,6 +2956,7 @@ export default function NewPurchasePage() {
             setLineItemInvoiceTotal={setLineItemInvoiceTotal}
             purchaseGstDoc={purchaseGstDoc}
             totals={totals}
+            billTotalCheck={billPrintedTotal != null ? { printed: billPrintedTotal, gap: billGap } : null}
             loading={loading}
             isOnline={isOnline}
             onSubmitDraft={() => void handleSubmit('draft')}

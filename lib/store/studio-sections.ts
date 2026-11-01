@@ -7,7 +7,89 @@ export type StudioSectionType =
   | 'banner'
   | 'testimonials'
   | 'footer'
-  | 'richtext';
+  | 'richtext'
+  | 'usp'
+  | 'marquee';
+
+/** Where a product section gets its products. `all` is the full catalog with Load more. */
+export type StudioProductSource =
+  | 'all'
+  | 'featured'
+  | 'new'
+  | 'bestsellers'
+  | 'discounted'
+  | 'category'
+  | 'price_max';
+
+export const STUDIO_PRODUCT_SOURCES: StudioProductSource[] = [
+  'all',
+  'featured',
+  'new',
+  'bestsellers',
+  'discounted',
+  'category',
+  'price_max',
+];
+
+/** Extra hero slides after the first one, which keeps using the hero's own fields. */
+export interface StudioSlide {
+  image: string;
+  /** Shown on phones instead of `image` (engine slideshow only). */
+  mobileImage?: string;
+  heading: string;
+  description: string;
+  buttonText: string;
+  link: string;
+  /**
+   * The rest is a slide's own look (engine slideshow only; such slides always have a `position`). The old store's
+   * extra slides have none of it and take the hero's label, alignment, darkening and text colour.
+   */
+  eyebrow?: string;
+  headingSize?: 'small' | 'medium' | 'large' | 'xl' | 'xxl';
+  buttonStyle?: 'filled' | 'outline';
+  button2Text?: string;
+  button2Link?: string;
+  button2Style?: 'filled' | 'outline';
+  /** One of the nine `top-left` … `bottom-right` spots; split layouts use only its row. */
+  position?: string;
+  align?: 'left' | 'center' | 'right';
+  alignMobile?: 'left' | 'center' | 'right';
+  box?: boolean;
+  /** Photo darkening, 0–80 (%). */
+  overlay?: number;
+  /** Hex; absent = white over a full photo, else the slide colours. */
+  textColor?: string;
+  /** The slide's colour scheme id as stored; the section component resolves it into `schemeStyle`. */
+  colorScheme?: string;
+  /** The scheme's CSS variables for this slide's words and picture; absent = the slideshow's scheme. */
+  schemeStyle?: Record<string, string>;
+}
+
+/**
+ * The hero's settings as the engine slideshow hands them over: slide one's look sits beside the hero's own fields
+ * (as its picture and words already do), plus the slideshow-wide phone option. Never stored, so not in `RULES`.
+ */
+export type StudioHeroSettings = StudioSettings &
+  Omit<StudioSlide, keyof StudioSettings> & {
+    /** Phones: the words sit under the picture instead of over it. */
+    textBelowMobile?: boolean;
+  };
+
+export const STUDIO_USP_ICONS = ['truck', 'cash', 'return', 'shield', 'clock', 'leaf', 'star', 'gift', 'phone', 'badge'] as const;
+export type StudioUspIcon = (typeof STUDIO_USP_ICONS)[number];
+
+export interface StudioUsp {
+  icon: StudioUspIcon;
+  title: string;
+  text: string;
+  /** A photo shown instead of the icon. */
+  image?: string;
+}
+
+export interface StudioBadge {
+  label: string;
+  tone: 'sale' | 'new' | 'hot';
+}
 
 export interface StudioSettings {
   text?: string;
@@ -44,8 +126,12 @@ export interface StudioSettings {
   description?: string;
   buttonText?: string;
   image?: string;
+  /** Hero slide one's phone image (engine slideshow only). */
+  mobileImage?: string;
   align?: 'left' | 'center' | 'right';
   height?: 'small' | 'medium' | 'large';
+  /** Hero: `cover` crops to the height, `contain` shows the whole image, `natural` sizes the hero to the image. */
+  imageFit?: 'cover' | 'contain' | 'natural';
   overlay?: number;
   title?: string;
   columns?: number;
@@ -64,6 +150,52 @@ export interface StudioSettings {
   textPadRight?: number;
   textPadBottom?: number;
   textPadLeft?: number;
+  /** Hero: slides shown after the first; autoplay interval in seconds (0 = manual). */
+  slides?: StudioSlide[];
+  autoplay?: number;
+  /** Product sections. */
+  source?: StudioProductSource;
+  categoryId?: string;
+  priceMax?: number;
+  limit?: number;
+  display?: 'grid' | 'carousel';
+  cardStyle?: 'bordered' | 'shadow' | 'minimal';
+  imageRatio?: 'square' | 'portrait' | 'landscape';
+  showRating?: boolean;
+  showBadges?: boolean;
+  /** Product tiles: the product's one-line tagline above its name. */
+  showTagline?: boolean;
+  /** Product tiles: the product's colour swatches under its price. */
+  showSwatches?: boolean;
+  /** USP strip. */
+  usps?: StudioUsp[];
+  /** Marquee. */
+  speed?: 'slow' | 'normal' | 'fast';
+  /** Any section: merchant class names on the wrapper, and CSS scoped to this section. */
+  cssClass?: string;
+  customCss?: string;
+  /** Quick header: delivery promise shown in the location bar, e.g. "in 30 minutes". */
+  deliveryEta?: string;
+}
+
+/** Per-section custom CSS limit; the store-wide box keeps its own 8,000. */
+export const SECTION_CSS_MAX = 3000;
+
+const CLASS_TOKEN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,39}$/;
+
+/** Merchant class names for a section: up to 3 plain CSS class tokens, anything else dropped. */
+export function sanitizeCssClass(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return Array.from(
+    new Set(
+      raw
+        .split(/\s+/)
+        .map((t) => t.replace(/^\./, ''))
+        .filter((t) => CLASS_TOKEN.test(t)),
+    ),
+  )
+    .slice(0, 3)
+    .join(' ');
 }
 
 export interface StudioSection {
@@ -84,10 +216,15 @@ const SECTION_TYPES: StudioSectionType[] = [
   'testimonials',
   'footer',
   'richtext',
+  'usp',
+  'marquee',
 ];
 
-/** Only one of each of these may exist; richtext can repeat. */
-const SINGLETON_TYPES = new Set<StudioSectionType>(SECTION_TYPES.filter((t) => t !== 'richtext'));
+/** Section types a store can have more than once. */
+export const REPEATABLE_TYPES: StudioSectionType[] = ['products', 'banner', 'richtext', 'usp', 'marquee'];
+
+/** Only one of each of these may exist. */
+const SINGLETON_TYPES = new Set<StudioSectionType>(SECTION_TYPES.filter((t) => !REPEATABLE_TYPES.includes(t)));
 
 const MAX_SECTIONS = 24;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -102,7 +239,11 @@ type Rule =
   | { kind: 'hex' }
   | { kind: 'url' }
   | { kind: 'svg' }
-  | { kind: 'icon' };
+  | { kind: 'icon' }
+  | { kind: 'slides' }
+  | { kind: 'usps' }
+  | { kind: 'cssclass' }
+  | { kind: 'css' };
 
 const RULES: Record<keyof StudioSettings, Rule> = {
   text: { kind: 'text', max: 2000 },
@@ -134,8 +275,10 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   description: { kind: 'text', max: 400 },
   buttonText: { kind: 'text', max: 40 },
   image: { kind: 'url' },
+  mobileImage: { kind: 'url' },
   align: { kind: 'enum', values: ['left', 'center', 'right'] },
   height: { kind: 'enum', values: ['small', 'medium', 'large'] },
+  imageFit: { kind: 'enum', values: ['cover', 'contain', 'natural'] },
   overlay: { kind: 'num', min: 0, max: 90 },
   title: { kind: 'text', max: 120 },
   columns: { kind: 'num', min: 2, max: 8 },
@@ -154,12 +297,65 @@ const RULES: Record<keyof StudioSettings, Rule> = {
   textPadRight: { kind: 'num', min: 0, max: 120 },
   textPadBottom: { kind: 'num', min: 0, max: 120 },
   textPadLeft: { kind: 'num', min: 0, max: 120 },
+  slides: { kind: 'slides' },
+  autoplay: { kind: 'num', min: 0, max: 15 },
+  source: { kind: 'enum', values: STUDIO_PRODUCT_SOURCES },
+  categoryId: { kind: 'text', max: 64 },
+  priceMax: { kind: 'num', min: 1, max: 999999 },
+  limit: { kind: 'num', min: 2, max: 24 },
+  display: { kind: 'enum', values: ['grid', 'carousel'] },
+  cardStyle: { kind: 'enum', values: ['bordered', 'shadow', 'minimal'] },
+  imageRatio: { kind: 'enum', values: ['square', 'portrait', 'landscape'] },
+  showRating: { kind: 'bool' },
+  showBadges: { kind: 'bool' },
+  showTagline: { kind: 'bool' },
+  showSwatches: { kind: 'bool' },
+  usps: { kind: 'usps' },
+  speed: { kind: 'enum', values: ['slow', 'normal', 'fast'] },
+  cssClass: { kind: 'cssclass' },
+  customCss: { kind: 'css' },
+  deliveryEta: { kind: 'text', max: 40 },
 };
 
 function cleanUrl(v: string): string | undefined {
   if (v.startsWith('data:image/') && !v.startsWith('data:image/svg')) return v.slice(0, 1_800_000);
   if (/^https?:\/\//i.test(v) || v.startsWith('/')) return v.slice(0, 2000);
   return undefined;
+}
+
+function cleanText(raw: unknown, max: number): string {
+  return typeof raw === 'string' ? raw.slice(0, max) : '';
+}
+
+function cleanSlides(raw: unknown): StudioSlide[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: StudioSlide[] = [];
+  for (const item of raw.slice(0, 5)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const image = typeof row.image === 'string' && row.image.trim() ? cleanUrl(row.image.trim()) ?? '' : '';
+    const link = typeof row.link === 'string' && row.link.trim() ? cleanUrl(row.link.trim()) ?? '' : '';
+    out.push({
+      image,
+      heading: cleanText(row.heading, 120),
+      description: cleanText(row.description, 400),
+      buttonText: cleanText(row.buttonText, 40),
+      link: link.startsWith('data:') ? '' : link,
+    });
+  }
+  return out;
+}
+
+function cleanUsps(raw: unknown): StudioUsp[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: StudioUsp[] = [];
+  for (const item of raw.slice(0, 6)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const icon = STUDIO_USP_ICONS.includes(row.icon as StudioUspIcon) ? (row.icon as StudioUspIcon) : 'badge';
+    out.push({ icon, title: cleanText(row.title, 60), text: cleanText(row.text, 120) });
+  }
+  return out;
 }
 
 function cleanValue(rule: Rule, raw: unknown): unknown {
@@ -184,6 +380,15 @@ function cleanValue(rule: Rule, raw: unknown): unknown {
       return typeof raw === 'string' && raw.startsWith('data:image/svg+xml') && raw.length < 20000 ? raw : undefined;
     case 'icon':
       return typeof raw === 'string' && ICON_NAME.test(raw) ? raw : undefined;
+    case 'slides':
+      return cleanSlides(raw);
+    case 'usps':
+      return cleanUsps(raw);
+    case 'cssclass':
+      return typeof raw === 'string' ? sanitizeCssClass(raw) : undefined;
+    case 'css':
+      // Kept as typed (minus `<`); it is cleaned and scoped again every time it is rendered.
+      return typeof raw === 'string' ? raw.slice(0, SECTION_CSS_MAX).replace(/</g, '') : undefined;
   }
 }
 

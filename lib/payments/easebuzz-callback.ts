@@ -69,12 +69,55 @@ export async function handleEasebuzzCallback(
   if (context === 'ST') {
     return handleStoreCallback(rawBody, txnid, options.expectedBusinessId);
   }
+  if (context === 'KH') {
+    return handleKhataCallback(rawBody, txnid, options.expectedBusinessId);
+  }
   return handleSalesOrderCallback(rawBody, txnid, options.expectedBusinessId);
 }
 
 async function verifierFor(businessId: string): Promise<EasebuzzPaymentProvider | null> {
   const cfg = await getBusinessPaymentProviderConfig(businessId, 'easebuzz');
   return cfg?.clientId && cfg.clientSecret ? new EasebuzzPaymentProvider(cfg) : null;
+}
+
+/** Store khata payment: the row Khatario stored for this txnid picks the business. */
+async function handleKhataCallback(
+  rawBody: string,
+  txnid: string,
+  expectedBusinessId?: string | null,
+): Promise<EasebuzzCallbackResult> {
+  const { findKhataPayment, applyKhataGatewayPayment, markKhataPaymentFailed } = await import('@/lib/khata/online-pay');
+  const row = await findKhataPayment('easebuzz', { paymentRef: txnid });
+  if (!row) {
+    return { httpStatus: 200, body: { ok: true, ignored: true }, redirectPath: payComplete('pending') };
+  }
+  if (expectedBusinessId && expectedBusinessId !== row.business_id) {
+    return { httpStatus: 400, body: { ok: false, error: 'business_id mismatch' }, redirectPath: payComplete('unverified') };
+  }
+  const verifier = await verifierFor(row.business_id);
+  if (!verifier) {
+    return { httpStatus: 400, body: { ok: false, error: 'Unknown store payment config' }, redirectPath: payComplete('unverified') };
+  }
+  const verified = await verifier.verifyWebhook({ rawBody, headers: {} });
+  if (!verified.verified) {
+    return { httpStatus: 401, body: { ok: false, verified: false }, redirectPath: payComplete('unverified') };
+  }
+  const redirectPath = payComplete(outcomeFromStatus(verified.status));
+  if (verified.status === 'failed') {
+    await markKhataPaymentFailed(row.id, row.business_id);
+    return { httpStatus: 200, body: { ok: true, outcome: 'failed' }, redirectPath };
+  }
+  if (verified.status !== 'success') {
+    return { httpStatus: 200, body: { ok: true, verified: true, ignored: true }, redirectPath };
+  }
+  const result = await applyKhataGatewayPayment({
+    khataPaymentId: row.id,
+    businessId: row.business_id,
+    amount: verified.amount,
+    providerPaymentId: verified.providerPaymentId,
+    payload: verified.rawPayload ?? null,
+  });
+  return { httpStatus: 200, body: { ok: true, ...result }, redirectPath };
 }
 
 async function handleSalesOrderCallback(

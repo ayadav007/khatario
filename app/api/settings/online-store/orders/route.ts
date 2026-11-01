@@ -13,6 +13,9 @@ import { accountOutstandingStoreOrders, createInvoiceForStoreOrder } from '@/lib
 import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
 import { collectStoreOrderCash, StoreCashCollectError } from '@/lib/store/store-receipt';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { approveKhataOrder, rejectKhataOrder } from '@/lib/khata/approval';
+import { KhataError } from '@/lib/khata/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +28,8 @@ const ORDER_SELECT = `
   so.subtotal::text, so.tax_total::text, so.delivery_charge::text, so.grand_total::text,
   so.cancelled_reason, so.created_at, so.awb, so.tracking_url, so.shipment_id,
   so.invoice_id, so.dispatch_mode, so.courier_scanned_at, so.cash_collected_at,
+  so.khata_approval, so.khata_approval_reason, so.khata_due_date::text AS khata_due_date,
+  so.khata_customer_id,
   br.name AS branch_name,
   (SELECT COUNT(*)::int FROM store_order_items soi WHERE soi.order_id = so.id) AS line_count,
   (SELECT COUNT(*)::int FROM store_order_items soi
@@ -97,7 +102,7 @@ async function loadOrder(orderId: string, businessId: string) {
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+  const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'invoices', 'read');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -127,6 +132,9 @@ export async function GET(request: NextRequest) {
     idx++;
     conditions.push(`so.status = $${idx}`);
     params.push(status);
+  }
+  if (searchParams.get('khata') === 'pending') {
+    conditions.push(`so.khata_approval = 'pending' AND so.status <> 'cancelled'`);
   }
   if (q) {
     idx++;
@@ -169,7 +177,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const tenant = requireTenantBusinessId(request, body.business_id);
+  const tenant = await requireTenantPermission(request, body.business_id, 'invoices', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;
@@ -193,6 +201,35 @@ export async function PATCH(request: NextRequest) {
     } catch (error) {
       if (error instanceof StoreRefundError) {
         return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+      }
+      throw error;
+    }
+  }
+
+  if (action === 'khata_approve' || action === 'khata_reject') {
+    if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
+    const actorUserId = getAuthenticatedUserId(request);
+    if (!actorUserId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    try {
+      let invoiceError: string | null = null;
+      if (action === 'khata_approve') {
+        invoiceError = (await approveKhataOrder({ businessId, orderId, actorUserId })).invoiceError;
+      } else {
+        await rejectKhataOrder({
+          businessId,
+          orderId,
+          actorUserId,
+          reason: typeof body.reason === 'string' ? body.reason : null,
+        });
+      }
+      await syncStoreFulfilmentQuietly(businessId, orderId, actorUserId);
+      const detail = await loadOrder(orderId, businessId);
+      return NextResponse.json({ success: true, invoice_error: invoiceError, ...detail });
+    } catch (error) {
+      if (error instanceof KhataError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
       }
       throw error;
     }

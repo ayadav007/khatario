@@ -107,14 +107,24 @@ export function withWhatsAppPremiumApi<
 export function withWhatsAppBaseApi<
   TParams extends Record<string, string> = Record<string, string>,
 >(
-  options: Omit<WithBusinessApiOptions<TParams>, 'afterSubscription'> = {},
+  options: Omit<WithBusinessApiOptions<TParams>, 'afterSubscription'> & {
+    /** Require the "WhatsApp setup & campaigns" role permission (linking, reminders, bulk sends). */
+    managePermission?: true | WhatsAppInboxAction;
+  } = {},
   handler: (ctx: BusinessApiHandlerContext<TParams>) => Promise<NextResponse>,
 ): BusinessApiHandler<TParams> {
+  const { managePermission, ...rest } = options;
   return withPremiumSubscriptionApi(
     {
-      ...options,
-      afterSubscription: async (ctx) =>
-        (await assertWhatsAppBaseAccess(ctx)) ?? assertNotConnectAgentWrite(ctx),
+      ...rest,
+      afterSubscription: async (ctx) => {
+        const denied = (await assertWhatsAppBaseAccess(ctx)) ?? (await assertNotConnectAgentWrite(ctx));
+        if (denied) return denied;
+        if (managePermission) {
+          return assertWhatsAppManagePermission(ctx, managePermission === true ? undefined : managePermission);
+        }
+        return null;
+      },
     },
     handler,
   );

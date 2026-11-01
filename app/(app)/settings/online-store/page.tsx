@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart, Palette } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -11,8 +12,11 @@ import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor'
 import { StoreAppearanceStudio } from '@/components/store/admin/StoreAppearanceStudio';
 import { StoreLivePreview } from '@/components/store/admin/StoreLivePreview';
 import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager';
+import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { storeHostSuffix } from '@/lib/store/subdomain';
+import { editorPath, openWorkingDraft } from '@/components/store/studio2/api';
+import { pendingBadgeText } from '@/lib/store/review-admin-helpers';
 import {
   DEFAULT_STORE_PROMO,
   nextPromoSheetVersion,
@@ -44,6 +48,9 @@ interface StoreSettings {
   store_shiprocket_email?: string | null;
   shiprocket_webhook_configured?: boolean;
   store_promo_sheet?: StorePromoSheetConfig | null;
+  store_cart_reminder_enabled?: boolean;
+  store_cart_reminder_hours?: number;
+  store_engine?: boolean;
   logo_url?: string | null;
   categories?: Array<{ id: string; name: string }>;
 }
@@ -91,6 +98,10 @@ function Toggle({
 
 export default function OnlineStoreSettingsPage() {
   const { business, user } = useAuth();
+  const router = useRouter();
+  const [storeEngine, setStoreEngine] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(false);
+  const [pendingReviews, setPendingReviews] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +125,8 @@ export default function OnlineStoreSettingsPage() {
   const [returnDays, setReturnDays] = useState('7');
   const [deliveryProvider, setDeliveryProvider] = useState('self');
   const [hideBadge, setHideBadge] = useState(false);
+  const [cartReminderOn, setCartReminderOn] = useState(false);
+  const [cartReminderHours, setCartReminderHours] = useState('3');
   const [shipEmail, setShipEmail] = useState('');
   const [shipPassword, setShipPassword] = useState('');
   const [shipWebhookToken, setShipWebhookToken] = useState('');
@@ -125,6 +138,20 @@ export default function OnlineStoreSettingsPage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [businessLogo, setBusinessLogo] = useState('');
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    if (!business?.id) return;
+    let cancelled = false;
+    fetch(`/api/settings/online-store/reviews?business_id=${business.id}&status=pending`, { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data && Array.isArray(data.reviews)) setPendingReviews(data.reviews.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   const fetchSettings = useCallback(async () => {
     if (!business?.id || !user?.id) return;
@@ -163,6 +190,9 @@ export default function OnlineStoreSettingsPage() {
         setTheme(nextTheme);
         setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
+        setCartReminderOn(data.store_cart_reminder_enabled === true);
+        setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
+        setStoreEngine(data.store_engine === true);
         setShipEmail(data.store_shiprocket_email ?? '');
         setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
         setShipWebhookToken('');
@@ -188,6 +218,19 @@ export default function OnlineStoreSettingsPage() {
   useEffect(() => {
     setHostSuffix(storeHostSuffix(window.location.hostname));
   }, []);
+
+  const openStoreDesignEditor = useCallback(async () => {
+    if (!business?.id) return;
+    setOpeningEditor(true);
+    setError(null);
+    try {
+      const draft = await openWorkingDraft(business.id);
+      router.push(editorPath(draft.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to open the store design editor');
+      setOpeningEditor(false);
+    }
+  }, [business?.id, router]);
 
   const handleSave = useCallback(async () => {
     if (!business?.id) return;
@@ -217,6 +260,8 @@ export default function OnlineStoreSettingsPage() {
           store_delivery_provider: deliveryProvider,
           store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
+          store_cart_reminder_enabled: cartReminderOn,
+          store_cart_reminder_hours: Math.min(72, Math.max(1, Math.round(Number(cartReminderHours)) || 3)),
           store_shiprocket_email: shipEmail || null,
           store_shiprocket_password: shipPassword || undefined,
           store_shiprocket_webhook_token: shipWebhookToken || undefined,
@@ -258,6 +303,8 @@ export default function OnlineStoreSettingsPage() {
     deliveryProvider,
     theme,
     hideBadge,
+    cartReminderOn,
+    cartReminderHours,
     shipEmail,
     shipPassword,
     shipWebhookToken,
@@ -368,6 +415,26 @@ export default function OnlineStoreSettingsPage() {
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
+          {storeEngine ? (
+            <button
+              type="button"
+              onClick={() => void openStoreDesignEditor()}
+              disabled={openingEditor || !business?.id}
+              className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+            >
+              {openingEditor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Edit store design (beta)
+            </button>
+          ) : null}
+          {storeEngine ? (
+            <Link
+              href="/settings/online-store/themes"
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Palette className="h-3.5 w-3.5" />
+              Themes (beta)
+            </Link>
+          ) : null}
           <Link
             href="/settings/online-store/studio"
             className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
@@ -381,6 +448,25 @@ export default function OnlineStoreSettingsPage() {
           >
             <Inbox className="h-3.5 w-3.5" />
             Enquiries
+          </Link>
+          <Link
+            href="/settings/online-store/reviews"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Star className="h-3.5 w-3.5" />
+            Reviews
+            {pendingBadgeText(pendingReviews) ? (
+              <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">
+                {pendingBadgeText(pendingReviews)}
+              </span>
+            ) : null}
+          </Link>
+          <Link
+            href="/settings/online-store/abandoned-carts"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <ShoppingCart className="h-3.5 w-3.5" />
+            Abandoned carts
           </Link>
           <button
             type="button"
@@ -747,6 +833,31 @@ export default function OnlineStoreSettingsPage() {
                   />
                   <span className="mt-1 block">Buyers can ask for a return from their account. 0 turns online returns off.</span>
                 </label>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>
+                      Remind shoppers about carts they leave
+                      <span className="block text-xs text-gray-500">
+                        One reminder per cart, by app notification if they have your app, else WhatsApp.
+                      </span>
+                    </span>
+                    <Toggle on={cartReminderOn} onToggle={() => setCartReminderOn((v) => !v)} />
+                  </label>
+                  {cartReminderOn ? (
+                    <label className="flex items-center gap-2 text-xs text-gray-500">
+                      after
+                      <input
+                        type="number"
+                        min="1"
+                        max="72"
+                        className="w-20 rounded-lg border px-3 py-2 text-sm"
+                        value={cartReminderHours}
+                        onChange={(e) => setCartReminderHours(e.target.value)}
+                      />
+                      hours
+                    </label>
+                  ) : null}
+                </div>
                 <label className="block text-xs text-gray-500">
                   Delivery partner
                   <select
@@ -807,6 +918,9 @@ export default function OnlineStoreSettingsPage() {
               </Card>
               <Card className="p-5">
                 {business?.id ? <StoreCouponManager businessId={business.id} /> : null}
+              </Card>
+              <Card className="p-5">
+                <StoreKhataSettings />
               </Card>
               <Card className="p-5">
                 <h3 className="text-sm font-semibold text-gray-900">Delivery zones</h3>

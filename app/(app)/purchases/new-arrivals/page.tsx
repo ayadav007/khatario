@@ -20,7 +20,14 @@ type Listing = {
   pack_label: string | null;
   lead_time_text: string | null;
   my_item_name: string | null;
+  /** True when the price is the supplier's own price for you */
+  my_price?: boolean;
+  /** Your discount % on that price, from the supplier's price rules for you */
+  discount_percent?: number | null;
+  options?: Array<{ id: string; label: string; price: string | number | null; my_price?: boolean; discount_percent?: number | null }>;
 };
+
+const lessText = (d: number | null | undefined) => (Number(d) > 0 ? ` less ${Number(d)}%` : '');
 
 type Collection = {
   id: string;
@@ -91,7 +98,11 @@ export default function NewArrivalsPage() {
   const send = async (sid: string) => {
     const lines = Object.entries(cart[sid] || {})
       .filter(([, q]) => Number(q) > 0)
-      .map(([vendor_item_id, q]) => ({ vendor_item_id, qty: Number(q) }));
+      // Cart keys are "<supplier item>" or "<supplier item>|<option>" for a size or colour.
+      .map(([key, q]) => {
+        const [vendor_item_id, option_id] = key.split('|');
+        return { vendor_item_id, option_id: option_id || undefined, qty: Number(q) };
+      });
     setSending(sid);
     try {
       const res = await fetch('/api/supply-orders', {
@@ -143,6 +154,8 @@ export default function NewArrivalsPage() {
           <p className="truncate font-medium text-text-primary">{l.name}</p>
           <p className="text-xs text-text-secondary">
             {l.price != null ? `${money(l.price)} per ${l.unit || 'unit'}` : 'Price on request'}
+            {l.price != null ? lessText(l.discount_percent) : ''}
+            {l.my_price ? ' · your price' : ''}
             {l.pack_label ? ` · ${l.pack_label}` : ''}
           </p>
           <p className="text-xs text-text-secondary">
@@ -150,16 +163,41 @@ export default function NewArrivalsPage() {
               .filter(Boolean)
               .join(' · ')}
           </p>
-          <input
-            type="number"
-            min={0}
-            step={step || 'any'}
-            inputMode="decimal"
-            placeholder={moq ? String(moq) : '0'}
-            className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={cart[sid]?.[l.vendor_item_id] ?? ''}
-            onChange={(e) => setQty(sid, l.vendor_item_id, e.target.value)}
-          />
+          {l.options && l.options.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {l.options.map((o) => {
+                const key = `${l.vendor_item_id}|${o.id}`;
+                return (
+                  <label key={o.id} className="flex items-center gap-1.5 text-xs text-text-secondary">
+                    <span className="font-medium text-text-primary">{o.label}</span>
+                    {o.price != null && (o.my_price || !l.my_price) ? `${money(o.price)}${lessText(o.discount_percent)}` : null}
+                    <input
+                      type="number"
+                      min={0}
+                      step={step || 'any'}
+                      inputMode="decimal"
+                      placeholder="0"
+                      aria-label={`${l.name} ${o.label} quantity`}
+                      className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                      value={cart[sid]?.[key] ?? ''}
+                      onChange={(e) => setQty(sid, key, e.target.value)}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <input
+              type="number"
+              min={0}
+              step={step || 'any'}
+              inputMode="decimal"
+              placeholder={moq ? String(moq) : '0'}
+              className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={cart[sid]?.[l.vendor_item_id] ?? ''}
+              onChange={(e) => setQty(sid, l.vendor_item_id, e.target.value)}
+            />
+          )}
         </div>
       </li>
     );

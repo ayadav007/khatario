@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = (page - 1) * limit;
     const updatedAfter = searchParams.get('updated_after');
+    // Opt-in: only items the online store sells (the same rule as saving an item: show or featured).
+    const storeOnly = searchParams.get('store_only') === '1';
 
     // AUTHORIZATION: Check read permission
     try {
@@ -142,6 +144,11 @@ export async function GET(request: NextRequest) {
       params.push(updatedAfter);
     }
 
+    if (storeOnly) {
+      const tableRef = accessibleBranchIds.length > 0 ? 'i' : 'items';
+      sql += ` AND ${tableRef}.show_in_store = true`;
+    }
+
     // Total row count: must NOT reuse the data SELECT (it contains $2 for branch UUID[] in a
     // subquery). Slice-based COUNT dropped that clause but still passed 2 params → PG bind error.
     const hasBranchScope = accessibleBranchIds.length > 0;
@@ -164,6 +171,9 @@ export async function GET(request: NextRequest) {
     if (updatedAfter) {
       countSql += ` AND ${countRef}.updated_at >= $${c}::timestamptz`;
       countParams.push(updatedAfter);
+    }
+    if (storeOnly) {
+      countSql += ` AND ${countRef}.show_in_store = true`;
     }
     const countResult = await queryOne<{ total: number }>(countSql, countParams);
     const total = countResult?.total || 0;
@@ -215,6 +225,7 @@ export async function POST(request: NextRequest) {
       tax_rate = 0,
       hsn_sac,
       item_type = 'goods',
+      stock_class,
       opening_stock = 0,
       min_stock = 0,
       default_supplier_id,
@@ -410,6 +421,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
+      Object.prototype.hasOwnProperty.call(body, k),
+    );
+    let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
+    if (hasExtras) {
+      const { validateProductExtras } = await import('@/lib/store/product-extras');
+      extras = validateProductExtras(body);
+      if (!extras.ok) {
+        return NextResponse.json({ error: extras.error }, { status: 400 });
+      }
+    }
+
     const pool = getPool();
     const client = await pool.connect();
     let item: Item | null = null;
@@ -505,6 +528,28 @@ export async function POST(request: NextRequest) {
         await client.query('ROLLBACK');
         throw new Error('Failed to create item');
       }
+      if (item_type === 'goods' && stock_class) {
+        const { parseStockClass } = await import('@/lib/inventory/stock-class');
+        const nextClass = parseStockClass(stock_class);
+        if (nextClass !== 'trading') {
+          try {
+            const updated = await client.query<Item>(
+              `UPDATE items SET stock_class = $1 WHERE id = $2 AND business_id = $3 RETURNING *`,
+              [nextClass, item.id, business_id],
+            );
+            item = updated.rows[0] ?? item;
+          } catch (error: any) {
+            if (error?.code === '42703') {
+              await client.query('ROLLBACK');
+              return NextResponse.json(
+                { error: 'Stock kinds need the inventory migration before they can be saved', code: 'MIGRATION_REQUIRED' },
+                { status: 503 },
+              );
+            }
+            throw error;
+          }
+        }
+      }
 
       const { clipItemSeo } = await import('@/lib/store/item-seo');
       const seo = clipItemSeo({ seo_title, seo_description, seo_image_url });
@@ -515,6 +560,48 @@ export async function POST(request: NextRequest) {
           [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
         );
         item = { ...item, ...seo };
+      }
+
+      if (extras?.ok) {
+        const v = extras.value;
+        const sets: string[] = [];
+        const vals: unknown[] = [];
+        if (v.video_url !== undefined) {
+          vals.push(v.video_url);
+          sets.push(`video_url = $${vals.length}`);
+        }
+        if (v.store_tabs !== undefined) {
+          vals.push(JSON.stringify(v.store_tabs));
+          sets.push(`store_tabs = $${vals.length}::jsonb`);
+        }
+        if (v.size_chart !== undefined) {
+          vals.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
+          sets.push(`size_chart = $${vals.length}::jsonb`);
+        }
+        if (v.store_badge !== undefined) {
+          vals.push(v.store_badge);
+          sets.push(`store_badge = $${vals.length}`);
+        }
+        if (v.store_tagline !== undefined) {
+          vals.push(v.store_tagline);
+          sets.push(`store_tagline = $${vals.length}`);
+        }
+        if (v.store_swatches !== undefined) {
+          vals.push(JSON.stringify(v.store_swatches));
+          sets.push(`store_swatches = $${vals.length}::jsonb`);
+        }
+        if (v.store_returnable !== undefined) {
+          vals.push(v.store_returnable);
+          sets.push(`store_returnable = $${vals.length}`);
+        }
+        if (sets.length > 0) {
+          vals.push(item.id, business_id);
+          const updated = await client.query<Item>(
+            `UPDATE items SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND business_id = $${vals.length} RETURNING *`,
+            vals,
+          );
+          item = updated.rows[0] ?? item;
+        }
       }
 
       if (lookup_source && normalizedBarcode) {

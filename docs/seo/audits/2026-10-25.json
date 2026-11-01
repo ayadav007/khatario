@@ -1,0 +1,405 @@
+{
+  "generatedAt": "2026-10-25T04:07:06.431Z",
+  "base": "https://khatario.com",
+  "sitemapUrls": [
+    "https://khatario.com",
+    "https://khatario.com/blog",
+    "https://khatario.com/guides",
+    "https://khatario.com/privacy",
+    "https://khatario.com/terms",
+    "https://khatario.com/book-demo",
+    "https://khatario.com/solution/accounting",
+    "https://khatario.com/solution/inventory"
+  ],
+  "pages": [
+    {
+      "url": "https://khatario.com",
+      "status": 200,
+      "ms": 106,
+      "finalUrl": "https://khatario.com",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "https://khatario.com",
+      "h1": 1,
+      "jsonLd": [
+        "Organization",
+        "WebSite",
+        "SoftwareApplication",
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 2135,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/blog",
+      "status": 200,
+      "ms": 73,
+      "finalUrl": "https://khatario.com/blog",
+      "redirects": 0,
+      "title": "Khatario Blog: GST, Billing & Shop Business Tips",
+      "description": "Practical articles for Indian shop owners on GST billing, returns, stock, udhaar, WhatsApp invoices and growing a small business.",
+      "robots": "",
+      "canonical": "https://khatario.com/blog",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario Blog: GST, Billing & Shop Business Tips - Khatario",
+        "image": "https://khatario.com/opengraph-image"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 100,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/guides",
+      "status": 200,
+      "ms": 62,
+      "finalUrl": "https://khatario.com/guides",
+      "redirects": 0,
+      "title": "Khatario Guides: GST Billing, Stock & Accounts How-tos",
+      "description": "Step-by-step Khatario guides for GST billing, WhatsApp invoices, stock, purchases, accounts and GST returns. Free to read, no sign-in required.",
+      "robots": "",
+      "canonical": "https://khatario.com/guides",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1038,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/privacy",
+      "status": 200,
+      "ms": 55,
+      "finalUrl": "https://khatario.com/privacy",
+      "redirects": 0,
+      "title": "Privacy Policy - Khatario",
+      "description": "How Khatario collects, uses and protects the data of businesses and their customers.",
+      "robots": "",
+      "canonical": "https://khatario.com/privacy",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 39,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/terms",
+      "status": 200,
+      "ms": 67,
+      "finalUrl": "https://khatario.com/terms",
+      "redirects": 0,
+      "title": "Terms of Service - Khatario",
+      "description": "The terms that apply when you use Khatario for GST billing, stock, payments and WhatsApp invoices.",
+      "robots": "",
+      "canonical": "https://khatario.com/terms",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 31,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/book-demo",
+      "status": 200,
+      "ms": 90,
+      "finalUrl": "https://khatario.com/book-demo",
+      "redirects": 0,
+      "title": "Book a Free Khatario Demo | GST Billing App for Shops",
+      "description": "Pick a time for a free 20-minute walkthrough of Khatario: GST bills, WhatsApp invoices, stock and udhaar tracking for your shop.",
+      "robots": "",
+      "canonical": "https://khatario.com/book-demo",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 190,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/solution/accounting",
+      "status": 200,
+      "ms": 59,
+      "finalUrl": "https://khatario.com/solution/accounting",
+      "redirects": 0,
+      "title": "Simple Accounting Software for Small Businesses | Khatario",
+      "description": "Easy accounting app for Indian small businesses: books update from every bill, GSTR-1, 3B and 2B ready, P&L, balance sheet and WhatsApp reminders. Start free.",
+      "robots": "",
+      "canonical": "https://khatario.com/solution/accounting",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Simple Accounting Software for Small Businesses | Khatario - Khatario",
+        "image": "https://khatario.com/opengraph-image"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 634,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/solution/inventory",
+      "status": 200,
+      "ms": 59,
+      "finalUrl": "https://khatario.com/solution/inventory",
+      "redirects": 0,
+      "title": "Inventory Management Software for Small Business | Khatario",
+      "description": "Stock app for Indian shops and wholesalers: live stock with every bill, batch and expiry, branches, barcodes, low-stock alerts and valuation reports. Start free.",
+      "robots": "",
+      "canonical": "https://khatario.com/solution/inventory",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Inventory Management Software for Small Business | Khatario - Khatario",
+        "image": "https://khatario.com/opengraph-image"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 724,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/login",
+      "status": 200,
+      "ms": 54,
+      "finalUrl": "https://khatario.com/login",
+      "redirects": 0,
+      "title": "Log In | Khatario",
+      "description": "Log in to Khatario to make GST bills, share invoices on WhatsApp and manage stock.",
+      "robots": "noindex, follow",
+      "canonical": "https://khatario.com/login",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 54,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/signup",
+      "status": 200,
+      "ms": 47,
+      "finalUrl": "https://khatario.com/signup",
+      "redirects": 0,
+      "title": "Sign Up Free | Khatario GST Billing & Stock App",
+      "description": "Create your free Khatario account and make your first GST bill in minutes. Works on phone and computer, no card needed.",
+      "robots": "",
+      "canonical": "https://khatario.com/signup",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 216,
+      "consolidated": false
+    },
+    {
+      "url": "https://khatario.com/signup?product=billing",
+      "status": 200,
+      "ms": 39,
+      "finalUrl": "https://khatario.com/signup?product=billing",
+      "redirects": 0,
+      "title": "Sign Up Free | Khatario GST Billing & Stock App",
+      "description": "Create your free Khatario account and make your first GST bill in minutes. Works on phone and computer, no card needed.",
+      "robots": "",
+      "canonical": "https://khatario.com/signup",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 216,
+      "consolidated": true
+    },
+    {
+      "url": "https://khatario.com/?product=billing",
+      "status": 200,
+      "ms": 88,
+      "finalUrl": "https://khatario.com/?product=billing",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "https://khatario.com",
+      "h1": 1,
+      "jsonLd": [
+        "Organization",
+        "WebSite",
+        "SoftwareApplication",
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 2135,
+      "consolidated": true
+    },
+    {
+      "url": "https://khatario.com/?product=hr",
+      "status": 200,
+      "ms": 96,
+      "finalUrl": "https://khatario.com/?product=hr",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "https://khatario.com",
+      "h1": 1,
+      "jsonLd": [
+        "Organization",
+        "WebSite",
+        "SoftwareApplication",
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1813,
+      "consolidated": true
+    },
+    {
+      "url": "https://khatario.com/?product=connect",
+      "status": 200,
+      "ms": 58,
+      "finalUrl": "https://khatario.com/?product=connect",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "https://khatario.com",
+      "h1": 1,
+      "jsonLd": [
+        "Organization",
+        "WebSite",
+        "SoftwareApplication",
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1703,
+      "consolidated": true
+    },
+    {
+      "url": "https://khatario.com/signup?product=hr",
+      "status": 200,
+      "ms": 54,
+      "finalUrl": "https://khatario.com/signup?product=hr",
+      "redirects": 0,
+      "title": "Sign Up Free | Khatario GST Billing & Stock App",
+      "description": "Create your free Khatario account and make your first GST bill in minutes. Works on phone and computer, no card needed.",
+      "robots": "",
+      "canonical": "https://khatario.com/signup",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 195,
+      "consolidated": true
+    },
+    {
+      "url": "https://khatario.com/signup?product=connect",
+      "status": 200,
+      "ms": 49,
+      "finalUrl": "https://khatario.com/signup?product=connect",
+      "redirects": 0,
+      "title": "Sign Up Free | Khatario GST Billing & Stock App",
+      "description": "Create your free Khatario account and make your first GST bill in minutes. Works on phone and computer, no card needed.",
+      "robots": "",
+      "canonical": "https://khatario.com/signup",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": "https://khatario.com/opengraph-image?a4052be305211371"
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 203,
+      "consolidated": true
+    }
+  ],
+  "psi": [],
+  "issues": [
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/blog",
+      "code": "thin_content",
+      "detail": "100 words"
+    },
+    {
+      "severity": "low",
+      "url": "/book-demo",
+      "code": "thin_content",
+      "detail": "190 words"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "title_long",
+      "detail": "66 chars: Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "low",
+      "url": "/login",
+      "code": "title_short",
+      "detail": "Log In | Khatario"
+    }
+  ]
+}

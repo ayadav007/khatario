@@ -56,6 +56,15 @@ interface CreditNoteItem {
   line_total: number;
 }
 
+/** First and last day of the previous month, as ISO dates. */
+function previousMonthRange(): { from: string; to: string } {
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const last = new Date(today.getFullYear(), today.getMonth(), 0);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: iso(first), to: iso(last) };
+}
+
 export default function NewCreditNotePage() {
   const { business, user } = useAuth();
   const toast = useToastContext();
@@ -81,7 +90,13 @@ export default function NewCreditNotePage() {
     credit_note_number: '',
     credit_note_date: new Date().toISOString().split('T')[0],
     reason: '',
+    // Migration 443: a sales return (goods back, linked invoice) or a post-sale discount
+    // (s.15(3)(b): a period of supplies, no invoice, no items, no stock).
+    note_type: 'sales_return' as 'sales_return' | 'post_sale_discount',
+    supply_period_from: previousMonthRange().from,
+    supply_period_to: previousMonthRange().to,
   });
+  const isDiscount = formData.note_type === 'post_sale_discount';
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [creditNoteItems, setCreditNoteItems] = useState<CreditNoteItem[]>([]);
@@ -325,11 +340,25 @@ export default function NewCreditNotePage() {
     e.preventDefault();
 
     if (!formData.customer_id || !formData.credit_note_number || creditNoteItems.length === 0) {
-      toast.error('Please fill all required fields and add at least one item');
+      toast.error(isDiscount ? 'Please fill all required fields and add at least one discount line' : 'Please fill all required fields and add at least one item');
       return;
     }
-    if (selectedCustomer?.gstin && !formData.invoice_id) {
-      toast.error('Select the original invoice: required for a registered (GSTIN) customer');
+    if (!isDiscount && selectedCustomer?.gstin && !formData.invoice_id) {
+      toast.error('Select the original invoice: required for a sales return to a registered (GSTIN) customer');
+      return;
+    }
+    if (isDiscount) {
+      if (!formData.supply_period_from || !formData.supply_period_to || formData.supply_period_from > formData.supply_period_to) {
+        toast.error('Enter the supply period the discount covers, from and to, in order');
+        return;
+      }
+      if (formData.supply_period_to > formData.credit_note_date) {
+        toast.error('The supply period cannot end after the credit note date');
+        return;
+      }
+    }
+    if (creditNoteItems.some((item) => !item.item_id && !item.description.trim())) {
+      toast.error(isDiscount ? 'Each discount line needs a description' : 'A line without an item needs a description');
       return;
     }
 
@@ -338,17 +367,20 @@ export default function NewCreditNotePage() {
     const payload = {
       business_id: business?.id,
       customer_id: formData.customer_id,
-      invoice_id: formData.invoice_id || null,
+      invoice_id: isDiscount ? null : formData.invoice_id || null,
       credit_note_number: formData.credit_note_number,
       credit_note_date: formData.credit_note_date,
+      note_type: formData.note_type,
+      supply_period_from: isDiscount ? formData.supply_period_from : null,
+      supply_period_to: isDiscount ? formData.supply_period_to : null,
       reason: formData.reason,
       place_of_supply_state_code: selectedCustomer?.state_code,
       items: creditNoteItems.map(item => ({
-        item_id: item.item_id || null,
+        item_id: isDiscount ? null : item.item_id || null,
         description: item.description,
         item_name: item.item_name,
-        qty: item.qty,
-        quantity: item.qty,
+        qty: isDiscount ? 1 : item.qty,
+        quantity: isDiscount ? 1 : item.qty,
         unit: item.unit,
         unit_price: item.unit_price,
         discount: item.discount,
@@ -408,7 +440,7 @@ export default function NewCreditNotePage() {
       <div className="w-full min-w-0 max-w-5xl space-y-6">
         <MobileDuplicatePageChrome
           title="New credit note"
-          description="Sales return — customer returns goods."
+          description="Sales return, or a post-sale discount under s.15(3)(b)."
           onBack={() => router.push('/credit-notes')}
         />
 
@@ -416,9 +448,48 @@ export default function NewCreditNotePage() {
           <div className="space-y-6">
             <AnnotatedFormSection
               title="Credit note details"
-              description="Document reference, customer, and link to the original invoice when applicable."
+              description={
+                isDiscount
+                  ? 'Document reference, customer, and the period of supplies the discount covers. No invoice link is needed.'
+                  : 'Document reference, customer, and link to the original invoice when applicable.'
+              }
             >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <fieldset className="md:col-span-2">
+              <legend className="block text-sm font-medium text-gray-700 mb-2">Type</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    ['sales_return', 'Sales return', 'Goods come back. Lines are items and quantities; link the original invoice.'],
+                    ['post_sale_discount', 'Post-sale discount', 'Scheme, volume or rate difference after the sale. No goods back, no invoice link.'],
+                  ] as const
+                ).map(([value, label, help]) => (
+                  <label
+                    key={value}
+                    className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${
+                      formData.note_type === value ? 'border-primary-500 bg-primary-50' : 'border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="note_type"
+                      value={value}
+                      checked={formData.note_type === value}
+                      onChange={() => {
+                        setFormData({ ...formData, note_type: value, invoice_id: '' });
+                        setCreditNoteItems([]);
+                      }}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-900">{label}</span>
+                      <span className="block text-xs text-gray-500">{help}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Credit Note Number *
@@ -465,48 +536,83 @@ export default function NewCreditNotePage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Original Invoice {selectedCustomer?.gstin ? '(required for GSTIN customer)' : '(optional)'}
-              </label>
-              <select
-                value={formData.invoice_id}
-                onChange={(e) => setFormData({ ...formData, invoice_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                disabled={!formData.customer_id}
-              >
-                <option value="">Select Invoice (Optional)</option>
-                {invoices.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {invoice.invoice_number} - ₹{Number(invoice.grand_total).toLocaleString('en-IN')}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isDiscount ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplies covered from *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.supply_period_from}
+                    max={formData.credit_note_date}
+                    onChange={(e) => setFormData({ ...formData, supply_period_from: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplies covered to *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.supply_period_to}
+                    min={formData.supply_period_from}
+                    max={formData.credit_note_date}
+                    onChange={(e) => setFormData({ ...formData, supply_period_to: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    GST can be reduced only up to 30 November after the financial year of the first supply covered (s.34(2)).
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Original Invoice {selectedCustomer?.gstin ? '(required for GSTIN customer)' : '(optional)'}
+                </label>
+                <select
+                  value={formData.invoice_id}
+                  onChange={(e) => setFormData({ ...formData, invoice_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  disabled={!formData.customer_id}
+                >
+                  <option value="">Select Invoice (Optional)</option>
+                  {invoices.map((invoice) => (
+                    <option key={invoice.id} value={invoice.id}>
+                      {invoice.invoice_number} - ₹{Number(invoice.grand_total).toLocaleString('en-IN')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Reason for Return
+                {isDiscount ? 'Reason' : 'Reason for Return'}
               </label>
               <textarea
                 value={formData.reason}
                 onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                 rows={2}
-                placeholder="Defective goods, customer dissatisfaction, etc."
+                placeholder={isDiscount ? 'Q2 volume scheme 2%, rate difference, etc.' : 'Defective goods, customer dissatisfaction, etc.'}
               />
             </div>
           </div>
             </AnnotatedFormSection>
 
             <AnnotatedFormSection
-              title="Return items"
-              description="Lines returned to stock; quantities can differ from the original invoice."
+              title={isDiscount ? 'Discount lines' : 'Return items'}
+              description={
+                isDiscount
+                  ? 'One line per GST rate: what the discount is for, its taxable amount before GST, and the rate the supplies carried. The customer must reverse the ITC on it.'
+                  : 'Lines returned to stock; quantities can differ from the original invoice. A line without an item needs a description.'
+              }
             >
           <div className="flex justify-end mb-4">
             <Button type="button" onClick={addCreditNoteItem} size="sm">
               <Plus className="w-4 h-4 mr-2" />
-              Add Item
+              {isDiscount ? 'Add line' : 'Add Item'}
             </Button>
           </div>
 
@@ -526,35 +632,50 @@ export default function NewCreditNotePage() {
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-12 md:gap-4">
-                  <div className="col-span-2 md:col-span-3">
-                    <label className="mb-1 block text-xs font-medium text-gray-700">Item</label>
-                    <select
-                      value={item.item_id}
-                      onChange={(e) => updateCreditNoteItem(index, 'item_id', e.target.value)}
-                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
-                    >
-                      <option value="">Select Item</option>
-                      {items.map((i) => (
-                        <option key={i.id} value={i.id}>
-                          {i.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {isDiscount ? (
+                    <div className="col-span-2 md:col-span-5">
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Description</label>
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => updateCreditNoteItem(index, 'description', e.target.value)}
+                        placeholder="Q2 volume scheme 2% on soap"
+                        className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      />
+                    </div>
+                  ) : (
+                    <div className="col-span-2 md:col-span-3">
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Item</label>
+                      <select
+                        value={item.item_id}
+                        onChange={(e) => updateCreditNoteItem(index, 'item_id', e.target.value)}
+                        className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      >
+                        <option value="">Select Item</option>
+                        {items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {!isDiscount && (
+                    <div className="min-w-0 md:col-span-2">
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Qty</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.qty}
+                        onChange={(e) => updateCreditNoteItem(index, 'qty', e.target.value)}
+                        className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      />
+                    </div>
+                  )}
 
                   <div className="min-w-0 md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-gray-700">Qty</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.qty}
-                      onChange={(e) => updateCreditNoteItem(index, 'qty', e.target.value)}
-                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
-                    />
-                  </div>
-
-                  <div className="min-w-0 md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-gray-700">Price</label>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">{isDiscount ? 'Taxable amount' : 'Price'}</label>
                     <input
                       type="number"
                       step="0.01"
@@ -582,6 +703,19 @@ export default function NewCreditNotePage() {
                     </div>
                   </div>
 
+                  {!isDiscount && !item.item_id && (
+                    <div className="col-span-2 md:col-span-11">
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Description (no item selected)</label>
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => updateCreditNoteItem(index, 'description', e.target.value)}
+                        placeholder="What this line is for"
+                        className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      />
+                    </div>
+                  )}
+
                   <div className="hidden items-end md:col-span-1 md:flex">
                     <Button
                       type="button"
@@ -599,7 +733,7 @@ export default function NewCreditNotePage() {
 
             {creditNoteItems.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                No items added. Click "Add Item" to begin.
+                {isDiscount ? 'No lines yet. Click "Add line" to begin.' : 'No items added. Click "Add Item" to begin.'}
               </div>
             )}
           </div>

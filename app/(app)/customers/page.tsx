@@ -84,7 +84,9 @@ export default function CustomersPage() {
   const searchParams = useSearchParams();
   const partyTab: PartyKind = searchParams.get('tab') === 'suppliers' ? 'suppliers' : 'customers';
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance'>('all');
+  const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance' | 'khata' | 'khata-requests'>(
+    () => (searchParams.get('filter') === 'khata-requests' ? 'khata-requests' : searchParams.get('filter') === 'khata' ? 'khata' : 'all'),
+  );
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -104,7 +106,12 @@ export default function CustomersPage() {
     setSelectedSupplierId(null);
   };
 
-  const { data: allCustomers, loading } = useEntityList<Customer>({
+  const {
+    data: allCustomers,
+    loading,
+    error: customersError,
+    refresh: refreshCustomers,
+  } = useEntityList<Customer>({
     apiUrl: '/api/customers',
     businessId: business?.id ?? null,
     userId: user?.id ?? null,
@@ -132,6 +139,9 @@ export default function CustomersPage() {
     }
     const balanceFilter = (c: Customer) => {
       const balance = Number(c.current_balance ?? c.opening_balance ?? 0);
+      const k = c as Customer & { khata_enabled?: boolean; khata_requested_at?: string | null };
+      if (filter === 'khata') return k.khata_enabled === true;
+      if (filter === 'khata-requests') return !k.khata_enabled && Boolean(k.khata_requested_at);
       return (
         filter === 'all' ||
         (filter === 'with-balance' && !isPartyBalanceSettled(balance)) ||
@@ -155,6 +165,8 @@ export default function CustomersPage() {
       const balance = partyBalance(s.current_balance, s.opening_balance);
       return (
         filter === 'all' ||
+        filter === 'khata' ||
+        filter === 'khata-requests' ||
         (filter === 'with-balance' && !isPartyBalanceSettled(balance)) ||
         (filter === 'zero-balance' && isPartyBalanceSettled(balance))
       );
@@ -172,6 +184,15 @@ export default function CustomersPage() {
   }, [filteredSuppliers, page]);
 
   const listLoading = partyTab === 'suppliers' ? suppliersLoading : loading;
+  const customersLoadFailed = partyTab === 'customers' && Boolean(customersError) && allCustomers.length === 0;
+  const loadFailedNotice = (
+    <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-text-secondary">
+      <p>Couldn&apos;t load your customers. Check your connection and try again.</p>
+      <Button size="sm" variant="secondary" onClick={() => void refreshCustomers()}>
+        Retry
+      </Button>
+    </div>
+  );
   const filteredCount = partyTab === 'suppliers' ? filteredSuppliers.length : filteredCustomers.length;
   const totalPages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
 
@@ -283,6 +304,22 @@ export default function CustomersPage() {
             >
               Zero Balance
             </button>
+            {partyTab === 'customers' ? (
+              <>
+                <button
+                  onClick={() => setFilter('khata')}
+                  className={`chip ${filter === 'khata' ? 'bg-primary-500 text-white border-primary-500' : ''}`}
+                >
+                  Khata
+                </button>
+                <button
+                  onClick={() => setFilter('khata-requests')}
+                  className={`chip ${filter === 'khata-requests' ? 'bg-primary-500 text-white border-primary-500' : ''}`}
+                >
+                  Khata requests
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -363,6 +400,8 @@ export default function CustomersPage() {
               );
             })
           )
+        ) : customersLoadFailed ? (
+          loadFailedNotice
         ) : paginatedCustomers.length === 0 ? (
           <div className="p-8 text-center text-sm text-text-secondary">No customers</div>
         ) : (
@@ -569,7 +608,7 @@ export default function CustomersPage() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="text-center py-12 text-text-secondary">
-                      No customers found.
+                      {customersLoadFailed ? loadFailedNotice : 'No customers found.'}
                     </td>
                   </tr>
                 )}
@@ -659,7 +698,11 @@ export default function CustomersPage() {
                 );
               })
             ) : (
-              <div className="px-4 py-10 text-center text-sm text-text-secondary">No customers found.</div>
+              customersLoadFailed ? (
+                loadFailedNotice
+              ) : (
+                <div className="px-4 py-10 text-center text-sm text-text-secondary">No customers found.</div>
+              )
             )}
           </div>
         </>
@@ -745,6 +788,12 @@ export default function CustomersPage() {
                       { id: 'all', label: partyTab === 'suppliers' ? 'All Suppliers' : 'All Customers' },
                       { id: 'with-balance', label: 'With Balance' },
                       { id: 'zero-balance', label: 'Zero Balance' },
+                      ...(partyTab === 'customers'
+                        ? [
+                            { id: 'khata', label: 'Khata' },
+                            { id: 'khata-requests', label: 'Khata requests' },
+                          ]
+                        : []),
                     ].map((f) => (
                       <button
                         key={f.id}
@@ -792,6 +841,7 @@ export default function CustomersPage() {
                 onClose={() => setSelectedCustomerId(null)}
                 onSendReminder={(c) => handleSendReminder(c.id)}
                 sendingReminder={sendingReminder === selectedCustomerId}
+                onCustomerChanged={() => void refreshCustomers()}
               />
             ) : null
           }

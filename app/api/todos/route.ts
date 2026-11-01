@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getUserIdFromRequest,
-  getBusinessIdFromRequest,
-  requirePortalSession,
-} from '@/lib/auth-helpers';
-import { queryRows, queryOne, query } from '@/lib/db';
+import { requireStrictSession } from '@/lib/auth-helpers';
+import { queryRows, getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { computeSmartReminderUtc } from '@/lib/todo-reminder-defaults';
+import {
+  TodoInputError,
+  TODO_PRIORITIES,
+  TODO_REMINDER_TYPES,
+  checkAssignee,
+  checkChannels,
+  checkInstant,
+  checkOneOf,
+  checkRelatedEntity,
+  checkTitle,
+  isUuid,
+} from '@/lib/todo-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,12 +31,12 @@ interface GetTodosQuery {
 
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
 
     const { searchParams } = new URL(request.url);
-    const business_id = getBusinessIdFromRequest(request);
-    const user_id = getUserIdFromRequest(request);
+    const business_id = session.businessId;
+    const user_id = session.userId;
     const view = searchParams.get('view') as GetTodosQuery['view'];
     const status = searchParams.get('status') as GetTodosQuery['status'];
     const priority = searchParams.get('priority') as GetTodosQuery['priority'];
@@ -36,10 +45,6 @@ export async function GET(request: NextRequest) {
     const related_entity_id = searchParams.get('related_entity_id');
     const due_from = searchParams.get('due_from');
     const due_to = searchParams.get('due_to');
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
 
     // Check Todo feature access
     try {
@@ -106,6 +111,10 @@ export async function GET(request: NextRequest) {
       paramIndex++;
     }
 
+    if ((assigned_to && !isUuid(assigned_to)) || (related_entity_id && !isUuid(related_entity_id))) {
+      return NextResponse.json({ error: 'assigned_to and related_entity_id must be valid ids' }, { status: 400 });
+    }
+
     // Assigned to filter
     if (assigned_to) {
       whereConditions.push(`assigned_to = $${paramIndex}`);
@@ -162,29 +171,24 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
+    // Business and creator come from the session only; body business_id / created_by are ignored.
+    const session = await requireStrictSession(request);
+    if (!session.ok) return session.response;
+    const business_id = session.businessId;
+    const created_by = session.userId;
 
-    const body = await request.json();
-    const { 
-      business_id, 
-      assigned_to,
-      title, 
-      description, 
-      due_date, 
-      priority, 
-      reminder_type,
-      reminder_time,
-      reminder_channels,
-      related_entity_type,
-      related_entity_id,
-      created_by
-    } = body;
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
-    if (!business_id || !title || !due_date) {
-      return NextResponse.json({ 
-        error: 'Business ID, Title, and Due Date are required' 
-      }, { status: 400 });
+    if (body.business_id && body.business_id !== business_id) {
+      return NextResponse.json({ error: 'Business ID does not match your session' }, { status: 403 });
     }
 
     // Check Todo feature access
@@ -197,67 +201,106 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // Set default reminder_time if not provided but reminder_type is set
-    let finalReminderTime = reminder_time;
-    if (reminder_type && reminder_type !== 'none' && !reminder_time) {
-      // Default: 1 hour before due date
-      const dueDate = new Date(due_date);
-      dueDate.setHours(dueDate.getHours() - 1);
-      finalReminderTime = dueDate.toISOString();
-    }
-
-    const newTodo = await queryOne(
-      `INSERT INTO todos (
-        business_id, 
-        assigned_to,
-        title, 
-        description, 
-        due_date, 
-        priority, 
+    let fields;
+    try {
+      const title = checkTitle(body.title);
+      if (body.due_date == null || body.due_date === '') {
+        throw new TodoInputError('Due date is required');
+      }
+      const due_date = checkInstant('due_date', body.due_date);
+      const priority = body.priority == null || body.priority === ''
+        ? 'medium'
+        : checkOneOf('priority', body.priority, TODO_PRIORITIES);
+      const reminder_type = body.reminder_type == null || body.reminder_type === ''
+        ? 'once'
+        : checkOneOf('reminder_type', body.reminder_type, TODO_REMINDER_TYPES);
+      let reminder_time: string | null = null;
+      if (reminder_type !== 'none') {
+        reminder_time = body.reminder_time == null || body.reminder_time === ''
+          // Same default the Todo page uses when no reminder time is picked
+          ? computeSmartReminderUtc(new Date(due_date), new Date()).toISOString()
+          : checkInstant('reminder_time', body.reminder_time);
+      }
+      const reminder_channels = body.reminder_channels == null
+        ? ['in_app']
+        : checkChannels(body.reminder_channels);
+      const related = checkRelatedEntity(body.related_entity_type, body.related_entity_id);
+      if (body.description != null && typeof body.description !== 'string') {
+        throw new TodoInputError('description must be text');
+      }
+      const assigned_to = await checkAssignee(business_id, body.assigned_to);
+      fields = {
+        title,
+        description: (body.description as string | undefined) || null,
+        due_date,
+        priority,
         reminder_type,
         reminder_time,
         reminder_channels,
-        related_entity_type,
-        related_entity_id,
-        created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
-      RETURNING *`,
-      [
-        business_id, 
-        assigned_to || null,
-        title, 
-        description || null, 
-        due_date, 
-        priority || 'medium', 
-        reminder_type || 'once',
-        finalReminderTime || null,
-        reminder_channels || ['in_app'],
-        related_entity_type || null,
-        related_entity_id || null,
-        created_by || null
-      ]
-    );
-
-    // Create history entry
-    if (newTodo) {
-      await query(
-        `SELECT create_todo_history($1, 'created', NULL, $2, $3)`,
-        [newTodo.id, title, created_by || null]
-      );
+        related,
+        assigned_to,
+      };
+    } catch (error) {
+      if (error instanceof TodoInputError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
     }
 
-    // Schedule reminder if Todo feature is enabled
-    if (newTodo && newTodo.reminder_type && newTodo.reminder_type !== 'none' && newTodo.reminder_time) {
+    // Todo and its "created" history row are written together, so a failure leaves neither.
+    const client = await getPool().connect();
+    let newTodo: any;
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
+        `INSERT INTO todos (
+          business_id, 
+          assigned_to,
+          title, 
+          description, 
+          due_date, 
+          priority, 
+          reminder_type,
+          reminder_time,
+          reminder_channels,
+          related_entity_type,
+          related_entity_id,
+          created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+        RETURNING *`,
+        [
+          business_id,
+          fields.assigned_to,
+          fields.title,
+          fields.description,
+          fields.due_date,
+          fields.priority,
+          fields.reminder_type,
+          fields.reminder_time,
+          fields.reminder_channels,
+          fields.related.type,
+          fields.related.id,
+          created_by
+        ]
+      );
+      newTodo = inserted.rows[0];
+      await client.query(
+        `SELECT create_todo_history($1, 'created', NULL, $2, $3)`,
+        [newTodo.id, fields.title, created_by]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    // Schedule reminder (feature access was checked above)
+    if (newTodo.reminder_type !== 'none' && newTodo.reminder_time) {
       try {
-        const { hasFeatureAccess } = await import('@/lib/subscription/feature-access');
-        const hasAccess = await hasFeatureAccess(business_id, 'todo');
-        
-        if (hasAccess) {
-          const { scheduleTodoReminder } = await import('@/lib/queue/todoReminderQueue');
-          await scheduleTodoReminder(newTodo.id, new Date(newTodo.reminder_time));
-        } else {
-          console.log('[POST /api/todos] Todo feature disabled, skipping reminder scheduling');
-        }
+        const { scheduleTodoReminder } = await import('@/lib/queue/todoReminderQueue');
+        await scheduleTodoReminder(newTodo.id, new Date(newTodo.reminder_time));
       } catch (error) {
         console.error('[POST /api/todos] Failed to schedule reminder:', error);
         // Don't fail todo creation if reminder scheduling fails
@@ -267,9 +310,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(newTodo);
   } catch (error: any) {
     console.error('[POST /api/todos] Error:', error);
-    return NextResponse.json({ 
-      error: error.message || 'Failed to create todo',
-      details: error.detail
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create todo' }, { status: 500 });
   }
 }

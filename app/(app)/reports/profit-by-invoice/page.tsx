@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
+import { csvSafeText } from '@/lib/csv-safe';
 
 export type ProfitInvoiceRow = {
   invoice_id: string;
@@ -44,7 +45,7 @@ function monthToDateDefaults() {
 }
 
 function escapeCsvCell(v: string | number | null | undefined): string {
-  const s = v === null || v === undefined ? '' : String(v);
+  const s = csvSafeText(v === null || v === undefined ? '' : String(v));
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

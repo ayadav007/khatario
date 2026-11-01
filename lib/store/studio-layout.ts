@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { chowkInkOn, chowkOnAccent, hexLuminance, sectionEnabled, storeCanvas, type StoreTheme } from './store-theme';
-import type { StudioSection, StudioSectionType } from './studio-sections';
+import type { StudioProductSource, StudioSection, StudioSectionType, StudioSettings } from './studio-sections';
 
 export const STUDIO_FALLBACK_HERO =
   'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80';
@@ -12,8 +12,18 @@ export const STUDIO_EYEBROW: Partial<Record<StudioSectionType, string>> = {
   testimonials: 'CUSTOMER LOVE',
 };
 
-export function studioEyebrow(type: StudioSectionType, value: string | undefined): string {
-  return value ?? STUDIO_EYEBROW[type] ?? '';
+/** Default label above a product section's heading, by where its products come from. */
+const SOURCE_EYEBROW: Partial<Record<StudioProductSource, string>> = {
+  new: 'JUST IN',
+  bestsellers: 'CUSTOMER FAVOURITES',
+  discounted: 'ON SALE',
+  category: 'SHOP THE CATEGORY',
+  price_max: 'VALUE PICKS',
+};
+
+export function studioEyebrow(type: StudioSectionType, value: string | undefined, source?: StudioProductSource): string {
+  if (value !== undefined) return value;
+  return (type === 'products' && source ? SOURCE_EYEBROW[source] : undefined) ?? STUDIO_EYEBROW[type] ?? '';
 }
 
 export interface StudioContext {
@@ -84,6 +94,13 @@ export function themeToStudioSections(theme: StoreTheme, ctx: StudioContext): St
         align: 'left',
         height: 'medium',
         overlay: 20,
+        slides: theme.hero_slides.slice(1, 6).map((sl) => ({
+          image: sl.image_url,
+          heading: sl.title,
+          description: sl.subtitle,
+          buttonText: theme.hero_cta || 'Shop now',
+          link: '',
+        })),
       },
     },
     {
@@ -129,9 +146,65 @@ export function themeToStudioSections(theme: StoreTheme, ctx: StudioContext): St
   ];
 }
 
+const QUICK_RAILS: StudioSection[] = [
+  {
+    id: 'quick-bestsellers',
+    type: 'products',
+    name: 'Bestsellers',
+    enabled: true,
+    settings: { title: 'Bestsellers', source: 'bestsellers', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+  },
+  {
+    id: 'quick-deals',
+    type: 'products',
+    name: 'Top Deals',
+    enabled: true,
+    settings: { title: 'Top deals', source: 'discounted', limit: 12, columns: 6, display: 'carousel', showPrice: true },
+  },
+];
+
+/**
+ * Rearranges a section list into Quick's app-style home while keeping the merchant's own content:
+ * a full-width hero card, 8-up category icons, Bestsellers and Top deals rails (unless the store
+ * already has product rows), trust badges, and the full catalog last. Other sections keep their order.
+ */
+export function toQuickLayout(sections: StudioSection[]): StudioSection[] {
+  const isCatalog = (s: StudioSection) => s.type === 'products' && (s.settings.source ?? 'all') === 'all';
+  const isRow = (s: StudioSection) => s.type === 'products' && !isCatalog(s);
+  const rows = sections.filter(isRow);
+  const usp = sections.filter((s) => s.type === 'usp');
+  const catalog = sections.filter(isCatalog);
+  // Product rows and trust badges sit right under the categories, like a quick-delivery app home.
+  const lifted: StudioSection[] = [
+    ...(rows.length ? rows : QUICK_RAILS),
+    ...(usp.length ? usp : [{ id: 'quick-usp', type: 'usp' as const, name: 'Trust Badges', enabled: true, settings: {} }]),
+  ];
+  const out: StudioSection[] = [];
+  let liftAt = -1;
+  for (const s of sections) {
+    if (isRow(s) || isCatalog(s) || s.type === 'usp') continue;
+    if (s.type === 'hero') {
+      out.push({ ...s, settings: { ...s.settings, layout: 'full', height: 'small', overlay: s.settings.overlay ?? 35 } });
+      liftAt = out.length;
+    } else if (s.type === 'categories') {
+      out.push({ ...s, settings: { ...s.settings, columns: 8, title: s.settings.title || 'Shop by category' } });
+      liftAt = out.length;
+    } else {
+      out.push(s);
+    }
+  }
+  out.splice(liftAt >= 0 ? liftAt : Math.min(2, out.length), 0, ...lifted);
+  // The full catalog goes last, just above the footer.
+  const footerAt = out.findIndex((s) => s.type === 'footer');
+  out.splice(footerAt >= 0 ? footerAt : out.length, 0, ...catalog.map((c) => ({ ...c, settings: { ...c.settings, columns: 6 } })));
+  return out;
+}
+
 /** The saved Studio layout, or one derived from the theme for stores that never opened Studio. */
 export function resolveStudioSections(theme: StoreTheme, ctx: StudioContext): StudioSection[] {
-  return theme.studio_sections.length > 0 ? theme.studio_sections : themeToStudioSections(theme, ctx);
+  if (theme.studio_sections.length > 0) return theme.studio_sections;
+  const base = themeToStudioSections(theme, ctx);
+  return theme.pack === 'quick' ? toQuickLayout(base) : base;
 }
 
 /** Colour tokens for Studio sections, so every surface stays readable in light, dim and dark. */
@@ -190,6 +263,93 @@ export function studioLinkTarget(label: string, categories: Array<{ id: string; 
   const cat = categories.find((c) => c.name.trim().toLowerCase() === key);
   if (cat) return { kind: 'category', id: cat.id };
   return { kind: 'products' };
+}
+
+/** Sections a merchant can add from the Studio "Add section" menu, in menu order. */
+export const ADDABLE_SECTIONS: Array<{ type: StudioSectionType; label: string; hint: string }> = [
+  { type: 'products', label: 'Product row', hint: 'New arrivals, best sellers, a category…' },
+  { type: 'banner', label: 'Promo banner', hint: 'Image, offer text and a button' },
+  { type: 'usp', label: 'Trust badges', hint: 'Free delivery, COD, easy returns' },
+  { type: 'marquee', label: 'Scrolling text', hint: 'A moving line of offers' },
+  { type: 'richtext', label: 'Text block', hint: 'Heading and paragraph' },
+];
+
+/** A new section with sensible starting content. */
+export function newStudioSection(type: StudioSectionType, id: string): StudioSection {
+  switch (type) {
+    case 'products':
+      return {
+        id,
+        type,
+        name: 'New Arrivals',
+        enabled: true,
+        settings: { title: 'New arrivals', source: 'new', limit: 8, columns: 4, display: 'carousel', showPrice: true },
+      };
+    case 'banner':
+      return {
+        id,
+        type,
+        name: 'Promo Banner',
+        enabled: true,
+        settings: { title: 'Festive sale is live', text: 'Up to 30% off on bestsellers this week.', button: 'Shop the sale', image: '' },
+      };
+    case 'usp':
+      return { id, type, name: 'Trust Badges', enabled: true, settings: {} };
+    case 'marquee':
+      return {
+        id,
+        type,
+        name: 'Scrolling Text',
+        enabled: true,
+        settings: { text: 'Free delivery above ₹499, Cash on delivery available, New arrivals every week', speed: 'normal' },
+      };
+    default:
+      return { id, type: 'richtext', name: 'New Text Section', enabled: true, settings: { title: 'Your heading', text: 'Add your content here.' } };
+  }
+}
+
+export const STUDIO_SOURCE_LABELS: Record<StudioProductSource, string> = {
+  all: 'All products (with Load more)',
+  featured: 'Featured products',
+  new: 'New arrivals',
+  bestsellers: 'Best sellers',
+  discounted: 'On sale',
+  category: 'One category',
+  price_max: 'Under a price',
+};
+
+/** A product section that shows the whole catalog (the default for older layouts). */
+export function isCatalogSection(section: StudioSection): boolean {
+  return section.type === 'products' && (section.settings.source ?? 'all') === 'all';
+}
+
+/** Items API query for a sourced product section. */
+export function studioProductParams(s: StudioSettings): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set('limit', String(s.limit ?? 8));
+  switch (s.source) {
+    case 'featured':
+      params.set('featured', '1');
+      break;
+    case 'new':
+      params.set('sort', 'new');
+      break;
+    case 'bestsellers':
+      params.set('sort', 'bestsellers');
+      break;
+    case 'discounted':
+      params.set('discounted', '1');
+      break;
+    case 'category':
+      if (s.categoryId) params.set('category_id', s.categoryId);
+      break;
+    case 'price_max':
+      params.set('max_price', String(s.priceMax ?? 499));
+      break;
+    default:
+      break;
+  }
+  return params;
 }
 
 export function splitList(value: string | undefined, fallback: string): string[] {

@@ -27,21 +27,7 @@
       }
 
       .page {
-        /* IMPORTANT:
-         * The PDF generator already applies A4 margins.
-         * Using a fixed 210mm page box + extra padding can introduce top whitespace
-         * and force content to spill onto a second page.
-         */
-        width: 100%;
-        margin: 0;
-        padding: 0;
-      }
-
-      .grid-table {
-        width: 100%;
-        border-collapse: collapse;
-        border: 1px solid #333;
-      }
+        /* Page margin comes from the print pipeline (
       .grid-table th,
       .grid-table td {
         border: 1px solid #333;
@@ -149,14 +135,14 @@
 
 @page {
   size: A4 portrait;
-  margin: 0;
+  margin: 10mm 10mm 10mm 10mm;
 }
 </style>
 </head>
   <body class="print-root orientation-portrait format-A4">
     <div class="page">
       <!-- Header -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="header" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td style="width: 140px;">
                 <img class="logo" src="https://cdn.example.com/zqlogo.png" alt="Logo" />
@@ -171,6 +157,7 @@
               <div class="small"><b>GSTIN:</b> 27ZZZZZ9999Z1Z9</div>
           </td>
           <td style="width: 220px;">
+            <div class="kh-copy-label" style="text-align: right; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; padding: 0 4px;">Original for Recipient</div>
             <div class="section-title">TAX INVOICE</div>
             <div class="small">
               <div><b>No:</b> ZQINV-0042</div>
@@ -182,7 +169,7 @@
       </table>
 
       <!-- BILL TO + Invoice details -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="details" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td>
             <div class="section-title">BILL TO:</div>
@@ -217,13 +204,14 @@
             <span class="detail-value">ZQCF-SITE9</span>
           </div>
               <div><b>Place Of Supply:</b> Maharashtra</div>
+              <div><b>Reverse Charge:</b> No</div>
             </div>
           </td>
         </tr>
       </table>
 
       <!-- Items table -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="items" class="grid-table" style="margin-bottom: 10px;">
         <thead>
           <tr>
             <th class="text-center" style="width: 32px;">#</th>
@@ -273,7 +261,7 @@
       </table>
 
       <!-- Tax Summary + Totals -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="totals" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           <td style="width: 65%; padding: 0;">
             <div style="padding: 6px 8px; font-weight: 700;">Tax Summary:</div>
@@ -380,7 +368,7 @@
       </table>
 
       <!-- Bank details + payment terms -->
-      <table class="grid-table" style="margin-bottom: 10px;">
+      <table data-kh-section="footer" class="grid-table" style="margin-bottom: 10px;">
         <tr>
           
           <td class="small">
@@ -401,7 +389,7 @@
       </table>
 
       <!-- Terms & Conditions + Signature -->
-      <table class="grid-table" style="margin-bottom: 8px;">
+      <table data-kh-section="footer" class="grid-table" style="margin-bottom: 8px;">
         <tr>
           <td class="shade" colspan="2">
             

@@ -166,7 +166,7 @@ export async function buildPlansMarkdown(): Promise<string> {
     '## WhatsApp on Khatario',
     '',
     '- Every billing plan, including Free, can link a WhatsApp number by QR code to send invoices and payment reminders. ' +
-      'Automatic scheduled payment reminders start on the Growth plan.',
+      'Automatic scheduled payment reminders start on the Starter plan and go out over the QR link; they do not need Connect.',
     '- The Connect plan is a paid add-on for the official WhatsApp Business API: your own WhatsApp Business number, ' +
       'the shared team inbox, the AI agent, Meta-approved templates, campaigns, automation and the WhatsApp shop.',
     '- Connect includes its own WhatsApp agent seats, separate from billing plan users. Owners add agents under ' +

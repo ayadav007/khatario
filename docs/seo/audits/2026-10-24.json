@@ -1,0 +1,706 @@
+{
+  "generatedAt": "2026-10-24T12:49:32.568Z",
+  "base": "https://khatario.com",
+  "sitemapUrls": [
+    "https://khatario.com",
+    "https://khatario.com/blog",
+    "https://khatario.com/guides",
+    "https://khatario.com/privacy",
+    "https://khatario.com/terms",
+    "https://khatario.com/book-demo",
+    "https://khatario.com/solution/accounting",
+    "https://khatario.com/solution/inventory"
+  ],
+  "pages": [
+    {
+      "url": "https://khatario.com",
+      "status": 200,
+      "ms": 469,
+      "finalUrl": "https://khatario.com",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 2135
+    },
+    {
+      "url": "https://khatario.com/blog",
+      "status": 200,
+      "ms": 334,
+      "finalUrl": "https://khatario.com/blog",
+      "redirects": 0,
+      "title": "Blog - Khatario",
+      "description": "Guides and notes from Khatario on GST billing, stock, and running a shop.",
+      "robots": "",
+      "canonical": "https://khatario.com/blog",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Blog - Khatario",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 87
+    },
+    {
+      "url": "https://khatario.com/guides",
+      "status": 200,
+      "ms": 608,
+      "finalUrl": "https://khatario.com/guides",
+      "redirects": 0,
+      "title": "Guides - Khatario",
+      "description": "How-to guides for Khatario — billing, accounts, inventory, GST, and day-to-day business workflows. No sign-in required.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1038
+    },
+    {
+      "url": "https://khatario.com/privacy",
+      "status": 200,
+      "ms": 415,
+      "finalUrl": "https://khatario.com/privacy",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 39
+    },
+    {
+      "url": "https://khatario.com/terms",
+      "status": 200,
+      "ms": 284,
+      "finalUrl": "https://khatario.com/terms",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 31
+    },
+    {
+      "url": "https://khatario.com/book-demo",
+      "status": 200,
+      "ms": 411,
+      "finalUrl": "https://khatario.com/book-demo",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 190
+    },
+    {
+      "url": "https://khatario.com/solution/accounting",
+      "status": 200,
+      "ms": 527,
+      "finalUrl": "https://khatario.com/solution/accounting",
+      "redirects": 0,
+      "title": "Simple Accounting Software for Small Businesses | Khatario",
+      "description": "Easy accounting app for Indian SMEs: automatic entries from invoices, purchases & expenses, GST (GSTR-1, GSTR-3B, GSTR-2B), credit tracking, bank reconciliation, P&L & balance sheet, WhatsApp reminders. Start free.",
+      "robots": "",
+      "canonical": "/solution/accounting",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Simple Accounting Software for Small Businesses | Khatario - Khatario",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 634
+    },
+    {
+      "url": "https://khatario.com/solution/inventory",
+      "status": 200,
+      "ms": 413,
+      "finalUrl": "https://khatario.com/solution/inventory",
+      "redirects": 0,
+      "title": "Inventory Management Software for Small Business | Khatario",
+      "description": "Stock tracking app for Indian retail & wholesale: live stock with every sale and purchase, branches & warehouses, batch/expiry/serial, FIFO and weighted-average costing, transfers & adjustments, reports (summary, valuation, movement, low stock, expired), barcodes. Start free.",
+      "robots": "",
+      "canonical": "/solution/inventory",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Inventory Management Software for Small Business | Khatario - Khatario",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 724
+    },
+    {
+      "url": "https://khatario.com/login",
+      "status": 200,
+      "ms": 297,
+      "finalUrl": "https://khatario.com/login",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 54
+    },
+    {
+      "url": "https://khatario.com/signup",
+      "status": 200,
+      "ms": 295,
+      "finalUrl": "https://khatario.com/signup",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 216
+    },
+    {
+      "url": "https://khatario.com/signup?product=billing",
+      "status": 200,
+      "ms": 314,
+      "finalUrl": "https://khatario.com/signup?product=billing",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 216
+    },
+    {
+      "url": "https://khatario.com/?product=billing",
+      "status": 200,
+      "ms": 423,
+      "finalUrl": "https://khatario.com/?product=billing",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 2135
+    },
+    {
+      "url": "https://khatario.com/?product=hr",
+      "status": 200,
+      "ms": 434,
+      "finalUrl": "https://khatario.com/?product=hr",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1813
+    },
+    {
+      "url": "https://khatario.com/?product=connect",
+      "status": 200,
+      "ms": 416,
+      "finalUrl": "https://khatario.com/?product=connect",
+      "redirects": 0,
+      "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+      "description": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [
+        "FAQPage"
+      ],
+      "og": {
+        "title": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 1703
+    },
+    {
+      "url": "https://khatario.com/signup?product=hr",
+      "status": 200,
+      "ms": 283,
+      "finalUrl": "https://khatario.com/signup?product=hr",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 195
+    },
+    {
+      "url": "https://khatario.com/signup?product=connect",
+      "status": 200,
+      "ms": 309,
+      "finalUrl": "https://khatario.com/signup?product=connect",
+      "redirects": 0,
+      "title": "Khatario — GST Billing & Invoicing",
+      "description": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.",
+      "robots": "",
+      "canonical": "",
+      "h1": 1,
+      "jsonLd": [],
+      "og": {
+        "title": "Khatario — GST Billing & Invoicing",
+        "image": null
+      },
+      "lang": "en",
+      "imagesNoAlt": 0,
+      "words": 203
+    }
+  ],
+  "psi": [
+    {
+      "page": "/",
+      "error": "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'pagespeedonline.googleapis.com' for consumer 'project_number:583797351490'."
+    },
+    {
+      "page": "/solution/accounting",
+      "error": "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'pagespeedonline.googleapis.com' for consumer 'project_number:583797351490'."
+    },
+    {
+      "page": "/solution/inventory",
+      "error": "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'pagespeedonline.googleapis.com' for consumer 'project_number:583797351490'."
+    },
+    {
+      "page": "/blog",
+      "error": "Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'pagespeedonline.googleapis.com' for consumer 'project_number:583797351490'."
+    }
+  ],
+  "issues": [
+    {
+      "severity": "high",
+      "url": "/solution/accounting",
+      "code": "canonical_off_site",
+      "detail": "/solution/accounting"
+    },
+    {
+      "severity": "high",
+      "url": "/solution/inventory",
+      "code": "canonical_off_site",
+      "detail": "/solution/inventory"
+    },
+    {
+      "severity": "medium",
+      "url": "/, /, /, /",
+      "code": "duplicate_description",
+      "detail": "Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. "
+    },
+    {
+      "severity": "medium",
+      "url": "/privacy, /terms, /book-demo, /login, /signup, /signup, /signup, /signup",
+      "code": "duplicate_description",
+      "detail": "GST billing, stock, payments and WhatsApp invoices for Indian small businesses."
+    },
+    {
+      "severity": "medium",
+      "url": "/, /, /, /",
+      "code": "duplicate_title",
+      "detail": "Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "medium",
+      "url": "/privacy, /terms, /book-demo, /login, /signup, /signup, /signup, /signup",
+      "code": "duplicate_title",
+      "detail": "Khatario — GST Billing & Invoicing"
+    },
+    {
+      "severity": "medium",
+      "url": "/",
+      "code": "home_structured_data_missing",
+      "detail": "no Organization / SoftwareApplication / WebSite JSON-LD"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/guides",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/privacy",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/terms",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/book-demo",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/login",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "canonical_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/solution/accounting",
+      "code": "description_long",
+      "detail": "214 chars"
+    },
+    {
+      "severity": "low",
+      "url": "/solution/inventory",
+      "code": "description_long",
+      "detail": "276 chars"
+    },
+    {
+      "severity": "low",
+      "url": "/login",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "not_in_sitemap",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/blog",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/guides",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/privacy",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/terms",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/book-demo",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/solution/accounting",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/solution/inventory",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/login",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "og_image_missing",
+      "detail": ""
+    },
+    {
+      "severity": "low",
+      "url": "/blog",
+      "code": "thin_content",
+      "detail": "87 words"
+    },
+    {
+      "severity": "low",
+      "url": "/book-demo",
+      "code": "thin_content",
+      "detail": "190 words"
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "thin_content",
+      "detail": "216 words"
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "thin_content",
+      "detail": "195 words"
+    },
+    {
+      "severity": "low",
+      "url": "/signup",
+      "code": "thin_content",
+      "detail": "203 words"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "title_long",
+      "detail": "66 chars: Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "title_long",
+      "detail": "66 chars: Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "title_long",
+      "detail": "66 chars: Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "low",
+      "url": "/",
+      "code": "title_long",
+      "detail": "66 chars: Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops"
+    },
+    {
+      "severity": "low",
+      "url": "/blog",
+      "code": "title_short",
+      "detail": "Blog - Khatario"
+    },
+    {
+      "severity": "low",
+      "url": "/guides",
+      "code": "title_short",
+      "detail": "Guides - Khatario"
+    }
+  ]
+}

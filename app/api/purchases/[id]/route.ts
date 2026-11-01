@@ -12,7 +12,7 @@ import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 import { cancelFinalPurchase, PurchaseCancelError } from '@/lib/purchases/cancel-purchase';
 import { deleteDraftPurchase } from '@/lib/purchases/delete-draft-purchase';
-import { purchaseReturnLineKey } from '@/lib/purchases/purchase-return-lines';
+import { alreadyReturnedByBillLine, purchaseReturnLineKey } from '@/lib/purchases/purchase-return-lines';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { rejectDocumentDateChange } from '@/lib/gst/document-dates';
 
@@ -90,9 +90,11 @@ export async function GET(
       `SELECT
         pi.*,
         i.name AS catalog_item_name,
-        i.code AS catalog_item_code
+        i.code AS catalog_item_code,
+        iv.variant_name
       FROM purchase_items pi
       LEFT JOIN items i ON pi.item_id = i.id
+      LEFT JOIN item_variants iv ON iv.id = pi.variant_id
       WHERE pi.purchase_id = $1
       ORDER BY pi.id`,
       [purchaseId]
@@ -129,21 +131,18 @@ export async function GET(
     }
 
     const returned = await pool.query(
-      `SELECT pri.item_id, pri.description, SUM(pri.qty)::float8 AS qty
+      `SELECT pri.item_id, pri.description, pri.variant_id, SUM(pri.qty)::float8 AS qty
          FROM purchase_return_items pri
          JOIN purchase_returns pr ON pr.id = pri.return_id
         WHERE pr.purchase_id = $1 AND pr.business_id = $2
           AND COALESCE(pr.status, 'final') <> 'cancelled'
-        GROUP BY pri.item_id, pri.description`,
+        GROUP BY pri.item_id, pri.description, pri.variant_id`,
       [purchaseId, purchase.business_id]
     );
-    const alreadyReturned = new Map<string, number>();
-    for (const row of returned.rows) {
-      const key = purchaseReturnLineKey(row.item_id, row.description);
-      alreadyReturned.set(key, (alreadyReturned.get(key) || 0) + Number(row.qty));
-    }
+    // Per bill line: an item bought in two sizes has a returned quantity for each size.
+    const alreadyReturned = alreadyReturnedByBillLine(purchase.items, returned.rows);
     for (const item of purchase.items) {
-      const key = purchaseReturnLineKey(item.item_id, item.item_name);
+      const key = purchaseReturnLineKey(item.item_id, item.item_name, item.variant_id);
       item.returned_qty = alreadyReturned.get(key) || 0;
     }
     const priorSlices = await pool.query(

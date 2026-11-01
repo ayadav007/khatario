@@ -5,12 +5,13 @@ import { financialYearLabel } from '@/lib/accounting/advances';
 import { listAvailableCustomerCredits } from '@/lib/credit-notes/customer-credit';
 
 /**
- * Money paid back to a customer against a credit note (cash, UPI or bank).
+ * Money paid back to a customer against a credit note (cash, UPI or bank, or `gateway`: back to the
+ * card / UPI the customer paid online with, posted by lib/returns/gateway-refund.ts only).
  * Posts Dr receivable / Cr cash-or-bank, so the customer's credit balance comes back to zero for
  * the refunded part. Runs on the caller's transaction.
  */
 
-export type RefundMode = 'cash' | 'upi' | 'bank';
+export type RefundMode = 'cash' | 'upi' | 'bank' | 'gateway';
 
 export class CreditNoteRefundError extends Error {
   constructor(
@@ -23,6 +24,7 @@ export class CreditNoteRefundError extends Error {
   }
 }
 
+/** Modes staff can pick by hand; `gateway` is only set when the gateway confirms a refund. */
 export function isRefundMode(v: unknown): v is RefundMode {
   return v === 'cash' || v === 'upi' || v === 'bank';
 }
@@ -32,6 +34,8 @@ export async function refundableOnCreditNote(
   client: PoolClient,
   businessId: string,
   creditNoteId: string,
+  /** The pending gateway refund being posted, so its own hold on the note does not block it. */
+  opts?: { excludeGatewayRefundId?: string | null },
 ): Promise<{ customerId: string; refundable: number } | null> {
   const note = await client.query<{ customer_id: string }>(
     `SELECT customer_id FROM credit_notes WHERE id = $1 AND business_id = $2 AND status = 'active'`,
@@ -39,7 +43,7 @@ export async function refundableOnCreditNote(
   );
   const customerId = note.rows[0]?.customer_id;
   if (!customerId) return null;
-  const credits = await listAvailableCustomerCredits(client, businessId, customerId);
+  const credits = await listAvailableCustomerCredits(client, businessId, customerId, opts);
   const found = credits.notes.find((n) => n.id === creditNoteId);
   return { customerId, refundable: round2(found?.available ?? 0) };
 }
@@ -57,6 +61,8 @@ export async function refundCreditNote(
     reference?: string | null;
     notes?: string | null;
     orderReturnId?: string | null;
+    /** mode `gateway`: the return_gateway_refunds row being posted (its hold is its own room). */
+    gatewayRefundId?: string | null;
   },
 ): Promise<{ id: string; voucherNumber: string; amount: number; fullyRefunded: boolean }> {
   const locked = await client.query<{ id: string; branch_id: string | null; credit_note_number: string; refund_amount: string | null }>(
@@ -67,7 +73,9 @@ export async function refundCreditNote(
   const note = locked.rows[0];
   if (!note) throw new CreditNoteRefundError(404, 'CREDIT_NOTE_NOT_FOUND', 'Credit note not found');
 
-  const room = await refundableOnCreditNote(client, p.businessId, p.creditNoteId);
+  const room = await refundableOnCreditNote(client, p.businessId, p.creditNoteId, {
+    excludeGatewayRefundId: p.mode === 'gateway' ? p.gatewayRefundId ?? null : null,
+  });
   const refundable = room?.refundable ?? 0;
   if (refundable <= 0.004) {
     throw new CreditNoteRefundError(409, 'NOTHING_TO_REFUND', 'This credit note has no unused credit left to pay back');
@@ -78,11 +86,23 @@ export async function refundCreditNote(
     throw new CreditNoteRefundError(400, 'EXCEEDS_CREDIT', `Only ₹${refundable.toFixed(2)} can be refunded on this credit note`);
   }
 
-  const accounts = await listCashBankAccounts(client, p.businessId);
-  const wantKind = p.mode === 'cash' ? 'cash' : 'bank';
-  const account = p.paymentAccountId
-    ? accounts.find((a) => a.id === p.paymentAccountId)
-    : accounts.find((a) => a.kind === wantKind) ?? accounts[0];
+  // A gateway refund leaves the bank account the online payment settled in; the caller names it.
+  if (p.mode === 'gateway' && !p.paymentAccountId) {
+    throw new CreditNoteRefundError(400, 'ACCOUNT_REQUIRED', 'Choose the bank account the online payment settled in');
+  }
+
+  let account: { id: string } | undefined;
+  if (p.mode === 'gateway') {
+    // Back out of the account the online payment settled in: a bank, or a payment-gateway clearing account.
+    const { listSettlementAccounts } = await import('@/lib/accounting/settlement-accounts-db');
+    account = (await listSettlementAccounts(p.businessId)).find((a) => a.id === p.paymentAccountId);
+  } else {
+    const accounts = await listCashBankAccounts(client, p.businessId);
+    const wantKind = p.mode === 'cash' ? 'cash' : 'bank';
+    account = p.paymentAccountId
+      ? accounts.find((a) => a.id === p.paymentAccountId)
+      : accounts.find((a) => a.kind === wantKind) ?? accounts[0];
+  }
   if (!account) {
     throw new CreditNoteRefundError(400, 'NOT_CASH_OR_BANK', 'Choose a cash or bank account the refund was paid from');
   }

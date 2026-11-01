@@ -159,6 +159,7 @@ export async function POST(
       hsn_sac: it.hsn_sac || null,
       quantity: Number(it.quantity) || 0,
       unit: it.unit || undefined,
+      unit_factor: Number(it.unit_factor) || 1,
       unit_price: Number(it.unit_price) || 0,
       discount_percent: Number(it.discount_percent) || 0,
       tax_rate: Number(it.tax_rate) || 0,
@@ -197,7 +198,7 @@ export async function POST(
       invoice_date: invoiceDate,
       due_date: proforma.due_date || null,
       status: 'final',
-      document_type: 'tax_invoice',
+      document_type: proforma.supply_type === 'exempt' ? 'bill_of_supply' : 'tax_invoice',
       items,
       charges: chargeRows.rows.map((row) => ({
         purpose: row.purpose,
@@ -221,7 +222,7 @@ export async function POST(
       sales_order_id: proforma.sales_order_id || null,
     };
 
-    const result = await createInvoiceInTransaction(client, payload);
+    const result = await createInvoiceInTransaction(client, payload, { keepUnitFactors: true });
 
     await client.query(
       `UPDATE invoices

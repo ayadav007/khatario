@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Download, Edit, Loader2, Printer } from 'lucide-react';
+import { Download, Edit, FileText, Loader2, PackageCheck, Printer } from 'lucide-react';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,8 @@ import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContex
 import { PurchasePaymentModal } from '@/components/modals/PurchasePaymentModal';
 import { PrintLabelsModal } from '@/components/purchases/PrintLabelsModal';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { PurchaseGoodsReceiptPanel } from '@/components/purchases/PurchaseGoodsReceiptPanel';
+import { EwayBillPanel } from '@/components/eway-bills/EwayBillPanel';
 
 function PurchaseDetailContent() {
   const params = useParams();
@@ -30,6 +32,8 @@ function PurchaseDetailContent() {
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showLabelsModal, setShowLabelsModal] = useState(false);
+  const [showGoodsPanel, setShowGoodsPanel] = useState(false);
+  const [showEwayPanel, setShowEwayPanel] = useState(false);
   const { hasFeature } = useFeatureRegistry();
   const canPrintLabelsFromPurchase = hasFeature('barcode_label_from_purchase');
 
@@ -115,6 +119,18 @@ function PurchaseDetailContent() {
               <Download className="w-4 h-4 mr-2" />
               PDF
             </Button>
+            {purchase.status === 'final' && (purchase.goods_status === 'in_transit' || purchase.goods_status === 'partial') && (
+              <Button onClick={() => setShowGoodsPanel(true)}>
+                <PackageCheck className="w-4 h-4 mr-2" />
+                Goods arrived
+              </Button>
+            )}
+            {purchase.status === 'final' && (
+              <Button variant="secondary" onClick={() => setShowEwayPanel(true)}>
+                <FileText className="w-4 h-4 mr-2" />
+                Record e-way bill
+              </Button>
+            )}
             {canPrintLabelsFromPurchase && (
               <Button
                 variant="secondary"
@@ -132,6 +148,57 @@ function PurchaseDetailContent() {
             )}
             </div>
           }
+        />
+
+        {(purchase.goods_status === 'in_transit' || purchase.goods_status === 'partial') && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {purchase.goods_status === 'partial' ? 'Part of these goods has arrived.' : 'These goods have not arrived yet.'} They stay on the books as
+            in transit from the supplier and are not counted in the godown until received.
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span>Now</span>
+              <select
+                className="border border-amber-300 rounded-md px-2 py-1 text-sm bg-white"
+                value={purchase.transit_stage || ''}
+                onChange={async (e) => {
+                  const stage = e.target.value;
+                  if (!stage) return;
+                  const boe = stage === 'at_customs' || stage === 'bonded_warehouse' ? window.prompt('Bill of entry number (leave blank if not filed yet)') : null;
+                  const res = await fetch(`/api/purchases/${purchaseId}/receive-goods`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'stage', stage, bill_of_entry_number: boe || null }),
+                  });
+                  if (res.ok) fetchPurchase();
+                }}
+              >
+                <option value="">Where are the goods?</option>
+                <option value="dispatched">Dispatched by supplier</option>
+                <option value="on_road">On the road</option>
+                <option value="at_sea">At sea</option>
+                <option value="at_port">At the port</option>
+                <option value="at_customs">At customs</option>
+                <option value="bonded_warehouse">In a bonded warehouse</option>
+              </select>
+              {purchase.bill_of_entry_number && <span>Bill of entry {purchase.bill_of_entry_number}</span>}
+            </div>
+          </div>
+        )}
+
+        <PurchaseGoodsReceiptPanel
+          purchaseId={purchaseId}
+          items={purchase.items || []}
+          open={showGoodsPanel}
+          onClose={() => setShowGoodsPanel(false)}
+          onDone={fetchPurchase}
+        />
+        <EwayBillPanel
+          open={showEwayPanel}
+          onClose={() => setShowEwayPanel(false)}
+          onDone={fetchPurchase}
+          sourceType="purchase"
+          sourceId={purchaseId}
+          inward
+          defaults={{ doc_type: 'tax_invoice', sub_supply_type: 'supply', goods_value: Number(purchase.grand_total) || undefined }}
         />
 
         {showLabelsModal && business?.id && (

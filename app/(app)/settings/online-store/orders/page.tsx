@@ -14,6 +14,8 @@ import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { printStorePackingSlip } from '@/lib/store/print-packing-slip';
 import { STORE_ORDER_TRANSITIONS } from '@/lib/store/fulfillment-rules';
+import { khataReasonLabel } from '@/lib/khata/rules';
+import { khataShortDate } from '@/lib/khata/cycle';
 import clsx from 'clsx';
 
 interface StoreOrderItem {
@@ -56,7 +58,15 @@ interface StoreOrder {
   branch_name: string | null;
   line_count?: number;
   packed_lines?: number;
+  khata_approval?: string | null;
+  khata_approval_reason?: string | null;
+  khata_due_date?: string | null;
+  khata_customer_id?: string | null;
 }
+
+const isKhata = (o: Pick<StoreOrder, 'payment_provider'>) => o.payment_provider === 'khata';
+const khataPending = (o: Pick<StoreOrder, 'payment_provider' | 'khata_approval' | 'status'>) =>
+  isKhata(o) && o.khata_approval === 'pending' && o.status !== 'cancelled';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
@@ -81,6 +91,9 @@ export default function StoreOrdersPage() {
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [khataFilter, setKhataFilter] = useState<boolean>(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('khata') === 'pending',
+  );
   const [queryText, setQueryText] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<StoreOrder | null>(null);
   const [items, setItems] = useState<StoreOrderItem[]>([]);
@@ -102,6 +115,7 @@ export default function StoreOrdersPage() {
         page: String(page),
       });
       if (statusFilter) params.set('status', statusFilter);
+      if (khataFilter) params.set('khata', 'pending');
       if (queryText.trim()) params.set('q', queryText.trim());
 
       const res = await fetch(
@@ -118,7 +132,7 @@ export default function StoreOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [business?.id, page, statusFilter, queryText]);
+  }, [business?.id, page, statusFilter, khataFilter, queryText]);
 
   useEffect(() => {
     void fetchOrders();
@@ -292,6 +306,7 @@ export default function StoreOrdersPage() {
             <li>When the courier hands you the AWB sticker, scan it onto the open order — that is the delivery-partner barcode.</li>
             <li>COD: tap Cash collected when the rider or customer pays. Then mark Delivered.</li>
             <li>UPI: check the credit in your bank or UPI app (the note shows the order number), then tap UPI received before dispatch.</li>
+            <li>Khata: nothing to collect. The bill is on the customer&apos;s khata and is paid on their settlement day. Orders over the limit or with overdue bills may wait for your approval.</li>
           </ol>
         ) : null}
       </div>
@@ -311,20 +326,31 @@ export default function StoreOrdersPage() {
 
       <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
         <button
-          onClick={() => { setStatusFilter(null); setPage(1); }}
+          onClick={() => { setStatusFilter(null); setKhataFilter(false); setPage(1); }}
           className={clsx(
             'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-            !statusFilter
+            !statusFilter && !khataFilter
               ? 'bg-gray-900 text-white'
               : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
           )}
         >
           All
         </button>
+        <button
+          onClick={() => { setStatusFilter(null); setKhataFilter(true); setPage(1); }}
+          className={clsx(
+            'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
+            khataFilter
+              ? 'bg-gray-900 text-white'
+              : 'bg-amber-50 text-amber-800 hover:bg-amber-100',
+          )}
+        >
+          Khata to approve
+        </button>
         {Object.entries(STATUS_LABELS).map(([key, label]) => (
           <button
             key={key}
-            onClick={() => { setStatusFilter(key); setPage(1); }}
+            onClick={() => { setStatusFilter(key); setKhataFilter(false); setPage(1); }}
             className={clsx(
               'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
               statusFilter === key
@@ -373,6 +399,11 @@ export default function StoreOrdersPage() {
                         AWB
                       </span>
                     ) : null}
+                    {khataPending(order) ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        Khata · approve
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-gray-700">{order.customer_name}</p>
                   <div className="mt-1 flex items-center gap-3 text-xs text-gray-400">
@@ -388,7 +419,9 @@ export default function StoreOrdersPage() {
                     ) : null}
                     {order.payment_status === 'cod' ? (
                       <span>
-                        {order.payment_provider === 'upi'
+                        {isKhata(order)
+                          ? `Khata${order.khata_due_date ? `, due ${khataShortDate(order.khata_due_date)}` : ''}`
+                          : order.payment_provider === 'upi'
                           ? order.cash_collected_at
                             ? 'UPI received'
                             : 'UPI · confirm payment'
@@ -544,7 +577,7 @@ export default function StoreOrdersPage() {
                     Invoice / thermal print
                   </a>
                 ) : null}
-                {selectedOrder.payment_status === 'cod' && !selectedOrder.cash_collected_at ? (
+                {selectedOrder.payment_status === 'cod' && !selectedOrder.cash_collected_at && !isKhata(selectedOrder) ? (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -588,7 +621,49 @@ export default function StoreOrdersPage() {
                 </div>
               </div>
 
-              {(STATUS_FLOW[selectedOrder.status] ?? []).length > 0 ? (
+              {khataPending(selectedOrder) ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-medium text-amber-900">Khata order waiting for your approval</p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    {khataReasonLabel(selectedOrder.khata_approval_reason) || 'A khata rule sent this order to you.'}. Approve
+                    to bill it on the customer&apos;s khata, or reject to cancel it and ask them to pay another way.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      type="button"
+                      disabled={updatingStatus}
+                      onClick={() => void patchOrder({ action: 'khata_approve', order_id: selectedOrder.id })}
+                    >
+                      Approve khata
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      disabled={updatingStatus}
+                      className="text-red-600 hover:text-red-700"
+                      onClick={() => {
+                        if (window.confirm('Reject this khata order? It is cancelled and the customer is told to order again with another payment option.')) {
+                          void patchOrder({ action: 'khata_reject', order_id: selectedOrder.id });
+                        }
+                      }}
+                    >
+                      Reject
+                    </Button>
+                    {selectedOrder.khata_customer_id ? (
+                      <a
+                        href={`/customers/${selectedOrder.khata_customer_id}`}
+                        className="inline-flex items-center px-2 text-xs font-medium text-amber-900 underline"
+                      >
+                        See their khata
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {!khataPending(selectedOrder) && (STATUS_FLOW[selectedOrder.status] ?? []).length > 0 ? (
                 <div className="flex gap-2 pt-2">
                   {(STATUS_FLOW[selectedOrder.status] ?? []).map((nextStatus) => (
                     <Button
@@ -616,7 +691,23 @@ export default function StoreOrdersPage() {
 
               {selectedOrder.payment_status ? (
                 <p className="mt-2 text-xs text-gray-500">
-                  Payment: {selectedOrder.payment_provider === 'upi' ? 'UPI to your UPI ID' : selectedOrder.payment_status}
+                  Payment:{' '}
+                  {isKhata(selectedOrder) ? (
+                    <>
+                      On the customer&apos;s khata
+                      {selectedOrder.khata_due_date ? `, due ${khataShortDate(selectedOrder.khata_due_date)}` : ''}. Nothing to
+                      collect.{' '}
+                      {selectedOrder.khata_customer_id ? (
+                        <a className="text-blue-600 hover:underline" href={`/customers/${selectedOrder.khata_customer_id}`}>
+                          Open khata
+                        </a>
+                      ) : null}
+                    </>
+                  ) : selectedOrder.payment_provider === 'upi' ? (
+                    'UPI to your UPI ID'
+                  ) : (
+                    selectedOrder.payment_status
+                  )}
                   {selectedOrder.cash_collected_at
                     ? selectedOrder.payment_provider === 'upi'
                       ? ' · received'

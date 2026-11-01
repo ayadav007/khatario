@@ -8,9 +8,13 @@ import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helper
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { saveItemLink } from '@/lib/supplier-item-links';
 import { markSupplyOrderReceived } from '@/lib/supply-orders';
 import { inBuyerUnits, loadBillForBuyer, loadBillLines, parseItemMap, resolveBillLines } from '@/lib/supplier-bills';
+import { readReceiptShortfallMode } from '@/lib/purchases/receipt-shortfall-mode';
+import { createPurchaseReturnInTx } from '@/lib/purchases/create-purchase-return';
+import { todayIst } from '@/lib/gst/time-limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -196,14 +200,16 @@ export async function POST(
     }
 
     // What actually arrived (body.received: { [invoice_item_id]: { short_qty, damaged_qty, note } },
-    // in the caller's unit). The purchase still matches the bill; shortfalls are recorded on the
-    // receipt and settled with a purchase return.
+    // in the caller's unit). The purchase still matches the bill and the receipt records the
+    // shortfalls. The business setting decides who raises the purchase return for them: the
+    // business later ('keep'), or this receipt at once ('auto_return', below).
     const receivedInput: Record<string, any> =
       body.received && typeof body.received === 'object' ? body.received : {};
     const receiptLines = invoiceItems.map((line: any, i: number) => {
       const billed = inBuyerUnits(line, resolvedLines[i].factor).qty;
       const r = receivedInput[String(line.id)] || {};
       return {
+        index: i,
         invoiceItemId: String(line.id),
         buyerItemId: resolvedLines[i].itemId,
         itemName: String(resolvedLines[i].itemName || line.item_name || ''),
@@ -283,9 +289,31 @@ export async function POST(
 
     const purchase = purchaseRes.rows[0];
 
+    // A bill raised from a Supplier Hub order: lines ordered for one size or colour
+    // (supply_order_lines.buyer_variant_id) add stock to that size. The bill keeps the order's
+    // line order, so the nth bill line for a supplier item is the nth order line for it.
+    const variantQueue = new Map<string, Array<string | null>>();
+    const orderLines = await client.query(
+      `SELECT l.vendor_item_id, l.buyer_variant_id
+         FROM supply_order_lines l
+         JOIN supply_orders o ON o.id = l.order_id
+        WHERE o.invoice_id = $1 AND o.buyer_business_id = $2 AND COALESCE(l.confirmed_qty, l.qty) > 0
+        ORDER BY l.sort_order`,
+      [invoiceId, business_id]
+    );
+    for (const ol of orderLines.rows) {
+      if (!ol.vendor_item_id) continue;
+      const key = String(ol.vendor_item_id);
+      if (!variantQueue.has(key)) variantQueue.set(key, []);
+      variantQueue.get(key)!.push(ol.buyer_variant_id ?? null);
+    }
+
     // Create purchase items and update stock
+    const lineVariantIds: Array<string | null> = [];
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
+      const buyerVariantId = item.item_id ? variantQueue.get(String(item.item_id))?.shift() ?? null : null;
+      lineVariantIds[i] = buyerVariantId;
       
       // The supplier's item_id belongs to their business; use the caller's matched item, in the
       // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
@@ -298,9 +326,9 @@ export async function POST(
         INSERT INTO purchase_items (
           purchase_id, item_id, item_name, hsn_sac, quantity, unit, unit_price,
           discount_percent, discount_amount, tax_rate, tax_mode, tax_amount, taxable_value,
-          cgst_amount, sgst_amount, igst_amount, line_total, location_id, cess_amount
+          cgst_amount, sgst_amount, igst_amount, line_total, location_id, cess_amount, variant_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       `, [
         purchase.id,
         customerItemId, // Use customer's item_id, not supplier's
@@ -321,6 +349,7 @@ export async function POST(
         item.line_total || 0,
         locationIdForPurchase,
         Number(item.cess_amount) || 0,
+        buyerVariantId,
       ]);
 
       // Update stock if item was found in customer's inventory
@@ -361,24 +390,52 @@ export async function POST(
             
             // If batch/serial tracking is enabled AND columns exist, use advanced inventory allocation
             if ((trackBatch || trackSerial) && (hasBatchId || hasSerialId)) {
+              // Carry the supplier's batch numbers and expiry dates: the batches their sale took
+              // this item from, each converted to the buyer's unit. Anything left has no batch.
+              const supplierBatches =
+                trackBatch && !trackSerial && hasBatchId && item.item_id
+                  ? (
+                      await client.query(
+                        `SELECT ib.batch_number, to_char(ib.manufacturing_date, 'YYYY-MM-DD') AS mfg,
+                                to_char(ib.expiry_date, 'YYYY-MM-DD') AS expiry, SUM(sm.quantity)::float8 AS qty
+                           FROM stock_movements sm
+                           JOIN item_batches ib ON ib.id = sm.batch_id
+                          WHERE sm.business_id = $1 AND sm.reference_type = 'invoice' AND sm.reference_id = $2
+                            AND sm.item_id = $3 AND sm.type = 'out' AND ib.batch_number IS NOT NULL
+                          GROUP BY ib.batch_number, ib.manufacturing_date, ib.expiry_date
+                          ORDER BY ib.expiry_date NULLS LAST`,
+                        [invoice.business_id, invoiceId, item.item_id]
+                      )
+                    ).rows
+                  : [];
+              const parts: Array<{ qty: number; batch?: string; mfg?: string; expiry?: string }> = [];
+              let left = quantity;
+              for (const b of supplierBatches) {
+                const q = Math.min(left, Math.round(Number(b.qty) * (resolvedLines[i].factor || 1) * 1000) / 1000);
+                if (q > 0) parts.push({ qty: q, batch: b.batch_number, mfg: b.mfg || undefined, expiry: b.expiry || undefined });
+                left = Math.round((left - q) * 1000) / 1000;
+              }
+              if (left > 0 || parts.length === 0) parts.push({ qty: left > 0 ? left : quantity });
+
+              for (const part of parts) {
               const allocation = await allocateStockOnPurchase(
                 customerItemId,
-                quantity,
+                part.qty,
                 unitCost,
                 business_id,
                 purchase.id,
                 locationIdForPurchase || undefined,
                 supplierId || undefined,
-                undefined, // batch_number
+                part.batch,
                 undefined, // serial_numbers
-                undefined, // manufacturing_date
-                undefined  // expiry_date
+                part.mfg,
+                part.expiry
               );
               
               // Create stock movement entries for batches if batch_id column exists
               if (allocation.batchId && hasBatchId) {
                 const batchColumns = ['business_id', 'item_id', 'type', 'quantity', 'reference_type', 'reference_id', 'batch_id'];
-                const batchValues = [business_id, customerItemId, 'in', quantity, 'purchase', purchase.id, allocation.batchId];
+                const batchValues = [business_id, customerItemId, 'in', part.qty, 'purchase', purchase.id, allocation.batchId];
                 
                 if (hasUnitCost) {
                   batchColumns.push('unit_cost');
@@ -414,6 +471,7 @@ export async function POST(
                   );
                 }
               }
+              }
             }
             
             if (warehouseModeEnabled && locationIdForPurchase) {
@@ -428,6 +486,9 @@ export async function POST(
               `,
                 [locationIdForPurchase, customerItemId, quantity]
               );
+            } else if (!warehouseModeEnabled && buyerVariantId) {
+              await adjustBranchVariantStock(client, business_id, purchaseBranchId, buyerVariantId, quantity);
+              await refreshVariantGlobalStockFromBranches(client, business_id, buyerVariantId);
             } else if (!warehouseModeEnabled) {
               await adjustBranchItemStock(client, business_id, purchaseBranchId, customerItemId, quantity);
               await refreshItemGlobalStockFromBranches(client, business_id, customerItemId);
@@ -525,6 +586,53 @@ export async function POST(
     }
 
     const issues = receiptLines.filter((l: any) => l.short > 0 || l.damaged > 0);
+
+    // Auto-return: a debit note for short + damaged through the same path as POST
+    // /api/purchase-returns, so stock, supplier balance, ledger and GST all move back together.
+    // Stock is not held back from the purchase: a later manual return would then take it twice.
+    const shortfallMode = await readReceiptShortfallMode(business_id, client);
+    let purchaseReturn: any = null;
+    if (shortfallMode === 'auto_return' && issues.length > 0) {
+      const billNo = String(invoice.invoice_number || purchase.id).slice(0, 80);
+      const taken = await client.query(
+        `SELECT return_number FROM purchase_returns WHERE business_id = $1 AND return_number LIKE $2`,
+        [business_id, `DN-${billNo.replace(/[\\%_]/g, '\\$&')}%`]
+      );
+      const used = new Set(taken.rows.map((r: any) => r.return_number));
+      let returnNumber = `DN-${billNo}`;
+      for (let n = 2; used.has(returnNumber); n++) returnNumber = `DN-${billNo}-${n}`;
+      const billDate = String(invoice.invoice_date instanceof Date
+        ? invoice.invoice_date.toISOString()
+        : invoice.invoice_date || '').slice(0, 10);
+      const today = todayIst();
+      const lineNotes = issues.filter((l: any) => l.note).map((l: any) => `${l.itemName}: ${l.note}`);
+      const created = await createPurchaseReturnInTx(client, {
+        businessId: business_id,
+        userId,
+        purchaseId: purchase.id,
+        supplierId,
+        returnNumber,
+        returnDate: billDate && billDate > today ? billDate : today,
+        reason: 'Short or damaged on receipt',
+        items: issues.map((l: any) => ({
+          item_id: l.buyerItemId,
+          // The size or colour this line's stock went into, so the return takes it back from there.
+          variant_id: l.buyerItemId ? lineVariantIds[l.index] ?? null : null,
+          item_name: l.itemName,
+          qty: Math.round((l.short + l.damaged) * 1000) / 1000,
+        })),
+        notes: lineNotes.length ? lineNotes.join('; ').slice(0, 1000) : null,
+      });
+      if (!created.ok) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `Could not raise the debit note for short and damaged goods: ${created.error}`, code: created.code ?? 'AUTO_RETURN_FAILED' },
+          { status: created.status }
+        );
+      }
+      purchaseReturn = created.purchaseReturn;
+    }
+
     const receiptRes = await client.query(
       `INSERT INTO supplier_bill_receipts (
          buyer_business_id, vendor_business_id, invoice_id, purchase_id, status, notes, received_by_user_id
@@ -564,7 +672,9 @@ export async function POST(
         invoice.business_id,
         issues.length ? `Bill ${invoice.invoice_number} received with issues` : `Bill ${invoice.invoice_number} received`,
         issues.length
-          ? `${buyerName} received bill ${invoice.invoice_number} with issues. ${issueText}. Expect a debit note for these.`
+          ? `${buyerName} received bill ${invoice.invoice_number} with issues. ${issueText}. ${
+              purchaseReturn ? `Debit note ${purchaseReturn.return_number} has been raised for these.` : 'Expect a debit note for these.'
+            }`
           : `${buyerName} received bill ${invoice.invoice_number} in full.`,
         invoiceId,
       ]
@@ -582,10 +692,26 @@ export async function POST(
 
     await client.query('COMMIT');
 
+    if (purchaseReturn) {
+      const { noticeBuyerDebitNote } = await import('@/lib/supplier-hub-money');
+      await noticeBuyerDebitNote({
+        buyerBusinessId: business_id,
+        purchaseId: purchase.id,
+        returnId: purchaseReturn.id,
+        amount: Number(purchaseReturn.grand_total) || 0,
+        returnDate: String(purchaseReturn.return_date instanceof Date
+          ? purchaseReturn.return_date.toISOString()
+          : purchaseReturn.return_date).slice(0, 10),
+        reason: 'Short or damaged on receipt',
+      });
+    }
+
     return NextResponse.json(
       {
         purchase,
         receipt,
+        shortfall_mode: shortfallMode,
+        purchase_return: purchaseReturn,
         shortfalls: issues.map((l: any) => ({
           item_id: l.buyerItemId,
           item_name: l.itemName,
@@ -597,6 +723,7 @@ export async function POST(
     );
   } catch (error: any) {
     await client.query('ROLLBACK');
+    if (error instanceof AuthorizationError) return error.toNextResponse();
     console.error('Error converting invoice to purchase:', error);
     return NextResponse.json(
       { error: 'Failed to convert invoice to purchase', details: error.message },

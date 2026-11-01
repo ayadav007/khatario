@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkGstin } from '@/lib/tax/gstin';
+import { fetchGstinRegistry } from '@/lib/gstin-registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,102 +18,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
     }
 
-    // Try multiple APIs in sequence
-    let gstData = null;
-    let apiSource = '';
-
-    // API 1: GSTINCHECK.CO.IN (Free, unlimited, most reliable)
-    try {
-      const response1 = await fetch(
-        `https://sheet.gstincheck.co.in/check/${gstin}`,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      if (response1.ok) {
-        const data1 = await response1.json();
-        console.log('GSTINCHECK Response:', JSON.stringify(data1, null, 2));
-        
-        if (data1.flag && data1.data) {
-          // Transform to our format
-          gstData = {
-            gstin: data1.data.gstin,
-            lgnm: data1.data.lgnm || data1.data.tradeNam,
-            tradeNam: data1.data.tradeNam,
-            sts: data1.data.sts,
-            rgdt: data1.data.rgdt,
-            dty: data1.data.dty,
-            pradr: {
-              addr: {
-                bno: data1.data.pradr?.addr?.bno,
-                bnm: data1.data.pradr?.addr?.bnm,
-                flno: data1.data.pradr?.addr?.flno,
-                st: data1.data.pradr?.addr?.st,
-                loc: data1.data.pradr?.addr?.loc,
-                dst: data1.data.pradr?.addr?.dst,
-                pncd: data1.data.pradr?.addr?.pncd,
-                stcd: data1.data.pradr?.addr?.stcd
-              }
-            }
-          };
-          apiSource = 'GSTINCHECK';
-        }
-      }
-    } catch (e) {
-      console.log('GSTINCHECK API failed:', e);
-    }
-
-    // API 2: Masters India (if GSTINCHECK fails)
-    if (!gstData) {
-      try {
-        const response2 = await fetch(
-          `https://commonapi.mastersindia.co/commonapis/searchgstin?gstin=${gstin}`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-
-        if (response2.ok) {
-          const data2 = await response2.json();
-          console.log('Masters India Response:', JSON.stringify(data2, null, 2));
-          
-          if (data2.data && !data2.error) {
-            gstData = data2.data;
-            apiSource = 'Masters India';
-          }
-        }
-      } catch (e) {
-        console.log('Masters India API failed:', e);
-      }
-    }
-
-    // API 3: GST.in (last resort)
-    if (!gstData) {
-      try {
-        const response3 = await fetch(
-          `https://gst.nic.in/commonapi/search?action=TP&gstin=${gstin}`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-
-        if (response3.ok) {
-          const data3 = await response3.json();
-          console.log('GST.IN Response:', JSON.stringify(data3, null, 2));
-          
-          if (data3 && !data3.error) {
-            gstData = data3;
-            apiSource = 'GST.IN';
-          }
-        }
-      } catch (e) {
-        console.log('GST.IN API failed:', e);
-      }
-    }
+    const found = await fetchGstinRegistry(check.gstin);
+    const gstData: any = found?.record ?? null;
+    const apiSource = found?.source ?? '';
 
     // If all APIs fail, return basic info
     if (!gstData) {

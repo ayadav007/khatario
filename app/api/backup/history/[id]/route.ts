@@ -4,7 +4,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 /**
  * GET /api/backup/history/[id]
@@ -17,7 +17,7 @@ export async function GET(
   try {
     const backupId = params.id;
     const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'read');
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 

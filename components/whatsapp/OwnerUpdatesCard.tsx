@@ -44,7 +44,7 @@ const TEMPLATE_LABEL: Record<string, string> = {
 };
 
 /**
- * Settings > WhatsApp > Notifications: link the owner's phone to the business's own WhatsApp number for business
+ * Settings > WhatsApp > Reminders: link the owner's phone to the business's own WhatsApp number for business
  * figures on request and an evening summary. Renders nothing for anyone but the primary admin.
  */
 export function OwnerUpdatesCard({ onToast }: { onToast?: (message: string, type: 'success' | 'error' | 'info') => void }) {

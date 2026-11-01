@@ -8,6 +8,7 @@ import {
 } from '@/lib/auth-helpers';
 import * as db from '@/lib/db';
 import { assertFeatureAccess } from '@/lib/subscription/feature-access';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 // GET - Load saved custom reports
 export async function GET(request: NextRequest) {
@@ -56,8 +57,11 @@ export async function POST(request: NextRequest) {
     if (gate) return gate;
 
     const body = await request.json();
-    const { business_id, name, description, entity_type, fields } = body;
-    const userId = getUserIdFromRequest(request, body);
+    const { business_id: claimedBusinessId, name, description, entity_type, fields } = body;
+    const userId = getUserIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
 
     if (!business_id || !userId || !name || !entity_type || !fields) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });

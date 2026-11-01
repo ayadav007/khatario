@@ -32,6 +32,11 @@ import {
 import type { CustomFieldValues } from '@/types/custom-fields';
 import { extraGalleryUrls, sanitizeGalleryUrls } from '@/lib/store/item-gallery';
 import { CategoryCombobox } from '@/components/items/CategoryCombobox';
+import { ItemStorePageFields } from '@/components/store/admin/ItemStorePageFields';
+import type { ItemStorePageValue } from '@/components/store/admin/ItemStorePageFields';
+import { validateProductExtras } from '@/lib/store/product-extras';
+import type { SizeChart, StoreSwatch, StoreTab } from '@/lib/store/product-extras';
+import { extrasChanged } from '@/lib/store/size-chart-grid';
 
 interface Supplier {
   id: string;
@@ -43,7 +48,18 @@ interface Supplier {
 interface ItemCategory {
   id: string;
   name: string;
+  size_chart?: SizeChart | null;
 }
+
+const EMPTY_STORE_PAGE: ItemStorePageValue = {
+  video_url: '',
+  store_tabs: [],
+  size_chart: null,
+  store_badge: '',
+  store_tagline: '',
+  store_swatches: [],
+  store_returnable: true,
+};
 
 const ITEM_TYPES = [
   { value: 'goods', label: 'Goods', hint: 'Physical products. Stock is tracked.' },
@@ -69,6 +85,9 @@ export default function NewItemPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [productVariantsEnabled, setProductVariantsEnabled] = useState(false);
+  const [storePage, setStorePage] = useState<ItemStorePageValue>(EMPTY_STORE_PAGE);
+  const [loadedStorePage, setLoadedStorePage] = useState<ItemStorePageValue>(EMPTY_STORE_PAGE);
+  const [storePageError, setStorePageError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -80,6 +99,7 @@ export default function NewItemPage() {
     pack_unit: '',
     uqc: '',
     item_type: 'goods' as 'goods' | 'service',
+    stock_class: 'trading' as 'trading' | 'raw_material' | 'wip' | 'finished_goods',
     selling_price: '',
     purchase_price: '',
     tax_rate: '',
@@ -442,6 +462,7 @@ export default function NewItemPage() {
               pack_unit: item.pack_unit || '',
               uqc: (item as { uqc?: string | null }).uqc || '',
               item_type: item.item_type || 'goods',
+              stock_class: item.stock_class || 'trading',
               selling_price: item.selling_price?.toString() || '',
               purchase_price: item.purchase_price?.toString() || '',
               tax_rate: item.tax_rate?.toString() || '',
@@ -482,6 +503,22 @@ export default function NewItemPage() {
               seo_description: (item as { seo_description?: string | null }).seo_description || '',
               seo_image_url: (item as { seo_image_url?: string | null }).seo_image_url || '',
             });
+
+            const loadedExtras: ItemStorePageValue = {
+              video_url: (item as { video_url?: string | null }).video_url || '',
+              store_tabs: Array.isArray((item as { store_tabs?: unknown }).store_tabs)
+                ? ((item as { store_tabs: StoreTab[] }).store_tabs)
+                : [],
+              size_chart: ((item as { size_chart?: SizeChart | null }).size_chart as SizeChart | null) ?? null,
+              store_badge: (item as { store_badge?: string | null }).store_badge ?? '',
+              store_tagline: (item as { store_tagline?: string | null }).store_tagline ?? '',
+              store_swatches: Array.isArray((item as { store_swatches?: unknown }).store_swatches)
+                ? ((item as { store_swatches: StoreSwatch[] }).store_swatches)
+                : [],
+              store_returnable: (item as { store_returnable?: boolean | null }).store_returnable !== false,
+            };
+            setStorePage(loadedExtras);
+            setLoadedStorePage(loadedExtras);
 
             const itemIsBundle = !!(item as { is_bundle?: boolean }).is_bundle;
             if (itemIsBundle) {
@@ -791,7 +828,47 @@ export default function NewItemPage() {
         }
       }
 
+      // Store page extras: validate here, and send each key only when it changed.
+      const extrasCheck = validateProductExtras({
+        video_url: storePage.video_url,
+        store_tabs: storePage.store_tabs,
+        size_chart: storePage.size_chart,
+        store_badge: storePage.store_badge,
+        store_tagline: storePage.store_tagline,
+        store_swatches: storePage.store_swatches,
+      });
+      if (!extrasCheck.ok) {
+        setStorePageError(extrasCheck.error);
+        toast.error(extrasCheck.error);
+        setLoading(false);
+        return;
+      }
+      setStorePageError(null);
+      const storePagePayload: Record<string, unknown> = {};
+      if (extrasChanged(storePage.video_url.trim(), loadedStorePage.video_url.trim())) {
+        storePagePayload.video_url = extrasCheck.value.video_url ?? null;
+      }
+      if (extrasChanged(storePage.store_tabs, loadedStorePage.store_tabs)) {
+        storePagePayload.store_tabs = extrasCheck.value.store_tabs ?? [];
+      }
+      if (extrasChanged(storePage.size_chart, loadedStorePage.size_chart)) {
+        storePagePayload.size_chart = extrasCheck.value.size_chart ?? null;
+      }
+      if (extrasChanged(storePage.store_badge.trim(), loadedStorePage.store_badge.trim())) {
+        storePagePayload.store_badge = extrasCheck.value.store_badge ?? null;
+      }
+      if (extrasChanged(storePage.store_tagline.trim(), loadedStorePage.store_tagline.trim())) {
+        storePagePayload.store_tagline = extrasCheck.value.store_tagline ?? null;
+      }
+      if (extrasChanged(storePage.store_swatches, loadedStorePage.store_swatches)) {
+        storePagePayload.store_swatches = extrasCheck.value.store_swatches ?? [];
+      }
+      if (storePage.store_returnable !== loadedStorePage.store_returnable) {
+        storePagePayload.store_returnable = storePage.store_returnable;
+      }
+
       const basePayload = {
+        ...storePagePayload,
         name: formData.name,
         code: formData.code || null,
         barcode: formData.barcode || null,
@@ -801,6 +878,7 @@ export default function NewItemPage() {
         pack_unit: formData.pack_unit || null,
         uqc: formData.uqc || toGstUqc(formData.unit, formData.hsn_sac),
         item_type: formData.item_type,
+        stock_class: formData.item_type === 'goods' ? formData.stock_class : 'trading',
         selling_price: formData.item_type === 'service' || formData.has_variants
           ? (formData.selling_price ? Number(formData.selling_price) : null)
           : (Number(formData.selling_price) || 0),
@@ -987,6 +1065,7 @@ export default function NewItemPage() {
           setLimitInfo({ current: errorData.current, limit: errorData.limit });
           setShowUpgradePrompt(true);
         } else {
+          if (res.status === 400 && errorData.error) setStorePageError(errorData.error);
           toast.error(errorData.error || `Failed to ${isEditMode ? 'update' : 'create'} item. Check console for details.`);
         }
       }
@@ -1026,7 +1105,7 @@ export default function NewItemPage() {
                         type="button"
                         onClick={() => {
                           if (t.value === 'service') {
-                            setFormData({ ...formData, item_type: 'service', is_bundle: false });
+                            setFormData({ ...formData, item_type: 'service', is_bundle: false, stock_class: 'trading' });
                             setBundleComponents([]);
                           } else {
                             setFormData({ ...formData, item_type: 'goods' });
@@ -1047,6 +1126,24 @@ export default function NewItemPage() {
                     );
                   })}
                 </div>
+                {formData.item_type === 'goods' && (
+                  <div>
+                    <label className="type-label mb-1.5 block">Stock kind</label>
+                    <select
+                      value={formData.stock_class}
+                      onChange={(e) => setFormData({ ...formData, stock_class: e.target.value as typeof formData.stock_class })}
+                      className="input"
+                    >
+                      <option value="trading">Stock-in-trade (resale)</option>
+                      <option value="raw_material">Raw material</option>
+                      <option value="wip">Work in progress</option>
+                      <option value="finished_goods">Finished goods</option>
+                    </select>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Purchases, opening stock and the cost of a sale post to this account. Resale stays on Inventory.
+                    </p>
+                  </div>
+                )}
               </AnnotatedFormSection>
 
               <AnnotatedFormSection
@@ -1848,14 +1945,14 @@ export default function NewItemPage() {
                     <Switch
                       className="pb-4"
                       label="Track batch numbers"
-                      description="Expiry and manufacturing dates per batch, and FIFO valuation."
+                      description="Save the item, then type each batch on the item’s Batches tab, on the purchase bill, or in Scan & Add. The number is not entered on this switch."
                       checked={formData.track_batch}
                       onChange={(checked) => setFormData({ ...formData, track_batch: checked })}
                     />
                     <Switch
                       className="py-4"
                       label="Track serial numbers"
-                      description="One serial per unit, for electronics, appliances and similar goods."
+                      description="Save the item, then type each serial on the item’s Serials tab or on the purchase bill. One serial per unit. The number is not entered on this switch."
                       checked={formData.track_serial}
                       onChange={(checked) => setFormData({ ...formData, track_serial: checked })}
                     />
@@ -2148,6 +2245,20 @@ export default function NewItemPage() {
                   </div>
                 ) : null}
               </AnnotatedFormSection>
+
+              {formData.show_in_store ? (
+                <AnnotatedFormSection
+                  title="Store page"
+                  description="A product video, extra info tabs and a size chart for this item's page in your online store."
+                >
+                  <ItemStorePageFields
+                    value={storePage}
+                    onChange={setStorePage}
+                    categoryChart={categories.find((c) => c.id === formData.category_id)?.size_chart ?? null}
+                    serverError={storePageError}
+                  />
+                </AnnotatedFormSection>
+              ) : null}
             </div>
 
             <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">

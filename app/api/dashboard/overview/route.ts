@@ -210,7 +210,7 @@ export async function GET(request: NextRequest) {
         purchaseParams
       ),
       queryOne<{ total: number }>(
-        `SELECT COALESCE(SUM(ii.quantity * COALESCE(i.purchase_price, 0)), 0) as total
+        `SELECT COALESCE(SUM(ii.quantity * COALESCE(ii.unit_factor, 1) * COALESCE(i.purchase_price, 0)), 0) as total
          FROM invoice_items ii
          JOIN invoices inv ON ii.invoice_id = inv.id AND inv.deleted_at IS NULL
          LEFT JOIN items i ON ii.item_id = i.id

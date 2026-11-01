@@ -5,7 +5,7 @@ import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
-import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
+import { assertOwnCollection, CatalogInputError, parseListingExtras, LISTING_OPTIONS_SQL, parseListingOptions, saveListingOptions } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
       SupplierPublishedListing & { item_name: string; item_unit: string; item_code: string | null }
     >(
       `
-      SELECT l.*, i.name AS item_name, i.unit AS item_unit, i.code AS item_code
+      SELECT l.*, i.name AS item_name, i.unit AS item_unit, i.code AS item_code,
+             ${LISTING_OPTIONS_SQL} AS options
       FROM supplier_published_listings l
       -- Soft delete: exclude records where deleted_at is set
       INNER JOIN items i ON i.id = l.item_id AND i.business_id = l.supplier_business_id AND i.deleted_at IS NULL
@@ -119,8 +120,10 @@ export async function POST(request: NextRequest) {
     }
 
     let extras: ReturnType<typeof parseListingExtras>;
+    let options: ReturnType<typeof parseListingOptions>;
     try {
       extras = parseListingExtras(body, businessId);
+      options = parseListingOptions(body.options);
       if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
     } catch (e) {
       if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
@@ -161,6 +164,7 @@ export async function POST(request: NextRequest) {
           extras.collection_id ?? null,
         ]
       );
+      if (row && options) await saveListingOptions(row.id, options);
       return NextResponse.json({ listing: row }, { status: 201 });
     } catch (ins: any) {
       if (ins.code === '23505') {

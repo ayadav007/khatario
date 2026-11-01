@@ -18,6 +18,10 @@ No. Khatario does not create e-invoices (IRN / QR code) with the government e-in
 
 No. You can type the e-way bill number and date on an invoice so it prints, but the e-way bill itself must be generated on the e-way bill portal.
 
+## Can I make a bill without an internet connection?
+
+No. Saving a bill needs an internet connection. Reconnect, then save the bill.
+
 ## Does Khatario file GST returns directly on the GST portal?
 
 No. Khatario prepares GSTR-1 and GSTR-3B and exports them (Excel, offline-tool Excel or JSON) for you or your CA to upload on the GST portal. After filing you can mark the return as filed in Khatario to lock the period.

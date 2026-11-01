@@ -22,11 +22,9 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getUserIdFromRequest,
-  getBusinessIdFromRequest,
-  requirePortalSession,
-} from '@/lib/auth-helpers';
+import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import { primaryAdminUserId } from '@/lib/admin-diagnostics-auth';
+import { requirePortalSession } from '@/lib/auth-helpers';
 import { queryOne, queryRows } from '@/lib/db';
 import { buildProfitAndLoss, type BranchScope } from '@/lib/reports/profit-loss';
 import { effectivePlSection, plSectionFromGroup } from '@/lib/accounting/pl-sections';
@@ -47,8 +45,11 @@ export async function GET(request: NextRequest) {
     if (gate) return gate;
 
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    // Platform diagnostics: super admins only (business from ?business_id=).
+    const platform = await requirePlatformRequest(request, 'super_admin');
+    if (!platform.ok) return platform.response;
+    const businessId = searchParams.get('business_id');
+    const userId = businessId ? await primaryAdminUserId(businessId) : null;
     const fromDate = searchParams.get('from_date');
     const toDate = searchParams.get('to_date');
     const branchIdParam = searchParams.get('branch_id'); // 'ALL' | uuid | null

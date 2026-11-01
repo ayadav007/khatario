@@ -379,6 +379,13 @@ export async function collectStoreOrderCash(
     if (!row || row.payment_status !== 'cod') {
       throw new StoreCashCollectError('COD order not found', 404, 'ORDER_NOT_FOUND');
     }
+    if (row.payment_provider === 'khata') {
+      throw new StoreCashCollectError(
+        "This order is on the customer's khata. Record the khata payment from the customer page.",
+        409,
+        'KHATA_ORDER',
+      );
+    }
     if (row.cash_collected_at) {
       await client.query('COMMIT');
       return { paymentId: null };

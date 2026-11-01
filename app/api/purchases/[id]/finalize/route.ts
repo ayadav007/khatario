@@ -7,6 +7,8 @@ import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { holdPurchaseInTransit } from '@/lib/purchases/goods-in-transit';
+import { stockErrorBody } from '@/lib/inventory/godown-stock';
 import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 
 export const dynamic = 'force-dynamic';
@@ -281,10 +283,13 @@ export async function PATCH(
 
       const lineIntent = (row.line_item_type as string) || 'goods';
       const qty = Number(row.quantity) || 0;
+      const freeQty = Number(row.free_qty) || 0;
       const taxable = Number(row.taxable_value) || 0;
       const storedCost = acquisitionByItem.get(row.id);
       const unitCostForLine =
         qty > 0 ? (storedCost != null ? Number(storedCost) : taxable) / qty : Number(row.unit_price) || 0;
+      // Free goods share the line's cost.
+      const unitCostForStock = qty + freeQty > 0 ? (unitCostForLine * qty) / (qty + freeQty) : unitCostForLine;
 
       if (!resolvedItemId && String(row.item_name || '').trim().length > 0 && lineIntent === 'goods') {
         try {
@@ -349,8 +354,8 @@ export async function PATCH(
             item_id: resolvedItemId,
             variant_id: row.variant_id || null,
             item_name: row.item_name,
-            quantity: Number(row.quantity) || 0,
-            unit_price: unitCostForLine,
+            quantity: (Number(row.quantity) || 0) + freeQty,
+            unit_price: unitCostForStock,
             location_id: row.location_id || null,
             batch_number: row.batch_number ?? null,
             serial_numbers: row.serial_numbers,
@@ -456,9 +461,15 @@ export async function PATCH(
     );
     updated = upd.rows[0] ?? null;
 
+    if (body.goods_in_transit === true) {
+      await holdPurchaseInTransit(client, purchase.business_id, purchase.id, getAuthenticatedUserId(request) ?? null);
+    }
+
     await client.query('COMMIT');
   } catch (error: any) {
     await client.query('ROLLBACK');
+    const refused = stockErrorBody(error);
+    if (refused) return NextResponse.json(refused.body, { status: refused.status });
     throw error;
   } finally {
     client.release();

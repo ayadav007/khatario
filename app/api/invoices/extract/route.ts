@@ -22,6 +22,11 @@ import {
 } from '@/lib/services/invoice-extract/extractionChain';
 import { GoogleVisionGroqProvider, GeminiVisionProvider } from '@/lib/services/invoice-extract/providers';
 import {
+  closerToPrintedTotal,
+  extractionTotalCheck,
+  totalRecheckNote,
+} from '@/lib/services/invoice-extract/totalRecheck';
+import {
   insertInvoiceLearningEvent,
   mergeLearningInsertPayload,
 } from '@/lib/services/invoice-extract/extractionLearningTelemetry';
@@ -29,6 +34,7 @@ import { recordInvoiceExtractionTelemetry } from '@/lib/services/invoice-extract
 import { getParserVersionMetadata } from '@/lib/services/invoice-extract/parserVersion';
 import { buildSupplierLayoutFingerprint } from '@/lib/services/invoice-extract/supplierFingerprintEngine';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +64,53 @@ async function extractWithGeminiVision(
   businessId: string,
 ): Promise<ExtractionPipelineResult> {
   return geminiVisionProvider.extract({ file, includeDebug, businessId });
+}
+
+type TotalRecheck = {
+  first_lines_total: number;
+  second_lines_total: number | null;
+  printed_total: number;
+  kept: 'first' | 'second';
+};
+
+/**
+ * A Gemini read whose lines do not add up to the printed payable gets one more read with
+ * the gap spelled out in the prompt. The read closer to the printed total is kept; a failed
+ * second read keeps the first.
+ */
+async function secondReadWhenTotalMisses(
+  first: ExtractionPipelineResult,
+  file: File,
+  includeDebug: boolean,
+  businessId: string,
+): Promise<{ extraction: ExtractionPipelineResult; recheck: TotalRecheck | null }> {
+  if (first.provider !== 'gemini-vision') return { extraction: first, recheck: null };
+  const firstCheck = extractionTotalCheck(first.data);
+  if (!firstCheck || firstCheck.gap == null) return { extraction: first, recheck: null };
+  try {
+    const second = await geminiVisionProvider.extract({
+      file,
+      includeDebug,
+      businessId,
+      promptNote: totalRecheckNote(firstCheck, first.data.items.length),
+    });
+    const secondCheck = extractionTotalCheck(second.data);
+    const kept = closerToPrintedTotal({ result: first, check: firstCheck }, { result: second, check: secondCheck });
+    const recheck: TotalRecheck = {
+      first_lines_total: firstCheck.linesTotal,
+      second_lines_total: secondCheck?.linesTotal ?? null,
+      printed_total: firstCheck.printed,
+      kept: kept === second ? 'second' : 'first',
+    };
+    console.warn(`[invoices/extract] total recheck (${second.model}): ${JSON.stringify(recheck)}`);
+    return {
+      extraction: { ...kept, processingTimeMs: first.processingTimeMs + second.processingTimeMs },
+      recheck,
+    };
+  } catch (err) {
+    console.warn(`[invoices/extract] second read failed, keeping the first: ${err instanceof Error ? err.message : String(err)}`);
+    return { extraction: first, recheck: null };
+  }
 }
 
 async function extractWithOcrService(file: File, includeDebug: boolean): Promise<ExtractionPipelineResult> {
@@ -108,7 +161,9 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const businessId = formData.get('business_id') as string;
+    const access = await requireTenantPermission(request, formData.get('business_id'), 'purchases', 'create');
+    if (!access.ok) return access.response;
+    const businessId = access.businessId;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -199,7 +254,12 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       );
     }
-    const extraction = outcome.extraction;
+    const { extraction, recheck } = await secondReadWhenTotalMisses(
+      outcome.extraction,
+      file,
+      includeDebug,
+      businessId,
+    );
 
     const frontendData = transformExtractToPurchaseReviewFormat(extraction.data);
 
@@ -253,6 +313,7 @@ export async function POST(request: NextRequest) {
       processing_time_ms: extraction.processingTimeMs,
       extraction_pipeline_versions: parserBundle,
     };
+    if (recheck) jsonBody.total_recheck = recheck;
     if (invoiceConfidenceEngineEnabled()) {
       const historical = await loadHistoricalConfidenceSignalsFromDb({
         layoutFingerprint: extraction.learningSnapshot?.layoutFingerprint ?? null,

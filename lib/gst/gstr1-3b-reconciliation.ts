@@ -8,6 +8,7 @@ import { parseGstr1FilingSnapshot, type Gstr1FilingSnapshotV1 } from '@/lib/gst/
 import { calendarMonthBounds } from '@/lib/gst/gst-period-lock';
 import type { GSTR3BData } from '@/lib/gst/gstr3b';
 import { GSTR3BGenerator } from '@/lib/gst/gstr3b';
+import { registrationGstinKey } from '@/lib/gst/registration';
 import {
   GSTR3B_OUTPUT_CESS,
   GSTR3B_OUTPUT_CGST,
@@ -555,10 +556,10 @@ export async function runGstr13bReconciliation(params: ReconciliationParams): Pr
       `
       SELECT gstr1_snapshot, status
       FROM gstr1_filings
-      WHERE business_id = $1::uuid AND filing_period = $2
+      WHERE business_id = $1::uuid AND gstin = $3 AND filing_period = $2
       LIMIT 1
       `,
-      [businessId, gstPeriod.trim()]
+      [businessId, gstPeriod.trim(), await registrationGstinKey(getPool(), businessId, branchId)]
     );
     const parsed = row?.gstr1_snapshot ? parseGstr1FilingSnapshot(row.gstr1_snapshot) : null;
     if (parsed) {

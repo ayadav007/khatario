@@ -1072,6 +1072,19 @@ export async function POST(request: NextRequest) {
           branch_id: finalBranchId,
         },
       });
+      // Paying a connected supplier's bill: tell the supplier so they can record the receipt.
+      if (type === 'payable' && reference_type === 'purchase' && reference_id) {
+        const { noticeBuyerPayment } = await import('@/lib/supplier-hub-money');
+        await noticeBuyerPayment({
+          buyerBusinessId: business_id,
+          purchaseId: reference_id,
+          paymentId: payment.id,
+          amount: Number(amount),
+          paymentMode: payment_mode,
+          paymentDate: payment_date ? String(payment_date).slice(0, 10) : null,
+          note: typeof notes === 'string' ? notes : null,
+        });
+      }
     }
 
     return NextResponse.json({ payment }, { status: 201 });

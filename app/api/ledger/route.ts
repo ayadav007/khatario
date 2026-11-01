@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { listLedgerRegister } from '@/lib/accounting/ledger-register';
+import { listLedgerRegister, sumLedgerRegisterByAccount } from '@/lib/accounting/ledger-register';
+import { presentLedgerEntries } from '@/lib/accounting/ledger-presentation';
 import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
@@ -40,26 +41,37 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
       branchIds = accessible.length > 0 ? accessible : null;
     }
 
-    const { entries, total } = await listLedgerRegister({
+    const { entries } = await listLedgerRegister({
       businessId,
       accountId,
       fromDate,
       toDate,
       voucherType,
       branchIds,
-      page,
-      limit,
-      order: 'desc',
+      limit: null,
+      order: 'asc',
     });
+    const prior = fromDate
+      ? await sumLedgerRegisterByAccount({
+          businessId,
+          accountId,
+          beforeDate: fromDate,
+          voucherType,
+          branchIds,
+        })
+      : [];
+    const presented = presentLedgerEntries(entries, prior);
 
+    const safePage = Math.max(1, Number.isFinite(page) ? page : 1);
     const safeLimit = Math.min(200, Math.max(1, Number.isFinite(limit) ? limit : 50));
+    const offset = (safePage - 1) * safeLimit;
     return NextResponse.json({
-      entries,
+      entries: presented.slice(offset, offset + safeLimit),
       pagination: {
-        page: Math.max(1, Number.isFinite(page) ? page : 1),
+        page: safePage,
         limit: safeLimit,
-        total,
-        totalPages: Math.ceil(total / safeLimit),
+        total: presented.length,
+        totalPages: Math.ceil(presented.length / safeLimit),
       },
     });
   } catch (error: any) {

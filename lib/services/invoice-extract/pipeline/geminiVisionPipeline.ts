@@ -37,8 +37,9 @@ const TIMEOUT_MS = 90_000;
 export async function runGeminiVisionPipeline(
   file: File,
   includeDebug: boolean,
-  _extractionCtx?: { businessId?: string },
+  extractionCtx?: { businessId?: string; /** Appended to the prompt for a second read. */ promptNote?: string },
 ): Promise<ExtractionPipelineResult> {
+  const prompt = extractionCtx?.promptNote ? `${VISION_PROMPT}\n\n${extractionCtx.promptNote}` : VISION_PROMPT;
   const pipelineStartedAt = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
@@ -76,7 +77,7 @@ export async function runGeminiVisionPipeline(
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(
         buildGeminiVisionGenerateContentBody({
-          prompt: VISION_PROMPT,
+          prompt,
           mimeType: prepared.mimeType,
           base64,
           model,

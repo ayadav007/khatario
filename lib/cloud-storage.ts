@@ -6,36 +6,39 @@
 import * as db from '@/lib/db';
 import crypto from 'crypto';
 
-const ENCRYPTION_KEY = process.env.BACKUP_ENCRYPTION_KEY || process.env.JWT_SECRET || 'default-key-change-in-production';
+import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
 
-/**
- * Encrypt sensitive data (OAuth tokens)
- */
-export function encrypt(text: string): string {
-  const iv = crypto.randomBytes(16);
-  const key = crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
-  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  
-  return iv.toString('hex') + ':' + encrypted;
+/** Browser-bound nonce cookie for the Google Drive OAuth round trip. */
+export const GOOGLE_DRIVE_OAUTH_STATE_COOKIE = 'khatario_gdrive_oauth_state';
+
+const GCM_PREFIX = 'v2:';
+
+/** Key for rows written before AES-GCM (AES-CBC `iv:ciphertext`); read-only. No default key. */
+function legacyKey(): Buffer {
+  const k = process.env.BACKUP_ENCRYPTION_KEY || process.env.JWT_SECRET;
+  if (!k) throw new Error('BACKUP_ENCRYPTION_KEY or JWT_SECRET is required to read stored cloud credentials');
+  return crypto.createHash('sha256').update(k).digest();
 }
 
 /**
- * Decrypt sensitive data
+ * Encrypt sensitive data (OAuth tokens) with AES-256-GCM.
+ */
+export function encrypt(text: string): string {
+  return GCM_PREFIX + encryptSecret(text);
+}
+
+/**
+ * Decrypt sensitive data (AES-GCM, or legacy AES-CBC rows).
  */
 export function decrypt(encryptedText: string): string {
+  if (encryptedText.startsWith(GCM_PREFIX)) {
+    return decryptSecret(encryptedText.slice(GCM_PREFIX.length));
+  }
   const parts = encryptedText.split(':');
   const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  
-  const key = crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
-  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-  
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', legacyKey(), iv);
+  let decrypted = decipher.update(parts[1], 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
   return decrypted;
 }
 

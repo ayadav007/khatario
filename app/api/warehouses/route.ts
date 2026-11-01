@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { checkWarehousePlace, flagWarehousePlaces } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
 
     const warehouses = await db.queryRows(query, params);
 
-    return NextResponse.json({ warehouses });
+    return NextResponse.json({ warehouses: await flagWarehousePlaces(db.getPool() as any, businessId, warehouses) });
   } catch (error: any) {
     console.error('Error fetching warehouses:', error);
     return NextResponse.json(
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
       pincode,
       country,
       warehouse_type,
+      gst_place_type,
     } = body;
 
     if (!business_id || !name) {
@@ -119,7 +121,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const created_by = body.created_by || getUserIdFromRequest(request, body); // Support both field names
+    const created_by = actingUserId(request, body.created_by) || getUserIdFromRequest(request, body);
     if (!created_by) {
       return NextResponse.json(
         { error: 'created_by (user_id) is required for authorization' },
@@ -183,16 +185,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const placeError = await checkWarehousePlace(db.getPool() as any, business_id, branch_id, { state });
+    if (placeError) {
+      return NextResponse.json(placeError, { status: 400 });
+    }
+
     const warehouse = await db.queryOne(`
       INSERT INTO warehouses (
         business_id, branch_id, name, warehouse_code, address_line1, address_line2,
-        city, state, pincode, country, warehouse_type
+        city, state, pincode, country, warehouse_type, gst_place_type
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
       business_id, branch_id || null, name, warehouse_code, address_line1, address_line2,
-      city, state, pincode, country || 'India', warehouse_type || 'physical'
+      city, state, pincode, country || 'India', warehouse_type || 'physical',
+      ['principal', 'additional', 'not_registered'].includes(gst_place_type) ? gst_place_type : null,
     ]);
 
     // If branch_id provided, create mapping

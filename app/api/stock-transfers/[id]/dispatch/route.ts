@@ -3,6 +3,8 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { ChallanInputError } from '@/lib/delivery-challans/challan';
+import { issueTransferChallan } from '@/lib/stock-transfers/transfer-challan';
 
 export const dynamic = 'force-dynamic';
 
@@ -155,6 +157,13 @@ export async function PATCH(
       ]);
     }
 
+    // Same GSTIN on both ends: no invoice, so the goods travel under a delivery challan (Rule 55).
+    const challanDate =
+      typeof dispatch_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dispatch_date)
+        ? dispatch_date
+        : (await client.query(`SELECT CURRENT_DATE::text AS d`)).rows[0].d;
+    await issueTransferChallan(client, transfer, { date: challanDate, createdBy: userId });
+
     // Update transfer status to 'in_transit'
     await client.query(`
       UPDATE stock_transfers 
@@ -192,6 +201,9 @@ export async function PATCH(
     });
   } catch (error: any) {
     await client.query('ROLLBACK');
+    if (error instanceof ChallanInputError) {
+      return NextResponse.json({ error: `Delivery challan: ${error.message}` }, { status: error.status });
+    }
     console.error('Error dispatching stock transfer:', error);
     return NextResponse.json(
       { error: 'Failed to dispatch stock transfer', details: error.message },

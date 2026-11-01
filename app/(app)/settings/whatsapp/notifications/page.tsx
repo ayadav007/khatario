@@ -29,7 +29,7 @@ export default function WhatsAppNotificationsPage() {
           description="Automatic WhatsApp reminders before and after invoices fall due."
         >
           <BillingPlanLockedCard
-            title="Automatic reminders come with the Growth plan"
+            title="Automatic reminders come with the Starter plan"
             description="Schedule payment reminders so customers are nudged without you lifting a finger. You can still send reminders yourself below."
             featureName="Automatic payment reminders"
           />
@@ -43,13 +43,13 @@ export default function WhatsAppNotificationsPage() {
       >
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/whatsapp/reminders"
+            href="/payments/reminders"
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800"
           >
             <Send className="h-4 w-4" aria-hidden /> Send reminders
           </Link>
           <Link
-            href="/whatsapp/reminders?tab=logs"
+            href="/payments/reminders?tab=logs"
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800"
           >
             <History className="h-4 w-4" aria-hidden /> Reminder history

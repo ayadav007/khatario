@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -69,6 +70,13 @@ export function HubCustomerLinkCard({ customerId }: { customerId: string }) {
         <span className="text-xs text-text-secondary">
           {link.stock_shared ? 'Shares low stock with you' : 'Does not share low stock'}
         </span>
+      )}
+      {link.status === 'approved' && (
+        <Link href={`/suppliers/hub/buyer-prices/${customerId}`}>
+          <Button size="sm" variant="secondary">
+            Prices for this buyer
+          </Button>
+        </Link>
       )}
       {link.status === 'approved' && (
         <Button size="sm" variant="ghost" onClick={disconnect} disabled={busy}>

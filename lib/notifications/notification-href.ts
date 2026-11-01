@@ -23,6 +23,8 @@ export function notificationHref(n: NotificationRef): string | null {
 
   // Supplier Hub
   if (refType === 'supply_order' && id) return `/supply-orders/${id}`;
+  if (refType === 'supply_standing_order') return '/supply-orders';
+  if (refType === 'supplier_hub_money') return '/suppliers/hub';
   if (refType === 'supplier_collection') return '/purchases/new-arrivals';
   if (type === 'hub_connection_request') return '/suppliers/hub';
   if (type === 'hub_connection_accepted') return '/suppliers';
@@ -30,13 +32,22 @@ export function notificationHref(n: NotificationRef): string | null {
   if (type === 'low_stock_alert') return '/supply-orders?role=vendor';
   if (refType === 'business') return '/suppliers';
 
-  if (type === 'supplier_request') return '/suppliers/requests';
+  if (type === 'supplier_request') return '/suppliers/hub';
   if (refType === 'supplier' && id) return `/suppliers/${id}`;
   if (type === 'invoice_nearing_due' || type === 'invoice_overdue') return id ? `/invoices/${id}` : '/invoices';
-  if (refType === 'invoice' && id) return `/invoices/${id}`;
+  // Customer-surface "invoice read" rows store the plural reference type.
+  if ((refType === 'invoice' || refType === 'invoices') && id) return `/invoices/${id}`;
+  if (refType === 'purchase_order' && id) return `/purchase-orders/${id}`;
+  if (refType === 'subscription') return '/settings/subscription';
+  if (refType === 'ai_agent') return '/settings/ai-agent';
+  if (refType === 'whatsapp_session') return '/settings/whatsapp';
   if (type === 'todo_reminder') return '/tools/todo';
   if (type === 'store_enquiry') return '/settings/online-store/enquiries';
+  if (refType === 'khata_customer' && id) return `/customers/${id}`;
+  if (refType === 'order_return' && id) return `/orders?view=returns&return=${id}`;
+  if (refType === 'khata_order') return '/settings/online-store/orders?khata=pending';
   if (type === 'gst_compliance') return '/reports/gst/compliance';
   if (refType === 'whatsapp_conversation' && id) return `/whatsapp/conversations?c=${id}`;
+  if (refType === 'whatsapp_lead' && id) return `/whatsapp/leads?lead=${id}`;
   return null;
 }

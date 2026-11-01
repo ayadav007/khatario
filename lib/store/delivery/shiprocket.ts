@@ -14,7 +14,18 @@ export interface ShiprocketCreds {
   password: string;
 }
 
-export type ShiprocketStage = 'login' | 'pickup_location' | 'create' | 'awb' | 'pickup' | 'label' | 'manifest' | 'cancel' | 'ndr';
+export type ShiprocketStage =
+  | 'login'
+  | 'pickup_location'
+  | 'create'
+  | 'awb'
+  | 'pickup'
+  | 'label'
+  | 'manifest'
+  | 'cancel'
+  | 'ndr'
+  | 'return_create'
+  | 'return_awb';
 
 export class ShiprocketError extends Error {
   constructor(
@@ -27,7 +38,7 @@ export class ShiprocketError extends Error {
 }
 
 const tokens = new Map<string, { token: string; exp: number }>();
-const pickupLocations = new Map<string, { name: string; exp: number }>();
+const pickupLocations = new Map<string, { location: Record<string, unknown>; exp: number }>();
 
 /** Test hook: tokens and pickup locations are cached per account for the process lifetime. */
 export function clearShiprocketCache(): void {
@@ -111,6 +122,37 @@ export interface ShiprocketParcel {
   heightCm?: number;
 }
 
+/** Where a returned parcel goes: the account's primary pickup address. */
+export interface ShiprocketWarehouse {
+  name: string;
+  address: string;
+  address2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string;
+}
+
+/** A parcel coming back from the customer to the shop. Prices are per unit and include GST. */
+export interface ShiprocketReturnParcel {
+  /** Our reference, e.g. RET-0001; unique per Shiprocket order in the merchant's account. */
+  ref: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string | null;
+  address: string;
+  pincode: string;
+  city?: string | null;
+  state?: string | null;
+  items: Array<{ name: string; sku?: string; units: number; price: number; reason?: string }>;
+  subTotal: number;
+  weightKg: number;
+  lengthCm?: number;
+  breadthCm?: number;
+  heightCm?: number;
+}
+
 export interface ShiprocketBooking {
   ok: boolean;
   stage?: ShiprocketStage;
@@ -131,6 +173,12 @@ function splitName(full: string): { first: string; last: string } {
   return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
+/** Last 10 digits of a phone number (drops +91, 91 and spaces), or null when there are fewer than 10. */
+export function tenDigitPhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : null;
+}
+
 /** City and state from the tail of a free-text address ("…, Pune, Maharashtra 411001"). */
 export function cityStateFromAddress(address: string): { city: string | null; state: string | null } {
   const parts = address
@@ -145,9 +193,10 @@ export function cityStateFromAddress(address: string): { city: string | null; st
 }
 
 export function createShiprocketClient(creds: ShiprocketCreds) {
-  async function pickupLocation(): Promise<string> {
+  /** The account's primary pickup address (the first one when none is primary), cached for an hour. */
+  async function primaryLocation(): Promise<Json> {
     const cached = pickupLocations.get(creds.email);
-    if (cached && cached.exp > Date.now()) return cached.name;
+    if (cached && cached.exp > Date.now()) return cached.location;
     const { ok, data } = await call(creds, '/settings/company/pickup');
     const list = (((data.data as Json | undefined)?.shipping_address ?? []) as Json[]).filter(
       (a) => typeof a.pickup_location === 'string' && a.pickup_location,
@@ -159,9 +208,28 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
       );
     }
     const primary = list.find((a) => Number(a.is_primary_location) === 1) ?? list[0];
-    const name = String(primary.pickup_location);
-    pickupLocations.set(creds.email, { name, exp: Date.now() + 60 * 60 * 1000 });
-    return name;
+    pickupLocations.set(creds.email, { location: primary, exp: Date.now() + 60 * 60 * 1000 });
+    return primary;
+  }
+
+  async function pickupLocation(): Promise<string> {
+    return String((await primaryLocation()).pickup_location);
+  }
+
+  /** The primary pickup address in full: where a returned parcel is sent. */
+  async function warehouseAddress(): Promise<ShiprocketWarehouse> {
+    const l = await primaryLocation();
+    const text = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
+    return {
+      name: text(l.name) || text(l.pickup_location),
+      address: text(l.address),
+      address2: text(l.address_2),
+      city: text(l.city),
+      state: text(l.state),
+      pincode: text(l.pin_code),
+      phone: text(l.phone),
+      email: text(l.email),
+    };
   }
 
   async function postcodeDetails(pincode: string): Promise<{ city: string; state: string } | null> {
@@ -176,21 +244,31 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
     }
   }
 
-  async function createOrder(parcel: ShiprocketParcel): Promise<{ orderId: string; shipmentId: string }> {
-    const location = await pickupLocation();
-    let city = parcel.city?.trim() || null;
-    let state = parcel.state?.trim() || null;
+  /** The given city and state, else the PIN code lookup, else the tail of the address. */
+  async function resolveCityState(
+    p: { city?: string | null; state?: string | null; pincode: string; address: string },
+    stage: ShiprocketStage,
+  ): Promise<{ city: string; state: string }> {
+    let city = p.city?.trim() || null;
+    let state = p.state?.trim() || null;
     if (!city || !state) {
-      const looked = await postcodeDetails(parcel.pincode);
-      const parsed = cityStateFromAddress(parcel.address);
+      const looked = await postcodeDetails(p.pincode);
+      const parsed = cityStateFromAddress(p.address);
       city = city || looked?.city || parsed.city;
       state = state || looked?.state || parsed.state;
     }
     if (!city || !state) {
-      throw new ShiprocketError('Could not work out the city and state for this PIN code. Add them to the address.', 'create');
+      throw new ShiprocketError('Could not work out the city and state for this PIN code. Add them to the address.', stage);
     }
+    return { city, state };
+  }
+
+  async function createOrder(parcel: ShiprocketParcel): Promise<{ orderId: string; shipmentId: string }> {
+    const location = await pickupLocation();
+    const { city, state } = await resolveCityState(parcel, 'create');
     const { first, last } = splitName(parcel.buyerName);
-    const phone = parcel.buyerPhone.replace(/\D/g, '').slice(-10);
+    const phone = tenDigitPhone(parcel.buyerPhone);
+    if (!phone) throw new ShiprocketError('A 10-digit phone number is needed to book a pickup.', 'create');
     const { ok, data } = await call(creds, '/orders/create/adhoc', {
       body: {
         order_id: parcel.ref,
@@ -228,20 +306,81 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
     return { orderId, shipmentId };
   }
 
-  /** Without a courier id Shiprocket picks the account's recommended courier. */
-  async function assignAwb(shipmentId: string, courierId?: number): Promise<{ awb: string; courierName: string }> {
-    const { data } = await call(creds, '/courier/assign/awb', {
-      body: { shipment_id: Number(shipmentId), ...(courierId ? { courier_id: courierId } : {}) },
+  /** Return order: the customer is the pickup point and the shop's primary pickup address is where it ships to. */
+  async function createReturnOrder(p: ShiprocketReturnParcel): Promise<{ orderId: string; shipmentId: string }> {
+    const warehouse = await warehouseAddress();
+    const { city, state } = await resolveCityState(p, 'return_create');
+    const { first, last } = splitName(p.customerName);
+    const phone = tenDigitPhone(p.customerPhone);
+    if (!phone) throw new ShiprocketError('A 10-digit phone number is needed to book a pickup.', 'return_create');
+    const { ok, data } = await call(creds, '/orders/create/return', {
+      body: {
+        order_id: p.ref,
+        order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+        pickup_customer_name: first,
+        pickup_last_name: last,
+        pickup_address: p.address,
+        pickup_city: city,
+        pickup_state: state,
+        pickup_country: 'India',
+        pickup_pincode: p.pincode,
+        pickup_email: p.customerEmail || 'noreply@khatario.com',
+        pickup_phone: phone,
+        shipping_customer_name: warehouse.name,
+        shipping_address: [warehouse.address, warehouse.address2].filter(Boolean).join(', '),
+        shipping_city: warehouse.city,
+        shipping_state: warehouse.state,
+        shipping_country: 'India',
+        shipping_pincode: warehouse.pincode,
+        shipping_phone: tenDigitPhone(warehouse.phone) ?? warehouse.phone,
+        shipping_email: warehouse.email || 'noreply@khatario.com',
+        order_items: p.items.map((it, i) => ({
+          name: it.name.slice(0, 200),
+          sku: (it.sku || `${p.ref}-${i + 1}`).slice(0, 50),
+          units: Math.max(1, Math.round(it.units)),
+          selling_price: Math.max(0, Math.round(it.price * 100) / 100),
+          return_reason: (it.reason || 'Return').slice(0, 200),
+        })),
+        payment_method: 'Prepaid',
+        sub_total: Math.max(0, Math.round(p.subTotal * 100) / 100),
+        length: p.lengthCm ?? 10,
+        breadth: p.breadthCm ?? 10,
+        height: p.heightCm ?? 10,
+        weight: p.weightKg,
+      },
     });
+    const orderId = num(data.order_id);
+    const shipmentId = num(data.shipment_id);
+    if (!ok || !orderId || !shipmentId) {
+      throw new ShiprocketError(shiprocketErrorMessage(data, 'Shiprocket could not create the return order'), 'return_create');
+    }
+    return { orderId, shipmentId };
+  }
+
+  async function assignCourierAwb(
+    shipmentId: string,
+    extra: Record<string, unknown>,
+    stage: ShiprocketStage,
+  ): Promise<{ awb: string; courierName: string }> {
+    const { data } = await call(creds, '/courier/assign/awb', { body: { shipment_id: Number(shipmentId), ...extra } });
     const d = ((data.response as Json | undefined)?.data ?? {}) as Json;
     const awb = num(d.awb_code);
     if (Number(data.awb_assign_status) !== 1 || !awb) {
       throw new ShiprocketError(
         shiprocketErrorMessage(data, 'No courier could take this parcel. Check the PIN code and your Shiprocket wallet.'),
-        'awb',
+        stage,
       );
     }
     return { awb, courierName: typeof d.courier_name === 'string' && d.courier_name ? d.courier_name : 'Shiprocket' };
+  }
+
+  /** Without a courier id Shiprocket picks the account's recommended courier. */
+  async function assignAwb(shipmentId: string, courierId?: number): Promise<{ awb: string; courierName: string }> {
+    return assignCourierAwb(shipmentId, courierId ? { courier_id: courierId } : {}, 'awb');
+  }
+
+  async function assignReturnAwb(shipmentId: string): Promise<{ awb: string; courierName: string }> {
+    return assignCourierAwb(shipmentId, { is_return: 1 }, 'return_awb');
   }
 
   async function requestPickup(shipmentId: string): Promise<{ scheduledAt: string | null }> {
@@ -338,7 +477,68 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
     }
   }
 
-  return { pickupLocation, postcodeDetails, createOrder, assignAwb, requestPickup, label, manifest, cancelOrders, book, ndrAction };
+  /**
+   * Same contract as `book` for a return: create the return order (unless a previous attempt did),
+   * assign the AWB, then ask for pickup. Ids from a partial attempt are returned so a retry never
+   * makes a second Shiprocket order; a pickup failure is a warning on a booked return.
+   */
+  async function bookReturn(
+    parcel: ShiprocketReturnParcel,
+    existing: { orderId?: string | null; shipmentId?: string | null } = {},
+  ): Promise<ShiprocketBooking> {
+    let orderId = existing.orderId ?? undefined;
+    let shipmentId = existing.shipmentId ?? undefined;
+    try {
+      if (!shipmentId) {
+        const created = await createReturnOrder(parcel);
+        orderId = created.orderId;
+        shipmentId = created.shipmentId;
+      }
+      const { awb, courierName } = await assignReturnAwb(shipmentId);
+      let pickupScheduledAt: string | null = null;
+      let pickupError: string | undefined;
+      try {
+        pickupScheduledAt = (await requestPickup(shipmentId)).scheduledAt;
+      } catch (e) {
+        pickupError = e instanceof Error ? e.message : 'Pickup could not be requested';
+      }
+      return {
+        ok: true,
+        orderId,
+        shipmentId,
+        awb,
+        courierName,
+        trackingUrl: shiprocketTrackingUrl(awb),
+        pickupScheduledAt,
+        ...(pickupError ? { stage: 'pickup' as const, error: pickupError } : {}),
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        orderId,
+        shipmentId,
+        stage: e instanceof ShiprocketError ? e.stage : 'return_create',
+        error: e instanceof Error ? e.message : 'Shiprocket request failed',
+      };
+    }
+  }
+
+  return {
+    pickupLocation,
+    warehouseAddress,
+    postcodeDetails,
+    createOrder,
+    assignAwb,
+    requestPickup,
+    label,
+    manifest,
+    cancelOrders,
+    book,
+    ndrAction,
+    createReturnOrder,
+    assignReturnAwb,
+    bookReturn,
+  };
 }
 
 export type ShiprocketClient = ReturnType<typeof createShiprocketClient>;
@@ -356,7 +556,9 @@ async function serviceability(creds: ShiprocketCreds, input: DeliveryQuoteReques
     cod: input.isCod ? '1' : '0',
   });
   const { ok, data } = await call(creds, `/courier/serviceability/?${params}`);
-  const companies = (((data.data as Json | undefined)?.available_courier_companies ?? []) as Array<{
+  const serviceData = (data.data as Json | undefined) ?? {};
+  const companies = ((serviceData.available_courier_companies ?? []) as Array<{
+    courier_company_id?: number;
     rate?: number;
     freight_charge?: number;
     etd?: string;
@@ -370,7 +572,10 @@ async function serviceability(creds: ShiprocketCreds, input: DeliveryQuoteReques
       error: typeof data.message === 'string' && data.message ? data.message : 'No courier available for this pincode',
     };
   }
-  const best = [...companies].sort((a, b) => (a.rate ?? a.freight_charge ?? 0) - (b.rate ?? b.freight_charge ?? 0))[0];
+  // Shiprocket books the courier it recommends when no courier is named, so quote that one's rate.
+  const recommendedId = Number(serviceData.recommended_courier_company_id);
+  const cheapest = [...companies].sort((a, b) => (a.rate ?? a.freight_charge ?? 0) - (b.rate ?? b.freight_charge ?? 0))[0];
+  const best = companies.find((c) => Number(c.courier_company_id) === recommendedId) ?? cheapest;
   const charge = Number(best.rate ?? best.freight_charge ?? 0) || 0;
   const eta =
     best.etd ||

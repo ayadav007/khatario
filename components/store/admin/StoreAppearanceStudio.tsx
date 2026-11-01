@@ -527,11 +527,13 @@ export function StoreAppearanceStudio({
                 WhatsApp URL
                 <input className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={theme.whatsapp_url} onChange={(e) => setTheme((t) => ({ ...t, whatsapp_url: e.target.value }))} />
               </label>
-              <label className="block text-xs text-gray-500">
-                Custom CSS
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs" rows={8} value={theme.custom_css} onChange={(e) => setTheme((t) => ({ ...t, custom_css: e.target.value }))} />
-                <span className="mt-1 block">No scripts or @import. Max 8,000 characters.</span>
-              </label>
+              <p className="text-xs text-gray-500">
+                Custom CSS is edited in{' '}
+                <Link href="/settings/online-store/studio" className="font-medium underline">
+                  Studio → Custom CSS
+                </Link>
+                , with a live preview. Each section can also have its own CSS under its Advanced tab.
+              </p>
             </>
           ) : null}
         </div>

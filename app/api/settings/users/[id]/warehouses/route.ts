@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
@@ -36,6 +36,10 @@ export async function GET(
     }
 
     const targetUserId = params.id;
+    const target = await queryOne('SELECT id FROM users WHERE id = $1 AND business_id = $2', [targetUserId, businessId]);
+    if (!target) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     // Get all warehouses for the business
     const allWarehouses = await queryRows(`
@@ -106,8 +110,11 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const { business_id, warehouses } = body;
-    const user_id = getUserIdFromRequest(request, body);
+    const { warehouses } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const user_id = getUserIdFromRequest(request);
 
     if (!business_id || !user_id) {
       return NextResponse.json(
@@ -134,6 +141,10 @@ export async function PATCH(
     }
 
     const targetUserId = params.id;
+    const target = await queryOne('SELECT id FROM users WHERE id = $1 AND business_id = $2', [targetUserId, business_id]);
+    if (!target) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     // Start transaction
     const pool = await import('@/lib/db').then(m => m.getPool());
@@ -155,7 +166,7 @@ export async function PATCH(
             INSERT INTO user_warehouses (
               user_id, warehouse_id, can_view, can_edit, can_create_transactions
             )
-            VALUES ($1, $2, $3, $4, $5)
+            SELECT $1, w.id, $3, $4, $5 FROM warehouses w WHERE w.id = $2 AND w.business_id = $6
             ON CONFLICT (user_id, warehouse_id) DO UPDATE SET
               can_view = EXCLUDED.can_view,
               can_edit = EXCLUDED.can_edit,
@@ -167,6 +178,7 @@ export async function PATCH(
             wh.can_view || false,
             wh.can_edit || false,
             wh.can_create_transactions || false,
+            business_id,
           ]);
         }
       }

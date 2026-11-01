@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { csvSafeText } from '@/lib/csv-safe';
 
 const REORDER_PAGE_SIZE = 25;
 
@@ -281,7 +282,7 @@ export default function StockSummaryReportPage() {
     for (const row of reorderSuggestions) {
       lines.push(
         [
-          `"${row.name.replace(/"/g, '""')}"`,
+          `"${csvSafeText(row.name).replace(/"/g, '""')}"`,
           row.current_stock,
           row.unit,
           row.avg_daily_sales,
@@ -294,20 +295,20 @@ export default function StockSummaryReportPage() {
     lines.push('Fast moving (30d qty)');
     lines.push('Name,Qty');
     for (const row of velocity?.fastMoving ?? []) {
-      lines.push([`"${row.name.replace(/"/g, '""')}"`, row.quantity_sold_30d].join(','));
+      lines.push([`"${csvSafeText(row.name).replace(/"/g, '""')}"`, row.quantity_sold_30d].join(','));
     }
     lines.push('');
     lines.push('Slow moving (30d qty, non-zero)');
     lines.push('Name,Qty');
     for (const row of velocity?.slowMoving ?? []) {
-      lines.push([`"${row.name.replace(/"/g, '""')}"`, row.quantity_sold_30d].join(','));
+      lines.push([`"${csvSafeText(row.name).replace(/"/g, '""')}"`, row.quantity_sold_30d].join(','));
     }
     lines.push('');
     lines.push('Recent activity');
     lines.push('Item,Type,Quantity,Timestamp');
     for (const row of recentActivity) {
       lines.push(
-        [`"${row.item_name.replace(/"/g, '""')}"`, row.type, row.quantity, row.timestamp].join(',')
+        [`"${csvSafeText(row.item_name).replace(/"/g, '""')}"`, row.type, row.quantity, row.timestamp].join(',')
       );
     }
     lines.push('');
@@ -315,7 +316,7 @@ export default function StockSummaryReportPage() {
     lines.push('Name,Current stock,Min stock,Unit,Selling price');
     for (const row of lowStockItems) {
       lines.push(
-        [`"${row.name.replace(/"/g, '""')}"`, row.current_stock, row.min_stock, row.unit, row.selling_price].join(',')
+        [`"${csvSafeText(row.name).replace(/"/g, '""')}"`, row.current_stock, row.min_stock, row.unit, row.selling_price].join(',')
       );
     }
     lines.push('');
@@ -323,7 +324,7 @@ export default function StockSummaryReportPage() {
     lines.push('Name,Quantity,Unit,Purchase price,Stock value');
     for (const row of highValueItems) {
       lines.push(
-        [`"${row.name.replace(/"/g, '""')}"`, row.current_stock, row.unit, row.purchase_price, row.stock_value].join(
+        [`"${csvSafeText(row.name).replace(/"/g, '""')}"`, row.current_stock, row.unit, row.purchase_price, row.stock_value].join(
           ','
         )
       );

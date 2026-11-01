@@ -7,6 +7,10 @@ import { NextRequest } from 'next/server';
 
 const queryOne = jest.fn();
 const query = jest.fn();
+// The route checks the session tenant and purchases permission; these tests cover extraction.
+jest.mock('@/lib/security/require-tenant-permission', () => ({
+  requireTenantPermission: async () => ({ ok: true, businessId: 'biz-1', userId: 'user-1' }),
+}));
 jest.mock('@/lib/db', () => ({ queryOne: (...a: unknown[]) => queryOne(...a), query: (...a: unknown[]) => query(...a) }));
 jest.mock('@/lib/services/invoice-extract/extractionLearningTelemetry', () => ({
   insertInvoiceLearningEvent: jest.fn(),

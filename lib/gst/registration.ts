@@ -1,4 +1,4 @@
-import { checkGstin, GST_STATE_NAMES } from '@/lib/tax/gstin';
+import { checkGstin, GST_STATE_NAMES, resolveGstinAndState } from '@/lib/tax/gstin';
 import { effectiveGstScheme, type GstScheme } from '@/lib/gst/scheme-policy';
 
 type Queryable = {
@@ -92,18 +92,116 @@ export async function resolveSupplierRegistration(
     };
   }
   const stateCode = stateOf(businessGstin, r.b_state_code, r.b_state);
+  // An additional place of business under the head-office GSTIN issues from its own address.
+  const ownAddress = !!r.br_address1?.trim();
   return {
     source: 'business',
     gstin: businessGstin,
     stateCode,
     stateName: stateCode ? GST_STATE_NAMES[stateCode] ?? r.b_state : r.b_state,
-    addressLine1: r.b_address,
-    addressLine2: r.b_address2,
-    city: r.b_city,
-    pincode: r.b_pincode,
-    phone: r.b_phone,
-    email: r.b_email,
+    addressLine1: ownAddress ? r.br_address1 : r.b_address,
+    addressLine2: ownAddress ? r.br_address2 : r.b_address2,
+    city: ownAddress ? r.br_city : r.b_city,
+    pincode: ownAddress ? r.br_pincode : r.b_pincode,
+    phone: r.br_phone ?? r.b_phone,
+    email: r.br_email ?? r.b_email,
   };
+}
+
+export interface PlaceRegistrationError {
+  code: 'BRANCH_NEEDS_STATE_GSTIN' | 'WAREHOUSE_OUTSIDE_REGISTRATION_STATE' | 'GSTIN_STATE_MISMATCH' | 'INVALID_GSTIN';
+  error: string;
+}
+
+/**
+ * GST registration is per state (s.22 and s.25(1) CGST Act): a principal or additional place of
+ * business must sit in the state of the GSTIN it trades under, and a place in another state needs
+ * its own registration there. Skipped when the business is not registered or the state is unknown.
+ */
+export function placeOutsideRegistration(
+  kind: 'branch' | 'warehouse',
+  place: { state?: string | null; stateCode?: string | null },
+  registration: { gstin: string | null; stateCode: string | null },
+): PlaceRegistrationError | null {
+  if (!registration.gstin) return null;
+  const placeCode = place.stateCode?.trim() ? place.stateCode.trim().padStart(2, '0') : stateCodeFromName(place.state);
+  const regCode = registration.stateCode || registration.gstin.slice(0, 2);
+  if (!placeCode || placeCode === regCode) return null;
+  const placeName = GST_STATE_NAMES[placeCode] ?? place.state ?? placeCode;
+  const regName = GST_STATE_NAMES[regCode] ?? regCode;
+  return kind === 'branch'
+    ? {
+        code: 'BRANCH_NEEDS_STATE_GSTIN',
+        error: `This branch is in ${placeName}, but it has no GSTIN of its own and the business is registered in ${regName}. GST registration is per state, so add this branch's ${placeName} GSTIN.`,
+      }
+    : {
+        code: 'WAREHOUSE_OUTSIDE_REGISTRATION_STATE',
+        error: `This godown is in ${placeName}, but it falls under the ${regName} GST registration. Stock can only be kept at places in the registration's state, so link it to a branch with a ${placeName} GSTIN.`,
+      };
+}
+
+/** Rule above for a branch: its own GSTIN must match its state, otherwise it trades under the head office's. */
+export async function checkBranchPlace(
+  db: Queryable,
+  businessId: string,
+  branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
+): Promise<PlaceRegistrationError | null> {
+  return branchPlaceError(branch, await resolveSupplierRegistration(db, businessId, null));
+}
+
+/** `checkBranchPlace` with the head office's registration already loaded (lists check every row). */
+export function branchPlaceError(
+  branch: { gstin?: string | null; state?: string | null; state_code?: string | null },
+  headOffice: { gstin: string | null; stateCode: string | null },
+): PlaceRegistrationError | null {
+  const own = branch.gstin?.trim().toUpperCase() || null;
+  if (own && own !== headOffice.gstin) {
+    const check = resolveGstinAndState({ gstin: own, state: branch.state, state_code: branch.state_code });
+    return check.ok ? null : { code: check.code, error: check.error };
+  }
+  return placeOutsideRegistration('branch', { state: branch.state, stateCode: branch.state_code }, headOffice);
+}
+
+/** Rule above for a godown: checked against its branch's registration, or the head office's without a branch. */
+export async function checkWarehousePlace(
+  db: Queryable,
+  businessId: string,
+  branchId: string | null | undefined,
+  warehouse: { state?: string | null },
+): Promise<PlaceRegistrationError | null> {
+  const registration = await resolveSupplierRegistration(db, businessId, branchId || null);
+  return placeOutsideRegistration('warehouse', { state: warehouse.state }, registration);
+}
+
+/** Adds `gst_place_issue` to stored branches, so the list flags rows saved before the rule above. */
+export async function flagBranchPlaces<T extends { gstin?: string | null; state?: string | null; state_code?: string | null }>(
+  db: Queryable,
+  businessId: string,
+  branches: T[],
+): Promise<Array<T & { gst_place_issue: string | null }>> {
+  if (branches.length === 0) return [];
+  const headOffice = await resolveSupplierRegistration(db, businessId, null);
+  return branches.map((b) => ({ ...b, gst_place_issue: branchPlaceError(b, headOffice)?.error ?? null }));
+}
+
+/** Adds `gst_place_issue` to stored godowns, checked against each one's branch registration. */
+export async function flagWarehousePlaces<T extends { branch_id?: string | null; state?: string | null }>(
+  db: Queryable,
+  businessId: string,
+  warehouses: T[],
+): Promise<Array<T & { gst_place_issue: string | null }>> {
+  const registrations = new Map<string, Promise<SupplierRegistration>>();
+  const registrationOf = (branchId: string | null | undefined) => {
+    const key = branchId || '';
+    if (!registrations.has(key)) registrations.set(key, resolveSupplierRegistration(db, businessId, branchId || null));
+    return registrations.get(key)!;
+  };
+  return Promise.all(
+    warehouses.map(async (w) => ({
+      ...w,
+      gst_place_issue: placeOutsideRegistration('warehouse', { state: w.state }, await registrationOf(w.branch_id))?.error ?? null,
+    })),
+  );
 }
 
 /** Effective GST scheme of the registration a document is issued / received under. */
@@ -128,18 +226,32 @@ export async function resolveGstScheme(
  * the head office, and a branch with a separate GSTIN only with branches holding that GSTIN.
  */
 export async function registrationBranchIds(db: Queryable, businessId: string, branchId: string): Promise<string[]> {
+  const keys = await branchRegistrationKeys(db, businessId);
+  if (!keys.has(branchId)) return [branchId];
+  const key = keys.get(branchId);
+  return Array.from(keys).filter(([, k]) => k === key).map(([id]) => id);
+}
+
+/**
+ * Branch id → the GSTIN it files under ('' for branches trading under the business registration,
+ * whatever that is). Branches with equal keys share one return and one invoice series space.
+ */
+export async function branchRegistrationKeys(db: Queryable, businessId: string): Promise<Map<string, string>> {
   const res = await db.query<{ id: string; gstin: string | null; b_gstin: string | null }>(
     `SELECT br.id, br.gstin, b.gstin AS b_gstin
        FROM branches br JOIN businesses b ON b.id = br.business_id
       WHERE br.business_id = $1`,
     [businessId],
   );
-  const ownGstin = (r: { gstin: string | null; b_gstin: string | null }) => {
+  const keys = new Map<string, string>();
+  for (const r of res.rows) {
     const g = r.gstin?.trim().toUpperCase() || null;
-    return g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : null;
-  };
-  const target = res.rows.find((r) => r.id === branchId);
-  if (!target) return [branchId];
-  const key = ownGstin(target);
-  return res.rows.filter((r) => ownGstin(r) === key).map((r) => r.id);
+    keys.set(r.id, g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : '');
+  }
+  return keys;
+}
+
+/** GSTIN a branch files its returns under ('' when the business has no GSTIN): the key for per-return records. */
+export async function registrationGstinKey(db: Queryable, businessId: string, branchId: string | null | undefined): Promise<string> {
+  return (await resolveSupplierRegistration(db, businessId, branchId)).gstin ?? '';
 }

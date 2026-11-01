@@ -25,7 +25,6 @@ export const ESS_API_ALLOWLIST: { method: string; pathPrefix: string }[] = [
   { method: 'GET', pathPrefix: '/api/employees/salary/payslips/' },
   { method: 'GET', pathPrefix: '/api/employees/expenses' },
   { method: 'POST', pathPrefix: '/api/employees/expenses' },
-  { method: 'GET', pathPrefix: '/api/employees/' },
   // Manager "My team" (narrow approve scope enforced in route handlers)
   { method: 'GET', pathPrefix: '/api/employees/manager/team' },
   { method: 'GET', pathPrefix: '/api/employees/manager/pending-approvals' },
@@ -50,3 +49,20 @@ export function isEssApiAllowed(method: string, pathname: string): boolean {
 }
 
 export const EMPLOYEE_PORTAL_SESSION_HEADER = 'x-employee-portal-session';
+
+/** Kiosk portal session tokens carry this prefix (edge-safe; see kiosk-device.ts). */
+export const KIOSK_SESSION_PREFIX = 'k_';
+
+/** The only API calls a kiosk punch session may make. */
+const KIOSK_SESSION_API_PATHS = [
+  '/api/employees/attendance/check-in',
+  '/api/employees/attendance/check-out',
+];
+
+export function isKioskSessionToken(token: string | null | undefined): boolean {
+  return !!token && token.startsWith(KIOSK_SESSION_PREFIX);
+}
+
+export function isKioskSessionApiAllowed(method: string, pathname: string): boolean {
+  return method.toUpperCase() === 'POST' && KIOSK_SESSION_API_PATHS.includes(pathname.replace(/\/$/, ''));
+}

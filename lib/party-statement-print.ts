@@ -1,3 +1,4 @@
+import { csvSafeText } from '@/lib/csv-safe';
 /**
  * Print-friendly HTML for customer party statement (aligned with common "Party ledger" layouts).
  */
@@ -64,7 +65,7 @@ export function formatInrStatement(n: number): string {
 }
 
 export function csvEscape(value: unknown): string {
-  const s = value == null ? '' : String(value);
+  const s = csvSafeText(value == null ? '' : String(value));
   if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

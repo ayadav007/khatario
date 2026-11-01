@@ -7,6 +7,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { checkBranchPlace, flagBranchPlaces } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,7 +86,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ branches });
+    // Flags branches saved before the per-state rule, so the owner can add the missing GSTIN.
+    return NextResponse.json({ branches: await flagBranchPlaces(db.getPool() as any, businessId, branches) });
   } catch (error: any) {
     console.error('Error fetching branches:', error);
     return NextResponse.json(
@@ -179,6 +181,10 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+    const placeError = await checkBranchPlace(db.getPool() as any,business_id, gstinCheck);
+    if (placeError) {
+      return NextResponse.json(placeError, { status: 400 });
+    }
 
     // CRITICAL: Handle is_default flag
     // If setting as default, unset other default branches
@@ -218,16 +224,16 @@ export async function POST(request: NextRequest) {
 
     // Rule 46(b): one consecutive series per GSTIN per year. A second branch on the same
     // GSTIN must not restart at INV-001, so non-default branches get their own prefix.
+    // Bills of supply (Rule 49) follow the same rule.
     if (branch && !is_default) {
-      const code =
-        String(invoice_prefix || '').trim() ||
-        `INV-${(String(branch_code || '').trim() || String(name).replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BR').toUpperCase()}`;
+      const tag = (String(branch_code || '').trim() || String(name).replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BR').toUpperCase();
+      const code = String(invoice_prefix || '').trim() || `INV-${tag}`;
       try {
         await db.query(
           `INSERT INTO branch_document_prefixes (branch_id, document_type, prefix)
-           VALUES ($1, 'tax_invoice', $2)
+           VALUES ($1, 'tax_invoice', $2), ($1, 'bill_of_supply', $3)
            ON CONFLICT (branch_id, document_type) DO NOTHING`,
-          [branch.id, code.slice(0, 50)]
+          [branch.id, code.slice(0, 50), `BOS-${tag}`.slice(0, 50)]
         );
       } catch (error: any) {
         if (error?.code !== '42P01') throw error;

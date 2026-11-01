@@ -23,6 +23,7 @@ export const PLATFORM_WA_EVENT_KEYS = [
   'funnel_trial_inactive',
   'funnel_trial_feature',
   'funnel_handover',
+  'supplier_hub_update',
 ] as const;
 
 export const PLATFORM_WA_HEADER_FORMATS = ['none', 'text', 'image', 'video'] as const;

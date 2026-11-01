@@ -1,32 +1,107 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Check, ExternalLink, Loader2, RotateCcw } from 'lucide-react';
+import type { PickupStatus, ReturnMethod } from '@/lib/returns/labels';
+
+type BuyerReturn = {
+  return_number: string;
+  status: string;
+  credit_amount: number;
+  refunded_amount: number;
+  refund_method: string | null;
+  rejected_reason: string | null;
+  method: ReturnMethod | null;
+  instructions: string | null;
+  pickup_status: PickupStatus | null;
+  awb: string | null;
+  tracking_url: string | null;
+  gateway_refund_status: 'pending' | 'processed' | 'failed' | null;
+  events: Array<{ kind: string; note: string | null; created_at: string }>;
+};
 
 type Info = {
   can_return: boolean;
   reason: string | null;
   window_days?: number;
   reasons?: Array<{ value: string; label: string }>;
-  lines: Array<{ invoice_item_id: string; item_name: string; unit: string | null; returnable_qty: number }>;
-  returns: Array<{
-    return_number: string;
-    status: string;
-    credit_amount: number;
-    refunded_amount: number;
-    refund_method: string | null;
-    rejected_reason: string | null;
-  }>;
+  lines: Array<{ invoice_item_id: string; item_name: string; unit: string | null; returnable_qty: number; returnable?: boolean }>;
+  returns: BuyerReturn[];
 };
+
+/** A line is returnable unless the shop said otherwise (older responses do not carry the flag). */
+const canReturnLine = (l: { returnable?: boolean }) => l.returnable !== false;
 
 const BUYER_STATUS: Record<string, string> = {
   requested: 'Waiting for the shop',
-  approved: 'Approved – hand the items back',
+  approved: 'Approved',
   received: 'Items received – refund on the way',
   closed: 'Completed',
   rejected: 'Not accepted',
   cancelled: 'Cancelled',
 };
+
+const dayTime = (iso: string) =>
+  new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/** Requested, Approved, Picked up, Received, Refunded: where a return that is going or done stands. */
+function ReturnProgress({ r, accent }: { r: BuyerReturn; accent: string }) {
+  const at = (kind: string) => r.events.find((e) => e.kind === kind)?.created_at;
+  const courier = r.method === 'courier_pickup';
+  const received = r.status === 'received' || r.status === 'closed';
+  const refunded = r.status === 'closed';
+  const steps: Array<{ label: string; done: boolean; when?: string }> = [
+    { label: 'Requested', done: true, when: at('requested') },
+    { label: 'Approved', done: r.status !== 'requested', when: at('approved') },
+    ...(courier
+      ? [{ label: 'Picked up', done: r.pickup_status === 'in_transit' || r.pickup_status === 'arrived' || received }]
+      : []),
+    { label: 'Received', done: received, when: at('received') },
+    { label: 'Refunded', done: refunded, when: at('refunded') },
+  ];
+  const trackable = r.status === 'approved' && r.awb && r.tracking_url;
+
+  return (
+    <div className="mt-2 space-y-2">
+      <ol className="flex flex-wrap gap-x-4 gap-y-1">
+        {steps.map((s) => (
+          <li key={s.label} className={`flex items-center gap-1 text-xs ${s.done ? 'text-gray-900' : 'text-gray-400'}`}>
+            {s.done ? <Check className="h-3.5 w-3.5" style={{ color: accent }} /> : <span className="h-3.5 w-3.5 rounded-full border border-gray-300" />}
+            <span className="font-medium">{s.label}</span>
+            {s.done && s.when ? <span className="text-gray-400">{dayTime(s.when)}</span> : null}
+          </li>
+        ))}
+      </ol>
+      {r.status === 'approved' && courier && r.pickup_status ? (
+        <p className="text-sm text-gray-600">
+          {r.pickup_status === 'booked' ? 'Pickup booked. The courier will collect it from you.' : null}
+          {r.pickup_status === 'out_for_pickup' ? 'The courier is out to collect it.' : null}
+          {r.pickup_status === 'pickup_issue' ? 'The courier could not collect it. The shop will sort it out with you.' : null}
+          {r.pickup_status === 'in_transit' ? 'On its way back to the shop.' : null}
+          {r.pickup_status === 'arrived' ? 'It has reached the shop.' : null}
+          {r.pickup_status === 'cancelled' ? 'The pickup was cancelled. The shop will be in touch.' : null}
+        </p>
+      ) : null}
+      {trackable ? (
+        <a href={r.tracking_url ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium" style={{ color: accent }}>
+          Track pickup (AWB {r.awb}) <ExternalLink className="h-3 w-3" />
+        </a>
+      ) : null}
+      {r.status === 'approved' && r.method === 'customer_sends' && r.instructions ? (
+        <p className="whitespace-pre-line text-sm text-gray-600">{r.instructions}</p>
+      ) : null}
+      {r.status === 'approved' && r.method === 'no_return' ? <p className="text-sm text-gray-600">No need to send it back.</p> : null}
+      {r.status === 'received' && r.gateway_refund_status === 'pending' ? (
+        <p className="text-sm text-gray-600">Your refund is on its way to your original payment. It reaches you in 5 to 7 working days.</p>
+      ) : null}
+      {r.status === 'closed' && r.refund_method === 'original_payment' ? (
+        <p className="text-sm text-emerald-700">
+          ₹{r.refunded_amount.toLocaleString('en-IN')} refunded to your original payment. It reaches you in 5 to 7 working days.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 /** Buyer's own return request for a delivered order, and the status of earlier ones. */
 export function StoreOrderReturn({ subdomain, orderId, accent }: { subdomain: string; orderId: string; accent: string }) {
@@ -53,7 +128,7 @@ export function StoreOrderReturn({ subdomain, orderId, accent }: { subdomain: st
   if (!info) return null;
   if (!info.can_return && info.returns.length === 0) return null;
 
-  const chosen = info.lines.filter((l) => (qty[l.invoice_item_id] ?? 0) > 0);
+  const chosen = info.lines.filter((l) => canReturnLine(l) && (qty[l.invoice_item_id] ?? 0) > 0);
 
   async function submit() {
     setBusy(true);
@@ -85,13 +160,18 @@ export function StoreOrderReturn({ subdomain, orderId, accent }: { subdomain: st
   return (
     <div className="mt-3 border-t border-gray-100 pt-3">
       {info.returns.map((r) => (
-        <p key={r.return_number} className="text-sm text-gray-600">
-          <RotateCcw className="mr-1 inline h-3.5 w-3.5" />
-          Return {r.return_number}: {BUYER_STATUS[r.status] ?? r.status}
-          {r.status === 'closed' && r.refunded_amount > 0 ? ` · ₹${r.refunded_amount.toLocaleString('en-IN')} refunded` : ''}
-          {r.status === 'closed' && r.refund_method === 'store_credit' ? ' · kept as credit for your next order' : ''}
-          {r.status === 'rejected' && r.rejected_reason ? ` · ${r.rejected_reason}` : ''}
-        </p>
+        <div key={r.return_number} className="mb-2">
+          <p className="text-sm text-gray-600">
+            <RotateCcw className="mr-1 inline h-3.5 w-3.5" />
+            Return {r.return_number}: {BUYER_STATUS[r.status] ?? r.status}
+            {r.status === 'closed' && r.refunded_amount > 0 && r.refund_method !== 'original_payment'
+              ? ` · ₹${r.refunded_amount.toLocaleString('en-IN')} refunded`
+              : ''}
+            {r.status === 'closed' && r.refund_method === 'store_credit' ? ' · kept as credit for your next order' : ''}
+            {r.status === 'rejected' && r.rejected_reason ? ` · ${r.rejected_reason}` : ''}
+          </p>
+          {r.status !== 'rejected' && r.status !== 'cancelled' ? <ReturnProgress r={r} accent={accent} /> : null}
+        </div>
       ))}
       {done ? <p className="mt-1 text-sm text-emerald-700">{done}</p> : null}
 
@@ -107,8 +187,11 @@ export function StoreOrderReturn({ subdomain, orderId, accent }: { subdomain: st
           <p className="text-sm font-medium text-gray-900">What would you like to return?</p>
           <ul className="space-y-2">
             {info.lines.map((l) => (
-              <li key={l.invoice_item_id} className="flex items-center justify-between gap-2 text-sm">
+              <li key={l.invoice_item_id} className={`flex items-center justify-between gap-2 text-sm ${canReturnLine(l) ? '' : 'text-gray-400'}`}>
                 <span className="min-w-0 truncate">{l.item_name}</span>
+                {!canReturnLine(l) ? (
+                  <span className="shrink-0 text-xs">Can&apos;t be returned</span>
+                ) : (
                 <select
                   className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
                   value={qty[l.invoice_item_id] ?? 0}
@@ -121,6 +204,7 @@ export function StoreOrderReturn({ subdomain, orderId, accent }: { subdomain: st
                     </option>
                   ))}
                 </select>
+                )}
               </li>
             ))}
           </ul>

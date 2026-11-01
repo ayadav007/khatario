@@ -3,10 +3,17 @@
 import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isStudioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
-import { storeDiscountPercent } from '@/lib/store/map-store-product';
+import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { lowStockCount, storeDiscountPercent } from '@/lib/store/map-store-product';
 import { StudioAddButton, StudioProductTile } from './studio-theme/StudioSections';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { QuickVariantSheet } from './quick-theme/QuickSheets';
+import { usePhoneSheets } from '@/lib/store/phone-kit';
+import { useEngineCardLook } from './engine/EngineCardContext';
+import { productCardLook } from '@/lib/store/engine/card-look';
+import { isDesignedCard } from '@/lib/store/engine/card-render';
+import { cardBadges } from '@/lib/store/engine/card-badges';
+import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -21,6 +28,7 @@ export interface StoreProduct {
   image_url: string | null;
   category_id: string | null;
   category_name: string | null;
+  brand?: string | null;
   current_stock: number;
   has_variants: boolean;
   tax_rate: number;
@@ -29,9 +37,18 @@ export interface StoreProduct {
   rating_avg?: number;
   rating_count?: number;
   featured_in_store?: boolean;
+  /** ISO time the item was added; drives the "New" badge. */
+  created_at?: string | null;
+  /** Units sold on the store; only filled when the list was sorted by best sellers. */
+  sold_count?: number;
   seo_title?: string | null;
   seo_description?: string | null;
   seo_image_url?: string | null;
+  store_badge?: string | null;
+  store_tagline?: string | null;
+  store_swatches?: StoreSwatch[];
+  /** False when the shop marked the product as not returnable online (treated as returnable when absent). */
+  returnable?: boolean;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -47,6 +64,28 @@ interface StoreProductCardProps {
   product: StoreProduct;
   onViewDetail?: (product: StoreProduct) => void;
   variant?: StoreProductCardVariant;
+  /** Studio: an extra badge from the section, e.g. "Bestseller". */
+  highlight?: string;
+  /** Studio: show the product's tagline / colour swatches; undefined follows the theme preset. */
+  showTagline?: boolean;
+  showSwatches?: boolean;
+}
+
+/** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
+export function StoreProductCard(props: StoreProductCardProps) {
+  const { store } = useStore();
+  const look = productCardLook(useEngineCardLook(), sanitizeStoreTheme(store?.store_theme));
+  const sheets = usePhoneSheets(look.sheetsTheme);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const picker = sheets && props.product.has_variants;
+  return (
+    <>
+      <ProductCard {...props} onOptions={picker ? () => setOptionsOpen(true) : undefined} />
+      {picker && optionsOpen ? (
+        <QuickVariantSheet product={props.product} open onClose={() => setOptionsOpen(false)} />
+      ) : null}
+    </>
+  );
 }
 
 function ChowkAddControl({
@@ -124,11 +163,22 @@ function ChowkAddControl({
   );
 }
 
-export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
+function ProductCard({
+  product,
+  onViewDetail,
+  variant,
+  highlight,
+  showTagline,
+  showSwatches,
+  onOptions,
+}: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
+  const engineLook = useEngineCardLook();
+  const look = productCardLook(engineLook, theme);
   const accent = theme.accent;
   const khatario = isKhatarioPack(theme);
+  const quick = look.quick;
   const layout: StoreProductCardVariant = variant ?? 'grid';
 
   const inCart = useMemo(() => {
@@ -156,7 +206,9 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
       e.preventDefault();
       e.stopPropagation();
       if (product.has_variants) {
-        onViewDetail?.(product);
+        // The bottom-sheet picker (Quick, phone kit) instead of opening the product.
+        if (onOptions) onOptions();
+        else onViewDetail?.(product);
         return;
       }
       addToCart({
@@ -168,9 +220,26 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         unit: product.unit,
         maxStock: product.current_stock,
         taxRate: product.tax_rate,
+        mrp: product.mrp != null && product.mrp > product.selling_price ? product.mrp : undefined,
       });
     },
-    [product, addToCart, onViewDetail],
+    [product, addToCart, onViewDetail, onOptions],
+  );
+
+  // Buy now, as on the product page (StoreKhatarioProductView.buyNow): put one in the cart unless it is already there, then
+  // go to checkout. A product with options opens the option chooser first, as Add does.
+  const handleBuy = useCallback(
+    (e: React.MouseEvent) => {
+      if (product.has_variants) {
+        handleAdd(e);
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (!cartItem) handleAdd(e);
+      window.location.href = '/checkout';
+    },
+    [product.has_variants, cartItem, handleAdd],
   );
 
   const handleIncrement = useCallback(
@@ -193,7 +262,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
     [product.id, cartItem, updateCartQuantity],
   );
 
-  if (isStudioPack(theme)) {
+  if (look.studioTile) {
     const open = inCart > 0 && !product.has_variants;
     const add = !theme.show_listing_add ? null : open ? (
       <div className="stepper">
@@ -212,26 +281,79 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
       </div>
     ) : (
       <StudioAddButton
-        label={outOfStock ? 'Out of stock' : product.has_variants ? 'Choose options' : 'Add'}
+        label={
+          outOfStock
+            ? quick
+              ? 'Sold out'
+              : 'Out of stock'
+            : product.has_variants
+              ? quick
+                ? `${product.variants.length} options`
+                : 'Choose options'
+              : quick
+                ? 'ADD'
+                : 'Add'
+        }
         onClick={handleAdd}
         disabled={outOfStock}
       />
     );
-    return (
+    const { badges, hideDiscount } = cardBadges({
+      customBadge: product.store_badge,
+      highlight,
+      createdAt: product.created_at,
+      discountPct: discount,
+    });
+    // A card design decides its tagline and swatch lines itself (the section's switches are folded into its look).
+    const designed = engineLook && isDesignedCard(engineLook.card) ? { look: engineLook.card, schemes: engineLook.schemes } : undefined;
+    const tagline = designed ? product.store_tagline : (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
+    const swatches = designed ? product.store_swatches : (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
+    const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
+    // A card design draws its own buttons from these (its button style, Buy now, the stepper); Theme's own gets none of it.
+    const designedExtras = designed
+      ? {
+          card: designed,
+          brand: product.brand,
+          images: gallery,
+          placeholderLogo: store?.logo_url ?? null,
+          actions: add
+            ? {
+                inCart,
+                hasOptions: product.has_variants,
+                canInc: !!cartItem && cartItem.quantity < cartItem.maxStock,
+                onAdd: handleAdd,
+                onBuy: handleBuy,
+                onInc: handleIncrement,
+                onDec: handleDecrement,
+              }
+            : undefined,
+        }
+      : {};
+    const tile = (
       <StudioProductTile
         name={product.name}
         unit={product.has_variants ? `${product.variants.length} options` : product.unit}
         price={product.selling_price}
         mrp={product.mrp}
-        image={product.image_url}
+        image={gallery[0] ?? product.image_url}
+        hoverImage={gallery[1]}
         href={`/products/${product.id}`}
         discount={discount}
+        hideDiscountBadge={hideDiscount}
+        badges={badges}
+        tagline={tagline}
+        swatches={swatches}
+        rating={product.rating_avg}
+        ratingCount={product.rating_count}
+        lowStock={lowStockCount(product)}
         outOfStock={outOfStock}
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}
         add={add}
+        {...designedExtras}
       />
     );
+    return tile;
   }
 
   if (theme.pack === 'grocery') {

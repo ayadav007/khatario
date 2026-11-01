@@ -21,6 +21,7 @@ export function isPublicMarketingSurface(
   if (p.startsWith('/terms')) return true;
   if (p.startsWith('/privacy')) return true;
   if (p.startsWith('/guides')) return true;
+  if (p === '/themes' || p.startsWith('/themes/')) return true;
   if (p === '/blog' || p.startsWith('/blog/')) return true;
   if (p.startsWith('/solution/')) return true;
   if (p.startsWith('/login')) return true;

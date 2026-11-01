@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionEarning } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -125,7 +125,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { commission_id, action, approved_by, payment_reference, notes, updated_by_user_id } = body;
+    const { commission_id, action, approved_by, payment_reference, notes } = body;
+    const updated_by_user_id = actingUserId(request, body.updated_by_user_id);
 
     if (!commission_id || !action) {
       return NextResponse.json(

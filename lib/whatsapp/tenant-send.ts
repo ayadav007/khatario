@@ -5,6 +5,7 @@ import {
   uploadMedia,
 } from '@/lib/meta-whatsapp';
 import { toE164Digits } from '@/lib/platform-whatsapp-send';
+import { enqueueCustomerPush } from '@/lib/push/customer-push';
 import type { TenantWaEventKey, TenantWaFieldKey } from '@/lib/whatsapp/tenant-events';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 
@@ -96,6 +97,14 @@ export async function notifyBusinessEvent(input: {
   values: EventValues;
   fallbackText: string;
 }): Promise<{ via: 'cloud' | 'qr' | null }> {
+  // Customer-facing events also reach the customer's phone app when they registered a device for
+  // this shop (lib/push/customer-push.ts decides which events qualify). Never throws.
+  await enqueueCustomerPush({
+    businessId: input.businessId,
+    phone: input.to,
+    eventKey: input.eventKey,
+    body: input.fallbackText,
+  });
   const res = await sendEventTemplate(input);
   if (res.sent) return { via: 'cloud' };
   const to = toE164Digits(input.to);

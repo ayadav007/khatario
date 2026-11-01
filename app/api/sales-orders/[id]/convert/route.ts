@@ -14,6 +14,7 @@ import {
   lineRemainingQty,
 } from '@/lib/sales-orders/billing-status';
 import { releaseSalesOrderReservationQty } from '@/lib/stock/sales-order-reservations';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,14 @@ export async function POST(
   const tenant = requireTenantBusinessId(request);
   if (!tenant.ok) return tenant.response;
   const body = await request.json().catch(() => ({}));
-  const userId = getUserIdFromRequest(request, body);
+  const userId = getUserIdFromRequest(request);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await authorize(userId, 'invoices', 'create', { businessId: tenant.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   const salesOrderId = params.id;
   const invoiceDate = body?.invoice_date ? String(body.invoice_date).slice(0, 10) : todayIsoDate();
@@ -202,6 +209,7 @@ export async function POST(
         hsn_sac: row.hsn_sac,
         quantity,
         unit: row.unit,
+        unit_factor: row.unit_factor,
         unit_price: row.unit_price,
         discount_percent: row.discount_percent,
         tax_rate: row.tax_rate,
@@ -221,7 +229,8 @@ export async function POST(
         salesOrderId,
         itemId: row.item_id,
         variantId: row.variant_id,
-        quantity,
+        // Reservations are held in base units; the order line may be in boxes.
+        quantity: quantity * (Number(row.unit_factor) || 1),
         userId,
       });
     }

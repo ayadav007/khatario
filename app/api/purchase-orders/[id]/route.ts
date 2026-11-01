@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const purchaseOrderId = params.id;
+  const access = await requireTenantPermission(request, null, 'purchases', 'read');
+  if (!access.ok) return access.response;
 
   try {
     const pool = getPool();
@@ -26,9 +29,9 @@ export async function GET(
         s.gstin as supplier_gstin,
         s.address as supplier_address
       FROM purchase_orders po
-      LEFT JOIN suppliers s ON po.supplier_id = s.id
-      WHERE po.id = $1`,
-      [purchaseOrderId]
+      LEFT JOIN suppliers s ON po.supplier_id = s.id AND s.business_id = po.business_id
+      WHERE po.id = $1 AND po.business_id = $2`,
+      [purchaseOrderId, access.businessId]
     );
 
     if (orderResult.rows.length === 0) {

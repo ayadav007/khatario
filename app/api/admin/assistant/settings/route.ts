@@ -3,6 +3,7 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { logAdminAction } from '@/lib/platform-auth';
 import { SettingsUpdateSchema } from '@/lib/rag/admin';
 import { getPlatformAssistantSettings, savePlatformAssistantSettings } from '@/lib/rag/settings';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function PUT(request: NextRequest) {
     'assistant_settings',
     undefined,
     { scope: 'platform', channels: next.channels },
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+    getClientIp(request),
     request.headers.get('user-agent') || undefined,
   );
   return NextResponse.json({ settings: next });

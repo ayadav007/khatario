@@ -17,6 +17,7 @@ interface DeliveryChallan {
   invoice_number: string | null;
   sales_order_id: string | null;
   sales_order_number: string | null;
+  stock_transfer_number?: string | null;
   challan_number: string;
   challan_date: string;
   delivery_date: string | null;
@@ -173,6 +174,8 @@ export default function DeliveryChallansPage() {
                             <User className="w-4 h-4 text-gray-400" />
                             <span className="text-sm text-gray-700">{challan.customer_name}</span>
                           </div>
+                        ) : challan.stock_transfer_number ? (
+                          <span className="text-sm text-gray-700">Stock transfer {challan.stock_transfer_number}</span>
                         ) : (
                           <span className="text-sm text-gray-400">-</span>
                         )}

@@ -1,0 +1,72 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CONTENT_BLOCK_RULES } from '@/components/store/engine/content-block-rules';
+
+// There is no visual harness for the engine stylesheet, so these pin the rules whose absence or drift was a real regression.
+
+const ruleBody = (selector: string): string => {
+  const rule = CONTENT_BLOCK_RULES.split('}').find((r) => r.split('{')[0].trim() === selector) ?? '';
+  return rule.slice(rule.indexOf('{') + 1);
+};
+
+describe('content block rules', () => {
+  it('every rule is scoped under the engine root', () => {
+    const selectors = CONTENT_BLOCK_RULES.split('}')
+      .map((r) => r.split('{')[0].trim())
+      .filter(Boolean);
+    for (const sel of selectors) expect(sel.startsWith('.st-root.eng-root') || sel.startsWith('@container')).toBe(true);
+  });
+
+  it("Image with text keeps the old hero heading size, line height and top margin for the medium heading", () => {
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-size-medium')).toBe('font-size:clamp(24px,5cqi,40px);line-height:1.1');
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-heading')).toContain('margin-top:12px');
+  });
+
+  it('Rich text headings stay at the old .rich h2 size', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-size-medium')).toBe('font-size:clamp(22px,3.4cqi,32px)');
+  });
+
+  it('has xl and xxl heading sizes, a hero scale for them, and the text styles', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-size-xl')).toBe('font-size:clamp(34px,6cqi,56px)');
+    expect(ruleBody('.st-root.eng-root .eng-cb-size-xxl')).toBe('font-size:clamp(40px,7.5cqi,72px)');
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-size-xl')).toContain('font-size:');
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-size-xxl')).toContain('font-size:');
+    expect(ruleBody('.st-root.eng-root .eng-cb-text-subtitle')).toBe('font-size:1.15em;opacity:.8');
+    expect(ruleBody('.st-root.eng-root .eng-cb-text-caps')).toBe('text-transform:uppercase;letter-spacing:.08em');
+  });
+
+  it("a Subtitle paragraph takes the block's larger size back from the hero paragraph rules", () => {
+    const sel = '.st-root.eng-root.eng-root.eng-root.eng-root .eng-cb-text.eng-cb-text-subtitle p';
+    expect(ruleBody(sel)).toBe('font-size:inherit');
+    // Beats the highest hero paragraph rule it must override (Grocery with the phone kit: 6 classes and a tag).
+    expect((sel.match(/\./g) ?? []).length).toBeGreaterThan(6);
+    // Normal text is untouched.
+    expect(CONTENT_BLOCK_RULES).not.toContain('.eng-cb-text p{font-size');
+  });
+
+  it('centred Image with text centres its column items and stretches block text', () => {
+    expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy')).toContain('align-items:center');
+    expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy :is(.eng-cb-text,.eng-cb-quote)')).toContain('align-self:stretch');
+  });
+
+  it('a text block keeps the old 20px gap before what follows, and none when it is last', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-text')).toBe('margin-bottom:20px');
+    // Same specificity, so the :last-child rule must come after it to win.
+    const selectors = CONTENT_BLOCK_RULES.split('}').map((r) => r.split('{')[0].trim());
+    expect(selectors.indexOf('.st-root.eng-root .eng-cb-text')).toBeGreaterThan(selectors.indexOf('.st-root.eng-root .eng-cb'));
+    expect(selectors.indexOf('.st-root.eng-root .eng-cb:last-child')).toBeGreaterThan(selectors.indexOf('.st-root.eng-root .eng-cb-text'));
+    expect(ruleBody('.st-root.eng-root .eng-cb:last-child')).toBe('margin-bottom:0');
+  });
+
+  it('the last paragraph of a text block adds no margin of its own', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-text p:last-child')).toContain('margin-bottom:0');
+  });
+});
+
+describe('grocery.css hero heading', () => {
+  const css = readFileSync(join(process.cwd(), 'components/store/engine/presets/grocery.css'), 'utf8');
+  it('styles the block heading, not the removed .eng-heroTitle', () => {
+    expect(css).not.toContain('.eng-heroTitle');
+    expect(css).toContain('.eng-cb-heading.eng-cb-size-medium');
+  });
+});

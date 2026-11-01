@@ -50,7 +50,8 @@ function computeInvoiceProfitSummary(
     }
 
     totalRevenue += revenue;
-    totalCost += qty * unitCost;
+    // Cost is per base unit; a line sold in boxes costs quantity × factor of them.
+    totalCost += qty * (Number(row.unit_factor) || 1) * unitCost;
   }
 
   const totalProfit = totalRevenue - totalCost;

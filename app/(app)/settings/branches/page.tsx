@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import { Plus, Building2, Phone, Mail, CheckCircle, Edit, Trash2, XCircle, Loader2 } from 'lucide-react';
+import { Plus, Building2, Phone, Mail, CheckCircle, Edit, Trash2, XCircle, Loader2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
@@ -28,6 +28,8 @@ interface Branch {
   is_active: boolean;
   invoice_prefix: string | null;
   next_invoice_number: number;
+  /** Set when the branch breaks the per-state GST registration rule. */
+  gst_place_issue?: string | null;
 }
 
 export default function BranchesPage() {
@@ -238,6 +240,13 @@ export default function BranchesPage() {
                     )}
                   </div>
                 </div>
+
+{branch.gst_place_issue && (
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{branch.gst_place_issue}</span>
+                  </div>
+                )}
 
                 {/* GSTIN */}
                 {branch.gstin && (

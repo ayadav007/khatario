@@ -25,6 +25,19 @@
 
         </activity>
 
+        <!-- Push (FCM through @capacitor/push-notifications). The channel itself is created in
+             KhatarioApplication so it exists before the first message arrives; these defaults
+             apply to messages Android displays while the app is in the background. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_khatario" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/khatario_notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="khatario_alerts" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -39,6 +52,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Android 13+: notifications need a runtime grant (requested after sign-in, see
+         lib/push/client/capacitor-push.ts). Also merged from the push plugin's manifest. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Contacts: pick name/number when adding a customer from the invoice (APK).
          @capacitor/contacts also merges READ_CONTACTS + WRITE_CONTACTS. -->

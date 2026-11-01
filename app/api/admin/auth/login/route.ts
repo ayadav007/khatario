@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const { admin, sessionVersion } = result;
 
     const ipAddress =
-      request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+      getClientIp(request);
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
     await logAdminAction(
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Platform admin login error:', error);
     return NextResponse.json(
-      { error: 'Login failed', details: error.message },
+      { error: 'Login failed' },
       { status: 500 }
     );
   }

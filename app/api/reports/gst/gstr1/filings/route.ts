@@ -79,9 +79,12 @@ export async function GET(request: NextRequest) {
     const client = await pool.connect();
     
     try {
+      const { registrationGstinKey } = await import('@/lib/gst/registration');
+      const filingGstin = await registrationGstinKey(client, business_id, finalBranchId);
       const filings = await client.query(
         `SELECT 
           f.id,
+          f.gstin,
           f.filing_period,
           f.filing_date,
           f.status,
@@ -95,11 +98,11 @@ export async function GET(request: NextRequest) {
          FROM gstr1_filings f
          LEFT JOIN gstr1_filing_invoices fi ON f.id = fi.gstr1_filing_id
          LEFT JOIN users u ON f.filed_by = u.id
-         WHERE f.business_id = $1
-         GROUP BY f.id, f.filing_period, f.filing_date, f.status, f.lock_date, 
+         WHERE f.business_id = $1 AND f.gstin = $2
+         GROUP BY f.id, f.gstin, f.filing_period, f.filing_date, f.status, f.lock_date, 
                   f.created_at, f.updated_at, f.filed_by, u.name, f.gstr1_snapshot
          ORDER BY f.filing_period DESC, f.created_at DESC`,
-        [business_id]
+        [business_id, filingGstin]
       );
 
       const rows = filings.rows;

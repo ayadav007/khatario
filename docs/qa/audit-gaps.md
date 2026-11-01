@@ -404,3 +404,8 @@ Count: 106.
 - Do not mark a route passed because this inventory lists it.
 - Do not invent expected GST totals, stock quantities, or permission matrices.
 - Do not run migrations against staging or production. Use `kh_phase2_test` when a scenario needs the database.
+
+
+## Identity from the request body (2026-10-27, staging run)
+
+`POST /api/employees` takes `business_id` from the body and passes `resolveCreatedByUserId(request, body)` to `authorize`. That helper (`lib/auth-helpers.ts:56`) returns body `created_by_user_id` or `created_by` before the session user. Other callers of `resolveCreatedByUserId` need the same review. NOT TESTED. Recorded as F-001 in `staging-scenario-results.md`.

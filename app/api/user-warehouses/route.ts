@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Granting warehouse rights is a settings change, and only inside the caller's business.
+    const access = await requireTenantPermission(request, null, 'settings', 'update');
+    if (!access.ok) {
+      client.release();
+      return access.response;
+    }
+
     // Validate user and warehouse exist
     const userCheck = await client.query(
       'SELECT id, business_id FROM users WHERE id = $1',
@@ -91,8 +99,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate user and warehouse belong to same business
-    if (userCheck.rows[0].business_id !== warehouseCheck.rows[0].business_id) {
+    // Validate user and warehouse belong to the caller's business
+    if (
+      userCheck.rows[0].business_id !== access.businessId ||
+      warehouseCheck.rows[0].business_id !== access.businessId
+    ) {
       client.release();
       return NextResponse.json(
         { error: 'User and warehouse must belong to the same business' },
@@ -140,7 +151,12 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const userId = getUserIdFromRequest(request);
+    const access = await requireTenantPermission(request, null, 'settings', 'update');
+    if (!access.ok) {
+      client.release();
+      return access.response;
+    }
+    const userId = searchParams.get('user_id') || access.userId;
     const warehouseId = searchParams.get('warehouse_id');
 
     if (!userId || !warehouseId) {
@@ -154,10 +170,13 @@ export async function DELETE(request: NextRequest) {
     await client.query('BEGIN');
 
     const result = await client.query(`
-      DELETE FROM user_warehouses
-      WHERE user_id = $1 AND warehouse_id = $2
-      RETURNING *
-    `, [userId, warehouseId]);
+      DELETE FROM user_warehouses uw
+      USING users u, warehouses w
+      WHERE uw.user_id = $1 AND uw.warehouse_id = $2
+        AND u.id = uw.user_id AND u.business_id = $3
+        AND w.id = uw.warehouse_id AND w.business_id = $3
+      RETURNING uw.*
+    `, [userId, warehouseId, access.businessId]);
 
     await client.query('COMMIT');
     client.release();

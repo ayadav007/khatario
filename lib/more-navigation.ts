@@ -10,6 +10,12 @@ import {
 } from '@/lib/platform-modules';
 import { buildHrNavSection } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
+import {
+  CONNECT_DASHBOARD_ITEM,
+  CONNECT_NAV_FEATURE_KEY,
+  CONNECT_NAV_GROUPS,
+  CONNECT_SETTINGS_ITEM,
+} from '@/lib/navigation/connect-nav-items';
 
 export type MoreNavItem = {
   href: string;
@@ -123,7 +129,6 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
         { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
         { href: '/suppliers/catalog', label: 'My Catalog' },
         { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
-        { href: '/suppliers/requests', label: 'Requests to Fulfill' },
       ].map((item) => withSupplierHubLock(item, hubLocked)),
       ctx
     );
@@ -160,9 +165,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           ]
         : []),
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-      ...(showHub
-        ? [withSupplierHubLock({ href: '/purchases/requests', label: 'Requests', module: 'purchases' }, hubLocked)]
-        : []),
+      { href: '/purchases/order-list', label: 'Order List', module: 'purchases' },
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
       { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
       { href: '/expenses', label: 'Expenses', module: 'expenses' },
@@ -174,6 +177,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const invItems: MoreNavItem[] = [
     { href: '/items', label: 'Items', module: 'items' },
     { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+    { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
+    { href: '/pricing/schemes', label: 'Schemes', module: 'items' },
+    { href: '/pricing/price-list', label: 'Price List', module: 'items' },
   ];
   if (hasFeature(hasCapability, 'barcode_label_printing')) {
     invItems.push({
@@ -201,6 +207,12 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   }
   invItems.push(
     { href: '/inventory-adjustments', label: 'Adjustments', module: 'items' },
+    { href: '/stock-counts', label: 'Stock Counts', module: 'items' },
+    { href: '/stock-holds', label: "Held & Others' Goods", module: 'items' },
+    { href: '/manufacturing', label: 'Manufacturing', module: 'items' },
+    { href: '/insurance-claims', label: 'Insurance Claims', module: 'items' },
+    { href: '/items/cleanup', label: 'Units & Duplicates', module: 'items' },
+    { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
     { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
     { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' }
   );
@@ -210,6 +222,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       [
         { href: '/items', label: 'Items', module: 'items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+        { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
+        { href: '/pricing/schemes', label: 'Schemes', module: 'items' },
+        { href: '/pricing/price-list', label: 'Price List', module: 'items' },
       ],
       ctx
     );
@@ -278,8 +293,12 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
       { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
       { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+      { href: '/eway-bills', label: 'E-way bills', module: 'reports' },
       { href: '/reports/deleted', label: 'Deleted items', module: 'reports' },
       { href: '/reports/stock/valuation', label: 'Stock valuation', module: 'reports' },
+      { href: '/reports/stock/quantitative', label: 'Quantity details (3CD)', module: 'reports' },
+      { href: '/reports/stock/bank-statement', label: 'Bank stock statement', module: 'reports' },
+      { href: '/reports/stock/job-work', label: 'Job work (ITC-04)', module: 'reports' },
       { href: '/reports/credit-risk', label: 'Credit risk', module: 'reports' },
     ],
     ctx
@@ -309,98 +328,17 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const whatsappUnlocked = hasFeature(hasCapability, 'whatsapp_bot');
 
   if (hasConnect) {
+    // Phone menu has no nested groups, so the Sidebar's Chats / Send / Audience groups run in order.
+    const connectItems = [CONNECT_DASHBOARD_ITEM, ...CONNECT_NAV_GROUPS.flatMap((group) => group.items)];
     const connect = section(
       'Connect',
       [
-        {
-          href: '/whatsapp/dashboard',
-          label: 'Dashboard',
-          module: 'whatsapp',
+        ...connectItems.map((item) => ({
+          ...item,
           isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/conversations',
-          label: 'Conversations',
-          module: 'whatsapp_inbox',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/reminders',
-          label: 'Payment Reminders',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/orders',
-          label: 'Order Verification',
-          module: 'whatsapp_inbox',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/flows',
-          label: 'Flows',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/send-message',
-          label: 'Send Message',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/who-to-message',
-          label: 'Who to message',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/campaigns',
-          label: 'Campaigns',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/contacts',
-          label: 'Contacts',
-          module: 'whatsapp_inbox',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/contacts/groups',
-          label: 'Contact Groups',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/group-extractor',
-          label: 'Group Extractor',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/unsubscribes',
-          label: 'Unsubscribes',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/settings/whatsapp',
-          label: 'WhatsApp Settings',
-          module: 'whatsapp',
-        },
+          featureKey: CONNECT_NAV_FEATURE_KEY,
+        })),
+        CONNECT_SETTINGS_ITEM,
       ],
       ctx
     );
@@ -426,6 +364,12 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/tools/hsn-finder', label: 'HSN/SAC Finder' },
     { href: '/tools/gst-calculator', label: 'GST Calculator' },
     { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+    {
+      href: '/tools/whatsapp-group-extractor',
+      label: 'Group Extractor',
+      featureKey: 'whatsapp_bot',
+      isLocked: !hasFeature(hasCapability, 'whatsapp_bot'),
+    },
     { href: '/tools/tds-calculator', label: 'TDS Calculator' },
     { href: '/tools/discount-calculator', label: 'Discount Calculator' },
     { href: '/tools/price-margin-calculator', label: 'Price Calculator' },

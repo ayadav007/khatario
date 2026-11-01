@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { FlowNode } from '@/lib/whatsapp/flows/schema';
 import { WA_LIMITS } from '@/lib/whatsapp/wa-limits';
 import { newNodeId } from './flow-convert';
@@ -284,7 +285,11 @@ export function FlowNodeEditor({
           <option value="assign_to_user_id">Assign agent</option>
           <option value="add_labels">Add labels</option>
           <option value="remove_labels">Remove labels</option>
+          <option value="set_stage">Move to pipeline stage</option>
         </select>
+        {node.data.kind === 'set_stage' ? (
+          <StagePicker value={node.data.stageId ?? null} onChange={(stageId) => setData({ ...node.data, stageId })} />
+        ) : null}
         {node.data.kind === 'open_shop' ? (
           <>
             <p className={label}>Body</p>
@@ -321,6 +326,30 @@ export function FlowNodeEditor({
   }
 
   return <p className="text-[10px] text-text-muted">End of flow.</p>;
+}
+
+/** Pipeline stages from the business's board; loaded once per picker. */
+function StagePicker({ value, onChange }: { value: string | null; onChange: (stageId: string | null) => void }) {
+  const [stages, setStages] = useState<Array<{ id: string; name: string }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/whatsapp/pipeline/stages')
+      .then((res) => (res.ok ? res.json() : { stages: [] }))
+      .then((data) => { if (!cancelled) setStages(data.stages || []); })
+      .catch(() => { if (!cancelled) setStages([]); });
+    return () => { cancelled = true; };
+  }, []);
+  return (
+    <>
+      <p className={label}>Stage</p>
+      <select className={field} value={value || ''} onChange={(e) => onChange(e.target.value || null)} disabled={!stages}>
+        <option value="">{stages ? 'Pick a stage' : 'Loading…'}</option>
+        {(stages || []).map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
+        ))}
+      </select>
+    </>
+  );
 }
 
 function HeaderBodyFooter({

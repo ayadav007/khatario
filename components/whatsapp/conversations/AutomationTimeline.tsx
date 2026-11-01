@@ -2,11 +2,11 @@
 
 import React from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Bot, MousePointerClick, ArrowRight, ArrowLeft, Phone, Link2, Megaphone, Activity } from 'lucide-react';
+import { Bot, MousePointerClick, ArrowRight, ArrowLeft, Phone, Link2, Megaphone, Activity, Kanban } from 'lucide-react';
 
 export interface TimelineEvent {
   id: string;
-  event_type: 'bot_message' | 'button_clicked' | 'flow_entered' | 'flow_exited' | 'cta_clicked' | 'campaign_triggered';
+  event_type: 'bot_message' | 'button_clicked' | 'flow_entered' | 'flow_exited' | 'cta_clicked' | 'campaign_triggered' | 'stage_changed';
   description: string;
   icon: string;
   event_data?: Record<string, any>;
@@ -25,7 +25,8 @@ const iconMap: Record<string, React.ReactNode> = {
   phone: <Phone className="w-4 h-4" />,
   link: <Link2 className="w-4 h-4" />,
   megaphone: <Megaphone className="w-4 h-4" />,
-  activity: <Activity className="w-4 h-4" />
+  activity: <Activity className="w-4 h-4" />,
+  kanban: <Kanban className="w-4 h-4" />
 };
 
 export function AutomationTimeline({ events }: AutomationTimelineProps) {

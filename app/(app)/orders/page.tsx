@@ -361,7 +361,7 @@ function OrdersHub() {
         ))}
       </div>
 
-      {view === 'returns' ? <ReturnsList onCounts={onReturnCounts} /> : null}
+      {view === 'returns' ? <ReturnsList onCounts={onReturnCounts} openId={sp.get('return')} /> : null}
 
       <div className={view === 'returns' ? 'hidden' : 'space-y-5'}>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">

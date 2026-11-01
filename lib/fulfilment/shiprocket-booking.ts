@@ -437,10 +437,11 @@ export async function cancelShiprocketBooking(
 export async function applyShiprocketFulfilmentUpdate(input: {
   businessId: string;
   awb: string;
-  orderRef: string;
+  /** Shiprocket's own order id (`sr_order_id`), matched against `carrier_order_id`. */
+  srOrderId: string;
   fulfilmentStatus: FulfilmentStatus | null;
 }): Promise<{ outcome: 'not_found' | 'unchanged' | 'updated'; fulfilment?: FulfilmentChange }> {
-  if (!input.fulfilmentStatus || (!input.awb && !input.orderRef)) return { outcome: 'not_found' };
+  if (!input.fulfilmentStatus || (!input.awb && !input.srOrderId)) return { outcome: 'not_found' };
   const c = await getPool().connect();
   try {
     await c.query('BEGIN');
@@ -451,7 +452,7 @@ export async function applyShiprocketFulfilmentUpdate(input: {
         ORDER BY ($2 <> '' AND awb = $2) DESC, created_at DESC
         LIMIT 1
         FOR UPDATE`,
-      [input.businessId, input.awb, input.orderRef],
+      [input.businessId, input.awb, input.srOrderId],
     );
     const row = found.rows[0];
     if (!row) {
@@ -489,6 +490,70 @@ export async function applyShiprocketFulfilmentUpdate(input: {
     }
     await c.query('COMMIT');
     return { outcome: 'updated', fulfilment: { fulfilmentId: row.id, to } };
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
+/** The timeline note for a parcel that has started coming back; the first RTO label keeps the plain wording. */
+function rtoNote(label: string): string {
+  const base = 'Coming back to the shop (RTO)';
+  const clean = label.trim().toLowerCase();
+  return clean === 'rto initiated' || !clean ? base : `${base} - ${clean}`;
+}
+
+/**
+ * A parcel that has left for the shop (RTO initiated, in transit, ...) is not "returned" yet: the
+ * store order, the parcel status and returns stay as they are. Only a timeline note is added, once
+ * per label. True when the parcel was found (note added or already there), false when it is not
+ * this business's parcel.
+ */
+export async function noteRtoInProgress(input: {
+  businessId: string;
+  awb: string;
+  srOrderId: string;
+  label: string;
+}): Promise<boolean> {
+  if (!input.awb && !input.srOrderId) return false;
+  const c = await getPool().connect();
+  try {
+    await c.query('BEGIN');
+    // Store-order parcels and Orders-screen parcels both live in order_fulfilments; a store order
+    // carries the same awb and Shiprocket id.
+    const found = await c.query<{ id: string; status: FulfilmentStatus }>(
+      `SELECT f.id, f.status
+         FROM order_fulfilments f
+         LEFT JOIN store_orders so ON so.id = f.store_order_id AND so.business_id = f.business_id
+        WHERE f.business_id = $1
+          AND (($2 <> '' AND (f.awb = $2 OR so.awb = $2))
+            OR ($3 <> '' AND (f.carrier_order_id = $3 OR so.carrier_order_id = $3)))
+        ORDER BY ($2 <> '' AND (f.awb = $2 OR so.awb = $2)) DESC, f.created_at DESC
+        LIMIT 1
+        FOR UPDATE OF f`,
+      [input.businessId, input.awb, input.srOrderId],
+    );
+    const row = found.rows[0];
+    if (!row) {
+      await c.query('ROLLBACK');
+      return false;
+    }
+    const note = rtoNote(input.label);
+    const exists = await c.query(
+      `SELECT 1 FROM order_fulfilment_events WHERE fulfilment_id = $1 AND business_id = $2 AND note = $3 LIMIT 1`,
+      [row.id, input.businessId, note],
+    );
+    if (!exists.rows[0]) {
+      await c.query(
+        `INSERT INTO order_fulfilment_events (fulfilment_id, business_id, status, note, actor_type)
+         VALUES ($1, $2, $3, $4, 'webhook')`,
+        [row.id, input.businessId, row.status, note],
+      );
+    }
+    await c.query('COMMIT');
+    return true;
   } catch (e) {
     await c.query('ROLLBACK').catch(() => {});
     throw e;

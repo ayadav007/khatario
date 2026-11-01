@@ -125,7 +125,8 @@ export async function getSessionFromRequest(
   const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
   if (accessToken) {
     const payload = await verifyToken(accessToken);
-    if (payload) return payload;
+    // A refresh token placed in the access cookie must not act as a 7-day access token.
+    if (payload && payload.type !== 'refresh') return payload;
   }
   // Access token expired — try refresh token (middleware will issue new access token)
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
@@ -148,7 +149,7 @@ export async function shouldRotateTokens(
   const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
   if (accessToken) {
     const payload = await verifyToken(accessToken);
-    if (payload) return { rotate: false, payload };
+    if (payload && payload.type !== 'refresh') return { rotate: false, payload };
   }
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
   if (refreshToken) {

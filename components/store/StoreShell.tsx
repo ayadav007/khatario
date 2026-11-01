@@ -1,11 +1,12 @@
 'use client';
 
+import { storePinKey } from '@/lib/store/store-pincode';
 import { Search, MapPin, ChevronDown } from 'lucide-react';
-import { useStore } from '@/lib/store/store-context';
+import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
 import { GroceryFooter, GroceryHeader, GroceryMarquee } from './StoreGroceryChrome';
 import {
@@ -15,13 +16,20 @@ import {
   type StudioNavCategory,
   type StudioNavState,
 } from './studio-theme/StoreStudioChrome';
-import { chowkInkOn, chowkOnAccent, isGroceryPack, isKhatarioPack, sanitizeStoreTheme, storeCanvas, storeFontStack, storePackClass } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isGroceryPack, isKhatarioPack, isQuickPack, sanitizeStoreTheme, storeCanvas, storeFontStack, storePackClass } from '@/lib/store/store-theme';
+import { QuickCartBar, QuickHeader, QuickSheet, QuickTabs } from './quick-theme/QuickChrome';
+import { phoneKitEnabled } from '@/lib/store/phone-kit';
+import './phone-kit.css';
 import { studioThemeVars, type StudioLinkTarget } from '@/lib/store/studio-layout';
+import { HeaderSearch, type SearchPick } from './features/catalog/HeaderSearch';
 
 interface StoreShellProps {
   children: React.ReactNode;
   onSearchChange?: (query: string) => void;
   searchQuery?: string;
+  /** Header search with suggestions (Quick, grocery, Khatario): the grid follows on submit. */
+  onSearchSubmit?: (query: string) => void;
+  onSearchPick?: (pick: SearchPick) => void;
   showSearch?: boolean;
   onCartOpen?: () => void;
   subnav?: ReactNode;
@@ -36,14 +44,14 @@ interface StoreShellProps {
 
 const NO_CATEGORIES: StudioNavCategory[] = [];
 
-function pinKey(subdomain: string) {
-  return `khatario-store-pin:${subdomain}`;
-}
+const pinKey = storePinKey;
 
 export function StoreShell({
   children,
   onSearchChange,
   searchQuery = '',
+  onSearchSubmit,
+  onSearchPick,
   showSearch = false,
   onCartOpen,
   subnav,
@@ -62,6 +70,26 @@ export function StoreShell({
   const searchRef = useRef<HTMLInputElement>(null);
   const theme = sanitizeStoreTheme(store?.store_theme);
   const studioSections = useStudioSections(theme, store, categories);
+  const router = useRouter();
+  // Off the catalog (no search handler) the studio header still types in place, and Enter opens the
+  // catalog with that search. Quick handles this inside HeaderSearch.
+  const [awayQuery, setAwayQuery] = useState('');
+  const studioAwaySearch =
+    !onSearchChange && !isKhatarioPack(theme) && !isGroceryPack(theme) && !isQuickPack(theme);
+  useEffect(() => {
+    if (!studioAwaySearch) return;
+    const input = searchRef.current;
+    if (!input) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      const q = input.value.trim();
+      if (!q) return;
+      e.preventDefault();
+      router.push(`/?${withStoreDraft(new URLSearchParams({ q }))}`);
+    };
+    input.addEventListener('keydown', onKey);
+    return () => input.removeEventListener('keydown', onKey);
+  }, [studioAwaySearch, store, router]);
 
   useEffect(() => {
     if (!store) return;
@@ -72,6 +100,14 @@ export function StoreShell({
       /* ignore */
     }
   }, [store]);
+
+  // Search links from other pages (and the Search tab) land on /?focus=search.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('focus') !== 'search') return;
+    const t = window.setTimeout(() => searchRef.current?.focus(), 300);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -167,23 +203,133 @@ export function StoreShell({
     </div>
   ) : null;
 
+  const kit = phoneKitEnabled(theme);
+  const kitFreeAbove = (selectedBranch ?? (branches.length === 1 ? branches[0] : undefined))?.free_delivery_above ?? null;
   const mobileNav = (
-    <StoreMobileNav
-      onSearch={() => {
-        if (!showSearch) {
-          window.location.href = '/';
-          return;
-        }
-        searchRef.current?.focus();
-      }}
-      onCart={openCart}
-    />
+    <>
+      <StoreMobileNav
+        onSearch={() => {
+          if (!showSearch) {
+            window.location.href = '/';
+            return;
+          }
+          searchRef.current?.focus();
+        }}
+        onCart={openCart}
+      />
+      {/* Phone kit: floating cart bar above the tabs (phones only; hidden by CSS on wider screens). */}
+      {kit && !hideCartBar && cartCount > 0 ? (
+        <div className="qk-kit" style={studioThemeVars(theme)}>
+          <QuickCartBar freeAbove={kitFreeAbove} onCart={openCart} />
+        </div>
+      ) : null}
+    </>
   );
+
+  if (isQuickPack(theme)) {
+    const focusSearch = () => {
+      // Quick's header search is on every page now, so the Search tab focuses it in place.
+      if (!searchRef.current) {
+        window.location.href = '/?focus=search';
+        return;
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      searchRef.current.focus();
+    };
+    const freeAbove = (selectedBranch ?? (branches.length === 1 ? branches[0] : undefined))?.free_delivery_above ?? null;
+    return (
+      <div
+        className={clsx('st-root min-h-screen', storePackClass(theme))}
+        style={{
+          ...studioThemeVars(theme),
+          ...(theme.font_family !== 'system' ? { fontFamily: storeFontStack(theme.font_family) } : {}),
+          backgroundColor: paper,
+          ['--store-accent' as string]: accent,
+          ['--store-paper' as string]: paper,
+        }}
+      >
+        <QuickHeader
+          sections={studioSections}
+          store={store}
+          logoUrl={logoUrl}
+          categories={categories}
+          cartCount={cartCount}
+          onCart={openCart}
+          showSearch={showSearch}
+          searchQuery={searchQuery}
+          onSearchChange={onSearchChange}
+          onSearchSubmit={onSearchSubmit}
+          onSearchPick={onSearchPick}
+          searchRef={searchRef}
+          searchPlaceholder={searchPlaceholder}
+          onNavigate={onStudioNavigate}
+          navState={studioNav}
+          locationLine={pincode ? `Deliver to ${pincode}` : showPlace ? locationLabel : 'Set delivery pincode'}
+          onLocation={() => setBranchPickerOpen(true)}
+        />
+        <QuickSheet
+          open={branchPickerOpen}
+          onClose={() => setBranchPickerOpen(false)}
+          label="Delivery location"
+          title={<h2>Where should we deliver?</h2>}
+          footer={
+            <button type="button" className="qk-cta qk-ctaPlain" onClick={() => setBranchPickerOpen(false)}>
+              Done
+            </button>
+          }
+        >
+          <div className="qk-locBody">
+            {showBranchPicker ? (
+              <div className="qk-branches">
+                {branches.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={b.id === selectedBranchId ? 'on' : ''}
+                    onClick={() => selectBranch(b.id)}
+                  >
+                    <MapPin />
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <label>
+              Pincode
+              <input
+                inputMode="numeric"
+                value={pincode}
+                onChange={(e) => persistPin(e.target.value)}
+                placeholder="6-digit pincode"
+                maxLength={6}
+                autoFocus
+              />
+            </label>
+            {pincode.length === 6 && !pinOk ? (
+              <p className="warn">This store may not deliver to {pincode}. Pickup may still be available.</p>
+            ) : pincode.length === 6 ? (
+              <p className="good">We deliver to {pincode}.</p>
+            ) : null}
+          </div>
+        </QuickSheet>
+        <main className={clsx('qk-main', hideCartBar ? 'noBar' : '', padded && 'qk-padded')}>{children}</main>
+        {hideCartBar ? null : <QuickCartBar freeAbove={freeAbove} onCart={openCart} />}
+        <QuickTabs onSearch={focusSearch} onCart={openCart} />
+        <StudioStoreFooter
+          sections={studioSections}
+          store={store}
+          theme={theme}
+          categories={categories}
+          hideBadge={hideBadge}
+        />
+      </div>
+    );
+  }
 
   if (studio) {
     return (
       <div
-        className={clsx('st-root min-h-screen', storePackClass(theme))}
+        className={clsx('st-root min-h-screen', storePackClass(theme), kit && 'phone-kit')}
         style={{
           ...studioThemeVars(theme),
           ...(theme.font_family !== 'system' ? { fontFamily: storeFontStack(theme.font_family) } : {}),
@@ -199,9 +345,9 @@ export function StoreShell({
           categories={categories}
           cartCount={cartCount}
           onCart={openCart}
-          showSearch={showSearch}
-          searchQuery={searchQuery}
-          onSearchChange={onSearchChange}
+          showSearch={showSearch || studioAwaySearch}
+          searchQuery={studioAwaySearch ? awayQuery : searchQuery}
+          onSearchChange={studioAwaySearch ? setAwayQuery : onSearchChange}
           searchRef={searchRef}
           searchPlaceholder={searchPlaceholder}
           onNavigate={onStudioNavigate}
@@ -224,6 +370,7 @@ export function StoreShell({
         <main
           className={clsx(
             hideCartBar ? 'pb-10' : 'pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-10',
+            kit && !hideCartBar && cartCount > 0 && 'qk-kitRoom',
             padded && 'mx-auto max-w-6xl px-4 pt-6',
           )}
         >
@@ -243,7 +390,7 @@ export function StoreShell({
 
   return (
     <div
-      className={clsx('min-h-screen', storePackClass(theme))}
+      className={clsx('min-h-screen', storePackClass(theme), kit && 'phone-kit')}
       style={{
         backgroundColor: paper,
         color: ink,
@@ -267,6 +414,8 @@ export function StoreShell({
             searchPlaceholder={searchPlaceholder}
             searchRef={searchRef}
             onSearchChange={onSearchChange}
+            onSearchSubmit={onSearchSubmit}
+            onSearchPick={onSearchPick}
             cartCount={cartCount}
             onCart={openCart}
             customerInitial={customer?.name || customer?.phone ? (customer.name || customer.phone).slice(0, 1).toUpperCase() : null}
@@ -315,16 +464,16 @@ export function StoreShell({
 
               {showSearch ? (
                 <div className="relative" role="search">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    id="store-search"
-                    ref={searchRef}
-                    type="search"
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <HeaderSearch
+                    subdomain={store.store_subdomain}
                     value={searchQuery}
-                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    onSubmit={onSearchSubmit}
+                    onPick={onSearchPick}
                     placeholder={searchPlaceholder}
-                    aria-label={searchPlaceholder}
-                    className="h-10 w-full rounded-xl border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none"
+                    inputRef={searchRef}
+                    inputId="store-search"
+                    className="[&_input]:h-10 [&_input]:min-h-0 [&_input]:rounded-xl [&_input]:border-0 [&_input]:bg-white [&_input]:pl-10 [&_input]:pr-4 [&_input]:shadow-sm [&_input]:placeholder:text-gray-400"
                   />
                 </div>
               ) : null}
@@ -347,6 +496,7 @@ export function StoreShell({
             : hideCartBar
               ? 'pb-[calc(var(--chowk-nav)+var(--chowk-safe)+1rem)] sm:pb-10'
               : 'pb-[var(--chowk-chrome)]',
+          kit && !hideCartBar && cartCount > 0 && 'qk-kitRoom',
           padded && clsx('mx-auto px-4 pt-6', grocery ? 'max-w-7xl' : 'max-w-6xl'),
         )}
       >

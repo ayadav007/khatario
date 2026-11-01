@@ -1,5 +1,6 @@
 import archiver from 'archiver';
 import { B2BInvoice, B2CLInvoice, B2CSInvoice, HSNEntry, NilRatedEntry, ExportInvoice, CDNEntry } from '@/lib/gst/gstr1';
+import { csvSafeText } from '@/lib/csv-safe';
 
 // Helper to convert array of objects to CSV string
 function toCSV(data: any[], headers: string[]): string {
@@ -14,7 +15,7 @@ function toCSV(data: any[], headers: string[]): string {
       // For now, let's assume keys match or we do mapping here.
       const key = headerToKeyMap[header]; 
       const val = row[key];
-      const escaped = ('' + (val ?? '')).replace(/"/g, '""');
+      const escaped = csvSafeText('' + (val ?? '')).replace(/"/g, '""');
       return `"${escaped}"`;
     });
     csvRows.push(values.join(','));

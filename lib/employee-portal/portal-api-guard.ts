@@ -22,10 +22,14 @@ export function isEmployeePortalSession(request: NextRequest): boolean {
   return request.headers.get(EMPLOYEE_PORTAL_SESSION_HEADER) === '1';
 }
 
-/** Resolve JWT headers (middleware) or employee portal cookie session. */
+/**
+ * Resolve JWT headers (middleware) or a database-validated employee portal session.
+ * `body` is accepted for call-site compatibility and never used as identity.
+ */
 export async function resolveActorContext(
   request: NextRequest,
-  body?: Record<string, unknown> | null
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _body?: Record<string, unknown> | null
 ): Promise<ActorContext | null> {
   const headerUser = request.headers.get('x-authenticated-user-id');
   const headerBusiness = request.headers.get('x-authenticated-business-id');
@@ -49,16 +53,6 @@ export async function resolveActorContext(
       businessId: headerBusiness,
       isPortal: isEmployeePortalSession(request),
     };
-  }
-
-  const userId =
-    (body?.user_id as string | undefined) ??
-    (body?.updated_by_user_id as string | undefined) ??
-    (body?.employee_id as string | undefined) ??
-    null;
-  const businessId = (body?.business_id as string | undefined) ?? null;
-  if (userId && businessId) {
-    return { userId, businessId, isPortal: false };
   }
 
   return null;

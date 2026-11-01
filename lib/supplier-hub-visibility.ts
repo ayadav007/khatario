@@ -15,6 +15,28 @@ export async function isSupplierHubVisible(): Promise<boolean> {
   }
 }
 
+/** When on, a new directory listing waits for platform approval (migration 430). */
+export async function isListingReviewOn(): Promise<boolean> {
+  try {
+    const row = await queryOne<{ on: boolean | null }>(
+      `SELECT supplier_hub_review_listings AS on FROM platform_settings WHERE id = 'default'`,
+    );
+    return row?.on === true;
+  } catch (error: unknown) {
+    if ((error as { code?: string })?.code === '42703') return false;
+    throw error;
+  }
+}
+
+export async function setListingReview(on: boolean): Promise<void> {
+  const updated = await query(
+    `UPDATE platform_settings SET supplier_hub_review_listings = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 'default'`,
+    [on],
+  );
+  if ((updated.rowCount ?? 0) > 0) return;
+  await query(`INSERT INTO platform_settings (id, supplier_hub_review_listings) VALUES ('default', $1)`, [on]);
+}
+
 export async function setSupplierHubVisible(visible: boolean): Promise<void> {
   const updated = await query(
     `UPDATE platform_settings

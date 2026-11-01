@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "type": "image-with-text",
+      "settings": {
+        "heading": "Our story",
+        "description": "<p>Tell customers about your business.</p>",
+        "image_side": "left"
+      },
+      "blocks": {},
+      "block_order": []
+    },
+    {
+      "type": "rich-text",
+      "settings": {
+        "heading": "What we stand for",
+        "content": "<p>Share what makes your shop different.</p>",
+        "align": "center"
+      },
+      "blocks": {},
+      "block_order": []
+    }
+  ]
+}

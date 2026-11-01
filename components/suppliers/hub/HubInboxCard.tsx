@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { ClipboardList, FileText, Inbox, Send, ShoppingCart, UserPlus } from 'lucide-react';
+import { CalendarClock, ClipboardList, FileText, Inbox, IndianRupee, RotateCcw, Send, ShoppingCart, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type { InboxItem, InboxKind } from '@/lib/supplier-hub-home';
 
@@ -14,6 +14,9 @@ const ICON: Record<InboxKind, React.ComponentType<{ className?: string }>> = {
   bill_to_receive: Inbox,
   ready_to_bill: FileText,
   draft_to_send: Send,
+  payment_to_record: IndianRupee,
+  credit_note_to_issue: RotateCcw,
+  standing_to_accept: CalendarClock,
 };
 
 export const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -64,7 +67,7 @@ export function HubInboxCard({
       </div>
 
       <div className="mt-3 flex gap-2 sm:justify-end sm:pl-[3.25rem]">
-        {a.kind === 'request' ? (
+        {a.kind === 'request' || a.kind === 'standing' ? (
           <>
             <Button className="flex-1 sm:flex-none" onClick={() => onAct(item, 'accept')} disabled={busy}>
               Accept

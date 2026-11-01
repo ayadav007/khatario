@@ -57,6 +57,28 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         { status: 409 }
       );
     }
+    // A return refund claims under the credit note's lock, so this sees any refund already claimed.
+    const refundsTable = await client.query<{ t: string | null }>(
+      `SELECT to_regclass('public.return_gateway_refunds') AS t`
+    );
+    const gatewayRefunds = refundsTable.rows[0]?.t
+      ? await client.query(
+          `SELECT 1 FROM return_gateway_refunds
+            WHERE business_id = $1 AND credit_note_id = $2 AND status IN ('pending', 'processed')
+            LIMIT 1`,
+          [businessId, cn.id]
+        )
+      : { rows: [] };
+    if (gatewayRefunds.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'A refund to the original payment is in progress or done on this credit note',
+          code: 'GATEWAY_REFUND_ON_NOTE',
+        },
+        { status: 409 }
+      );
+    }
 
     try {
       await authorize(userId, 'credit_notes', 'cancel', {
@@ -94,7 +116,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const warehouseModeEnabled = await isWarehouseModeEnabled(businessId);
 
     const lines = await client.query(
-      `SELECT cni.item_id, cni.qty, cni.location_id, i.item_type
+      `SELECT cni.item_id, cni.qty * COALESCE(cni.unit_factor, 1) AS qty, cni.location_id, i.item_type
          FROM credit_note_items cni
          LEFT JOIN items i ON i.id = cni.item_id
         WHERE cni.credit_note_id = $1`,

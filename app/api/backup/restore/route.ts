@@ -27,6 +27,23 @@ const RESTORE_PARENT_SCOPE: Record<string, { column: string; table: string }> = 
 };
 
 /**
+ * Reference columns that must point at a row of the restoring business. A backup file is
+ * user-supplied, so an id here could otherwise link this business's rows to another tenant's.
+ */
+const RESTORE_REFERENCE_SCOPE: Record<string, string> = {
+  customer_id: 'customers',
+  supplier_id: 'suppliers',
+  item_id: 'items',
+  warehouse_id: 'warehouses',
+  location_id: 'warehouses',
+  branch_id: 'branches',
+  account_id: 'accounts',
+  invoice_id: 'invoices',
+  purchase_id: 'purchases',
+  user_id: 'users',
+};
+
+/**
  * POST /api/backup/restore
  * Restore business data from a backup file with transaction support
  * Supports multiple restore modes: replace_all, merge_smart, selective
@@ -241,6 +258,21 @@ export async function POST(request: NextRequest) {
 
       let insertedCount = 0;
       const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
+      const ownedRefs = new Set<string>();
+      const assertOwnedReference = async (column: string, value: unknown) => {
+        const refTable = RESTORE_REFERENCE_SCOPE[column];
+        if (!refTable || value == null || value === '' || refTable === tableName) return;
+        const key = `${refTable}:${String(value)}`;
+        if (ownedRefs.has(key)) return;
+        const ok = await client!.query(
+          `SELECT 1 FROM ${q(refTable)} WHERE id = $1 AND business_id = $2`,
+          [value, businessId]
+        );
+        if (ok.rowCount === 0) {
+          throw new Error(`Backup row in ${tableName} references a ${refTable} record outside this business`);
+        }
+        ownedRefs.add(key);
+      };
 
       for (const raw of records) {
         if (!raw || typeof raw !== 'object') continue;
@@ -263,6 +295,10 @@ export async function POST(request: NextRequest) {
           if (owner.rowCount === 0) {
             throw new Error(`Backup row in ${tableName} references a record outside this business`);
           }
+        }
+
+        for (const [col, val] of Object.entries(record)) {
+          await assertOwnedReference(col, val);
         }
 
         const columns = Object.keys(record);
@@ -303,9 +339,11 @@ export async function POST(request: NextRequest) {
       for (const user of backup.users) {
         await client.query(`
           UPDATE users 
-          SET name = $1, phone = $2, role = $3, is_active = $4
+          SET name = $1, phone = $2, role = $3,
+              -- A restore never deactivates the owner or the person running it.
+              is_active = CASE WHEN is_primary_admin OR id = $7 THEN is_active ELSE $4 END
           WHERE id = $5 AND business_id = $6
-        `, [user.name, user.phone, user.role, user.is_active, user.id, businessId]);
+        `, [user.name, user.phone, user.role, user.is_active, user.id, businessId, userId]);
       }
       stats['users'] = backup.users.length;
     }

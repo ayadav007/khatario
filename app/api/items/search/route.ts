@@ -150,6 +150,10 @@ export async function GET(request: NextRequest) {
     }
     const barcodeOr = barcodeAllowed ? 'i.barcode = $3 OR i.barcode ILIKE $2 OR' : '';
     const variantBarcodeOr = barcodeAllowed ? 'iv2.barcode = $3 OR iv2.barcode ILIKE $2 OR' : '';
+    // A box barcode (item_units.barcode) finds its item; the scan then adds one box.
+    const unitBarcodeOr = barcodeAllowed
+      ? 'EXISTS (SELECT 1 FROM item_units iu WHERE iu.item_id = i.id AND iu.business_id = $1 AND iu.barcode = $3) OR'
+      : '';
 
     // Normalize barcode for search (remove spaces, etc.) to match how barcodes are stored
     const normalizedQuery = normalizeBarcode(query);
@@ -297,6 +301,7 @@ export async function GET(request: NextRequest) {
            i.name ILIKE $2 OR 
            i.code ILIKE $2 OR 
            ${barcodeOr}
+           ${unitBarcodeOr}
            COALESCE(i.hsn_sac, '') ILIKE $2 OR
            EXISTS (
              SELECT 1 FROM item_variants iv2 
@@ -467,6 +472,18 @@ export async function GET(request: NextRequest) {
       }
     }
     
+    if (barcodeAllowed && Array.isArray(items) && items.length > 0) {
+      const boxes = await queryRows<{ item_id: string; unit: string; factor_to_base: number; selling_price: number | null }>(
+        `SELECT item_id, unit, factor_to_base::float AS factor_to_base, selling_price::float AS selling_price
+           FROM item_units WHERE business_id = $1 AND barcode = $2`,
+        [businessId, normalizedQuery]
+      );
+      for (const b of boxes) {
+        const hit = items.find((it: any) => String(it.id) === String(b.item_id));
+        if (hit) hit.scanned_unit = { unit: b.unit, factor_to_base: b.factor_to_base, selling_price: b.selling_price };
+      }
+    }
+
     return NextResponse.json({ items });
   } catch (error: any) {
     console.error('Item search error:', error);

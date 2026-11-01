@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 
 import { getCandidatePortalSessionFromRequest } from '@/lib/hr/recruitment/candidate-portal-session';
+import { getClientIp } from '@/lib/rate-limit';
 
 
 
@@ -168,13 +169,7 @@ export async function PATCH(request: NextRequest) {
 
 
 
-  const ip =
-
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-
-    request.headers.get('x-real-ip') ||
-
-    null;
+  const ip = getClientIp(request);
 
 
 

@@ -48,13 +48,22 @@ export function initWebSocketServer(httpServer?: HTTPServer): SocketIOServer {
   });
 
   // Authentication middleware
+  // Identity comes from the signed session cookie on the handshake, never from `auth` fields
+  // the client chooses (which would let anyone join another business's room).
   io.use(async (socket: Socket, next) => {
-    const businessId = socket.handshake.auth?.businessId;
-    const userId = socket.handshake.auth?.userId;
-
-    if (!businessId) {
-      return next(new Error('businessId is required'));
+    const cookieHeader = socket.handshake.headers.cookie ?? '';
+    const token = cookieHeader
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('khatario_session='))
+      ?.slice('khatario_session='.length);
+    const { verifyToken } = await import('@/lib/jwt');
+    const session = token ? await verifyToken(decodeURIComponent(token)) : null;
+    if (!session || session.type === 'refresh' || !session.businessId || !session.userId) {
+      return next(new Error('Authentication required'));
     }
+    const businessId = session.businessId;
+    const userId = session.userId;
 
     // Store in socket data for later use
     socket.data.businessId = businessId;

@@ -116,6 +116,13 @@ CREATE TABLE IF NOT EXISTS customers (
     opening_balance DECIMAL(12,2) DEFAULT 0,
     opening_balance_type VARCHAR(10) DEFAULT 'debit' CHECK (opening_balance_type IN ('debit', 'credit')),
     credit_limit DECIMAL(12,2) DEFAULT 0,
+    -- Migration 444: store khata (order from the online store, pay on the settlement day)
+    khata_enabled BOOLEAN NOT NULL DEFAULT false,
+    khata_settlement_day SMALLINT CHECK (khata_settlement_day IS NULL OR khata_settlement_day BETWEEN 0 AND 28),
+    khata_over_limit_rule VARCHAR(10) CHECK (khata_over_limit_rule IS NULL OR khata_over_limit_rule IN ('block', 'warn', 'approval')),
+    khata_overdue_rule VARCHAR(10) CHECK (khata_overdue_rule IS NULL OR khata_overdue_rule IN ('block', 'warn', 'approval')),
+    khata_opened_at TIMESTAMP,
+    khata_requested_at TIMESTAMP,
     tags TEXT[],
     notes TEXT,
     is_active BOOLEAN DEFAULT true,
@@ -150,6 +157,7 @@ CREATE TABLE IF NOT EXISTS categories (
     business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
+    size_chart JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -174,6 +182,9 @@ CREATE TABLE IF NOT EXISTS items (
     min_stock DECIMAL(10,2) DEFAULT 0,
     image_url TEXT,
     gallery_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+    video_url TEXT,
+    store_tabs JSONB NOT NULL DEFAULT '[]'::jsonb,
+    size_chart JSONB,
     show_in_store BOOLEAN NOT NULL DEFAULT false,
     featured_in_store BOOLEAN NOT NULL DEFAULT false,
     is_active BOOLEAN DEFAULT true,
@@ -713,7 +724,11 @@ CREATE TABLE IF NOT EXISTS credit_notes (
     invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
     credit_note_number VARCHAR(100) NOT NULL,
     credit_note_date DATE NOT NULL,
-    original_invoice_date DATE,  -- Reference to original invoice date
+    original_invoice_date DATE,  -- Reference to original invoice date (post_sale_discount: supply_period_from)
+    -- Migration 443: sales_return (goods back, linked invoice) or post_sale_discount (s.15(3)(b), supply period, no invoice, no stock)
+    note_type VARCHAR(20) NOT NULL DEFAULT 'sales_return' CHECK (note_type IN ('sales_return', 'post_sale_discount')),
+    supply_period_from DATE,
+    supply_period_to DATE,
     reason VARCHAR(200),
     place_of_supply_state_code VARCHAR(2),
     subtotal DECIMAL(15, 2) NOT NULL DEFAULT 0,
@@ -1073,3 +1088,239 @@ DROP TRIGGER IF EXISTS update_advance_payments_updated_at ON advance_payments;
 CREATE TRIGGER update_advance_payments_updated_at BEFORE UPDATE ON advance_payments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+
+-- =====================================================================
+-- Push notifications (migration 445): FCM device tokens for two audiences
+-- (business users, store customers), the push outbox and per-device delivery rows.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS push_devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    audience VARCHAR(16) NOT NULL CHECK (audience IN ('business', 'customer')),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES store_customers(id) ON DELETE CASCADE,
+    business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+    app_id VARCHAR(80) NOT NULL,
+    platform VARCHAR(16) NOT NULL DEFAULT 'android',
+    token TEXT NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    environment VARCHAR(16) NOT NULL DEFAULT 'production',
+    session_version INTEGER,
+    device_label VARCHAR(120),
+    app_version VARCHAR(40),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMPTZ,
+    revoked_reason VARCHAR(40),
+    CONSTRAINT uq_push_devices_token UNIQUE (token),
+    CONSTRAINT chk_push_devices_owner CHECK (
+        (audience = 'business' AND user_id IS NOT NULL AND customer_id IS NULL)
+        OR (audience = 'customer' AND customer_id IS NOT NULL AND business_id IS NOT NULL AND user_id IS NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices (user_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_push_devices_customer ON push_devices (customer_id, business_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_push_devices_token_hash ON push_devices (token_hash);
+
+CREATE TABLE IF NOT EXISTS push_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind VARCHAR(16) NOT NULL CHECK (kind IN ('notification', 'customer')),
+    audience VARCHAR(16) NOT NULL CHECK (audience IN ('business', 'customer')),
+    notification_id UUID REFERENCES notifications(id) ON DELETE CASCADE,
+    notification_seq BIGINT,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    user_id UUID,
+    customer_id UUID REFERENCES store_customers(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_at TIMESTAMPTZ,
+    last_error VARCHAR(200),
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMPTZ,
+    CONSTRAINT chk_push_jobs_target CHECK (
+        (audience = 'business' AND customer_id IS NULL)
+        OR (audience = 'customer' AND customer_id IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_push_jobs_notification_seq
+    ON push_jobs (notification_id, notification_seq) WHERE notification_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_push_jobs_pending ON push_jobs (next_attempt_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_push_jobs_business_created ON push_jobs (business_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS push_deliveries (
+    id BIGSERIAL PRIMARY KEY,
+    job_id UUID NOT NULL REFERENCES push_jobs(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES push_devices(id) ON DELETE SET NULL,
+    token_hash CHAR(64),
+    status VARCHAR(16) NOT NULL CHECK (status IN ('accepted', 'retry', 'invalid_token', 'failed')),
+    error_code VARCHAR(80),
+    provider_message_id VARCHAR(200),
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_job ON push_deliveries (job_id);
+-- Triggers trg_notifications_push_insert / trg_notifications_push_refire (function
+-- notifications_enqueue_push) are defined in database/migrations/445_push_notifications.sql.
+
+-- Migration 448: shopper reviews for the online store (photos, moderation status, merchant reply).
+CREATE TABLE IF NOT EXISTS store_item_reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+    item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    order_id UUID REFERENCES store_orders(id) ON DELETE SET NULL,
+    rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    title VARCHAR(120),
+    body TEXT NOT NULL,
+    photos JSONB NOT NULL DEFAULT '[]',
+    status VARCHAR(10) NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'pending', 'hidden')),
+    merchant_reply TEXT,
+    replied_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (business_id, customer_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_item_reviews_item ON store_item_reviews (business_id, item_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_store_item_reviews_status ON store_item_reviews (business_id, status, created_at DESC);
+
+-- Migration 449: server-side carts for abandoned-cart reminders. The two switches sit on business_settings with the other store_* settings.
+CREATE TABLE IF NOT EXISTS store_carts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+    items JSONB NOT NULL DEFAULT '[]',
+    subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+    status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'recovered', 'cleared')),
+    reminded_at TIMESTAMPTZ,
+    reminder_via VARCHAR(10),
+    recovered_order_id UUID REFERENCES store_orders(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (business_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_carts_open ON store_carts (business_id, status, updated_at) WHERE status = 'open';
+ALTER TABLE business_settings
+    ADD COLUMN IF NOT EXISTS store_cart_reminder_enabled BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS store_cart_reminder_hours SMALLINT NOT NULL DEFAULT 3
+        CHECK (store_cart_reminder_hours BETWEEN 1 AND 72);
+
+-- Migration 450: store theme engine. Named themes per business (one live, others draft) and published version history.
+CREATE TABLE IF NOT EXISTS store_themes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(60) NOT NULL,
+    role VARCHAR(8) NOT NULL DEFAULT 'draft' CHECK (role IN ('live', 'draft')),
+    preset VARCHAR(16) NOT NULL DEFAULT 'studio',
+    data JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by UUID NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS store_themes_one_live ON store_themes (business_id) WHERE role = 'live';
+CREATE INDEX IF NOT EXISTS store_themes_business ON store_themes (business_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS store_theme_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    theme_id UUID NOT NULL REFERENCES store_themes(id) ON DELETE CASCADE,
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    data JSONB NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_by UUID NULL
+);
+CREATE INDEX IF NOT EXISTS store_theme_versions_business ON store_theme_versions (business_id, published_at DESC);
+ALTER TABLE store_themes ADD COLUMN IF NOT EXISTS is_working boolean NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS store_themes_one_working ON store_themes (business_id) WHERE is_working;
+ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS store_engine BOOLEAN NOT NULL DEFAULT false;
+
+-- Migration 460: order returns release 1 (return method, Shiprocket pickup, gateway refunds, timeline, not-returnable products).
+-- order_returns, credit_note_refunds and store_orders come from their own migrations (380, 281).
+ALTER TABLE order_returns
+  ADD COLUMN IF NOT EXISTS return_method VARCHAR(16),
+  ADD COLUMN IF NOT EXISTS return_instructions TEXT,
+  ADD COLUMN IF NOT EXISTS pickup_address TEXT,
+  ADD COLUMN IF NOT EXISTS pickup_pincode VARCHAR(6),
+  ADD COLUMN IF NOT EXISTS pickup_phone VARCHAR(15),
+  ADD COLUMN IF NOT EXISTS pickup_weight_kg NUMERIC,
+  ADD COLUMN IF NOT EXISTS pickup_length_cm NUMERIC,
+  ADD COLUMN IF NOT EXISTS pickup_breadth_cm NUMERIC,
+  ADD COLUMN IF NOT EXISTS pickup_height_cm NUMERIC,
+  ADD COLUMN IF NOT EXISTS pickup_status VARCHAR(16),
+  ADD COLUMN IF NOT EXISTS pickup_attempt SMALLINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS carrier_order_id VARCHAR(40),
+  ADD COLUMN IF NOT EXISTS carrier_shipment_id VARCHAR(40),
+  ADD COLUMN IF NOT EXISTS awb VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS courier_name VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS tracking_url TEXT,
+  ADD COLUMN IF NOT EXISTS pickup_scheduled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS pickup_error TEXT;
+
+ALTER TABLE order_returns DROP CONSTRAINT IF EXISTS order_returns_return_method_check;
+ALTER TABLE order_returns ADD CONSTRAINT order_returns_return_method_check
+  CHECK (return_method IS NULL OR return_method IN ('courier_pickup', 'customer_sends', 'no_return'));
+
+ALTER TABLE order_returns DROP CONSTRAINT IF EXISTS order_returns_pickup_status_check;
+ALTER TABLE order_returns ADD CONSTRAINT order_returns_pickup_status_check
+  CHECK (pickup_status IS NULL OR pickup_status IN ('booked', 'out_for_pickup', 'pickup_issue', 'in_transit', 'arrived', 'cancelled'));
+
+ALTER TABLE order_returns DROP CONSTRAINT IF EXISTS order_returns_refund_method_check;
+ALTER TABLE order_returns ADD CONSTRAINT order_returns_refund_method_check
+  CHECK (refund_method IS NULL OR refund_method IN ('store_credit', 'cash', 'upi', 'bank', 'original_payment'));
+
+CREATE INDEX IF NOT EXISTS idx_order_returns_awb
+  ON order_returns (business_id, awb) WHERE awb IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_order_returns_carrier_order
+  ON order_returns (business_id, carrier_order_id) WHERE carrier_order_id IS NOT NULL;
+
+ALTER TABLE credit_note_refunds DROP CONSTRAINT IF EXISTS credit_note_refunds_mode_check;
+ALTER TABLE credit_note_refunds ADD CONSTRAINT credit_note_refunds_mode_check
+  CHECK (mode IN ('cash', 'upi', 'bank', 'gateway'));
+
+CREATE TABLE IF NOT EXISTS return_gateway_refunds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  order_return_id UUID NOT NULL REFERENCES order_returns(id) ON DELETE CASCADE,
+  store_order_id UUID REFERENCES store_orders(id) ON DELETE SET NULL,
+  credit_note_id UUID REFERENCES credit_notes(id) ON DELETE SET NULL,
+  provider VARCHAR(12) NOT NULL CHECK (provider IN ('razorpay', 'easebuzz')),
+  provider_payment_id VARCHAR(100),
+  provider_refund_id VARCHAR(100),
+  idempotency_key VARCHAR(120) NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  status VARCHAR(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processed', 'failed')),
+  failure_reason TEXT,
+  credit_note_refund_id UUID REFERENCES credit_note_refunds(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_return_gateway_refunds_key UNIQUE (business_id, idempotency_key)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_return_gateway_refunds_one_pending
+  ON return_gateway_refunds (order_return_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_return_gateway_refunds_return
+  ON return_gateway_refunds (order_return_id);
+CREATE INDEX IF NOT EXISTS idx_return_gateway_refunds_provider_refund
+  ON return_gateway_refunds (provider, provider_refund_id) WHERE provider_refund_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS order_return_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  return_id UUID NOT NULL REFERENCES order_returns(id) ON DELETE CASCADE,
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  kind VARCHAR(20) NOT NULL CHECK (kind IN (
+    'requested', 'approved', 'rejected', 'pickup_booked', 'pickup_status', 'pickup_cancelled',
+    'received', 'refund_pending', 'refunded', 'refund_failed', 'cancelled'
+  )),
+  note TEXT,
+  actor_type VARCHAR(10) NOT NULL CHECK (actor_type IN ('customer', 'staff', 'webhook', 'system')),
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_return_events_return
+  ON order_return_events (return_id, created_at);
+
+ALTER TABLE items ADD COLUMN IF NOT EXISTS store_returnable BOOLEAN NOT NULL DEFAULT true;

@@ -11,6 +11,7 @@ import { isAllowedPlSection } from '@/lib/accounting/pl-sections';
 
 const CORE_CODES = new Set([
   '1101', '1102', '1103', '1104', '1105', '1106', '1107', '1108', '1109', '1110', '1111', '1112', '1113',
+  '1160', '1161', '1162',
   '1114', '1115', '1116', '1117', '1118', '1130', '1131', '1132', '1133', '1201', '1202',
   '2101', '2102', '2103', '2104', '2105', '2106', '2107', '2108', '2109', '2110', '2111', '2112', '2113',
   '2114', '2115', '2116', '2117', '2118', '2150', '2151', '2152', '2153', '2154', '2155', '2156', '2157', '2158',
@@ -96,11 +97,25 @@ describe('industry chart of accounts packs', () => {
     expect(codes({ industry: 'textiles', businessType: 'wholesaler', businessModel: 'export' })).toContain('1142');
   });
 
-  it('treats retail or service food businesses as restaurants with input credit blocked', () => {
-    const r = resolveIndustryPacks({ industry: 'food_beverages', businessType: 'retail', businessModel: 'b2c' });
-    expect(r.packs.map((p) => p.key)).toContain('industry:food_beverages:restaurant');
-    expect(r.blocksItcByDefault).toBe(true);
-    expect(r.expenseCategories.every((c) => c.itcBlocked)).toBe(true);
+  it('treats restaurant and food-service businesses as restaurants with input credit blocked', () => {
+    for (const p of [
+      { industry: 'food_beverages', businessType: 'restaurant', businessModel: 'b2c' },
+      { industry: 'other', businessType: 'restaurant', businessModel: 'b2c' },
+      { industry: 'food_beverages', businessType: 'service', businessModel: 'b2c' },
+    ]) {
+      const r = resolveIndustryPacks(p);
+      expect(r.packs.map((x) => x.key)).toContain('industry:food_beverages:restaurant');
+      expect(r.blocksItcByDefault).toBe(true);
+      expect(r.expenseCategories.every((c) => c.itcBlocked)).toBe(true);
+    }
+  });
+
+  it('keeps input tax credit for a grocery or kirana shop (retail + food & beverages)', () => {
+    const kirana = resolveIndustryPacks({ industry: 'food_beverages', businessType: 'retail', businessModel: 'b2c' });
+    expect(kirana.packs.map((x) => x.key)).not.toContain('industry:food_beverages:restaurant');
+    expect(kirana.packs.map((x) => x.key)).toContain('industry:food_beverages:fmcg');
+    expect(kirana.blocksItcByDefault).toBe(false);
+    expect(kirana.expenseCategories.some((c) => c.itcBlocked)).toBe(false);
 
     const fmcg = resolveIndustryPacks({ industry: 'food_beverages', businessType: 'manufacturer', businessModel: 'b2b' });
     expect(fmcg.packs.map((p) => p.key)).toContain('industry:food_beverages:fmcg');

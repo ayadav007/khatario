@@ -8,7 +8,7 @@ import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 export const dynamic = 'force-dynamic';
 
 export const GET = withPremiumSubscriptionApi<{ id: string }>(
-  { feature: 'accounting_tds' },
+  { module: 'report.financial', action: 'read', feature: 'accounting_tds' },
   async ({ businessId, params }) => {
     try {
       const { id } = params;

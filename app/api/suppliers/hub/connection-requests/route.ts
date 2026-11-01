@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { openConnectionRequest } from '@/lib/supplier-hub-links';
+import { createSupplyOrder, SupplyOrderInputError } from '@/lib/supply-orders';
 import type { SupplierConnectionRequest } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/suppliers/hub/connection-requests — incoming + outgoing for current business
- * POST — buyer creates request (body: supplier_business_id, message?)
+ * POST — buyer creates request (body: supplier_business_id, message?, share_low_stock?, lines?)
+ *   lines: a first order from the supplier's public catalogue ([{ vendor_item_id, qty }]); it
+ *   waits with the request and reaches the supplier as a pending order when they accept.
  * Business and user come from the session only.
  */
 export async function GET(request: NextRequest) {
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest) {
     const { businessId: buyerBusinessId, userId: createdByUserId } = auth;
     const body = await request.json();
     const { supplier_business_id: supplierBusinessId, message } = body;
+    const shareLowStock = body.share_low_stock === true;
 
     if (!supplierBusinessId) {
       return NextResponse.json({ error: 'supplier_business_id is required' }, { status: 400 });
@@ -108,47 +113,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const pending = await db.queryOne<SupplierConnectionRequest>(
-      `SELECT * FROM supplier_connection_requests
-       WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
-      [buyerBusinessId, supplierBusinessId]
-    );
-    if (pending) {
-      return NextResponse.json({ request: pending, existing: true });
-    }
-
-    const row = await db.queryOne<SupplierConnectionRequest>(
-      `
-      INSERT INTO supplier_connection_requests (
-        buyer_business_id, supplier_business_id, status, message, created_by_user_id
-      )
-      VALUES ($1, $2, 'pending', $3, $4)
-      RETURNING *
-      `,
-      [buyerBusinessId, supplierBusinessId, message || null, createdByUserId]
-    );
-
-    const buyerBiz = await db.queryOne<{ name: string }>(
-      `SELECT name FROM businesses WHERE id = $1`,
-      [buyerBusinessId]
-    );
-
-    await db.query(
-      `
-      INSERT INTO notifications (
-        business_id, type, title, message, reference_type, reference_id, created_at
-      )
-      VALUES ($1, 'hub_connection_request', $2, $3, 'supplier_connection_request', $4, CURRENT_TIMESTAMP)
-      `,
-      [
+    const lines = Array.isArray(body.lines) ? body.lines.filter((l: any) => l && Number(l.qty) > 0) : [];
+    const client = await db.getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const { request: row, existing } = await openConnectionRequest({
+        buyerBusinessId,
         supplierBusinessId,
-        'New supplier connection request',
-        `${buyerBiz?.name || 'A business'} wants to connect as a buyer. Open Suppliers Hub requests to accept or decline.`,
-        row!.id,
-      ]
-    );
-
-    return NextResponse.json({ request: row }, { status: 201 });
+        createdByUserId,
+        message,
+        shareLowStock,
+        client,
+      });
+      const order = lines.length
+        ? await createSupplyOrder(
+            {
+              actorBusinessId: buyerBusinessId,
+              userId: createdByUserId,
+              role: 'buyer',
+              counterpartyBusinessId: supplierBusinessId,
+              lines,
+              notes: typeof body.notes === 'string' ? body.notes : null,
+              connectionRequestId: row.id,
+            },
+            client
+          )
+        : null;
+      await client.query('COMMIT');
+      return NextResponse.json({ request: row, order, ...(existing ? { existing: true } : {}) }, { status: existing ? 200 : 201 });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (err instanceof SupplyOrderInputError) {
+        return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (e: any) {
     console.error('hub connection-requests POST', e);
     return NextResponse.json({ error: e.message || 'Failed' }, { status: 500 });

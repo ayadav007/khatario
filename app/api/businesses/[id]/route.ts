@@ -33,7 +33,8 @@ export async function GET(
       SELECT 
         id, name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin,
         pan, logo_url, signature_url, gst_registration_type, aggregate_turnover_above_5cr,
-        iec_code, swift_code, business_type, industry, business_model, company_introduction
+        iec_code, swift_code, business_type, industry, business_model, company_introduction,
+        udyam_number, tan, din
       FROM businesses
       WHERE id = $1
     `, [tenant.businessId]);

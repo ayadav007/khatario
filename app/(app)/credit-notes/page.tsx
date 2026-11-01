@@ -24,6 +24,18 @@ interface CreditNote {
   reason?: string;
   status?: 'active' | 'cancelled';
   cancellation_reason?: string;
+  /** Migration 443: a post-sale discount covers a supply period instead of one invoice. */
+  note_type?: 'sales_return' | 'post_sale_discount';
+  supply_period_from?: string | null;
+  supply_period_to?: string | null;
+}
+
+function supplyPeriodLabel(cn: CreditNote): string {
+  if (!cn.supply_period_from || !cn.supply_period_to) return 'Discount';
+  const from = new Date(cn.supply_period_from);
+  const to = new Date(cn.supply_period_to);
+  const sameMonth = from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth();
+  return sameMonth ? format(from, 'MMM yyyy') : `${format(from, 'MMM yyyy')} – ${format(to, 'MMM yyyy')}`;
 }
 
 export default function CreditNotesPage() {
@@ -116,7 +128,7 @@ export default function CreditNotesPage() {
       <div className="space-y-3 md:space-y-6">
         <ListPageHeader
           title="Credit Notes"
-          description="Sales returns — goods returned by customers"
+          description="Sales returns and post-sale discounts"
           actions={
             <Link href="/credit-notes/new">
               <Button className="h-10">
@@ -205,7 +217,16 @@ export default function CreditNotesPage() {
                         <div className="text-sm text-gray-900">{creditNote.customer_name || '-'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500">{creditNote.invoice_number || '-'}</div>
+                        {creditNote.note_type === 'post_sale_discount' ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex rounded-full bg-amber-100 px-2 text-xs font-semibold leading-5 text-amber-800">
+                              Discount
+                            </span>
+                            <span className="text-sm text-gray-500">{supplyPeriodLabel(creditNote)}</span>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">{creditNote.invoice_number || '-'}</div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-500">

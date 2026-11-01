@@ -5,6 +5,8 @@ import { clsx } from 'clsx';
 import { AlertTriangle, Barcode, Plus, Trash2 } from 'lucide-react';
 import type { ComposerRow } from './types';
 import { GST_RATES, inr, Kbd, NumberInput, Switch } from './ui';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
+import { baseQtyLabel, withSaleUnit } from '@/lib/invoices/use-item-units';
 
 type Props = {
   rows: ComposerRow[];
@@ -17,6 +19,7 @@ type Props = {
   barcodeRef: React.RefObject<HTMLInputElement>;
   documentType: string;
   isExport: boolean;
+  supplyKind?: 'taxable' | 'exempt' | 'export' | 'sez';
   exportType: 'wp' | 'wop';
   isIntraState: boolean;
   pricesIncludeGst: boolean;
@@ -41,6 +44,7 @@ export function ItemsTable({
   barcodeRef,
   documentType,
   isExport,
+  supplyKind = 'taxable',
   exportType,
   isIntraState,
   pricesIncludeGst,
@@ -49,8 +53,8 @@ export function ItemsTable({
   readOnly,
 }: Props) {
   const [amountMode, setAmountMode] = useState<Record<number, boolean>>({});
-  const showTax = documentType !== 'bill_of_supply';
-  const zeroRated = isExport && exportType === 'wop';
+  const showTax = documentType !== 'bill_of_supply' && supplyKind !== 'exempt';
+  const zeroRated = supplyKind === 'exempt' || ((isExport || supplyKind === 'sez') && exportType === 'wop');
   const visible = rows.map((row, index) => ({ row, index })).filter(({ row }) => row.itemId || row.name);
   const colCount = showTax ? 9 : 8;
 
@@ -128,7 +132,7 @@ export function ItemsTable({
           </thead>
           <tbody>
             {visible.map(({ row, index }, pos) => {
-              const noPrice = !(Number(row.price) > 0);
+              const noPrice = !(Number(row.price) > 0) && !row.schemeOf;
               const byAmount = amountMode[index] ?? (row.discountAmount > 0 && !row.discountPercent);
               const rateOptions = GST_RATES.includes(row.taxPercent) ? GST_RATES : [...GST_RATES, row.taxPercent].sort((a, b) => a - b);
               return (
@@ -169,10 +173,26 @@ export function ItemsTable({
                         disabled={readOnly}
                         className={clsx(cellInput, 'w-16 font-semibold')}
                       />
-                      <span className="w-10 truncate text-[11px] font-medium text-text-muted" title={row.unit}>
-                        {row.unit}
-                      </span>
+                      <SaleUnitSelect
+                        unit={row.unit}
+                        units={row.units}
+                        disabled={readOnly}
+                        className="w-16"
+                        onChange={(unit) => {
+                          const next = withSaleUnit(row, unit);
+                          patchRow(index, {
+                            unit: next.unit,
+                            price: next.price,
+                            mrp: next.mrp,
+                            costPrice: next.costPrice,
+                            priceUserOverride: false,
+                          });
+                        }}
+                      />
                     </div>
+                    {baseQtyLabel(row) && (
+                      <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{baseQtyLabel(row)}</p>
+                    )}
                   </td>
                   <td className="px-2 py-2">
                     <NumberInput
@@ -183,6 +203,8 @@ export function ItemsTable({
                       disabled={readOnly}
                       className={clsx(cellInput, noPrice && 'bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-950/30')}
                     />
+                    {row.priceWarning && <p className="mt-0.5 text-right text-[10px] font-semibold text-red-600">{row.priceWarning}</p>}
+                    {row.priceNote && <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{row.priceNote}</p>}
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center justify-end gap-1">

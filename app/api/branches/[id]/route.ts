@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import {
+  getUserIdFromRequest,
+  getBusinessIdFromRequest,
+  getAuthenticatedUserId,
+  getSessionScopedBusinessId,
+} from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
+import { checkBranchPlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,7 +65,8 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
     const {
       name,
       branch_code,
@@ -80,30 +87,22 @@ export async function PATCH(
       is_active,
     } = body;
 
-    if (!business_id) {
+    if (!business_id || !userId) {
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const { updated_by_user_id } = body; // REQUIRED for authorization
-    if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
     // AUTHORIZATION: Check update permission
     // First check if user has branch-level edit permission
     const { checkUserBranchPermission } = await import('@/lib/branch-access');
-    const hasBranchEditPermission = await checkUserBranchPermission(updated_by_user_id, params.id, 'edit');
+    const hasBranchEditPermission = await checkUserBranchPermission(userId, params.id, 'edit');
     
     // If user doesn't have branch-level edit permission, check settings.update permission
     if (!hasBranchEditPermission) {
       try {
-        await authorize(updated_by_user_id, 'settings', 'update', { businessId: business_id, resourceId: params.id });
+        await authorize(userId, 'settings', 'update', { businessId: business_id, resourceId: params.id });
       } catch (error) {
         if (error instanceof AuthorizationError) {
           return error.toNextResponse();
@@ -114,8 +113,10 @@ export async function PATCH(
 
     // Subscription: multi_branch is required only when editing a non-default branch while
     // multiple active branches exist. Single-outlet (or default / HQ branch) edits stay allowed on Free.
-    const currentBranch = await db.queryOne<{ is_default: boolean }>(
-      `SELECT is_default FROM branches WHERE id = $1 AND business_id = $2`,
+    const currentBranch = await db.queryOne<{
+      is_default: boolean; gstin: string | null; state: string | null; state_code: string | null;
+    }>(
+      `SELECT is_default, gstin, state, state_code FROM branches WHERE id = $1 AND business_id = $2`,
       [params.id, business_id]
     );
 
@@ -163,6 +164,18 @@ export async function PATCH(
       finalGstin = gstinCheck.gstin;
       finalState = gstinCheck.state;
       finalStateCode = gstinCheck.state_code;
+    }
+    if (gstin !== undefined || state !== undefined || state_code !== undefined) {
+      // The UPDATE keeps old values for nulls, so check the row as it will be saved. A new state
+      // name without a code drops the stored code, which may belong to the old state.
+      const placeError = await checkBranchPlace(db.getPool() as any, business_id, {
+        gstin: finalGstin ?? currentBranch.gstin,
+        state: finalState ?? currentBranch.state,
+        state_code: finalStateCode ?? (state != null ? null : currentBranch.state_code),
+      });
+      if (placeError) {
+        return NextResponse.json(placeError, { status: 400 });
+      }
     }
 
     // If setting as default, unset other default branches

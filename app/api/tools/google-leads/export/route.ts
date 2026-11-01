@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { NormalizedLead } from '@/lib/google-leads/normalizer';
+import { csvSafeText } from '@/lib/csv-safe';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 /**
  * Convert leads to CSV format
@@ -42,8 +44,9 @@ function generateCSV(leads: NormalizedLead[]): string {
 /**
  * Escape CSV field (handle commas, quotes, newlines)
  */
-function escapeCSVField(field: string): string {
-  if (!field) return '';
+function escapeCSVField(raw: string): string {
+  if (!raw) return '';
+  const field = csvSafeText(raw);
   
   // If field contains comma, quote, or newline, wrap in quotes and escape quotes
   if (field.includes(',') || field.includes('"') || field.includes('\n')) {
@@ -66,6 +69,8 @@ function generateExcel(leads: NormalizedLead[]): Buffer {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requireTenantPermission(request, null, 'tools', 'read');
+  if (!access.ok) return access.response;
   try {
     const body = await request.json();
     const { leads, format = 'csv' } = body;

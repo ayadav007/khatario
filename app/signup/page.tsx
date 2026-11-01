@@ -19,6 +19,7 @@ import { clsx } from 'clsx';
 import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
 import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import { trackSignupComplete } from '@/components/marketing/SignupMetaPixel';
+import { loginHrefFor } from '@/lib/auth/login-href';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -122,6 +123,11 @@ function SignupPageContent() {
 
   const leadToken = searchParams.get('lead');
   const refFromUrl = searchParams.get('ref');
+  // Where to land after signup, e.g. a supplier joining from an order link. Same-site paths only.
+  const nextFromUrl = searchParams.get('next');
+  const nextPath = nextFromUrl && /^\/(?!\/)[\w\-/]*$/.test(nextFromUrl) ? nextFromUrl : '/dashboard';
+  // An existing user who picks Log in keeps the same return path (e.g. Apply theme from the theme store).
+  const loginHref = loginHrefFor(nextPath);
   const [partnerRef, setPartnerRef] = useState<string | null>(null);
   const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [leadNotice, setLeadNotice] = useState<string | null>(null);
@@ -207,7 +213,7 @@ function SignupPageContent() {
 
       // Full reload so httpOnly session cookies from /api/signup are sent on /dashboard.
       await trackSignupComplete();
-      window.location.assign('/dashboard');
+      window.location.assign(nextPath);
     } catch (err: unknown) {
       completingRef.current = false;
       setError(err instanceof Error ? err.message : 'Signup failed');
@@ -254,7 +260,7 @@ function SignupPageContent() {
           <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
             <span className="hidden sm:inline">Already have an account?</span>
             <Link
-              href="/login"
+              href={loginHref}
               className="rounded-md border border-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-slate-50 dark:border-primary-400 dark:text-primary-400 dark:hover:bg-primary-900/50"
             >
               Log in
@@ -364,7 +370,7 @@ function SignupPageContent() {
                     <p>{error}</p>
                     {errorCode === 'PHONE_ALREADY_REGISTERED' && (
                       <p className="mt-2">
-                        <Link href="/login" className="font-semibold text-primary-600 hover:underline dark:text-primary-400">
+                        <Link href={loginHref} className="font-semibold text-primary-600 hover:underline dark:text-primary-400">
                           Go to login
                         </Link>
                         {' '}or use a different mobile number.
@@ -457,6 +463,7 @@ function SignupPageContent() {
                   <select name="businessType" value={formData.businessType} onChange={handleChange} className={selectClassName} required>
                     <option value="">Select</option>
                     <option value="retail">Retail</option>
+                    <option value="restaurant">Restaurant / food service</option>
                     <option value="wholesaler">Wholesaler</option>
                     <option value="distributor">Distributor</option>
                     <option value="manufacturer">Manufacturer</option>
@@ -601,7 +608,7 @@ function SignupPageContent() {
 
               <p className="mt-8 text-center text-sm text-slate-600 lg:hidden dark:text-slate-400">
                 Already have an account?{' '}
-                <Link href="/login" className="font-semibold text-primary-600 dark:text-primary-400">
+                <Link href={loginHref} className="font-semibold text-primary-600 dark:text-primary-400">
                   Log in
                 </Link>
               </p>

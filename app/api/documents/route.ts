@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { DOCUMENT_ENTITY_TYPES, isValidDocumentEntityType } from '@/lib/document-entity-types';
-import { getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getSessionScopedBusinessId, getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const entityType = searchParams.get('entity_type');
     const entityId = searchParams.get('entity_id');
 
@@ -60,7 +62,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const businessId = formData.get('business_id') as string;
+    const tenant = requireTenantBusinessId(request, formData.get('business_id') as string | null);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const entityType = formData.get('entity_type') as string;
     const entityId = formData.get('entity_id') as string;
     const file = formData.get('file') as File;
@@ -184,7 +188,9 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const documentId = searchParams.get('id');
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     if (!documentId || !businessId) {
       return NextResponse.json(

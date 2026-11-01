@@ -79,8 +79,9 @@ export async function GET(
           inv.invoice_date::text AS date,
           c.name AS party_name,
           c.id AS party_id,
-          ii.quantity,
-          ii.unit_price,
+          -- In the item's own unit: a line of 5 BOX reads 60 at the per-piece rate.
+          ii.quantity * COALESCE(ii.unit_factor, 1) AS quantity,
+          ii.unit_price / COALESCE(ii.unit_factor, 1) AS unit_price,
           ii.line_total,
           inv.document_type
         FROM invoice_items ii

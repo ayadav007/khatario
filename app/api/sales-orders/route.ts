@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireStrictSession } from '@/lib/auth-helpers';
@@ -322,6 +323,18 @@ export async function POST(request: NextRequest) {
 
     const salesOrder = orderResult.rows[0];
 
+    // A line in a box keeps the box's factor from the item's units (never the client's).
+    let saleUnits;
+    try {
+      saleUnits = await resolveSaleUnits(client, business_id, items.map((item: any) => ({ ...item, item_name: item.item_name || item.name })));
+    } catch (e) {
+      if (e instanceof SaleUnitError) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: e.message, code: e.code }, { status: e.statusCode });
+      }
+      throw e;
+    }
+
     // Create sales order items
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -329,16 +342,16 @@ export async function POST(request: NextRequest) {
         INSERT INTO sales_order_items (
           sales_order_id, item_id, item_name, description, hsn_sac, qty, unit, unit_price,
           discount_percent, discount_amount, tax_rate, tax_amount, taxable_value,
-          cgst_amount, sgst_amount, igst_amount, line_total, sort_order
+          cgst_amount, sgst_amount, igst_amount, line_total, sort_order, unit_factor
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       `, [
         salesOrder.id, item.item_id || null, item.item_name || item.name, item.description || null,
-        item.hsn_sac || null, item.qty || item.quantity, item.unit || 'PCS', item.unit_price || item.price,
+        item.hsn_sac || null, item.qty || item.quantity, saleUnits[i].unit || item.unit || 'PCS', item.unit_price || item.price,
         item.discount_percent || 0, item.discount_amount || 0, item.tax_rate || item.taxPercent || 0,
         item.tax_amount || 0, item.taxable_value || 0,
         item.cgst_amount || 0, item.sgst_amount || 0, item.igst_amount || 0,
-        item.line_total || item.total || 0, i
+        item.line_total || item.total || 0, i, saleUnits[i].unit_factor
       ]);
     }
 
@@ -349,10 +362,10 @@ export async function POST(request: NextRequest) {
         salesOrderId: salesOrder.id,
         branchId: finalBranchId,
         userId: created_by || null,
-        lines: items.map((item: any) => ({
+        lines: items.map((item: any, i: number) => ({
           item_id: item.item_id || null,
           variant_id: item.variant_id || null,
-          qty: Number(item.qty ?? item.quantity) || 0,
+          qty: (Number(item.qty ?? item.quantity) || 0) * saleUnits[i].unit_factor,
         })),
       });
     }

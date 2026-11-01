@@ -7,13 +7,15 @@ import { InvoiceChargeError, persistInvoiceCharges } from '@/lib/invoices/invoic
 import { computeInvoiceTotals } from '@/lib/invoices/validate-invoice-gst-payload';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
-import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
+import { queueLowStockCheck } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches, getBranchVariantQuantityDb } from '@/lib/branch-variant-stock';
 import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
 import { allocateStockOnSale } from '@/lib/stock-valuation';
+import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import {
   deductBundleChildrenOnInvoice,
   getFirstBundleStockPreflightFailure,
@@ -443,6 +445,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A line without a price would otherwise reach the insert and fail as a database error.
+    const unpriced = (items as Array<{ unit_price?: unknown; item_name?: unknown }>).find(
+      (it) => it?.unit_price === undefined || it.unit_price === null || it.unit_price === '' || !Number.isFinite(Number(it.unit_price))
+    );
+    if (unpriced) {
+      return NextResponse.json(
+        { error: `Enter a price for ${String(unpriced.item_name || 'each item')}`, code: 'LINE_PRICE_REQUIRED' },
+        { status: 400 }
+      );
+    }
+
     if (invoice_date) {
       try {
         const cutoff = await getClosingStockLockedCutoffDate(business_id);
@@ -495,6 +508,19 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
+    }
+
+    // A line sold in a box carries the box's factor from the item's own units; a client-sent
+    // factor is overwritten. Stock below moves quantity × unit_factor.
+    try {
+      const saleUnits = await resolveSaleUnits(client, business_id, items);
+      saleUnits.forEach((su, i) => {
+        items[i].unit = su.unit ?? items[i].unit;
+        items[i].unit_factor = su.unit_factor;
+      });
+    } catch (e) {
+      if (e instanceof SaleUnitError) return NextResponse.json({ error: e.message, code: e.code }, { status: e.statusCode });
+      throw e;
     }
 
     // CRITICAL: Enforce access boundary - reject attendance-only employees
@@ -664,7 +690,7 @@ export async function POST(request: NextRequest) {
               businessId: business_id,
               branchId: finalBranchId,
               bundleItemId: item.item_id,
-              lineQuantity: parseFloat(String(item.quantity || '0')),
+              lineQuantity: baseQty(item),
               warehouseModeEnabled: true,
               warehouseId,
             });
@@ -742,7 +768,7 @@ export async function POST(request: NextRequest) {
                 [warehouseId, item.item_id]
               );
               const availableStock = parseFloat(stockCheck.rows[0]?.current_stock_qty || '0');
-              const requestedQuantity = parseFloat(String(item.quantity || '0'));
+              const requestedQuantity = baseQty(item);
 
               if (availableStock < requestedQuantity) {
                 const { getItemStockAcrossWarehouses } = await import('@/lib/warehouse-access');
@@ -817,7 +843,7 @@ export async function POST(request: NextRequest) {
               businessId: business_id,
               branchId: finalBranchId,
               bundleItemId: item.item_id,
-              lineQuantity: parseFloat(String(item.quantity || '0')),
+              lineQuantity: baseQty(item),
               warehouseModeEnabled: false,
               warehouseId: null,
             });
@@ -857,7 +883,7 @@ export async function POST(request: NextRequest) {
           } else {
             availableStock = await getBranchItemQuantityDb(business_id, finalBranchId, item.item_id);
           }
-          const requestedQuantity = parseFloat(String(item.quantity || '0'));
+          const requestedQuantity = baseQty(item);
           if (availableStock < requestedQuantity) {
             const healed = item.variant_id
               ? await tryReconcileVariantBranchStock(
@@ -1195,6 +1221,25 @@ export async function POST(request: NextRequest) {
     }
 
     const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    if (document_type !== 'proforma_invoice') {
+      const godownMismatch = await findWarehouseStateMismatch(
+        client,
+        business_id,
+        registration,
+        items.map((it: { location_id?: string | null }) => it.location_id)
+      );
+      if (godownMismatch) {
+        await client.query('ROLLBACK').catch(() => {});
+        return NextResponse.json(
+          {
+            error: warehouseStateMismatchMessage(godownMismatch),
+            code: 'WAREHOUSE_STATE_MISMATCH',
+            warehouse_id: godownMismatch.warehouseId,
+          },
+          { status: 400 }
+        );
+      }
+    }
     const schemeRes = await client.query<{ gst_registration_type: string | null }>(
       'SELECT gst_registration_type FROM businesses WHERE id = $1',
       [business_id]
@@ -1265,18 +1310,21 @@ export async function POST(request: NextRequest) {
     const issuedNumber = await reserveDocumentNumber(client, finalBranchId, finalDocumentType, requestedNumber);
     invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
     
-    // Check if invoice number already exists for this branch (matches database constraint)
+    // Rule 46(b): a number may be used once per GSTIN, so check every branch filing under it.
+    const { registrationBranchIds } = await import('@/lib/gst/registration');
     const existingInvoiceCheck = await client.query(
-      'SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL',
-      [invoiceNumber, finalBranchId, business_id]
+      'SELECT id, branch_id FROM invoices WHERE invoice_number = $1 AND branch_id = ANY($2::uuid[]) AND business_id = $3 AND deleted_at IS NULL',
+      [invoiceNumber, await registrationBranchIds(client, business_id, finalBranchId), business_id]
     );
     
-    // If duplicate exists for this branch, throw error before INSERT
     if (existingInvoiceCheck.rows.length > 0) {
       await client.query('ROLLBACK');
+      const sameBranch = existingInvoiceCheck.rows.some((r: { branch_id: string }) => r.branch_id === finalBranchId);
       return NextResponse.json(
         { 
-          error: `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`,
+          error: sameBranch
+            ? `Invoice number ${invoiceNumber} already exists for this branch. Please try again.`
+            : `Invoice number ${invoiceNumber} is already used by another branch on the same GSTIN. Give this branch its own invoice prefix in Settings → Number series.`,
           code: 'DUPLICATE_INVOICE_NUMBER'
         },
         { status: 409 }
@@ -1553,6 +1601,14 @@ export async function POST(request: NextRequest) {
       } else {
         finalSupplyType = b2cSize(); // cash sale
       }
+    }
+
+    if (status === 'final' && finalSupplyType === 'sez' && !complianceCustomer?.gstin) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'SEZ supply needs the SEZ unit GSTIN on the customer.', code: 'SEZ_GSTIN_REQUIRED' },
+        { status: 400 },
+      );
     }
 
     // Check if estimate_status and expiry_date columns exist (from migration 139)
@@ -1863,11 +1919,11 @@ export async function POST(request: NextRequest) {
           invoice_id, item_id, variant_id, item_name, description, hsn_sac,
           quantity, unit, unit_price, discount_percent, discount_amount,
           tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
-          line_total, sort_order
+          line_total, sort_order, unit_factor
         )
         VALUES ($1, $2, $3, $4, $5,
                 COALESCE(NULLIF(TRIM($6::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)),
-                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       `, [
         invoice.id,
         item.item_id || null,
@@ -1888,6 +1944,7 @@ export async function POST(request: NextRequest) {
         igst,
         lineTotal,
         i,
+        Number(item.unit_factor) || 1,
       ]);
       
 
@@ -1928,7 +1985,7 @@ export async function POST(request: NextRequest) {
           const trackBatch = itemData?.track_batch || false;
           const trackSerial = itemData?.track_serial || false;
           const valuationMethod = (itemData?.valuation_method || 'simple') as 'fifo' | 'lifo' | 'weighted_avg' | 'simple';
-          const quantity = Number(item.quantity) || 0;
+          const quantity = baseQty(item);
 
           // Bundle / combo: deduct component stock only (not the bundle SKU row)
           if (itemData?.is_bundle) {
@@ -2317,7 +2374,7 @@ export async function POST(request: NextRequest) {
             [item.item_id, business_id]
           );
           const row0 = itemData.rows[0];
-          const lineQty = Number(item.quantity) || 0;
+          const lineQty = baseQty(item);
           if (row0?.item_type === 'goods' && row0?.is_bundle) {
             const comp = await client.query(
               `SELECT bi.quantity::numeric AS comp_qty, i.purchase_price
@@ -2783,15 +2840,10 @@ export async function POST(request: NextRequest) {
       throw verifyError;
     }
 
-    // Check for low stock alerts (async, don't wait)
-    if (stockDeductedItems.length > 0) {
-      checkLowStockForMultipleItems(stockDeductedItems).catch(err => 
-        console.error('Error checking low stock:', err)
-      );
-    }
-
     // Commit transaction before returning
     await client.query('COMMIT');
+    // Supplier Hub low-stock check reads committed stock, so it is queued after commit.
+    for (const deducted of stockDeductedItems) queueLowStockCheck(deducted.business_id, deducted.item_id);
 
     if (status === 'final' && invoice?.id) {
       const { autoTrackDeliveryBill } = await import('@/lib/fulfilment/auto-track');

@@ -27,7 +27,7 @@ export type StoreOrderLifecycleResult =
   | {
       ok: false;
       status: 404 | 409;
-      code: 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'PAYMENT_REQUIRED';
+      code: 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'PAYMENT_REQUIRED' | 'KHATA_APPROVAL_PENDING';
       error: string;
       from?: StoreOrderStatus;
     };
@@ -100,8 +100,9 @@ export async function transitionStoreOrderInTransaction(
     payment_status: string;
     shipment_id: string | null;
     invoice_id: string | null;
+    khata_approval: string | null;
   }>(
-    `SELECT status, payment_status, shipment_id, invoice_id
+    `SELECT status, payment_status, shipment_id, invoice_id, khata_approval
        FROM store_orders
       WHERE id = $1 AND business_id = $2
       FOR UPDATE`,
@@ -117,6 +118,15 @@ export async function transitionStoreOrderInTransaction(
       status: 409,
       code: 'INVALID_TRANSITION',
       error: `Cannot change a ${order.status} order to ${input.to}`,
+      from: order.status,
+    };
+  }
+  if (order.khata_approval === 'pending' && input.to !== 'cancelled') {
+    return {
+      ok: false,
+      status: 409,
+      code: 'KHATA_APPROVAL_PENDING',
+      error: 'Approve or reject this khata order first',
       from: order.status,
     };
   }
@@ -239,6 +249,8 @@ export async function applyShiprocketTrackingUpdate(input: {
   businessId: string;
   awb: string;
   orderRef: string;
+  /** Shiprocket's own order id; matches `carrier_order_id` when the awb and our reference miss. */
+  srOrderId?: string;
   status: StoreFulfillmentStatus;
   fulfilmentStatus?: FulfilmentStatus | null;
 }): Promise<ShiprocketTrackingOutcome> {
@@ -249,11 +261,13 @@ export async function applyShiprocketTrackingUpdate(input: {
       `SELECT id, status
          FROM store_orders
         WHERE business_id = $1
-          AND (($2 <> '' AND awb = $2) OR ($3 <> '' AND (shipment_id = $3 OR order_number = $3)))
-        ORDER BY ($2 <> '' AND awb = $2) DESC, created_at DESC
+          AND (($2 <> '' AND awb = $2)
+            OR ($3 <> '' AND (shipment_id = $3 OR order_number = $3))
+            OR ($4 <> '' AND carrier_order_id = $4))
+        ORDER BY ($2 <> '' AND awb = $2) DESC, ($3 <> '' AND order_number = $3) DESC, created_at DESC
         LIMIT 1
         FOR UPDATE`,
-      [input.businessId, input.awb, input.orderRef],
+      [input.businessId, input.awb, input.orderRef, input.srOrderId ?? ''],
     );
     const order = found.rows[0];
     if (!order) {

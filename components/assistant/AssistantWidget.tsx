@@ -31,7 +31,7 @@ const APP_STARTERS = ['How do I create an invoice?', 'How do I connect WhatsApp?
 const OWNER_STARTERS = ['How was sales today?', 'Who owes me the most?', 'Top products this month', 'How do I create an invoice?'];
 
 const STARTERS: Record<AssistantChannel, string[]> = {
-  web: ['How much does Khatario cost?', 'Can I file GSTR-1 from it?', 'Does it work offline?', 'Kitne ka hai?'],
+  web: ['How much does Khatario cost?', 'Can I file GSTR-1 from it?', 'Can I use it on my phone?', 'Kitne ka hai?'],
   signup: ['Is there a free trial?', 'Do I need a credit card?', 'What happens after the trial?'],
   trial_app: APP_STARTERS,
   in_app: APP_STARTERS,

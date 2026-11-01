@@ -10,7 +10,7 @@ url: /
 
 ## Is Khatario good for retail shops and kirana stores?
 
-Yes. Retail shops get fast counter billing with barcode scanning, POS mode with Bluetooth thermal printing, stock that updates with every sale, low-stock alerts and WhatsApp bills. Billing keeps working offline.
+Yes. Retail shops get fast counter billing with barcode scanning, POS mode with Bluetooth thermal printing, stock that updates with every sale, low-stock alerts and WhatsApp bills. Saving a bill needs an internet connection.
 
 ## Is Khatario good for wholesalers and distributors?
 

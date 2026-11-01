@@ -91,6 +91,9 @@ String timeAgo(DateTime created, DateTime now) {
   if (n.referenceType == 'whatsapp_conversation' && n.referenceId != null) {
     return (kind: 'route', id: n.referenceId, label: 'WhatsApp conversation');
   }
+  if (n.referenceType == 'whatsapp_lead' && n.referenceId != null) {
+    return (kind: 'route', id: n.referenceId, label: 'WhatsApp lead');
+  }
   return null;
 }
 
@@ -164,7 +167,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         'todo_reminder' => (LucideIcons.listTodo, AppTints.indigo),
         'store_enquiry' => (LucideIcons.store, AppTints.teal),
         'gst_compliance' => (LucideIcons.badgeIndianRupee, AppTints.violet),
-        _ when n.referenceType == 'whatsapp_conversation' => (LucideIcons.messageCircle, AppTints.green),
+        _ when n.referenceType == 'whatsapp_conversation' || n.referenceType == 'whatsapp_lead' =>
+          (LucideIcons.messageCircle, AppTints.green),
         _ => (LucideIcons.bell, AppTints.sky),
       };
 

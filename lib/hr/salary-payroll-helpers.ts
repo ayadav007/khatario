@@ -7,6 +7,22 @@ export function parseDateOnly(value: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * yyyy-MM-dd for a DATE column value. node-postgres returns DATE as a Date at local midnight, so the
+ * local parts are the stored calendar day (toISOString would shift it a day east of UTC).
+ */
+export function toDateOnly(value: string | Date | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${value.getFullYear()}-${m}-${d}`;
+  }
+  const t = String(value).trim().slice(0, 10);
+  return t || null;
+}
+
 /** Inclusive calendar days between two yyyy-MM-dd dates. */
 export function inclusiveCalendarDays(fromYmd: string, toYmd: string): number {
   const from = parseDateOnly(fromYmd);
@@ -14,6 +30,26 @@ export function inclusiveCalendarDays(fromYmd: string, toYmd: string): number {
   const diffMs = to.getTime() - from.getTime();
   if (diffMs < 0) return 0;
   return Math.floor(diffMs / 86_400_000) + 1;
+}
+
+export interface DailyWageResult {
+  dailyRate: number;
+  presentDays: number;
+  halfDays: number;
+  payableDays: number;
+  amount: number;
+}
+
+/**
+ * Pay for a daily-wage employee: the day rate for each day marked present and half the rate for
+ * each half day. Absent days and days with no attendance earn nothing.
+ */
+export function computeDailyWage(dailyRate: number, records: ReadonlyArray<{ status: string }>): DailyWageResult {
+  const rate = Number(dailyRate) || 0;
+  const presentDays = records.filter((r) => r.status === 'present').length;
+  const halfDays = records.filter((r) => r.status === 'half_day').length;
+  const payableDays = presentDays + halfDays / 2;
+  return { dailyRate: rate, presentDays, halfDays, payableDays, amount: Math.round(rate * payableDays * 100) / 100 };
 }
 
 export interface ProRataSalaryResult {
@@ -35,9 +71,10 @@ export function computeProRataMonthlySalary(params: {
   monthlySalary: number;
   periodFrom: string;
   periodTo: string;
-  joiningDate?: string | null;
+  joiningDate?: string | Date | null;
 }): ProRataSalaryResult {
-  const { monthlySalary, periodFrom, periodTo, joiningDate } = params;
+  const { monthlySalary, periodFrom, periodTo } = params;
+  const joiningDate = toDateOnly(params.joiningDate);
   const fullMonthlySalary = Number(monthlySalary) || 0;
   const daysInPeriod = inclusiveCalendarDays(periodFrom, periodTo);
 
@@ -49,14 +86,14 @@ export function computeProRataMonthlySalary(params: {
     effectiveTo: periodTo,
     daysInPeriod,
     daysPaid: daysInPeriod,
-    joiningDate: joiningDate ?? null,
+    joiningDate,
   };
 
-  if (fullMonthlySalary <= 0 || daysInPeriod <= 0 || !joiningDate?.trim()) {
+  if (fullMonthlySalary <= 0 || daysInPeriod <= 0 || !joiningDate) {
     return base;
   }
 
-  const join = joiningDate.trim().slice(0, 10);
+  const join = joiningDate;
   if (join <= periodFrom) {
     return base;
   }

@@ -1,0 +1,138 @@
+/*
+ * Hero banner (sections/ImageBanner.tsx, sections/HeroMedia.tsx; classes from lib/store/engine/hero-layout.ts).
+ * The root keeps Studio's .banner card (margin, corners, padding, panel colour, its tablet and phone sizes), so a
+ * converted old banner keeps its box; these rules turn it into a one-cell grid with the pictures behind the words.
+ * Every rule is scoped under the engine root.
+ */
+.st-root.eng-root .eng-hero{display:grid;grid-template-columns:minmax(0,1fr);gap:0;align-items:stretch;justify-content:normal;position:relative;overflow:hidden;isolation:isolate}
+/* No top or bottom padding, at any width or preset: the old engine banner had none (noBox put an inline
+   padding-top/bottom of 0 on the card), so existing banners keep their height. That also made Small look like Medium,
+   which stays so; Large is the old bh-large height. The card keeps its side padding. */
+.st-root.eng-root .banner.eng-hero{padding-top:0;padding-bottom:0}
+.st-root.eng-root .eng-hero.hb-h-large{min-height:360px}
+/* A picture with no words: nothing in flow holds the card open, so the height comes from the setting (Large keeps its
+   360px). Converted banners always have their label, so they never get here. Only a phone picture: phones only. */
+.st-root.eng-root .eng-hero.hb-bare.hb-h-small{min-height:240px}
+.st-root.eng-root .eng-hero.hb-bare.hb-h-medium{min-height:360px}
+@container store (min-width:641px){.st-root.eng-root .eng-hero.hb-phone-only{display:none}}
+/* The owner's own height (heroHeightStyle): computers and phones each in their own range, after the size rules. */
+@container store (min-width:641px){.st-root.eng-root .eng-hero.eng-hero.hb-hpx{min-height:var(--hb-h)}}
+/* Full width: the card runs to the section's edges with square corners. */
+.st-root.eng-root .eng-sec--full .banner.eng-hero{margin-left:0;margin-right:0;border-radius:0}
+
+/* Pictures: behind the words, filling the card's padding box; two pictures share the width. */
+.st-root.eng-root .eng-hero-media{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:minmax(0,1fr)}
+.st-root.eng-root .eng-hero.hb-two .eng-hero-media{grid-template-columns:repeat(2,minmax(0,1fr))}
+.st-root.eng-root .eng-hero-pic{position:relative;overflow:hidden;min-width:0;min-height:0}
+.st-root.eng-root .eng-hero-pic.phone{display:none}
+.st-root.eng-root .eng-hero-layer{position:absolute;inset:0;background-position:center;background-size:cover;background-repeat:no-repeat}
+/* Fit the picture: the media joins the grid cell and the invisible sizer (.heroSizer) sets its height; the words keep
+   the card's padding instead of the card. */
+.st-root.eng-root .eng-hero.hb-h-adapt{padding:0}
+/* The picture's own height is the minimum; when the words need more (a wide picture on a phone), the picture stretches
+   to the card's full height and keeps covering it, so the words stay on the picture instead of below it. */
+.st-root.eng-root .hb-h-adapt .eng-hero-media{position:relative;inset:auto;grid-area:1/1;grid-auto-rows:1fr;align-self:stretch}
+.st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:38px 44px}
+
+/* Words: one of nine cells (rows top / middle / bottom, columns left / centre / right), lines aligned by hb-align-*. */
+.st-root.eng-root .eng-hero-inner{grid-area:1/1;position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;min-width:0}
+.st-root.eng-root :is(.hb-pos-top-left,.hb-pos-top-center,.hb-pos-top-right) .eng-hero-inner{justify-content:flex-start}
+.st-root.eng-root :is(.hb-pos-bottom-left,.hb-pos-bottom-center,.hb-pos-bottom-right) .eng-hero-inner{justify-content:flex-end}
+.st-root.eng-root :is(.hb-pos-top-center,.hb-pos-middle-center,.hb-pos-bottom-center) .eng-hero-inner{align-items:center}
+.st-root.eng-root :is(.hb-pos-top-right,.hb-pos-middle-right,.hb-pos-bottom-right) .eng-hero-inner{align-items:flex-end}
+.st-root.eng-root .eng-hero-copy{max-width:100%;min-width:0}
+.st-root.eng-root .hb-align-center .eng-hero-copy{text-align:center}
+.st-root.eng-root .hb-align-right .eng-hero-copy{text-align:right}
+.st-root.eng-root .hb-align-center .eng-cb-buttons{justify-content:center}
+.st-root.eng-root .hb-align-right .eng-cb-buttons{justify-content:flex-end}
+/* The old banner's spacing: label and heading 8px above the next block, the description 16px above the button. The
+   label looks like the old <small class="eyebrow"> (same .eyebrow size, spacing, capitals and colour) although .banner p
+   sizes paragraphs; its line is as tall as the old one, which sat in a line of the card's 16px text. */
+.st-root.eng-root .eng-hero .eng-cb-eyebrow{font-size:11px;line-height:1.75;opacity:1}
+.st-root.eng-root .eng-hero :is(.eng-cb-eyebrow,.eng-cb-heading):not(:last-child){margin-bottom:8px}
+.st-root.eng-root .eng-hero .eng-cb-text:not(:last-child){margin-bottom:16px}
+/* Subtitle text: .banner p pins paragraphs to 14px at .85 opacity, which would cancel the style's larger, lighter look;
+   body text keeps the old 14px. */
+.st-root.eng-root .eng-hero .eng-cb-text-subtitle p{font-size:inherit;opacity:1}
+/* Quick sizes .banner h2 itself (quick-theme.css), which keeps its old banner heading at Medium; the other sizes
+   (content-block-rules.ts values) still apply there. */
+.st-root.eng-root .eng-hero h2.eng-cb-size-small{font-size:clamp(18px,3cqi,24px)}
+.st-root.eng-root .eng-hero h2.eng-cb-size-large{font-size:clamp(28px,5cqi,44px)}
+.st-root.eng-root .eng-hero h2.eng-cb-size-xl{font-size:clamp(34px,6cqi,56px)}
+.st-root.eng-root .eng-hero h2.eng-cb-size-xxl{font-size:clamp(40px,7.5cqi,72px)}
+
+/* Box: the words on a card in the section's colours, kept off the banner's top and bottom edges (new setting, so the
+   padding the plain banner lacks is added here only). */
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:38px}
+.st-root.eng-root .hb-box .eng-hero-copy{background:var(--c-card,var(--st-card,#fff));color:var(--c-text,var(--text));padding:28px 32px;border-radius:12px;max-width:min(100%,560px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+/* A chosen text colour wins everywhere; without a box or colour, words over a picture are white (desktop hb-white,
+   phones hb-white-m, so a phone picture alone or words under it on phones are told apart). */
+.st-root.eng-root .hb-text .eng-hero-copy,.st-root.eng-root .hb-text .eng-hero-copy .eyebrow{color:var(--hb-text)}
+.st-root.eng-root .hb-text .eng-cta[data-style=outline]{color:var(--hb-text);border-color:var(--hb-text)}
+@container store (min-width:641px){
+.st-root.eng-root .hb-white .eng-hero-copy,.st-root.eng-root .hb-white .eng-hero-copy .eyebrow{color:#fff}
+.st-root.eng-root .hb-white .eng-cta[data-style=outline]{color:#fff;border-color:#fff}
+}
+
+/* Words beside the photo (computers; phones stack them through hb-below-m): two columns, the photo running to the
+   card's edges in one and the words, on the section's colours, in the other. Text position places the words within
+   their column. The photo's height follows the Height choice; Fit the picture lets the picture set it. */
+@container store (min-width:641px){
+.st-root.eng-root .banner.eng-hero.hb-side{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);padding:0}
+.st-root.eng-root .banner.eng-hero.hb-side-photo-right{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}
+.st-root.eng-root .eng-hero.hb-side .eng-hero-media{position:relative;inset:auto;grid-area:1/1;align-self:stretch;min-height:320px}
+.st-root.eng-root .eng-hero.hb-side-photo-right .eng-hero-media{grid-area:1/2}
+.st-root.eng-root .eng-hero.hb-side.hb-h-small .eng-hero-media{min-height:240px}
+.st-root.eng-root .eng-hero.hb-side.hb-h-large .eng-hero-media{min-height:420px}
+.st-root.eng-root .eng-hero.hb-side.hb-h-adapt .eng-hero-media{min-height:0}
+.st-root.eng-root .eng-hero.hb-side .eng-hero-inner{grid-area:1/2;padding:38px 44px}
+.st-root.eng-root .eng-hero.hb-side-photo-right .eng-hero-inner{grid-area:1/1}
+}
+
+/* Movement: drift is a slow scale / pan loop, zoom follows scroll (HeroMedia sets --hb-zoom), fixed keeps the picture
+   still while the page scrolls. iOS and touch screens do not keep a fixed background, so they scroll normally. */
+@keyframes eng-hb-drift{from{transform:scale(1.04) translate3d(0,0,0)}to{transform:scale(1.12) translate3d(-2%,-1.5%,0)}}
+.st-root.eng-root .hb-motion-drift .eng-hero-layer{animation:eng-hb-drift 18s ease-in-out infinite alternate;will-change:transform}
+.st-root.eng-root .hb-motion-zoom .eng-hero-layer{transform:scale(var(--hb-zoom,1));will-change:transform}
+.st-root.eng-root .hb-motion-fixed .eng-hero-layer{background-attachment:fixed}
+@supports (-webkit-touch-callout:none){.st-root.eng-root .hb-motion-fixed .eng-hero-layer{background-attachment:scroll}}
+@media (hover:none){.st-root.eng-root .hb-motion-fixed .eng-hero-layer{background-attachment:scroll}}
+@media (prefers-reduced-motion:reduce){.st-root.eng-root .eng-hero .eng-hero-layer{animation:none;transform:none;background-attachment:scroll}}
+
+@container store (max-width:900px){
+.st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:26px 24px}
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:26px}
+}
+@container store (max-width:640px){
+.st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:22px 18px}
+.st-root.eng-root .eng-hero.hb-bare:is(.hb-h-small,.hb-h-medium){min-height:180px}
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:22px}
+/* The phone picture replaces the others; two pictures stack, or only the first shows. */
+.st-root.eng-root .eng-hero.hb-has-phone .eng-hero-pic:not(.phone){display:none}
+.st-root.eng-root .eng-hero.hb-has-phone .eng-hero-pic.phone{display:block}
+.st-root.eng-root .eng-hero.hb-two .eng-hero-media{grid-template-columns:minmax(0,1fr)}
+.st-root.eng-root .eng-hero.hb-m-first .eng-hero-pic.second{display:none}
+/* Phone alignment: the lines and the words' column. */
+.st-root.eng-root .eng-hero.hb-malign-left .eng-hero-inner{align-items:flex-start}
+.st-root.eng-root .eng-hero.hb-malign-center .eng-hero-inner{align-items:center}
+.st-root.eng-root .eng-hero.hb-malign-right .eng-hero-inner{align-items:flex-end}
+.st-root.eng-root .eng-hero.hb-malign-left .eng-hero-copy{text-align:left}
+.st-root.eng-root .eng-hero.hb-malign-center .eng-hero-copy{text-align:center}
+.st-root.eng-root .eng-hero.hb-malign-right .eng-hero-copy{text-align:right}
+.st-root.eng-root .eng-hero.hb-malign-left .eng-cb-buttons{justify-content:flex-start}
+.st-root.eng-root .eng-hero.hb-malign-center .eng-cb-buttons{justify-content:center}
+.st-root.eng-root .eng-hero.hb-malign-right .eng-cb-buttons{justify-content:flex-end}
+.st-root.eng-root .hb-white-m .eng-hero-copy,.st-root.eng-root .hb-white-m .eng-hero-copy .eyebrow{color:#fff}
+.st-root.eng-root .hb-white-m .eng-cta[data-style=outline]{color:#fff;border-color:#fff}
+.st-root.eng-root .hb-box .eng-hero-copy{padding:20px 22px}
+/* Words under the picture: the picture runs edge to edge on top, the words follow on the card's colours. */
+.st-root.eng-root .eng-hero.hb-below-m{padding:0;min-height:0}
+.st-root.eng-root .hb-below-m .eng-hero-media{position:relative;inset:auto;grid-area:1/1;grid-auto-rows:auto}
+.st-root.eng-root .hb-below-m .eng-hero-inner{grid-area:2/1;padding:22px 18px}
+.st-root.eng-root .hb-below-m .eng-hero-pic{min-height:240px}
+.st-root.eng-root .hb-below-m.hb-h-small .eng-hero-pic{min-height:180px}
+.st-root.eng-root .hb-below-m.hb-h-large .eng-hero-pic{min-height:320px}
+.st-root.eng-root .hb-below-m.hb-h-adapt .eng-hero-pic{min-height:0}
+.st-root.eng-root .eng-hero.eng-hero.hb-hpx-m:not(.hb-below-m){min-height:var(--hb-h-m)}
+.st-root.eng-root .hb-below-m.hb-hpx-m .eng-hero-pic{min-height:var(--hb-h-m)}
+}

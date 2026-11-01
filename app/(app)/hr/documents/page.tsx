@@ -110,7 +110,14 @@ export default function HrDocumentsPage() {
     const data = await res.json();
     const w = window.open('', '_blank');
     if (w) {
-      w.document.write(data.html);
+      // The CSP comes first so nothing in the letter can run script in the app's origin.
+      w.document.write(
+        '<!doctype html><html><head><meta http-equiv="Content-Security-Policy" ' +
+          'content="default-src \'none\'; img-src https: data:; style-src \'unsafe-inline\'">' +
+          '</head><body>' +
+          data.html +
+          '</body></html>'
+      );
       w.document.close();
       w.print();
     }

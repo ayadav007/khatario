@@ -1,4 +1,5 @@
 import {
+  computeDailyWage,
   computeProRataMonthlySalary,
   inclusiveCalendarDays,
   isPartialAdvanceRecovery,
@@ -16,7 +17,49 @@ describe('inclusiveCalendarDays', () => {
   });
 });
 
+describe('computeDailyWage', () => {
+  it('pays the day rate for present days and half for half days', () => {
+    const rows = [
+      ...Array.from({ length: 7 }, () => ({ status: 'present' })),
+      { status: 'half_day' },
+      { status: 'absent' },
+      { status: 'absent' },
+    ];
+    const r = computeDailyWage(700, rows);
+    expect(r.payableDays).toBe(7.5);
+    expect(r.amount).toBe(5250);
+  });
+
+  it('pays nothing when no attendance is marked', () => {
+    expect(computeDailyWage(700, []).amount).toBe(0);
+  });
+});
+
 describe('computeProRataMonthlySalary', () => {
+  it('accepts a DATE column value from node-postgres (Date at local midnight)', () => {
+    const r = computeProRataMonthlySalary({
+      monthlySalary: 31000,
+      periodFrom: '2026-10-01',
+      periodTo: '2026-10-31',
+      joiningDate: new Date(2026, 9, 11),
+    });
+    expect(r.joiningDate).toBe('2026-10-11');
+    expect(r.applied).toBe(true);
+    expect(r.daysPaid).toBe(21);
+    expect(r.proratedAmount).toBe(21000);
+  });
+
+  it('pays the full month when a Date joining day is the first of the period', () => {
+    const r = computeProRataMonthlySalary({
+      monthlySalary: 16000,
+      periodFrom: '2026-10-01',
+      periodTo: '2026-10-31',
+      joiningDate: new Date(2026, 9, 1),
+    });
+    expect(r.applied).toBe(false);
+    expect(r.proratedAmount).toBe(16000);
+  });
+
   it('returns full salary when join is before period', () => {
     const r = computeProRataMonthlySalary({
       monthlySalary: 20000,

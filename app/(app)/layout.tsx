@@ -28,6 +28,7 @@ import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
+import { PushRegistration } from '@/components/system/PushRegistration';
 import { PortalThemeBootScript } from '@/components/portal/PortalThemeBootScript';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
@@ -106,6 +107,7 @@ function AppRouteLayoutInner({
   const shell = posMode && isInvoicePage ? (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <PushRegistration />
         <MobileBackNavigation />
         <LastRouteTracker />
         <div className="h-screen w-screen overflow-hidden bg-background">
@@ -124,6 +126,7 @@ function AppRouteLayoutInner({
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <PushRegistration />
         <MobileBackNavigation />
         <PullToRefresh />
         <LastRouteTracker />

@@ -38,9 +38,21 @@ describe('computeInvoiceVisionTargetSize', () => {
     expect(out.height).toBe(1600);
   });
 
-  it('never exceeds the cap on either axis', () => {
+  it('keeps a long narrow image at 800px short side, never past 3200px long', () => {
     const out = computeInvoiceVisionTargetSize(8000, 2000);
-    expect(Math.max(out.width, out.height)).toBe(1600);
-    expect(Math.min(out.width, out.height)).toBe(400);
+    expect(out.width).toBe(3200);
+    expect(out.height).toBe(800);
+  });
+
+  it('keeps a cropped till roll readable instead of shrinking it to 1600px tall', () => {
+    // A receipt cropped from a 4000px photo: ~1100px wide, 3300px tall.
+    const out = computeInvoiceVisionTargetSize(1100, 3300);
+    expect(out.resized).toBe(true);
+    expect(out.width).toBe(800);
+    expect(out.height).toBe(2400);
+  });
+
+  it('leaves a narrow image that is already small enough alone', () => {
+    expect(computeInvoiceVisionTargetSize(700, 2600).resized).toBe(false);
   });
 });

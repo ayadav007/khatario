@@ -8,6 +8,7 @@ import { useOfflineSync, useSyncDiagnostics } from '@/contexts/OfflineSyncContex
 import { offlineActionQueue } from '@/lib/offline/queue/offline-action-queue';
 import { listSyncLogs } from '@/lib/offline/observability/sync-log';
 import { listPendingConflicts } from '@/lib/offline/sync/conflict-resolver';
+import { connectivityLabel } from '@/lib/offline/connectivity/state-machine';
 import type {
   ConflictRecord,
   OfflineAction,
@@ -167,14 +168,14 @@ export default function OfflineSyncDebugPage() {
 
   return (
     <SettingsPageShell
-      title="Offline sync"
-      description="Download items and customers for offline billing, and view queue diagnostics."
+      title="Catalog sync"
+      description="Download items and customers onto this device, and view queue diagnostics."
       icon={CloudOff}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-lg border border-border bg-surface p-4">
           <h2 className="font-semibold text-text-primary">Connectivity</h2>
-          <p className="mt-2 text-sm">State: {connectivity.state}</p>
+          <p className="mt-2 text-sm">State: {connectivityLabel(connectivity.state)}</p>
           <p className="text-sm">Pending: {pendingActionCount}</p>
           <Button
             className="mt-3"
@@ -187,9 +188,9 @@ export default function OfflineSyncDebugPage() {
         </section>
 
         <section className="rounded-lg border border-border bg-surface p-4">
-          <h2 className="font-semibold text-text-primary">Offline catalog</h2>
+          <h2 className="font-semibold text-text-primary">Saved catalog</h2>
           <p className="mt-1 text-sm text-text-secondary">
-            Local items, parties, and recent invoices for offline use.
+            Items, parties, and recent invoices stored on this device.
           </p>
           <ul className="mt-3 space-y-1 text-sm text-text-secondary">
             <li>Storage: {catalogStorageLabel}</li>
@@ -370,7 +371,7 @@ export default function OfflineSyncDebugPage() {
             {(serverHistory.invoice_number_mappings?.length ?? 0) > 0 && (
               <div className="mt-4">
                 <h3 className="text-sm font-semibold text-text-primary">
-                  Offline → final invoice numbers
+                  Temporary → final invoice numbers
                 </h3>
                 <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
                   {serverHistory.invoice_number_mappings!.map((m) => (

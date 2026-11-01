@@ -12,27 +12,35 @@ export interface Note {
   id: string;
   note_text: string;
   created_at: string;
-  user_id: string;
-  user_name?: string;
-  user_email?: string;
+  user_id: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  /** The enquiry (lead) the note belongs to; null for a general chat note. */
+  lead_id?: string | null;
+  lead_opened_at?: string | null;
+  lead_stage_name?: string | null;
 }
 
 interface NotesSectionProps {
-  conversationId: string;
-  businessId: string;
+  /** The notes endpoint: /api/whatsapp/conversations/<id>/notes or /api/whatsapp/leads/<id>/notes. */
+  notesUrl: string;
   notes: Note[];
   currentUserId?: string;
   onNoteAdded: () => void;
   onNoteDeleted: () => void;
+  title?: string;
+  /** Tag each note with its enquiry ("Enquiry of 12 Oct · Won"), for a chat that has had several. */
+  showEnquiry?: boolean;
 }
 
-export function NotesSection({ 
-  conversationId, 
-  businessId, 
-  notes, 
+export function NotesSection({
+  notesUrl,
+  notes,
   currentUserId,
   onNoteAdded,
-  onNoteDeleted 
+  onNoteDeleted,
+  title = 'Internal Notes',
+  showEnquiry = false,
 }: NotesSectionProps) {
   const [newNote, setNewNote] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -45,17 +53,11 @@ export function NotesSection({
 
     setIsAdding(true);
     try {
-      const res = await fetch(
-        `/api/whatsapp/conversations/${conversationId}/notes?business_id=${businessId}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            note_text: newNote.trim(),
-            user_id: currentUserId
-          })
-        }
-      );
+      const res = await fetch(notesUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_text: newNote.trim() })
+      });
 
       if (res.ok) {
         setNewNote('');
@@ -75,12 +77,7 @@ export function NotesSection({
   const executeDeleteNote = async (noteId: string) => {
     setDeletingId(noteId);
     try {
-      const res = await fetch(
-        `/api/whatsapp/conversations/${conversationId}/notes?business_id=${businessId}&note_id=${noteId}`,
-        {
-          method: 'DELETE'
-        }
-      );
+      const res = await fetch(`${notesUrl}?note_id=${encodeURIComponent(noteId)}`, { method: 'DELETE' });
 
       if (res.ok) {
         await onNoteDeleted();
@@ -110,7 +107,7 @@ export function NotesSection({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Internal Notes</h3>
+        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
       </div>
 
       {/* Add note */}
@@ -159,13 +156,19 @@ export function NotesSection({
                   </p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-xs text-gray-500">
-                      {note.user_name || note.user_email || 'Unknown'}
+                      {note.user_name || note.user_email || (note.user_id ? 'Unknown' : 'Former staff')}
                     </span>
                     <span className="text-xs text-gray-400">•</span>
                     <span className="text-xs text-gray-500">
                       {formatDistanceToNow(new Date(note.created_at), { addSuffix: true })}
                     </span>
                   </div>
+                  {showEnquiry && note.lead_opened_at && (
+                    <span className="mt-1 inline-block rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                      Enquiry of {format(new Date(note.lead_opened_at), 'd MMM yyyy')}
+                      {note.lead_stage_name ? ` · ${note.lead_stage_name}` : ''}
+                    </span>
+                  )}
                 </div>
                 {note.user_id === currentUserId && (
                   <button

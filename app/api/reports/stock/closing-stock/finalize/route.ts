@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { finalizeClosingStock } from '@/lib/services/closing-stock-valuator';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -13,8 +13,11 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, financial_year_id } = body;
-    const userId = getUserIdFromRequest(request, body);
+    const { business_id: claimedBusinessId, financial_year_id } = body;
+    const userId = getUserIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
 
     if (!business_id || !financial_year_id) {
       return NextResponse.json(
@@ -40,9 +43,9 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // AUTHORIZATION: Check read permission for inventory report (finalize is a read action)
+    // AUTHORIZATION: finalizing freezes the closing-stock snapshot, so it needs finalize rights
     try {
-      await authorize(userId, 'report.inventory', 'read', {
+      await authorize(userId, 'report.inventory', 'finalize', {
         businessId: business_id,
         resource: {
           business_id,

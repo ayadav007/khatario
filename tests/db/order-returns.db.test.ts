@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { NextRequest } from 'next/server';
 
 const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
@@ -26,24 +27,44 @@ jest.mock('@/lib/enforce-access', () => ({
   enforceAccess: jest.fn().mockResolvedValue(undefined),
   enforceAccessErrorResponse: jest.fn(() => null),
 }));
+jest.mock('@/lib/auth-helpers', () => ({
+  ...jest.requireActual('@/lib/auth-helpers'),
+  // Session checks hit the users table; the headers a request carries are what the middleware would set.
+  requireStrictSession: jest.fn(async (request: any) => ({
+    ok: true,
+    userId: request.headers.get('x-authenticated-user-id'),
+    businessId: request.headers.get('x-authenticated-business-id'),
+  })),
+}));
+jest.mock('@/lib/rag/tenant-reindex', () => ({ noteShopChanged: jest.fn() }));
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
+  hasFeatureAccess: jest.fn().mockResolvedValue(true),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'order-returns-test-secret';
+
 import { getPool, closePool } from '@/lib/db';
+import { signStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
+import { GET as getStoreReturn, POST as postStoreReturn } from '@/app/api/public/store/[subdomain]/orders/[id]/return/route';
+import { PATCH as patchItem } from '@/app/api/items/[id]/route';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { createInvoiceForStoreOrder, fulfillStoreOrderPayment } from '@/lib/store/fulfill-paid-order';
 import { ensureFulfilment, transitionFulfilment } from '@/lib/fulfilment/service';
 import {
   approveReturn,
+  cancelReturn,
   createReturn,
   ensureReturnForReturnedFulfilment,
   receiveReturn,
+  rejectReturn,
   returnableLines,
   ReturnError,
+  setReturnMethod,
   settleReturn,
 } from '@/lib/returns/service';
+import { listReturnEvents } from '@/lib/returns/events';
 
 d('order returns (real DB)', () => {
   jest.setTimeout(120000);
@@ -302,5 +323,230 @@ d('order returns (real DB)', () => {
     expect(r).toMatchObject({ status: 'approved', fulfilment_id: fulfilmentId, store_order_id: orderId });
     const qty = (await pool.query(`SELECT SUM(quantity)::float8 AS q FROM order_return_items WHERE return_id = $1`, [returnId])).rows[0].q;
     expect(qty).toBe(3);
+  });
+
+  test('customer sends it stores the shop address as instructions', async () => {
+    // No store branch address yet: the business address is used.
+    await pool.query(`UPDATE businesses SET address_line1 = '5 Market Road', city = 'Pune', state = 'Maharashtra' WHERE id = $1`, [B]);
+    const first = await billedOrder(1);
+    const r1 = await tx((c) => createReturn(c, { businessId: B, invoiceId: first.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    const out = await tx((c) => approveReturn(c, { businessId: B, returnId: r1, userId: A, method: 'customer_sends' }));
+    expect(out).toEqual({ method: 'customer_sends', needsPickup: false });
+    expect(await returnRow(r1)).toMatchObject({
+      status: 'approved',
+      return_method: 'customer_sends',
+      return_instructions: 'Please send it to: 5 Market Road, Pune, Maharashtra',
+    });
+
+    // The branch's delivery address wins over the business address.
+    await pool.query(
+      `INSERT INTO store_branch_delivery (business_id, branch_id, location_address) VALUES ($1, $2, 'Shop 3, Station Road, Pune 411001')
+       ON CONFLICT (business_id, branch_id) DO UPDATE SET location_address = EXCLUDED.location_address`,
+      [B, BR],
+    );
+    const second = await billedOrder(1);
+    const r2 = await tx((c) => createReturn(c, { businessId: B, invoiceId: second.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    await tx((c) => approveReturn(c, { businessId: B, returnId: r2, userId: A, method: 'customer_sends' }));
+    expect((await returnRow(r2)).return_instructions).toBe('Please send it to: Shop 3, Station Road, Pune 411001');
+
+    // The shop's own wording is kept as typed.
+    const third = await billedOrder(1);
+    const r3 = await tx((c) => createReturn(c, { businessId: B, invoiceId: third.invoiceId, reason: 'not_needed', initiatedBy: 'customer' }));
+    await tx((c) =>
+      approveReturn(c, { businessId: B, returnId: r3, userId: A, method: 'customer_sends', instructions: 'Post it to our Pune shop, ask for Ravi' }),
+    );
+    expect((await returnRow(r3)).return_instructions).toBe('Post it to our Pune shop, ask for Ravi');
+  });
+
+  test('no need to send it back credits the bill without restocking', async () => {
+    const { invoiceId } = await billedOrder(2);
+    const before = await stock();
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'damaged', initiatedBy: 'customer' }));
+    const out = await tx((c) => approveReturn(c, { businessId: B, returnId: id, userId: A, method: 'no_return' }));
+    expect(out).toMatchObject({ method: 'no_return', needsPickup: false });
+    expect(out.received).toMatchObject({ creditAmount: 236 });
+    expect(await stock()).toBe(before);
+    const row = await returnRow(id);
+    expect(row).toMatchObject({ return_method: 'no_return', status: 'closed' });
+    expect(row.credit_note_id).toBe(out.received!.creditNoteId);
+    const lines = (await pool.query(`SELECT condition, received_qty::float8 AS q FROM order_return_items WHERE return_id = $1`, [id])).rows;
+    expect(lines).toEqual([{ condition: 'damaged', q: 2 }]);
+    expect((await listReturnEvents(pool, B, id)).map((e) => e.kind)).toEqual(['requested', 'approved', 'received']);
+  });
+
+  test('no need to send it back needs the user who credits the bill', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'damaged', initiatedBy: 'customer' }));
+    await expect(tx((c) => approveReturn(c, { businessId: B, returnId: id, method: 'no_return' }))).rejects.toMatchObject({ code: 'USER_REQUIRED' });
+    expect((await returnRow(id)).status).toBe('requested');
+  });
+
+  test('a picked-up return cannot be rejected or cancelled', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'in_transit' WHERE id = $1`, [id]);
+    await expect(tx((c) => rejectReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKED_UP' });
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKED_UP' });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'arrived' WHERE id = $1`, [id]);
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ code: 'PICKED_UP' });
+    expect((await returnRow(id)).status).toBe('approved');
+  });
+
+  test('a return with a live pickup must have the pickup cancelled before it is rejected or cancelled', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A }));
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'booked', carrier_order_id = '123' WHERE id = $1`, [id]);
+    await expect(tx((c) => rejectReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKUP_LIVE' });
+    await expect(tx((c) => cancelReturn(c, { businessId: B, returnId: id }))).rejects.toMatchObject({ status: 409, code: 'PICKUP_LIVE' });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'cancelled', carrier_order_id = NULL WHERE id = $1`, [id]);
+    await tx((c) => cancelReturn(c, { businessId: B, returnId: id }));
+    expect((await returnRow(id)).status).toBe('cancelled');
+  });
+
+  test('a merchant-started return applies its way back, and the way back can change until a pickup is live', async () => {
+    const { invoiceId } = await billedOrder(1);
+    const id = await tx((c) =>
+      createReturn(c, { businessId: B, invoiceId, reason: 'size_fit', initiatedBy: 'merchant', userId: A, method: 'customer_sends', instructions: 'Send it to us' }),
+    );
+    expect(await returnRow(id)).toMatchObject({ status: 'approved', return_method: 'customer_sends', return_instructions: 'Send it to us' });
+    await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', pickup_status = 'booked', carrier_order_id = '55' WHERE id = $1`, [id]);
+    await expect(tx((c) => setReturnMethod(c, { businessId: B, returnId: id, method: 'customer_sends' }))).rejects.toMatchObject({
+      status: 409,
+      code: 'PICKUP_LIVE',
+    });
+    await pool.query(`UPDATE order_returns SET pickup_status = 'cancelled', carrier_order_id = NULL WHERE id = $1`, [id]);
+    const out = await tx((c) =>
+      setReturnMethod(c, { businessId: B, returnId: id, method: 'courier_pickup', pickup: { address: '9 Lane, Pune', pincode: '411001', phone: '9876543210', weightKg: 2 } }),
+    );
+    expect(out.needsPickup).toBe(true);
+    expect(await returnRow(id)).toMatchObject({
+      return_method: 'courier_pickup',
+      pickup_address: '9 Lane, Pune',
+      pickup_pincode: '411001',
+      pickup_phone: '9876543210',
+    });
+  });
+
+  test('a refund to the original payment is not settled here', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'wrong_item', initiatedBy: 'merchant', userId: A }));
+    await tx((c) => receiveReturn(c, { businessId: B, returnId: id, userId: A }));
+    await expect(
+      tx((c) => settleReturn(c, { businessId: B, returnId: id, userId: A, method: 'original_payment' })),
+    ).rejects.toMatchObject({ status: 409, code: 'USE_GATEWAY_REFUND', message: 'Refund to the original payment from the refund step' });
+  });
+
+  describe('not returnable products and the return clock', () => {
+    const SUB = `rt-${tag}`;
+    const SHOPPER = randomUUID();
+
+    beforeAll(async () => {
+      await pool.query(
+        `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_return_window_days) VALUES ($1, $2, true, 7)
+         ON CONFLICT (business_id) DO UPDATE SET store_subdomain = EXCLUDED.store_subdomain, store_enabled = true, store_return_window_days = 7`,
+        [B, SUB],
+      );
+      await pool.query(`INSERT INTO store_customers (id, business_id, phone, name) VALUES ($1, $2, $3, 'Shopper')`, [SHOPPER, B, `98${phone}`]);
+    });
+
+    const ctx = (id: string) => ({ params: { subdomain: SUB, id } });
+    const asShopper = (id: string, body?: unknown) =>
+      new NextRequest(`http://localhost/api/public/store/${SUB}/orders/${id}/return`, {
+        method: body ? 'POST' : 'GET',
+        headers: { 'content-type': 'application/json', cookie: `${STORE_CUSTOMER_COOKIE}=${signStoreCustomer(B, SHOPPER)}` },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+    /** A billed order of the shopper's whose parcel was delivered just now. */
+    async function deliveredOrder(qty: number): Promise<{ orderId: string; invoiceId: string; fulfilmentId: string }> {
+      const { orderId, invoiceId } = await billedOrder(qty);
+      await pool.query(`UPDATE store_orders SET store_customer_id = $2 WHERE id = $1`, [orderId, SHOPPER]);
+      const fulfilmentId = await tx(async (c) => {
+        const { row } = await ensureFulfilment(c, {
+          businessId: B,
+          channel: 'online_store',
+          storeOrderId: orderId,
+          invoiceId,
+          branchId: BR,
+          buyerName: 'Buyer',
+          buyerPhone: phone,
+          status: 'confirmed',
+          method: 'own_rider',
+          codAmount: 0,
+          actorType: 'staff',
+          actorUserId: A,
+        });
+        for (const to of ['packed', 'shipped', 'delivered'] as const) {
+          const moved = await transitionFulfilment(c, { businessId: B, fulfilmentId: row.id, to, actorType: 'staff', actorUserId: A, skipPaymentGate: true });
+          expect(moved.ok).toBe(true);
+        }
+        return row.id;
+      });
+      return { orderId, invoiceId, fulfilmentId };
+    }
+
+    test('a not-returnable product is shown but cannot be asked for', async () => {
+      const { orderId, invoiceId } = await deliveredOrder(2);
+      await pool.query(`UPDATE items SET store_returnable = false WHERE id = $1`, [ITEM]);
+      try {
+        const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+        expect(got.lines).toHaveLength(1);
+        expect(got.lines[0]).toMatchObject({ item_name: 'Widget', returnable: false });
+        expect(got).toMatchObject({ can_return: false, reason: "Items on this order can't be returned" });
+
+        const lineId = got.lines[0].invoice_item_id as string;
+        const res = await postStoreReturn(asShopper(orderId, { lines: [{ invoice_item_id: lineId, quantity: 1 }], reason: 'wrong_item' }), ctx(orderId));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: "Widget can't be returned", code: 'NOT_RETURNABLE' });
+        expect((await pool.query(`SELECT 1 FROM order_returns WHERE store_order_id = $1`, [orderId])).rowCount).toBe(0);
+
+        // The shop itself may still return anything.
+        const id = await tx((c) =>
+          createReturn(c, { businessId: B, invoiceId, lines: [{ invoice_item_id: lineId, quantity: 1 }], reason: 'wrong_item', initiatedBy: 'merchant', userId: A }),
+        );
+        expect(id).toBeTruthy();
+      } finally {
+        await pool.query(`UPDATE items SET store_returnable = true WHERE id = $1`, [ITEM]);
+      }
+    });
+
+    test('a returnable product on an order can still be asked for', async () => {
+      const { orderId } = await deliveredOrder(1);
+      const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+      expect(got).toMatchObject({ can_return: true });
+      expect(got.lines[0]).toMatchObject({ returnable: true });
+    });
+
+    test('an edit after delivery does not restart the return window', async () => {
+      const { orderId, fulfilmentId } = await deliveredOrder(1);
+      await pool.query(`UPDATE order_fulfilments SET delivered_at = NULL WHERE id = $1`, [fulfilmentId]);
+      await pool.query(
+        `UPDATE order_fulfilment_events SET created_at = NOW() - INTERVAL '10 days' WHERE fulfilment_id = $1 AND status = 'delivered'`,
+        [fulfilmentId],
+      );
+      await pool.query(`UPDATE store_orders SET updated_at = NOW() WHERE id = $1`, [orderId]);
+      const got = await (await getStoreReturn(asShopper(orderId), ctx(orderId))).json();
+      expect(got).toMatchObject({ can_return: false, reason: 'Returns are accepted within 7 days of delivery' });
+    });
+
+    test('the item API saves store_returnable', async () => {
+      const patch = (body: unknown) =>
+        patchItem(
+          new NextRequest(`http://localhost/api/items/${ITEM}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json', 'x-authenticated-user-id': A, 'x-authenticated-business-id': B },
+            body: JSON.stringify({ name: 'Widget', unit: 'PCS', selling_price: 100, ...(body as object) }),
+          }),
+          { params: { id: ITEM } },
+        );
+      const column = async () => (await pool.query(`SELECT store_returnable FROM items WHERE id = $1`, [ITEM])).rows[0].store_returnable;
+      const res = await patch({ store_returnable: false });
+      expect(res.status).toBe(200);
+      expect(await column()).toBe(false);
+      expect((await patch({ store_returnable: 'no' })).status).toBe(400);
+      expect(await column()).toBe(false);
+      expect((await patch({ store_returnable: true })).status).toBe(200);
+      expect(await column()).toBe(true);
+    });
   });
 });

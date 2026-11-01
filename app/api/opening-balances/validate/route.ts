@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +10,10 @@ export const dynamic = 'force-dynamic';
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, financial_year_id, opening_balances } = body;
+    const { business_id: claimedBusinessId, financial_year_id, opening_balances } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'journal', 'read');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
 
     if (!business_id || !opening_balances || !Array.isArray(opening_balances)) {
       return NextResponse.json(

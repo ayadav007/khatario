@@ -7,6 +7,7 @@ import { StatusOverview } from '@/components/whatsapp/dashboard/StatusOverview';
 import { AgentPerformance } from '@/components/whatsapp/dashboard/AgentPerformance';
 import { CampaignPerformance } from '@/components/whatsapp/dashboard/CampaignPerformance';
 import { BotVsHuman } from '@/components/whatsapp/dashboard/BotVsHuman';
+import { PipelinePerformance } from '@/components/whatsapp/dashboard/PipelinePerformance';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { Loader2 } from 'lucide-react';
@@ -21,6 +22,7 @@ export default function WhatsAppDashboardPage() {
   const [agentData, setAgentData] = useState<any>(null);
   const [campaignData, setCampaignData] = useState<any>(null);
   const [botVsHumanData, setBotVsHumanData] = useState<any>(null);
+  const [pipelineData, setPipelineData] = useState<any>(null);
 
   useEffect(() => {
     if (business?.id) {
@@ -50,6 +52,12 @@ export default function WhatsAppDashboardPage() {
 
       const agents = await agentsRes.json();
       setAgentData(agents.agents);
+
+      // Pipeline is optional too
+      fetch('/api/whatsapp/dashboard/pipeline')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setPipelineData(d?.pipeline ?? null))
+        .catch(() => undefined);
 
       // Campaigns is optional — silently skip if not available (addon not active or table missing)
       try {
@@ -105,6 +113,8 @@ export default function WhatsAppDashboardPage() {
             <div className="space-y-6">
               {/* Row 1: Status Overview */}
               <StatusOverview data={statusData} loading={loading} />
+
+              <PipelinePerformance data={pipelineData} />
 
               {/* Row 2: Agent Performance */}
               <AgentPerformance data={agentData} loading={loading} />

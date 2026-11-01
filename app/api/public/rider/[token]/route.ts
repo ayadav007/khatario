@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { applyRiderUpdate, isRiderAction, isRiderToken, loadRiderDrop } from '@/lib/fulfilment/rider';
 import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: { token: string } };
 
 function ip(request: NextRequest): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0].trim() || request.headers.get('x-real-ip') || 'unknown';
+  return getClientIp(request);
 }
 
 /** Drop details for the rider holding this link. */

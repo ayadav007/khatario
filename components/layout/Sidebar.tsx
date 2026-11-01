@@ -77,6 +77,12 @@ import {
   HR_NAV_SECTION_TITLE,
 } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
+import {
+  CONNECT_DASHBOARD_ITEM,
+  CONNECT_NAV_FEATURE_KEY,
+  CONNECT_NAV_GROUPS,
+  CONNECT_SETTINGS_ITEM,
+} from '@/lib/navigation/connect-nav-items';
 import { featureIdForPath, isSupplierHubHref } from '@/lib/subscription/plan-path-gate';
 import { collectNavHrefs, pickActiveNavHref } from '@/lib/navigation/nav-active';
 
@@ -235,6 +241,10 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/stock/low-stock': 'reports_basic',
     '/reports/stock/low-stock-warehouse': 'reports_basic',
     '/reports/stock/damaged': 'reports_basic',
+    '/reports/stock/third-party': 'reports_basic',
+    '/reports/stock/quantitative': 'reports_basic',
+    '/reports/stock/bank-statement': 'reports_basic',
+    '/reports/stock/job-work': 'reports_basic',
     '/reports/stock/expired': 'reports_basic',
     '/reports/stock/closing-stock': 'reports_advanced',
     '/reports/stock/closing-stock/finalize': 'reports_advanced',
@@ -542,7 +552,7 @@ export const Sidebar = React.memo(function Sidebar() {
           { href: '/suppliers/hub', label: 'Supplier Hub' },
           { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
           { href: '/suppliers/catalog', label: 'My Catalog' },
-          { href: '/suppliers/requests', label: 'Requests to Fulfill' },
+          { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
         ],
       }
     ] : []),
@@ -573,7 +583,7 @@ export const Sidebar = React.memo(function Sidebar() {
         { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
         { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
         { href: '/purchases', label: 'All Purchases', module: 'purchases' },
-        { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
+        { href: '/purchases/order-list', label: 'Order List', module: 'purchases' },
         { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
         { href: '/purchase-returns', label: 'Purchase Returns', module: 'purchases' },
         { href: '/expenses', label: 'Expenses', module: 'expenses' },
@@ -589,6 +599,9 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/items', label: 'Items', module: 'items', tourId: 'nav-items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+        { href: '/pricing/levels', label: 'Price Levels', module: 'items' },
+        { href: '/pricing/schemes', label: 'Schemes', module: 'items' },
+        { href: '/pricing/price-list', label: 'Price List', module: 'items' },
         {
           href: '/items/barcodes',
           label: 'Print Labels',
@@ -619,6 +632,12 @@ export const Sidebar = React.memo(function Sidebar() {
           featureKey: 'settings_multi_warehouse'
         }] : []),
         { href: '/inventory-adjustments', label: 'Adjustments', module: 'items' },
+        { href: '/stock-counts', label: 'Stock Counts', module: 'items' },
+        { href: '/stock-holds', label: "Held & Others' Goods", module: 'items' },
+        { href: '/manufacturing', label: 'Manufacturing', module: 'items' },
+        { href: '/insurance-claims', label: 'Insurance Claims', module: 'items' },
+        { href: '/items/cleanup', label: 'Units & Duplicates', module: 'items' },
+        { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
         { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
         { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' },
       ],
@@ -705,6 +724,17 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
             { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+            { href: '/eway-bills', label: 'E-way Bills', module: 'reports', featureKey: 'eway_bill' },
+          ],
+        },
+        {
+          label: 'Stock & Audit',
+          collapsible: true,
+          subItems: [
+            { href: '/reports/stock/quantitative', label: 'Quantity Details (3CD)', module: 'reports' },
+            { href: '/reports/stock/bank-statement', label: 'Bank Stock Statement', module: 'reports' },
+            { href: '/reports/stock/job-work', label: 'Job Work (ITC-04)', module: 'reports' },
+            { href: '/reports/stock/third-party', label: 'Stock with Parties', module: 'reports' },
           ],
         },
         {
@@ -740,94 +770,20 @@ export const Sidebar = React.memo(function Sidebar() {
             collapsible: true,
             subItems: [
               {
-                href: '/whatsapp/dashboard',
-                label: 'Dashboard',
-                module: 'whatsapp',
+                ...CONNECT_DASHBOARD_ITEM,
                 isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
+                featureKey: CONNECT_NAV_FEATURE_KEY,
               },
-              {
-                href: '/whatsapp/conversations',
-                label: 'Conversations',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/reminders',
-                label: 'Payment Reminders',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/orders',
-                label: 'Order Verification',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/flows',
-                label: 'Flows',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/send-message',
-                label: 'Send Message',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/who-to-message',
-                label: 'Who to message',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/campaigns',
-                label: 'Campaigns',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/contacts',
-                label: 'Contacts',
-                module: 'whatsapp_inbox',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/contacts/groups',
-                label: 'Contact Groups',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/group-extractor',
-                label: 'Group Extractor',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/whatsapp/unsubscribes',
-                label: 'Unsubscribes',
-                module: 'whatsapp',
-                isLocked: !hasWhatsAppAddon(),
-                featureKey: 'whatsapp_bot',
-              },
-              {
-                href: '/settings/whatsapp',
-                label: 'WhatsApp Settings',
-                module: 'whatsapp',
-              },
+              ...CONNECT_NAV_GROUPS.map((group) => ({
+                label: group.label,
+                collapsible: true,
+                subItems: group.items.map((item) => ({
+                  ...item,
+                  isLocked: !hasWhatsAppAddon(),
+                  featureKey: CONNECT_NAV_FEATURE_KEY,
+                })),
+              })),
+              CONNECT_SETTINGS_ITEM,
             ],
           },
         ]
@@ -855,6 +811,12 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/tools/discount-calculator', label: 'Discount Calculator' },
             { href: '/tools/price-margin-calculator', label: 'Price Calculator' },
             { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+            {
+              href: '/tools/whatsapp-group-extractor',
+              label: 'Group Extractor',
+              featureKey: 'whatsapp_bot',
+              isLocked: !hasWhatsAppAddon(),
+            },
             { href: '/tools/pan-validator', label: 'PAN Validator' },
             { href: '/tools/gstin-validator', label: 'GSTIN Validator' },
             { href: '/tools/interest-calculator', label: 'Interest Calculator' },
@@ -959,7 +921,6 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/whatsapp/templates': FileText,
       '/settings/whatsapp/notifications': Bell,
       '/settings/whatsapp/inbox': Inbox,
-      '/settings/whatsapp/team': Users,
       '/settings/whatsapp/ai-agent': Bot,
       '/settings/whatsapp/shop': ShoppingBag,
       '/settings/online-store': ShoppingBag,

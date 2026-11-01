@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { accountIdByCode, insertVoucherLines, round2, type VoucherLine } from '@/lib/accounting/voucher-posting';
+import { accountCodeForStockClass, accountIdForCode } from '@/lib/inventory/stock-class';
 
 export type AdjustmentReason =
   | 'STOCK_TAKE'
@@ -10,19 +11,35 @@ export type AdjustmentReason =
   | 'COST_CORRECTION'
   | 'LANDED_COST'
   | 'REVALUATION'
-  | 'WRITE_DOWN';
+  | 'WRITE_DOWN'
+  | 'PROCESS_LOSS'
+  | 'TRANSIT_LOSS'
+  | 'OWN_CONSUMPTION'
+  | 'CUSTODY_LOSS'
+  | 'PRODUCTION_ISSUE'
+  | 'PRODUCTION_RECEIPT'
+  | 'BY_PRODUCT';
 
-/** s.17(5)(h): goods lost, stolen, destroyed, written off or given as free samples. */
+/**
+ * s.17(5)(h): goods lost, stolen, destroyed, written off or given as free samples (transit and
+ * custody losses are goods lost); s.17(5)(g): goods used for personal consumption. A normal
+ * process loss keeps its credit.
+ */
 export const ITC_REVERSAL_REASONS: ReadonlySet<AdjustmentReason> = new Set([
   'DAMAGE',
   'THEFT',
   'EXPIRED',
   'WRITE_DOWN',
   'FREE_SAMPLE',
+  'TRANSIT_LOSS',
+  'CUSTODY_LOSS',
+  'OWN_CONSUMPTION',
 ]);
 
 /** Ledger code for the non-inventory side of an adjustment, with fallbacks. */
 export function counterAccountCodes(reason: AdjustmentReason, isDecrease: boolean): string[] {
+  // Production moves stock through work in progress: inputs in, output and by-products out.
+  if (reason === 'PRODUCTION_ISSUE' || reason === 'PRODUCTION_RECEIPT' || reason === 'BY_PRODUCT') return ['1161'];
   if (isDecrease) {
     if (reason === 'FREE_SAMPLE') return ['5202', '5201'];
     if (reason === 'LANDED_COST') return ['5105', '5101'];
@@ -76,14 +93,22 @@ export async function postInventoryAdjustment(
   const amount = round2(Math.abs(p.amount));
   if (amount === 0) return { itcReversed: 0 };
 
-  const inventory = await accountIdByCode(client, p.businessId, '1104');
+  const classRow = await client.query<{ stock_class: string | null }>(
+    `SELECT to_jsonb(items) ->> 'stock_class' AS stock_class FROM items WHERE id = $1 AND business_id = $2`,
+    [p.itemId, p.businessId],
+  );
+  const inventory = await accountIdForCode(
+    client,
+    p.businessId,
+    accountCodeForStockClass(classRow.rows[0]?.stock_class),
+  );
   const counter = await firstAccount(
     client,
     p.businessId,
     p.counterCodes && p.counterCodes.length > 0 ? p.counterCodes : counterAccountCodes(p.reason, p.isDecrease)
   );
   if (!inventory || !counter) {
-    throw new Error('Inventory (1104) or stock adjustment ledger account not found; initialise the chart of accounts');
+    throw new Error('Inventory account or stock adjustment ledger account not found; initialise the chart of accounts');
   }
 
   const lines: VoucherLine[] = p.isDecrease

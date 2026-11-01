@@ -40,7 +40,7 @@ function PurchaseSelectItemGate() {
   if (!business?.id || !user?.id) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-text-secondary">
-        <p>Session data is still loading. If this persists offline, open the app once while online.</p>
+        <p>Session data is still loading. If this keeps happening, open the app once while you have an internet connection.</p>
       </div>
     );
   }

@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 /**
  * Whether a store buyer may ask for a return on their own order: the order is theirs, delivered,
  * billed, and within the shop's return window (business_settings.store_return_window_days, 0 = off).
+ * The window starts when the parcel was delivered: its delivered time, else its first "delivered" event,
+ * and only then the order's last edit, so editing an order later never restarts the window.
  */
 export type StoreReturnEligibility =
   | { ok: true; invoiceId: string; fulfilmentId: string | null; windowDays: number; deliveredAt: string | null }
@@ -18,12 +20,16 @@ export async function storeReturnEligibility(
     invoice_status: string | null;
     fulfilment_id: string | null;
     delivery_status: string | null;
-    delivered_at: string | null;
-    updated_at: string;
+    delivered_at: string;
     window_days: number | null;
   }>(
     `SELECT so.status, so.invoice_id, i.status AS invoice_status,
-            f.id AS fulfilment_id, f.status AS delivery_status, f.delivered_at, so.updated_at,
+            f.id AS fulfilment_id, f.status AS delivery_status,
+            COALESCE(
+              f.delivered_at,
+              (SELECT MIN(e.created_at) FROM order_fulfilment_events e WHERE e.fulfilment_id = f.id AND e.status = 'delivered'),
+              so.updated_at
+            ) AS delivered_at,
             (SELECT bs.store_return_window_days FROM business_settings bs WHERE bs.business_id = so.business_id) AS window_days
        FROM store_orders so
        LEFT JOIN invoices i ON i.id = so.invoice_id AND i.deleted_at IS NULL
@@ -43,7 +49,7 @@ export async function storeReturnEligibility(
   if (!o.invoice_id || o.invoice_status !== 'final') {
     return { ok: false, status: 409, error: 'This order cannot be returned online. Please contact the shop.' };
   }
-  const deliveredAt = o.delivered_at ?? o.updated_at;
+  const deliveredAt = o.delivered_at;
   const ageDays = (Date.now() - new Date(deliveredAt).getTime()) / 86_400_000;
   if (ageDays > windowDays) {
     return { ok: false, status: 409, error: `Returns are accepted within ${windowDays} days of delivery` };

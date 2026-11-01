@@ -18,6 +18,8 @@ interface ActionsBarProps {
   
   // Display flags
   isFinal: boolean;
+  amendMode?: boolean;
+  onSaveAmend?: () => void;
   isOnline: boolean;
   
   // Saved invoice info
@@ -44,6 +46,8 @@ const ActionsBar = React.memo(function ActionsBar({
   previewLoading,
   saving,
   isFinal,
+  amendMode = false,
+  onSaveAmend,
   isOnline,
   savedInvoiceId,
   invoicePrefix,
@@ -71,7 +75,12 @@ const ActionsBar = React.memo(function ActionsBar({
 
   return (
     <div className="lg:col-span-1 flex flex-col gap-3">
-      {!isFinal && (
+      {amendMode && (
+        <Button variant="primary" className="w-full justify-center" onClick={onSaveAmend} isLoading={saving}>
+          <Save className="w-4 h-4 mr-2" /> Save amendment
+        </Button>
+      )}
+      {!isFinal && !amendMode && (
         <>
           <Button variant="secondary" className="w-full justify-center" onClick={onPreview} isLoading={previewLoading} disabled={previewLoading}>
             <Eye className="w-4 h-4 mr-2" /> Preview
@@ -126,7 +135,7 @@ const ActionsBar = React.memo(function ActionsBar({
           <Button variant="secondary" className="justify-center border border-gray-300" onClick={handleDownload}>
             <Download className="w-4 h-4 mr-2" /> Download PDF
           </Button>
-          {isFinal && (
+          {isFinal && !amendMode && (
             <Button variant="secondary" className="justify-center border border-border" onClick={onShare}>
               <Send className="w-4 h-4 mr-2" /> Share
             </Button>

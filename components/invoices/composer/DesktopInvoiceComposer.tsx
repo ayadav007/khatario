@@ -45,6 +45,11 @@ export type DesktopInvoiceComposerProps = {
   onUseClassicForm: () => void;
   readOnly: boolean;
   isFinal: boolean;
+  amendMode?: boolean;
+  billingName?: string;
+  setBillingName?: (v: string) => void;
+  datesReadOnly?: boolean;
+  onSaveAmend?: () => void;
   keyboardBlocked: boolean;
   banners: React.ReactNode;
 
@@ -86,6 +91,9 @@ export type DesktopInvoiceComposerProps = {
   setSelectedWarehouseId: (v: string) => void;
 
   isExport: boolean;
+  supplyKind: 'taxable' | 'exempt' | 'export' | 'sez';
+  showSezExempt: boolean;
+  onSupplyKind: (kind: 'taxable' | 'exempt' | 'export' | 'sez') => void;
   setIsExport: (v: boolean) => void;
   exportState: ComposerExportState;
   patchExport: (patch: Partial<ComposerExportState>) => void;
@@ -192,6 +200,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
   const toggleExport = useCallback(
     (enabled: boolean, quiet = false) => {
       if (p.readOnly || enabled === p.isExport) return;
+      p.onSupplyKind(enabled ? 'export' : 'taxable');
       p.setIsExport(enabled);
       if (!quiet) {
         toast.info(
@@ -252,6 +261,10 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && lower === 's') {
       e.preventDefault();
+      if (p.amendMode) {
+        if (!p.saving) p.onSaveAmend?.();
+        return;
+      }
       if (p.readOnly || p.saving) return;
       if (e.shiftKey) p.onSaveDraft();
       else p.onSaveFinal();
@@ -346,9 +359,13 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     };
   }, [sidebarCollapsed]);
 
-  const taxLabel = nonTaxable
+  const taxLabel = p.supplyKind === 'exempt' || (nonTaxable && p.supplyKind !== 'export' && p.supplyKind !== 'sez')
     ? 'Tax'
-    : p.isExport
+    : p.supplyKind === 'sez'
+      ? p.exportState.exportType === 'wop'
+        ? 'SEZ · IGST 0%'
+        : 'SEZ · IGST'
+      : p.isExport
       ? p.exportState.exportType === 'wop'
         ? 'IGST 0% · LUT'
         : 'IGST'
@@ -413,6 +430,9 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               billingAddress={p.billingAddress}
               setBillingAddress={p.setBillingAddress}
               readOnly={p.readOnly}
+              amendBillTo={p.amendMode && !p.datesReadOnly}
+              billingName={p.billingName}
+              setBillingName={p.setBillingName}
               credit={p.credit}
             />
           </div>
@@ -447,13 +467,17 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               posStateCode={p.posStateCode}
               isIntraState={p.isIntraState}
               isExport={p.isExport}
+              supplyKind={p.supplyKind}
+              showSezExempt={p.showSezExempt}
               exportType={p.exportState.exportType}
-              onToggleExport={(v) => toggleExport(v)}
+              onSupplyKind={p.onSupplyKind}
+              onExportType={(kind) => p.patchExport({ exportType: kind })}
               warehouses={p.warehouses}
               warehousesLoading={p.warehousesLoading}
               selectedWarehouseId={p.selectedWarehouseId}
               setSelectedWarehouseId={p.setSelectedWarehouseId}
               readOnly={p.readOnly}
+              datesReadOnly={p.datesReadOnly ?? p.readOnly}
             />
           </div>
         </div>
@@ -487,6 +511,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
           barcodeRef={barcodeRef}
           documentType={p.documentType}
           isExport={p.isExport}
+          supplyKind={p.supplyKind}
           exportType={p.exportState.exportType}
           isIntraState={p.isIntraState}
           pricesIncludeGst={p.pricesIncludeGst}
@@ -564,7 +589,17 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               </>
             )}
 
-            {p.readOnly ? (
+            {p.amendMode ? (
+              <button
+                type="button"
+                onClick={p.onSaveAmend}
+                disabled={p.saving || p.datesReadOnly}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-lg shadow-primary-600/30 transition hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+              >
+                {p.saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save amendment
+              </button>
+            ) : p.readOnly ? (
               <button
                 type="button"
                 onClick={p.onStartNew}

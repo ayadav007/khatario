@@ -299,6 +299,7 @@ export function OrderDrawer({
         awb: f.awb,
         paid,
         codAmount: f.cod_collected_at ? 0 : Number(f.cod_amount) || 0,
+        khata: data.order.payment_status === 'khata',
         itemCount: (f.items.length > 0 ? f.items : data.lines).reduce((n, l) => n + (Number(l.quantity) || 0), 0),
         boxes,
       },
@@ -379,7 +380,13 @@ export function OrderDrawer({
             {o ? (
               <p className="mt-1 text-sm text-slate-500">
                 {o.customer_name || 'Customer'} {o.customer_phone ? `· ${o.customer_phone}` : ''} · {inr(o.amount)} ·{' '}
-                <span className={paid ? 'text-emerald-600' : 'text-amber-600'}>{(o.payment_status ?? 'unpaid').replace(/_/g, ' ')}</span>
+                <span className={paid || o.payment_status === 'khata' ? 'text-emerald-600' : 'text-amber-600'}>
+                  {o.payment_status === 'khata'
+                    ? 'on khata'
+                    : o.payment_status === 'khata_pending'
+                      ? 'khata, waiting for approval'
+                      : (o.payment_status ?? 'unpaid').replace(/_/g, ' ')}
+                </span>
               </p>
             ) : null}
           </div>

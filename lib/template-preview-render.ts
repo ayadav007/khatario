@@ -4,6 +4,9 @@ import { renderLocalizedPrintHtml } from '@/lib/print-language';
 import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { registerInvoiceHandlebarsPartials } from '@/lib/handlebars-invoice-partials';
+import { applyStatutorySettings, buildHsnTaxSummary, copyLabelFor } from '@/lib/invoice-statutory';
+import { attachItemTablePrintData } from '@/lib/print/item-columns';
+import { injectPreviewBridge } from '@/lib/template-preview-source';
 import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';
 import { enrichInvoiceRenderData } from '@/lib/custom-fields-render';
 import { finalizePrintHtml } from '@/lib/pdf-generator';
@@ -19,6 +22,7 @@ export const TEMPLATE_PREVIEW_PATHS: Record<string, string> = {
   tally_style: 'templates/tally_style/template.html',
   export_invoice: 'templates/export_invoice/template.html',
   gst_detailed: 'templates/gst_detailed/template.html',
+  distributor: 'templates/distributor/template.html',
   composition_standard: 'templates/bill_of_supply/composition_standard/template.html',
   composition_modern: 'templates/bill_of_supply/composition_modern/template.html',
   tax_exempt: 'templates/bill_of_supply/tax_exempt/template.html',
@@ -36,7 +40,20 @@ export type TemplatePreviewRenderInput = {
   customSettings?: Record<string, unknown> | null;
   /** Sample data factory from route module */
   getSampleData: (templateId: string) => Record<string, unknown>;
+  /** For a PDF: skip the screen-only preview CSS and the click-to-edit script. */
+  forPrint?: boolean;
+  /** Template designer: hovering a part of the page outlines it and a click opens its section. */
+  clickToEdit?: boolean;
 };
+
+/** The document a preview template stands for, when the sample data does not say. */
+function previewDocumentType(templateId: string): string {
+  if (templateId.startsWith('composition_') || templateId === 'tax_exempt') return 'bill_of_supply';
+  if (templateId === 'credit_standard') return 'credit_note';
+  if (templateId === 'debit_standard') return 'debit_note';
+  if (templateId === 'challan_standard') return 'delivery_challan';
+  return 'tax_invoice';
+}
 
 async function loadBusinessPreviewAssets(businessId: string | null | undefined) {
   let businessLogoUrl: string | null = null;
@@ -95,7 +112,7 @@ async function loadBusinessPreviewAssets(businessId: string | null | undefined) 
 export async function renderTemplatePreviewHtml(
   input: TemplatePreviewRenderInput
 ): Promise<string> {
-  const { templateId, businessId, customSettings, getSampleData } = input;
+  const { templateId, businessId, customSettings, getSampleData, forPrint, clickToEdit } = input;
 
   const templatePath = TEMPLATE_PREVIEW_PATHS[templateId];
   if (!templatePath) {
@@ -120,6 +137,27 @@ export async function renderTemplatePreviewHtml(
   if (customSettings) {
     finalSettings = mergeTemplateSettings(customSettings, defaults);
   }
+
+  // Preview what will really print: GST documents cannot hide their mandatory fields.
+  const sampleInvoice = (sampleData.invoice || {}) as Record<string, any>;
+  const sampleItems = (Array.isArray(sampleData.items) ? sampleData.items : []) as Record<string, unknown>[];
+  const previewDocType = sampleInvoice.document_type || previewDocumentType(templateId);
+  finalSettings = applyStatutorySettings(
+    finalSettings as unknown as Record<string, unknown>,
+    previewDocType,
+    templateId,
+    { b2b: !!(sampleData.customer as Record<string, unknown> | undefined)?.gstin },
+  ) as unknown as typeof finalSettings;
+  if (!Array.isArray(sampleInvoice.tax_breakdown) && sampleItems.length) {
+    const summary = buildHsnTaxSummary(sampleItems);
+    sampleInvoice.tax_breakdown = summary.rows;
+    sampleInvoice.tax_breakdown_totals = summary.totals;
+  }
+  if (sampleInvoice.has_tax === undefined) sampleInvoice.has_tax = Number(sampleInvoice.tax_total || 0) > 0;
+  if (sampleInvoice.copy_label === undefined) {
+    sampleInvoice.copy_label = copyLabelFor(previewDocType, 'original', sampleItems);
+  }
+  sampleData.invoice = sampleInvoice;
 
   const finalRecord = finalSettings as unknown as Record<string, unknown>;
   const defaultsRecord = defaults as unknown as Record<string, unknown>;
@@ -157,6 +195,11 @@ export async function renderTemplatePreviewHtml(
     )) as Record<string, unknown>;
   }
 
+  data = attachItemTablePrintData(
+    data as Parameters<typeof attachItemTablePrintData>[0],
+    { docType: previewDocType },
+  ) as Record<string, unknown>;
+
   const renderedHtml = renderLocalizedPrintHtml(
     templateHtml,
     data as Record<string, any>,
@@ -170,7 +213,7 @@ export async function renderTemplatePreviewHtml(
     finalSettings,
     businessId || ''
   );
+  if (forPrint) return html;
   html = injectTemplateScreenPreviewCss(html, templateId, settingsRecord);
-
-  return html;
+  return clickToEdit ? injectPreviewBridge(html) : html;
 }

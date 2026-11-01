@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryAdvance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -111,8 +111,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use requested_by as fallback if not provided (for self-request)
-    const authUserId = requested_by || employee_id;
+    const authUserId = actingUserId(request, requested_by);
+    if (!authUserId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
 
     // AUTHORIZATION: Check create permission (salary advances are part of HR module)
     try {
@@ -150,7 +152,7 @@ export async function POST(request: NextRequest) {
         recovery_method,
         recovery_months || null,
         advance_amount, // Initially, remaining = advance_amount
-        requested_by || null,
+        authUserId,
         'pending',
       ]
     );

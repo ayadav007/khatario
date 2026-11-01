@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { logAdminAction } from '@/lib/platform-auth';
 import { LeadUpdateSchema, updateLead } from '@/lib/rag/admin';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     'assistant_lead',
     params.id,
     { status: parsed.data.status },
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+    getClientIp(request),
     request.headers.get('user-agent') || undefined,
   );
   return NextResponse.json({ lead });

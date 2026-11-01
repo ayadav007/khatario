@@ -272,7 +272,7 @@ Widget? phoneSettingPage(AppSession session, String href) {
     '/privacy' => const _PrivacyScreen(),
     '/settings/offline-sync' => JsonListScreen(
         session: session,
-        title: 'Offline sync',
+        title: 'Catalog sync',
         blurb: 'Changes this phone sent after it was back online.',
         path: '/api/offline-sync/history?limit=50&user_id=${session.user['id'] ?? ''}',
         listKey: 'history',
@@ -351,7 +351,7 @@ class _SupportScreen extends StatelessWidget {
       children: [
         SettingsSection(title: 'Try this first', children: [
           SettingRow(label: 'Pull down to refresh the screen.'),
-          SettingRow(label: 'Check the phone is online, then open Offline sync if a save did not go through.'),
+          SettingRow(label: 'Check the phone has an internet connection, then open Catalog sync if a save did not go through.'),
           SettingRow(label: 'Printer trouble is under Help, Printer diagnostics.'),
         ]),
         SettingsSection(title: 'Write to us', children: [

@@ -2,23 +2,29 @@ import { DEFAULT_STORE_PROMO } from '@/lib/store/promo-sheet';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { DEFAULT_HOMEPAGE_SECTIONS, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
+import type { StoreSwatch } from '@/lib/store/product-extras';
+import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
+import type { DemoCatalogId } from '@/lib/store/engine/theme-catalog';
 
 export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset, 'custom'>; pack: StoreThemePack }> = {
   'theme-studio': { preset: 'studio', pack: 'studio' },
   'theme-khatario': { preset: 'khatario', pack: 'khatario' },
   'theme-grocery': { preset: 'grocery', pack: 'grocery' },
+  'theme-quick': { preset: 'quick', pack: 'quick' },
 };
 
 const DEMO_BUSINESS: Record<StoreThemePack, string> = {
   studio: '00000000-0000-4000-8000-000000000001',
   khatario: '00000000-0000-4000-8000-000000000004',
   grocery: '00000000-0000-4000-8000-000000000007',
+  quick: '00000000-0000-4000-8000-000000000010',
 };
 
 const STORE_LABEL: Record<StoreThemePack, string> = {
   studio: 'Studio',
   khatario: 'Khatario',
   grocery: 'Premium Grocery',
+  quick: 'Quick',
 };
 
 export function isThemeDemoSubdomain(subdomain: string): boolean {
@@ -54,6 +60,7 @@ function mk(
   featured = false,
   image: string | null = null,
   unit = 'PCS',
+  card?: { badge?: string; tagline?: string; swatches?: StoreSwatch[] },
 ): StoreProduct {
   return {
     id,
@@ -74,13 +81,23 @@ function mk(
     rating_avg: 4.6,
     rating_count: 12,
     featured_in_store: featured,
+    store_badge: card?.badge ?? null,
+    store_tagline: card?.tagline ?? null,
+    store_swatches: card?.swatches ?? [],
     variants: [],
   };
 }
 
 function apparelDemoProducts(): StoreProduct[] {
   return [
-    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80', 'PCS', {
+      badge: 'Pure merino',
+      tagline: 'Spun in Ludhiana',
+      swatches: [
+        { name: 'Oat', hex: '#d9cbb3' },
+        { name: 'Charcoal', hex: '#333333' },
+      ],
+    }),
     mk('demo-2', 'Linen overshirt', 2450, null, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
     mk('demo-3', 'Everyday tote', 890, 990, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=900&q=80'),
     mk('demo-4', 'Cotton tee', 650, null, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
@@ -107,8 +124,10 @@ function groceryDemoProducts(): StoreProduct[] {
 }
 
 /** Every demo product across all packs, for id lookups on detail routes. */
-export function themeDemoProducts(pack?: StoreThemePack | null): StoreProduct[] {
-  if (pack === 'grocery') return groceryDemoProducts();
+/** A demo store's products: its own catalogue (`catalog`, the theme demo stores), else the old packs' lists. */
+export function themeDemoProducts(pack?: StoreThemePack | null, catalog?: DemoCatalogId): StoreProduct[] {
+  if (catalog) return DEMO_CATALOGS[catalog].products;
+  if (pack === 'grocery' || pack === 'quick') return groceryDemoProducts();
   if (pack) return apparelDemoProducts();
   return [...apparelDemoProducts(), ...groceryDemoProducts()];
 }
@@ -117,14 +136,18 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   const spec = THEME_DEMO_SLUGS[subdomain.toLowerCase().trim()];
   if (!spec) return null;
   const presetTheme = applyStorePreset(spec.preset);
-  const grocery = spec.pack === 'grocery';
+  // Quick shows the grocery catalog; its look comes from the Quick pack.
+  const grocery = spec.pack === 'grocery' || spec.pack === 'quick';
   const theme = sanitizeStoreTheme({
     ...presetTheme,
     preset: spec.preset,
     pack: spec.pack,
     hero_slides: [
       {
-        image_url: spec.pack === 'studio' ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1400&q=80' : '',
+        image_url:
+          spec.pack === 'studio' || spec.pack === 'quick'
+            ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1400&q=80'
+            : '',
         title: grocery ? 'Fresh groceries, delivered fast.' : 'Welcome',
         subtitle: 'Theme preview — sample catalog, checkout off.',
         viewport: 'both',
@@ -177,19 +200,30 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   };
 }
 
+/** Which sample catalogue a demo store reads: a theme demo store's own (`catalog`), else its old pack. */
+export function demoCatalogOptions(store: StoreBusinessContext): { pack?: StoreThemePack; catalog?: DemoCatalogId } {
+  return { pack: store.store_theme?.pack, catalog: store.demo_catalog };
+}
+
 export function filterDemoCatalog(opts: {
   pack?: StoreThemePack | null;
+  /** A theme demo store's catalogue; wins over `pack`. */
+  catalog?: DemoCatalogId;
   categoryId?: string | null;
   search?: string | null;
   page: number;
   limit: number;
   featuredOnly?: boolean;
   discountedOnly?: boolean;
+  /** At least this percent off MRP (the `disc` catalog filter). */
+  minDiscountPct?: number | null;
   maxPrice?: number | null;
+  sort?: 'name' | 'new' | 'bestsellers';
 }) {
-  const grocery = opts.pack === 'grocery';
-  const all = grocery ? groceryDemoProducts() : apparelDemoProducts();
-  const categories = (grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
+  const grocery = opts.pack === 'grocery' || opts.pack === 'quick';
+  const own = opts.catalog ? DEMO_CATALOGS[opts.catalog] : null;
+  const all = own ? own.products : grocery ? groceryDemoProducts() : apparelDemoProducts();
+  const categories = (own ? own.categories : grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
     ...c,
     item_count: all.filter((i) => i.category_id === c.id).length,
   }));
@@ -200,6 +234,10 @@ export function filterDemoCatalog(opts: {
       (i) => i.mrp != null && i.mrp > i.selling_price && i.current_stock > 0,
     );
   }
+  if (opts.minDiscountPct != null && opts.minDiscountPct > 0) {
+    const pct = opts.minDiscountPct;
+    items = items.filter((i) => i.mrp != null && i.mrp > 0 && ((i.mrp - i.selling_price) / i.mrp) * 100 >= pct);
+  }
   if (opts.maxPrice != null && opts.maxPrice > 0) {
     items = items.filter((i) => i.selling_price <= opts.maxPrice!);
   }
@@ -207,6 +245,11 @@ export function filterDemoCatalog(opts: {
   if (opts.search) {
     const q = opts.search.toLowerCase();
     items = items.filter((i) => i.name.toLowerCase().includes(q));
+  }
+  // Demo items have no dates or sales: "new" shows the end of the list, "bestsellers" the featured ones first.
+  if (opts.sort === 'new') items = [...items].reverse();
+  if (opts.sort === 'bestsellers') {
+    items = [...items].sort((a, b) => Number(!!b.featured_in_store) - Number(!!a.featured_in_store));
   }
   const total = items.length;
   const start = (opts.page - 1) * opts.limit;

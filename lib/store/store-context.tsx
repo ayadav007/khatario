@@ -1,8 +1,18 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
 import { sanitizeStoreTheme } from './store-theme';
+import {
+  CART_SYNC_DEBOUNCE_MS,
+  cartSignature,
+  cartSyncEnabled,
+  mergeServerCart,
+  shouldPutCart,
+  toSyncLines,
+  type ServerCartLine,
+} from './cart-sync';
+import type { StoreKhataStatus } from '@/lib/khata/store-view';
 
 export interface StoreCartItem {
   itemId: string;
@@ -15,6 +25,8 @@ export interface StoreCartItem {
   unit: string;
   maxStock: number;
   taxRate?: number;
+  /** List price, when above `price`; only used to show savings. */
+  mrp?: number;
 }
 
 export type StoreShopper = {
@@ -24,6 +36,8 @@ export type StoreShopper = {
   email: string | null;
   last_address?: string | null;
   last_pincode?: string | null;
+  /** Store khata with this shop (none, asked for, or open with its balance and pay-by date). */
+  khata?: StoreKhataStatus;
 };
 
 interface StoreContextValue {
@@ -47,6 +61,9 @@ interface StoreContextValue {
   favoriteIds: string[];
   toggleFavorite: (itemId: string) => Promise<boolean>;
   rateProduct: (itemId: string, rating: number) => Promise<{ rating_avg: number; rating_count: number } | null>;
+  /** True while an engine theme renders the page; the old store theme's CSS, font and favicon then stay off. */
+  engineActive: boolean;
+  setEngineActive: (on: boolean) => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -79,6 +96,22 @@ export function storeDraftToken(): string | null {
 export function withStoreDraft(params: URLSearchParams): URLSearchParams {
   const td = storeDraftToken();
   if (td) params.set('td', td);
+  return withEnginePreview(params);
+}
+
+/**
+ * Adds the engine theme preview params (`preview_theme`, `pt`) from the page URL, so the store API
+ * can return a store that is not launched yet; the server verifies the token for that business.
+ */
+export function withEnginePreview(params: URLSearchParams): URLSearchParams {
+  if (typeof window === 'undefined') return params;
+  const current = new URLSearchParams(window.location.search);
+  const previewTheme = current.get('preview_theme');
+  const pt = current.get('pt');
+  if (previewTheme && pt && previewTheme.length <= 64 && pt.length <= 1024) {
+    params.set('preview_theme', previewTheme);
+    params.set('pt', pt);
+  }
   return params;
 }
 
@@ -98,6 +131,7 @@ export function StoreProvider({
   const [cartReady, setCartReady] = useState(false);
   const [customer, setCustomer] = useState<StoreShopper | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [engineActive, setEngineActive] = useState(false);
 
   useEffect(() => {
     try {
@@ -131,7 +165,7 @@ export function StoreProvider({
     let cancelled = false;
     (async () => {
       try {
-        const params = withStoreDraft(new URLSearchParams());
+        const params = withEnginePreview(withStoreDraft(new URLSearchParams()));
         const qs = params.toString();
         const res = await fetch(
           `/api/public/store/${encodeURIComponent(subdomain)}${qs ? `?${qs}` : ''}`,
@@ -234,6 +268,13 @@ export function StoreProvider({
   }, [refreshCustomer]);
 
   const signOutCustomer = useCallback(async () => {
+    try {
+      // Android app: drop this device's push token for this shop while the store cookie is still valid.
+      const { unregisterCapacitorPush } = await import('@/lib/push/client/capacitor-push');
+      await unregisterCapacitorPush({ kind: 'customer', subdomain });
+    } catch {
+      /* non-blocking */
+    }
     await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/account`, {
       method: 'POST',
       credentials: 'include',
@@ -263,6 +304,90 @@ export function StoreProvider({
       setFavoriteIds((prev) => Array.from(new Set([...prev, ...remote])));
     })();
   }, [customer, subdomain]);
+
+  // Signed-in cart sync (abandoned-cart recovery): on sign-in merge with the saved cart, then
+  // save every change after a 2 s pause. Failures are ignored; the local cart keeps working.
+  const customerId = customer?.id ?? null;
+  const syncOn = cartSyncEnabled({
+    customerId,
+    storeLoaded: !!store,
+    isDemo: store?.is_demo,
+    draft: !!storeDraftToken(),
+  });
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const cartMergedFor = useRef<string | null>(null);
+  const cartMerging = useRef(false);
+  const cartLastSent = useRef<string | null>(null);
+
+  const putServerCart = useCallback(
+    async (lines: StoreCartItem[]) => {
+      const signature = cartSignature(lines);
+      try {
+        const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/cart`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lines: toSyncLines(lines) }),
+        });
+        if (res.ok) cartLastSent.current = signature;
+      } catch {
+        /* ignore */
+      }
+    },
+    [subdomain],
+  );
+
+  useEffect(() => {
+    if (!syncOn || !customerId || !cartReady) {
+      cartMergedFor.current = null;
+      cartLastSent.current = null;
+      return;
+    }
+    if (cartMergedFor.current === customerId) return;
+    let cancelled = false;
+    cartMerging.current = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/cart`, {
+          credentials: 'include',
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const server = Array.isArray(data.lines) ? (data.lines as ServerCartLine[]) : [];
+        const merged = mergeServerCart(cartRef.current, server);
+        setCart(merged);
+        cartMergedFor.current = customerId;
+        cartMerging.current = false;
+        await putServerCart(merged);
+      } catch {
+        /* ignore */
+      } finally {
+        cartMerging.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      cartMerging.current = false;
+    };
+  }, [syncOn, customerId, cartReady, subdomain, putServerCart]);
+
+  useEffect(() => {
+    const ready = () =>
+      shouldPutCart({
+        enabled: syncOn,
+        customerId,
+        mergedFor: cartMergedFor.current,
+        merging: cartMerging.current,
+        signature: cartSignature(cart),
+        lastSent: cartLastSent.current,
+      });
+    if (!ready()) return;
+    const t = setTimeout(() => {
+      if (ready()) void putServerCart(cart);
+    }, CART_SYNC_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [cart, syncOn, customerId, putServerCart]);
 
   const toggleFavorite = useCallback(
     async (itemId: string) => {
@@ -332,6 +457,8 @@ export function StoreProvider({
         favoriteIds,
         toggleFavorite,
         rateProduct,
+        engineActive,
+        setEngineActive,
       }}
     >
       <div style={{ ['--store-accent' as string]: accent }}>{children}</div>

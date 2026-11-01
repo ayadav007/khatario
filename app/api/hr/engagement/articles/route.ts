@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryRows, queryOne } from '@/lib/db';
+import { sanitizeBlogHtml } from '@/lib/blog/html';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,9 @@ export async function GET(request: NextRequest) {
        ORDER BY published_at DESC LIMIT 50`,
       [businessId],
     );
-    return NextResponse.json({ articles: rows });
+    return NextResponse.json({
+      articles: rows.map((r: Record<string, unknown>) => ({ ...r, body_html: sanitizeBlogHtml(String(r.body_html ?? '')) })),
+    });
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();
     return NextResponse.json({ error: 'Failed to load articles' }, { status: 500 });
@@ -50,7 +53,7 @@ export async function POST(request: NextRequest) {
       [
         businessId,
         title,
-        String(body?.body_html ?? ''),
+        sanitizeBlogHtml(String(body?.body_html ?? '')),
         body?.author_name ? String(body.author_name) : null,
         body?.allow_employee_posts === true,
         body?.expires_at ? String(body.expires_at) : null,
@@ -89,7 +92,7 @@ export async function PATCH(request: NextRequest) {
         id,
         businessId,
         body.title ? String(body.title) : null,
-        body.body_html != null ? String(body.body_html) : null,
+        body.body_html != null ? sanitizeBlogHtml(String(body.body_html)) : null,
         body.is_published != null ? Boolean(body.is_published) : null,
         body.expires_at != null ? String(body.expires_at) : null,
       ],

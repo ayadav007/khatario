@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { checkWarehousePlace } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,10 +94,11 @@ export async function PATCH(
       pincode,
       country,
       warehouse_type,
+      gst_place_type,
       is_active,
     } = body;
 
-    const updated_by = body.updated_by || getUserIdFromRequest(request, body);
+    const updated_by = actingUserId(request, body.updated_by) || getUserIdFromRequest(request, body);
     const businessId = getBusinessIdFromRequest(request, body);
 
     if (!updated_by) {
@@ -185,6 +187,18 @@ export async function PATCH(
       }
     }
 
+    if (state !== undefined || branch_id !== undefined) {
+      const placeError = await checkWarehousePlace(
+        db.getPool() as any,
+        businessId,
+        branch_id !== undefined ? branch_id : existingWarehouse.branch_id,
+        { state: state !== undefined ? state : existingWarehouse.state },
+      );
+      if (placeError) {
+        return NextResponse.json(placeError, { status: 400 });
+      }
+    }
+
     // Build update query dynamically
     const updates: string[] = [];
     const values: any[] = [];
@@ -229,6 +243,10 @@ export async function PATCH(
     if (warehouse_type !== undefined) {
       updates.push(`warehouse_type = $${paramIndex++}`);
       values.push(warehouse_type);
+    }
+    if (gst_place_type !== undefined) {
+      updates.push(`gst_place_type = $${paramIndex++}`);
+      values.push(['principal', 'additional', 'not_registered'].includes(gst_place_type) ? gst_place_type : null);
     }
     if (is_active !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);

@@ -168,6 +168,7 @@ export async function PATCH(
       tax_rate,
       hsn_sac,
       item_type,
+      stock_class,
       min_stock,
       description,
       default_supplier_id,
@@ -368,6 +369,17 @@ export async function PATCH(
       const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
       galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
     }
+    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
+      Object.prototype.hasOwnProperty.call(body, k),
+    );
+    let extrasPatched: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
+    if (patchExtras) {
+      const { validateProductExtras } = await import('@/lib/store/product-extras');
+      extrasPatched = validateProductExtras(body);
+      if (!extrasPatched.ok) {
+        return NextResponse.json({ error: extrasPatched.error }, { status: 400 });
+      }
+    }
     const patchSeo =
       Object.prototype.hasOwnProperty.call(body, 'seo_title') ||
       Object.prototype.hasOwnProperty.call(body, 'seo_description') ||
@@ -415,6 +427,44 @@ export async function PATCH(
         parts.push(`, gallery_urls = $${idx}::jsonb`);
         extra.push(galleryJson);
         idx += 1;
+      }
+      if (extrasPatched?.ok) {
+        const v = extrasPatched.value;
+        if (v.video_url !== undefined) {
+          parts.push(`, video_url = $${idx}`);
+          extra.push(v.video_url);
+          idx += 1;
+        }
+        if (v.store_tabs !== undefined) {
+          parts.push(`, store_tabs = $${idx}::jsonb`);
+          extra.push(JSON.stringify(v.store_tabs));
+          idx += 1;
+        }
+        if (v.size_chart !== undefined) {
+          parts.push(`, size_chart = $${idx}::jsonb`);
+          extra.push(v.size_chart === null ? null : JSON.stringify(v.size_chart));
+          idx += 1;
+        }
+        if (v.store_badge !== undefined) {
+          parts.push(`, store_badge = $${idx}`);
+          extra.push(v.store_badge);
+          idx += 1;
+        }
+        if (v.store_tagline !== undefined) {
+          parts.push(`, store_tagline = $${idx}`);
+          extra.push(v.store_tagline);
+          idx += 1;
+        }
+        if (v.store_swatches !== undefined) {
+          parts.push(`, store_swatches = $${idx}::jsonb`);
+          extra.push(JSON.stringify(v.store_swatches));
+          idx += 1;
+        }
+        if (v.store_returnable !== undefined) {
+          parts.push(`, store_returnable = $${idx}`);
+          extra.push(v.store_returnable);
+          idx += 1;
+        }
       }
       if (seoPatched) {
         parts.push(`, seo_title = $${idx}`);
@@ -558,64 +608,130 @@ export async function PATCH(
     }
 
     // Handle Variants Update
+    // Sync instead of replace: variants that come back with their id are updated in place, new ones
+    // are inserted and only the ones left out are deleted. Ids stay the same, so invoice, purchase and
+    // stock-movement lines and customer prices stay linked, and stock already moved is kept.
     if (finalHasVariants && variants.length > 0) {
-      // For simplicity in PATCH, we'll replace variants or update existing ones
-      // A more robust way would be to sync them, but for now we'll delete and re-insert
-      // if it's a small number of variants.
-      await query('DELETE FROM item_variants WHERE item_id = $1', [itemId]);
-      
-      for (const variant of variants) {
-        // Validate variant barcode if provided
-        let variantBarcode: string | null = null;
-        let variantBarcodeType: string | null = null;
-        
-        if (variant.barcode) {
-          variantBarcode = normalizeBarcode(variant.barcode);
-          const validation = validateBarcode(variantBarcode, variant.barcode_type);
-          
-          if (!validation.isValid) {
-            console.error(`Invalid barcode for variant ${variant.name}: ${validation.error}`);
-            variantBarcode = null;
-          } else {
-            variantBarcodeType = validation.type || null;
-            
-            // Check variant barcode uniqueness within item
-            try {
-              const existingVariant = await queryOne(
+      const pool = getPool();
+      const vc = await pool.connect();
+      try {
+        await vc.query('BEGIN');
+        const existingVariants = (
+          await vc.query<{ id: string; opening_stock: string | null }>(
+            'SELECT id, opening_stock FROM item_variants WHERE item_id = $1 FOR UPDATE',
+            [itemId]
+          )
+        ).rows;
+        const existingById = new Map(existingVariants.map((v) => [v.id, v]));
+        // An id from another item (or a made-up one) is never trusted: that variant is treated as new.
+        const keptIds = new Set<string>(
+          variants
+            .map((v: { id?: unknown }) => (typeof v.id === 'string' ? v.id : ''))
+            .filter((id: string) => existingById.has(id))
+        );
+        const removedIds = existingVariants.filter((v) => !keptIds.has(v.id)).map((v) => v.id);
+        if (removedIds.length > 0) {
+          await vc.query('DELETE FROM item_variants WHERE item_id = $1 AND id = ANY($2::uuid[])', [itemId, removedIds]);
+        }
+        // Every kept variant gets its barcode back from the form below. Clearing them first lets an
+        // edit swap barcodes between variants without the duplicate check seeing the old values.
+        await vc.query('UPDATE item_variants SET barcode = NULL, barcode_type = NULL WHERE item_id = $1', [itemId]);
+
+        const updatedIds = new Set<string>();
+        for (const variant of variants) {
+          const keepId = typeof variant.id === 'string' && keptIds.has(variant.id) && !updatedIds.has(variant.id)
+            ? variant.id as string
+            : null;
+
+          // Validate variant barcode if provided
+          let variantBarcode: string | null = null;
+          let variantBarcodeType: string | null = null;
+
+          if (variant.barcode) {
+            variantBarcode = normalizeBarcode(variant.barcode);
+            const validation = validateBarcode(variantBarcode, variant.barcode_type);
+
+            if (!validation.isValid) {
+              console.error(`Invalid barcode for variant ${variant.name}: ${validation.error}`);
+              variantBarcode = null;
+            } else {
+              variantBarcodeType = validation.type || null;
+
+              // Check variant barcode uniqueness within item
+              const existingVariant = await vc.query(
                 'SELECT id FROM item_variants WHERE item_id = $1 AND barcode = $2 AND id != COALESCE($3, \'00000000-0000-0000-0000-000000000000\'::uuid)',
-                [itemId, variantBarcode, variant.id]
+                [itemId, variantBarcode, keepId]
               );
-              
-              if (existingVariant) {
+
+              if (existingVariant.rows.length > 0) {
                 console.error(`Duplicate barcode for variant ${variant.name}`);
                 variantBarcode = null;
                 variantBarcodeType = null;
               }
-            } catch (err) {
-              // Table might not exist yet, ignore
-              console.warn('Could not check variant barcode uniqueness:', err);
             }
           }
+
+          const openingStock = Number(variant.opening_stock) || 0;
+          const fields = [
+            variant.name,
+            variant.sku,
+            variantBarcode,
+            variantBarcodeType,
+            variant.purchase_price || purchase_price,
+            variant.selling_price || selling_price,
+            openingStock,
+            JSON.stringify(variant.attributes || {}),
+          ];
+
+          if (keepId) {
+            updatedIds.add(keepId);
+            // Stock on hand keeps every movement so far; only a change to opening stock shifts it.
+            const oldOpening = Number(existingById.get(keepId)?.opening_stock) || 0;
+            await vc.query(
+              `UPDATE item_variants
+                  SET variant_name = $3, sku = $4, barcode = $5, barcode_type = $6, purchase_price = $7,
+                      selling_price = $8, opening_stock = $9, attributes = $10,
+                      current_stock = COALESCE(current_stock, 0) + $11,
+                      updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1 AND item_id = $2`,
+              [keepId, itemId, ...fields, openingStock - oldOpening]
+            );
+          } else {
+            await vc.query(
+              `INSERT INTO item_variants (
+                 item_id, variant_name, sku, barcode, barcode_type, purchase_price,
+                 selling_price, opening_stock, attributes, current_stock
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $8)`,
+              [itemId, ...fields]
+            );
+          }
         }
-        
-        await query(`
-          INSERT INTO item_variants (
-            item_id, variant_name, sku, barcode, barcode_type, purchase_price, 
-            selling_price, opening_stock, current_stock, attributes
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [
-          itemId,
-          variant.name,
-          variant.sku,
-          variantBarcode,
-          variantBarcodeType,
-          variant.purchase_price || purchase_price,
-          variant.selling_price || selling_price,
-          variant.opening_stock || 0,
-          variant.opening_stock || 0,
-          JSON.stringify(variant.attributes || {})
-        ]);
+        await vc.query('COMMIT');
+      } catch (e) {
+        await vc.query('ROLLBACK');
+        throw e;
+      } finally {
+        vc.release();
+      }
+    }
+
+    const effectiveType = item_type ?? existingItem.item_type ?? 'goods';
+    if (stock_class !== undefined && effectiveType !== 'service') {
+      const { parseStockClass } = await import('@/lib/inventory/stock-class');
+      try {
+        await query(
+          `UPDATE items SET stock_class = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND business_id = $3`,
+          [parseStockClass(stock_class), itemId, businessId],
+        );
+      } catch (error: any) {
+        if (error?.code === '42703' && parseStockClass(stock_class) !== 'trading') {
+          return NextResponse.json(
+            { error: 'Stock kinds need the inventory migration before they can be saved', code: 'MIGRATION_REQUIRED' },
+            { status: 503 },
+          );
+        }
+        if (error?.code !== '42703') throw error;
       }
     }
 

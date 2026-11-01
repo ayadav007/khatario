@@ -103,6 +103,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
   String _scannedSupplierName = '';
   bool _scanGstinMissing = false;
   double? _scanRoundOff;
+  /// Payable printed on the scanned bill; the form total is checked against it.
+  double? _scanPrintedTotal;
 
   bool get _supplier => widget.kind == BillKind.purchase || widget.kind == BillKind.purchaseOrder;
   bool get _serverTax =>
@@ -244,7 +246,12 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'file': MultipartFile.fromBytes(bytes, filename: capture.name),
         'business_id': widget.session.businessId,
       });
-      final res = await widget.session.api.dio.post<dynamic>('/api/invoices/extract', data: form);
+      // A bill whose lines miss its total is read twice on the server; allow nginx's 120s.
+      final res = await widget.session.api.dio.post<dynamic>(
+        '/api/invoices/extract',
+        data: form,
+        options: Options(receiveTimeout: const Duration(seconds: 120)),
+      );
       final body = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
       if ((res.statusCode ?? 500) >= 400) {
         throw ApiException(body['error']?.toString() ?? 'Could not read this bill');
@@ -269,6 +276,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         if (docType.isNotEmpty) _docType = docType;
         if (invoice['is_reverse_charge'] == true) _reverseCharge = true;
         _priceMode = purchasePriceModeFromScan(invoice['price_mode']);
+        _scanPrintedTotal = scanPrintedGrandTotal(totals);
         final roundOff = totals['round_off'];
         if (roundOff is num) {
           _scanRoundOff = invoiceRound2(roundOff.toDouble());
@@ -774,6 +782,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
       intraState: intra,
       lineMode: line.taxMode,
       headerMode: _priceMode,
+      inclusiveTotal: line.inclusiveTotal,
     );
   }
 
@@ -1330,7 +1339,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
                       Text(line.label, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
                       if (line.item == null) Text('Not in your items', style: AppText.caption.copyWith(color: AppColors.warning)),
                       if (line.printedLineTotal != null)
-                        Text('Printed ${_money(line.printedLineTotal!)}', style: AppText.caption),
+                        scanLineDisagreesWithBill(line.printedLineTotal, gst)
+                            ? Text('Printed ${_money(line.printedLineTotal!)} · does not match', style: AppText.caption.copyWith(color: AppColors.warning, fontWeight: FontWeight.w600))
+                            : Text('Printed ${_money(line.printedLineTotal!)}', style: AppText.caption),
                     ],
                   ),
                 ),
@@ -1377,6 +1388,19 @@ class _BillFormScreenState extends State<BillFormScreen> {
               ),
             ),
           ),
+          if (_scanPrintedTotal != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: () {
+                final gap = billTotalGap(_scanPrintedTotal, preview.grand);
+                return Text(
+                  gap == null
+                      ? 'Bill ${_money(_scanPrintedTotal!)} · matches'
+                      : 'Bill ${_money(_scanPrintedTotal!)} · ${_money(gap.abs())} ${gap > 0 ? 'over' : 'short'}. Check qty and amounts.',
+                  style: gap == null ? AppText.caption : AppText.caption.copyWith(color: AppColors.warning, fontWeight: FontWeight.w600),
+                );
+              }(),
+            ),
           if (_breakupOpen)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),

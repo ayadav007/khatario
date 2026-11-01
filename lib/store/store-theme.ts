@@ -1,8 +1,8 @@
 import { sanitizeStudioSections, type StudioSection } from './studio-sections';
 
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
-export type StoreThemePreset = 'studio' | 'khatario' | 'grocery' | 'custom';
-export type StoreThemePack = 'studio' | 'khatario' | 'grocery';
+export type StoreThemePreset = 'studio' | 'khatario' | 'grocery' | 'quick' | 'custom';
+export type StoreThemePack = 'studio' | 'khatario' | 'grocery' | 'quick';
 export type StoreAppearanceMode = 'light' | 'dim' | 'dark';
 export type StoreHeroViewport = 'both' | 'mobile' | 'desktop';
 export type StoreAnnouncementAlign = 'left' | 'center' | 'right';
@@ -89,6 +89,12 @@ export const STORE_FONT_FAMILIES = [
   'outfit',
   'cormorant',
   'source-serif',
+  'cinzel',
+  'newsreader',
+  'manrope',
+  'dm-serif',
+  'lora',
+  'poppins',
 ] as const;
 
 export type StoreFontFamily = (typeof STORE_FONT_FAMILIES)[number];
@@ -136,6 +142,8 @@ export interface StoreTheme {
   whatsapp_url: string;
   /** Studio pack home layout, in order. Empty until first customised in Studio. */
   studio_sections: StudioSection[];
+  /** Phone kit on Studio, Grocery and Khatario (cart bar, bottom sheets, compact layouts). On unless switched off. */
+  phone_kit: boolean;
 }
 
 /** Theme-owned ink. Merchant accent never replaces this. */
@@ -146,12 +154,14 @@ export const PACK_CANVAS: Record<StoreThemePack, string> = {
   studio: '#fbf8f3',
   khatario: '#f4f5f7',
   grocery: '#f6f7f4',
+  quick: '#f3f5f7',
 };
 
 export const PACK_CANVAS_MODE: Record<StoreThemePack, Record<StoreAppearanceMode, string>> = {
   studio: { light: '#fbf8f3', dim: '#ece6dc', dark: '#131210' },
   khatario: { light: '#f4f5f7', dim: '#e4e7eb', dark: '#111827' },
   grocery: { light: '#f6f7f4', dim: '#e6eae3', dark: '#101a14' },
+  quick: { light: '#f3f5f7', dim: '#e3e7ec', dark: '#0e1116' },
 };
 
 export const STORE_THEME_PRESETS: Record<
@@ -161,6 +171,7 @@ export const STORE_THEME_PRESETS: Record<
   studio: { accent: '#b94717', background: PACK_CANVAS.studio, label: 'Studio', pack: 'studio' },
   khatario: { accent: '#00897b', background: PACK_CANVAS.khatario, label: 'Khatario', pack: 'khatario' },
   grocery: { accent: '#176b45', background: PACK_CANVAS.grocery, label: 'Premium Grocery', pack: 'grocery' },
+  quick: { accent: '#0f7a5c', background: PACK_CANVAS.quick, label: 'Quick', pack: 'quick' },
 };
 
 export const DEFAULT_HOMEPAGE_SECTIONS: StoreHomepageSection[] = [
@@ -240,11 +251,12 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   instagram_url: '',
   whatsapp_url: '',
   studio_sections: [],
+  phone_kit: true,
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const PRESETS: StoreThemePreset[] = ['studio', 'khatario', 'grocery', 'custom'];
-const PACKS: StoreThemePack[] = ['studio', 'khatario', 'grocery'];
+const PRESETS: StoreThemePreset[] = ['studio', 'khatario', 'grocery', 'quick', 'custom'];
+const PACKS: StoreThemePack[] = ['studio', 'khatario', 'grocery', 'quick'];
 const STYLES: StoreCategoryStyle[] = ['letter', 'icon', 'photo'];
 const MODES: StoreAppearanceMode[] = ['light', 'dim', 'dark'];
 const VIEWPORTS: StoreHeroViewport[] = ['both', 'mobile', 'desktop'];
@@ -483,6 +495,7 @@ export function sanitizeContactForm(raw: unknown): StoreContactForm {
 function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack {
   if (preset === 'khatario') return 'khatario';
   if (preset === 'grocery') return 'grocery';
+  if (preset === 'quick') return 'quick';
   if (preset === 'custom') {
     return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'studio';
   }
@@ -501,6 +514,15 @@ export function isStudioPack(theme: StoreTheme): boolean {
   return theme.pack === 'studio';
 }
 
+export function isQuickPack(theme: Pick<StoreTheme, 'pack'>): boolean {
+  return theme.pack === 'quick';
+}
+
+/** Packs whose home page is the Studio section list (Studio, and Quick on top of it). */
+export function usesStudioSections(theme: Pick<StoreTheme, 'pack'>): boolean {
+  return theme.pack === 'studio' || theme.pack === 'quick';
+}
+
 /** Root CSS class that scopes pack styles (drawers, motion, fonts) on storefront surfaces. */
 export function storePackClass(theme: StoreTheme): string {
   const dark = hexLuminance(storeCanvas(theme)) < 0.4;
@@ -509,6 +531,9 @@ export function storePackClass(theme: StoreTheme): string {
       return 'store-khatario';
     case 'grocery':
       return dark ? 'store-grocery is-dark' : 'store-grocery';
+    case 'quick':
+      // Quick is the Studio engine with its own skin, so it keeps the Studio scope too.
+      return dark ? 'store-studio store-quick is-dark' : 'store-studio store-quick';
     default:
       return dark ? 'store-studio is-dark' : 'store-studio';
   }
@@ -555,6 +580,18 @@ export function storeFontStack(family: StoreFontFamily): string {
       return 'var(--font-store-cormorant), Georgia, serif';
     case 'source-serif':
       return 'var(--font-store-source-serif), Georgia, serif';
+    case 'cinzel':
+      return 'var(--font-store-cinzel), Georgia, serif';
+    case 'newsreader':
+      return 'var(--font-store-newsreader), Georgia, serif';
+    case 'manrope':
+      return 'var(--font-store-manrope), system-ui, sans-serif';
+    case 'dm-serif':
+      return 'var(--font-store-dm-serif), Georgia, serif';
+    case 'lora':
+      return 'var(--font-store-lora), Georgia, serif';
+    case 'poppins':
+      return 'var(--font-store-poppins), system-ui, sans-serif';
     default:
       return 'system-ui, sans-serif';
   }
@@ -630,6 +667,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     instagram_url: sanitizeHttpUrl(src.instagram_url),
     whatsapp_url: sanitizeHttpUrl(src.whatsapp_url),
     studio_sections: sanitizeStudioSections(src.studio_sections),
+    phone_kit: src.phone_kit !== false,
   };
 }
 
@@ -665,6 +703,19 @@ export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): P
       ),
     };
   }
+  if (preset === 'quick') {
+    return {
+      preset,
+      accent: p.accent,
+      background: p.background,
+      pack: p.pack,
+      mobile_columns: 3,
+      category_style: 'photo',
+      hero_cta: 'Order now',
+      search_placeholder: 'Search for products…',
+      appearance_mode: 'light',
+    };
+  }
   return {
     preset,
     accent: p.accent,
@@ -689,6 +740,7 @@ export const GALLERY_PACKS: Array<{
   blurb: string;
 }> = [
   { preset: 'studio', pack: 'studio', label: 'Studio', blurb: 'Editorial header, split hero, photo category tiles. Every section is editable and re-orderable.' },
+  { preset: 'quick', pack: 'quick', label: 'Quick', blurb: 'Phone-first quick delivery: delivery-time bar, big search, category rail, ADD steppers, floating cart bar and bottom tabs.' },
   { preset: 'grocery', pack: 'grocery', label: 'Premium Grocery', blurb: 'Fresh green supermarket — hero card, emoji category tiles, lifting product cards, promo cards.' },
   { preset: 'khatario', pack: 'khatario', label: 'Khatario', blurb: 'Brand header, carousel, bottom tabs.' },
 ];

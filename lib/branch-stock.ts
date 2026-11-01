@@ -5,6 +5,7 @@
 
 import type { PoolClient } from 'pg';
 import { queryOne } from '@/lib/db';
+import { queueLowStockCheck } from '@/lib/low-stock-checker';
 
 export interface BranchStockClient {
   query: PoolClient['query'];
@@ -70,6 +71,8 @@ export async function adjustBranchItemStock(
 
 /**
  * Keep items.current_stock equal to sum of branch rows for list/dashboard compatibility.
+ * Every branch-mode stock change ends here (sales, POS, adjustments, returns, cancels), so it
+ * also queues the Supplier Hub low-stock check, which runs after the caller commits.
  */
 export async function refreshItemGlobalStockFromBranches(
   client: BranchStockClient,
@@ -88,6 +91,7 @@ export async function refreshItemGlobalStockFromBranches(
      WHERE id = $2 AND business_id = $3`,
     [total, itemId, businessId]
   );
+  queueLowStockCheck(businessId, itemId);
 }
 
 /** Read branch quantity outside an explicit transaction (pre-flight checks). */

@@ -3,16 +3,28 @@ import { createCreditNoteLedgerEntries } from '@/lib/ledger-utils';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
 import { refreshCreditNoteRefundStatus } from '@/lib/credit-notes/customer-credit';
 
 /**
- * Sales return (credit note) posting, shared by POST /api/credit-notes and order returns.
+ * Credit note posting, shared by POST /api/credit-notes and order returns.
  * Runs on the caller's open transaction: the caller has already checked permission, plan access,
  * GST filing and period lock, and commits or rolls back.
  *
- * Effects: credit note + lines, stock back in for goods lines (unless a line says `restock: false`,
- * e.g. damaged returns), customer balance down, linked invoice balance recomputed, ledger posted.
+ * Two kinds (migration 443, `credit_notes.note_type`):
+ * - `sales_return` (default): goods come back. Lines are items with quantities; a note to a GSTIN
+ *   customer links one invoice and pools against it. Stock back in for goods lines (unless a line
+ *   says `restock: false`, e.g. damaged returns).
+ * - `post_sale_discount`: a s.15(3)(b) discount over a period of supplies (Finance Act 2026). No
+ *   invoice, no items, no stock. Lines are description + taxable amount + rate, one per rate. The
+ *   period's first day sets the s.34(2) deadline and is stored as `original_invoice_date`. Per rate,
+ *   the taxable value is capped at the customer's sales at that rate in the period, net of earlier
+ *   discount notes whose period overlaps.
+ *
+ * Both: customer balance down, linked invoice balance recomputed, ledger posted.
  */
+
+export type CreditNoteType = 'sales_return' | 'post_sale_discount';
 
 export class CreditNoteCreateError extends Error {
   constructor(
@@ -53,6 +65,11 @@ export type CreateCreditNoteInput = {
   creditNoteNumber: string;
   creditNoteDate: string;
   originalInvoiceDate?: string | null;
+  /** Default `sales_return`. */
+  noteType?: CreditNoteType | null;
+  /** `post_sale_discount` only: the supplies the discount covers (inclusive). */
+  supplyPeriodFrom?: string | null;
+  supplyPeriodTo?: string | null;
   reason?: string | null;
   placeOfSupplyStateCode?: string | null;
   items: CreditNoteLineInput[];
@@ -109,11 +126,43 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
   if (!noteCustomer) {
     throw new CreditNoteCreateError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
   }
-  if (noteCustomer.gstin && noteCustomer.gstin.trim() && !invoice_id) {
+
+  const noteType: CreditNoteType = input.noteType === 'post_sale_discount' ? 'post_sale_discount' : 'sales_return';
+  const isDiscount = noteType === 'post_sale_discount';
+  const periodFrom = isDiscount ? String(input.supplyPeriodFrom ?? '').slice(0, 10) : '';
+  const periodTo = isDiscount ? String(input.supplyPeriodTo ?? '').slice(0, 10) : '';
+  if (isDiscount) {
+    if (invoice_id) {
+      throw new CreditNoteCreateError(
+        400,
+        'DISCOUNT_NOTE_HAS_INVOICE',
+        'A post-sale discount note covers a period of supplies and does not link one invoice. For a discount on a single bill, set the period to that bill\'s date.',
+      );
+    }
+    const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+    const noteDay = String(credit_note_date).slice(0, 10);
+    if (!isoDate.test(periodFrom) || !isoDate.test(periodTo) || periodFrom > periodTo || periodTo > noteDay) {
+      throw new CreditNoteCreateError(
+        400,
+        'DISCOUNT_PERIOD_INVALID',
+        'A post-sale discount note needs the supply period it covers: a from date and a to date, in order, not after the credit note date.',
+      );
+    }
+    const { isCreditNoteTaxReductionTimeBarred, thirtyNovAfterFy } = await import('@/lib/gst/time-limits');
+    if (isCreditNoteTaxReductionTimeBarred(periodFrom, credit_note_date)) {
+      throw new CreditNoteCreateError(
+        400,
+        'CREDIT_NOTE_TIME_BARRED',
+        `Supplies from ${periodFrom}: GST can be reduced by a credit note only up to ${thirtyNovAfterFy(periodFrom)} (s.34(2) CGST Act). ` +
+          'Record any commercial settlement as a financial adjustment outside GST.',
+      );
+    }
+  } else if (noteCustomer.gstin && noteCustomer.gstin.trim() && !invoice_id) {
     throw new CreditNoteCreateError(
       400,
       'ORIGINAL_INVOICE_REQUIRED',
-      'A credit note to a registered customer must reference the original invoice (s.34 CGST Act; reported in GSTR-1 CDNR)',
+      'A sales return to a registered customer must reference the original invoice (s.34 CGST Act; reported in GSTR-1 CDNR). ' +
+        'For a discount over a period, issue a post-sale discount note instead.',
     );
   }
 
@@ -162,7 +211,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
     const invItems = await client.query(
       `SELECT item_id,
-              SUM(quantity)::numeric AS qty,
+              SUM(quantity * COALESCE(unit_factor, 1))::numeric AS qty,
               SUM(taxable_value)::numeric AS taxable,
               SUM(cgst_amount)::numeric AS cgst,
               SUM(sgst_amount)::numeric AS sgst,
@@ -177,7 +226,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     );
     const credited = await client.query(
       `SELECT cni.item_id,
-              SUM(cni.qty)::numeric AS qty,
+              SUM(cni.qty * COALESCE(cni.unit_factor, 1))::numeric AS qty,
               SUM(cni.line_total - cni.tax_amount)::numeric AS taxable,
               SUM(cni.tax_amount)::numeric AS tax
          FROM credit_note_items cni
@@ -225,10 +274,64 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     }
   }
 
+  // Units: a line credited in boxes takes the factor the invoice line was sold at, else the
+  // item's current box, else 1. Quantity pools against the invoice are all in base units.
+  const saleUnits = await resolveSaleUnits(client, business_id, input.items).catch((e) => {
+    if (e instanceof SaleUnitError) throw new CreditNoteCreateError(400, e.code, e.message);
+    throw e;
+  });
+  if (invoice_id) {
+    const soldUnits = await client.query<{ item_id: string; unit: string | null; unit_factor: string }>(
+      `SELECT DISTINCT ON (item_id, UPPER(COALESCE(unit, ''))) item_id, unit, unit_factor::text
+         FROM invoice_items WHERE invoice_id = $1 AND item_id IS NOT NULL
+        ORDER BY item_id, UPPER(COALESCE(unit, '')), sort_order`,
+      [invoice_id],
+    );
+    input.items.forEach((item, i) => {
+      const sent = String(item.unit ?? '').trim().toUpperCase();
+      const sold = soldUnits.rows.find((r) => r.item_id === item.item_id && String(r.unit ?? '').toUpperCase() === sent);
+      if (sold && sent) saleUnits[i] = { unit: sold.unit, unit_factor: Number(sold.unit_factor) || 1 };
+    });
+  }
+
   const intraState = (finalPosStateCode?.substring(0, 2) || '') === businessStateCode;
   const zeroRated = invoice ? isZeroRatedWithoutTax(invoice) : false;
-  const lines = input.items.map((item) => {
+
+  // What each line prints as. A line with an item falls back to the item's name; a line without
+  // one must say what it is (there is no 'Adjustment' default any more).
+  const lineTexts: string[] = [];
+  for (const item of input.items) {
+    let text = String(item.description ?? item.item_name ?? '').trim();
+    if (!text && item.item_id) {
+      const named = await client.query<{ name: string }>('SELECT name FROM items WHERE id = $1 AND business_id = $2', [
+        item.item_id,
+        business_id,
+      ]);
+      text = String(named.rows[0]?.name ?? '').trim();
+    }
+    if (!text) {
+      throw new CreditNoteCreateError(400, 'DESCRIPTION_REQUIRED', 'Each credit note line needs a description or an item');
+    }
+    lineTexts.push(text);
+  }
+
+  const lines = input.items.map((item, index) => {
+    if (isDiscount) {
+      if (item.item_id) {
+        throw new CreditNoteCreateError(
+          400,
+          'DISCOUNT_LINE_HAS_ITEM',
+          'A post-sale discount note has no item lines: enter the discount as a description with its taxable amount and GST rate.',
+        );
+      }
+      const taxable = round2(Number(item.unit_price ?? item.price) || 0);
+      const taxRate = Number(item.tax_rate) || 0;
+      const line = computeLineGst({ quantity: 1, unit_price: taxable, tax_rate: taxRate }, intraState, false);
+      return { item, qty: 1, unit: null as string | null, unitFactor: 1, unitPrice: taxable, discount: 0, taxRate, ...line };
+    }
     const qty = Number(item.qty ?? item.quantity) || 0;
+    const { unit, unit_factor: unitFactor } = saleUnits[index];
+    const baseQ = qty * unitFactor;
     const unitPrice = Number(item.unit_price ?? item.price) || 0;
     const gross = qty * unitPrice;
     const discountPercent = Number(item.discount_percent) || 0;
@@ -240,8 +343,8 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     const already = linkedId ? creditedByItem.get(linkedId) : undefined;
     if (original && already && invoice_id) {
       const openQty = original.qty - already.qty;
-      const closes = qty >= openQty - 1e-9;
-      const share = original.qty > 0 ? qty / original.qty : 0;
+      const closes = baseQ >= openQty - 1e-9;
+      const share = original.qty > 0 ? baseQ / original.qty : 0;
       const taxable = closes ? round2(original.taxable - already.taxable) : round2(original.taxable * share);
       const taxAmount = closes ? round2(original.tax - already.tax) : round2(original.tax * share);
       const head = (amount: number) =>
@@ -253,13 +356,15 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
       const cgst = head(original.cgst);
       const sgst = head(original.sgst);
       const igst = head(original.igst);
-      already.qty = round2(already.qty + qty);
+      already.qty = round2(already.qty + baseQ);
       already.taxable = round2(already.taxable + taxable);
       already.tax = round2(already.tax + taxAmount);
       const taxRate = zeroRated ? 0 : original.taxRate;
       return {
         item,
         qty,
+        unit,
+        unitFactor,
         unitPrice: qty > 0 ? round2(taxable / qty) : 0,
         discount: 0,
         taxRate,
@@ -274,12 +379,14 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     const linked = item.item_id ? invoicedByItem.get(item.item_id) : undefined;
     const taxRate = linked ? linked.taxRate : Number(item.tax_rate) || 0;
     const line = computeLineGst({ quantity: 1, unit_price: gross - discount, tax_rate: taxRate }, intraState, zeroRated);
-    return { item, qty, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
+    return { item, qty, unit, unitFactor, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
   });
   const { gstRateError } = await import('@/lib/gst/rates');
   const invDate: unknown = invoice?.invoice_date;
-  const rateDate =
-    invDate instanceof Date
+  // Rates are checked against the supply date: the invoice, the discount period's first day, or the note.
+  const rateDate = isDiscount
+    ? periodFrom
+    : invDate instanceof Date
       ? `${invDate.getFullYear()}-${String(invDate.getMonth() + 1).padStart(2, '0')}-${String(invDate.getDate()).padStart(2, '0')}`
       : String(invDate ?? credit_note_date).slice(0, 10);
   for (const l of lines) {
@@ -293,6 +400,46 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     throw new CreditNoteCreateError(400, 'INVALID_LINE', 'Each credit note line needs a positive quantity and value');
   }
 
+  if (isDiscount) {
+    // Per rate: discount ≤ the customer's taxable sales at that rate in the period, net of active
+    // discount notes to the customer at that rate whose period overlaps (counted whole, on purpose).
+    const wanted = new Map<number, number>();
+    for (const l of lines) wanted.set(l.taxRate, round2((wanted.get(l.taxRate) || 0) + l.taxable));
+    const sold = await client.query<{ tax_rate: string; taxable: string }>(
+      `SELECT ii.tax_rate, SUM(ii.taxable_value)::numeric AS taxable
+         FROM invoice_items ii
+         JOIN invoices i ON i.id = ii.invoice_id
+        WHERE i.business_id = $1 AND i.customer_id = $2 AND i.status = 'final' AND i.deleted_at IS NULL
+          AND i.document_type <> 'proforma_invoice'
+          AND i.invoice_date BETWEEN $3::date AND $4::date
+        GROUP BY ii.tax_rate`,
+      [business_id, customer_id, periodFrom, periodTo],
+    );
+    const earlier = await client.query<{ tax_rate: string; taxable: string }>(
+      `SELECT cni.tax_rate, SUM(cni.line_total - cni.tax_amount)::numeric AS taxable
+         FROM credit_note_items cni
+         JOIN credit_notes cn ON cn.id = cni.credit_note_id
+        WHERE cn.business_id = $1 AND cn.customer_id = $2 AND cn.status = 'active'
+          AND cn.note_type = 'post_sale_discount'
+          AND cn.supply_period_from <= $4::date AND cn.supply_period_to >= $3::date
+        GROUP BY cni.tax_rate`,
+      [business_id, customer_id, periodFrom, periodTo],
+    );
+    const soldByRate = new Map(sold.rows.map((r) => [Number(r.tax_rate), Number(r.taxable) || 0]));
+    const earlierByRate = new Map(earlier.rows.map((r) => [Number(r.tax_rate), Number(r.taxable) || 0]));
+    for (const [rate, taxable] of wanted) {
+      const left = round2((soldByRate.get(rate) || 0) - (earlierByRate.get(rate) || 0));
+      if (taxable > left + 0.005) {
+        throw new CreditNoteCreateError(
+          400,
+          'DISCOUNT_EXCEEDS_SALES',
+          `Discount of ₹${taxable.toFixed(2)} at ${rate}% exceeds the ₹${Math.max(0, left).toFixed(2)} still open on this customer's sales at ${rate}% between ${periodFrom} and ${periodTo}` +
+            (earlierByRate.get(rate) ? ' (after earlier discount notes for an overlapping period)' : ''),
+        );
+      }
+    }
+  }
+
   if (invoice) {
     const requested = new Map<string, number>();
     for (const l of lines) {
@@ -304,7 +451,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
           `"${l.item.item_name || l.item.description || l.item.item_id}" is not on invoice ${invoice.invoice_number}`,
         );
       }
-      requested.set(l.item.item_id, (requested.get(l.item.item_id) || 0) + l.qty);
+      requested.set(l.item.item_id, (requested.get(l.item.item_id) || 0) + l.qty * l.unitFactor);
     }
     for (const [itemId, qty] of requested) {
       const available = invoicedByItem.get(itemId)!.qty;
@@ -359,18 +506,20 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
       original_invoice_date, reason, place_of_supply_state_code,
       subtotal, discount_total, tax_total, cgst_total, sgst_total, igst_total,
       round_off, grand_total, refund_status, refund_mode, refund_date, refund_amount,
-      notes, created_by
+      notes, created_by, note_type, supply_period_from, supply_period_to
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
     RETURNING *
   `,
     [
       business_id, finalBranchId, customer_id, invoice_id, credit_note_number, credit_note_date,
-      input.originalInvoiceDate || (invoice ? invoice.invoice_date : null), input.reason ?? null, finalPosStateCode,
+      isDiscount ? periodFrom : input.originalInvoiceDate || (invoice ? invoice.invoice_date : null),
+      input.reason ?? null, finalPosStateCode,
       computedSubtotal, computedDiscount, computedTax, computedCgst, computedSgst, computedIgst,
       computedRoundOff, computedGrandTotal, input.refundStatus ?? 'pending', input.refundMode ?? null,
       input.refundDate ?? null, input.refundAmount ?? null,
       input.notes ?? null, input.userId,
+      noteType, isDiscount ? periodFrom : null, isDiscount ? periodTo : null,
     ],
   );
 
@@ -381,23 +530,23 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
   // Insert credit note items and increase stock (goods coming back)
   for (let i = 0; i < lines.length; i++) {
-    const { item, qty, unitPrice, discount, taxRate, taxAmount, lineTotal } = lines[i];
+    const { item, qty, unit, unitFactor, unitPrice, discount, taxRate, taxAmount, lineTotal } = lines[i];
 
     await client.query(
       `
       INSERT INTO credit_note_items (
         credit_note_id, item_id, description, qty, unit, unit_price,
-        discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac, restocked
+        discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac, restocked, unit_factor
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-              COALESCE(NULLIF(TRIM($12::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)), $13)
+              COALESCE(NULLIF(TRIM($12::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)), $13, $14)
     `,
       [
         creditNote.id,
         item.item_id || null,
-        item.description || item.item_name || 'Adjustment',
+        lineTexts[i],
         qty,
-        item.unit || 'PCS',
+        isDiscount ? null : unit || item.unit || 'PCS',
         unitPrice,
         discount,
         taxRate,
@@ -405,7 +554,8 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
         lineTotal,
         i,
         item.hsn_sac || null,
-        item.restock !== false,
+        !isDiscount && item.restock !== false,
+        unitFactor,
       ],
     );
 
@@ -433,7 +583,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
       const itemType = itemTypeRes.rows[0]?.item_type || 'goods';
 
       if (itemType === 'goods') {
-        const returnQty = parseFloat(String(item.qty || item.quantity || '0'));
+        const returnQty = qty * unitFactor;
 
         if (warehouseModeEnabled) {
           if (!locationId) {
@@ -491,12 +641,12 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
 
   // Cost of goods coming back into stock; damaged lines are written off so their cost stays in COGS.
   let totalCogsAmount = 0;
-  for (const { item } of lines) {
+  for (const { item, qty, unitFactor } of lines) {
     if (item.item_id && item.restock !== false) {
       const itemData = await client.query('SELECT purchase_price, item_type FROM items WHERE id = $1', [item.item_id]);
       if (itemData.rows[0]?.item_type === 'goods' && itemData.rows[0]?.purchase_price) {
         const itemCost = Number(itemData.rows[0].purchase_price) || 0;
-        const itemQuantity = Number(item.qty || item.quantity) || 0;
+        const itemQuantity = qty * unitFactor;
         totalCogsAmount += itemCost * itemQuantity;
       }
     }
@@ -517,6 +667,7 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     sgstTotal: computedSgst,
     igstTotal: computedIgst,
     poolClient: client,
+    noteType,
   });
 
   const { markGstReadinessStale } = await import('@/lib/gst/period-freshness');

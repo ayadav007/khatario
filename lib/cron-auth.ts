@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -13,8 +14,9 @@ export function assertCronAuthorized(request: NextRequest): NextResponse | null 
       { status: 503 }
     );
   }
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${secret}`) {
+  const given = Buffer.from(request.headers.get('authorization') ?? '');
+  const expected = Buffer.from(`Bearer ${secret}`);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   return null;

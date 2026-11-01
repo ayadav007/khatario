@@ -5,6 +5,8 @@ import { getAIProvider, ChatMessage } from './ai-provider-factory';
 
 interface ConversationMessage {
   role: 'user' | 'assistant';
+  /** Who wrote it as the transcript should name them ("Customer", "Bot", "Ravi (staff)"); defaults from role. */
+  speaker?: string;
   content: string;
   timestamp: string;
 }
@@ -263,7 +265,7 @@ export class LeadAnalyzer {
 
   private buildAnalysisPrompt(request: LeadAnalysisRequest): string {
     const conversationText = request.messages
-      .map(msg => `${msg.role === 'user' ? 'Customer' : 'Business'}: ${msg.content}`)
+      .map(msg => `${msg.speaker || (msg.role === 'user' ? 'Customer' : 'Business')}: ${msg.content}`)
       .join('\n');
 
     return `You are an expert sales and lead qualification analyst. Analyze the following WhatsApp conversation between a customer and ${request.companyInfo?.name || 'a business'} to determine lead quality, interest level, and behavior patterns.
@@ -306,7 +308,7 @@ Analyze and provide:
 6. **Key Topics**: Main topics discussed (e.g., pricing, delivery, features, support, warranty, OR "irrelevant", "casual_chat", "greeting_only")
 7. **Purchase Intent (0-100)**: How likely they are to make a purchase - BE CONSERVATIVE. Only 70+ if actively discussing purchase.
 8. **Urgency Level**: high (wants to buy now), medium (interested, needs time), low (just browsing, no urgency)
-9. **AI Summary**: 2-3 sentence summary - mention if conversation is irrelevant or has no business context
+9. **AI Summary**: 2-4 short sentences a salesperson reads before replying: what the customer wants (items, quantity, budget, timing), what the business told or promised them (say whether the bot or a named staff member said it), and the open next step. Mention if the conversation is irrelevant or has no business context
 10. **Insights**: Specific observations and recommended actions - flag if conversation is irrelevant
 
 **If the conversation is irrelevant (no business context, just greetings, casual chat, wrong number, spam), the leadScore MUST be 0-30, leadStatus MUST be "not_interested" or "cold", and purchaseIntent MUST be 0-20.**

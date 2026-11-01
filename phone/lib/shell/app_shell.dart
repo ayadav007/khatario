@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -5,6 +6,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api.dart';
 import '../capability.dart';
 import '../format.dart';
+import '../screens/hub/hub_home_screen.dart';
+import '../screens/purchases/order_list_screen.dart';
+import '../screens/hub/my_catalog_screen.dart';
 import '../screens/hub/hub_directory_screen.dart';
 import '../screens/hub/incoming_bills_screen.dart';
 import '../screens/hub/new_arrivals_screen.dart';
@@ -18,6 +22,7 @@ import '../screens/invoices/invoice_detail_screen.dart';
 import '../screens/invoices/invoice_form_screen.dart';
 import '../screens/items/item_detail_screen.dart';
 import '../screens/more/more_screen.dart';
+import '../push/push_service.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/pages/page_catalog.dart';
 import '../screens/pages/website_page_screen.dart';
@@ -78,11 +83,14 @@ List<NavItem> bottomNavItems(AppSession s, {int unpaidInvoices = 0, int lowStock
 }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.session, required this.onSessionChanged, required this.onSignOut});
+  const AppShell({super.key, required this.session, required this.onSessionChanged, required this.onSignOut, this.pushTaps});
 
   final AppSession session;
   final Future<void> Function() onSessionChanged;
   final Future<void> Function() onSignOut;
+
+  /// Push notification taps (lib/push/push_service.dart). The shell opens the screen and clears it.
+  final ValueListenable<PushTap?>? pushTaps;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -188,9 +196,14 @@ class _AppShellState extends State<AppShell> {
     final hubScreen = switch (href) {
       '/purchases/incoming' => IncomingBillsScreen(session: widget.session),
       '/supply-orders' => SupplyOrdersScreen(session: widget.session),
+      // Single-item stock requests were replaced by supplier orders (migration 430).
+      '/purchases/requests' => SupplyOrdersScreen(session: widget.session),
+      '/purchases/order-list' => OrderListScreen(session: widget.session),
       '/supply-orders?role=vendor' => SupplyOrdersScreen(session: widget.session, selling: true),
       '/purchases/new-arrivals' => NewArrivalsScreen(session: widget.session),
-      '/suppliers/hub' => HubDirectoryScreen(session: widget.session),
+      '/suppliers/hub' => HubHomeScreen(session: widget.session),
+      '/suppliers/hub/find' => HubDirectoryScreen(session: widget.session),
+      '/suppliers/catalog' => MyCatalogScreen(session: widget.session),
       '/suppliers/requests' => ConnectionRequestsScreen(session: widget.session),
       _ => null,
     };
@@ -202,7 +215,6 @@ class _AppShellState extends State<AppShell> {
       '/purchases': PurchaseKind.bills,
       '/purchase-orders': PurchaseKind.orders,
       '/purchase-returns': PurchaseKind.returns,
-      '/purchases/requests': PurchaseKind.requests,
     };
     final purchaseKind = purchaseHrefs[href];
     if (purchaseKind != null) {
@@ -235,6 +247,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    widget.pushTaps?.removeListener(_onPushTap);
     _banners.dispose();
     super.dispose();
   }
@@ -249,6 +262,61 @@ class _AppShellState extends State<AppShell> {
     _loadBusinesses();
     _loadNotifications();
     _loadCapabilities();
+    widget.pushTaps?.addListener(_onPushTap);
+    // A tap that arrived before the shell existed (cold start from a notification).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onPushTap());
+  }
+
+  bool _switchingForPush = false;
+
+  /// Opens the screen behind a tapped push notification. An alert for another business the user
+  /// belongs to switches the session first; the tap stays pending until the shell for that
+  /// business picks it up. Routing reuses the notification list's rules and the href catalogue.
+  Future<void> _onPushTap() async {
+    final taps = widget.pushTaps;
+    final tap = taps?.value;
+    if (taps == null || tap == null || !mounted) return;
+    if (tap.isForAnotherBusiness(widget.session.businessId)) {
+      if (_switchingForPush) return;
+      _switchingForPush = true;
+      try {
+        await _api.postJson('/api/businesses/switch', {'business_id': tap.businessId});
+        await widget.onSessionChanged();
+      } catch (_) {
+        // Not a member any more (or offline): show the list for the current business instead.
+        if (taps is ValueNotifier<PushTap?>) taps.value = null;
+        if (mounted) _openNotifications();
+      } finally {
+        _switchingForPush = false;
+      }
+      return;
+    }
+    if (taps is ValueNotifier<PushTap?>) taps.value = null;
+    _loadNotifications();
+    final n = AppNotification(
+      id: tap.notificationId ?? '',
+      type: tap.type ?? 'general',
+      title: '',
+      message: '',
+      isRead: false,
+      referenceType: tap.referenceType,
+      referenceId: tap.referenceId,
+    );
+    final target = notificationTarget(n);
+    if (target != null && target.kind == 'invoice' && target.id != null) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => InvoiceDetailScreen(api: widget.session.api, invoiceId: target.id!, businessName: widget.session.businessName, session: widget.session),
+      ));
+      return;
+    }
+    if (target != null && target.kind == 'supplier' && target.id != null) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SupplierDetailScreen(session: widget.session, supplierId: target.id!, onOpen: _openAnything),
+      ));
+      return;
+    }
+    if (tap.href == '/notifications') return _openNotifications();
+    _openFromMore(tap.href, 'Notification');
   }
 
   Future<void> _loadBadges() async {

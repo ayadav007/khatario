@@ -403,6 +403,24 @@ describe('Redis subscriber', () => {
     expect(sse.messages().map((e) => e.data.seq)).toEqual([row.seq]);
   });
 
+  it('delivers a row inserted without a hint on the next heartbeat while Redis is healthy', async () => {
+    // Most producers (payment reminders, Supplier Hub, low stock, GST, ...) insert the row and
+    // never publish a hint; the stream must still deliver it without waiting for a reconnect.
+    sub!.goReady();
+    publisherUp = true;
+    const { sse } = open();
+    await settle();
+    expect(hub.hintsHealthy()).toBe(true);
+    const row = source.insert({ businessId: BIZ, userId: null });
+    await jest.advanceTimersByTimeAsync(24_999);
+    expect(sse.messages()).toHaveLength(0);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(sse.messages().map((e) => e.data.seq)).toEqual([row.seq]);
+    // Already delivered rows are not sent again by later heartbeats.
+    await jest.advanceTimersByTimeAsync(50_000);
+    expect(sse.messages()).toHaveLength(1);
+  });
+
   it('polls while the publisher is down even if the subscriber is up', async () => {
     sub!.goReady();
     publisherUp = false;

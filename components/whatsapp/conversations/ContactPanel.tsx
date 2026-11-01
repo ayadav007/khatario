@@ -10,6 +10,8 @@ import { AutomationTimeline, TimelineEvent } from './AutomationTimeline';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { Toast } from '@/components/ui/Toast';
 import { LinkedOrdersCard } from './LinkedOrdersCard';
+import { DealSection } from '../pipeline/DealSection';
+import { ChatLeadsSection } from '../leads/ChatLeadsSection';
 import type { OwnershipView } from './inbox';
 
 interface ContactInfo {
@@ -94,6 +96,20 @@ export function ContactPanel({
   const [labelBusy, setLabelBusy] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<{ is_blocked: boolean; opted_out: boolean; is_group: boolean } | null>(null);
   const [blocking, setBlocking] = useState(false);
+  // AI hot/warm/cold, or the agent's manual pick until the profile is reloaded.
+  const [temperature, setTemperature] = useState<string>(leadProfile?.lead_status || '');
+  // A lead action in the Leads section (stage, convert, new enquiry) remounts the deal section and may
+  // link a customer before the contact prop is reloaded.
+  const [dealKey, setDealKey] = useState(0);
+  const [leadCustomerId, setLeadCustomerId] = useState<string | null>(null);
+  useEffect(() => {
+    setDealKey(0);
+    setLeadCustomerId(null);
+  }, [conversationId]);
+  const isCustomer = !!(contact?.customer?.id || leadCustomerId);
+  useEffect(() => {
+    setTemperature(leadProfile?.lead_status || '');
+  }, [conversationId, leadProfile?.lead_status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +300,13 @@ export function ContactPanel({
                 <p className="font-medium text-gray-900">
                   {contact?.customer?.name || formatPhoneNumber(contact?.phone || '')}
                 </p>
+                <span
+                  className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    isCustomer ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {isCustomer ? 'Existing customer' : 'New lead'}
+                </span>
                 {contact?.customer?.email && (
                   <p className="text-sm text-gray-500">{contact.customer.email}</p>
                 )}
@@ -293,6 +316,17 @@ export function ContactPanel({
             {/* Lead Profile Mini View */}
             {leadProfile && (
               <div className="mt-3 pt-3 border-t border-gray-200">
+                {leadProfile.ai_summary && (
+                  <div className="mb-3">
+                    <span className="text-xs font-medium text-gray-600 block mb-1">Summary</span>
+                    <p className="text-sm text-gray-800 whitespace-pre-line">{leadProfile.ai_summary}</p>
+                    {leadProfile.last_analyzed_at && (
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        Updated {new Date(leadProfile.last_analyzed_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-gray-600">Lead Score</span>
                   <span className={`text-sm font-bold ${
@@ -421,10 +455,21 @@ export function ContactPanel({
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <h3 className="text-sm font-bold text-gray-900 mb-4">Lead Management</h3>
           <div className="space-y-4">
+            <DealSection key={dealKey} conversationId={conversationId} isGroup={!!(chatStatus?.is_group || ownership?.is_group)} />
+            {contact?.phone && !(chatStatus?.is_group || ownership?.is_group) && (
+              <ChatLeadsSection
+                phone={contact.phone}
+                onChanged={(customerId) => {
+                  setDealKey((k) => k + 1);
+                  setLeadCustomerId(customerId);
+                }}
+              />
+            )}
+
             {/* Lead Status (AI-based with manual override) */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Lead Status
+                Lead temperature
                 {leadProfile && (
                   <span className="text-xs text-gray-500 ml-1">
                     (AI: {leadProfile.lead_status || 'not analyzed'})
@@ -432,10 +477,16 @@ export function ContactPanel({
                 )}
               </label>
               <select
-                value={leadProfile?.lead_status || leadStatus || 'cold'}
-                onChange={(e) => onUpdate({ lead_status: e.target.value })}
+                value={temperature}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setTemperature(e.target.value);
+                  void onUpdate({ lead_status: e.target.value });
+                }}
                 className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
+                {/* The stage lives in the pipeline picker above; this is only the AI's hot/warm/cold. */}
+                {!temperature && <option value="">Not set yet</option>}
                 <option value="hot">🔥 Hot Lead</option>
                 <option value="warm">🟡 Warm Lead</option>
                 <option value="cold">🔵 Cold Lead</option>
@@ -550,8 +601,8 @@ export function ContactPanel({
         {/* Section 4: Internal Notes */}
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <NotesSection
-            conversationId={conversationId}
-            businessId={businessId}
+            notesUrl={`/api/whatsapp/conversations/${conversationId}/notes`}
+            showEnquiry
             notes={notes}
             currentUserId={currentUserId}
             onNoteAdded={onNoteAdded || (() => {})}

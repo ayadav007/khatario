@@ -6,12 +6,16 @@ import {
   assertFeatureAccess,
   FeatureAccessDeniedError,
 } from '@/lib/subscription/feature-access';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 // POST - Generate custom report
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, entity_type, fields } = body;
+    const { business_id: claimedBusinessId, entity_type, fields } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'report', 'read');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId;
 
     if (!business_id || !entity_type || !fields || !Array.isArray(fields)) {
       return NextResponse.json(
@@ -75,7 +79,7 @@ export async function POST(request: NextRequest) {
           SELECT 
             ${selectedFields.join(', ')}
             ${selectedFields.length > 0 ? ',' : ''}
-            COALESCE(SUM(i.total), 0) as total_sales,
+            COALESCE(SUM(i.grand_total), 0) as total_sales,
             COUNT(i.id) as invoice_count
           FROM customers c
           LEFT JOIN invoices i ON c.id = i.customer_id AND i.deleted_at IS NULL
@@ -162,7 +166,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof FeatureAccessDeniedError) {
       return error.toNextResponse();
     }
-    const message = error instanceof Error ? error.message : 'Failed to generate report';
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Database errors name tables and columns; keep them in the server log only.
+    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 });
   }
 }

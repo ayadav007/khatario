@@ -24,6 +24,8 @@ type Line = {
 };
 
 type Detail = {
+  /** The supplier's UPI ID and a upi:// link with amount and bill number filled in */
+  pay?: { upi_id: string; link: string } | null;
   bill: {
     invoice_id: string;
     invoice_number: string;
@@ -37,6 +39,8 @@ type Detail = {
   purchase: { id: string; bill_number: string; receipt_status: string | null } | null;
   receipt_lines: Array<{ buyer_item_id: string | null; item_name: string; billed_qty: string; short_qty: string; damaged_qty: string; note: string | null }>;
   purchase_returns: Array<{ id: string; return_number: string }>;
+  /** Business setting: 'auto_return' raises the debit note for short + damaged on receipt */
+  shortfall_mode?: 'keep' | 'auto_return';
 };
 
 type Received = { short: string; damaged: string; note: string };
@@ -139,7 +143,11 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to receive the bill');
-      toast.success(`Purchase ${data.purchase?.bill_number || ''} created`);
+      toast.success(
+        data.purchase_return
+          ? `Purchase ${data.purchase?.bill_number || ''} created, debit note ${data.purchase_return.return_number} raised`
+          : `Purchase ${data.purchase?.bill_number || ''} created`
+      );
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to receive the bill');
@@ -194,6 +202,17 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
               Open purchase {purchase.bill_number}
             </Link>
           </div>
+          {detail?.pay && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+              <a href={detail.pay.link} className="inline-flex min-h-10 items-center rounded-md bg-primary-600 px-4 font-semibold text-white">
+                Pay ₹{Number(bill.grand_total).toLocaleString('en-IN')} by UPI
+              </a>
+              <span className="text-text-secondary">
+                UPI ID <span className="select-all font-medium text-text-primary">{detail.pay.upi_id}</span>. After paying, record
+                it on the purchase; {bill.supplier_name} is told so their books match.
+              </span>
+            </div>
+          )}
           {shortfalls.length > 0 && (
             <div>
               <p className="text-sm font-medium text-text-primary">Short or damaged</p>
@@ -405,8 +424,13 @@ export default function ReceiveBillPage({ params }: { params: { invoiceId: strin
               />
             </label>
             <p className="text-xs text-text-secondary">
-              The purchase is recorded exactly as billed, so GST and the amount owed match the supplier&apos;s bill. Short or
-              damaged quantities are sent to the supplier, and you can record a debit note for them next.
+              The purchase is recorded exactly as billed, so GST and the amount owed match the supplier&apos;s bill.{' '}
+              {detail.shortfall_mode === 'auto_return'
+                ? 'Short or damaged quantities go back to the supplier at once: a debit note is raised for them, taking them out of stock and off what you owe.'
+                : 'Everything billed goes into stock. Short or damaged quantities are sent to the supplier, and you can record a debit note for them next.'}{' '}
+              <Link href="/settings/suppliers-directory#receipt-shortfall" className="link-primary">
+                Change
+              </Link>
             </p>
             {missing.length > 0 && (
               <p className="text-sm text-amber-700">Match or create an item for: {missing.map((l) => l.item_name).join(', ')}</p>

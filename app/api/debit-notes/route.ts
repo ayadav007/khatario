@@ -386,6 +386,21 @@ export async function POST(request: NextRequest) {
 
     const debitNote = debitNoteRes.rows[0];
 
+    // Line item ids come from the body: each must be one of this business's items.
+    const lineItemIds = Array.from(
+      new Set(lines.map((l) => l.item?.item_id).filter((id): id is string => typeof id === 'string' && id !== ''))
+    );
+    if (lineItemIds.length > 0) {
+      const owned = await client.query(
+        'SELECT id FROM items WHERE business_id = $1 AND id = ANY($2::uuid[])',
+        [business_id, lineItemIds]
+      );
+      if (owned.rowCount !== lineItemIds.length) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'One or more items were not found' }, { status: 400 });
+      }
+    }
+
     // Price and tax adjustments do not move stock. A goods id is not a delivery.
     for (let i = 0; i < lines.length; i++) {
       const { item, qty, unitPrice, discount, taxable, cgst, sgst, igst, taxAmount, lineTotal, taxRate } = lines[i];

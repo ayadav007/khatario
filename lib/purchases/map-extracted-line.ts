@@ -88,6 +88,24 @@ function pushCode(codes: LineDiscrepancyCode[], code: LineDiscrepancyCode): void
   if (!codes.includes(code)) codes.push(code);
 }
 
+/**
+ * Printed qty × printed rate (less a printed discount) should give the printed value on rows
+ * whose value is the amount charged. A mismatch means one of the three was misread, e.g. a
+ * till roll where the rate was copied into the value column or a weighed qty was lost.
+ * `taxRate` allows the value to be the rate plus GST when the document basis is unknown.
+ */
+function flagRowArithmetic(
+  codes: LineDiscrepancyCode[],
+  row: { quantity: number; rate: number; discount: number; lineTotal: number; taxRate?: number },
+): void {
+  if (!(row.rate > 0) || !(row.lineTotal > 0)) return;
+  const net = row.quantity * row.rate - row.discount;
+  if (amountsNear(net, row.lineTotal, row.lineTotal)) return;
+  const t = (row.taxRate ?? 0) / 100;
+  if (t > 0 && amountsNear(net * (1 + t), row.lineTotal, row.lineTotal)) return;
+  pushCode(codes, 'LINE_TOTAL_VS_COMPUTED');
+}
+
 function statusFrom(codes: LineDiscrepancyCode[]): LineValidationStatus {
   if (codes.includes('QTY_MISSING') || codes.includes('RATE_MISSING') || codes.includes('INCOMPLETE')) {
     if (codes.some((c) => c === 'LINE_TOTAL_EQUALS_TAXABLE' || c === 'LINE_TOTAL_VS_COMPUTED')) {
@@ -289,6 +307,7 @@ export function mapExtractedLineToPurchaseLine(
       pushCode(codes, 'INCOMPLETE');
     }
     if (rate <= 0) pushCode(codes, 'RATE_MISSING');
+    flagRowArithmetic(codes, { quantity, rate, discount: discountAmount, lineTotal });
     let unit_price = rate;
     let mapping_rule: LineMappingRule = 'zero_gst';
     if (!(unit_price > 0) && printedTaxable != null && printedTaxable > 0) {
@@ -317,6 +336,7 @@ export function mapExtractedLineToPurchaseLine(
   if (documentBasis === 'inclusive') {
     if (rate <= 0) pushCode(codes, 'RATE_MISSING');
     const charge = sourceLineTotal != null && sourceLineTotal > 0 ? sourceLineTotal : lineTotal;
+    flagRowArithmetic(codes, { quantity, rate, discount: discountAmount, lineTotal: charge });
     const unit_price = rate > 0 ? rate : charge > 0 ? charge / quantity : 0;
     const amount = charge > 0 ? charge : unit_price * quantity;
     return finish({
@@ -331,6 +351,7 @@ export function mapExtractedLineToPurchaseLine(
   if (documentBasis === 'unknown') {
     if (rate <= 0) pushCode(codes, 'RATE_MISSING');
     pushCode(codes, 'PRICE_BASIS_UNKNOWN');
+    flagRowArithmetic(codes, { quantity, rate, discount: discountAmount, lineTotal, taxRate });
     const unit_price = rate > 0 ? rate : lineTotal > 0 ? lineTotal / quantity : 0;
     const amount = lineTotal > 0 ? lineTotal : unit_price * quantity;
     return finish({

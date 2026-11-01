@@ -7,7 +7,7 @@ import { useStore } from '@/lib/store/store-context';
 
 export default function StoreCheckoutPage() {
   const { store } = useStore();
-  const [confirm, setConfirm] = useState<{ orderNumber: string; grandTotal: number } | null>(null);
+  const [confirm, setConfirm] = useState<{ orderNumber: string; grandTotal: number; note?: string } | null>(null);
 
   return (
     <StoreShell>
@@ -17,12 +17,13 @@ export default function StoreCheckoutPage() {
         onClose={() => {
           window.location.href = '/cart';
         }}
-        onOrderPlaced={(orderNumber, grandTotal) => setConfirm({ orderNumber, grandTotal })}
+        onOrderPlaced={(orderNumber, grandTotal, note) => setConfirm({ orderNumber, grandTotal, note })}
       />
       {confirm && store ? (
         <OrderConfirmation
           orderNumber={confirm.orderNumber}
           grandTotal={confirm.grandTotal}
+          note={confirm.note}
           storeName={store.name}
           storePhone={store.phone}
           onClose={() => {

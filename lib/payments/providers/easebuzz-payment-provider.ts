@@ -9,6 +9,7 @@ import type {
   VerifyWebhookParams,
   VerifyWebhookResult,
 } from '../types';
+import { GatewayRefundError, isDefiniteRefusalStatus } from '../gateway-refund-error';
 
 /**
  * Easebuzz hosted checkout (Initiate Payment API) + response / webhook verification.
@@ -25,9 +26,10 @@ import type {
  */
 
 /** Which Khatario flow a txnid belongs to. Encoded as the txnid prefix. */
-export type EasebuzzTxnContext = 'SO' | 'ST' | 'PB';
+/** SO sales orders, ST store orders, PB platform billing, KH store khata payments. */
+export type EasebuzzTxnContext = 'SO' | 'ST' | 'PB' | 'KH';
 
-const EASEBUZZ_TXN_PREFIXES: readonly EasebuzzTxnContext[] = ['SO', 'ST', 'PB'];
+const EASEBUZZ_TXN_PREFIXES: readonly EasebuzzTxnContext[] = ['SO', 'ST', 'PB', 'KH'];
 
 export function sha512LowerHex(input: string): string {
   return createHash('sha512').update(input, 'utf8').digest('hex');
@@ -249,7 +251,7 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
 
     const ctxRaw = params.metadata?.easebuzz_context;
     const context: EasebuzzTxnContext =
-      ctxRaw === 'ST' || ctxRaw === 'PB' ? ctxRaw : 'SO';
+      ctxRaw === 'ST' || ctxRaw === 'PB' || ctxRaw === 'KH' ? ctxRaw : 'SO';
 
     const fields: EasebuzzHashFields = {
       key: this.merchantKey,
@@ -377,6 +379,9 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
   /**
    * Refund API v2. Easebuzz settles refunds later, so an accepted request is `pending`.
    * The returned `providerRefundId` is our merchant_refund_id, which Refund Status echoes too.
+   * A refusal throws GatewayRefundError: definite when Easebuzz answered with `status: false` or a 4xx
+   * (no refund exists), not definite for a 5xx, 409 / 429 or a reply that is not JSON. A network error
+   * is passed on as is.
    */
   async refundPayment(args: {
     easebuzzId: string;
@@ -400,18 +405,28 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
         hash,
       }),
     });
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const json = parsed ?? {};
     if (!res.ok || !(json.status === true || json.status === 1 || json.status === 'true')) {
       const reason =
         (typeof json.reason === 'string' && json.reason) ||
         (typeof json.error === 'string' && json.error) ||
         `HTTP ${res.status}`;
-      throw new Error(`Easebuzz refund failed: ${reason}`);
+      const refused = res.ok
+        ? parsed != null && (json.status === false || json.status === 0 || json.status === 'false' || json.status === '0')
+        : isDefiniteRefusalStatus(res.status);
+      throw new GatewayRefundError(`Easebuzz refund failed: ${reason}`, res.status, refused);
     }
     return { providerRefundId: merchantRefundId, status: 'pending' };
   }
 
-  /** Refund Status API, filtered to one merchant_refund_id. Null when Easebuzz has no such refund. */
+  /**
+   * Refund Status API, filtered to one merchant_refund_id. Null only when Easebuzz answers (status
+   * true) and lists no refund with that id. Throws when it cannot answer: an HTTP error, a reply that
+   * is not JSON (a maintenance page), or `status: false`, which is how Easebuzz reports an error such
+   * as a bad hash and cannot be told apart from anything else. A failed lookup is never read as
+   * "no refund", so the refund is not raised a second time.
+   */
   async fetchRefundStatus(
     easebuzzId: string,
     merchantRefundIdRaw: string,
@@ -429,8 +444,18 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
         hash,
       }),
     });
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok || !(json.status === true || json.status === 1)) return null;
+    if (!res.ok) throw new Error(`Easebuzz refund lookup failed: HTTP ${res.status}`);
+    const parsed = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (parsed == null || typeof parsed !== 'object') throw new Error('Easebuzz refund lookup failed: the reply was not JSON');
+    const json = parsed;
+    if (!(json.status === true || json.status === 1)) {
+      const reason =
+        (typeof json.error === 'string' && json.error) ||
+        (typeof json.message === 'string' && json.message) ||
+        (typeof json.reason === 'string' && json.reason) ||
+        'Easebuzz did not answer';
+      throw new Error(`Easebuzz refund lookup failed: ${reason}`);
+    }
     const refunds = Array.isArray(json.refunds) ? (json.refunds as Record<string, unknown>[]) : [];
     const match = refunds.find((r) => r.merchant_refund_id === merchantRefundId);
     if (!match) return null;

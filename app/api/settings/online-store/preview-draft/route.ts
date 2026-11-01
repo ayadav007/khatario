@@ -3,12 +3,13 @@ import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { signThemeDraft } from '@/lib/store/theme-draft';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const tenant = requireTenantBusinessId(request, body.business_id);
+  const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
   if (!tenant.ok) return tenant.response;
   const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
   if (planDenied) return planDenied;

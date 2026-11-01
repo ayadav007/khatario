@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -158,8 +158,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use processed_by as fallback if not provided
-    const authUserId = processed_by;
+    const authUserId = actingUserId(request, processed_by);
     if (!authUserId) {
       return NextResponse.json(
         { error: 'processed_by (user_id) is required for authorization' },
@@ -320,7 +319,7 @@ export async function POST(request: NextRequest) {
         employee?.bank_account_number || null, employee?.bank_ifsc || null,
         working_days || null, present_days || null, absent_days || null,
         leave_days || null, overtime_hours || null,
-        'processed', new Date(), processed_by || null,
+        'processed', new Date(), authUserId,
         [notes, encashmentNote, otNote].filter(Boolean).join('\n') || null,
         attendance_adjustment_details
           ? JSON.stringify(attendance_adjustment_details)

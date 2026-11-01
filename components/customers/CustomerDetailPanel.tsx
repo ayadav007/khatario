@@ -29,6 +29,7 @@ import {
   PARTY_BALANCE_COLUMN_HEADER,
 } from '@/lib/party-balance-ui';
 import { CustomerPortalAccessCard } from '@/components/customers/CustomerPortalAccessCard';
+import { CustomerKhataCard } from '@/components/customers/CustomerKhataCard';
 import { CustomerLedgerView } from '@/components/customers/CustomerLedgerView';
 
 interface CustomerDetailPanelProps {
@@ -36,6 +37,8 @@ interface CustomerDetailPanelProps {
   onClose: () => void;
   onSendReminder?: (customer: any) => void;
   sendingReminder?: boolean;
+  /** Called after the panel changes the customer's figures (khata payment), so the list can refresh. */
+  onCustomerChanged?: () => void;
 }
 
 type TabId = 'overview' | 'transactions' | 'ledger' | 'history';
@@ -74,6 +77,7 @@ export function CustomerDetailPanel({
   onClose,
   onSendReminder,
   sendingReminder,
+  onCustomerChanged,
 }: CustomerDetailPanelProps) {
   const router = useRouter();
   const { business, user } = useAuth();
@@ -86,9 +90,10 @@ export function CustomerDetailPanel({
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const fetchCustomer = useCallback(async () => {
+  /** `quiet`: refresh the figures without the full-panel spinner (after a khata change). */
+  const fetchCustomer = useCallback(async (quiet = false) => {
     if (!customerId || !user?.id) return;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     try {
       const res = await fetch(
         `/api/customers/${customerId}?user_id=${user.id}`,
@@ -331,6 +336,14 @@ export function CustomerDetailPanel({
               />
             </div>
           </section>
+
+          <CustomerKhataCard
+            customerId={customer.id}
+            onChanged={() => {
+              void fetchCustomer(true);
+              onCustomerChanged?.();
+            }}
+          />
 
           <CustomerPortalAccessCard
             customerId={customer.id}

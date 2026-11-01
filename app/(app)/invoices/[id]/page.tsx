@@ -399,7 +399,7 @@ export default function InvoiceDetailPage() {
           }
           description={
             <>
-              {invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
+              {invoice.billing_name || invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
               {' • '}
               {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No date'}
               {' • '}
@@ -479,10 +479,23 @@ export default function InvoiceDetailPage() {
                 </Button>
                 {a4PrintButton}
                 {bluetoothPrintButton}
-                <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
-                  <Ban className="w-4 h-4 mr-2" />
-                  Cancel Invoice
+              {isFinal && !isProforma && !isCancelled && (
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    router.push(
+                      `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                    )
+                  }
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Amend
                 </Button>
+              )}
+              <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
+                <Ban className="w-4 h-4 mr-2" />
+                Cancel Invoice
+              </Button>
               </>
             )}
 
@@ -545,6 +558,20 @@ export default function InvoiceDetailPage() {
               <Button variant="primary" onClick={() => setPaymentModalOpen(true)} className="flex-1">
                 <CreditCard className="w-4 h-4" />
                 <span className="ml-2">Pay</span>
+              </Button>
+            )}
+            {isFinal && !isProforma && !isCancelled && (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  router.push(
+                    `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                  )
+                }
+                className="flex-1"
+              >
+                <Edit className="w-4 h-4" />
+                <span className="ml-2">Amend</span>
               </Button>
             )}
             {isFinal && (

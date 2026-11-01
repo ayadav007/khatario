@@ -1,4 +1,4 @@
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -128,9 +128,18 @@ export async function consumePlatformOtp(
   return true;
 }
 
+/** Proof ids already spent on a signup or booking (single process; entries expire with the proof). */
+const g = globalThis as typeof globalThis & { __khatarioUsedOtpProofs?: Map<string, number> };
+const usedOtpProofs = (g.__khatarioUsedOtpProofs ??= new Map<string, number>());
+
+function pruneUsedOtpProofs(now: number): void {
+  for (const [jti, exp] of usedOtpProofs) if (exp < now) usedOtpProofs.delete(jti);
+}
+
 async function signOtpProof(purpose: PlatformOtpPurpose, phone: string): Promise<string> {
   return new SignJWT({ typ: 'platform_otp', purpose, phone })
     .setProtectedHeader({ alg: 'HS256' })
+    .setJti(randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${OTP_MAX_AGE_SEC}s`)
     .sign(new TextEncoder().encode(otpPepper()));
@@ -162,8 +171,29 @@ export async function requestHasVerifiedPlatformOtp(
   if (!token) return false;
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(otpPepper()));
+    if (!payload.jti || usedOtpProofs.has(payload.jti)) return false;
     return payload.typ === 'platform_otp' && payload.purpose === purpose && payload.phone === phone;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Spend the OTP proof once the signup or booking it unlocked has been created, so the same
+ * cookie cannot create a second account or booking. Also clears the cookie on `response`.
+ */
+export async function consumePlatformOtpProof(request: NextRequest, response: NextResponse): Promise<void> {
+  response.cookies.set(PLATFORM_OTP_COOKIE, '', { path: '/', maxAge: 0 });
+  const token = request.cookies.get(PLATFORM_OTP_COOKIE)?.value;
+  if (!token) return;
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(otpPepper()));
+    if (payload.jti) {
+      const now = Date.now();
+      pruneUsedOtpProofs(now);
+      usedOtpProofs.set(payload.jti, (payload.exp ?? now / 1000 + OTP_MAX_AGE_SEC) * 1000);
+    }
+  } catch {
+    // Expired or invalid: nothing to spend.
   }
 }

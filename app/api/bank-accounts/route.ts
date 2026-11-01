@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { deleteVoucher } from '@/lib/accounting/voucher-posting';
@@ -275,8 +275,9 @@ export async function PUT(request: NextRequest) {
       is_active,
       notes,
       ledger_account_id,
-      updated_by_user_id, // REQUIRED for authorization
+      updated_by_user_id: bodyUpdatedBy,
     } = body;
+    const updated_by_user_id = actingUserId(request, bodyUpdatedBy);
 
     if (!id || !business_id) {
       return NextResponse.json(

@@ -47,3 +47,21 @@ Go to Settings > Sales & billing > Store Orders. You also get a WhatsApp message
 ## What are store enquiries and how do I reply?
 
 Enquiries are messages customers send from your store's Contact page. Turn on the contact form in Themes & Studio > Contact page > "Show a contact form on the Contact page". New enquiries arrive in Settings > Sales & billing > Store Enquiries, as a Khatario notification and on your business WhatsApp. Open one and tap Reply on WhatsApp, or Mark replied / Archive.
+
+## How do I handle returns from my online store?
+
+Customers ask for a return from their store account (Your orders > Return items) within your return window. Set the window in days under Settings > Sales & billing > Online Store (7 by default, 0 turns returns off). It counts from delivery.
+
+1. Go to Orders > Returns (or tap the notification) and open the request.
+2. Tap **Approve** and choose how it comes back:
+   - **Courier pickup**: Khatario books a Shiprocket pickup from the customer's door. You see the AWB and a Track link, and the customer gets it on WhatsApp. If booking fails, fix the address or PIN on the card and tap **Book again**. **Cancel pickup** works until the courier has picked it up. This choice shows only when Shiprocket is connected.
+   - **Customer sends it**: type where to send it (your shop address is filled in). The customer gets it on WhatsApp.
+   - **No need to send it back**: the return is received at once, nothing goes back to stock, and the credit note is made.
+   Tap **Reject** to refuse; the customer sees your reason.
+3. When the parcel reaches you the return says "Arrived at shop, check the items". Open it, mark each item **Good, back to stock** or **Damaged, write off** (and the quantity you really got), and tap **Receive & post credit note**.
+4. Choose the refund in the same step. For an order the customer paid online, **Back to original payment** comes first: the money goes back to the card or UPI they used, up to what they paid. It can show **Refund on its way** for a short while and closes by itself when the payment company confirms (tap **Check now** to look sooner). Cash on delivery orders refund as store credit, cash, UPI or bank. The delivery charge is not refunded automatically; you can type a different amount, up to the most that can go back.
+
+To stop customers returning a product, open it in Inventory > Items, and under its store details untick **Customers can return this online**. It shows "This item can't be returned" on the product page. You can still return it yourself from the order.
+
+The customer gets a WhatsApp message when the return is approved or rejected, when the pickup is booked, when you receive it and when the refund is done. They also see the steps (Requested, Approved, Picked up, Received, Refunded) on their order.
+

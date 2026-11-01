@@ -68,6 +68,15 @@ async function handleTenant(businessId: string, body: unknown) {
       sourceTimestampSec: m.timestamp,
       media: m.media,
       replyId: m.replyId,
+      referral: m.referral
+        ? {
+            sourceId: m.referral.sourceId,
+            sourceType: m.referral.sourceType,
+            sourceUrl: m.referral.sourceUrl,
+            headline: m.referral.headline,
+            ctwaClid: m.referral.ctwaClid,
+          }
+        : null,
       order: m.order
         ? {
             catalogId: m.order.catalogId,

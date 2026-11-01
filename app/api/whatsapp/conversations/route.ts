@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { getInboxViewer, UNOWNED_SQL, visibilityClause } from '@/lib/whatsapp/inbox-ownership';
+import { dueFollowupSql } from '@/lib/whatsapp/followups';
 
 export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
@@ -127,6 +128,14 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ re
         whereConditions.push(`c.assigned_to = $${paramIndex++}::uuid`);
         params.push(intervenedBy);
       }
+    }
+
+    // My reminders due by the end of my today (the browser sends due_before).
+    if (searchParams.get('followups') === 'due') {
+      const dueBefore = new Date(searchParams.get('due_before') || '');
+      const before = Number.isNaN(dueBefore.getTime()) ? new Date() : dueBefore;
+      whereConditions.push(dueFollowupSql('c', `$${paramIndex++}`, `$${paramIndex++}`));
+      params.push(userId, before.toISOString());
     }
 
     const viewer = await getInboxViewer({ businessId, userId });

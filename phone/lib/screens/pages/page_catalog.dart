@@ -68,7 +68,7 @@ const settingsSections = <(String, List<(String, String)>)>[
     ('/items/categories', 'Item categories'),
   ]),
   ('Billing tools', [
-    ('/settings/offline-sync', 'Offline sync'),
+    ('/settings/offline-sync', 'Catalog sync'),
     ('/settings/automation', 'Workflow automation'),
   ]),
   ('People', [
@@ -178,7 +178,8 @@ const appPages = <AppPage>[
   AppPage('/suppliers/requests', 'Requests to Fulfill', '/api/suppliers/hub/connection-requests', listKey: 'requests'),
   AppPage('/suppliers/dashboard', 'Supplier Dashboard', '/api/suppliers/dashboard'),
   AppPage('/purchases', 'All Purchases', '/api/purchases', listKey: 'purchases'),
-  AppPage('/purchases/requests', 'Purchase requests', '/api/stock-requests', listKey: 'requests'),
+  AppPage('/purchases/requests', 'Supplier orders', '/api/supply-orders?role=buyer&group=all', listKey: 'orders'),
+  AppPage('/purchases/order-list', 'Order List', '/api/purchases/order-list', listKey: 'lines'),
   AppPage('/purchase-orders', 'Purchase Orders', '/api/purchase-orders', listKey: 'purchaseOrders'),
   AppPage('/purchase-returns', 'Purchase Returns', '/api/purchase-returns', listKey: 'purchaseReturns'),
   AppPage('/expenses', 'Expenses', '/api/expenses', listKey: 'expenses'),
@@ -246,7 +247,9 @@ const appPages = <AppPage>[
   AppPage('/whatsapp/contacts/groups', 'Contact Groups', '/api/whatsapp/contact-groups', listKey: 'groups'),
   AppPage('/whatsapp/orders', 'Order Verification', '/api/whatsapp/orders', listKey: 'orders'),
   AppPage('/whatsapp/unsubscribes', 'Unsubscribes', '/api/whatsapp/unsubscribes', listKey: 'unsubscribes'),
+  AppPage('/payments/reminders', 'Payment Reminders', '/api/whatsapp/reminders', listKey: 'settings'),
   AppPage('/whatsapp/reminders', 'Payment Reminders', '/api/whatsapp/reminders', listKey: 'settings'),
+  AppPage('/tools/whatsapp-group-extractor', 'Group Extractor', '/api/tools/whatsapp-groups'),
   AppPage('/whatsapp/group-extractor', 'Group Extractor', '/api/tools/whatsapp-groups'),
   AppPage('/settings/whatsapp', 'WhatsApp Settings', '/api/whatsapp/status'),
   AppPage('/settings/branches', 'Branches', '/api/branches', listKey: 'branches'),

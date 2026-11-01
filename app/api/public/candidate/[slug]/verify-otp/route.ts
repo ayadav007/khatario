@@ -36,6 +36,17 @@ export async function POST(
       return NextResponse.json({ error: 'Email and OTP are required' }, { status: 400 });
     }
 
+    // Guesses per account from any IP; past the cap the live codes are burned.
+    const accountRl = checkRateLimit(`candidate-otp-verify-acct:${business.id}:${email}`, 5, VERIFY_WINDOW_MS);
+    if (!accountRl.allowed) {
+      await query(
+        `UPDATE candidate_portal_otps SET used_at = CURRENT_TIMESTAMP
+          WHERE business_id = $1 AND lower(trim(email)) = $2 AND used_at IS NULL`,
+        [business.id, email],
+      );
+      return NextResponse.json({ error: 'Too many attempts. Request a new code later.' }, { status: 429 });
+    }
+
     const otp = await queryOne<{ id: string; candidate_id: string }>(
       `SELECT id, candidate_id FROM candidate_portal_otps
        WHERE business_id = $1 AND lower(trim(email)) = $2 AND otp_code = $3

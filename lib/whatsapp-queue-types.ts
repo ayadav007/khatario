@@ -129,6 +129,14 @@ export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
   } | null;
   /** Tapped reply button or list row id. */
   replyId?: string | null;
+  /** Click-to-WhatsApp ad or post that opened the chat (first message only). */
+  referral?: {
+    sourceId: string | null;
+    sourceType: string | null;
+    sourceUrl: string | null;
+    headline: string | null;
+    ctwaClid: string | null;
+  } | null;
 };
 
 /** A message to Khatario's own WhatsApp number (prospects and existing users). */

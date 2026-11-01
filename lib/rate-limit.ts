@@ -71,12 +71,17 @@ export function checkRateLimit(
 }
 
 /**
- * Get the client IP from a request (works behind proxies).
+ * Get the client IP from a request. nginx sets X-Real-IP from `$remote_addr` (restored from
+ * Cloudflare's CF-Connecting-IP), overwriting any client copy. The first X-Forwarded-For entry
+ * is client-controlled, so without X-Real-IP only the last hop (added by our proxy) is used.
  */
 export function getClientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0].trim();
-  const real = request.headers.get('x-real-ip');
+  const real = request.headers.get('x-real-ip')?.trim();
   if (real) return real;
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    const hops = forwarded.split(',').map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
   return '127.0.0.1';
 }

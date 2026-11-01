@@ -2,9 +2,11 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { StoreProvider } from '@/lib/store/store-context';
+import { StorePushRegistration } from '@/components/store/StorePushRegistration';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
 import { StoreThemeEffects } from '@/components/store/StoreThemeEffects';
 import { StorePromoSheet } from '@/components/store/StorePromoSheet';
+import { StoreEmbedGuard } from '@/components/store/StoreEmbedGuard';
 
 export function StoreApp({
   children,
@@ -37,7 +39,9 @@ export function StoreApp({
     <StoreProvider subdomain={subdomain}>
       <StoreThemeEffects />
       <StorePromoSheet />
+      <StoreEmbedGuard />
       {children}
     </StoreProvider>
   );
 }
+

@@ -5,9 +5,11 @@ import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import {
   CustomerLinkError,
   ensureVendorCustomerLink,
+  execFor,
   previewVendorCustomerLink,
   type CustomerLinkChoice,
 } from '@/lib/supplier-hub-links';
+import { settleOrdersForRequest } from '@/lib/supply-orders';
 import type { SupplierConnectionRequest } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -123,6 +125,14 @@ export async function PATCH(
         `,
         [id, updatedByUserId]
       );
+      await settleOrdersForRequest(id, 'closed');
+      // A supplier added with a link waits as 'pending' on this request; withdrawing ends it.
+      await db.query(
+        `UPDATE suppliers SET approval_status = 'disconnected', allow_low_stock_access = false,
+                disconnected_at = CURRENT_TIMESTAMP, disconnected_by_business_id = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE business_id = $1 AND linked_business_id = $2 AND approval_status = 'pending' AND deleted_at IS NULL`,
+        [row.buyer_business_id, row.supplier_business_id]
+      );
       return NextResponse.json({ ok: true });
     }
 
@@ -146,6 +156,13 @@ export async function PATCH(
         WHERE id = $1
         `,
         [id, updatedByUserId]
+      );
+      await settleOrdersForRequest(id, 'closed');
+      await db.query(
+        `UPDATE suppliers SET approval_status = 'rejected', allow_low_stock_access = false,
+                rejected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE business_id = $1 AND linked_business_id = $2 AND approval_status = 'pending' AND deleted_at IS NULL`,
+        [row.buyer_business_id, row.supplier_business_id]
       );
       const supName = await db.queryOne<{ name: string }>(
         `SELECT name FROM businesses WHERE id = $1`,
@@ -201,6 +218,8 @@ export async function PATCH(
       `SELECT id FROM suppliers WHERE business_id = $1 AND linked_business_id = $2`,
       [row.buyer_business_id, row.supplier_business_id]
     );
+    // The buyer chose this when sending the request; it never comes from the supplier's call.
+    const shareLowStock = row.share_low_stock === true;
 
     if (existing) {
       await db.query(
@@ -220,6 +239,7 @@ export async function PATCH(
           city = COALESCE(city, $6),
           state = COALESCE(state, $7),
           gstin = COALESCE(gstin, $8),
+          allow_low_stock_access = (allow_low_stock_access OR $9),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
         `,
@@ -232,6 +252,7 @@ export async function PATCH(
           peer.city,
           peer.state,
           peer.gstin,
+          shareLowStock,
         ]
       );
     } else {
@@ -243,7 +264,7 @@ export async function PATCH(
           linked_business_id, requested_by_business_id, approval_status, approved_at,
           allow_low_stock_access
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'credit', $8, $9, 'approved', CURRENT_TIMESTAMP, false)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'credit', $8, $9, 'approved', CURRENT_TIMESTAMP, $10)
         `,
         [
           row.buyer_business_id,
@@ -255,6 +276,7 @@ export async function PATCH(
           peer.gstin,
           row.supplier_business_id,
           row.buyer_business_id,
+          shareLowStock,
         ]
       );
     }
@@ -285,10 +307,20 @@ export async function PATCH(
       [
         row.buyer_business_id,
         'Supplier connection accepted',
-        `${peer.name} accepted your connection request. You can add purchases and requests under Suppliers.`,
+        shareLowStock
+          ? `${peer.name} accepted your connection request. They will see when their items reach your reorder level and can propose orders for you to confirm.`
+          : `${peer.name} accepted your connection request. Their bills now come into Supplier Hub, and you can order from them there.`,
         id,
       ]
     );
+    // The first order sent with the request now reaches the supplier as a pending order.
+    await settleOrdersForRequest(id, 'accepted');
+    const { queueHubWhatsApp } = await import('@/lib/supplier-hub-whatsapp');
+    await queueHubWhatsApp(execFor(), row.buyer_business_id, {
+      title: `${peer.name} accepted your connection request`,
+      detail: 'You can order from them and receive their bills in Supplier Hub.',
+      path: '/suppliers/hub',
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {

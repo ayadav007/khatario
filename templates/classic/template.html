@@ -108,13 +108,14 @@
 </head>
 <body>
   <div class="container">
-    <div class="header">
+    <div data-kh-section="header" class="header">
       {{#ifSetting 'show_logo'}}
         {{#if business.logo_url}}
           <img src="{{business.logo_url}}" style="height: 60px; margin-bottom: 10px;" />
         {{/if}}
       {{/ifSetting}}
       
+      {{> copy-label}}
       <div class="title">{{invoice.invoice_title}}</div>
       
       {{#ifSetting 'show_business_name'}}
@@ -171,7 +172,7 @@
       {{/if}}
     </div>
 
-    <div class="grid">
+    <div data-kh-section="details" class="grid">
       {{#ifSetting 'show_bill_to'}}
       <div class="col">
         <strong>Billed To:</strong><br>
@@ -295,9 +296,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_reverse_charge'}}
-          {{#if invoice.is_reverse_charge}}
-            Reverse Charge: Yes<br>
-          {{/if}}
+          Reverse Charge: {{#if invoice.is_reverse_charge}}Yes{{else}}No{{/if}}<br>
         {{/ifSetting}}
         {{#ifSetting 'show_eway_bill_number'}}
           {{#if invoice.eway_bill_number}}
@@ -383,7 +382,7 @@
     </div>
     {{/or}}
 
-    <table>
+    <table data-kh-section="items">
       <thead>
         <tr>
           {{#ifSetting 'show_serial_number'}}
@@ -588,6 +587,8 @@
       </tfoot>
     </table>
 
+    {{> hsn-summary}}
+
     {{#if invoice.is_export}}
     <div class="transport-details" style="margin-top: 20px;">
       <div class="transport-label" style="grid-column: 1 / -1; margin-bottom: 8px; font-size: 12px; font-weight: bold;">Export Shipping Details</div>
@@ -658,7 +659,7 @@
     </div>
     {{/if}}
 
-    <div class="footer">
+    <div data-kh-section="footer" class="footer">
       {{#ifSetting 'show_terms'}}
         {{#if settings.terms}}
           <strong>Terms:</strong> {{settings.terms}}<br>

@@ -4,6 +4,7 @@
  */
 
 import { query } from '@/lib/db';
+import { getClientIp } from '@/lib/rate-limit';
 
 export interface ActivityLogData {
   business_id: string;
@@ -54,9 +55,7 @@ export async function logActivity(data: ActivityLogData): Promise<void> {
  * Get client IP from request
  */
 export function getClientIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIP = request.headers.get('x-real-ip');
-  return forwarded?.split(',')[0] || realIP || 'unknown';
+  return getClientIp(request);
 }
 
 /**

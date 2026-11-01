@@ -6,6 +6,7 @@ import { PlanFeatureMatrix } from '@/components/admin/PlanFeatureMatrix';
 import { PlanLimitsMatrix } from '@/components/admin/PlanLimitsMatrix';
 import { PricingDisplaySettings } from '@/components/admin/PricingDisplaySettings';
 import { SupplierHubVisibilitySwitch } from '@/components/admin/SupplierHubVisibilitySwitch';
+import { SupplierHubListingsReview } from '@/components/admin/SupplierHubListingsReview';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
@@ -204,6 +205,7 @@ export default function PlansManagement() {
       </div>
 
       <SupplierHubVisibilitySwitch />
+      <SupplierHubListingsReview />
 
       {/* Plans Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
-import { SubscriptionBadge } from './SubscriptionBadge';
+import { SubscriptionMenuRow } from './SubscriptionBadge';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { getMobileRouteTitle } from '@/lib/mobile-route-title';
@@ -786,7 +786,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 md:gap-4">
-          <BusinessSwitcher />
           {!branchLoading && accessibleBranches.length > 1 && (
             <BranchSelector
               branchSelectorRef={branchSelectorRefDesktop}
@@ -798,12 +797,6 @@ export const TopBar: React.FC<TopBarProps> = ({
               isAdmin={isAdmin}
               setCurrentBranchId={setCurrentBranchId}
             />
-          )}
-
-          {business?.id && (
-            <div className="hidden sm:block">
-              <SubscriptionBadge businessId={business.id} />
-            </div>
           )}
 
           <form onSubmit={handleSearch} className="relative hidden md:block">
@@ -859,11 +852,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-border bg-surface shadow-lg">
+              <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-lg border border-border bg-surface shadow-lg">
                 <div className="border-b border-border p-4">
                   <p className="font-semibold text-text-primary">{user?.name || 'User'}</p>
                   <p className="text-sm text-text-secondary">{user?.email || ''}</p>
-                  <p className="mt-1 text-xs text-text-muted">{business?.name || ''}</p>
+                </div>
+                <div className="space-y-1 border-b border-border p-2">
+                  <BusinessSwitcher inMenu />
+                  <SubscriptionMenuRow onNavigate={() => setShowProfileMenu(false)} />
                 </div>
                 {(currentBranch || userRole) && (
                   <div className="border-b border-border bg-background/80 dark:bg-slate-900/50 px-4 py-2">

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tint for the notification small icon (brand dark green). -->
+    <color name="khatario_notification_accent">#0F2E24</color>
+</resources>

@@ -23,6 +23,10 @@ type MyAccount = {
   has_activity: boolean;
   debit: number;
   credit: number;
+  opening?: number;
+  opening_side?: 'Dr' | 'Cr' | null;
+  closing?: number;
+  balance_side?: 'Dr' | 'Cr' | null;
 };
 
 type MyGroup = {
@@ -36,6 +40,11 @@ type MyNode = MyAccount & { children: MyNode[] };
 
 function money(amount: number): string {
   return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function sided(amount: number, side?: 'Dr' | 'Cr' | null): string {
+  if (!side || amount === 0) return money(0);
+  return `${side} ${money(amount)}`;
 }
 
 function buildTree(rows: MyAccount[]): MyNode[] {
@@ -178,8 +187,12 @@ export function MyAccountsView({ businessId }: { businessId: string }) {
               {node.reason === 'manual' ? ' · Added by you' : ''}
             </div>
             {node.has_activity ? (
-              <div className="mt-1 text-sm tabular-nums text-text-primary">
-                Dr {money(node.debit)} · Cr {money(node.credit)}
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm tabular-nums text-text-primary">
+                <span>Opening {sided(node.opening || 0, node.opening_side)}</span>
+                <span>Dr {money(node.debit)}</span>
+                <span>Cr {money(node.credit)}</span>
+                <span>Closing {money(node.closing || 0)}</span>
+                <span>Balance {sided(node.closing || 0, node.balance_side)}</span>
               </div>
             ) : (
               <div className="mt-1 text-sm text-text-secondary">No posted entries on this account</div>

@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { restoreBundleChildrenAfterInvoiceCancel } from '@/lib/invoice-bundle-stock';
+import { baseQty } from '@/lib/items/item-units';
 import { reverseInvoiceAccountingOnCancel } from '@/lib/invoices/cancel-invoice-accounting';
 
 /** Authenticated Shiprocket tracking event. Not a users.id. */
@@ -166,7 +167,7 @@ async function restorePostedInvoiceStockOnCancel(
     const itemType = itemData?.item_type || 'goods';
 
     if (itemType === 'goods' && itemData?.is_bundle) {
-      const quantity = Number(row.quantity) || 0;
+      const quantity = baseQty(row);
       await client.query(
         `UPDATE item_serials
             SET status = 'available',
@@ -193,7 +194,7 @@ async function restorePostedInvoiceStockOnCancel(
 
     if (itemType !== 'goods') continue;
 
-    const quantity = Number(row.quantity) || 0;
+    const quantity = baseQty(row);
 
     if (itemData?.track_serial) {
       await client.query(

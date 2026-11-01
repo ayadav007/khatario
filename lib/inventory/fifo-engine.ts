@@ -35,6 +35,8 @@ export interface Movement {
   peek?: boolean;
   /** Credit note → invoice id; purchase return → purchase id. */
   linkedDocId?: string | null;
+  /** Repack leg: inventory moves between items, so there is no voucher to recost. */
+  repack?: boolean;
 }
 
 export interface Allocation {

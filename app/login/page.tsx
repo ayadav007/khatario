@@ -26,7 +26,10 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { login, user, loading: authLoading, platformSession } = useAuth();
   const { isOffline } = useNetworkStatus();
-  const redirectFromQuery = searchParams.get('redirect');
+  const rawRedirect = searchParams.get('redirect');
+  // Same-site paths only: `//evil.com`, `/\evil.com` or `https://…` would leave Khatario.
+  const redirectFromQuery =
+    rawRedirect && /^\/(?![/\\])[^\s\\]*$/.test(rawRedirect) ? rawRedirect : null;
   const defaultHome = resolveHomePathForUser(platformSession, user);
   const redirectTarget =
     redirectFromQuery &&
@@ -121,7 +124,7 @@ export default function LoginPage() {
       }
 
       if (isOffline) {
-        setError("You're offline — sign-in needs internet.");
+        setError('No internet connection. Sign-in needs internet.');
         return;
       }
 
@@ -153,7 +156,7 @@ export default function LoginPage() {
         const msg = err instanceof Error ? err.message : '';
         setError(
           msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network')
-            ? "You're offline. Please check your connection and try again."
+            ? 'No internet connection. Please check your connection and try again.'
             : msg || 'Login failed'
         );
       } finally {

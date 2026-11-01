@@ -14,6 +14,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -41,6 +42,7 @@ export default function NewBranchPage() {
   const toast = useToastContext();
   const { hasFeature } = useFeatureRegistry();
   const [saving, setSaving] = useState(false);
+  const [gstinError, setGstinError] = useState('');
   
   // Check authorization before rendering form
   const { allowed: canCreate, loading: authLoading, reason } = useAuthorizationGuard({
@@ -99,6 +101,19 @@ export default function NewBranchPage() {
     e.preventDefault();
     if (!business?.id) return;
 
+    if (formData.gstin.trim()) {
+      const checked = resolveGstinAndState({
+        gstin: formData.gstin,
+        state: formData.state,
+        state_code: formData.state_code,
+      });
+      if (!checked.ok) {
+        setGstinError(checked.error);
+        return;
+      }
+    }
+    setGstinError('');
+
     setSaving(true);
     try {
       const response = await fetch('/api/branches', {
@@ -127,7 +142,9 @@ export default function NewBranchPage() {
         router.refresh();
       } else {
         const error = await safeJsonParse(response);
-        toast.error(getApiErrorMessage(error, 'Failed to create branch'));
+        const message = getApiErrorMessage(error, 'Failed to create branch');
+        if (/gstin/i.test(message)) setGstinError(message);
+        toast.error(message);
       }
     } catch (error) {
       console.error('Error creating branch:', error);
@@ -207,9 +224,14 @@ export default function NewBranchPage() {
               <Input
                 label="GSTIN"
                 value={formData.gstin}
-                onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-                placeholder="27ABCDE1234F1Z5"
+                onChange={(e) => {
+                  setGstinError('');
+                  handleChange('gstin', e.target.value.toUpperCase());
+                }}
+                placeholder="15 characters from the GST certificate"
                 maxLength={15}
+                error={gstinError}
+                helperText="The first two digits must match the state below. The last character is a check digit."
               />
               <div className="grid grid-cols-2 gap-4">
                 <div>

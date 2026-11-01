@@ -166,7 +166,7 @@ function collectResponseFromStoredRow(row: PaymentTransactionRow) {
  * - order_id (required) — sales_orders.id
  * - business_id (optional if session sets tenant)
  * - provider (optional) — defaults to the business's default provider when it has saved
- *   credentials (Settings → Payments), otherwise `mock`; e.g. `cashfree`, `easebuzz`
+ *   credentials (Settings → Payments), otherwise `mock` outside production; e.g. `cashfree`, `easebuzz`
  * - Credentials: payment_provider_configs + PAYMENT_ENCRYPTION_KEY, or ENV fallback (never accept secrets in body)
  * - customer_name, customer_phone, customer_email — forwarded to PSP
  * - return_url, notify_url — forwarded to PSP where supported
@@ -303,7 +303,14 @@ export async function POST(request: NextRequest) {
     const providerId =
       typeof requestedProvider === 'string' && requestedProvider.trim()
         ? requestedProvider.trim()
-        : (await getPreferredConfiguredProvider(businessId)) ?? 'mock';
+        : (await getPreferredConfiguredProvider(businessId)) ??
+          (process.env.NODE_ENV === 'production' ? null : 'mock');
+    if (!providerId) {
+      return NextResponse.json(
+        { error: 'No payment gateway is set up. Add one in Settings → Payments.' },
+        { status: 400 }
+      );
+    }
 
     let psp;
     try {

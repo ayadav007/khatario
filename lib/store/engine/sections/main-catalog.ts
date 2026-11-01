@@ -1,0 +1,60 @@
+import type { SectionSchema } from '../schema-types';
+import { CARD_DESIGN_SETTING } from './featured-products';
+
+/**
+ * Product grid (D14, D18): the store's products with filters and sort held in the URL, locked to the
+ * route's category on `/catalog/[category]`. Promo tiles are blocks placed after product N. The `rail`
+ * layout puts the categories, with photos, in a column beside the products (the old Quick category view).
+ */
+export const mainCatalog: SectionSchema = {
+  type: 'main-catalog',
+  name: 'Product grid',
+  category: 'Catalog',
+  templates: ['catalog'],
+  limit: 1,
+  settings: [
+    {
+      id: 'layout',
+      type: 'select',
+      label: 'Layout',
+      default: 'grid',
+      options: [
+        { value: 'grid', label: 'Grid with filters' },
+        { value: 'rail', label: 'Categories down the left' },
+      ],
+      info: 'Categories down the left: a picture list of categories beside the products, like a quick-delivery app.',
+    },
+    { id: 'columns_desktop', type: 'range', label: 'Columns on desktop', min: 2, max: 5, step: 1, default: 4 },
+    { id: 'columns_mobile', type: 'range', label: 'Columns on mobile', min: 1, max: 3, step: 1, default: 2 },
+    CARD_DESIGN_SETTING,
+    { id: 'show_filters', type: 'checkbox', label: 'Show filters', default: true },
+    { id: 'show_sort', type: 'checkbox', label: 'Show sort', default: true },
+    { id: 'show_count', type: 'checkbox', label: 'Show product count', default: true, info: 'The "12 products" line above the grid' },
+  ],
+  max_blocks: 3,
+  blocks: [
+    {
+      type: 'promo',
+      name: 'Promo tile',
+      settings: [
+        { id: 'image', type: 'image', label: 'Image', default: '' },
+        { id: 'heading', type: 'text', label: 'Heading', default: '', max_length: 60 },
+        { id: 'text', type: 'text', label: 'Text', default: '', max_length: 120 },
+        { id: 'link', type: 'url', label: 'Link', default: '' },
+        {
+          id: 'position',
+          type: 'range',
+          label: 'Show after product',
+          min: 1,
+          max: 40,
+          step: 1,
+          default: 6,
+          info: 'With fewer products than this, the tile shows after the last one.',
+        },
+      ],
+    },
+  ],
+  // The rail lists the store's categories with a photo each; a failed lookup just leaves the rail out.
+  data: (settings) => (settings.layout === 'rail' ? { categories: true, categoriesOptional: true } : {}),
+  presets: [{ name: 'Product grid' }],
+};

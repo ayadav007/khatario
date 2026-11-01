@@ -42,7 +42,7 @@ const ACCUM_DEP = '1202';
 
 const WC_LABELS: Array<[RegExp, string, 'asset' | 'liability']> = [
   [/^1103/, 'Trade receivables', 'asset'],
-  [/^1104/, 'Inventories', 'asset'],
+  [/^1104|^116[012]$/, 'Inventories', 'asset'],
   [/^111[0-5]/, 'GST input credit', 'asset'],
   [/^113[0-3]$/, 'GST electronic cash ledger', 'asset'],
   [/^111[67]/, 'TDS / advance tax paid', 'asset'],

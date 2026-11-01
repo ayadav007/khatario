@@ -73,9 +73,11 @@ const branchData = z.object({
 });
 
 const actionData = z.object({
-  kind: z.enum(['add_labels', 'remove_labels', 'assign_to_user_id', 'handoff', 'open_shop']),
+  kind: z.enum(['add_labels', 'remove_labels', 'assign_to_user_id', 'handoff', 'open_shop', 'set_stage']),
   labelIds: z.array(z.string().uuid()).max(20).optional().default([]),
   userId: z.string().uuid().optional().nullable(),
+  /** Pipeline stage for `set_stage`. */
+  stageId: z.string().uuid().optional().nullable(),
   catalogBody: z.string().trim().max(WA_LIMITS.interactiveBody).optional().default(''),
   catalogFooter: z.string().trim().max(WA_LIMITS.interactiveFooter).optional().default(''),
 });

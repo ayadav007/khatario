@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-10-24T12:20:24.574Z",
+  "site": "sc-domain:khatario.com",
+  "range": {
+    "startDate": "2026-09-25",
+    "endDate": "2026-10-22"
+  },
+  "totals": {
+    "clicks": 0,
+    "impressions": 0
+  },
+  "daily": [],
+  "queries": [],
+  "pages": [],
+  "sitemaps": [],
+  "inspections": [
+    {
+      "url": "/",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-10-20T05:23:38Z"
+    },
+    {
+      "url": "/solution/accounting",
+      "verdict": "NEUTRAL",
+      "coverage": "Discovered - currently not indexed"
+    },
+    {
+      "url": "/solution/inventory",
+      "verdict": "NEUTRAL",
+      "coverage": "Discovered - currently not indexed"
+    },
+    {
+      "url": "/guides",
+      "verdict": "NEUTRAL",
+      "coverage": "Discovered - currently not indexed"
+    },
+    {
+      "url": "/blog",
+      "verdict": "NEUTRAL",
+      "coverage": "Discovered - currently not indexed"
+    },
+    {
+      "url": "/book-demo",
+      "verdict": "NEUTRAL",
+      "coverage": "URL is unknown to Google"
+    }
+  ]
+}

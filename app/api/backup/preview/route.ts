@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const businessId = backup.business_id;
+    // A backup may only be previewed by its own business, with backup rights.
+    const access = await requireTenantPermission(request, backup.business_id, 'settings', 'export');
+    if (!access.ok) return access.response;
+    const businessId = access.businessId;
 
     // Verify business exists
     const business = await db.queryOne(`

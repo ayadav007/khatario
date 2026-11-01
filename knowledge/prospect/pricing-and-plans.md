@@ -10,12 +10,14 @@ url: /#pricing
 
 ## Is there a free plan?
 
-Yes. Khatario Billing has a Free plan that is free forever, meant for trying Khatario properly and for very small businesses. It has monthly limits on invoices, customers and items; the exact limits are in the plans and pricing document. Khatario Connect is also free, with paid WhatsApp add-ons.
+Yes. Khatario Billing has a Free plan that is free forever, meant for trying Khatario properly and for very small businesses. It has monthly limits on invoices, customers and items; the exact limits are in the plans and pricing document. Every plan, including Free, can link a WhatsApp number by QR code to send invoices and payment reminders. Khatario Connect also has a free account for the QR link; the paid Connect plan adds the official WhatsApp Business API and automation.
 
 ## Which plans are available?
 
-- Billing: Free / Starter, Professional, Business and Enterprise
-- Connect: free platform with WhatsApp Bot and Send Message add-ons
+- Billing: Free, Starter, Growth and Business
+- Connect: free account (QR link) and the paid Connect plan (official WhatsApp Business API, team inbox, AI agent, templates, campaigns and automation)
+
+Automatic WhatsApp payment reminders start on Billing Starter and work over the QR link; they do not need Connect.
 
 Khatario HR is coming soon, so there are no HR plans or prices yet.
 

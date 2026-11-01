@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { encrypt } from '@/lib/cloud-storage';
+import crypto from 'crypto';
+import { encrypt, GOOGLE_DRIVE_OAUTH_STATE_COOKIE } from '@/lib/cloud-storage';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state'); // business_id
+    const state = searchParams.get('state');
     const error = searchParams.get('error');
 
     if (error) {
@@ -27,7 +29,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const businessId = state;
+    const tenant = await requireTenantPermission(request, null, 'settings', 'update');
+    if (!tenant.ok) {
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/settings/backup?error=not_authorized`
+      );
+    }
+    const businessId = tenant.businessId;
+
+    const expected = Buffer.from(`${businessId}.${state}`);
+    const stored = Buffer.from(request.cookies.get(GOOGLE_DRIVE_OAUTH_STATE_COOKIE)?.value ?? '');
+    if (stored.length !== expected.length || !crypto.timingSafeEqual(stored, expected)) {
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/settings/backup?error=invalid_state`
+      );
+    }
 
     // Get business-specific credentials
     const connection = await db.queryOne(`
@@ -122,7 +138,7 @@ export async function GET(request: NextRequest) {
       )
       VALUES (
         $1, 
-        (SELECT id FROM users WHERE business_id = $1 LIMIT 1), 
+        $7, 
         'google_drive', $2, $3, $4, $5, $6, true, NOW()
       )
       ON CONFLICT (business_id, provider) 
@@ -142,12 +158,15 @@ export async function GET(request: NextRequest) {
       tokenExpiresAt,
       providerUserId,
       providerUserEmail,
+      tenant.userId,
     ]);
 
     // Redirect back to backup settings with success
-    return NextResponse.redirect(
+    const done = NextResponse.redirect(
       `${process.env.NEXT_PUBLIC_APP_URL}/settings/backup?google_drive=connected`
     );
+    done.cookies.delete({ name: GOOGLE_DRIVE_OAUTH_STATE_COOKIE, path: '/api/cloud-storage/google/callback' });
+    return done;
 
   } catch (error: any) {
     console.error('Error handling Google OAuth callback:', error);

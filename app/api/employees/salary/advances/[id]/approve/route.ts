@@ -6,7 +6,7 @@ import { postSalaryAdvanceToBooks } from '@/lib/hr/staff-wage-posting';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { actingUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 /**
  * PATCH /api/employees/salary/advances/[id]/approve
@@ -26,7 +26,8 @@ export async function PATCH(
     );
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
-    const { approved, approved_by, rejection_reason, payment_mode, payment_reference } = body;
+    const { approved, rejection_reason, payment_mode, payment_reference } = body;
+    const approved_by = actingUserId(request, body.approved_by);
 
     if (!businessId) {
       return NextResponse.json(

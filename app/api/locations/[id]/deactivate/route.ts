@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,10 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { business_id, force } = body; // force: bypass validation
+    const { business_id: claimedBusinessId, force } = body;
+    const access = await requireTenantPermission(request, claimedBusinessId, 'warehouse', 'update');
+    if (!access.ok) return access.response;
+    const business_id = access.businessId; // force: bypass validation
 
     if (!business_id) {
       client.release();

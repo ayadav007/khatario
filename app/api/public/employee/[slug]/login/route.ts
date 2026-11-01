@@ -12,6 +12,7 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { getMustChangePassword } from '@/lib/employee-portal/password';
 import { getHrPortalSettings } from '@/lib/hr/hr-portal-settings';
+import { KIOSK_DEVICE_COOKIE, verifyKioskDeviceToken } from '@/lib/employee-portal/kiosk-device';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,19 @@ export async function POST(
       if (!portalSettings.kiosk_enabled) {
         return NextResponse.json({ error: 'Attendance kiosk is disabled' }, { status: 403 });
       }
+      // An employee code alone is not a secret: only a device a manager registered may use it.
+      if (
+        !verifyKioskDeviceToken(
+          request.cookies.get(KIOSK_DEVICE_COOKIE)?.value,
+          business.id,
+          portalSettings.kiosk_device_generation
+        )
+      ) {
+        return NextResponse.json(
+          { error: 'This device is not registered as an attendance kiosk', code: 'KIOSK_DEVICE_NOT_REGISTERED' },
+          { status: 403 }
+        );
+      }
 
       const row = await queryOne<{
         id: string;
@@ -84,7 +98,7 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid employee ID' }, { status: 401 });
       }
 
-      const { token, expiresAt } = await createEmployeePortalSession(business.id, row.id);
+      const { token, expiresAt } = await createEmployeePortalSession(business.id, row.id, { kiosk: true });
       const response = NextResponse.json({
         employee: {
           id: row.id,

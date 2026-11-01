@@ -14,6 +14,9 @@ import {
 } from '@/lib/offline/catalog/catalog-to-entity';
 import { loadInvoiceListCache } from '@/lib/offline/invoices/invoice-list-cache';
 
+/** A list request that hangs longer than this is treated as failed. */
+const LIST_FETCH_TIMEOUT_MS = 30_000;
+
 const EMPTY_QUERY_PARAMS: Record<string, string | number | boolean | null | undefined> = {};
 
 interface UseEntityListOptions<T> {
@@ -67,55 +70,68 @@ export function useEntityList<T = Record<string, unknown>>(
     setSyncing(true);
     setError(null);
 
-    let hadLocalData = false;
+    /** The device's offline copy of this list; null when there is none or it cannot be read. */
+    const readLocal = async (): Promise<T[] | null> => {
+      if (!userId) return null;
+      const scope = { businessId, userId };
+      try {
+        if (apiUrl.includes('/api/items')) {
+          const local = await browseCatalogItemsLocal(scope, { limit: 20_000 });
+          return local == null ? null : (local.map((row) => catalogItemToListItem(row, businessId)) as T[]);
+        }
+        if (apiUrl.includes('/api/customers')) {
+          const local = await listCatalogCustomersLocal(scope, 20_000);
+          return local == null ? null : (local.map(catalogCustomerToListCustomer) as T[]);
+        }
+        if (apiUrl.includes('/api/invoices')) {
+          const local = await loadInvoiceListCache(scope);
+          return local == null ? null : (local as T[]);
+        }
+      } catch (err) {
+        console.warn('[useEntityList] offline copy could not be read', err);
+      }
+      return null;
+    };
+
+    // An empty offline copy is not an answer: it may just not be synced yet. Only rows count,
+    // so a failed or skipped server call never shows "nothing here" in place of real records.
+    let hadLocalRows = false;
 
     try {
       // ── Phase 1: local-first read ──────────────────────────────────────────
-      // Serve catalog data immediately whenever it is populated.
-      // This works even on captive Wi-Fi where isAppOffline() stays false.
-      if (userId) {
-        const scope = { businessId, userId };
-
-        if (apiUrl.includes('/api/items')) {
-          const local = await browseCatalogItemsLocal(scope, { limit: 20_000 });
-          if (local != null) {
-            const list = local.map((row) => catalogItemToListItem(row, businessId)) as T[];
-            setData(filter ? (list.filter(filter) as T[]) : list);
-            setFromCache(true);
-            setLoading(false);
-            hadLocalData = true;
-          }
-        } else if (apiUrl.includes('/api/customers')) {
-          const local = await listCatalogCustomersLocal(scope, 20_000);
-          if (local != null) {
-            const list = local.map(catalogCustomerToListCustomer) as T[];
-            setData(filter ? (list.filter(filter) as T[]) : list);
-            setFromCache(true);
-            setLoading(false);
-            hadLocalData = true;
-          }
-        } else if (apiUrl.includes('/api/invoices')) {
-          const local = await loadInvoiceListCache(scope);
-          if (local != null) {
-            applyList(local as T[]);
-            setFromCache(true);
-            setLoading(false);
-            hadLocalData = true;
-          }
-        }
+      // Serve the offline copy immediately when it has rows (captive Wi-Fi included).
+      const local = await readLocal();
+      if (local && local.length > 0) {
+        applyList(local);
+        setFromCache(true);
+        setLoading(false);
+        hadLocalRows = true;
       }
 
       // ── Phase 2: skip API when fully offline ───────────────────────────────
-      if (isAppOffline()) return;
+      if (isAppOffline()) {
+        if (!hadLocalRows) {
+          setData([]);
+          setError(new Error('You are offline and this list is not saved on this device yet.'));
+        }
+        return;
+      }
 
-      // ── Phase 3: background API refresh ───────────────────────────────────
-      // If Phase 1 already set data the user sees it instantly; the API result
+      // ── Phase 3: API refresh ───────────────────────────────────────────────
+      // If Phase 1 already showed rows the user sees them instantly; the API result
       // silently overwrites with the freshest server data.
       const url = buildApiUrl(apiUrl, {
         business_id: businessId,
         ...queryParams,
       });
-      const res = await fetch(url, { cache: 'no-store' });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), LIST_FETCH_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!res.ok) {
         throw new Error(`Failed to fetch list: ${res.status}`);
       }
@@ -129,53 +145,29 @@ export function useEntityList<T = Record<string, unknown>>(
       const list = Array.isArray(rows) ? (rows as T[]) : [];
       applyList(list);
       setFromCache(false);
-      hadLocalData = true;
+      setError(null);
     } catch (err) {
       // ── Phase 4: last-resort fallback ──────────────────────────────────────
-      // If Phase 1 already showed local data we swallow the API error silently.
-      if (hadLocalData) return;
+      // Rows from the offline copy are already on screen: keep them, quietly.
+      if (hadLocalRows) return;
 
-      if (userId) {
-        const scope = { businessId, userId };
-        if (apiUrl.includes('/api/items')) {
-          const local = await browseCatalogItemsLocal(scope, { limit: 20_000 });
-          if (local != null) {
-            const list = local.map((row) => catalogItemToListItem(row, businessId)) as T[];
-            setData(filter ? (list.filter(filter) as T[]) : list);
-            setFromCache(true);
-            setError(null);
-            return;
-          }
-        }
-        if (apiUrl.includes('/api/customers')) {
-          const local = await listCatalogCustomersLocal(scope, 20_000);
-          if (local != null) {
-            const list = local.map(catalogCustomerToListCustomer) as T[];
-            setData(filter ? (list.filter(filter) as T[]) : list);
-            setFromCache(true);
-            setError(null);
-            return;
-          }
-        }
-        if (apiUrl.includes('/api/invoices')) {
-          const local = await loadInvoiceListCache(scope);
-          if (local != null) {
-            applyList(local as T[]);
-            setFromCache(true);
-            setError(null);
-            return;
-          }
-        }
+      const local = await readLocal();
+      if (local && local.length > 0) {
+        applyList(local);
+        setFromCache(true);
+        setError(null);
+        return;
       }
 
-      // Nothing from catalog either — surface the error.
-      toast.error('Could not load data. Connect to the internet or sync your catalog.');
+      // Nothing to show: say so instead of an empty list that looks like "no records".
+      setData([]);
+      toast.error('Could not load data. Check your connection and try again.');
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setSyncing(false);
       setLoading(false);
     }
-  }, [apiUrl, businessId, userId, queryParams, responseKey, filter, applyList]);
+  }, [apiUrl, businessId, userId, queryParams, responseKey, applyList]);
 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;

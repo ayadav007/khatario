@@ -332,7 +332,7 @@ export async function disconnectSupplierLink(params: {
     `UPDATE supply_orders
         SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
       WHERE buyer_business_id = $1 AND vendor_business_id = $2
-        AND status IN ('draft', 'proposed', 'pending', 'confirmed', 'partial')`,
+        AND status IN ('awaiting_link', 'draft', 'proposed', 'pending', 'confirmed', 'partial')`,
     [buyerBusinessId, vendorBusinessId]
   );
 
@@ -349,6 +349,70 @@ export async function disconnectSupplierLink(params: {
     ]
   );
   return true;
+}
+
+/**
+ * Open (or reuse) the buyer's pending hub connection request to a supplier and tell the
+ * supplier. Every way of linking a supplier goes through this, so each request shows in the
+ * supplier's Supplier Hub "Needs you" list and is accepted there. A share choice of true is
+ * kept if the buyer asks again.
+ */
+export async function openConnectionRequest(params: {
+  buyerBusinessId: string;
+  supplierBusinessId: string;
+  createdByUserId: string;
+  message?: string | null;
+  shareLowStock?: boolean;
+  client?: PoolClient;
+}): Promise<{ request: any; existing: boolean }> {
+  const { buyerBusinessId, supplierBusinessId, createdByUserId, client } = params;
+  const exec = execFor(client);
+  const share = params.shareLowStock === true;
+
+  const pending = (
+    await exec(
+      `SELECT * FROM supplier_connection_requests
+        WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
+      [buyerBusinessId, supplierBusinessId]
+    )
+  ).rows[0];
+  if (pending) {
+    if (share && !pending.share_low_stock) {
+      await exec(`UPDATE supplier_connection_requests SET share_low_stock = true WHERE id = $1`, [pending.id]);
+      pending.share_low_stock = true;
+    }
+    return { request: pending, existing: true };
+  }
+
+  const request = (
+    await exec(
+      `INSERT INTO supplier_connection_requests (
+         buyer_business_id, supplier_business_id, status, message, created_by_user_id, share_low_stock
+       )
+       VALUES ($1, $2, 'pending', $3, $4, $5)
+       RETURNING *`,
+      [buyerBusinessId, supplierBusinessId, params.message || null, createdByUserId, share]
+    )
+  ).rows[0];
+
+  const buyer = await exec(`SELECT name FROM businesses WHERE id = $1`, [buyerBusinessId]);
+  await exec(
+    `INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
+     VALUES ($1, 'hub_connection_request', $2, $3, 'supplier_connection_request', $4, CURRENT_TIMESTAMP)`,
+    [
+      supplierBusinessId,
+      'New supplier connection request',
+      `${buyer.rows[0]?.name || 'A business'} wants to connect as a buyer. Open Supplier Hub to accept or decline.`,
+      request.id,
+    ]
+  );
+  const { queueHubWhatsApp } = await import('./supplier-hub-whatsapp');
+  await queueHubWhatsApp(exec, supplierBusinessId, {
+    title: `${buyer.rows[0]?.name || 'A business'} wants to buy from you`,
+    detail: 'Accept the connection request so their orders and your bills flow through Supplier Hub.',
+    path: '/suppliers/hub',
+  });
+  return { request, existing: false };
 }
 
 /** True when supplierId is one of businessId's own (not deleted) suppliers. */

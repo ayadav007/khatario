@@ -61,8 +61,13 @@ describe('hr-hiring-settings', () => {
 });
 
 describe('hr-portal-settings', () => {
-  it('defaults kiosk to enabled', () => {
+  // Kiosk login needs only an employee code, so it stays off until the business turns it on.
+  it('defaults kiosk to disabled', () => {
     expect(parseHrPortalSettings({})).toEqual(DEFAULT_HR_PORTAL_SETTINGS);
-    expect(parseHrPortalSettings({ kiosk_enabled: false })).toEqual({ kiosk_enabled: false });
+    expect(DEFAULT_HR_PORTAL_SETTINGS.kiosk_enabled).toBe(false);
+    expect(parseHrPortalSettings({ kiosk_enabled: true, kiosk_device_generation: 2 })).toEqual({
+      kiosk_enabled: true,
+      kiosk_device_generation: 2,
+    });
   });
 });

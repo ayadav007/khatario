@@ -57,7 +57,7 @@ export function EmployeePortalProvider({
       if (metaRes.ok) {
         const meta = await metaRes.json();
         setPortalEnabled(meta.portal_enabled);
-        setKioskEnabled(meta.kiosk_enabled !== false);
+        setKioskEnabled(meta.kiosk_enabled === true);
         setBusinessMeta({
           name: meta.business?.name ?? '',
           logo_url: meta.business?.logo_url ?? null,

@@ -1,5 +1,5 @@
 {{#each items}}
-<div class="thermal-item">
+<div data-kh-section="items" class="thermal-item">
   <div class="thermal-item-name">
     {{#ifSetting 'show_serial_number'}}{{this.index}}. {{/ifSetting}}{{#ifSetting 'show_item_name'}}{{this.item_name}}{{#if this.variant_name}} <span class="thermal-muted">({{this.variant_name}})</span>{{/if}}{{/ifSetting}}
   </div>

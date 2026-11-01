@@ -1,4 +1,5 @@
 import { queryRows, queryOne } from '@/lib/db';
+import { sanitizeBlogHtml } from '@/lib/blog/html';
 
 export type { EngagementAudience } from '@/lib/hr/engagement-audience';
 export { parseAudience, buildEngagementPayload } from '@/lib/hr/engagement-audience';
@@ -38,7 +39,7 @@ export async function fetchActiveAnnouncements(
 }
 
 export async function fetchPublishedArticles(businessId: string, limit = 20) {
-  return queryRows(
+  const rows = await queryRows<{ body_html: string | null } & Record<string, unknown>>(
     `SELECT id, title, body_html, author_name, published_at::text
      FROM hr_engagement_articles
      WHERE business_id = $1
@@ -48,6 +49,8 @@ export async function fetchPublishedArticles(businessId: string, limit = 20) {
      LIMIT $2`,
     [businessId, limit],
   );
+  // Rendered with dangerouslySetInnerHTML; older rows were stored unsanitized.
+  return rows.map((r) => ({ ...r, body_html: sanitizeBlogHtml(String(r.body_html ?? '')) }));
 }
 
 export async function fetchActivePollsForEmployee(

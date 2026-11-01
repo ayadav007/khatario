@@ -2,6 +2,12 @@ import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
+import {
+  isKioskSessionApiAllowed,
+  isKioskSessionToken,
+  KIOSK_SESSION_MINUTES,
+  KIOSK_SESSION_PREFIX,
+} from '@/lib/employee-portal/kiosk-device';
 
 export const EMPLOYEE_PORTAL_COOKIE = 'khatario_employee_portal';
 
@@ -18,11 +24,19 @@ export type EmployeePortalSession = {
 
 export async function createEmployeePortalSession(
   businessId: string,
-  employeeId: string
+  employeeId: string,
+  opts: { kiosk?: boolean } = {}
 ): Promise<{ token: string; expiresAt: Date }> {
-  const token = crypto.randomBytes(32).toString('hex');
+  // Kiosk sessions are short and can only punch attendance (see kiosk-device.ts).
+  const token = opts.kiosk
+    ? KIOSK_SESSION_PREFIX + crypto.randomBytes(32).toString('hex')
+    : crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date();
-  expiresAt.setHours(expiresAt.getHours() + SESSION_HOURS);
+  if (opts.kiosk) {
+    expiresAt.setMinutes(expiresAt.getMinutes() + KIOSK_SESSION_MINUTES);
+  } else {
+    expiresAt.setHours(expiresAt.getHours() + SESSION_HOURS);
+  }
 
   await queryOne(
     `INSERT INTO employee_portal_sessions (business_id, employee_id, session_token, expires_at)
@@ -30,13 +44,15 @@ export async function createEmployeePortalSession(
     [businessId, employeeId, token, expiresAt.toISOString()]
   );
 
-  await queryOne(
-    `UPDATE employees SET
-       portal_last_login_at = CURRENT_TIMESTAMP,
-       portal_registered_at = COALESCE(portal_registered_at, CURRENT_TIMESTAMP)
-     WHERE id = $1`,
-    [employeeId]
-  );
+  if (!opts.kiosk) {
+    await queryOne(
+      `UPDATE employees SET
+         portal_last_login_at = CURRENT_TIMESTAMP,
+         portal_registered_at = COALESCE(portal_registered_at, CURRENT_TIMESTAMP)
+       WHERE id = $1`,
+      [employeeId]
+    );
+  }
 
   return { token, expiresAt };
 }
@@ -88,12 +104,19 @@ export function getEmployeePortalTokenFromRequest(request: NextRequest): string 
 export async function getEmployeePortalSessionFromRequest(
   request: NextRequest
 ): Promise<EmployeePortalSession | null> {
-  return resolveEmployeePortalSession(getEmployeePortalTokenFromRequest(request));
+  const token = getEmployeePortalTokenFromRequest(request);
+  if (isKioskSessionToken(token) && !isKioskSessionApiAllowed(request.method, new URL(request.url).pathname)) {
+    return null;
+  }
+  return resolveEmployeePortalSession(token);
 }
 
+/** Portal pages: a kiosk punch session never counts as a signed-in employee. */
 export async function getEmployeePortalSessionFromCookies(): Promise<EmployeePortalSession | null> {
   const jar = await cookies();
-  return resolveEmployeePortalSession(jar.get(EMPLOYEE_PORTAL_COOKIE)?.value);
+  const token = jar.get(EMPLOYEE_PORTAL_COOKIE)?.value;
+  if (isKioskSessionToken(token)) return null;
+  return resolveEmployeePortalSession(token);
 }
 
 export function employeePortalCookieOptions(expiresAt: Date) {

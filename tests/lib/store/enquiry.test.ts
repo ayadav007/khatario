@@ -53,3 +53,25 @@ describe('validateEnquiry', () => {
     expect(r.ok && r.value.source_path).toBeNull();
   });
 });
+
+describe('validateEnquiry newsletter signup', () => {
+  const signup = { topic: 'newsletter', email: 'Asha@Example.com', message: 'Newsletter signup', source_path: '/' };
+
+  it('accepts an email with no name or phone, even with topics and phone required', () => {
+    const r = validateEnquiry(signup, { ...form, topics: ['Bulk order'] });
+    expect(r).toEqual({
+      ok: true,
+      value: { name: 'Newsletter subscriber', phone: null, email: 'asha@example.com', topic: 'newsletter', message: 'Newsletter signup', source_path: '/' },
+    });
+  });
+
+  it('still needs a valid email', () => {
+    expect(validateEnquiry({ ...signup, email: '' }, form)).toMatchObject({ ok: false, error: 'Email is required' });
+    expect(validateEnquiry({ ...signup, email: 'nope' }, form)).toMatchObject({ ok: false, error: 'Enter a valid email' });
+  });
+
+  it('keeps the honeypot and leaves other topics strict', () => {
+    expect(validateEnquiry({ ...signup, website: 'x' }, form)).toMatchObject({ ok: false, spam: true });
+    expect(validateEnquiry({ ...good, topic: 'Other', name: '' }, form)).toMatchObject({ ok: false, error: 'Name is required' });
+  });
+});

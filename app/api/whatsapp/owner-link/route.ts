@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
   try {
     switch (body.action) {
       case 'start': {
-        const code = String(randomInt(1000, 10000));
+        const code = String(randomInt(10_000_000, 100_000_000));
         await query(
           `INSERT INTO owner_whatsapp_links (business_id, user_id, link_code, link_code_expires_at)
            VALUES ($1, $2, $3, NOW() + ($4 || ' minutes')::interval)

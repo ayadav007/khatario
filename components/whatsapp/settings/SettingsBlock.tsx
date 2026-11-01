@@ -112,7 +112,7 @@ export function BillingPlanLockedCard({
       cta="See plans"
       featureName={featureName}
       moduleKey="billing"
-      initialPlanId="growth"
+      initialPlanId="billing_starter"
     />
   );
 }

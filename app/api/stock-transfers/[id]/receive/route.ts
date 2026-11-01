@@ -136,8 +136,9 @@ export async function POST(
         );
       }
 
-      // Validate: Cannot receive more than dispatched
-      if (receivedQty > dispatchedQty) {
+      // Validate: Cannot receive more than dispatched (less any shortfall already written off)
+      const shortQty = parseFloat(transferItem.qty_short || '0');
+      if (receivedQty > dispatchedQty - shortQty) {
         await client.query('ROLLBACK');
         return NextResponse.json(
           { 
@@ -205,7 +206,7 @@ export async function POST(
     const allItemsReceived = await client.query(`
       SELECT 
         COUNT(*) as total_items,
-        COUNT(CASE WHEN received_qty >= quantity_dispatched THEN 1 END) as fully_received_items
+        COUNT(CASE WHEN COALESCE(received_qty, 0) + COALESCE(qty_short, 0) >= quantity_dispatched THEN 1 END) as fully_received_items
       FROM stock_transfer_items
       WHERE transfer_id = $1
     `, [params.id]);
@@ -228,6 +229,15 @@ export async function POST(
       WHERE id = $3
     `, [finalStatus, notes || null, params.id]);
 
+    if (finalStatus === 'completed') {
+      await client.query(
+        `UPDATE delivery_challans
+            SET status = 'delivered', delivered_at = NOW(), delivery_date = COALESCE(delivery_date, CURRENT_DATE)
+          WHERE stock_transfer_id = $1 AND business_id = $2 AND status = 'sent'`,
+        [params.id, transfer.business_id]
+      );
+    }
+
     // The receiving branch books the inter-branch invoice once, when the goods are fully received.
     if (transfer.inter_branch_invoice_id && finalStatus === 'completed') {
       const invoice = await client.query(
@@ -247,7 +257,7 @@ export async function POST(
         const cogs = await client.query(
           `SELECT COALESCE(SUM(credit), 0) AS amt
              FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
-            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code = '1104'`,
+            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code IN ('1104', '1160', '1161', '1162')`,
           [transfer.inter_branch_invoice_id]
         );
         await createInterBranchPurchaseEntries(client, {

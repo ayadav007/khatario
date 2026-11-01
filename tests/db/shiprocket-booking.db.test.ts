@@ -6,12 +6,18 @@
  */
 import { randomUUID } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { NextRequest } from 'next/server';
 
 const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
 const d = url ? describe : describe.skip;
 
+// The webhook route sends buyer messages for status changes; none are wanted here.
+jest.mock('@/lib/fulfilment/notify-trigger', () => ({ triggerFulfilmentNotification: jest.fn() }));
+
 import { getPool, closePool } from '@/lib/db';
+import { hashStoreWebhookToken } from '@/lib/store/delivery/webhooks';
+import { POST as shiprocketWebhook } from '@/app/api/webhooks/store/shiprocket/route';
 import { transitionStoreOrder } from '@/lib/store/order-lifecycle';
 import type { ShiprocketBooking, ShiprocketClient, ShiprocketParcel } from '@/lib/store/delivery/shiprocket';
 import {
@@ -25,6 +31,7 @@ import {
   applyShiprocketFulfilmentUpdate,
   bookFulfilmentWithShiprocket,
   cancelShiprocketBooking,
+  noteRtoInProgress,
   generateShiprocketManifest,
   pendingManifestCount,
   shiprocketLabelUrl,
@@ -54,6 +61,19 @@ d('Shiprocket booking (real DB)', () => {
   const tag = A.slice(0, 8);
   const PHONE = `97${String(Date.now()).slice(-8)}`;
   let seq = 0;
+  const TOKEN_A = `srbook${tag}${'a'.repeat(24)}`;
+
+  /** Posts a tracking event to the webhook route as the business that owns TOKEN_A. */
+  async function postTracking(body: Record<string, unknown>) {
+    const res = await shiprocketWebhook(
+      new NextRequest('http://localhost/api/webhooks/store/shiprocket', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': TOKEN_A },
+        body: JSON.stringify(body),
+      }),
+    );
+    return { status: res.status, json: (await res.json()) as any };
+  }
 
   async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
     const c = await pool.connect();
@@ -144,6 +164,11 @@ d('Shiprocket booking (real DB)', () => {
         [biz, `Ship ${name} ${tag}`],
       );
     }
+    await pool.query(
+      `INSERT INTO business_settings (business_id, store_shiprocket_webhook_token_hash) VALUES ($1, $2)
+       ON CONFLICT (business_id) DO UPDATE SET store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
+      [A, hashStoreWebhookToken(TOKEN_A)],
+    );
   });
 
   afterAll(async () => {
@@ -247,20 +272,98 @@ d('Shiprocket booking (real DB)', () => {
     await shipBooked(fulfilmentId, 300);
 
     const awb = `AWB${tag}300`;
-    expect(await applyShiprocketFulfilmentUpdate({ businessId: B, awb, orderRef: '', fulfilmentStatus: 'out_for_delivery' })).toEqual({
+    expect(await applyShiprocketFulfilmentUpdate({ businessId: B, awb, orderRef: '', srOrderId: '', fulfilmentStatus: 'out_for_delivery' })).toEqual({
       outcome: 'not_found',
     });
-    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb, orderRef: '', fulfilmentStatus: 'out_for_delivery' })).toEqual({
+    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb, orderRef: '', srOrderId: '', fulfilmentStatus: 'out_for_delivery' })).toEqual({
       outcome: 'updated',
       fulfilment: { fulfilmentId, to: 'out_for_delivery' },
     });
-    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb: '', orderRef: '9300', fulfilmentStatus: 'delivered' })).toMatchObject({
+    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb: '', orderRef: '', srOrderId: '9300', fulfilmentStatus: 'delivered' })).toMatchObject({
       outcome: 'updated',
     });
-    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb, orderRef: '', fulfilmentStatus: 'shipped' })).toEqual({
+    expect(await applyShiprocketFulfilmentUpdate({ businessId: A, awb, orderRef: '', srOrderId: '', fulfilmentStatus: 'shipped' })).toEqual({
       outcome: 'unchanged',
     });
     expect((await fulfilment(fulfilmentId)).status).toBe('delivered');
+  });
+
+  test('RTO initiated keeps the store order and parcel as they are and notes it', async () => {
+    const id = randomUUID();
+    seq += 1;
+    const orderNumber = `SR-${tag.slice(0, 4)}-${seq}`;
+    await pool.query(
+      `INSERT INTO store_orders
+         (id, business_id, order_number, customer_name, customer_phone, status, payment_status,
+          subtotal, grand_total, delivery_mode, customer_address, customer_pincode)
+       VALUES ($1, $2, $3, 'Ravi Kumar', $4, 'pending', 'cod', 500, 500, 'delivery', 'Flat 4, Baner Road, Pune, Maharashtra', '411045')`,
+      [id, A, orderNumber, PHONE],
+    );
+    await transitionStoreOrder({ businessId: A, orderId: id, to: 'confirmed' });
+    await transitionStoreOrder({ businessId: A, orderId: id, to: 'ready', dispatchMode: 'shiprocket' });
+    const f = (await pool.query(`SELECT id FROM order_fulfilments WHERE store_order_id = $1`, [id])).rows[0];
+    await bookFulfilmentWithShiprocket(A, f.id, { client: fakeClient([ok(610)]) });
+    await shipBooked(f.id, 610);
+
+    const storeStatus = async () => (await pool.query(`SELECT status FROM store_orders WHERE id = $1`, [id])).rows[0].status;
+    const storeBefore = await storeStatus();
+    const parcelBefore = (await fulfilment(f.id)).status;
+    const notes = async (where = `note LIKE 'Coming back to the shop (RTO)%'`) =>
+      Number(
+        (await pool.query(`SELECT COUNT(*) FROM order_fulfilment_events WHERE fulfilment_id = $1 AND ${where}`, [f.id])).rows[0].count,
+      );
+    const returnsCount = async () =>
+      Number((await pool.query(`SELECT COUNT(*) FROM order_returns WHERE business_id = $1`, [A])).rows[0].count);
+    const returnsBefore = await returnsCount();
+
+    const payload = { awb: `AWB${tag}610`, order_id: orderNumber, sr_order_id: 9610, current_status: 'RTO INITIATED' };
+    expect(await postTracking(payload)).toEqual({ status: 200, json: { ok: true, outcome: 'rto_noted' } });
+    expect(await storeStatus()).toBe(storeBefore);
+    expect((await fulfilment(f.id)).status).toBe(parcelBefore);
+    expect(await returnsCount()).toBe(returnsBefore);
+    expect(await notes(`note = 'Coming back to the shop (RTO)'`)).toBe(1);
+    const note = (
+      await pool.query(`SELECT status, actor_type FROM order_fulfilment_events WHERE fulfilment_id = $1 AND note LIKE 'Coming back%'`, [f.id])
+    ).rows[0];
+    expect(note).toEqual({ status: parcelBefore, actor_type: 'webhook' });
+
+    // The same label again adds nothing; a different RTO label is a new note.
+    expect((await postTracking(payload)).json).toEqual({ ok: true, outcome: 'rto_noted' });
+    expect(await notes()).toBe(1);
+    await postTracking({ ...payload, current_status: 'RTO IN TRANSIT' });
+    await postTracking({ ...payload, current_status: 'RTO IN TRANSIT' });
+    expect(await notes()).toBe(2);
+    expect(await storeStatus()).toBe(storeBefore);
+    expect(await returnsCount()).toBe(returnsBefore);
+
+    // Another business cannot add a note to this parcel.
+    expect(await noteRtoInProgress({ businessId: B, awb: `AWB${tag}610`, srOrderId: '9610', label: 'rto initiated' })).toBe(false);
+    expect(await notes()).toBe(2);
+  });
+
+  test("the Orders-screen fallback matches Shiprocket's order id", async () => {
+    const { fulfilmentId } = await packedSalesParcel();
+    await bookFulfilmentWithShiprocket(A, fulfilmentId, { client: fakeClient([ok(620)]) });
+    await shipBooked(fulfilmentId, 620);
+    await pool.query(`UPDATE order_fulfilments SET carrier_order_id = '555', awb = NULL WHERE id = $1`, [fulfilmentId]);
+
+    const r = await postTracking({ order_id: 'SO-x', sr_order_id: 555, current_status: 'DELIVERED' });
+    expect(r.json).toMatchObject({ ok: true, outcome: 'updated' });
+    expect((await fulfilment(fulfilmentId)).status).toBe('delivered');
+  });
+
+  test("a store order is also matched on Shiprocket's order id when AWB and order number miss", async () => {
+    const id = randomUUID();
+    seq += 1;
+    await pool.query(
+      `INSERT INTO store_orders
+         (id, business_id, order_number, customer_name, customer_phone, status, payment_status, subtotal, grand_total, delivery_mode, carrier_order_id)
+       VALUES ($1, $2, $3, 'Ravi Kumar', $4, 'ready', 'cod', 500, 500, 'delivery', '4321')`,
+      [id, A, `SR-${tag.slice(0, 4)}-${seq}`, PHONE],
+    );
+    const r = await postTracking({ order_id: 'nomatch', sr_order_id: 4321, current_status: 'DELIVERED' });
+    expect(r.json).toMatchObject({ ok: true, outcome: 'updated', orderId: id });
+    expect((await pool.query(`SELECT status FROM store_orders WHERE id = $1`, [id])).rows[0].status).toBe('delivered');
   });
 
   test('cancelling a booking before pickup puts the parcel back to packed', async () => {

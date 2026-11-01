@@ -8,6 +8,8 @@ import {
 import { sanitizeStoreTheme, type StoreTheme } from '@/lib/store/store-theme';
 import { getPreferredConfiguredProvider } from '@/lib/payments/business-provider-config';
 import { getBusinessUpiVpa } from '@/lib/payments/upi-pay-link';
+import type { ThemePreset } from '@/lib/store/engine/types';
+import type { DemoCatalogId } from '@/lib/store/engine/theme-catalog';
 
 export const STORE_GATEWAY_PROVIDERS = ['razorpay', 'easebuzz'] as const;
 
@@ -35,6 +37,9 @@ export interface StoreBusinessContext {
   upi_pay_enabled: boolean;
   store_promo_sheet: StorePromoSheetConfig;
   is_demo?: boolean;
+  /** A theme demo store (demo-<slug>, lib/store/engine/demo-stores.ts): the preset it draws and its sample catalogue. */
+  demo_preset?: ThemePreset;
+  demo_catalog?: DemoCatalogId;
 }
 
 export interface StoreBranch {
@@ -47,6 +52,8 @@ export interface StoreBranch {
   delivery_radius_km: number;
   serviceable_pincodes: string[];
   allow_pickup: boolean;
+  /** Order value above which delivery is free, when every delivery slab agrees on one; otherwise null. */
+  free_delivery_above: number | null;
 }
 
 export interface StoreDeliveryCharge {
@@ -64,8 +71,17 @@ const RESERVED_SUBDOMAINS = new Set([
   'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether', 'theme-grocery', 'theme-studio',
 ]);
 
+/** Store URLs merchants cannot take: the fixed list, and every `demo-` address (the theme demo stores). */
 export function isReservedStoreSubdomain(subdomain: string): boolean {
-  return RESERVED_SUBDOMAINS.has(subdomain.toLowerCase());
+  const sd = subdomain.trim().toLowerCase();
+  return RESERVED_SUBDOMAINS.has(sd) || sd.startsWith('demo-');
+}
+
+/** True when a store would move to a reserved URL; a store keeps the URL it already has, reserved or not. */
+export function reservedStoreUrlChange(next: string, current: string | null): boolean {
+  const sd = next.trim().toLowerCase();
+  if (current && current.trim().toLowerCase() === sd) return false;
+  return isReservedStoreSubdomain(sd);
 }
 
 export function isValidStoreSubdomain(subdomain: string): boolean {
@@ -79,6 +95,9 @@ export async function resolveStoreBySubdomain(
   const { themeDemoStore } = await import('@/lib/store/theme-demo');
   const demo = themeDemoStore(subdomain);
   if (demo) return demo;
+  const { engineDemoStore } = await import('@/lib/store/engine/demo-stores');
+  const engineDemo = engineDemoStore(subdomain);
+  if (engineDemo) return engineDemo;
 
   const row = await queryOne<{
     business_id: string;
@@ -169,12 +188,17 @@ export async function getStoreBranches(businessId: string): Promise<StoreBranch[
     delivery_radius_km: number;
     serviceable_pincodes: string[];
     allow_pickup: boolean;
+    free_delivery_above: string | null;
   }>(
     `SELECT
        br.id, br.name,
        sbd.location_lat::text, sbd.location_lng::text, sbd.location_address,
        sbd.delivery_mode, sbd.delivery_radius_km,
-       sbd.serviceable_pincodes, sbd.allow_pickup
+       sbd.serviceable_pincodes, sbd.allow_pickup,
+       (SELECT CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(c.free_above_amount)
+                         AND MIN(c.free_above_amount) = MAX(c.free_above_amount)
+                    THEN MIN(c.free_above_amount)::text END
+          FROM store_delivery_charges c WHERE c.branch_delivery_id = sbd.id) AS free_delivery_above
      FROM branches br
      INNER JOIN store_branch_delivery sbd
        ON sbd.branch_id = br.id AND sbd.business_id = br.business_id
@@ -195,6 +219,7 @@ export async function getStoreBranches(businessId: string): Promise<StoreBranch[
     delivery_radius_km: r.delivery_radius_km,
     serviceable_pincodes: r.serviceable_pincodes ?? [],
     allow_pickup: r.allow_pickup,
+    free_delivery_above: r.free_delivery_above ? parseFloat(r.free_delivery_above) : null,
   }));
 }
 

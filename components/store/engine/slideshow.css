@@ -1,0 +1,107 @@
+/*
+ * Slideshow slides on engine pages (StudioHero in studio-theme/StudioSections.tsx; imported by sections/Slideshow.tsx).
+ * An engine slide's words carry .hs-look and its own classes: the position from heroGridClass (hb-pos-<row>-<col>
+ * hb-align-<a>, as the Hero banner), hs-malign-* (phones), hs-box, hs-scheme, customText (text colour, EngineShell
+ * rule) and hs-size-* on the heading; the slideshow-wide hs-below-m on .hero puts the words under the picture on phones.
+ * A converted old slide (middle-left, left, no box, Large, one filled button) matches none of the placement or size
+ * rules, so it looks as before. The old store's slides have none of these classes. Every rule is under the engine root.
+ */
+
+/* The words as one flex column like .heroCopy itself, so a plain slide lays out exactly as before. */
+.st-root.eng-root .heroWords{display:flex;flex-direction:column;align-items:flex-start;max-width:100%;min-width:0}
+.st-root.eng-root .heroBtns{display:flex;flex-wrap:wrap;gap:12px}
+
+/* Row (every layout): top, middle (the old centring), bottom. */
+.st-root.eng-root .hero .heroCopy:is(.hb-pos-top-left,.hb-pos-top-center,.hb-pos-top-right){justify-content:flex-start}
+.st-root.eng-root .hero .heroCopy:is(.hb-pos-bottom-left,.hb-pos-bottom-center,.hb-pos-bottom-right){justify-content:flex-end}
+
+/* Alignment: the lines, the words' own column and, beside a picture, where the words sit (as the old slide's align). */
+.st-root.eng-root .hero .heroCopy.hb-align-center{text-align:center;align-items:center}
+.st-root.eng-root .hero .heroCopy.hb-align-right{text-align:right;align-items:flex-end}
+.st-root.eng-root .hero .heroCopy.hb-align-center .heroWords{align-items:center}
+.st-root.eng-root .hero .heroCopy.hb-align-right .heroWords{align-items:flex-end}
+.st-root.eng-root .hero .heroCopy.hb-align-center .heroBtns{justify-content:center}
+.st-root.eng-root .hero .heroCopy.hb-align-right .heroBtns{justify-content:flex-end}
+
+/* Full image: the column comes from the position; split layouts use only the row. */
+.st-root.eng-root .hero.full .heroCopy:is(.hb-pos-top-left,.hb-pos-middle-left,.hb-pos-bottom-left){align-items:flex-start}
+.st-root.eng-root .hero.full .heroCopy:is(.hb-pos-top-center,.hb-pos-middle-center,.hb-pos-bottom-center){align-items:center}
+.st-root.eng-root .hero.full .heroCopy:is(.hb-pos-top-right,.hb-pos-middle-right,.hb-pos-bottom-right){align-items:flex-end}
+
+/* Heading size. Large is the slide heading's own size, whatever sets it (Studio, its tablet and phone sizes, the phone
+   kit, Quick, Grocery), and gets no class. The other sizes scale that same size, so each preset keeps its look: the
+   variables below restate each context's Large (keep them in step with studio-theme.css, phone-kit.css,
+   quick-theme.css and presets/grocery.css). */
+.st-root.eng-root .hero .heroCopy.hs-look{--hs-min:28px;--hs-fluid:6.5cqi;--hs-max:52px}
+@container store (max-width:900px){.st-root.eng-root .hero .heroCopy.hs-look{--hs-min:26px;--hs-fluid:5.2cqi;--hs-max:40px}}
+@container store (max-width:640px){.st-root.eng-root .hero .heroCopy.hs-look{--hs-min:26px;--hs-fluid:8cqi;--hs-max:34px}}
+.st-root.eng-root.store-quick .hero .heroCopy.hs-look{--hs-min:22px;--hs-fluid:4.6cqi;--hs-max:40px}
+@container store (max-width:640px){.st-root.eng-root.phone-kit .hero .heroCopy.hs-look{--hs-min:22px;--hs-fluid:7cqi;--hs-max:30px}}
+.st-root.eng-root.eng-preset-grocery .eng-sec .hero .heroCopy.hs-look{--hs-min:34px;--hs-fluid:5vw;--hs-max:64px}
+@container store (max-width:640px){.st-root.eng-root.eng-preset-grocery.phone-kit .eng-sec .hero .heroCopy.hs-look{--hs-min:24px;--hs-fluid:7.4vw;--hs-max:30px}}
+.st-root.eng-root.eng-root .hero .heroCopy.hs-look h1.hs-size-small{font-size:calc(clamp(var(--hs-min),var(--hs-fluid),var(--hs-max)) * .62)}
+.st-root.eng-root.eng-root .hero .heroCopy.hs-look h1.hs-size-medium{font-size:calc(clamp(var(--hs-min),var(--hs-fluid),var(--hs-max)) * .8)}
+.st-root.eng-root.eng-root .hero .heroCopy.hs-look h1.hs-size-xl{font-size:calc(clamp(var(--hs-min),var(--hs-fluid),var(--hs-max)) * 1.25)}
+.st-root.eng-root.eng-root .hero .heroCopy.hs-look h1.hs-size-xxl{font-size:calc(clamp(var(--hs-min),var(--hs-fluid),var(--hs-max)) * 1.5)}
+
+/* Box: the words on a card in the slide's colours (its scheme, else the slideshow's), as the Hero banner's box. */
+.st-root.eng-root .hero .heroCopy.hs-box .heroWords{background:var(--c-card,var(--st-card,#fff));color:var(--c-text,var(--text));padding:28px 32px;border-radius:12px;max-width:min(100%,560px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+.st-root.eng-root .hero .heroCopy.hs-box .heroWords p{color:color-mix(in srgb,var(--c-text,var(--text)) 62%,transparent)}
+.st-root.eng-root .hero .heroCopy.hs-box .heroWords .eyebrow{color:var(--primary)}
+.st-root.eng-root .hero .heroCopy.hs-box .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
+
+/* Colour scheme: the slide's variables are on its words and its picture layer (inline); muted text and lines follow its
+   text colour, the words' panel beside a picture takes its tint, and a letterboxed picture sits on its background. */
+.st-root.eng-root .hero .heroCopy.hs-scheme{--st-muted:color-mix(in srgb,var(--text) 62%,transparent);--st-line:var(--c-border)}
+.st-root.eng-root .heroSlideImg.hs-scheme{background-color:var(--c-bg)}
+@container store (min-width:641px){.st-root.eng-root .hero:not(.full) .heroCopy.hs-scheme{background:var(--st-soft);color:var(--text)}}
+
+/* Outline buttons look like the Hero banner's: the button colour as text and border; white over a full photo (the
+   old white words), the text colour when the slide has one. Stated on the slide's words so presets' filled-button
+   rules (Grocery, the phone kit, the full layout's white button) do not fill them. */
+.st-root.eng-root .hero .heroCopy.hs-look .st-btn.eng-cta[data-style=outline]{background:transparent;color:var(--c-btn,var(--primary));border:1px solid var(--c-btn,var(--primary))}
+.st-root.eng-root .hero.full .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:#fff;border-color:#fff}
+
+/* Over the photo with no picture on any slide (noImg, e.g. a new Quick theme): Studio's white words and white button
+   are made for a photo, so on the plain panel they use the section's colours instead, as words under the picture do.
+   A chosen text colour (customText) still wins. */
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText){color:var(--text)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText) p{color:var(--st-muted)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText) .eyebrow{color:var(--primary)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:var(--c-btn,var(--primary));border-color:var(--c-btn,var(--primary))}
+
+@container store (max-width:640px){
+/* Phone alignment: the lines, the words' column and the buttons, over the desktop column. */
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-left{text-align:left;align-items:flex-start}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-center{text-align:center;align-items:center}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-right{text-align:right;align-items:flex-end}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-left .heroWords{align-items:flex-start}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-center .heroWords{align-items:center}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-right .heroWords{align-items:flex-end}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-left .heroBtns{justify-content:flex-start}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-center .heroBtns{justify-content:center}
+.st-root.eng-root .hero .heroCopy.hs-look.hs-malign-right .heroBtns{justify-content:flex-end}
+.st-root.eng-root .hero .heroCopy.hs-box .heroWords{padding:20px 22px}
+/* The phone kit lays the words over the picture on a dark fade: a box brings its own card, and outline buttons go
+   white like the rest of the words (not on Grocery, whose card holds the words without the picture). */
+.st-root.eng-root.phone-kit .hero .heroCopy.hs-box{background:none}
+.st-root.eng-root.phone-kit:not(.eng-preset-grocery) .hero:not(.full):not(.hs-below-m) .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:#fff;border-color:#fff}
+/* Words under the picture: the picture on top, the words after it on the section's (or the slide's) colours. */
+.st-root.eng-root.eng-root .hero.hs-below-m{display:grid;grid-template-columns:minmax(0,1fr)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroImg{grid-area:1/1;order:0}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy{grid-area:2/1;position:static;inset:auto;align-self:auto;color:inherit;background:none;padding:20px 18px}
+/* Several slides: the dots sit at the bottom of the hero, which is now the words, so leave them a row of their own. */
+.st-root.eng-root.eng-root .hero.hs-below-m.slideshow .heroCopy{padding-bottom:48px}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy:not(.customText) p{color:var(--st-muted)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy:not(.customText) .eyebrow{color:var(--primary)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
+.st-root.eng-root.eng-root .hero.full.hs-below-m .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:var(--c-btn,var(--primary));border-color:var(--c-btn,var(--primary))}
+/* A scheme's panel shows where the words have their own panel on phones: under the picture, or without the phone kit. */
+.st-root.eng-root:not(.phone-kit) .hero:not(.full) .heroCopy.hs-scheme,
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy.hs-scheme{background:var(--st-soft);color:var(--text)}
+}
+
+/* A chosen text colour wins everywhere, in the box too (the outline button follows it). */
+.st-root.eng-root .hero .heroCopy.hs-box.customText .heroWords :is(p,.eyebrow){color:var(--hero-text)}
+.st-root.eng-root.eng-root .hero .heroCopy.hs-look.customText .heroWords .st-btn.eng-cta[data-style=outline]{color:var(--hero-text);border-color:var(--hero-text)}

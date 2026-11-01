@@ -436,6 +436,14 @@ export default function ItemDetailPage() {
           description={itemSubtitle || undefined}
           trailing={
             <div className="flex gap-2">
+              {(item.item_type || 'goods') === 'goods' && !item.is_bundle && !item.has_variants && (
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push(`/inventory-adjustments/repacks/new?item_id=${itemId}`)}
+                >
+                  Repack
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 onClick={() => setDamageOpen(true)}

@@ -105,8 +105,28 @@ const nextConfig = {
     domains: [],
   },
   swcMinify: true,
+  // `npm run build` type-checks with tsc first, so next build's own pass would check everything a second time.
+  // A plain `next build` still type-checks. KH_SKIP_TYPECHECK=1 (deploy-vps.sh --skip-typecheck) skips both.
+  typescript: {
+    ignoreBuildErrors: process.env.npm_lifecycle_event === "build" || process.env.KH_SKIP_TYPECHECK === "1",
+  },
   async headers() {
+    // Baseline hardening. Framing is limited to Khatario's own hosts (Studio previews store
+    // subdomains). A script CSP needs an inventory of third-party checkout/analytics first.
+    const securityHeaders =
+      process.env.NODE_ENV === "production"
+        ? [
+            { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+            { key: "X-Content-Type-Options", value: "nosniff" },
+            { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+            {
+              key: "Content-Security-Policy",
+              value: "frame-ancestors 'self' https://khatario.com https://*.khatario.com; base-uri 'self'; object-src 'none'",
+            },
+          ]
+        : [];
     return [
+      ...(securityHeaders.length ? [{ source: "/:path*", headers: securityHeaders }] : []),
       {
         source: '/admin/sw.js',
         headers: [

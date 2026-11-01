@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { PageHeader } from '@/components/layout/PageHeader';
+import { PushPermissionNotice } from '@/components/notifications/PushPermissionNotice';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -81,7 +82,7 @@ export default function NotificationsPage() {
     
     // Navigate based on notification type
     if (notification.type === 'supplier_request') {
-      router.push('/suppliers/requests');
+      router.push('/suppliers/hub');
     } else if (notification.type === 'low_stock_alert') {
       router.push('/suppliers/dashboard');
     } else if (notification.reference_type === 'supplier' && notification.reference_id) {
@@ -100,6 +101,8 @@ export default function NotificationsPage() {
       router.push('/reports/gst/compliance');
     } else if (notification.reference_type === 'whatsapp_conversation' && notification.reference_id) {
       router.push(`/whatsapp/conversations?c=${encodeURIComponent(notification.reference_id)}`);
+    } else if (notification.reference_type === 'whatsapp_lead' && notification.reference_id) {
+      router.push(`/whatsapp/leads?lead=${encodeURIComponent(notification.reference_id)}`);
     }
   };
 
@@ -138,6 +141,7 @@ export default function NotificationsPage() {
     
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
+        <PushPermissionNotice />
         <PageHeader
   title="Notifications"
   subtitle={<>{unreadNotificationCount > 0 

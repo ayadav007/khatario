@@ -32,11 +32,13 @@ export async function GET(request: NextRequest) {
         dc.*,
         c.name as customer_name,
         i.invoice_number,
-        so.order_number as sales_order_number
+        so.order_number as sales_order_number,
+        st.transfer_number as stock_transfer_number
       FROM delivery_challans dc
       LEFT JOIN customers c ON dc.customer_id = c.id
       LEFT JOIN invoices i ON dc.invoice_id = i.id
       LEFT JOIN sales_orders so ON dc.sales_order_id = so.id
+      LEFT JOIN stock_transfers st ON dc.stock_transfer_id = st.id
       WHERE dc.business_id = $1
     `;
 
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     await client.query('BEGIN');
-    // No stock movement: a challan moves goods without selling them.
+    // No stock movement on create: a returnable challan moves its goods out only when sent.
     const deliveryChallan = await writeChallan(client, tenant.businessId, {
       ...body,
       created_by: auth.userId,

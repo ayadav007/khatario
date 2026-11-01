@@ -15,6 +15,7 @@ import { hasClosingStockV2Schema } from '@/lib/closing-stock-schema';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getClosingStockLockedCutoffDate } from '@/lib/closing-stock-period-lock';
+import { csvSafeText } from '@/lib/csv-safe';
 
 function isClosingValuationMethod(s: string): s is ClosingValuationMethod {
   return s === 'fifo' || s === 'weighted_avg' || s === 'last_purchase';
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
         for (const row of rows) {
           lines.push(
             [
-              `"${(row.item_name || '').replace(/"/g, '""')}"`,
+              `"${csvSafeText(row.item_name || '').replace(/"/g, '""')}"`,
               row.quantity,
               row.unit_cost,
               row.total_value,

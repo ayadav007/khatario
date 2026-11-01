@@ -11,6 +11,9 @@ import { optimizeForThermal } from '@/lib/thermal-transformer';
 import { hasTableColumn } from '@/lib/schema-columns';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
 import { findTemplateAssignment } from '@/lib/template-assignment';
+import { copyLabelFor, normalizePrintCopy, printCopiesFor, type PrintCopy } from '@/lib/invoice-statutory';
+import { translatePhrase, type DocumentLanguage } from '@/lib/print-language';
+import { pickCaseUnit } from '@/lib/print/item-columns';
 
 export type DocumentTable = 
   | 'invoices' 
@@ -24,9 +27,51 @@ export type DocumentTable =
 /**
  * Generates HTML for any document type.
  */
+export type DocumentPrintOptions = {
+  /** Which copy's label to print, or 'all' for every copy Rule 48 asks for, one per page. */
+  copy?: PrintCopy | 'all';
+  /** Template designer preview: render this template with these (unsaved) settings instead of the saved ones. */
+  templateId?: string;
+  settings?: Record<string, unknown>;
+};
+
+/** Puts each copy's <body> on its own page inside the first copy's document. */
+function combineCopies(htmls: string[]): string {
+  if (htmls.length < 2) return htmls[0] || '';
+  const bodies = htmls.slice(1).map((h) => {
+    const m = h.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    return `<div style="break-before: page; page-break-before: always;"></div>${m ? m[1] : h}`;
+  });
+  const first = htmls[0];
+  const close = first.search(/<\/body>/i);
+  return close < 0 ? first + bodies.join('') : first.slice(0, close) + bodies.join('') + first.slice(close);
+}
+
+/** Adds each line's case unit and size (from the item's alternate units) for the cases/pieces columns. */
+async function attachCaseUnits(items: Record<string, unknown>[]): Promise<void> {
+  const ids = Array.from(new Set(items.map((i) => i.item_id).filter(Boolean))) as string[];
+  if (!ids.length || !(await hasTableColumn('item_units', 'factor_to_base'))) return;
+  const units = await db.queryRows(
+    'SELECT iu.item_id, iu.unit, iu.factor_to_base FROM item_units iu WHERE iu.item_id = ANY($1::uuid[])',
+    [ids]
+  );
+  const byItem = new Map<string, { unit: string; factor_to_base: unknown }[]>();
+  for (const u of units as { item_id: string; unit: string; factor_to_base: unknown }[]) {
+    byItem.set(u.item_id, [...(byItem.get(u.item_id) || []), u]);
+  }
+  for (const item of items) {
+    const picked = pickCaseUnit(byItem.get(String(item.item_id)) || []);
+    if (picked) {
+      item.case_unit = picked.unit;
+      item.case_factor = picked.factor;
+    }
+  }
+}
+
 export async function generateDocumentHtml(
   documentId: string, 
-  table: DocumentTable = 'invoices'
+  table: DocumentTable = 'invoices',
+  options: DocumentPrintOptions = {}
 ) {
     const itemTableMap: Record<DocumentTable, string> = {
       'invoices': 'invoice_items',
@@ -128,15 +173,16 @@ export async function generateDocumentHtml(
         doc.business_gstin = reg.gstin;
         doc.business_state = reg.stateName;
         doc.business_state_code = reg.stateCode;
-        if (reg.addressLine1) {
-          doc.business_address = reg.addressLine1;
-          doc.business_address_line2 = reg.addressLine2;
-          doc.business_city = reg.city;
-          doc.business_pincode = reg.pincode;
-        }
-        if (reg.phone) doc.business_phone = reg.phone;
-        if (reg.email) doc.business_email = reg.email;
       }
+      // A branch prints its own address, also when it trades under the head-office GSTIN.
+      if (reg.addressLine1) {
+        doc.business_address = reg.addressLine1;
+        doc.business_address_line2 = reg.addressLine2;
+        doc.business_city = reg.city;
+        doc.business_pincode = reg.pincode;
+      }
+      if (reg.phone) doc.business_phone = reg.phone;
+      if (reg.email) doc.business_email = reg.email;
     }
 
     const itemsHaveCustomFields = await hasTableColumn('items', 'custom_fields');
@@ -157,6 +203,16 @@ export async function generateDocumentHtml(
       ? 'COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac'
       : 'i.hsn_sac as hsn_sac';
     const itemOrderBy = lineHasSortOrder ? 'ii.sort_order, ii.id' : 'ii.id';
+    // Item master facts distributor bills print: MRP, product code and the base unit (for cases/pieces).
+    const [itemsHaveMrp, itemsHaveCode] = await Promise.all([
+      hasTableColumn('items', 'mrp'),
+      hasTableColumn('items', 'code'),
+    ]);
+    const itemMasterSelect = [
+      itemsHaveMrp ? 'i.mrp as item_mrp' : 'NULL::numeric as item_mrp',
+      itemsHaveCode ? 'i.code as item_code' : 'NULL::text as item_code',
+      'i.unit as item_base_unit',
+    ].join(', ');
 
     const itemsQuery = hasVariants 
       ? `SELECT 
@@ -164,6 +220,7 @@ export async function generateDocumentHtml(
           ${itemNameSelect}, 
           ${hsnSelect},
           ${itemCustomFieldsSelect},
+          ${itemMasterSelect},
           iv.variant_name,
           iv.attributes as variant_attributes
          FROM ${itemTable} ii
@@ -175,13 +232,15 @@ export async function generateDocumentHtml(
           ii.*, 
           ${itemNameSelect}, 
           ${hsnSelect},
-          ${itemCustomFieldsSelect}
+          ${itemCustomFieldsSelect},
+          ${itemMasterSelect}
          FROM ${itemTable} ii
          LEFT JOIN items i ON ii.item_id = i.id
          WHERE ii.${idColumn} = $1
          ORDER BY ${itemOrderBy}`;
 
     const items = await db.queryRows(itemsQuery, [documentId]);
+    await attachCaseUnits(items);
 
     // Debug logging for troubleshooting
     if (process.env.NODE_ENV === 'development') {
@@ -357,6 +416,9 @@ export async function generateDocumentHtml(
       }
     }
     
+    if (options.templateId) finalTemplateId = options.templateId;
+    if (options.settings) savedSettings = options.settings;
+
     // Merge settings with defaults
     if (isDev) {
       console.log('[PDF Generator] Step 5: Merging settings...');
@@ -417,7 +479,7 @@ export async function generateDocumentHtml(
       },
       customer: {
         ...doc,
-        name: doc.customer_name,
+        name: doc.billing_name || doc.customer_name,
         billing_address: doc.invoice_billing_address || doc.customer_billing_address,
         shipping_address: doc.invoice_shipping_address || doc.customer_shipping_address,
         gstin: doc.customer_gstin,
@@ -428,16 +490,37 @@ export async function generateDocumentHtml(
         country: doc.customer_country,
         current_balance: doc.customer_current_balance || 0
       },
-      items: items
+      items: items,
+      template_id: finalTemplateId,
+      copy: options.copy === 'all' ? 'original' : normalizePrintCopy(options.copy),
     }, finalSettings);
 
     const renderer = new InvoiceRenderer();
-    const html = await renderer.renderHtml(finalTemplateId, renderData);
+    const printedDocType = String(renderData.invoice?.document_type || documentType);
+    const copies = options.copy === 'all' && !finalTemplateId.startsWith('thermal_')
+      ? printCopiesFor(printedDocType, renderData.items || [])
+      : [];
+    let html: string;
+    if (copies.length > 1) {
+      const language = renderData.settings?.document_language as DocumentLanguage;
+      const pages: string[] = [];
+      for (const copy of copies) {
+        const label = copyLabelFor(printedDocType, copy, renderData.items || []);
+        pages.push(await renderer.renderHtml(finalTemplateId, {
+          ...renderData,
+          invoice: { ...renderData.invoice, copy_label: label ? translatePhrase(language, label) : null },
+        }));
+      }
+      html = combineCopies(pages);
+    } else {
+      html = await renderer.renderHtml(finalTemplateId, renderData);
+    }
     return {
       html,
       templateId: finalTemplateId,
       settings: finalSettings,
       businessId: doc.business_id as string,
+      documentNumber: String(renderData.invoice?.invoice_number || ''),
     };
 }
 
@@ -477,13 +560,19 @@ export async function generateInvoiceHtml(invoiceId: string) {
   return generateDocumentHtml(invoiceId, 'invoices');
 }
 
-export async function generateDocumentPdf(documentId: string, table: DocumentTable = 'invoices') {
-    const { html, templateId, settings, businessId } = await generateDocumentHtml(documentId, table);
+export async function generateDocumentPdf(
+  documentId: string,
+  table: DocumentTable = 'invoices',
+  options: DocumentPrintOptions = {}
+) {
+    const { html, templateId, settings, businessId } = await generateDocumentHtml(documentId, table, options);
 
     const htmlForPdf = await finalizePrintHtml(html, templateId, settings, businessId);
+    return renderPrintHtmlToPdf(htmlForPdf, templateId, settings);
+}
 
-    // 3. Generate PDF with Puppeteer
-    // Optimize Puppeteer launch args for better performance
+/** Print-ready HTML (after finalizePrintHtml) to a PDF buffer, at the template's paper size. */
+export async function renderPrintHtmlToPdf(htmlForPdf: string, templateId: string, settings: unknown) {
     const browser = await puppeteer.launch(
       getPuppeteerLaunchOptions({
         headless: true,
@@ -500,26 +589,22 @@ export async function generateDocumentPdf(documentId: string, table: DocumentTab
         ],
       })
     );
-    const page = await browser.newPage();
-    // Use 'domcontentloaded' instead of 'networkidle0' for faster rendering
-    await page.setContent(htmlForPdf, { waitUntil: 'domcontentloaded' });
-    // CRITICAL: Render using print CSS (@media print) for consistent PDF layout
-    // Without this, Puppeteer uses screen media by default, which can introduce
-    // extra whitespace and unexpected page breaks across templates.
-    await page.emulateMediaType('print');
-
-    const printCfg = resolvePrintConfig(templateId, settings);
-    const pdfOptions: Record<string, unknown> = { ...printCfg.puppeteer };
-
-    const pdfBuffer = await page.pdf(pdfOptions as any);
-    await browser.close();
-
-    return Buffer.from(pdfBuffer);
+    try {
+      const page = await browser.newPage();
+      await page.setContent(htmlForPdf, { waitUntil: 'domcontentloaded' });
+      // Print CSS (@media print) for the same layout as a real print.
+      await page.emulateMediaType('print');
+      const printCfg = resolvePrintConfig(templateId, (settings ?? {}) as Record<string, unknown>);
+      const pdfBuffer = await page.pdf({ ...printCfg.puppeteer } as any);
+      return Buffer.from(pdfBuffer);
+    } finally {
+      await browser.close();
+    }
 }
 
 // Legacy wrapper for backward compatibility
-export async function generateInvoicePdf(invoiceId: string) {
-  return generateDocumentPdf(invoiceId, 'invoices');
+export async function generateInvoicePdf(invoiceId: string, options: DocumentPrintOptions = {}) {
+  return generateDocumentPdf(invoiceId, 'invoices', options);
 }
 
 /** Full-page PNG of the invoice (for native share as image). */

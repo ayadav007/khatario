@@ -74,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _error = e.message.isEmpty ? 'Login failed' : e.message);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = _isNetworkError(e) ? "You're offline. Please check your connection and try again." : 'Login failed');
+        setState(() => _error = _isNetworkError(e) ? 'No internet connection. Please check your connection and try again.' : 'Login failed');
       }
     } finally {
       if (mounted) setState(() => _loading = false);

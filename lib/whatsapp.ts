@@ -28,6 +28,7 @@ import { downloadContentFromMessage } from '@whiskeysockets/baileys/lib/Utils';
 import fs from 'fs';
 import path from 'path';
 import * as WACM from '@/lib/whatsapp-connection-manager';
+import { loadOutboundMedia } from '@/lib/http/outbound-media';
 
 // ─── Message extraction helpers ───────────────────────────────────────────────
 
@@ -3008,6 +3009,12 @@ export async function sendWhatsAppMessage(
     hasFooter: !!footer,
     textPreview: text?.substring(0, 50)
   });
+
+  // Baileys reads any non-http string as a local file path and fetches http(s) from this
+  // server, so caller-supplied media is always loaded into a Buffer under our own rules.
+  if (typeof media === 'string') {
+    media = media.trim() ? await loadOutboundMedia(media) : undefined;
+  }
   
   // Step 1: Check in-memory session first
   let session = sessions.get(businessId);

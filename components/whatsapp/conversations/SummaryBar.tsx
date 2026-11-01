@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { MessageSquare, Inbox, Clock, CheckCircle, XCircle, Loader2, Tag, Settings2, User, Hand, Headphones, Bot, Volume2, VolumeX } from 'lucide-react';
+import { MessageSquare, Inbox, Clock, CheckCircle, XCircle, Loader2, Tag, Settings2, User, Hand, Headphones, Bot, Volume2, VolumeX, AlarmClock } from 'lucide-react';
 import { useWhatsAppSocket } from '@/hooks/useWhatsAppSocket';
 import { isInboxSoundOn, requestInboxNotificationPermission, setInboxSoundOn, type InboxState, type TeamMember } from './inbox';
 
@@ -10,6 +10,15 @@ export interface InboxFilter {
   state: InboxState | null;
   /** 'me', 'others' or a user id; only for Intervened. Undefined = anyone. */
   intervenedBy?: string;
+  /** Chats with my follow-up reminders due today or overdue. */
+  followups?: boolean;
+}
+
+/** End of the viewer's today, sent so "due today" follows their clock. */
+export function endOfTodayIso(): string {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
 }
 
 interface SummaryBarProps {
@@ -71,6 +80,23 @@ export function SummaryBar({
   const [agents, setAgents] = useState<TeamMember[]>([]);
   const [soundOn, setSoundOn] = useState(true);
   const summaryRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [followupsDue, setFollowupsDue] = useState<{ overdue: number; today: number } | null>(null);
+
+  useEffect(() => {
+    if (!onInboxFilter) return;
+    let cancelled = false;
+    const load = () =>
+      fetch(`/api/whatsapp/followups?when=due&due_before=${encodeURIComponent(endOfTodayIso())}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d?.counts) setFollowupsDue(d.counts); })
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [onInboxFilter, inboxFilter?.followups]);
 
   useEffect(() => {
     setSoundOn(isInboxSoundOn());
@@ -494,6 +520,21 @@ export function SummaryBar({
               </button>
             );
           })}
+
+          {onInboxFilter && followupsDue && (followupsDue.overdue + followupsDue.today > 0 || inboxFilter?.followups) && (
+            <button
+              type="button"
+              onClick={() => onInboxFilter(inboxFilter?.followups ? { state: null } : { state: null, followups: true })}
+              className={`mobile-chip ${inboxFilter?.followups ? 'mobile-chip-active bg-red-100 border-red-300' : 'bg-red-50'}`}
+              title={`Your reminders: ${followupsDue.overdue} overdue, ${followupsDue.today} later today`}
+            >
+              <AlarmClock className="h-3.5 w-3.5 text-red-700" />
+              <span className="text-red-700">Follow-ups</span>
+              <span className="min-w-[1.1rem] text-center font-bold tabular-nums text-red-700">
+                {followupsDue.overdue + followupsDue.today}
+              </span>
+            </button>
+          )}
 
           {onInboxFilter && isSupervisor && inboxFilter?.state === 'intervened' && (
             <div className="flex items-center gap-0.5 rounded-lg border border-blue-200 bg-white p-0.5 text-[11px] shrink-0">

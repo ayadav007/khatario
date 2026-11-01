@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await authorize(userId, 'settings', 'export');
+      await authorize(userId, 'settings', 'export', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();

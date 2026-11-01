@@ -3,6 +3,7 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { logAdminAction } from '@/lib/platform-auth';
 import { ReindexSchema } from '@/lib/rag/admin';
 import { enqueueKbReindex } from '@/lib/rag/queue';
+import { getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     'kb_sources',
     undefined,
     { target: parsed.data.target, force: parsed.data.force ?? false, mode },
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+    getClientIp(request),
     request.headers.get('user-agent') || undefined,
   );
   return NextResponse.json({ status: mode });

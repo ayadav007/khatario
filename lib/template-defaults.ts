@@ -49,6 +49,9 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
   } else if (templateId === 'challan_standard') {
     defaultPrimaryColor = '#0891b2'; // Cyan — delivery challan
     defaultTableHeaderColor = '#0891b2';
+  } else if (templateId === 'distributor') {
+    defaultPrimaryColor = '#111827'; // Dense black-and-grey grid, like distributor bills
+    defaultTableHeaderColor = '#e5e7eb';
   } else if (templateId === 'export_invoice') {
     defaultPrimaryColor = '#4A90E2'; // Legacy export banner / accents
     defaultTableHeaderColor = '#4A90E2';
@@ -131,7 +134,7 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     show_tax_total: true,
     show_round_off: true,
     show_grand_total: true,
-    show_amount_in_words: isExportTemplate ? true : false, // Export invoices should show amount in words
+    show_amount_in_words: isExportTemplate || templateId === 'distributor', // Export invoices should show amount in words
     show_paid_amount: false,
     show_balance_amount: false,
     
@@ -145,9 +148,12 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     show_payment_terms: isExportTemplate ? true : false, // Export invoices should show payment terms
     show_terms: true,
     show_notes: true,
-    show_signature: false,
-    show_authorized_signatory: false,
+    // Rule 46 wants the supplier's signature; thermal receipts are B2C and skip it.
+    show_signature: !isThermal,
+    show_authorized_signatory: !isThermal,
     show_qr_code: false,
+    show_copy_label: !isThermal,
+    show_hsn_summary: !isThermal,
     
     // Export-specific fields
     show_invoice_currency: isExportTemplate ? true : false, // Invoice currency (USD, EUR, etc.)
@@ -185,6 +191,10 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     // Custom field placement — empty by default; user configures in customize drawer.
     // Must exist here: mergeTemplateSettings drops keys missing from defaults.
     custom_field_layout: { invoice_meta: [], item_table: [] },
+
+    // Ordered item-table column ids for templates that print a chosen column set (distributor).
+    // Empty = the template's default columns. Must exist here or mergeTemplateSettings drops it.
+    item_columns: [],
   };
 }
 

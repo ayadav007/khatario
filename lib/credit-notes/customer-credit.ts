@@ -56,7 +56,20 @@ export type AvailableCreditNote = {
   available: number;
 };
 
-function availableSql(hasApplications: boolean): string {
+/**
+ * `gatewayHold`: the SQL parameter (e.g. `$3`) of a refund attempt to leave out, or `null` for none.
+ * Omitted = gateway refunds on their way are not counted (the note's own adjusted/pending label).
+ */
+function availableSql(hasApplications: boolean, gatewayHold?: string): string {
+  // A refund to the original payment that is still pending holds its amount on the note, so the same
+  // credit cannot also be spent on a bill or refunded another way.
+  const held = gatewayHold
+    ? `COALESCE((
+      SELECT SUM(g.amount) FROM return_gateway_refunds g
+       WHERE g.credit_note_id = cn.id AND g.business_id = cn.business_id AND g.status = 'pending'
+         AND (${gatewayHold}::uuid IS NULL OR g.id <> ${gatewayHold}::uuid)
+    ), 0)`
+    : '0';
   const appliedLater = hasApplications
     ? `COALESCE((
       SELECT SUM(a.amount) FROM credit_note_applications a
@@ -96,7 +109,8 @@ function availableSql(hasApplications: boolean): string {
         )
       )
     END AS settled_on_source,
-    ${appliedLater} AS applied_later
+    ${appliedLater} AS applied_later,
+    ${held} AS gateway_held
   FROM credit_notes cn
   LEFT JOIN invoices i ON i.id = cn.invoice_id AND i.business_id = cn.business_id AND i.deleted_at IS NULL
   WHERE cn.business_id = $1
@@ -104,6 +118,13 @@ function availableSql(hasApplications: boolean): string {
     AND cn.status = 'active'
     AND cn.refund_status <> 'refunded'
 `;
+}
+
+async function hasGatewayRefundsTable(client: PoolClient): Promise<boolean> {
+  const found = await client.query<{ t: string | null }>(
+    `SELECT to_regclass('public.return_gateway_refunds') AS t`
+  );
+  return !!found.rows[0]?.t;
 }
 
 async function hasApplicationsTable(client: PoolClient): Promise<boolean> {
@@ -122,6 +143,7 @@ type AvailableRow = {
   refund_amount: string | null;
   settled_on_source: string;
   applied_later: string;
+  gateway_held: string;
 };
 
 function rowAvailable(row: AvailableRow): number {
@@ -129,14 +151,19 @@ function rowAvailable(row: AvailableRow): number {
     grandTotal: Number(row.grand_total) || 0,
     settledOnSourceInvoice: Number(row.settled_on_source) || 0,
     appliedToLaterInvoices: Number(row.applied_later) || 0,
-    refundedAmount: row.refund_status === 'refunded' ? Number(row.grand_total) || 0 : Number(row.refund_amount) || 0,
+    refundedAmount:
+      row.refund_status === 'refunded'
+        ? Number(row.grand_total) || 0
+        : (Number(row.refund_amount) || 0) + (Number(row.gateway_held) || 0),
   });
 }
 
 export async function listAvailableCustomerCredits(
   client: PoolClient,
   businessId: string,
-  customerId: string
+  customerId: string,
+  /** The pending gateway refund being posted: its own hold does not block it. */
+  opts?: { excludeGatewayRefundId?: string | null }
 ): Promise<{ available: number; current_balance: number; notes: AvailableCreditNote[] }> {
   const customer = await client.query<{ current_balance: string }>(
     `SELECT current_balance FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
@@ -145,9 +172,10 @@ export async function listAvailableCustomerCredits(
   if (!customer.rows[0]) {
     throw new CustomerCreditError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
   }
+  const holds = await hasGatewayRefundsTable(client);
   const rows = await client.query<AvailableRow>(
-    `${availableSql(await hasApplicationsTable(client))} ORDER BY cn.credit_note_date, cn.created_at, cn.id`,
-    [businessId, customerId]
+    `${availableSql(await hasApplicationsTable(client), holds ? '$3' : undefined)} ORDER BY cn.credit_note_date, cn.created_at, cn.id`,
+    holds ? [businessId, customerId, opts?.excludeGatewayRefundId ?? null] : [businessId, customerId]
   );
   const notes = rows.rows
     .map((row) => ({

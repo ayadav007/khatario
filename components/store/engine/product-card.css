@@ -1,0 +1,709 @@
+/* Product card designs (docs/superpowers/specs/2026-11-01-store-product-cards-design.md §4).
+   Every rule needs `pc-on` on the card root, which only a card design adds (never Theme's own), so existing stores match
+   none of them. `.pc-on` is written three times so these rules (0,6,0 and up) out-rank every preset's tile rules; the
+   strongest today are Quick's `.st-root.store-quick .productGrid.card-minimal .product` (0,5,0) and Grocery's card hover
+   (0,5,2). The card's variables (--pc-*) and its own colour scheme sit on the root as inline styles. The photo and the
+   buttons are styled by their own settings (`pc-shape-*`, `pc-btn-*`, …). */
+
+/* ---------- Card box: scheme, border, radius, shadow, padding, align ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: var(--pc-padding, 12px);
+  border: var(--pc-border, 0) solid var(--st-line);
+  border-radius: var(--pc-radius, 12px);
+  background: var(--st-card);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+  overflow: hidden;
+  text-align: left;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+/* No border, shadow or own scheme: no box, the card sits on the section. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-plain {
+  background: transparent;
+  border-color: transparent;
+}
+/* The card's own scheme: the lines and borders Studio derives from the text colour follow it too. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-scheme {
+  --st-line: var(--c-border);
+  --st-muted: color-mix(in srgb, var(--text) 62%, transparent);
+  --qk-card: var(--st-card);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on:hover {
+  transform: none;
+  box-shadow: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shadow-soft,
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shadow-soft:hover {
+  box-shadow: 0 8px 24px -14px rgba(0, 0, 0, 0.28);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shadow-strong,
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shadow-strong:hover {
+  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.42);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 30px -16px rgba(0, 0, 0, 0.38);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-hover-zoom:hover {
+  transform: scale(1.02);
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-root.eng-root .product.pc-on.pc-on.pc-on {
+    transition: none;
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-hover-lift:hover,
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-hover-zoom:hover {
+    transform: none;
+  }
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-align-center {
+  text-align: center;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-align-center :is(.prating, .price, .pswatches, .pc-np) {
+  justify-content: center;
+}
+
+/* ---------- Layout: photo on top, or photo left and details right ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 10px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-layout-row {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-layout-row .pimg {
+  flex: 0 0 38%;
+  max-width: 168px;
+  align-self: flex-start;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-layout-row .pc-body {
+  padding-top: 0;
+}
+/* A grid of photo-left cards: one card per row on phones, columns of at least 300px on wider screens (whatever the
+   section's columns); a carousel's cards get wider too. Only a grid holding such a card matches (Theme's own never). */
+.st-root.eng-root :is(.productGrid, .eng-catalog-grid):is(.productGrid, .eng-catalog-grid):not(.carousel):has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.st-root.eng-root .productGrid.productGrid.carousel:has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+  grid-auto-columns: min(100%, 340px);
+}
+@container store (max-width: 640px) {
+  .st-root.eng-root :is(.productGrid, .eng-catalog-grid):is(.productGrid, .eng-catalog-grid):not(.carousel):has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .st-root.eng-root .productGrid.productGrid.carousel:has(> .product.pc-on.pc-on.pc-on.pc-layout-row) {
+    grid-auto-columns: calc(100% - 36px);
+  }
+}
+/* Background picture: behind the details. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-bgimg .pc-body {
+  background: var(--pc-bg-image) center / cover no-repeat;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: calc(var(--pc-radius, 12px) / 2);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-bgimg.pc-layout-row .pc-body {
+  margin-top: 0;
+}
+
+/* ---------- Lines: each sits in the order the design gives; the gap spaces them ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on :is(.pc-brand, .ptag, .pname, .punit, .prating, .price, .pswatches, .plow) {
+  margin: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap {
+  margin: 0;
+  padding-top: 4px;
+  align-self: stretch;
+  justify-self: auto;
+  grid-area: auto;
+  min-width: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-body > .addWrap:last-child {
+  margin-top: auto;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-brand {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--st-muted);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .punit {
+  font-size: 11.5px;
+  color: var(--st-muted);
+}
+
+/* ---------- Name: font, case, lines, size ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pname {
+  min-height: 0;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namelines-1 .pname {
+  -webkit-line-clamp: 1;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namesize-s .pname {
+  font-size: 12.5px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namesize-l .pname {
+  font-size: 16.5px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namefont-heading .pname {
+  font-family: var(--font-heading, inherit);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namefont-body .pname {
+  font-family: var(--font-body, inherit);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-namecase-caps .pname {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ---------- Name and price on one row ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-np {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-np .pname {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The price may shrink so the name always keeps room: MRP and discount wrap under the price inside its box. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-np .price {
+  flex: 0 1 auto;
+  max-width: 60%;
+  min-width: 0;
+  justify-content: flex-end;
+  text-align: right;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-np .price .pc-now {
+  white-space: nowrap;
+}
+
+/* ---------- Rating: stars, number, count ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .prating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-stars {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 1px;
+  background: linear-gradient(90deg, #f59e0b var(--pc-rate, 0%), color-mix(in srgb, var(--text) 22%, transparent) var(--pc-rate, 0%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* A section with "Show rating" off still hides it (and "Show badges" off its badges), whatever the design. */
+.st-root.eng-root .productGrid.no-rating .product.pc-on.pc-on.pc-on .prating,
+.st-root.eng-root .productGrid.no-badges .product.pc-on.pc-on.pc-on :is(.badges, .plow) {
+  display: none;
+}
+
+/* ---------- Price: size, colour, MRP, discount ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .price .pc-now {
+  font-size: 15px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-pricesize-s .price .pc-now {
+  font-size: 13px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-pricesize-l .price .pc-now {
+  font-size: 19px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-pricecolor-accent .price .pc-now {
+  color: var(--primary);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .price del {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--st-muted);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-disc {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-disc-pill .pc-disc {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ---------- Badges: shape, position, icon, colours ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .badges {
+  left: 8px;
+  right: auto;
+  top: 8px;
+  align-items: flex-start;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badgepos-top-right .pimg .badges {
+  left: auto;
+  right: 8px;
+  align-items: flex-end;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg em {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.3px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badgecol-accent .pimg em {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badgecol-button .pimg em {
+  background: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pc-badge-icon {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+/* Ribbon: a flag from the photo's edge with a notched tail. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-ribbon .pimg .badges {
+  left: 0;
+  top: 10px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-ribbon .pimg em {
+  border-radius: 0;
+  padding: 5px 13px 5px 9px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 50%, 100% 100%, 0 100%);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-ribbon.pc-badgepos-top-right .pimg .badges {
+  left: auto;
+  right: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-ribbon.pc-badgepos-top-right .pimg em {
+  padding: 5px 9px 5px 13px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 7px 50%);
+}
+/* Corner: flush in the photo's corner. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-corner .pimg .badges {
+  left: 0;
+  top: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-corner .pimg em {
+  border-radius: 0 0 10px 0;
+  padding: 6px 10px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-corner.pc-badgepos-top-right .pimg .badges {
+  left: auto;
+  right: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-badge-corner.pc-badgepos-top-right .pimg em {
+  border-radius: 0 0 0 10px;
+}
+
+/* ---------- Photo: shape, fit, padding, radius, background ---------- */
+/* Replaces the presets' photo box (Quick's tinted box and 6% image padding, the section's card-minimal and ratio-*). */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  padding: var(--pc-img-padding, 0px);
+  border-radius: var(--pc-img-radius, 0px);
+  background: transparent;
+  overflow: hidden;
+  grid-area: auto;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-imgbg .pimg {
+  background: var(--pc-img-bg);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-portrait .pimg {
+  aspect-ratio: 3 / 4;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-landscape .pimg {
+  aspect-ratio: 4 / 3;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-natural .pimg {
+  aspect-ratio: auto;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg :is(.main, .pc-more, .alt) {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  object-fit: cover;
+  border-radius: max(0px, calc(var(--pc-img-radius, 0px) - var(--pc-img-padding, 0px)));
+  transform: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-fit-contain .pimg :is(.main, .pc-more, .alt) {
+  object-fit: contain;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-natural .pimg :is(.main, .pc-more) {
+  height: auto;
+}
+/* The hover photo covers the photo inside the padding; pointer events pass through to the swipe track below it. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .alt {
+  pointer-events: none;
+  position: absolute;
+  top: var(--pc-img-padding, 0px);
+  left: var(--pc-img-padding, 0px);
+  width: calc(100% - 2 * var(--pc-img-padding, 0px));
+  height: calc(100% - 2 * var(--pc-img-padding, 0px));
+  opacity: 0;
+}
+
+/* ---------- Photo hover: none, zoom, second photo (devices with a mouse; touch screens never see it) ---------- */
+@media (hover: hover) {
+  .st-root.eng-root .product.pc-on.pc-on.pc-on:hover .pimg img {
+    transform: none;
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-imghover-zoom:hover .pimg :is(.main, .pc-more) {
+    transform: scale(1.06);
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.hasAlt:hover .pimg .alt {
+    opacity: 1;
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.hasAlt:hover .pimg :is(.main, .pc-track) {
+    opacity: 0;
+  }
+  /* Swiped past the first photo: the photo in view stays. */
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.hasAlt:hover .pimg.pc-slid .alt {
+    opacity: 0;
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.hasAlt:hover .pimg.pc-slid :is(.main, .pc-track) {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-imghover-zoom:hover .pimg :is(.main, .pc-more) {
+    transform: none;
+  }
+}
+
+/* ---------- Swipe between photos: scroll-snap track and dots ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  transition: opacity 0.35s;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-track::-webkit-scrollbar {
+  display: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-track > img {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-natural .pimg .pc-track {
+  height: auto;
+  align-items: center;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--pc-img-padding, 0px) + 8px);
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  pointer-events: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  transition: width 0.2s, background 0.2s;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-dots i.on {
+  width: 14px;
+  background: #fff;
+}
+/* Clear of a button on the photo's corner and of the "Out of stock" label. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on:is(.pc-btn-pill_on_photo, .pc-btn-icon) .pimg .pc-dots {
+  justify-content: flex-start;
+  left: calc(var(--pc-img-padding, 0px) + 10px);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg.pc-has-out .pc-dots {
+  bottom: calc(var(--pc-img-padding, 0px) + 34px);
+}
+
+/* ---------- Placeholder (no photo): initial (today's), store logo, icon ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-shape-natural .pimg .ph {
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .ph {
+  border-radius: max(0px, calc(var(--pc-img-radius, 0px) - var(--pc-img-padding, 0px)));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-imgbg .pimg .ph {
+  background: transparent;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-ph-logo img {
+  width: 56%;
+  height: 56%;
+  padding: 0;
+  object-fit: contain;
+  transform: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .pc-ph-icon svg {
+  width: 34%;
+  height: 34%;
+  opacity: 0.45;
+}
+
+/* ---------- Wishlist: off (not drawn), top-left or top-right, plain or a circle ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .fav {
+  top: calc(var(--pc-img-padding, 0px) + 8px);
+  right: calc(var(--pc-img-padding, 0px) + 8px);
+  left: auto;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--st-card) 90%, transparent));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-wish-top-left .pimg .fav {
+  left: calc(var(--pc-img-padding, 0px) + 8px);
+  right: auto;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-wishbg-circle .pimg .fav {
+  background: var(--st-card);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.28);
+  filter: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .fav.on {
+  color: #e11d48;
+}
+/* Badge and heart in the same corner: the heart keeps the corner and the badge sits below it. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-wish-top-left.pc-badgepos-top-left .pimg .badges,
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-wish-top-right.pc-badgepos-top-right .pimg .badges {
+  top: calc(var(--pc-img-padding, 0px) + 48px);
+}
+
+/* ---------- Buttons: full, on the photo (pill, icon), full + icon; filled or outline; rounded or pill ---------- */
+/* Replaces the presets' add button (Quick's narrow ADD on the photo, the outline button that fills on hover). */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .addBtn {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px solid var(--c-btn, var(--primary));
+  border-radius: var(--btn-radius, 8px);
+  background: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .addBtn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--c-btn, var(--primary)) 86%, #000);
+  border-color: color-mix(in srgb, var(--c-btn, var(--primary)) 86%, #000);
+  color: var(--c-btn-text, var(--on-primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .addBtn svg {
+  display: block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-outline .addWrap .addBtn {
+  background: transparent;
+  color: var(--c-btn, var(--primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-outline .addWrap .addBtn:not(:disabled):hover {
+  background: var(--c-btn, var(--primary));
+  border-color: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .addBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  background: transparent;
+  border-color: var(--st-line);
+  color: var(--st-muted);
+}
+/* The − 1 + stepper once the product is in the cart. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .stepper {
+  height: 38px;
+  min-width: 0;
+  border: 1.5px solid var(--c-btn, var(--primary));
+  border-radius: var(--btn-radius, 8px);
+  background: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+  box-shadow: none;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap .stepper button {
+  width: 36px;
+  height: 100%;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-outline .addWrap .stepper {
+  background: transparent;
+  color: var(--c-btn, var(--primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-pill .addWrap :is(.addBtn, .stepper) {
+  border-radius: 999px;
+}
+/* Units already in the cart when the button stays a button (after_add: button, or a product with options). */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addBtn .pc-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--c-btn-text, var(--on-primary));
+  color: var(--c-btn, var(--primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-outline .addBtn .pc-count,
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addBtn.pc-ctl-side .pc-count {
+  background: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addBtn:is(.pc-ctl-icon, .pc-ctl-side) {
+  overflow: visible;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addBtn:is(.pc-ctl-icon, .pc-ctl-side) .pc-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+/* In the details: the full button, and for full + icon the icon beside it (outline, doing the other action). */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow > :first-child {
+  flex: 1 1 auto;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow > .pc-ctl-side {
+  flex: 0 0 38px;
+  width: 38px;
+  padding: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow > .addBtn.pc-ctl-side:not(:disabled) {
+  background: transparent;
+  color: var(--c-btn, var(--primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow > .addBtn.pc-ctl-side:not(:disabled):hover {
+  background: var(--c-btn, var(--primary));
+  color: var(--c-btn-text, var(--on-primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap.pc-btnrow > .stepper.pc-ctl-side {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 96px;
+}
+/* On the photo's corner: a small pill (ADD / BUY) or a round icon; a stepper there stays compact. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto {
+  position: absolute;
+  right: calc(var(--pc-img-padding, 0px) + 8px);
+  bottom: calc(var(--pc-img-padding, 0px) + 8px);
+  z-index: 3;
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto :is(.addBtn, .stepper) {
+  height: 32px;
+  box-shadow: 0 3px 10px -4px rgba(15, 23, 42, 0.4);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto .addBtn.pc-ctl-pill {
+  width: auto;
+  min-width: 60px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto .addBtn.pc-ctl-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto .stepper {
+  min-width: 84px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto .stepper button {
+  width: 28px;
+}
+/* Outline and disabled buttons on a photo keep the card's paper behind them so they stay readable. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-outline .pimg .addWrap.pc-onphoto :is(.addBtn, .stepper),
+.st-root.eng-root .product.pc-on.pc-on.pc-on .pimg .addWrap.pc-onphoto .addBtn:disabled {
+  background: var(--st-card);
+}
+/* Reveal on hover: hidden until the card is hovered or holds keyboard focus, only on devices with a mouse, so touch
+   screens (hover: none) always show it; a stepper (already in the cart) always shows. */
+@media (hover: hover) {
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-reveal-hover .addWrap:not(.pc-hold) {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-reveal-hover:hover .addWrap,
+  .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-btn-reveal-hover:focus-within .addWrap {
+    opacity: 1;
+  }
+}
+
+/* ---------- Out of stock: label (today's), faded (no button), sold-out button ---------- */
+/* Label is today's look, and today's tile fades the photo of an out-of-stock product (inline opacity .45 on its link). */
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-out.pc-oos-label .pimg > a {
+  opacity: 0.45;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-out.pc-oos-faded {
+  opacity: 0.55;
+}

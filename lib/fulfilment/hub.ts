@@ -54,12 +54,14 @@ const UNPAID = `('unpaid', 'pending', 'partial', 'partially_paid', 'failed')`;
 function needsPredicate(key: NeedsAction, sla: string): string {
   switch (key) {
     case 'to_confirm':
-      return `(h.delivery_status = 'new' AND h.source_type <> 'invoice' AND h.payment_status IN ('paid', 'cod'))`;
+      return `(h.delivery_status = 'new' AND h.source_type <> 'invoice' AND h.payment_status IN ('paid', 'cod', 'khata'))`;
     case 'payment_pending':
-      return `(h.source_type <> 'invoice' AND h.payment_status IN ${UNPAID} AND h.cod_amount = 0
+      // 'khata_pending': a khata store order waiting for the business to approve it.
+      return `(h.source_type <> 'invoice'
+               AND ((h.payment_status IN ${UNPAID} AND h.cod_amount = 0) OR h.payment_status = 'khata_pending')
                AND h.delivery_status NOT IN ('cancelled', 'returned', 'delivered'))`;
     case 'to_pack':
-      return `(h.delivery_status = 'confirmed' AND h.payment_status IN ('paid', 'cod'))`;
+      return `(h.delivery_status = 'confirmed' AND h.payment_status IN ('paid', 'cod', 'khata'))`;
     case 'to_dispatch':
       return `(h.delivery_status = 'packed')`;
     case 'delivery_failed':

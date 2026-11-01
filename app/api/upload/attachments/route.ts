@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const businessId = formData.get('business_id') as string;
+    const access = await requireTenantPermission(request, formData.get('business_id'), 'invoices', 'update');
+    if (!access.ok) return access.response;
+    const businessId = access.businessId;
     const documentType = formData.get('document_type') as string;
     const files = formData.getAll('files') as File[];
 

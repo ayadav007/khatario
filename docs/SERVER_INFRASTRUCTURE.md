@@ -164,6 +164,7 @@ npm run cap:android:production:install   # only after https://khatario.com serve
 | Redis | Shared process; production uses logical DB 1 so BullMQ queues do not mix |
 | OCR | Optional `:4000` — not running as of 2026-09-26; camera extract uses Google Vision + Groq |
 | Todo reminders | PM2 `todo-reminder-worker` (`pm2 start npm --name todo-reminder-worker -- run worker:todo`, then `pm2 save`). Delivers BullMQ jobs at the exact time and sweeps the DB every 30s for anything due that the queue missed. Without it no todo reminder is ever delivered. Production clone: set `PM2_WORKER_NAME` to a separate name |
+| Push notifications (FCM) | The same `todo-reminder-worker` process runs the push dispatcher (`lib/push/dispatch-loop.ts`: LISTEN on `push_jobs`, 10 s poll). It needs `FIREBASE_SERVICE_ACCOUNT_JSON` (raw or base64 service-account JSON) or `GOOGLE_APPLICATION_CREDENTIALS` in `.env.production`, then `pm2 restart todo-reminder-worker --update-env`. Without a credential every job is marked `failed: fcm_not_configured` and the in-app bell keeps working. Set `PUSH_DISPATCH_DISABLED=1` to turn the loop off. Firebase Console steps: `docs/qa/notification-audit/09-firebase-setup.md` |
 | WhatsApp workers | Tenant Baileys inbox — see `docs/WHATSAPP_INTEGRATION.md`. Not in PM2 yet |
 | Platform Meta Cloud API | Save credentials in `/admin` → WhatsApp templates (encrypted in DB). Tenant Cloud API: Settings → WhatsApp. `META_WA_*` env is optional fallback only |
 | Razorpay | Add `PLATFORM_RAZORPAY_*` to the **production** env; webhook `https://khatario.com/api/webhooks/platform-billing/razorpay` |
@@ -188,8 +189,17 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
 0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
 30 */3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron-staging.log 2>&1
+*/30 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/return-refunds >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron-staging.log 2>&1
+*/5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron-staging.log 2>&1
+*/15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron-staging.log 2>&1
+*/10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron-staging.log 2>&1
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron-staging.log 2>&1
+20 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron-staging.log 2>&1
+*/5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron-staging.log 2>&1
+30 5 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/standing-orders >> /var/log/khatario-cron-staging.log 2>&1
+0 4 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/khata-statements >> /var/log/khatario-cron-staging.log 2>&1
+*/2 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/dispatch-push >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
@@ -199,17 +209,57 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
 0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
 30 */3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron.log 2>&1
+*/30 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/return-refunds >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron.log 2>&1
+*/5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-followups >> /var/log/khatario-cron.log 2>&1
+*/15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/abandoned-carts >> /var/log/khatario-cron.log 2>&1
+*/10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-lead-sources >> /var/log/khatario-cron.log 2>&1
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron.log 2>&1
+25 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-low-stock >> /var/log/khatario-cron.log 2>&1
+*/5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/supplier-hub-whatsapp >> /var/log/khatario-cron.log 2>&1
+35 5 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/standing-orders >> /var/log/khatario-cron.log 2>&1
+5 4 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/khata-statements >> /var/log/khatario-cron.log 2>&1
+*/2 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/dispatch-push >> /var/log/khatario-cron.log 2>&1
 ```
 
+`/api/cron/check-low-stock` drives the Supplier Hub reorder loop. It alerts each supplier when a connected buyer who shares stock has an item at or below its reorder level, and builds or tops up one suggested order per buyer and supplier. Stock changes also queue the alert part a few seconds after they are saved; suggested orders are built only here, and this run also catches any alert the queue missed. An item already alerted or already on an open order is skipped, so repeated runs never notify twice. Without this entry, suggested orders are only built when a supplier opens Buyers low on stock.
+
+`/api/cron/standing-orders` turns each running Supplier Hub standing order due today (Indian time) into one confirmed order for the supplier to bill. It runs once a day before shops open; a second run the same day creates nothing. The hourly `check-low-stock` job also retries GST registry lookups for directory listings that are not verified yet.
+
+`/api/cron/supplier-hub-whatsapp` sends Supplier Hub updates (new order, order to confirm, bill, dispatch, connection request) from the platform WhatsApp number. Each update is written to an outbox with the change and normally sent a few seconds after it is saved; this job sends anything a restart left behind. Nothing goes out until the `khatario_supplier_hub_update` template (seeded as a draft by migration 424, event `supplier_hub_update`) is submitted and approved in `/admin` → WhatsApp templates. A business can switch the updates off in Settings → Suppliers directory.
+
 `/api/cron/whatsapp-auto-resolve` keeps the WhatsApp inbox tidy: chats owned by a removed or deactivated agent go back to Requesting, and chats an agent intervened in are resolved (handed back to the bot) once the customer has been silent for 24 hours. Businesses can switch auto-resolve off in Settings > WhatsApp > Inbox. Both steps only touch chats that still qualify, so repeated runs are safe.
+
+`/api/cron/whatsapp-followups` sends the in-app and push reminder when a Connect follow-up ("Remind me" on a chat) falls due. Each reminder is claimed before it is sent, so it notifies once; a reminder set to cancel on reply is dropped instead if the customer wrote in after it was set. The same run rewrites the AI lead summary of every 1:1 chat that has been quiet for 10 minutes since its last message (migration 446, `whatsapp_conversations.summary_due_at`), up to 25 chats per run; each chat is claimed first, so overlapping runs never summarise it twice.
+
+`/api/cron/whatsapp-lead-sources` pulls new IndiaMART buy-leads for every business that connected its CRM key (Connect → Lead sources). IndiaMART allows one pull per key every 5 minutes, so the job skips any business pulled in the last 5 minutes; each lead is recorded once, so overlapping runs never import twice. The public short links `/w/<code>` (tracked WhatsApp links and QR codes) and `/api/webhooks/leads/<token>` (inbound lead webhook) need no login.
 
 `/api/cron/order-dispatch-alerts` WhatsApps the owner when paid orders have waited longer than the dispatch time set on the Orders page (only for businesses that switched the alert on). Each business gets at most one alert every 20 hours, so the hourly schedule is safe.
 
 `/api/cron/stuck-parcels` tells the buyer once when a shipped parcel has not moved for the shop's "delay notice" days (Orders & delivery > Buyer updates, default 3, 0 = off). Each parcel is claimed before the message goes, so repeated runs never message twice.
 
+`/api/cron/return-refunds` confirms return refunds still on their way to the customer's original payment. Attempts pending for over 10 minutes are checked with the gateway (Razorpay by refund id, Easebuzz by our refund id); a Razorpay attempt that never got an answer is sent again with the same idempotency key, so the gateway refunds once. A processed refund is posted against the credit note once, so repeated runs are safe; the Razorpay refund webhook usually confirms first.
+
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
+
+**Studio 2 theme media.** Photos, animated GIFs (stored as animated webp) and slideshow videos (MP4/WebM, up to 10 MB each, kept as uploaded) are stored in `storage/store-theme` inside the app folder (gitignored; override with `STORE_THEME_MEDIA_DIR`) and served by `/media/store-theme/…` with byte ranges. Keep that folder across deploys and include it in backups. Uploads go through `/api/settings/online-store/media`, which fits under the 12M body limit above.
+
+**Online store shopping features (migrations 448/449).** Review photos are stored in `storage/store-reviews` inside the app folder (gitignored; override with `STORE_REVIEW_MEDIA_DIR`). Keep that folder across deploys and include it in backups: shoppers' photos cannot be re-created. The photo upload route needs its own body limit in each vhost, next to `location /` and with the same proxy lines (production upstream shown; staging uses its own `proxy_pass`):
+
+```nginx
+location ~ ^/api/public/store/[^/]+/reviews/photos$ {
+    client_max_body_size 3m;
+    proxy_pass http://khatario_prod;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+}
+```
+
+Migrations 448 and 449 must run in the same deploy as the code: the product detail route and checkout read and write their columns. `scripts/deploy-vps.sh` runs `db:migrate:pending`; never hot-reload this code without it. `/api/cron/abandoned-carts` (crontab above) sends cart reminders only for businesses that switched them on (default off); a business that sends through the Cloud API also needs an approved Meta template for the `store_cart_reminder` event before WhatsApp reminders can go out from its number (push reminders do not need it).
 
 `/api/cron/owner-daily-summary` sends the owner's evening summary (Settings > WhatsApp > Owner updates) from the business's own WhatsApp number once the owner's chosen time has passed in Indian time, whatever the server time zone. Each business gets at most one per day (`owner_whatsapp_links.last_summary_sent_on`), so the 15-minute schedule is safe to repeat.
 
@@ -280,6 +330,28 @@ Tenants using their own Meta app should subscribe that app to:
 In Meta App Dashboard subscribe to **`message_template_status_update`**. After `git pull` + `bash scripts/deploy-vps.sh`, migrations `290` and `291` run with other pending migrations.
 
 OTP still falls back to Baileys when `PLATFORM_WHATSAPP_BUSINESS_ID` is set and no **approved** Cloud API template exists for `signup_otp` / `demo_booking_otp`. Email remains the primary path for subscription notices.
+
+### Migration 447 (Connect leads)
+
+`447_connect_leads.sql` creates the `leads` table, backfills one lead per pipeline chat, and adds AFTER INSERT/UPDATE triggers on `invoices` and `sales_orders` (`leads_auto_won`: a final sales invoice or confirmed order wins the customer's open leads; quotations, estimates, proformas, challans and credit/debit notes do not; errors are swallowed so a document never fails). Run it in a quiet window: a re-apply on the test DB once hit a transient deadlock with another session. Apply to staging only with owner approval.
+
+**Deploy order.** `scripts/deploy-vps.sh` runs `npm run db:migrate:pending` before `npm run build` and `pm2 reload`, so for the length of the build the old code runs against the migrated database. Approving 447 therefore means approving the push and deploy of everything on `main` up to it (`main` is well ahead of `origin`). During that window the old code still writes deals and sources to `whatsapp_conversations` and opens no leads, so chats put on the pipeline then would be missing from the board. After `pm2 reload`, in the same quiet window, run the file once more: `node scripts/run-migration.js database/migrations/447_connect_leads.sql`. It is idempotent; the second run only adds leads for pipeline chats that still have none and changes nothing else. It cannot recover stage moves or deal edits the old code made in that window on chats that already had a lead (those wrote only chat columns), so keep the window short and tell staff not to edit the pipeline during the deploy.
+
+**Rollback.** Rolling the code back to before 447 works (the old pipeline columns on `whatsapp_conversations` are kept one release and the new tables and columns are ignored), but every pipeline change made while the lead code ran (stage moves, deals, new and closed leads, manual and imported leads) lives only on `leads` and is lost to the old board. Also, the old follow-up reminder cron joins reminders to chats with an INNER JOIN, so reminders on chat-less leads would be marked notified but never sent; tell the owner which pending reminders have `conversation_id IS NULL` (they are lost to the old code) before rolling back. Leave the `leads_auto_won` triggers in place or drop them; they only write to `leads`.
+
+### Message ids per business (migration 451, two deploys)
+
+When two Khatario businesses message each other (Supplier Hub), WhatsApp gives the message one id and it is stored in both inboxes. The old global `UNIQUE (message_id)` on `whatsapp_conversation_messages` let the sender's save overwrite the receiver's row. The fix ships in two deploys because migrations run before the build (see Migration 447 above), so the old code keeps saving messages for a few minutes against the new schema:
+
+1. **Phase 1 (`451_whatsapp_message_id_per_business.sql`, with commit 8772a78b):** adds `UNIQUE (business_id, message_id)` and keeps the old constraint, which the old code's `ON CONFLICT (message_id)` still needs. The new code inserts with `ON CONFLICT DO NOTHING` and updates only its own business's row, so the overwrite stops on this deploy; until phase 2 the second business's copy of a cross-business message is skipped. The index build blocks writes to `whatsapp_conversation_messages` while it runs: quiet window.
+2. **Phase 2 (the next deploy, once phase-1 code is live everywhere):** add a migration with exactly this, then deploy:
+
+   ```sql
+   ALTER TABLE whatsapp_conversation_messages
+     DROP CONSTRAINT IF EXISTS whatsapp_conversation_messages_message_id_key;
+   ```
+
+   After it, both businesses keep their own copy. Do not add this migration in the same deploy as 451.
 
 ### Platform admin PWA and push (staging and production)
 

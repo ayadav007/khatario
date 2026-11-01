@@ -133,7 +133,7 @@ export async function fetchStockHealth(businessId: string): Promise<StockHealthC
   const row = await db.queryOne<StockHealthCounts>(
     `
     WITH sold_30d AS (
-      SELECT ii.item_id, SUM(ii.quantity)::numeric AS qty
+      SELECT ii.item_id, SUM(ii.quantity * COALESCE(ii.unit_factor, 1))::numeric AS qty
       FROM invoice_items ii
       INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
       WHERE inv.business_id = $1
@@ -195,7 +195,7 @@ export async function fetchReorderSuggestions(
   const countRow = await db.queryOne<{ c: number }>(
     `
     WITH sold AS (
-      SELECT ii.item_id, SUM(ii.quantity)::numeric AS qty_30d
+      SELECT ii.item_id, SUM(ii.quantity * COALESCE(ii.unit_factor, 1))::numeric AS qty_30d
       FROM invoice_items ii
       INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
       WHERE inv.business_id = $1
@@ -229,7 +229,7 @@ export async function fetchReorderSuggestions(
   const rows = await db.queryRows<ReorderSuggestionRow>(
     `
     WITH sold AS (
-      SELECT ii.item_id, SUM(ii.quantity)::numeric AS qty_30d
+      SELECT ii.item_id, SUM(ii.quantity * COALESCE(ii.unit_factor, 1))::numeric AS qty_30d
       FROM invoice_items ii
       INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
       WHERE inv.business_id = $1
@@ -349,7 +349,7 @@ export async function fetchVelocity(businessId: string): Promise<{
 }> {
   const sold = await db.queryRows<{ item_id: string; name: string; qty: number }>(
     `
-    SELECT ii.item_id, MAX(ii.item_name) AS name, SUM(ii.quantity)::float AS qty
+    SELECT ii.item_id, MAX(ii.item_name) AS name, SUM(ii.quantity * COALESCE(ii.unit_factor, 1))::float AS qty
     FROM invoice_items ii
     INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
     WHERE inv.business_id = $1
@@ -396,7 +396,7 @@ export async function fetchRecentActivity(businessId: string, limit: number): Pr
 
         UNION ALL
 
-        SELECT i.name, 'sale'::text, ii.quantity::float, inv.created_at
+        SELECT i.name, 'sale'::text, (ii.quantity * COALESCE(ii.unit_factor, 1))::float, inv.created_at
         FROM invoice_items ii
         INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
         INNER JOIN items i ON i.id = ii.item_id
@@ -428,7 +428,7 @@ export async function fetchRecentActivity(businessId: string, limit: number): Pr
 
         UNION ALL
 
-        SELECT i.name, 'sale'::text, ii.quantity::float, inv.created_at
+        SELECT i.name, 'sale'::text, (ii.quantity * COALESCE(ii.unit_factor, 1))::float, inv.created_at
         FROM invoice_items ii
         INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.deleted_at IS NULL
         INNER JOIN items i ON i.id = ii.item_id

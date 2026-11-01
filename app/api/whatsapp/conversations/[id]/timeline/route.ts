@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
+import { describeStageEvent } from '@/lib/leads/timeline';
 
 export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
@@ -67,6 +68,10 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: tru
         case 'campaign_triggered':
           description = `Campaign triggered: ${eventData.campaign_name || eventData.campaign_id || 'Unknown'}`;
           icon = 'megaphone';
+          break;
+        case 'stage_changed':
+          description = describeStageEvent(eventData);
+          icon = 'kanban';
           break;
         default:
           description = 'Automation event';

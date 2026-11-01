@@ -1,0 +1,90 @@
+import type { ComponentType } from 'react';
+import type { StoreBusinessContext } from '@/lib/store/resolve-store';
+import type { SectionData } from '@/lib/store/engine/section-data';
+import type { Section, ThemeData } from '@/lib/store/engine/types';
+import { Announcement } from './sections/Announcement';
+import { Header } from './sections/Header';
+import { Footer } from './sections/Footer';
+import { Slideshow } from './sections/Slideshow';
+import { ImageBanner } from './sections/ImageBanner';
+import { ImageWithText } from './sections/ImageWithText';
+import { RichText } from './sections/RichText';
+import { Multicolumn } from './sections/Multicolumn';
+import { Marquee } from './sections/Marquee';
+import { ProductGrid } from './sections/ProductGrid';
+import { CategoryGrid } from './sections/CategoryGrid';
+import { Testimonials } from './sections/Testimonials';
+import { CustomHtml } from './sections/CustomHtml';
+import { MainProduct } from './sections/MainProduct';
+import { RelatedProducts } from './sections/RelatedProducts';
+import { RecentlyViewed } from './sections/RecentlyViewed';
+import { ProductReviews } from './sections/ProductReviews';
+import { CatalogBanner } from './sections/CatalogBanner';
+import { MainCatalog } from './sections/MainCatalog';
+import { Collage } from './sections/Collage';
+import { ShopTheLook } from './sections/ShopTheLook';
+import { ImageGallery } from './sections/ImageGallery';
+import { CollectionList } from './sections/CollectionList';
+import { LogoList } from './sections/LogoList';
+import { Video } from './sections/Video';
+import { Faq } from './sections/Faq';
+import { Newsletter } from './sections/Newsletter';
+import { Countdown } from './sections/Countdown';
+import { Spacer } from './sections/Spacer';
+import { PromoCards } from './sections/PromoCards';
+import { CategoryShelves } from './sections/CategoryShelves';
+
+/** What the page's URL names: the product on `/products/[id]`, the category on the catalog. */
+export interface EngineRoute {
+  productId?: string;
+  categoryId?: string;
+  categoryName?: string;
+}
+
+export interface EngineSectionProps {
+  id: string;
+  section: Section;
+  data?: SectionData;
+  store: StoreBusinessContext;
+  theme: ThemeData;
+  route?: EngineRoute;
+}
+
+/**
+ * Section type to its storefront component. These are server components: they map settings
+ * (and sanitise HTML) on the server and hand plain props to the client Studio components.
+ */
+export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps>> = {
+  announcement: Announcement,
+  header: Header,
+  footer: Footer,
+  slideshow: Slideshow,
+  'image-banner': ImageBanner,
+  'image-with-text': ImageWithText,
+  'rich-text': RichText,
+  multicolumn: Multicolumn,
+  marquee: Marquee,
+  'featured-products': ProductGrid,
+  'product-rail': ProductGrid,
+  'category-grid': CategoryGrid,
+  testimonials: Testimonials,
+  'custom-html': CustomHtml,
+  'main-product': MainProduct,
+  'related-products': RelatedProducts,
+  'recently-viewed': RecentlyViewed,
+  'product-reviews': ProductReviews,
+  'catalog-banner': CatalogBanner,
+  'main-catalog': MainCatalog,
+  collage: Collage,
+  'shop-the-look': ShopTheLook,
+  'image-gallery': ImageGallery,
+  'collection-list': CollectionList,
+  'logo-list': LogoList,
+  video: Video,
+  faq: Faq,
+  newsletter: Newsletter,
+  countdown: Countdown,
+  spacer: Spacer,
+  'promo-cards': PromoCards,
+  'category-shelves': CategoryShelves,
+};

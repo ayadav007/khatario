@@ -20,7 +20,9 @@ import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 import { InvoiceChargeError, persistInvoiceCharges, type InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
-import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { baseQty, resolveSaleUnits, SaleUnitError } from '@/lib/items/item-units';
+import { registrationBranchIds, resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { findWarehouseStateMismatch, warehouseStateMismatchMessage } from '@/lib/gst/warehouse-registration';
 import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
   computeInvoiceTotals,
@@ -45,6 +47,8 @@ export interface CreateInvoiceItemInput {
   item_name: string;
   quantity: number;
   unit?: string;
+  /** Base units in one `unit`. Set by the server from the item's units; read from the input only with `keepUnitFactors`. */
+  unit_factor?: number;
   unit_price: number;
   discount_percent?: number;
   tax_rate?: number;
@@ -102,6 +106,11 @@ export interface CreateInvoiceOptions {
   deviceId?: string | null;
   /** Recurring invoices: a draft is numbered and saved but posts no stock, balance or ledger. */
   allowDraft?: boolean;
+  /**
+   * Lines copied from a saved document (a sales order) keep the factor that document stored,
+   * so a box changed from 12 to 10 since the order still bills the order's box.
+   */
+  keepUnitFactors?: boolean;
 }
 
 export interface CreateInvoiceResult {
@@ -156,13 +165,16 @@ async function allocateBranchInvoiceNumber(
   const issuedNumber = await reserveDocumentNumber(client, branchId, documentType);
   const invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
 
-  const dup = await client.query(
-    `SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL`,
-    [invoiceNumber, branchId, businessId]
+  // Rule 46(b): a number may be used once per GSTIN, so check every branch filing under it.
+  const dup = await client.query<{ branch_id: string }>(
+    `SELECT branch_id FROM invoices WHERE invoice_number = $1 AND branch_id = ANY($2::uuid[]) AND business_id = $3 AND deleted_at IS NULL`,
+    [invoiceNumber, await registrationBranchIds(client, businessId, branchId), businessId]
   );
   if (dup.rows.length > 0) {
     throw new InvoiceCreateServiceError(
-      `Invoice number ${invoiceNumber} already exists for this branch`,
+      dup.rows.some((r) => r.branch_id === branchId)
+        ? `Invoice number ${invoiceNumber} already exists for this branch`
+        : `Invoice number ${invoiceNumber} is already used by another branch on the same GSTIN. Give this branch its own invoice prefix in Settings → Number series.`,
       409,
       'DUPLICATE_INVOICE_NUMBER'
     );
@@ -223,7 +235,7 @@ async function deductGoodsStockForLine(
     | undefined;
   if (!itemData || itemData.item_type === 'service') return;
 
-  const quantity = Number(item.quantity) || 0;
+  const quantity = baseQty(item);
   if (quantity <= 0) return;
 
   if (itemData.is_bundle) {
@@ -418,6 +430,18 @@ export async function createInvoiceInTransaction(
     }
   }
 
+  try {
+    const saleUnits = await resolveSaleUnits(client, business_id, items);
+    saleUnits.forEach((su, i) => {
+      const kept = options.keepUnitFactors ? Number(items[i].unit_factor) : NaN;
+      items[i].unit = (options.keepUnitFactors ? items[i].unit : su.unit) ?? items[i].unit;
+      items[i].unit_factor = kept > 0 ? kept : su.unit_factor;
+    });
+  } catch (e) {
+    if (e instanceof SaleUnitError) throw new InvoiceCreateServiceError(e.message, e.statusCode, e.code);
+    throw e;
+  }
+
   const businessRes = await client.query(
     `SELECT state_code, state, aggregate_turnover_above_5cr AS above, gst_registration_type FROM businesses WHERE id = $1`,
     [business_id]
@@ -432,6 +456,20 @@ export async function createInvoiceInTransaction(
     gst_registration_type?: string | null;
   };
   const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const godownMismatch = await findWarehouseStateMismatch(
+    client,
+    business_id,
+    registration,
+    items.map((it) => it.location_id)
+  );
+  if (godownMismatch) {
+    throw new InvoiceCreateServiceError(
+      warehouseStateMismatchMessage(godownMismatch),
+      400,
+      'WAREHOUSE_STATE_MISMATCH',
+      { warehouse_id: godownMismatch.warehouseId }
+    );
+  }
   const taxPolicy = outwardTaxPolicy({
     scheme: effectiveGstScheme(business.gst_registration_type, registration.gstin),
     documentType: document_type,
@@ -504,6 +542,13 @@ export async function createInvoiceInTransaction(
     document_type
   );
 
+  // A khata customer's bill without a due date is due on their next settlement date.
+  let dueDate: string | null = body.due_date || null;
+  if (!dueDate && body.customer_id && balanceAmount > 0.005) {
+    const { khataDueDateForCustomer } = await import('@/lib/khata/service');
+    dueDate = await khataDueDateForCustomer(business_id, body.customer_id, String(body.invoice_date), client);
+  }
+
   const invoiceRes = await client.query(
     `
     INSERT INTO invoices (
@@ -525,7 +570,7 @@ export async function createInvoiceInTransaction(
       body.customer_id || null,
       invoiceNumber,
       body.invoice_date,
-      body.due_date || null,
+      dueDate,
       status,
       paymentStatus,
       totals.subtotal,
@@ -582,9 +627,9 @@ export async function createInvoiceInTransaction(
         invoice_id, item_id, variant_id, item_name, description, hsn_sac,
         quantity, unit, unit_price, discount_percent, discount_amount,
         tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
-        line_total, sort_order
+        line_total, sort_order, unit_factor
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       `,
       [
         invoiceId,
@@ -606,6 +651,7 @@ export async function createInvoiceInTransaction(
         igst,
         lineTotal,
         i,
+        Number(item.unit_factor) || 1,
       ]
     );
 

@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { SaleUnitSelect } from '@/components/invoices/SaleUnitSelect';
+import { baseQtyLabel, unitFactorOf, useItemUnits, type SaleUnitOption } from '@/lib/invoices/use-item-units';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -16,6 +18,7 @@ import { Customer } from '@/types/database';
 import { useToastContext } from '@/contexts/ToastContext';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { toDateInputValue } from '@/lib/date-input';
+import { priceNote, storedPriceToBillUnit, type ResolvedLinePrice } from '@/lib/invoices/party-price';
 import {
   computeChallanLines,
   EWAY_BILL_THRESHOLD,
@@ -32,6 +35,14 @@ interface ChallanRow {
   unit: string;
   unit_price: number;
   tax_rate: number;
+  /** Rate typed by hand or copied from a saved document: customer pricing never replaces it. */
+  fixed_price?: boolean;
+  /** Where the rate came from and the last rate this customer paid. */
+  price_note?: string;
+  /** Purchase price (pre-GST), for the below-cost warning. */
+  cost_price?: number | null;
+  /** Units the item sells in (own unit first), once loaded. */
+  units?: SaleUnitOption[];
 }
 
 const newRow = (): ChallanRow => ({
@@ -66,10 +77,28 @@ function rowFromSourceLine(line: any): ChallanRow {
     unit: line.unit || 'PCS',
     unit_price: unitPrice,
     tax_rate: Number(line.tax_rate || 0),
+    fixed_price: true,
   };
 }
 
+/** Why returnable goods go out; each keeps the goods on our books while the holder has them. */
+const RETURN_PURPOSES: Array<{ value: string; label: string }> = [
+  { value: 'repair', label: 'Repair or service' },
+  { value: 'job_work', label: 'Job work' },
+  { value: 'approval', label: 'On approval / sale or return' },
+  { value: 'consignment', label: 'Consignment (agent)' },
+  { value: 'exhibition', label: 'Exhibition or display' },
+  { value: 'demo', label: 'Demo' },
+  { value: 'other', label: 'Other' },
+];
+
 const EMPTY_FORM = {
+  challan_kind: 'supply',
+  purpose: '',
+  supplier_id: '',
+  warehouse_id: '',
+  expected_return_date: '',
+  job_work_goods: 'inputs',
   customer_id: '',
   invoice_id: '',
   sales_order_id: '',
@@ -108,6 +137,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const [chargeTax, setChargeTax] = useState(true);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [items, setItems] = useState<ChallanRow[]>([newRow()]);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
+  const returnable = formData.challan_kind === 'returnable';
 
   const { allowed: canCreate, reason } = useAuthorizationGuard({
     resource: 'invoices',
@@ -121,7 +153,22 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     fetchInvoices();
     fetchSalesOrders();
     fetchNumberingAndTax();
+    fetchHolders();
   }, [business?.id, branchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Suppliers (repairers, job workers) and godowns, for returnable challans. */
+  async function fetchHolders() {
+    try {
+      const [s, w] = await Promise.all([
+        fetch(`/api/suppliers?business_id=${business!.id}&limit=500`).then((r) => (r.ok ? r.json() : { suppliers: [] })),
+        fetch(`/api/warehouses?business_id=${business!.id}&user_id=${user?.id}`).then((r) => (r.ok ? r.json() : { warehouses: [] })),
+      ]);
+      setSuppliers((s.suppliers || []).map((x: any) => ({ id: x.id, name: x.name })));
+      setWarehouses((w.warehouses || []).filter((x: any) => x.is_active !== false).map((x: any) => ({ id: x.id, name: x.name })));
+    } catch (error) {
+      console.error('Error loading suppliers and godowns:', error);
+    }
+  }
 
   useEffect(() => {
     if (business?.id && editId) loadExisting(editId);
@@ -203,6 +250,12 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
       }
       const dateOnly = toDateInputValue;
       setFormData({
+        challan_kind: dc.challan_kind || 'supply',
+        purpose: dc.purpose || '',
+        supplier_id: dc.supplier_id || '',
+        warehouse_id: dc.warehouse_id || '',
+        expected_return_date: dateOnly(dc.expected_return_date),
+        job_work_goods: dc.job_work_goods || 'inputs',
         customer_id: dc.customer_id || '',
         invoice_id: dc.invoice_id || '',
         sales_order_id: dc.sales_order_id || '',
@@ -232,6 +285,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
         unit: l.unit || 'PCS',
         unit_price: Number(l.unit_price || 0),
         tax_rate: Number(l.tax_rate || 0),
+        fixed_price: true,
       }));
       setItems(rows.length ? rows : [newRow()]);
     } catch (error) {
@@ -308,6 +362,80 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const removeItem = (id: string) => setItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
   const patchItem = (id: string, patch: Partial<ChallanRow>) =>
     setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  useItemUnits(items, setItems);
+  /** Another of the item's units: the rate scales now and the price lookup settles it. */
+  const changeUnit = (row: ChallanRow, unit: string) => {
+    const from = unitFactorOf(row);
+    const to = row.units?.find((u) => u.unit === unit)?.factor || 1;
+    const k = to / from;
+    patchItem(row.id, {
+      unit,
+      unit_price: Math.round(row.unit_price * k * 100) / 100,
+      cost_price: row.cost_price == null ? row.cost_price : Math.round(row.cost_price * k * 100) / 100,
+      fixed_price: false,
+    });
+  };
+
+  // Customer price, price level and discounts for the customer on the challan date, as on the
+  // invoice. Challans have no discount column, so a discount is taken off the rate.
+  const pricingKey = items
+    .map((r) => (r.item_id ? `${r.id}:${r.item_id}:${r.qty}:${r.unit}:${r.fixed_price ? 1 : 0}` : ''))
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const lines = items.filter((r) => r.item_id);
+    if (lines.length === 0) return;
+    const customerId = formData.customer_id || null;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/pricing/resolve', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: customerId,
+            date: formData.challan_date,
+            lines: lines.map((r) => ({ item_id: r.item_id, qty: r.qty || 1, unit: r.unit || null })),
+          }),
+        });
+        if (!res.ok) return;
+        const resolved: ResolvedLinePrice[] = (await res.json()).lines || [];
+        if (cancelled) return;
+        const byRow = new Map(lines.map((r, k) => [r.id, resolved[k]]));
+        setItems((prev) =>
+          prev.map((r) => {
+            const p = byRow.get(r.id);
+            if (!p || !r.item_id) return r;
+            const note = priceNote({
+              price: r.unit_price,
+              discountPercent: 0,
+              taxPercent: r.tax_rate,
+              priceSource: p.priceSource,
+              levelName: p.levelName,
+              lastSale: p.lastSale,
+              priceUserOverride: r.fixed_price,
+            });
+            let unitPrice = r.unit_price;
+            if (!r.fixed_price && p.price != null) {
+              const exclusive = storedPriceToBillUnit(p.price, p.gstIncluded, r.tax_rate, false);
+              unitPrice = Math.round(exclusive * (1 - (p.discountPercent ?? 0) / 100) * 100) / 100;
+            }
+            if (unitPrice === r.unit_price && note === r.price_note && (p.costPrice ?? null) === (r.cost_price ?? null)) return r;
+            return { ...r, unit_price: unitPrice, price_note: note, cost_price: p.costPrice ?? null };
+          })
+        );
+      } catch (e) {
+        console.warn('[challan] Price lookup failed:', e);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // Lines are read from the render that changed `pricingKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingKey, formData.customer_id, formData.challan_date]);
 
   const posCode = formData.place_of_supply_state_code || supplierStateCode;
   const interState = !!(posCode && supplierStateCode && posCode !== supplierStateCode);
@@ -332,7 +460,20 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
       toast.error('Please fill in challan number and date');
       return;
     }
-    if (!formData.customer_id && !formData.invoice_id && !formData.sales_order_id) {
+    if (returnable) {
+      if (!formData.purpose) {
+        toast.error('Choose why the goods are going out');
+        return;
+      }
+      if (!formData.supplier_id && !formData.customer_id) {
+        toast.error('Select the supplier or customer who will hold the goods');
+        return;
+      }
+      if (warehouses.length > 0 && !formData.warehouse_id) {
+        toast.error('Choose the godown the goods leave from');
+        return;
+      }
+    } else if (!formData.customer_id && !formData.invoice_id && !formData.sales_order_id) {
       toast.error('Select a customer, or link an invoice or sales order');
       return;
     }
@@ -374,8 +515,24 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
         const label = data.deliveryChallan?.challan_number
           ? `Delivery challan ${data.deliveryChallan.challan_number}`
           : 'Delivery challan';
-        toast.success(editId ? `${label} updated` : status === 'draft' ? `${label} saved as draft` : `${label} generated`);
         const id = data.deliveryChallan?.id || editId;
+        if (returnable && status === 'sent' && id) {
+          // Sending a returnable challan takes its goods out of the godown.
+          const sent = await fetch(`/api/delivery-challans/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'sent', business_id: business.id }),
+          });
+          const sentData = await sent.json().catch(() => ({}));
+          if (!sent.ok) {
+            toast.error(`${label} saved as draft. ${sentData.error || 'The goods could not be sent out.'}`);
+          } else {
+            toast.success(`${label} generated; the goods are now with the holder`);
+          }
+          router.push(`/delivery-challans/${id}`);
+          return;
+        }
+        toast.success(editId ? `${label} updated` : status === 'draft' ? `${label} saved as draft` : `${label} generated`);
         router.push(id ? `/delivery-challans/${id}` : '/delivery-challans');
       } else {
         toast.error(data.error || 'Failed to save delivery challan');
@@ -429,6 +586,102 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Goods</label>
+              <select
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                value={formData.challan_kind}
+                onChange={(e) => setFormData({ ...formData, challan_kind: e.target.value })}
+              >
+                <option value="supply">Going for sale (no stock change)</option>
+                <option value="returnable">Going out and coming back (stays on our books)</option>
+                <option value="non_returnable">Not coming back</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {returnable
+                  ? 'When sent, the goods leave the godown and show as held by the party until they come back.'
+                  : 'Stock moves with the invoice, not with this challan.'}
+              </p>
+            </div>
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose *</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.purpose}
+                  onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                >
+                  <option value="">Select purpose</option>
+                  {RETURN_PURPOSES.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Held by supplier (repairer, job worker)</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.supplier_id}
+                  onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                >
+                  <option value="">None (a customer holds them)</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && warehouses.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Leaves from godown *</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.warehouse_id}
+                  onChange={(e) => setFormData({ ...formData, warehouse_id: e.target.value })}
+                >
+                  <option value="">Select godown</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {returnable && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expected back by</label>
+                <Input
+                  type="date"
+                  value={formData.expected_return_date}
+                  onChange={(e) => setFormData({ ...formData, expected_return_date: e.target.value })}
+                />
+                {formData.purpose === 'job_work' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Inputs must come back from the job worker within 1 year, capital goods within 3 (GST s.143).
+                  </p>
+                )}
+              </div>
+            )}
+            {returnable && formData.purpose === 'job_work' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Goods sent are</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={formData.job_work_goods}
+                  onChange={(e) => setFormData({ ...formData, job_work_goods: e.target.value })}
+                >
+                  <option value="inputs">Inputs (back within 1 year)</option>
+                  <option value="capital_goods">Capital goods (back within 3 years)</option>
+                </select>
+              </div>
+            )}
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Challan Number *</label>
               <Input
                 type="text"
@@ -457,7 +710,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {returnable && formData.supplier_id ? 'Customer' : 'Customer *'}
+              </label>
               <CustomerSearchSelect customers={customers} value={formData.customer_id} onSelect={applyCustomer} />
             </div>
             <div>
@@ -665,8 +920,10 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                               item_name: selected.name,
                               hsn_sac: selected.hsn_sac || '',
                               unit: selected.unit || 'PCS',
+                              units: undefined,
                               unit_price: Number(selected.selling_price ?? 0),
                               tax_rate: Number(selected.tax_rate ?? 0),
+                              fixed_price: false,
                               ...(row.qty > 0 ? {} : { qty: 1 }),
                             });
                           }}
@@ -689,11 +946,18 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                         />
                       </td>
                       <td className="px-2 py-2" data-label="Unit">
-                        <Input
-                          type="text"
-                          value={row.unit}
-                          onChange={(e) => patchItem(row.id, { unit: e.target.value })}
-                        />
+                        {row.units && row.units.length > 1 ? (
+                          <SaleUnitSelect unit={row.unit} units={row.units} className="h-9 w-full text-sm" onChange={(unit) => changeUnit(row, unit)} />
+                        ) : (
+                          <Input
+                            type="text"
+                            value={row.unit}
+                            onChange={(e) => patchItem(row.id, { unit: e.target.value })}
+                          />
+                        )}
+                        {baseQtyLabel({ ...row, quantity: row.qty }) ? (
+                          <p className="mt-0.5 text-[11px] text-gray-500">{baseQtyLabel({ ...row, quantity: row.qty })}</p>
+                        ) : null}
                       </td>
                       <td className="px-2 py-2" data-label="Rate">
                         <Input
@@ -701,8 +965,12 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           min={0}
                           step="0.01"
                           value={row.unit_price}
-                          onChange={(e) => patchItem(row.id, { unit_price: Number(e.target.value) })}
+                          onChange={(e) => patchItem(row.id, { unit_price: Number(e.target.value), fixed_price: true })}
                         />
+                        {row.cost_price != null && row.cost_price > 0 && row.unit_price > 0 && row.unit_price < row.cost_price - 0.005 ? (
+                          <p className="mt-0.5 text-right text-[10px] font-semibold text-red-600">Below purchase price</p>
+                        ) : null}
+                        {row.price_note ? <p className="mt-0.5 text-right text-[10px] leading-tight text-text-muted">{row.price_note}</p> : null}
                       </td>
                       {chargeTax && (
                         <td className="px-2 py-2" data-label="GST %">

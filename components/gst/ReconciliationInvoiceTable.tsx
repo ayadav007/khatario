@@ -8,6 +8,7 @@ import type {
   ReconciliationExceptionType,
 } from '@/components/gst/gstr13b-reconciliation-types';
 import { voucherMismatchReason } from '@/lib/gst/reconciliation-ui-helpers';
+import { csvSafeText } from '@/lib/csv-safe';
 
 function fmtInr(n: number) {
   return `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -40,7 +41,7 @@ const EXCEPTION_FILTER_OPTIONS: { value: '' | ReconciliationExceptionType; label
 ];
 
 function csvEsc(cell: string | number) {
-  const s = String(cell);
+  const s = csvSafeText(String(cell));
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

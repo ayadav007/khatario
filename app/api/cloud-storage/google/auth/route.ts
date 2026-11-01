@@ -1,10 +1,10 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { decrypt } from '@/lib/cloud-storage';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { decrypt, GOOGLE_DRIVE_OAUTH_STATE_COOKIE } from '@/lib/cloud-storage';
 
 export const dynamic = 'force-dynamic';
-
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/cloud-storage/google/auth
@@ -13,7 +13,7 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    const tenant = await requireTenantPermission(request, searchParams.get('business_id'), 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
@@ -62,15 +62,25 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.append('scope', scopes.join(' '));
     authUrl.searchParams.append('access_type', 'offline'); // Get refresh token
     authUrl.searchParams.append('prompt', 'consent'); // Force consent to get refresh token
-    authUrl.searchParams.append('state', businessId); // Pass business_id in state
+    // State is a one-time nonce bound to this browser; the callback takes the business from
+    // the session, never from state, so another tenant cannot link their Drive here.
+    const state = crypto.randomBytes(24).toString('base64url');
+    authUrl.searchParams.append('state', state);
 
-    // Redirect to Google OAuth
-    return NextResponse.redirect(authUrl.toString());
+    const response = NextResponse.redirect(authUrl.toString());
+    response.cookies.set(GOOGLE_DRIVE_OAUTH_STATE_COOKIE, `${businessId}.${state}`, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/cloud-storage/google/callback',
+      maxAge: 600,
+    });
+    return response;
 
   } catch (error: any) {
     console.error('Error initiating Google OAuth:', error);
     return NextResponse.json(
-      { error: 'Failed to initiate Google Drive authentication', details: error.message },
+      { error: 'Failed to initiate Google Drive authentication' },
       { status: 500 }
     );
   }

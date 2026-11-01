@@ -10,7 +10,7 @@ url: /
 
 ## How does Khatario help me collect payments?
 
-Khatario shows who owes you money before you open the register: customer balances, receivables ageing (how long each amount has been due) and customer statements. You can send payment reminders on WhatsApp, one at a time or in bulk, and automatic reminders can go out on a schedule on plans that include them.
+Khatario shows who owes you money before you open the register: customer balances, receivables ageing (how long each amount has been due) and customer statements. You can send payment reminders on WhatsApp, one at a time or in bulk, From the Starter plan upwards, automatic reminders go out before the due date and again while an invoice stays overdue, from your QR-linked WhatsApp number; Connect is not needed for this.
 
 ## Can customers pay online?
 

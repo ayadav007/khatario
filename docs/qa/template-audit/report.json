@@ -2,10 +2,7 @@
   {
     "id": "tax_invoice__gst_standard",
     "templateId": "gst_standard",
-    "missing": [
-      "item.taxable_value",
-      "item.tax_amount"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -42,6 +39,8 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
+      "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
       "invoice.custom_field (Site Code)",
@@ -65,6 +64,26 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_tax_amount (item.tax_amount)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -76,9 +95,7 @@
   {
     "id": "tax_invoice__modern",
     "templateId": "modern",
-    "missing": [
-      "item.taxable_value"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -115,6 +132,7 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
       "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
@@ -139,6 +157,25 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -150,9 +187,7 @@
   {
     "id": "tax_invoice__classic",
     "templateId": "classic",
-    "missing": [
-      "item.taxable_value"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -189,6 +224,7 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
       "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
@@ -213,6 +249,25 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -224,9 +279,7 @@
   {
     "id": "tax_invoice__elegant",
     "templateId": "elegant",
-    "missing": [
-      "item.taxable_value"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -263,6 +316,7 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
       "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
@@ -287,6 +341,25 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -298,9 +371,7 @@
   {
     "id": "tax_invoice__minimal",
     "templateId": "minimal",
-    "missing": [
-      "item.taxable_value"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -337,6 +408,7 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
       "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
@@ -361,6 +433,25 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -372,10 +463,7 @@
   {
     "id": "tax_invoice__business_pro",
     "templateId": "business_pro",
-    "missing": [
-      "item.taxable_value",
-      "item.tax_amount"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -412,6 +500,8 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
+      "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
       "invoice.custom_field (Site Code)",
@@ -435,6 +525,26 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_tax_amount (item.tax_amount)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -508,6 +618,25 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -581,13 +710,32 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
+      "show_cgst (cgst_total)",
+      "show_sgst (sgst_total)",
+      "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
-    "placeOfSupply": "Maharashtra E-way Bill No. ZQEWB-331122"
+    "placeOfSupply": "Maharashtra Reverse Charge No E-way Bil"
   },
   {
     "id": "tax_invoice__thermal_58mm",
@@ -655,6 +803,20 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_line_total (item.line_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -729,6 +891,20 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_line_total (item.line_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -817,10 +993,27 @@
       "business.swift_code"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
       "show_customer_state (customer.state)",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
+      "show_line_total (item.line_total)",
       "show_tax_total (tax_total)",
+      "show_grand_total (grand_total)",
       "show_terms (terms (invoice))",
-      "show_notes (notes (invoice))"
+      "show_notes (notes (invoice))",
+      "show_invoice_number (document.number)",
+      "show_igst (igst_total)"
     ],
     "badItemSql": [],
     "title": "EXPORT INVOICE",
@@ -887,8 +1080,24 @@
       "item.line_total (= taxable value)"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
       "show_terms (terms (invoice))",
-      "show_notes (notes (invoice))"
+      "show_notes (notes (invoice))",
+      "show_grand_total (grand_total)",
+      "show_line_total (item.line_total (= taxable value))"
     ],
     "badItemSql": [],
     "title": "Bill of Supply",
@@ -955,8 +1164,24 @@
       "item.line_total (= taxable value)"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
       "show_terms (terms (invoice))",
-      "show_notes (notes (invoice))"
+      "show_notes (notes (invoice))",
+      "show_grand_total (grand_total)",
+      "show_line_total (item.line_total (= taxable value))"
     ],
     "badItemSql": [],
     "title": "Bill of Supply",
@@ -1023,8 +1248,24 @@
       "item.line_total (= taxable value)"
     ],
     "toggleIgnored": [
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (invoice.date)",
+      "show_customer_address (bill_to (invoice billing address))",
+      "show_eway_bill_number (eway_bill_number)",
+      "show_item_name (item.name)",
+      "show_hsn (item.hsn)",
+      "show_unit (item.unit)",
+      "show_rate (item.rate)",
       "show_terms (terms (invoice))",
-      "show_notes (notes (invoice))"
+      "show_notes (notes (invoice))",
+      "show_grand_total (grand_total)",
+      "show_line_total (item.line_total (= taxable value))"
     ],
     "badItemSql": [],
     "title": "Bill of Supply",
@@ -1034,10 +1275,7 @@
   {
     "id": "proforma__gst_standard",
     "templateId": "gst_standard",
-    "missing": [
-      "item.taxable_value",
-      "item.tax_amount"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -1074,6 +1312,8 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
+      "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
       "invoice.custom_field (Site Code)",
@@ -1097,6 +1337,8 @@
       "footer_text"
     ],
     "toggleIgnored": [
+      "show_eway_bill_number (eway_bill_number)",
+      "show_tax_amount (item.tax_amount)",
       "show_terms (terms (invoice))",
       "show_notes (notes (invoice))"
     ],
@@ -1136,7 +1378,20 @@
       "document.number (this note)"
     ],
     "toggleIgnored": [
-      "show_notes (note.notes)"
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (note.date)",
+      "show_notes (note.notes)",
+      "show_item_name (item.name/description)",
+      "show_hsn (item.hsn)",
+      "show_rate (item.rate)",
+      "show_cgst (cgst_total)",
+      "show_grand_total (grand_total)"
     ],
     "badItemSql": [],
     "title": "Credit Note",
@@ -1173,7 +1428,20 @@
       "document.number (this note)"
     ],
     "toggleIgnored": [
-      "show_notes (note.notes)"
+      "show_business_name (business.name)",
+      "show_business_address (business.address)",
+      "show_business_gstin (business.gstin)",
+      "show_signature (business.signature)",
+      "show_customer_name (customer.name)",
+      "show_customer_gstin (customer.gstin)",
+      "show_invoice_number (document.number)",
+      "show_invoice_date (note.date)",
+      "show_notes (note.notes)",
+      "show_item_name (item.name/description)",
+      "show_hsn (item.hsn)",
+      "show_rate (item.rate)",
+      "show_cgst (cgst_total)",
+      "show_grand_total (grand_total)"
     ],
     "badItemSql": [],
     "title": "Debit Note",
@@ -1213,6 +1481,7 @@
       "item.unit"
     ],
     "toggleIgnored": [
+      "show_eway_bill_number (e_way_bill_number)",
       "show_notes (notes)"
     ],
     "badItemSql": [],
@@ -1222,10 +1491,7 @@
   {
     "id": "sales_order__gst_standard",
     "templateId": "gst_standard",
-    "missing": [
-      "item.taxable_value",
-      "item.tax_amount"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -1248,6 +1514,8 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
+      "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
       "subtotal",
@@ -1271,6 +1539,7 @@
       "item.qty (qty column)"
     ],
     "toggleIgnored": [
+      "show_tax_amount (item.tax_amount)",
       "show_notes (notes (order))"
     ],
     "badItemSql": [],
@@ -1281,10 +1550,7 @@
   {
     "id": "purchase_order__gst_standard",
     "templateId": "gst_standard",
-    "missing": [
-      "item.taxable_value",
-      "item.tax_amount"
-    ],
+    "missing": [],
     "shown": [
       "business.name",
       "business.address",
@@ -1307,6 +1573,8 @@
       "item.rate",
       "item.discount_percent",
       "item.discount_amount",
+      "item.taxable_value",
+      "item.tax_amount",
       "item.line_total",
       "item.custom_field (Colour)",
       "subtotal",
@@ -1330,6 +1598,7 @@
       "item.qty (qty column)"
     ],
     "toggleIgnored": [
+      "show_tax_amount (item.tax_amount)",
       "show_notes (notes (order))"
     ],
     "badItemSql": [],

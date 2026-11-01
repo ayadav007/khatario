@@ -100,6 +100,20 @@ describe('resolveSettlementAccount', () => {
     }
   });
 
+  it('defaults a bank payment to the one bank when the only other is the seeded OD ledger', () => {
+    const od: SettlementAccount = { id: 'od', code: '2112', name: 'Bank OD / Cash Credit', accountType: 'liability', kind: 'bank' };
+    expect(resolveSettlementAccount({ accounts: [cash, bank, od], mode: 'upi' }).accountId).toBe('bank');
+    expect(resolveSettlementAccount({ accounts: [cash, bank, od], mode: 'upi', selectedId: 'od' }).accountId).toBe('od');
+    const twoBanks = resolveSettlementAccount({ accounts: [cash, bank, hdfc, od], mode: 'upi' });
+    expect(twoBanks.ok).toBe(false);
+  });
+
+  it('keeps the GST electronic cash and credit ledgers out of cash and bank', () => {
+    for (const name of ['Electronic Cash Ledger — IGST', 'Electronic Cash Ledger — CGST', 'Electronic Credit Ledger — SGST']) {
+      expect(settlementKind({ account_code: '1130', account_name: name, account_type: 'asset' })).toBeNull();
+    }
+  });
+
   it('requires a choice when two banks exist and does not fall back to 1102', () => {
     const resolved = resolveSettlementAccount({ accounts: [cash, bank, hdfc], mode: 'upi' });
     expect(resolved.ok).toBe(false);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -10,6 +10,7 @@ import { Chip } from '@/components/ui/Chip';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SUPPLY_ORDER_STATUS_LABEL, supplyOrderChipVariant } from '@/components/suppliers/supplyOrderStatus';
 import { NewOrderSheet } from '@/components/suppliers/hub/NewOrderSheet';
+import { createLatestRequest } from '@/lib/latest-request';
 
 type Row = {
   id: string;
@@ -63,17 +64,23 @@ export default function SupplyOrdersPage() {
     }
   }, []);
 
+  // The side can switch (URL, saved choice, buttons) while a fetch is in flight; only the latest
+  // request may fill the list, or the default side's empty answer overwrites the right one.
+  const latest = useRef(createLatestRequest());
   const load = useCallback(async () => {
+    const request = latest.current.start();
     setLoading(true);
     try {
       const res = await fetch(`/api/supply-orders?role=${role}&group=${group}`);
       const data = await res.json();
+      if (!latest.current.isLatest(request)) return;
       if (!res.ok) throw new Error(data.error || 'Failed to load orders');
       setRows(data.orders || []);
     } catch (e) {
+      if (!latest.current.isLatest(request)) return;
       toast.error(e instanceof Error ? e.message : 'Failed to load orders');
     } finally {
-      setLoading(false);
+      if (latest.current.isLatest(request)) setLoading(false);
     }
   }, [role, group, toast]);
 

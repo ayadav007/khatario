@@ -13,6 +13,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import { TransferShortfallPanel } from '@/components/stock-transfers/TransferShortfallPanel';
 
 interface TransferItem {
   id: string;
@@ -22,6 +23,9 @@ interface TransferItem {
   quantity_requested: number;
   quantity_dispatched: number;
   received_qty: number | null;
+  qty_short?: number | null;
+  short_reason?: string | null;
+  claim_party?: string | null;
   unit: string;
   notes: string | null;
 }
@@ -42,6 +46,8 @@ interface Transfer {
   approved_by: string | null;
   approved_by_name: string | null;
   approved_at: string | null;
+  delivery_challan_id?: string | null;
+  delivery_challan_number?: string | null;
   items?: TransferItem[];
 }
 
@@ -68,6 +74,7 @@ export default function ViewTransferPage() {
   );
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [shortOpen, setShortOpen] = useState(false);
 
   useEffect(() => {
     if (business?.id && user?.id && transferId) {
@@ -280,6 +287,17 @@ export default function ViewTransferPage() {
               </div>
             </>
           )}
+          {transfer.delivery_challan_id && (
+            <div>
+              <label className="text-sm font-medium text-gray-500">Delivery Challan</label>
+              <p>
+                <Link href={`/delivery-challans/${transfer.delivery_challan_id}`} className="text-primary-700 font-medium hover:underline">
+                  {transfer.delivery_challan_number || 'View challan'}
+                </Link>
+              </p>
+              <p className="text-xs text-gray-500">Print it, or make the e-way bill JSON, from the challan.</p>
+            </div>
+          )}
           {transfer.notes && (
             <div className="md:col-span-2">
               <label className="text-sm font-medium text-gray-500">Notes</label>
@@ -302,6 +320,7 @@ export default function ViewTransferPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Requested</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dispatched</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Short</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
                 </tr>
               </thead>
@@ -312,6 +331,11 @@ export default function ViewTransferPage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{item.quantity_requested || item.qty}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{item.quantity_dispatched || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{item.received_qty ?? '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {Number(item.qty_short) > 0
+                        ? `${item.qty_short} (${item.short_reason === 'carrier_claim' ? `claimed from ${item.claim_party}` : 'transit loss'})`
+                        : '-'}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{item.unit || 'PCS'}</td>
                   </tr>
                 ))}
@@ -363,13 +387,26 @@ export default function ViewTransferPage() {
           </>
         )}
         {transfer.status === 'in_transit' && canModify('warehouse_transfer') && (
-          <Button
-            onClick={() => router.push(`/stock-transfers/${transferId}/receive`)}
-          >
-            Receive
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setShortOpen(true)}>
+              Close shortfall
+            </Button>
+            <Button
+              onClick={() => router.push(`/stock-transfers/${transferId}/receive`)}
+            >
+              Receive
+            </Button>
+          </>
         )}
       </div>
+      <TransferShortfallPanel
+        transferId={transferId}
+        businessId={business?.id}
+        items={transfer.items || []}
+        open={shortOpen}
+        onClose={() => setShortOpen(false)}
+        onDone={fetchTransfer}
+      />
     </div>
   );
 }

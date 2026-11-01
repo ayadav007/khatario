@@ -5,6 +5,7 @@ import { AccountMappings } from '@/lib/account-mappings';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 
 /**
  * GET /api/settings/account-mappings
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
+    const tenant = await requireTenantPermission(request, body.business_id, 'settings', 'update');
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
     const { mappings } = body;

@@ -1,0 +1,167 @@
+import type { PageTemplate, ThemeData } from '../types';
+import type { PresetContext } from './index';
+import { block, onScheme, presetSettings, section, template } from './shared';
+import { studioFooter } from './studio';
+import { defaultTemplate } from './templates';
+import { pageKey } from '../shared';
+
+/** Heritage Couture's sample pictures: Khatario-made SVGs (no text) that the owner replaces with their own. */
+const IMG = '/store-presets/heritage';
+const img = (name: string) => `${IMG}/${name}.svg`;
+
+/** The handle the preset's "Our story" links point at; `about` is reserved, so the preset ships its own page. */
+const STORY_HANDLE = 'our-story';
+
+const NEUTRAL_LINE = 'Discover festive and bridal pieces, chosen with care.';
+
+const escapeHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const MAIN_MENU: { label: string; link: string }[] = [
+  { label: 'New in', link: '/catalog' },
+  { label: 'Sarees', link: '/catalog' },
+  { label: 'Bridal', link: '/catalog' },
+  { label: 'Jewellery', link: '/catalog' },
+  { label: 'Our story', link: `/pages/${STORY_HANDLE}` },
+];
+
+// Placeholder copy: each line tells the merchant what to write, so the preset promises nothing on their behalf.
+const PROMISES = [
+  { icon: 'truck', title: 'Delivery', text: 'Say how you pack, insure and ship orders' },
+  { icon: 'shield', title: 'Materials', text: 'Say what your fabrics and metals are' },
+  { icon: 'return', title: 'Made to measure', text: 'Say whether you offer fittings or alterations' },
+  { icon: 'badge', title: 'Personal service', text: 'Say how you help shoppers choose' },
+];
+
+const PROMO_CARDS = [
+  { eyebrow: 'New season', heading: 'Sarees', image: 'gallery-1' },
+  { eyebrow: 'The wedding edit', heading: 'Bridal', image: 'gallery-2' },
+  { eyebrow: 'Fine pieces', heading: 'Jewellery', image: 'gallery-3' },
+  { eyebrow: 'For every occasion', heading: 'Gifting', image: 'gallery-4' },
+];
+
+/** The custom page the "Our story" links open: the About starter's two sections, with copy that tells the merchant what to write. */
+function ourStoryPage(): PageTemplate {
+  return {
+    title: 'Our story',
+    ...template([
+      section('image-with-text', { image_side: 'left' }, [
+        block('heading', { text: 'Our story' }),
+        block('text', { content: '<p>Tell shoppers where your pieces are made and who makes them.</p>' }),
+      ]),
+      section('rich-text', { align: 'center' }, [
+        block('heading', { text: 'What we stand for' }),
+        block('text', { content: '<p>Share what makes your boutique different.</p>' }),
+      ]),
+    ]),
+  };
+}
+
+/**
+ * Heritage Couture: an ivory, crimson and gold boutique for fashion, couture and jewellery. Built only from
+ * engine sections, with placeholder copy (no invented reviews, press names or customer photos) and nine sample
+ * images under public/store-presets/heritage.
+ */
+export function heritagePreset(ctx: PresetContext): ThemeData {
+  const name = ctx.businessName.trim();
+  const tagline = ctx.tagline.trim();
+  // A demo store swaps the pattern pictures for its own photos.
+  const pic = (name: string) => ctx.images?.[name] ?? img(name);
+
+  const headerSettings: Record<string, unknown> = {};
+  if (ctx.logoUrl) headerSettings.logo_url = ctx.logoUrl;
+
+  const footer = studioFooter();
+  footer.settings = { ...footer.settings, show_payment_icons: true };
+  if (tagline) footer.settings.about = tagline.slice(0, 500).trim();
+
+  const catalog = defaultTemplate('catalog');
+  for (const s of Object.values(catalog.sections)) {
+    if (s.type === 'main-catalog') s.settings = { ...s.settings, columns_desktop: 4 };
+  }
+
+  return {
+    settings: presetSettings(ctx, 'heritage'),
+    header_group: template([
+      onScheme(section('announcement', { text: (tagline || (name ? `Welcome to ${name}` : 'Welcome')).slice(0, 200).trim() }), 'scheme-3'),
+      section('header', headerSettings, MAIN_MENU.map((m) => block('menu_link', m))),
+    ]),
+    footer_group: template([onScheme(footer, 'scheme-4')]),
+    templates: {
+      home: template([
+        section(
+          'collage',
+          {
+            layout: 'text-left',
+            feature_tile: 'first',
+            eyebrow: 'Festive & bridal edit',
+            heading: (name ? `Welcome to ${name}` : 'Welcome').slice(0, 120).trim(),
+            text: `<p>${escapeHtml(tagline.slice(0, 300).trim() || NEUTRAL_LINE)}</p>`,
+            button_text: 'Explore the collection',
+            link: '/catalog',
+            button_2_text: 'Our story',
+            link_2: `/pages/${STORY_HANDLE}`,
+          },
+          [1, 2, 3].map((n) => block('image_tile', { image: pic(`hero-${n}`) })),
+        ),
+        section('multicolumn', {}, PROMISES.map((p) => block('column', p))),
+        section(
+          'promo-cards',
+          { style: 'overlay', columns: 4 },
+          PROMO_CARDS.map((c) => block('card', { eyebrow: c.eyebrow, heading: c.heading, button_text: 'Shop now', link: '/catalog', image: pic(c.image) })),
+        ),
+        section('featured-products', {
+          heading: 'Signature pieces',
+          source: 'featured',
+          limit: 8,
+          columns: 4,
+          show_badges: true,
+          show_tagline: true,
+          show_swatches: true,
+        }),
+        section('image-with-text', { image: pic('story'), image_side: 'left' }, [
+          block('eyebrow', { text: 'Our craft' }),
+          block('heading', { text: 'Tell the story of your craft' }),
+          block('text', { content: '<p>Tell shoppers how your pieces are made, who makes them and why they last.</p>' }),
+          block('quote', { text: 'A line from your founder', attribution: 'Founder' }),
+          block('checklist_item', { title: 'Considered materials', text: 'Say what each piece is made of.' }),
+          block('checklist_item', { title: 'Finished with care', text: 'Describe how it is checked before it ships.' }),
+          block('checklist_item', { title: 'Made to be worn', text: 'Share how to keep it looking its best.' }),
+          block('button', { label: 'Read our story', link: `/pages/${STORY_HANDLE}` }),
+          block('highlight_card', { eyebrow: 'Your promise', title: 'Add the one promise you make', text: 'One sentence shoppers can hold you to.' }),
+        ]),
+        section('shop-the-look', { image: pic('look'), show_list: true, eyebrow: 'The edit', heading: 'Shop the look' }),
+        section('testimonials', { show_summary: false }, [
+          block('quote', { text: 'Tell shoppers what a customer said about you.', name: 'A customer' }),
+        ]),
+        section('logo-list', { heading: 'Add your press mentions' }, [
+          block('logo', { name: 'Your press mention', caption: '' }),
+          block('logo', { name: 'Another publication', caption: '' }),
+          block('logo', { name: 'A magazine', caption: '' }),
+        ]),
+        section(
+          'image-gallery',
+          { layout: 'grid', columns: 4 },
+          [1, 2, 3, 4].map((n) => block('image', { image: pic(`gallery-${n}`), subcaption: '@yourstore' })),
+        ),
+        section('newsletter', { heading: 'Stay in touch', text: 'Say what shoppers get when they sign up.' }),
+      ]),
+      product: template([
+        section('main-product', {}, [
+          block('title', { show_tagline: true }),
+          block('price', {}),
+          block('variant_picker', {}),
+          block('buy_buttons', {}),
+          block('description', {}),
+          block('collapsible_tab', { heading: 'Craft and provenance', content: '<p>Tell shoppers where and how this piece is made.</p>' }),
+          block('collapsible_tab', { heading: 'Care', content: '<p>Add care instructions for your fabrics and metals.</p>' }),
+          block('collapsible_tab', { heading: 'Delivery and returns', content: '<p>Describe your delivery times and return policy.</p>' }),
+        ]),
+        section('product-reviews', {}),
+        section('related-products', {}),
+        section('recently-viewed', {}),
+      ]),
+      catalog,
+      [pageKey(STORY_HANDLE)]: ourStoryPage(),
+    },
+  };
+}
