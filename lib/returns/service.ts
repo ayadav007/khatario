@@ -499,6 +499,11 @@ export async function settleReturn(
     return 'closed';
   }
 
+  // Refunds to the original payment arrive with the gateway refund release.
+  if (p.method === 'original_payment') {
+    throw new ReturnError(400, 'UNSUPPORTED_REFUND_METHOD', 'Refunds to the original payment are not available yet');
+  }
+
   try {
     const paid = await refundCreditNote(client, {
       businessId: p.businessId,
