@@ -1,4 +1,11 @@
-import type { StudioProductSource, StudioSettings, StudioSlide, StudioUsp, StudioUspIcon } from '@/lib/store/studio-sections';
+import type {
+  StudioHeroSettings,
+  StudioProductSource,
+  StudioSettings,
+  StudioSlide,
+  StudioUsp,
+  StudioUspIcon,
+} from '@/lib/store/studio-sections';
 import { STUDIO_PRODUCT_SOURCES, STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import { getSectionSchema } from './registry';
 import { defaultSettings } from './settings';
@@ -44,7 +51,19 @@ export function toStudioBox(section: Section): Pick<StudioSettings, 'spacingTop'
   return box;
 }
 
+const HEADING_SIZES = ['small', 'medium', 'large', 'xl', 'xxl'] as const;
+const BUTTON_STYLES = ['filled', 'outline'] as const;
+const ALIGNS = ['left', 'center', 'right'] as const;
+const POSITIONS = ['top', 'middle', 'bottom'].flatMap((row) => ALIGNS.map((col) => `${row}-${col}`));
+const HEX = /^#[0-9a-f]{3,8}$/i;
+
+/**
+ * One slide block, look included. Every slide carries its own value for each setting (so a slide never takes
+ * another's darkening or colours); the phone image, text colour and scheme are left out when empty.
+ */
 function toSlide(b: Raw): StudioSlide {
+  const textColor = str(b.text_color);
+  const scheme = str(b.color_scheme);
   return {
     image: str(b.image),
     ...(str(b.mobile_image) ? { mobileImage: str(b.mobile_image) } : {}),
@@ -52,6 +71,20 @@ function toSlide(b: Raw): StudioSlide {
     description: str(b.description),
     buttonText: str(b.button_text),
     link: str(b.link),
+    eyebrow: str(b.eyebrow),
+    headingSize: pick(b.heading_size, HEADING_SIZES) ?? 'large',
+    buttonStyle: pick(b.button_style, BUTTON_STYLES) ?? 'filled',
+    button2Text: str(b.button_2_text),
+    button2Link: str(b.button_2_link),
+    button2Style: pick(b.button_2_style, BUTTON_STYLES) ?? 'filled',
+    position: pick(b.position, POSITIONS) ?? 'middle-left',
+    align: pick(b.align, ALIGNS) ?? 'left',
+    alignMobile: pick(b.align_mobile, ALIGNS) ?? 'left',
+    box: bool(b.box, false),
+    overlay: Math.min(80, Math.max(0, num(b.overlay) ?? 0)),
+    ...(HEX.test(textColor) ? { textColor } : {}),
+    // Passed through as stored: the section component looks it up in the theme's schemes.
+    ...(scheme ? { colorScheme: scheme } : {}),
   };
 }
 
@@ -64,21 +97,18 @@ export function slideshowDevices(section: Section): SlideDevice[] {
     .map((b) => pick(b.device, ['both', 'mobile', 'desktop'] as const) ?? 'both');
 }
 
-export function slideshowSettings(section: Section): StudioSettings {
+/** Slide one's picture, words and look are the hero's own fields; `slides` holds the rest, each with its own look. */
+export function slideshowSettings(section: Section): StudioHeroSettings {
   const s = settingsOf(section);
-  const slideBlocks = blocksOf(section, 'slide');
-  const firstSlide: Raw = slideBlocks[0] ?? {};
-  const [first, ...rest] = slideBlocks.map(toSlide);
+  const [first, ...rest] = blocksOf(section, 'slide').map(toSlide);
   const speed = num(s.speed) ?? 5;
-  const out: StudioSettings = {
+  const out: StudioHeroSettings = {
     ...toStudioBox(section),
     autoplay: bool(s.autoplay, true) ? speed : 0,
     layout: pick(s.layout, ['full', 'image-text', 'text-image'] as const) ?? 'image-text',
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
     imageFit: pick(s.image_fit, ['cover', 'contain', 'natural'] as const) ?? 'cover',
-    // Darkening and text colour live on each slide now; until the renderer is per slide, slide one's apply to all.
-    overlay: Math.min(80, Math.max(0, num(firstSlide.overlay) ?? 0)),
-    ...(typeof firstSlide.text_color === 'string' && /^#[0-9a-f]{3,8}$/i.test(firstSlide.text_color) ? { textColor: firstSlide.text_color } : {}),
+    textBelowMobile: bool(s.text_below_mobile, false),
     ...(first ?? {}),
   };
   const slides = rest.slice(0, MAX_EXTRA_SLIDES);

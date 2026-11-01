@@ -94,6 +94,20 @@ export function sectionFrameStyle(settings: ThemeSettings, section: Section): St
   return style;
 }
 
+/**
+ * A slideshow slide's own colour scheme as CSS variables for its words and picture: the engine `--c-*` names plus the
+ * Studio names the slide markup reads, painted as a chosen section scheme is (panel tint from the scheme). An id that
+ * is empty or no longer exists gives none, so the slide keeps the slideshow's scheme.
+ */
+export function slideSchemeStyle(schemes: ColorScheme[], id: string | undefined): Record<string, string> | undefined {
+  const scheme = id ? schemes.find((s) => s.id === id) : undefined;
+  if (!scheme) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(studioSchemeVars(scheme, true))) if (typeof v === 'string') out[k] = v;
+  out['--st-soft'] = `color-mix(in srgb, ${scheme.text} 4%, ${scheme.background})`;
+  return { ...out, ...schemeCssVars(scheme, false) };
+}
+
 /** The picked categories in their picked order, or all of them when none are picked. */
 export function pickCategories<T extends { id: string }>(all: T[], picked: unknown): T[] {
   if (!Array.isArray(picked) || picked.length === 0) return all;

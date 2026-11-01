@@ -40,7 +40,40 @@ export interface StudioSlide {
   description: string;
   buttonText: string;
   link: string;
+  /**
+   * The rest is a slide's own look (engine slideshow only; such slides always have a `position`). The old store's
+   * extra slides have none of it and take the hero's label, alignment, darkening and text colour.
+   */
+  eyebrow?: string;
+  headingSize?: 'small' | 'medium' | 'large' | 'xl' | 'xxl';
+  buttonStyle?: 'filled' | 'outline';
+  button2Text?: string;
+  button2Link?: string;
+  button2Style?: 'filled' | 'outline';
+  /** One of the nine `top-left` … `bottom-right` spots; split layouts use only its row. */
+  position?: string;
+  align?: 'left' | 'center' | 'right';
+  alignMobile?: 'left' | 'center' | 'right';
+  box?: boolean;
+  /** Photo darkening, 0–80 (%). */
+  overlay?: number;
+  /** Hex; absent = white over a full photo, else the slide colours. */
+  textColor?: string;
+  /** The slide's colour scheme id as stored; the section component resolves it into `schemeStyle`. */
+  colorScheme?: string;
+  /** The scheme's CSS variables for this slide's words and picture; absent = the slideshow's scheme. */
+  schemeStyle?: Record<string, string>;
 }
+
+/**
+ * The hero's settings as the engine slideshow hands them over: slide one's look sits beside the hero's own fields
+ * (as its picture and words already do), plus the slideshow-wide phone option. Never stored, so not in `RULES`.
+ */
+export type StudioHeroSettings = StudioSettings &
+  Omit<StudioSlide, keyof StudioSettings> & {
+    /** Phones: the words sit under the picture instead of over it. */
+    textBelowMobile?: boolean;
+  };
 
 export const STUDIO_USP_ICONS = ['truck', 'cash', 'return', 'shield', 'clock', 'leaf', 'star', 'gift', 'phone', 'badge'] as const;
 export type StudioUspIcon = (typeof STUDIO_USP_ICONS)[number];

@@ -63,6 +63,89 @@ describe('studio adapter', () => {
     expect(slideshowSettings(sec('slideshow', { image_fit: 'stretch' }, blocks)).imageFit).toBe('cover');
   });
 
+  it('slideshow: every slide carries its own look, with defaults', () => {
+    const out = slideshowSettings(sec('slideshow', {}, [['a', 'slide', { heading: 'A' }], ['b', 'slide', { heading: 'B' }]]));
+    const defaults = {
+      eyebrow: '',
+      headingSize: 'large',
+      buttonStyle: 'filled',
+      button2Text: '',
+      button2Link: '',
+      button2Style: 'filled',
+      position: 'middle-left',
+      align: 'left',
+      alignMobile: 'left',
+      box: false,
+      overlay: 0,
+    };
+    expect(out).toMatchObject(defaults);
+    expect(out.slides?.[0]).toMatchObject(defaults);
+    expect(out.slides?.[0]).not.toHaveProperty('textColor');
+    expect(out.slides?.[0]).not.toHaveProperty('colorScheme');
+    expect(out).not.toHaveProperty('colorScheme');
+    expect(out.textBelowMobile).toBe(false);
+  });
+
+  it('slideshow: maps every new slide field, each slide its own (no slide-one shim)', () => {
+    const one = {
+      heading: 'One',
+      eyebrow: 'NEW',
+      heading_size: 'xl',
+      description: 'Sub',
+      button_text: 'Shop',
+      link: '/catalog',
+      button_style: 'outline',
+      button_2_text: 'More',
+      button_2_link: '/about',
+      button_2_style: 'outline',
+      position: 'bottom-right',
+      align: 'right',
+      align_mobile: 'center',
+      box: true,
+      overlay: 35,
+      text_color: '#ffeeaa',
+      color_scheme: 'scheme-3',
+    };
+    const two = { heading: 'Two', overlay: 60, text_color: '#112233', position: 'top-center', heading_size: 'small', color_scheme: 'scheme-gone' };
+    const out = slideshowSettings(sec('slideshow', { text_below_mobile: true }, [['a', 'slide', one], ['b', 'slide', two], ['c', 'slide', { heading: 'Three' }]]));
+    expect(out).toMatchObject({
+      heading: 'One',
+      eyebrow: 'NEW',
+      headingSize: 'xl',
+      description: 'Sub',
+      buttonText: 'Shop',
+      link: '/catalog',
+      buttonStyle: 'outline',
+      button2Text: 'More',
+      button2Link: '/about',
+      button2Style: 'outline',
+      position: 'bottom-right',
+      align: 'right',
+      alignMobile: 'center',
+      box: true,
+      overlay: 35,
+      textColor: '#ffeeaa',
+      colorScheme: 'scheme-3',
+      textBelowMobile: true,
+    });
+    expect(out.slides?.[0]).toMatchObject({ heading: 'Two', overlay: 60, textColor: '#112233', position: 'top-center', headingSize: 'small', colorScheme: 'scheme-gone' });
+    // Slide three keeps its own defaults, not slide one's (or two's) darkening and colour.
+    expect(out.slides?.[1]).toMatchObject({ heading: 'Three', overlay: 0, position: 'middle-left', box: false });
+    expect(out.slides?.[1]).not.toHaveProperty('textColor');
+  });
+
+  it('slideshow: bad slide values fall back to the defaults', () => {
+    const out = slideshowSettings(
+      sec('slideshow', {}, [
+        ['a', 'slide', { heading_size: 'huge', button_style: 'ghost', button_2_style: 3, position: 'middle', align: 'justify', align_mobile: '', box: 'yes', overlay: 120, text_color: 'red', color_scheme: 7 }],
+      ]),
+    );
+    expect(out).toMatchObject({ headingSize: 'large', buttonStyle: 'filled', button2Style: 'filled', position: 'middle-left', align: 'left', alignMobile: 'left', box: false, overlay: 80 });
+    expect(out.textColor).toBeUndefined();
+    expect(out).not.toHaveProperty('colorScheme');
+    expect(slideshowSettings(sec('slideshow', {}, [['a', 'slide', { overlay: -5 }]])).overlay).toBe(0);
+  });
+
   it('respects block_order and skips ids missing from blocks', () => {
     const s = sec('marquee', {}, [
       ['a', 'item', { text: 'One' }],

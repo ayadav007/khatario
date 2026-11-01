@@ -5,6 +5,7 @@ import {
   pickCategories,
   sectionFrameClass,
   sectionFrameStyle,
+  slideSchemeStyle,
 } from '@/lib/store/engine/render-helpers';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
 import type { Section, ThemeSettings } from '@/lib/store/engine/types';
@@ -190,5 +191,32 @@ describe('sectionFrameClass', () => {
       'eng-sec eng-sec--full eng-sp-r eng-sp-b',
     );
     expect(sectionFrameClass({ spacing_top: '0' })).toBe('eng-sec');
+  });
+});
+
+describe('slideSchemeStyle', () => {
+  it("gives a slide its scheme's variables (engine and Studio names) for a known id", () => {
+    const dark = DEFAULT_COLOR_SCHEMES[2];
+    const style = slideSchemeStyle(DEFAULT_COLOR_SCHEMES, dark.id);
+    expect(style).toMatchObject({
+      '--c-bg': dark.background,
+      '--c-text': dark.text,
+      '--c-btn': dark.button,
+      '--c-btn-text': dark.button_text,
+      '--c-card': dark.card,
+      '--primary': dark.accent,
+      '--paper': dark.background,
+      '--text': dark.text,
+      '--st-card': dark.card,
+    });
+    expect(style?.['--st-soft']).toContain(dark.background);
+    expect(Object.values(style ?? {}).every((v) => typeof v === 'string')).toBe(true);
+  });
+
+  it("a missing, unknown or empty id gives no style, so the slideshow's own scheme applies", () => {
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, 'scheme-gone')).toBeUndefined();
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, '')).toBeUndefined();
+    expect(slideSchemeStyle(DEFAULT_COLOR_SCHEMES, undefined)).toBeUndefined();
+    expect(slideSchemeStyle([], 'scheme-1')).toBeUndefined();
   });
 });

@@ -22,9 +22,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-theme';
-import type { StudioBadge, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
+import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
+import { heroGridClass } from '@/lib/store/engine/hero-layout';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import { isVideoUrl } from '@/lib/store/theme-media-url';
@@ -279,20 +280,67 @@ export function StudioHeader({
   );
 }
 
-/** The hero's own fields are slide one; `s.slides` holds the rest. */
-export function heroSlides(s: StudioSettings): StudioSlide[] {
-  return [
-    {
-      image: s.image ?? '',
-      ...(s.mobileImage ? { mobileImage: s.mobileImage } : {}),
-      heading: s.heading ?? '',
-      description: s.description ?? '',
-      buttonText: s.buttonText ?? '',
-      link: s.link ?? '',
-    },
-    ...(s.slides ?? []),
-  ];
+/**
+ * The hero's own fields are slide one; `s.slides` holds the rest. Engine slides carry their own look (they have a
+ * `position`); the old store's extra slides take the hero's label, alignment, darkening and text colour, as before.
+ */
+export function heroSlides(s: StudioHeroSettings): StudioSlide[] {
+  const first: StudioSlide = {
+    image: s.image ?? '',
+    ...(s.mobileImage ? { mobileImage: s.mobileImage } : {}),
+    heading: s.heading ?? '',
+    description: s.description ?? '',
+    buttonText: s.buttonText ?? '',
+    link: s.link ?? '',
+    eyebrow: s.eyebrow,
+    headingSize: s.headingSize,
+    buttonStyle: s.buttonStyle,
+    button2Text: s.button2Text,
+    button2Link: s.button2Link,
+    button2Style: s.button2Style,
+    position: s.position,
+    align: s.align,
+    alignMobile: s.alignMobile,
+    box: s.box,
+    overlay: s.overlay,
+    textColor: s.textColor,
+    colorScheme: s.colorScheme,
+    schemeStyle: s.schemeStyle,
+  };
+  const shared = { eyebrow: s.eyebrow, align: s.align, overlay: s.overlay, textColor: s.textColor };
+  return [first, ...(s.slides ?? []).map((sl) => (sl.position ? sl : { ...shared, ...sl }))];
 }
+
+/** Every slide field cleared, so nothing of the old slide one survives a new lead slide. */
+const NO_SLIDE: Record<keyof StudioSlide, undefined> = {
+  image: undefined,
+  mobileImage: undefined,
+  heading: undefined,
+  description: undefined,
+  buttonText: undefined,
+  link: undefined,
+  eyebrow: undefined,
+  headingSize: undefined,
+  buttonStyle: undefined,
+  button2Text: undefined,
+  button2Link: undefined,
+  button2Style: undefined,
+  position: undefined,
+  align: undefined,
+  alignMobile: undefined,
+  box: undefined,
+  overlay: undefined,
+  textColor: undefined,
+  colorScheme: undefined,
+  schemeStyle: undefined,
+};
+
+/** The hero settings with `slide` as slide one (engine slides, which carry their whole look). */
+export function heroWithLeadSlide(s: StudioHeroSettings, slide: StudioSlide): StudioHeroSettings {
+  return { ...s, ...NO_SLIDE, ...slide };
+}
+
+const SLIDE_ALIGNS = ['left', 'center', 'right'];
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -336,7 +384,7 @@ export function StudioHero({
   live = false,
   showSlide,
 }: {
-  s: StudioSettings;
+  s: StudioHeroSettings;
   /** Called with the slide's link (empty when it has none). */
   onCta?: (link: string) => void;
   /** Storefront: autoplay runs. The editor preview stays on `showSlide`. */
@@ -344,8 +392,6 @@ export function StudioHero({
   showSlide?: number;
 }) {
   const height = s.height || 'medium';
-  const alignItems = s.align === 'center' ? 'center' : s.align === 'right' ? 'flex-end' : 'flex-start';
-  const shade = (s.overlay || 0) / 100;
   const benefits = splitList(s.benefits, '');
   const slides = heroSlides(s);
   const many = slides.length > 1;
@@ -375,9 +421,71 @@ export function StudioHero({
 
   const go = (dir: 1 | -1) => setIndex((i) => (i + dir + slides.length) % slides.length);
 
+  // The active slide's words. An engine slide (it has a position) places them with classes styled in
+  // components/store/engine/slideshow.css (position, alignment, phone alignment, box, scheme), and its words sit in
+  // .heroWords so the box has something to paint. The old store's slides keep the inline alignment and markup they had.
+  const look = slide.position !== undefined;
+  const align = slide.align;
+  const alignItems = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+  const copyClass = look
+    ? [
+        'heroCopy hs-look',
+        heroGridClass(slide.position ?? '', align ?? 'left'),
+        `hs-malign-${SLIDE_ALIGNS.includes(slide.alignMobile ?? '') ? slide.alignMobile : 'left'}`,
+        slide.box ? 'hs-box' : '',
+        slide.textColor ? 'customText' : '',
+        slide.schemeStyle ? 'hs-scheme' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : slide.textColor
+      ? 'heroCopy customText'
+      : 'heroCopy';
+  const textVar = slide.textColor ? { ['--hero-text' as string]: slide.textColor } : {};
+  const copyStyle: CSSProperties = look
+    ? { ...(slide.schemeStyle as CSSProperties | undefined), ...textVar }
+    : { textAlign: align, alignItems, ...textVar };
+  // Default Large keeps the slide heading's own size rules (Studio, tablet, phone and each preset's); other sizes add a class.
+  const headingClass = look && slide.headingSize && slide.headingSize !== 'large' ? `hs-size-${slide.headingSize}` : undefined;
+  const cta = (text: string | undefined, link: string | undefined, style: StudioSlide['buttonStyle']) =>
+    text ? (
+      <button
+        type="button"
+        className={style === 'outline' ? 'st-btn eng-cta' : 'st-btn'}
+        data-style={style === 'outline' ? 'outline' : undefined}
+        onClick={() => onCta?.(link ?? '')}
+      >
+        {text} →
+      </button>
+    ) : null;
+  const button1 = cta(slide.buttonText, slide.link, look ? slide.buttonStyle : 'filled');
+  const button2 = look ? cta(slide.button2Text, slide.button2Link, slide.button2Style) : null;
+  const words = (
+    <>
+      {slide.eyebrow ? <small className="eyebrow">{slide.eyebrow}</small> : null}
+      <h1 className={headingClass}>{slide.heading}</h1>
+      {slide.description ? <p>{slide.description}</p> : null}
+      {button1 && button2 ? (
+        <div className="heroBtns">
+          {button1}
+          {button2}
+        </div>
+      ) : (
+        button1 ?? button2
+      )}
+      {benefits.length ? (
+        <div className="benefits">
+          {benefits.map((b) => (
+            <span key={b}>{b}</span>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <div
-      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''} ${noImg ? 'noImg' : ''} ${fit === 'cover' ? '' : `fit-${fit}`} ${hasPhoneImg ? 'hasPhoneImg' : ''}`}
+      className={`hero ${s.layout ?? 'image-text'} ${height} ${many ? 'slideshow' : ''} ${noImg ? 'noImg' : ''} ${fit === 'cover' ? '' : `fit-${fit}`} ${hasPhoneImg ? 'hasPhoneImg' : ''}${s.textBelowMobile && !noImg ? ' hs-below-m' : ''}`}
       style={boxStyle(s)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
@@ -393,32 +501,16 @@ export function StudioHero({
       }}
       aria-roledescription={many ? 'carousel' : undefined}
     >
-      <div
-        className={s.textColor ? 'heroCopy customText' : 'heroCopy'}
-        style={{ textAlign: s.align, alignItems, ...(s.textColor ? { ['--hero-text' as string]: s.textColor } : {}) }}
-        key={many ? `copy-${active}` : 'copy'}
-      >
-        {s.eyebrow ? <small className="eyebrow">{s.eyebrow}</small> : null}
-        <h1>{slide.heading}</h1>
-        {slide.description ? <p>{slide.description}</p> : null}
-        {slide.buttonText ? (
-          <button type="button" className="st-btn" onClick={() => onCta?.(slide.link)}>
-            {slide.buttonText} →
-          </button>
-        ) : null}
-        {benefits.length ? (
-          <div className="benefits">
-            {benefits.map((b) => (
-              <span key={b}>{b}</span>
-            ))}
-          </div>
-        ) : null}
+      <div className={copyClass} style={copyStyle} key={many ? `copy-${active}` : 'copy'}>
+        {look ? <div className="heroWords">{words}</div> : words}
       </div>
       <div className="heroImg" role="img" aria-label="">
         {fit === 'natural' ? <HeroSizer slide={slide} fallback={slides[0]} ratios={ratios} /> : null}
         {slides.map((sl, i) => {
           const desk = sl.image || slides[0].image || '';
           const phone = sl.mobileImage || slides[0].mobileImage || '';
+          // Each slide's own darkening (the old store's slides all carry the hero's).
+          const shade = (sl.overlay || 0) / 100;
           const layer = (url: string) => `linear-gradient(rgba(0,0,0,${shade}),rgba(0,0,0,${shade})),url(${JSON.stringify(url)})`;
           // Videos play as a muted loop (the only kind browsers autoplay); brightness stands in for the shade layer.
           const video = (url: string, cls: 'desk' | 'phone') => (
@@ -441,8 +533,9 @@ export function StudioHero({
           return (
             <div
               key={i}
-              className={`heroSlideImg ${i === active ? 'on' : ''} ${phone ? 'hasPhone' : ''}`}
+              className={`heroSlideImg ${i === active ? 'on' : ''} ${phone ? 'hasPhone' : ''}${sl.schemeStyle ? ' hs-scheme' : ''}`}
               style={{
+                ...(sl.schemeStyle as CSSProperties | undefined),
                 ...(isVideoUrl(desk) ? {} : { backgroundImage: layer(desk) }),
                 // A phone image swaps in through studio-theme.css's phone container query; a phone video clears it.
                 ...(phone ? { ['--hero-phone-img' as string]: isVideoUrl(phone) ? 'none' : layer(phone) } : {}),

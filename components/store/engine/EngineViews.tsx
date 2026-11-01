@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, MapPin, Menu as MenuIcon, Search, ShoppingCart, User } from 'lucide-react';
 import type { StoreCategoryStyle } from '@/lib/store/store-theme';
-import type { StudioSettings } from '@/lib/store/studio-sections';
+import type { StudioHeroSettings, StudioSettings } from '@/lib/store/studio-sections';
 import type { StoreItem } from '@/lib/store/map-store-product';
 import { useStore } from '@/lib/store/store-context';
 import { useIsPhone } from '@/lib/store/phone-kit';
@@ -20,6 +20,7 @@ import {
   StudioHero,
   StudioProductsSection,
   heroSlides,
+  heroWithLeadSlide,
   logoSizeClass,
   type StudioLink,
   type StudioTileCategory,
@@ -74,20 +75,20 @@ function useCatalogNav() {
  * The slides for this device (D28): those set to it or to both, else all. The server and the first
  * client render use desktop, as the old storefront did; phones switch after mount.
  */
-function slidesForDevice(s: StudioSettings, devices: string[] | undefined, phone: boolean): StudioSettings {
+function slidesForDevice(s: StudioHeroSettings, devices: string[] | undefined, phone: boolean): StudioHeroSettings {
   if (!devices || devices.length === 0) return s;
   const all = heroSlides(s);
   const picked = pickSlidesForDevice(devices.slice(0, all.length), phone).filter((i) => i < all.length);
   if (picked.length === 0 || picked.length === all.length) return s;
   const [first, ...rest] = picked.map((i) => all[i]);
-  // Slide one's phone image belongs to slide one, not to whichever slide now leads.
-  const out: StudioSettings = { ...s, mobileImage: undefined, ...first };
+  // Slide one's phone image, colours and scheme belong to slide one, not to whichever slide now leads.
+  const out = heroWithLeadSlide(s, first);
   if (rest.length) out.slides = rest;
   else delete out.slides;
   return out;
 }
 
-export function EngineHero({ s, devices }: { s: StudioSettings; devices?: Array<'both' | 'mobile' | 'desktop'> }) {
+export function EngineHero({ s, devices }: { s: StudioHeroSettings; devices?: Array<'both' | 'mobile' | 'desktop'> }) {
   const follow = useFollowLink();
   const phone = useIsPhone();
   const shown = slidesForDevice(s, devices, phone);

@@ -8,7 +8,7 @@ import type { Block, Section } from '@/lib/store/engine/types';
 // Server only: the settings module pulls in the HTML sanitisers.
 
 /** The section frame applies top/bottom spacing, so the Studio component adds none of its own. */
-export function noBox(s: StudioSettings): StudioSettings {
+export function noBox<T extends StudioSettings>(s: T): T {
   return { ...s, spacingTop: 0, spacingBottom: 0 };
 }
 
