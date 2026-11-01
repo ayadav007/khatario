@@ -637,4 +637,63 @@ d('return pickup booking (real DB)', () => {
       expect((await postTracking({ awb, is_return: 1, current_status: 'DELIVERED' }, 'x'.repeat(30))).status).toBe(401);
     });
   });
+
+  describe('one booking at a time', () => {
+    /** A fake client whose bookReturn waits until the test lets it answer. */
+    function heldClient(answer: ShiprocketBooking) {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const client = fakeClient();
+      client.bookReturn.mockImplementation(async () => {
+        await gate;
+        return answer;
+      });
+      const started = async () => {
+        for (let i = 0; i < 200 && client.bookReturn.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+        expect(client.bookReturn).toHaveBeenCalledTimes(1);
+      };
+      return { client, release, started };
+    }
+
+    test('a second booking while one is in flight is turned away and Shiprocket is called once', async () => {
+      const { returnId } = await approvedPickup();
+      const held = heldClient(booked(30));
+      const first = bookReturnPickup(B, returnId, { client: held.client, actorUserId: A });
+      await held.started();
+
+      const second = await bookReturnPickup(B, returnId, { client: held.client, actorUserId: A });
+      expect(second).toEqual({
+        ok: false,
+        code: 'BOOKING_FAILED',
+        error: 'A pickup is already being booked for this return. Try again in a moment.',
+      });
+      // The busy answer is not the return's booking error.
+      expect((await returnRow(returnId)).pickup_error).toBeNull();
+      // Cancelling the pickup waits its turn too.
+      expect(await cancelReturnPickup(B, returnId, { client: held.client })).toMatchObject({ ok: false, status: 409 });
+
+      held.release();
+      expect(await first).toMatchObject({ ok: true, awb: booked(30).awb });
+      expect(held.client.bookReturn).toHaveBeenCalledTimes(1);
+      expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'booked', awb: booked(30).awb });
+    });
+
+    test('a return rejected while Shiprocket answers gets its new order cancelled and no pickup', async () => {
+      const { returnId } = await approvedPickup();
+      const held = heldClient(booked(31));
+      const first = bookReturnPickup(B, returnId, { client: held.client, actorUserId: A });
+      await held.started();
+      await pool.query(`UPDATE order_returns SET status = 'rejected', closed_at = NOW() WHERE id = $1`, [returnId]);
+
+      held.release();
+      expect(await first).toEqual({
+        ok: false,
+        code: 'BOOKING_FAILED',
+        error: 'The return changed while the pickup was being booked; the pickup was cancelled.',
+      });
+      expect(held.client.cancelOrders).toHaveBeenCalledWith([booked(31).orderId]);
+      expect(await returnRow(returnId)).toMatchObject({ status: 'rejected', pickup_status: null, awb: null, carrier_order_id: null });
+      expect((await listReturnEvents(pool, B, returnId)).map((e) => e.kind)).not.toContain('pickup_booked');
+    });
+  });
 });

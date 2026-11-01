@@ -34,7 +34,7 @@ const CUSTOMER_EVENT_KINDS = ['requested', 'approved', 'pickup_booked', 'pickup_
 /** The shopper's returns on this order, newest first, each with its pickup tracking, refund state and timeline. */
 async function buyerReturns(pool: ReturnType<typeof getPool>, businessId: string, orderId: string, customerId: string) {
   const res = await pool.query<{ id: string } & Record<string, unknown>>(
-    `SELECT r.id, r.return_number, r.status, r.reason, r.requested_at, r.credit_amount::float8 AS credit_amount,
+    `SELECT r.id, r.initiated_by, r.return_number, r.status, r.reason, r.requested_at, r.credit_amount::float8 AS credit_amount,
             r.refunded_amount::float8 AS refunded_amount, r.refund_method, r.rejected_reason,
             r.return_method AS method, r.return_instructions AS instructions, r.pickup_status, r.awb, r.tracking_url,
             (SELECT g.status FROM return_gateway_refunds g
@@ -54,9 +54,12 @@ async function buyerReturns(pool: ReturnType<typeof getPool>, businessId: string
       ORDER BY created_at, id`,
     [businessId, res.rows.map((r) => r.id), CUSTOMER_EVENT_KINDS],
   );
-  return res.rows.map(({ id, ...r }) => ({
+  return res.rows.map(({ id, initiated_by, ...r }) => ({
     ...r,
-    events: events.rows.filter((e) => e.return_id === id).map((e) => ({ kind: e.kind, note: e.note, created_at: e.created_at })),
+    events: events.rows
+      .filter((e) => e.return_id === id)
+      // The request note is the shopper's own words only when they asked; on a return the shop started it is staff text.
+      .map((e) => ({ kind: e.kind, note: e.kind === 'requested' && initiated_by !== 'customer' ? null : e.note, created_at: e.created_at })),
   }));
 }
 

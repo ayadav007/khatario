@@ -345,6 +345,42 @@ async function loadPickupRow(businessId: string, returnId: string): Promise<Pick
   return r.rows[0] ?? null;
 }
 
+export const PICKUP_BUSY = 'A pickup is already being booked for this return. Try again in a moment.';
+
+/**
+ * Runs `fn` while holding this return's pickup lock: a Postgres session-level advisory lock on a
+ * pooled connection of its own, held through the slow Shiprocket round trip (no transaction stays
+ * open meanwhile). Booking, cancelling the pickup, rejecting, cancelling and changing the way back
+ * all take it, so none of them can overlap a booking in flight. `{ busy: true }` when another
+ * request holds it; callers answer with PICKUP_BUSY. Not re-entrant across calls: code already
+ * holding it passes `lockHeld` to bookReturnPickup / cancelReturnPickup.
+ */
+export async function withReturnPickupLock<T>(
+  returnId: string,
+  fn: () => Promise<T>,
+): Promise<{ busy: false; value: T } | { busy: true }> {
+  const key = `return-pickup:${returnId}`;
+  const c = await getPool().connect();
+  let locked = false;
+  let broken: Error | undefined;
+  try {
+    const r = await c.query<{ locked: boolean }>(`SELECT pg_try_advisory_lock(hashtext($1)) AS locked`, [key]);
+    locked = r.rows[0]?.locked === true;
+    if (!locked) return { busy: true };
+    return { busy: false, value: await fn() };
+  } finally {
+    if (locked) {
+      try {
+        await c.query(`SELECT pg_advisory_unlock(hashtext($1))`, [key]);
+      } catch (e) {
+        // Never hand a connection that may still hold the lock back to the pool: drop it instead.
+        broken = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+    c.release(broken);
+  }
+}
+
 async function shiprocketClientFor(businessId: string): Promise<ShiprocketClient | null> {
   const creds = await loadShiprocketCreds(businessId);
   return creds ? createShiprocketClient(creds) : null;
@@ -439,7 +475,9 @@ async function buildReturnParcel(
  * Books the courier pickup of an approved return: Shiprocket return order, courier + AWB, pickup.
  * Saves Shiprocket's ids even on a partial failure so "Book again" continues instead of creating a
  * duplicate order. A failure leaves the return approved with the reason in `pickup_error`.
- * Runs on its own connection, outside any request transaction (the Shiprocket calls are slow).
+ * Runs on its own connection, outside any request transaction (the Shiprocket calls are slow),
+ * holding the return's pickup lock (`withReturnPickupLock`) so a second click, the phone app or a
+ * reject cannot start while Shiprocket is still answering.
  */
 export async function bookReturnPickup(
   businessId: string,
@@ -449,7 +487,19 @@ export async function bookReturnPickup(
     actorUserId?: string | null;
     /** An order the shop's last change gave up on (`abandonedOrderId` from approve / setReturnMethod): cancelled first, best effort. */
     abandonedOrderId?: string | null;
+    /** The caller already holds the pickup lock for this return. */
+    lockHeld?: boolean;
   } = {},
+): Promise<ReturnPickupResult> {
+  if (opts.lockHeld) return bookLocked(businessId, returnId, opts);
+  const out = await withReturnPickupLock(returnId, () => bookLocked(businessId, returnId, opts));
+  return out.busy ? { ok: false, code: 'BOOKING_FAILED', error: PICKUP_BUSY } : out.value;
+}
+
+async function bookLocked(
+  businessId: string,
+  returnId: string,
+  opts: { client?: ShiprocketClient; actorUserId?: string | null; abandonedOrderId?: string | null },
 ): Promise<ReturnPickupResult> {
   const row = await loadPickupRow(businessId, returnId);
   if (!row) return { ok: false, code: 'NOT_FOUND', error: 'Return not found' };
@@ -495,10 +545,12 @@ export async function bookReturnPickup(
   });
   const gotAwb = booked.ok && Boolean(booked.awb);
 
+  let applied = false;
   const c = await getPool().connect();
   try {
     await c.query('BEGIN');
-    await c.query(
+    // Only while the return still wants this pickup (it may have been received meanwhile).
+    const updated = await c.query(
       `UPDATE order_returns
           SET carrier_order_id = COALESCE($3, carrier_order_id),
               carrier_shipment_id = COALESCE($4, carrier_shipment_id),
@@ -509,7 +561,7 @@ export async function bookReturnPickup(
               pickup_status = CASE WHEN $5::text IS NOT NULL THEN 'booked' ELSE pickup_status END,
               pickup_error = $9,
               updated_at = NOW()
-        WHERE id = $1 AND business_id = $2`,
+        WHERE id = $1 AND business_id = $2 AND status = 'approved' AND return_method = 'courier_pickup'`,
       [
         row.id,
         businessId,
@@ -522,7 +574,8 @@ export async function bookReturnPickup(
         [booked.error, cancelNote].filter(Boolean).join(' · ').slice(0, 500) || null,
       ],
     );
-    if (gotAwb) {
+    applied = (updated.rowCount ?? 0) > 0;
+    if (applied && gotAwb) {
       await recordReturnEvent(c, {
         businessId,
         returnId: row.id,
@@ -540,6 +593,14 @@ export async function bookReturnPickup(
     c.release();
   }
 
+  if (!applied) {
+    // The return was rejected, received or switched while Shiprocket answered: the order must not stay.
+    if (booked.orderId) {
+      await cancelAbandonedOrder(businessId, booked.orderId, { client });
+      return { ok: false, code: 'BOOKING_FAILED', error: 'The return changed while the pickup was being booked; the pickup was cancelled.' };
+    }
+    return { ok: false, code: 'BOOKING_FAILED', error: 'The return changed while the pickup was being booked.' };
+  }
   if (!gotAwb) {
     return { ok: false, code: 'BOOKING_FAILED', error: booked.error || 'Shiprocket booking failed' };
   }
@@ -556,11 +617,22 @@ export async function bookReturnPickup(
 /**
  * Cancels a pickup that has not left yet. The next booking gets a new Shiprocket reference
  * (`pickup_attempt` goes up by one) so Shiprocket never sees the same order id twice.
+ * Holds the pickup lock unless the caller already does (`lockHeld`); busy = 409 PICKUP_BUSY.
  */
 export async function cancelReturnPickup(
   businessId: string,
   returnId: string,
-  opts: { client?: ShiprocketClient; actorUserId?: string | null } = {},
+  opts: { client?: ShiprocketClient; actorUserId?: string | null; lockHeld?: boolean } = {},
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (opts.lockHeld) return cancelLocked(businessId, returnId, opts);
+  const out = await withReturnPickupLock(returnId, () => cancelLocked(businessId, returnId, opts));
+  return out.busy ? { ok: false, status: 409, error: PICKUP_BUSY } : out.value;
+}
+
+async function cancelLocked(
+  businessId: string,
+  returnId: string,
+  opts: { client?: ShiprocketClient; actorUserId?: string | null },
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const row = await loadPickupRow(businessId, returnId);
   if (!row) return { ok: false, status: 404, error: 'Return not found' };

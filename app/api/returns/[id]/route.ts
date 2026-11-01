@@ -25,7 +25,9 @@ import {
   cancelReturnPickup,
   hasLivePickup,
   pickupDetailsFor,
+  PICKUP_BUSY,
   savePickupDetails,
+  withReturnPickupLock,
   type ReturnPickupResult,
 } from '@/lib/returns/pickup';
 import { checkPendingReturnRefunds, originalRefundRoom, refundReturnToOriginalPayment } from '@/lib/returns/gateway-refund';
@@ -128,9 +130,10 @@ async function bookPickup(
   returnId: string,
   userId: string,
   abandonedOrderId?: string | null,
+  lockHeld = false,
 ): Promise<ReturnPickupResult> {
   try {
-    return await bookReturnPickup(businessId, returnId, { actorUserId: userId, abandonedOrderId: abandonedOrderId ?? null });
+    return await bookReturnPickup(businessId, returnId, { actorUserId: userId, abandonedOrderId: abandonedOrderId ?? null, lockHeld });
   } catch (error) {
     console.error('[returns book pickup]', error);
     return { ok: false, code: 'BOOKING_FAILED', error: 'Could not book the pickup. Try Book again.' };
@@ -149,6 +152,8 @@ async function bookPickup(
  *   pickup = { address?, pincode?, phone?, weight_kg?, length_cm?, breadth_cm?, height_cm? }
  *
  * Shiprocket and gateway calls run after the action's transaction has committed, never inside it.
+ * Actions that touch the pickup (book, cancel pickup, set_method, reject, cancel) hold the return's
+ * pickup lock, so none of them overlaps a booking in flight; a busy lock answers 409.
  */
 export async function PATCH(request: NextRequest, ctx: Ctx) {
   const auth = await resolveHubAuth(request, 'update');
@@ -162,10 +167,10 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   const instructions = typeof body.instructions === 'string' ? body.instructions : null;
   const date = typeof body.date === 'string' && DATE_RE.test(body.date) ? body.date : null;
 
-  const usesWayBack = action === 'approve' || action === 'set_method' || action === 'book_pickup';
-  const methodIn = parseReturnMethod(usesWayBack ? body.method : null);
+  const choosesWayBack = action === 'approve' || action === 'set_method';
+  const methodIn = parseReturnMethod(choosesWayBack ? body.method : null);
   if (!methodIn.ok) return NextResponse.json({ error: methodIn.error }, { status: 400 });
-  const pickupIn = parsePickupBody(usesWayBack ? body.pickup : null);
+  const pickupIn = parsePickupBody(choosesWayBack || action === 'book_pickup' ? body.pickup : null);
   if (!pickupIn.ok) return NextResponse.json({ error: pickupIn.error }, { status: 400 });
   const pickup = pickupIn.value;
   const method =
@@ -175,7 +180,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
   // Receiving posts a credit note and settling may pay money out: both need credit-note rights.
   // So does "no need to send it back", which receives the return at once.
-  if (action === 'receive' || action === 'settle' || (usesWayBack && method === 'no_return')) {
+  if (action === 'receive' || action === 'settle' || (choosesWayBack && method === 'no_return')) {
     try {
       await authorize(userId, 'credit_notes', 'create', { businessId });
     } catch (error) {
@@ -191,6 +196,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     const out = await load(businessId, id, auth.scope.branchIds);
     return NextResponse.json({ ok: true, ...out, ...extra });
   };
+  const busy = () => NextResponse.json({ error: PICKUP_BUSY, code: 'PICKUP_BUSY' }, { status: 409 });
 
   try {
     if (action === 'approve') {
@@ -213,40 +219,53 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     }
 
     if (action === 'book_pickup') {
-      const saved = await inTransaction(async (c) => {
-        const row = await lockReturn(c, businessId, id);
-        if (row.status !== 'approved' || row.return_method !== 'courier_pickup') {
-          throw new ReturnError(409, 'NOT_COURIER_PICKUP', 'Approve the return with a courier pickup before booking it');
-        }
-        if (row.pickup_status === 'in_transit' || row.pickup_status === 'arrived') {
-          throw new ReturnError(409, 'PICKED_UP', 'The parcel is already on its way back; receive it instead');
-        }
-        if (hasLivePickup(row)) throw new ReturnError(409, 'PICKUP_LIVE', 'A courier pickup is already booked for this return');
-        return savePickupDetails(c, { businessId, returnId: id, details: pickup });
+      const locked = await withReturnPickupLock(id, async () => {
+        const saved = await inTransaction(async (c) => {
+          const row = await lockReturn(c, businessId, id);
+          if (row.status !== 'approved' || row.return_method !== 'courier_pickup') {
+            throw new ReturnError(409, 'NOT_COURIER_PICKUP', 'Approve the return with a courier pickup before booking it');
+          }
+          if (row.pickup_status === 'in_transit' || row.pickup_status === 'arrived') {
+            throw new ReturnError(409, 'PICKED_UP', 'The parcel is already on its way back; receive it instead');
+          }
+          if (hasLivePickup(row)) throw new ReturnError(409, 'PICKUP_LIVE', 'A courier pickup is already booked for this return');
+          return savePickupDetails(c, { businessId, returnId: id, details: pickup });
+        });
+        return bookPickup(businessId, id, userId, saved.abandonedOrderId, true);
       });
-      const booked = await bookPickup(businessId, id, userId, saved.abandonedOrderId);
-      if (booked.ok) await notifyReturnCustomer(businessId, id, 'pickup_booked');
-      return respond({ pickup: booked });
+      if (locked.busy) return busy();
+      if (locked.value.ok) await notifyReturnCustomer(businessId, id, 'pickup_booked');
+      return respond({ pickup: locked.value });
     }
 
     if (action === 'cancel_pickup') {
       const cancelled = await cancelReturnPickup(businessId, id, { actorUserId: userId });
-      if (!cancelled.ok) return NextResponse.json({ error: cancelled.error }, { status: cancelled.status });
+      if (!cancelled.ok) {
+        const code = cancelled.error === PICKUP_BUSY ? { code: 'PICKUP_BUSY' } : {};
+        return NextResponse.json({ error: cancelled.error, ...code }, { status: cancelled.status });
+      }
       return respond();
     }
 
     if (action === 'set_method') {
       if (!method) return NextResponse.json({ error: 'Choose how the goods come back' }, { status: 400 });
-      const result = await inTransaction((c) =>
-        setReturnMethod(c, { businessId, returnId: id, userId, method, instructions, pickup }),
-      );
+      const locked = await withReturnPickupLock(id, async () => {
+        const changed = await inTransaction((c) =>
+          setReturnMethod(c, { businessId, returnId: id, userId, method, instructions, pickup }),
+        );
+        if (changed.needsPickup) {
+          return { ...changed, booked: await bookPickup(businessId, id, userId, changed.abandonedOrderId, true) };
+        }
+        if (changed.abandonedOrderId) await cancelAbandonedOrder(businessId, changed.abandonedOrderId);
+        return { ...changed, booked: undefined };
+      });
+      if (locked.busy) return busy();
+      const result = locked.value;
       const extra: Record<string, unknown> = {};
-      if (result.needsPickup) {
-        const booked = await bookPickup(businessId, id, userId, result.abandonedOrderId);
-        extra.pickup = booked;
-        if (booked.ok) await notifyReturnCustomer(businessId, id, 'pickup_booked');
+      if (result.booked) {
+        extra.pickup = result.booked;
+        if (result.booked.ok) await notifyReturnCustomer(businessId, id, 'pickup_booked');
       } else {
-        if (result.abandonedOrderId) await cancelAbandonedOrder(businessId, result.abandonedOrderId);
         if (result.received) {
           extra.credit_note_number = result.received.creditNoteNumber;
           extra.credit_amount = result.received.creditAmount;
@@ -258,18 +277,24 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     }
 
     if (action === 'reject' || action === 'cancel') {
-      // The courier must not come for goods the shop no longer takes back; if Shiprocket refuses, stop here.
-      if (hasLivePickup(visible)) {
-        const cancelled = await cancelReturnPickup(businessId, id, { actorUserId: userId });
-        if (!cancelled.ok) return NextResponse.json({ error: cancelled.error }, { status: cancelled.status });
-      }
-      if (action === 'reject') {
-        const reason = typeof body.reason === 'string' ? body.reason : null;
-        await inTransaction((c) => rejectReturn(c, { businessId, returnId: id, reason, userId }));
-        await notifyReturnCustomer(businessId, id, 'rejected');
-      } else {
-        await inTransaction((c) => cancelReturn(c, { businessId, returnId: id, userId }));
-      }
+      const locked = await withReturnPickupLock(id, async () => {
+        // The courier must not come for goods the shop no longer takes back; if Shiprocket refuses, stop here.
+        const current = await getReturn(getPool(), { businessId, returnId: id, branchIds: auth.scope.branchIds });
+        if (current && hasLivePickup(current)) {
+          const cancelled = await cancelReturnPickup(businessId, id, { actorUserId: userId, lockHeld: true });
+          if (!cancelled.ok) return cancelled;
+        }
+        if (action === 'reject') {
+          const reason = typeof body.reason === 'string' ? body.reason : null;
+          await inTransaction((c) => rejectReturn(c, { businessId, returnId: id, reason, userId }));
+        } else {
+          await inTransaction((c) => cancelReturn(c, { businessId, returnId: id, userId }));
+        }
+        return { ok: true as const };
+      });
+      if (locked.busy) return busy();
+      if (!locked.value.ok) return NextResponse.json({ error: locked.value.error }, { status: locked.value.status });
+      if (action === 'reject') await notifyReturnCustomer(businessId, id, 'rejected');
       return respond();
     }
 

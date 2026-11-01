@@ -396,6 +396,36 @@ d('return API actions (real DB)', () => {
     expect(rejected[0].fallbackText).toContain('was not accepted: Used item');
   });
 
+  test('reject while the pickup is being booked waits for the booking (409)', async () => {
+    const { invoiceId } = await order();
+    const id = await customerRequest(invoiceId);
+    const b = booked(8);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    mockShiprocket.bookReturn.mockImplementationOnce(async () => {
+      await gate;
+      return b;
+    });
+
+    const approving = patch(id, { action: 'approve', method: 'courier_pickup' });
+    for (let i = 0; i < 200 && mockShiprocket.bookReturn.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(mockShiprocket.bookReturn).toHaveBeenCalledTimes(1);
+
+    const busyMessage = 'A pickup is already being booked for this return. Try again in a moment.';
+    for (const body of [{ action: 'reject', reason: 'Used item' }, { action: 'cancel' }, { action: 'set_method', method: 'customer_sends' }, { action: 'book_pickup' }]) {
+      const res = await patch(id, body);
+      expect(res.status).toBe(409);
+      expect(res.json).toMatchObject({ error: busyMessage, code: 'PICKUP_BUSY' });
+    }
+
+    release();
+    const approved = await approving;
+    expect(approved.json.pickup).toMatchObject({ ok: true, awb: b.awb });
+    expect(await returnRow(id)).toMatchObject({ status: 'approved', pickup_status: 'booked', awb: b.awb });
+    expect(mockShiprocket.bookReturn).toHaveBeenCalledTimes(1);
+    expect(sent('return_rejected')).toHaveLength(0);
+  });
+
   test('settle original_payment refunds through the gateway and reports pending', async () => {
     const { invoiceId } = await order({ paid: true });
     const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'wrong_item', initiatedBy: 'merchant', userId: A }));
@@ -521,5 +551,18 @@ d('return API actions (real DB)', () => {
     expect(kinds).toEqual(['requested', 'approved', 'pickup_booked', 'pickup_booked']);
     expect(kinds).not.toContain('pickup_cancelled');
     for (const e of got.returns[0].events) expect(Object.keys(e).sort()).toEqual(['created_at', 'kind', 'note']);
+  });
+
+  test("a return the shop started does not show the staff's note to the shopper", async () => {
+    const { orderId, invoiceId } = await order();
+    await tx((c) =>
+      createReturn(c, { businessId: B, invoiceId, reason: 'other', reasonNote: 'internal: customer was rude', initiatedBy: 'merchant', userId: A }),
+    );
+    const got = (await (await getStoreReturn(asShopper(orderId), storeCtx(orderId))).json()) as any;
+    expect(got.returns).toHaveLength(1);
+    const requested = got.returns[0].events.find((e: { kind: string }) => e.kind === 'requested');
+    expect(requested).toMatchObject({ kind: 'requested', note: null });
+    expect(JSON.stringify(got)).not.toContain('customer was rude');
+    expect(got.returns[0].initiated_by).toBeUndefined();
   });
 });
