@@ -1,6 +1,7 @@
 // Client-safe rules for the theme library (D39): which actions each row gets, the preset choices, dates and
-// authors. Imports only types and shared.ts, so the library page can use it without pg or sanitize-html.
+// authors. Imports only types, shared.ts and theme-catalog.ts, so the library page can use it without pg or sanitize-html.
 import { ENGINE_LIMITS } from './shared';
+import { THEME_CATALOG } from './theme-catalog';
 import type { ThemeListRow, ThemePreset, ThemeVersionSummary } from './types';
 
 export interface PresetChoice {
@@ -14,51 +15,15 @@ export interface PresetChoice {
   premium?: true;
 }
 
-export const PRESET_CHOICES: PresetChoice[] = [
-  {
-    preset: 'studio',
-    label: 'Studio',
-    description: 'Editorial header, split hero and photo category tiles',
-    canvas: '#fbf8f3',
-    accent: '#b94717',
-  },
-  {
-    preset: 'quick',
-    label: 'Quick',
-    description: 'Phone-first quick delivery with a big search and a floating cart bar',
-    canvas: '#f3f5f7',
-    accent: '#0f7a5c',
-  },
-  {
-    preset: 'grocery',
-    label: 'Premium Grocery',
-    description: 'Fresh green supermarket with a hero card and emoji category tiles',
-    canvas: '#f6f7f4',
-    accent: '#176b45',
-  },
-  {
-    preset: 'khatario',
-    label: 'Khatario',
-    description: 'Brand header, carousel and bottom tabs',
-    canvas: '#f4f5f7',
-    accent: '#00897b',
-  },
-  {
-    preset: 'blank',
-    label: 'Blank',
-    description: 'An empty page to build from scratch',
-    canvas: '#fbf8f3',
-    accent: '#b94717',
-  },
-  {
-    preset: 'heritage',
-    label: 'Heritage Couture',
-    description: 'Ivory, crimson and gold with serif headings: a boutique for fashion, couture and jewellery. Comes with sample images; replace them with yours',
-    canvas: '#fcf9f3',
-    accent: '#7a0c1e',
-    premium: true,
-  },
-];
+/** The six presets, from the theme list (lib/store/engine/theme-catalog.ts), in its order. */
+export const PRESET_CHOICES: PresetChoice[] = THEME_CATALOG.map((t) => ({
+  preset: t.preset,
+  label: t.name,
+  description: t.summary,
+  canvas: t.canvas,
+  accent: t.accent,
+  ...(t.premium ? { premium: true as const } : {}),
+}));
 
 /** The preset choices a store may start from: premium ones only when its premium flag is on. */
 export function visiblePresetChoices(premiumEnabled: boolean): PresetChoice[] {
