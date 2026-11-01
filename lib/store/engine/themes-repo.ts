@@ -4,6 +4,8 @@ import { STORE_THEME_PRESETS } from '@/lib/store/store-theme';
 import type { ThemeData, ThemeListRow, ThemePreset, ThemeRow } from './types';
 import { ENGINE_LIMITS, sanitizeThemeData, themeTooLarge } from './sanitize';
 import { presetTheme, type PresetContext } from './presets';
+import { catalogThemeByPreset } from './theme-catalog';
+import { themeNameFor } from './theme-store';
 import { presetContextFor, presetContextFromRow } from './preset-context';
 import { migrateStoreTheme } from './migrate';
 import { migrationInputFor, type MigrationInput } from './migration-input';
@@ -191,7 +193,11 @@ async function createThemeLocked(
       if (!name) name = `Copy of ${src.rows[0].name as string}`;
     } else {
       data = sanitizeThemeData(presetTheme(preset, input.ctx));
-      if (!name) name = 'Untitled theme';
+      if (!name) {
+        // Named after the theme ("Heritage Couture", then "Heritage Couture 2"); the caller holds the business lock.
+        const taken = await client.query(`SELECT name FROM store_themes WHERE business_id = $1`, [businessId]);
+        name = themeNameFor(catalogThemeByPreset(preset).name, taken.rows.map((r) => r.name as string));
+      }
     }
     return insertThemeLocked(client, businessId, userId, { name, preset, data });
   }
