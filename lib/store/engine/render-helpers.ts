@@ -1,29 +1,16 @@
 import type { StoreCategoryStyle, StoreFontFamily } from '@/lib/store/store-theme';
 import { storeFontStack } from '@/lib/store/store-theme';
 import { groceryCategoryEmoji } from '@/lib/store/grocery';
-import { studioVars } from '@/lib/store/studio-layout';
-import { schemeCssVars } from './color-schemes';
+import { schemeCssVars, studioSchemeVars } from './color-schemes';
 import { toStudioBox } from './studio-adapter';
 import type { ColorScheme, Section, ThemeSettings } from './types';
 
-// Server-side only: color-schemes and studio-adapter import the HTML sanitisers. Client code uses ./links.
+// Server-side only: studio-adapter imports the HTML sanitisers. Client code uses ./links.
 
 type Style = Record<string, string | number | undefined>;
 
 function fontStack(id: string): string {
   return storeFontStack(id as StoreFontFamily);
-}
-
-/** The Studio CSS names (`--paper`, `--text`, …) for a scheme, so Studio markup follows it. */
-function studioSchemeVars(scheme: ColorScheme, withPrimary: boolean): Style {
-  const vars = { ...(studioVars(scheme.accent, scheme.background) as Style) };
-  vars['--text'] = scheme.text;
-  vars['--st-card'] = scheme.card;
-  if (!withPrimary) {
-    delete vars['--primary'];
-    delete vars['--on-primary'];
-  }
-  return vars;
 }
 
 /** Theme-level CSS variables on the engine root: scheme 1, Studio names, fonts and button radius. */

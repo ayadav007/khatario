@@ -418,20 +418,29 @@ function isDesignId(v: unknown): v is CardDesignId {
 /**
  * The effective card for a section. `sectionDesign` is the section's Card choice: a design id uses that design (keeping
  * the store's out-of-stock look and place, which are store-wide); anything else (`store`, empty, a design that no longer
- * exists) uses the store's card. A switch set to `false` turns that line off whatever the design; it never turns one on.
- * `design: 'theme'` stays `'theme'`: the card then draws as it does today.
+ * exists) uses the store's card. `design: 'theme'` stays `'theme'`: the card then draws as it does today.
+ *
+ * The section's switches work one way under a design: rating and badges `false` hide that line (`true` leaves it to the
+ * design), tagline and swatches `true` show that line (`false`, the section default, leaves it to the design). Under
+ * `theme` a `false` switch turns its line off and `true` changes nothing, as before.
  */
 export function resolveCardLook(store: ProductCardSettings, sectionDesign: string | undefined, switches: CardSwitches): ResolvedCardLook {
   const base = isDesignId(sectionDesign)
     ? { ...cloneProductCard(CARD_DESIGNS[sectionDesign]), oos_look: store.oos_look, oos_place: store.oos_place }
     : cloneProductCard(store);
   const hide = new Set<CardLineId>();
+  const show = new Set<CardLineId>();
   if (switches.rating === false) hide.add('rating');
-  if (switches.tagline === false) hide.add('tagline');
-  if (switches.swatches === false) hide.add('swatches');
+  if (base.design === 'theme') {
+    if (switches.tagline === false) hide.add('tagline');
+    if (switches.swatches === false) hide.add('swatches');
+  } else {
+    if (switches.tagline === true) show.add('tagline');
+    if (switches.swatches === true) show.add('swatches');
+  }
   return {
     ...base,
-    lines: base.lines.map((l) => (hide.has(l.id) ? { ...l, on: false } : l)),
+    lines: base.lines.map((l) => (hide.has(l.id) ? { ...l, on: false } : show.has(l.id) ? { ...l, on: true } : l)),
     show_badges: switches.badges !== false,
   };
 }

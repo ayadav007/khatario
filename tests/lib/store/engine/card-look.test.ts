@@ -9,6 +9,7 @@ function engine(over: Partial<EngineCardLook>): EngineCardLook {
     swatches: false,
     storeCard: PRODUCT_CARD_DEFAULTS,
     card: resolveCardLook(PRODUCT_CARD_DEFAULTS, undefined, {}),
+    schemes: [],
     ...over,
   };
 }

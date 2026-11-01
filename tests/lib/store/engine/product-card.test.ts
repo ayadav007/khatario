@@ -363,25 +363,60 @@ describe('resolveCardLook', () => {
     expect(look.name_price_row).toBe(true);
   });
 
-  it('section switches turn lines off under any design, and never on', () => {
-    for (const design of ['theme', ...CARD_DESIGN_IDS]) {
-      const store = design === 'theme' ? PRODUCT_CARD_DEFAULTS : CARD_DESIGNS[design as CardDesignId];
-      const hidden = resolveCardLook(store, 'store', { rating: false, tagline: false, swatches: false });
-      expect(on(hidden, 'rating')).toBe(false);
-      expect(on(hidden, 'tagline')).toBe(false);
-      expect(on(hidden, 'swatches')).toBe(false);
-      expect(on(hidden, 'name')).toBe(on(store, 'name'));
-      const shown = resolveCardLook(store, 'store', { rating: true, tagline: true, swatches: true });
-      expect(shown.lines).toEqual(store.lines);
+  it('under theme, a false switch turns its line off and a true one changes nothing (today\'s meaning)', () => {
+    const hidden = resolveCardLook(PRODUCT_CARD_DEFAULTS, 'store', { rating: false, tagline: false, swatches: false });
+    expect(on(hidden, 'rating')).toBe(false);
+    expect(on(hidden, 'tagline')).toBe(false);
+    expect(on(hidden, 'swatches')).toBe(false);
+    expect(on(hidden, 'name')).toBe(true);
+    const shown = resolveCardLook(PRODUCT_CARD_DEFAULTS, 'store', { rating: true, tagline: true, swatches: true });
+    expect(shown.lines).toEqual(PRODUCT_CARD_DEFAULTS.lines);
+  });
+
+  it('under a design, rating false hides the rating whatever the design; rating true leaves it to the design', () => {
+    for (const design of CARD_DESIGN_IDS) {
+      const store = CARD_DESIGNS[design];
+      expect(on(resolveCardLook(store, 'store', { rating: false }), 'rating')).toBe(false);
+      expect(on(resolveCardLook(PRODUCT_CARD_DEFAULTS, design, { rating: false }), 'rating')).toBe(false);
+      expect(on(resolveCardLook(store, 'store', { rating: true }), 'rating')).toBe(on(store, 'rating'));
     }
-    expect(on(resolveCardLook(CARD_DESIGNS.royal, 'store', { rating: false }), 'rating')).toBe(false);
-    expect(on(resolveCardLook(PRODUCT_CARD_DEFAULTS, 'royal', { tagline: false }), 'tagline')).toBe(false);
+    // Royal shows the rating, Classic does not; true never adds it to Classic.
+    expect(on(resolveCardLook(CARD_DESIGNS.classic, 'store', { rating: true }), 'rating')).toBe(false);
+    expect(on(resolveCardLook(CARD_DESIGNS.royal, 'store', { rating: true }), 'rating')).toBe(true);
+  });
+
+  it('under a design, tagline and swatches true show that line; false leaves it to the design', () => {
+    for (const design of CARD_DESIGN_IDS) {
+      const store = CARD_DESIGNS[design];
+      const shown = resolveCardLook(store, 'store', { tagline: true, swatches: true });
+      expect(on(shown, 'tagline')).toBe(true);
+      expect(on(shown, 'swatches')).toBe(true);
+      const left = resolveCardLook(store, 'store', { tagline: false, swatches: false });
+      expect(on(left, 'tagline')).toBe(on(store, 'tagline'));
+      expect(on(left, 'swatches')).toBe(on(store, 'swatches'));
+    }
+    // Royal's tagline survives a section whose "Show tagline" is off (the section default).
+    expect(on(resolveCardLook(PRODUCT_CARD_DEFAULTS, 'royal', { tagline: false }), 'tagline')).toBe(true);
+    expect(on(resolveCardLook(CARD_DESIGNS.classic, 'store', { tagline: true }), 'tagline')).toBe(true);
+  });
+
+  it('switches never move a line or touch the other lines', () => {
+    for (const design of CARD_DESIGN_IDS) {
+      const store = CARD_DESIGNS[design];
+      const look = resolveCardLook(store, 'store', { rating: false, tagline: true, swatches: true, badges: false });
+      expect(look.lines.map((l) => l.id)).toEqual(store.lines.map((l) => l.id));
+      for (const id of ['brand', 'name', 'unit', 'price', 'buttons']) expect(on(look, id)).toBe(on(store, id));
+    }
   });
 
   it('badges false sets show_badges false; otherwise badges show', () => {
     expect(resolveCardLook(PRODUCT_CARD_DEFAULTS, 'store', { badges: false }).show_badges).toBe(false);
     expect(resolveCardLook(PRODUCT_CARD_DEFAULTS, 'store', { badges: true }).show_badges).toBe(true);
     expect(resolveCardLook(PRODUCT_CARD_DEFAULTS, 'store', none).show_badges).toBe(true);
+    for (const design of CARD_DESIGN_IDS) {
+      expect(resolveCardLook(CARD_DESIGNS[design], 'store', { badges: false }).show_badges).toBe(false);
+      expect(resolveCardLook(PRODUCT_CARD_DEFAULTS, design, { badges: true }).show_badges).toBe(true);
+    }
   });
 
   it('does not change the store settings or the design tables', () => {

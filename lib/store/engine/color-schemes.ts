@@ -1,5 +1,8 @@
+// Client-safe: the product card resolves its own colour scheme in the browser (isHexColor comes from ./shared, not the
+// settings module, which pulls in the HTML sanitisers).
+import { studioVars } from '@/lib/store/studio-layout';
 import type { ColorScheme, SchemeColors } from './types';
-import { isHexColor } from './settings';
+import { isHexColor } from './shared';
 
 export const DEFAULT_COLOR_SCHEMES: ColorScheme[] = [
   { id: 'scheme-1', name: 'Light', background: '#ffffff', text: '#111827', accent: '#2563eb', button: '#2563eb', button_text: '#ffffff', border: '#e5e7eb', card: '#ffffff' },
@@ -56,4 +59,26 @@ export function schemeCssVars(scheme: ColorScheme, isPrimary: boolean): Record<s
   };
   if (isPrimary) vars['--primary'] = scheme.accent;
   return vars;
+}
+
+/** The Studio CSS names (`--paper`, `--text`, …) for a scheme, so Studio markup follows it. */
+export function studioSchemeVars(scheme: ColorScheme, withPrimary: boolean): Record<string, string> {
+  const vars = { ...(studioVars(scheme.accent, scheme.background) as Record<string, string>) };
+  vars['--text'] = scheme.text;
+  vars['--st-card'] = scheme.card;
+  if (!withPrimary) {
+    delete vars['--primary'];
+    delete vars['--on-primary'];
+  }
+  return vars;
+}
+
+/**
+ * A product card's own colour scheme, painted like a chosen section scheme: the Studio names and the engine `--c-*`
+ * names. An empty id, or one the theme no longer has, gives none, so the card keeps its section's colours.
+ */
+export function cardSchemeVars(id: string, schemes: readonly ColorScheme[]): Record<string, string> {
+  const scheme = id ? schemes.find((s) => s.id === id) : undefined;
+  if (!scheme) return {};
+  return { ...studioSchemeVars(scheme, true), ...schemeCssVars(scheme, false) };
 }

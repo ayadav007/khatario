@@ -1,7 +1,7 @@
 // Client-safe and pure. Which product card a storefront page shows.
 import { isQuickPack, usesStudioSections, type StoreTheme } from '@/lib/store/store-theme';
 import type { ProductCardSettings, ResolvedCardLook } from './product-card';
-import type { ThemePreset } from './types';
+import type { ColorScheme, ThemePreset } from './types';
 
 /** Set by EngineShell from the engine theme's preset; null off the engine. */
 export interface EngineCardLook {
@@ -14,6 +14,8 @@ export interface EngineCardLook {
   storeCard: ProductCardSettings;
   /** The card to draw here: the store's card, or the enclosing section's choice (`CardLookScope`). */
   card: ResolvedCardLook;
+  /** The theme's colour schemes, for a card design's own scheme (`card.color_scheme`). */
+  schemes: ColorScheme[];
 }
 
 /** Which extra lines a preset's product tiles show: Heritage's boutique cards carry the tagline and colour swatches. */

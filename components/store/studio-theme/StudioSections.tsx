@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import {
   BadgeCheck,
   Banknote,
@@ -25,11 +25,15 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
+import { cardBadgeList, cardDiscount, cardOutOfStock, cardRating, cardUnits, designedCardRoot, isDesignedCard } from '@/lib/store/engine/card-render';
+import type { ResolvedCardLook } from '@/lib/store/engine/product-card';
+import type { ColorScheme } from '@/lib/store/engine/types';
 import { heroGridClass } from '@/lib/store/engine/hero-layout';
 import { sanitizeCssClass, scopeSectionCss, sectionDomId } from '@/lib/store/section-css';
 import { splitList, studioEyebrow } from '@/lib/store/studio-layout';
 import { isVideoUrl } from '@/lib/store/theme-media-url';
 import './studio-theme.css';
+import '../engine/product-card.css';
 
 /**
  * Wrapper every Studio section renders in, on the store and in the editor: a stable
@@ -705,28 +709,7 @@ export function StudioCategoriesSection({
 
 export type { StudioBadge } from '@/lib/store/studio-sections';
 
-export function StudioProductTile({
-  name,
-  unit,
-  price,
-  mrp,
-  image,
-  hoverImage,
-  href,
-  showPrice = true,
-  discount,
-  badges = [],
-  rating = 0,
-  ratingCount = 0,
-  lowStock,
-  outOfStock,
-  fav,
-  onFav,
-  add,
-  tagline,
-  swatches,
-  hideDiscountBadge,
-}: {
+export interface StudioProductTileProps {
   name: string;
   unit?: string;
   price: number;
@@ -754,7 +737,44 @@ export function StudioProductTile({
   swatches?: StoreSwatch[];
   /** Leaves out the "% OFF" badge (a product's own badge replaces it); the struck-through MRP stays. */
   hideDiscountBadge?: boolean;
-}) {
+  /** Card design: the brand line. */
+  brand?: string | null;
+  /**
+   * Engine stores: the card look (`useEngineCardLook().card`) and the theme's colour schemes. A design other than Theme's
+   * own draws the designed card; without it, or with Theme's own, the tile is exactly today's.
+   */
+  card?: { look: ResolvedCardLook; schemes: ColorScheme[] };
+}
+
+export function StudioProductTile(props: StudioProductTileProps) {
+  const { card } = props;
+  if (card && isDesignedCard(card.look)) return <DesignedProductTile {...props} card={card} />;
+  return <ThemeProductTile {...props} />;
+}
+
+/** Today's tile, unchanged: Theme's own and every store off the engine. */
+function ThemeProductTile({
+  name,
+  unit,
+  price,
+  mrp,
+  image,
+  hoverImage,
+  href,
+  showPrice = true,
+  discount,
+  badges = [],
+  rating = 0,
+  ratingCount = 0,
+  lowStock,
+  outOfStock,
+  fav,
+  onFav,
+  add,
+  tagline,
+  swatches,
+  hideDiscountBadge,
+}: StudioProductTileProps) {
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
   const [broken, setBroken] = useState(false);
   const [altBroken, setAltBroken] = useState(false);
@@ -823,6 +843,194 @@ export function StudioProductTile({
       ) : null}
       {lowStock && !outOfStock ? <div className="plow">Only {lowStock} left</div> : null}
       {add ? <div className="addWrap">{add}</div> : null}
+    </article>
+  );
+}
+
+/** Small inline badge icons (`badge_icon`), drawn in the badge's text colour. */
+const BADGE_ICONS: Record<Exclude<ResolvedCardLook['badge_icon'], 'none'>, string> = {
+  crown: 'M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z',
+  star: 'M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8L12 2.5z',
+  flame: 'M12 2c1 3.5 5 5.5 5 11a5 5 0 0 1-10 0c0-2.5 1.2-4 2.5-5.5.3 1.8 1 2.8 2 3.3C11 8 11.5 5 12 2z',
+  sparkle: 'M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2zm7 13l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z',
+};
+
+/**
+ * The tile when a card design is active (spec §4): the root carries `pc-on`, the look's classes and variables and its
+ * colour scheme; the details (`.pc-body`) follow `look.lines`. Styles: components/store/engine/product-card.css. The photo
+ * and the buttons keep today's markup (`.pimg`, `.addWrap`) for the photo and button settings to style.
+ */
+function DesignedProductTile({
+  name,
+  brand,
+  unit,
+  price,
+  mrp,
+  image,
+  hoverImage,
+  href,
+  showPrice = true,
+  discount,
+  badges = [],
+  rating = 0,
+  ratingCount = 0,
+  lowStock,
+  outOfStock,
+  fav,
+  onFav,
+  add,
+  tagline,
+  swatches,
+  hideDiscountBadge,
+  card,
+}: StudioProductTileProps & { card: NonNullable<StudioProductTileProps['card']> }) {
+  const { look, schemes } = card;
+  const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
+  const [broken, setBroken] = useState(false);
+  const [altBroken, setAltBroken] = useState(false);
+  useEffect(() => setBroken(false), [image]);
+  useEffect(() => setAltBroken(false), [hoverImage]);
+  const { badges: allBadges, struck } = tileBadges(off, badges, hideDiscountBadge);
+  const shownBadges = cardBadgeList(look, allBadges);
+  const showAlt = !!hoverImage && hoverImage !== image && !broken && !altBroken;
+  const oos = cardOutOfStock(look, outOfStock, !!add);
+  const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: showAlt });
+  const icon =
+    look.badge_icon === 'none' ? null : (
+      <svg className="pc-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d={BADGE_ICONS[look.badge_icon]} fill="currentColor" />
+      </svg>
+    );
+  const stars = cardRating(look.rating_style, rating, ratingCount);
+  const saving = cardDiscount(look.discount_style, price, mrp, off);
+  const button =
+    oos.button === 'none' ? null : oos.button === 'soldout' ? (
+      <button type="button" className="addBtn pc-soldout" disabled>
+        Sold out
+      </button>
+    ) : (
+      add
+    );
+  const low = lowStock && !outOfStock ? <div className="plow">Only {lowStock} left</div> : null;
+
+  const nameLine = (
+    <a className="pname" href={href}>
+      {name}
+    </a>
+  );
+  const priceLine = showPrice ? (
+    <div className="price">
+      <span className="pc-now">{rupees(price)}</span>
+      {look.show_mrp && struck && mrp ? <del>{rupees(mrp)}</del> : null}
+      {saving ? <span className="pc-disc">{saving.kind === 'save' ? `Save ${rupees(saving.amount)}` : `${saving.percent}% off`}</span> : null}
+    </div>
+  ) : null;
+
+  const units = cardUnits(look);
+  const lines = units.map((u): ReactNode => {
+    switch (u) {
+      case 'brand':
+        return brand ? (
+          <div key={u} className="pc-brand">
+            {brand}
+          </div>
+        ) : null;
+      case 'name':
+        return <Fragment key={u}>{nameLine}</Fragment>;
+      case 'unit':
+        return unit ? (
+          <div key={u} className="punit">
+            {unit}
+          </div>
+        ) : null;
+      case 'rating':
+        return stars ? (
+          <div key={u} className="prating" aria-label={stars.label}>
+            {stars.stars ? (
+              <span className="pc-stars" style={{ '--pc-rate': `${stars.percent}%` } as CSSProperties} aria-hidden="true">
+                ★★★★★
+              </span>
+            ) : (
+              <span className="star" aria-hidden="true">
+                ★
+              </span>
+            )}
+            {stars.number ? <b>{stars.number}</b> : null}
+            {stars.count != null ? <small>({stars.count})</small> : null}
+          </div>
+        ) : null;
+      case 'tagline':
+        return tagline ? (
+          <div key={u} className="ptag">
+            {tagline}
+          </div>
+        ) : null;
+      case 'price':
+        return <Fragment key={u}>{priceLine}</Fragment>;
+      case 'name-price':
+        return (
+          <div key={u} className="pc-np">
+            {nameLine}
+            {priceLine}
+          </div>
+        );
+      case 'swatches':
+        return swatches?.length ? (
+          <div key={u} className="pswatches">
+            {swatches.map((s) => (
+              <span key={s.hex + s.name} title={s.name} style={{ background: s.hex }} />
+            ))}
+          </div>
+        ) : null;
+      case 'buttons':
+        return (
+          <Fragment key={u}>
+            {low}
+            {button ? <div className="addWrap">{button}</div> : null}
+          </Fragment>
+        );
+    }
+  });
+
+  return (
+    <article className={root.className} style={root.style as CSSProperties}>
+      <div className="pimg">
+        <a href={href} style={{ display: 'block', width: '100%', height: '100%' }}>
+          {image && !broken ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="main" src={image} alt={name} loading="lazy" onError={() => setBroken(true)} />
+          ) : (
+            <span className="ph">{name.charAt(0).toUpperCase()}</span>
+          )}
+          {showAlt ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="alt" src={hoverImage!} alt="" loading="lazy" aria-hidden="true" onError={() => setAltBroken(true)} />
+          ) : null}
+        </a>
+        {shownBadges.length ? (
+          <div className="badges">
+            {shownBadges.map((b) => (
+              <em key={b.label} className={b.tone}>
+                {icon}
+                {b.label}
+              </em>
+            ))}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className={`fav ${fav ? 'on' : ''}`}
+          aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
+          onClick={onFav}
+        >
+          <Heart />
+        </button>
+        {oos.label ? <span className="out">Out of stock</span> : null}
+      </div>
+      <div className="pc-body">
+        {lines}
+        {units.includes('buttons') ? null : low}
+      </div>
     </article>
   );
 }

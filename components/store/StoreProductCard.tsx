@@ -11,6 +11,7 @@ import { QuickVariantSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
 import { useEngineCardLook } from './engine/EngineCardContext';
 import { productCardLook } from '@/lib/store/engine/card-look';
+import { isDesignedCard } from '@/lib/store/engine/card-render';
 import { cardBadges } from '@/lib/store/engine/card-badges';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
@@ -285,8 +286,10 @@ function ProductCard({
       createdAt: product.created_at,
       discountPct: discount,
     });
-    const tagline = (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
-    const swatches = (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
+    // A card design decides its tagline and swatch lines itself (the section's switches are folded into its look).
+    const designed = engineLook && isDesignedCard(engineLook.card) ? { look: engineLook.card, schemes: engineLook.schemes } : undefined;
+    const tagline = designed ? product.store_tagline : (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
+    const swatches = designed ? product.store_swatches : (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
     const tile = (
       <StudioProductTile
@@ -309,6 +312,7 @@ function ProductCard({
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}
         add={add}
+        {...(designed ? { card: designed, brand: product.brand } : {})}
       />
     );
     return tile;

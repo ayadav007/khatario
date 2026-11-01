@@ -307,8 +307,9 @@ export function EngineShell({
       swatches: cardFields.swatches,
       storeCard,
       card: resolveCardLook(storeCard, undefined, {}),
+      schemes: settings.color_schemes ?? [],
     }),
-    [quick, kit, cardFields, storeCard],
+    [quick, kit, cardFields, storeCard, settings.color_schemes],
   );
   const storeCss = useMemo(() => previewStoreCss(settings.custom_css, '.eng-root'), [settings.custom_css]);
 
