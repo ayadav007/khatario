@@ -37,6 +37,42 @@ export const header: SectionSchema = {
     },
     { id: 'menu_caps', type: 'checkbox', label: 'Menu text in capitals', default: false },
     { id: 'show_category_chips', type: 'checkbox', label: 'Category chips', default: false, info: 'A row of category chips under the header' },
+    { id: 'layout_header', type: 'header', label: 'Layout' },
+    {
+      id: 'logo_position',
+      type: 'select',
+      label: 'Logo position',
+      default: 'left',
+      options: [
+        { value: 'left', label: 'Left' },
+        { value: 'center', label: 'Centre' },
+      ],
+    },
+    {
+      id: 'logo_position_mobile',
+      type: 'select',
+      label: 'Logo position on phones',
+      default: 'left',
+      options: [
+        { value: 'left', label: 'Left' },
+        { value: 'center', label: 'Centre' },
+      ],
+    },
+    { id: 'logo_width', type: 'range', label: 'Logo size', min: 0, max: 300, step: 10, default: 0, info: "0 keeps the logo's automatic size" },
+    { id: 'logo_width_mobile', type: 'range', label: 'Logo size on phones', min: 0, max: 200, step: 10, default: 0, info: "0 keeps the logo's automatic size" },
+    {
+      id: 'sticky',
+      type: 'select',
+      label: 'Stay at top while scrolling',
+      default: 'always',
+      options: [
+        { value: 'none', label: "Doesn't stay" },
+        { value: 'scroll_up', label: 'Comes back when scrolling up' },
+        { value: 'always', label: 'Always stays' },
+        { value: 'always_shrink', label: 'Always stays, logo shrinks' },
+      ],
+    },
+    { id: 'separator', type: 'checkbox', label: 'Line under the header', default: true },
   ],
   presets: [
     {
