@@ -42,6 +42,7 @@ export const header: SectionSchema = {
       id: 'logo_position',
       type: 'select',
       label: 'Logo position',
+      info: 'With a centred logo the icons sit on the right',
       default: 'left',
       options: [
         { value: 'left', label: 'Left' },
@@ -64,6 +65,7 @@ export const header: SectionSchema = {
       id: 'sticky',
       type: 'select',
       label: 'Stay at top while scrolling',
+      info: 'Quick stores keep their logo size',
       default: 'always',
       options: [
         { value: 'none', label: "Doesn't stay" },
@@ -72,7 +74,13 @@ export const header: SectionSchema = {
         { value: 'always_shrink', label: 'Always stays, logo shrinks' },
       ],
     },
-    { id: 'separator', type: 'checkbox', label: 'Line under the header', default: true },
+    {
+      id: 'separator',
+      type: 'checkbox',
+      label: 'Line under the header',
+      info: 'The line between the logo row and the menu row (when the menu is below the logo)',
+      default: true,
+    },
   ],
   presets: [
     {

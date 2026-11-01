@@ -519,7 +519,10 @@ export function StudioHero({
               src={url}
               muted
               loop
-              autoPlay
+              autoPlay={!reduced}
+              ref={(v) => {
+                if (v && reduced) v.pause();
+              }}
               playsInline
               preload="metadata"
               aria-hidden

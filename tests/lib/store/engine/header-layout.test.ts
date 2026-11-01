@@ -16,6 +16,16 @@ describe('header schema layout settings', () => {
     expect(byId('separator').default).toBe(true);
   });
 
+  it('explains the settings whose effect depends on another choice', () => {
+    expect(byId('separator').info).toBe('The line between the logo row and the menu row (when the menu is below the logo)');
+    expect(byId('sticky').info).toBe('Quick stores keep their logo size');
+    expect(byId('logo_position').info).toBe('With a centred logo the icons sit on the right');
+    // Labels and values are unchanged.
+    expect(byId('separator').label).toBe('Line under the header');
+    expect(byId('sticky').label).toBe('Stay at top while scrolling');
+    expect(byId('logo_position').label).toBe('Logo position');
+  });
+
   it('uses the agreed ranges and options', () => {
     expect(byId('logo_width')).toMatchObject({ type: 'range', min: 0, max: 300, step: 10 });
     expect(byId('logo_width_mobile')).toMatchObject({ type: 'range', min: 0, max: 200, step: 10 });

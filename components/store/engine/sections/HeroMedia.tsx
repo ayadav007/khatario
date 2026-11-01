@@ -2,18 +2,21 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { heroZoomScale, type HeroLayer } from '@/lib/store/engine/hero-layout';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
 /**
  * The Hero banner's pictures (hero.css): one cell per picture, the phone picture swapped in by the phone container
  * query. Pictures carry the darkening as a gradient over the image, as the slideshow's slides do; a video plays as the
  * slideshow's muted loop with brightness standing in for the darkening. `adapt` adds the slideshow's invisible sizer so
  * the picture's own shape sets the height (a video is 16:9 until its metadata loads). `zoom` scales the pictures with
- * scroll progress through one passive listener, not under reduced motion.
+ * scroll progress through one passive listener, not under reduced motion; under reduced motion a video does not
+ * autoplay (or is paused) and shows its first frame.
  */
 export function HeroMedia({ layers, shade, adapt, zoom }: { layers: HeroLayer[]; shade: number; adapt: boolean; zoom: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   // Video width / height by URL, for `adapt`.
   const [ratios, setRatios] = useState<Record<string, number>>({});
+  const reduced = usePrefersReducedMotion();
 
   useEffect(() => {
     const el = ref.current;
@@ -56,7 +59,10 @@ export function HeroMedia({ layers, shade, adapt, zoom }: { layers: HeroLayer[];
                 src={l.url}
                 muted
                 loop
-                autoPlay
+                autoPlay={!reduced}
+                ref={(v) => {
+                  if (v && reduced) v.pause();
+                }}
                 playsInline
                 preload="metadata"
                 style={shade > 0 ? { filter: `brightness(${1 - shade})` } : undefined}

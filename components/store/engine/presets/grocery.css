@@ -95,6 +95,10 @@
   .st-root.eng-root.eng-preset-grocery .eng-sec .hero.hasPhoneImg:not(.full) .heroImg {
     display: block;
   }
+  /* "Text below the picture on phones" shows the picture above the words, as on the other themes. */
+  .st-root.eng-root.eng-preset-grocery .eng-sec .hero.hs-below-m:not(.full) .heroImg {
+    display: block;
+  }
   .st-root.eng-root.eng-preset-grocery .eng-sec .hero:not(.full) .heroCopy {
     grid-area: auto;
     position: static;

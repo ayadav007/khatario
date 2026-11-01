@@ -35,6 +35,15 @@ describe('content block rules', () => {
     expect(ruleBody('.st-root.eng-root .eng-cb-text-caps')).toBe('text-transform:uppercase;letter-spacing:.08em');
   });
 
+  it("a Subtitle paragraph takes the block's larger size back from the hero paragraph rules", () => {
+    const sel = '.st-root.eng-root.eng-root.eng-root.eng-root .eng-cb-text.eng-cb-text-subtitle p';
+    expect(ruleBody(sel)).toBe('font-size:inherit');
+    // Beats the highest hero paragraph rule it must override (Grocery with the phone kit: 6 classes and a tag).
+    expect((sel.match(/\./g) ?? []).length).toBeGreaterThan(6);
+    // Normal text is untouched.
+    expect(CONTENT_BLOCK_RULES).not.toContain('.eng-cb-text p{font-size');
+  });
+
   it('centred Image with text centres its column items and stretches block text', () => {
     expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy')).toContain('align-items:center');
     expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy :is(.eng-cb-text,.eng-cb-quote)')).toContain('align-self:stretch');

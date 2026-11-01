@@ -26,6 +26,9 @@ export const CONTENT_BLOCK_RULES =
   `${R} .hero .heroCopy .eng-cb-size-xl{font-size:clamp(36px,8cqi,64px);line-height:1.1}` +
   `${R} .hero .heroCopy .eng-cb-size-xxl{font-size:clamp(42px,9.5cqi,80px);line-height:1.05}` +
   `${R} .eng-cb-text-subtitle{font-size:1.15em;opacity:.8}` +
+  // The hero's paragraph rules (studio 15px, Quick 13px, Grocery, the phone kit) pin a size on the paragraph itself, so
+  // the paragraph takes the block's larger size back; the raised specificity beats those theme rules in any chunk order.
+  `${R}.eng-root.eng-root.eng-root .eng-cb-text.eng-cb-text-subtitle p{font-size:inherit}` +
   `${R} .eng-cb-text-caps{text-transform:uppercase;letter-spacing:.08em}` +
   `${R} .eng-cb-quote{padding:2px 0 2px 16px;border-left:3px solid var(--c-accent,var(--primary));font-style:italic;font-size:1.15em;line-height:1.5;overflow-wrap:anywhere}` +
   `${R} .eng-cb-quote p{margin:0}` +

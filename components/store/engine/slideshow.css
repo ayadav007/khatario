@@ -79,16 +79,18 @@
 .st-root.eng-root.phone-kit .hero .heroCopy.hs-box{background:none}
 .st-root.eng-root.phone-kit:not(.eng-preset-grocery) .hero:not(.full):not(.hs-below-m) .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:#fff;border-color:#fff}
 /* Words under the picture: the picture on top, the words after it on the section's (or the slide's) colours. */
-.st-root.eng-root .hero.hs-below-m{display:grid;grid-template-columns:minmax(0,1fr)}
-.st-root.eng-root .hero.hs-below-m .heroImg{grid-area:1/1;order:0}
-.st-root.eng-root .hero.hs-below-m .heroCopy{grid-area:2/1;position:static;inset:auto;align-self:auto;color:inherit;background:none;padding:20px 18px}
-.st-root.eng-root .hero.hs-below-m .heroCopy p{color:var(--st-muted)}
-.st-root.eng-root .hero.hs-below-m .heroCopy:not(.customText) .eyebrow{color:var(--primary)}
-.st-root.eng-root .hero.hs-below-m .heroCopy .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
-.st-root.eng-root .hero.full.hs-below-m .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:var(--c-btn,var(--primary));border-color:var(--c-btn,var(--primary))}
+.st-root.eng-root.eng-root .hero.hs-below-m{display:grid;grid-template-columns:minmax(0,1fr)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroImg{grid-area:1/1;order:0}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy{grid-area:2/1;position:static;inset:auto;align-self:auto;color:inherit;background:none;padding:20px 18px}
+/* Several slides: the dots sit at the bottom of the hero, which is now the words, so leave them a row of their own. */
+.st-root.eng-root.eng-root .hero.hs-below-m.slideshow .heroCopy{padding-bottom:48px}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy:not(.customText) p{color:var(--st-muted)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy:not(.customText) .eyebrow{color:var(--primary)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
+.st-root.eng-root.eng-root .hero.full.hs-below-m .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:var(--c-btn,var(--primary));border-color:var(--c-btn,var(--primary))}
 /* A scheme's panel shows where the words have their own panel on phones: under the picture, or without the phone kit. */
 .st-root.eng-root:not(.phone-kit) .hero:not(.full) .heroCopy.hs-scheme,
-.st-root.eng-root .hero.hs-below-m .heroCopy.hs-scheme{background:var(--st-soft);color:var(--text)}
+.st-root.eng-root.eng-root .hero.hs-below-m .heroCopy.hs-scheme{background:var(--st-soft);color:var(--text)}
 }
 
 /* A chosen text colour wins everywhere, in the box too (the outline button follows it). */
