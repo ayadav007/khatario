@@ -15,6 +15,7 @@ import { PRESET_LOOK, mixHex, schemesFor } from './presets/look';
 import { template } from './presets/shared';
 import { engineSection, engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings, withLegacyBlocks } from './migrate-studio';
 import { convertLegacyMenus } from './menus-sanitize';
+import { PRODUCT_CARD_DEFAULTS, cloneProductCard } from './product-card';
 import { convertLegacyHeroSections } from './hero-convert';
 import { migratePackHome } from './migrate-packs';
 
@@ -86,6 +87,7 @@ function migrateSettings(t: StoreTheme, ctx: MigrationContext, w: Warnings): The
       youtube: '',
     },
     menus: [],
+    product_card: cloneProductCard(PRODUCT_CARD_DEFAULTS),
   };
 }
 

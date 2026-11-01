@@ -7,6 +7,7 @@ import { convertLegacyTextSections } from './text-sections-convert';
 import { convertLegacyHeroSections } from './hero-convert';
 import { convertLegacyMenus, sanitizeMenus } from './menus-sanitize';
 import { sanitizeColorSchemes, sanitizeCustomColors } from './color-schemes';
+import { sanitizeProductCard } from './product-card';
 import { SECTION_CSS_MAX, sanitizeCssClass } from '@/lib/store/section-css';
 
 export { ENGINE_LIMITS, ID_RE, newId, PAGE_HANDLE_RE, RESERVED_PAGE_HANDLES };
@@ -148,8 +149,9 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
     return typeof s === 'string' ? s : '';
   };
   const radius = typeof r.button_radius === 'number' && Number.isFinite(r.button_radius) ? Math.min(32, Math.max(0, Math.round(r.button_radius))) : 10;
+  const color_schemes = sanitizeColorSchemes(r.color_schemes);
   return {
-    color_schemes: sanitizeColorSchemes(r.color_schemes),
+    color_schemes,
     font_heading: (sanitizeSettingValue(FONT_SCHEMA, r.font_heading) as string | undefined) ?? 'outfit',
     font_body: (sanitizeSettingValue(FONT_SCHEMA, r.font_body) as string | undefined) ?? 'inter',
     button_radius: radius,
@@ -168,6 +170,7 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
       youtube: url(social.youtube),
     },
     menus: sanitizeMenus(r.menus),
+    product_card: sanitizeProductCard(r.product_card, new Set(color_schemes.map((s) => s.id))),
   };
 }
 

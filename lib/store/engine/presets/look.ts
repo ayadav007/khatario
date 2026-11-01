@@ -1,6 +1,7 @@
 import type { ColorScheme, ThemePreset, ThemeSettings } from '../types';
 import { DEFAULT_COLOR_SCHEMES } from '../color-schemes';
 import { isHexColor } from '../settings';
+import { PRODUCT_CARD_DEFAULTS, cloneProductCard } from '../product-card';
 import { PACK_CANVAS, STORE_THEME_PRESETS, chowkInkOn, chowkOnAccent, hexLuminance } from '@/lib/store/store-theme';
 import type { PresetContext } from './index';
 
@@ -223,5 +224,6 @@ export function presetSettings(ctx: PresetContext, preset: ThemePreset = 'studio
     custom_css: '',
     social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
     menus: [],
+    product_card: cloneProductCard(PRODUCT_CARD_DEFAULTS),
   };
 }

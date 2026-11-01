@@ -8,6 +8,7 @@ import {
   slideSchemeStyle,
 } from '@/lib/store/engine/render-helpers';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
+import { PRODUCT_CARD_DEFAULTS } from '@/lib/store/engine/product-card';
 import type { Section, ThemeSettings } from '@/lib/store/engine/types';
 
 const settings: ThemeSettings = {
@@ -22,6 +23,7 @@ const settings: ThemeSettings = {
   custom_css: '',
   social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
   menus: [],
+  product_card: PRODUCT_CARD_DEFAULTS,
 };
 
 function sec(over: Partial<Section> = {}): Section {

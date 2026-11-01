@@ -3,7 +3,7 @@ import { STORE_FONT_FAMILIES } from '@/lib/store/store-theme';
 import { STUDIO_USP_ICONS } from '@/lib/store/studio-sections';
 import type { SettingSchema } from './schema-types';
 import { sanitizeCustomHtml } from './html';
-import { ID_RE, VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings } from './shared';
+import { ID_RE, VIDEO_HOSTS as VIDEO_HOST_LIST, defaultSettings, normaliseLineList, type LineItem } from './shared';
 
 export { defaultSettings };
 
@@ -132,6 +132,12 @@ export function sanitizeSettingValue(schema: SettingSchema, raw: unknown): unkno
       return typeof raw === 'string' ? sanitizeCustomHtml(raw) : undefined;
     case 'menu':
       return typeof raw === 'string' && (raw === '' || ID_RE.test(raw)) ? raw : undefined;
+    case 'line_list': {
+      if (!Array.isArray(raw)) return undefined;
+      const ids = (schema.options ?? []).map((o) => o.value);
+      const defaults: LineItem[] = Array.isArray(schema.default) ? (schema.default as LineItem[]) : ids.map((id) => ({ id, on: true }));
+      return normaliseLineList(raw, ids, defaults);
+    }
     default:
       return undefined;
   }

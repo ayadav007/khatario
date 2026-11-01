@@ -22,6 +22,8 @@ export type SettingType =
   | 'font'
   | 'html'
   | 'menu'
+  /** An ordered on/off list; `options` holds the fixed ids (each once), `default` the starting list. */
+  | 'line_list'
   | 'header';
 
 export interface SettingSchema {

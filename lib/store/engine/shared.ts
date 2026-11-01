@@ -33,6 +33,37 @@ export function pageHandle(key: string): string | null {
   return PAGE_HANDLE_RE.test(handle) && !RESERVED_PAGE_HANDLES.includes(handle) ? handle : null;
 }
 
+export interface LineItem {
+  id: string;
+  on: boolean;
+}
+
+/**
+ * An ordered on/off list as a permutation of `ids`: unknown ids and repeats (the first wins) are dropped, a missing id
+ * is appended switched off, and a bad `on` flag takes that id's value in `defaults`. Anything that is not a list, or a
+ * list holding no known id, gives `defaults` (itself completed the same way).
+ */
+export function normaliseLineList(raw: unknown, ids: readonly string[], defaults: readonly LineItem[]): LineItem[] {
+  const fallback = new Map(defaults.map((d) => [d.id, d.on]));
+  const read = (source: unknown, useFallback: boolean): LineItem[] => {
+    const out: LineItem[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(source)) {
+      for (const r of source) {
+        if (!r || typeof r !== 'object') continue;
+        const { id, on } = r as { id?: unknown; on?: unknown };
+        if (typeof id !== 'string' || !ids.includes(id) || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, on: typeof on === 'boolean' ? on : (fallback.get(id) ?? true) });
+      }
+    }
+    if (out.length === 0 && useFallback) return read(defaults, false);
+    for (const id of ids) if (!seen.has(id)) out.push({ id, on: false });
+    return out;
+  };
+  return read(raw, true);
+}
+
 /** Hosts a `video_url` setting may point at (https only); the server drops anything else. */
 export const VIDEO_HOSTS: readonly string[] = [
   'youtube.com',

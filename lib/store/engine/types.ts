@@ -1,3 +1,5 @@
+import type { ProductCardSettings } from './product-card';
+
 export type TemplateKind = 'home' | 'product' | 'catalog' | 'page' | 'header' | 'footer';
 export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage';
 export type ThemeRole = 'live' | 'draft';
@@ -87,6 +89,7 @@ export interface ThemeSettings {
   custom_css: string;
   social: { instagram: string; whatsapp: string; facebook: string; youtube: string };
   menus: Menu[];
+  product_card: ProductCardSettings;
 }
 
 export interface ThemeData {
