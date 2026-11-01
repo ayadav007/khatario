@@ -4,7 +4,9 @@ import {
   createShiprocketClient,
   createShiprocketProvider,
   shiprocketErrorMessage,
+  tenDigitPhone,
   type ShiprocketParcel,
+  type ShiprocketReturnParcel,
 } from '@/lib/store/delivery/shiprocket';
 
 type Route = (body: Record<string, unknown> | null) => { status?: number; json: unknown };
@@ -228,6 +230,165 @@ describe('checkout quote', () => {
     });
     const result = await createShiprocketProvider(creds).quote(quoteInput);
     expect(result).toEqual({ serviceable: true, charge: 60, etaText: 'Nov 5' });
+  });
+});
+
+describe('Shiprocket return orders', () => {
+  const returnParcel: ShiprocketReturnParcel = {
+    ref: 'RET-0001',
+    customerName: 'Asha Rao',
+    customerPhone: '+91 98765 43210',
+    address: '12 MG Road, Kothrud',
+    pincode: '411038',
+    items: [{ name: 'Kurta', sku: 'KU-1', units: 1, price: 531, reason: 'Damaged' }],
+    subTotal: 531,
+    weightKg: 0.5,
+  };
+  const returnRoutes: Record<string, Route> = {
+    ...base,
+    '/settings/company/pickup': () => ({
+      json: {
+        data: {
+          shipping_address: [
+            {
+              pickup_location: 'Main',
+              address: 'Shop 4, MG Road',
+              address_2: '',
+              city: 'Pune',
+              state: 'Maharashtra',
+              pin_code: 411001,
+              phone: '9822000000',
+              name: 'Sharma Fresh',
+              email: 'shop@x.in',
+              is_primary_location: 1,
+            },
+          ],
+        },
+      },
+    }),
+    '/orders/create/return': () => ({ json: { order_id: 77, shipment_id: 88 } }),
+  };
+
+  test('createReturnOrder sends the customer as pickup and the warehouse as shipping', async () => {
+    const calls = mockFetch(returnRoutes);
+    const result = await createShiprocketClient(creds).createReturnOrder(returnParcel);
+
+    expect(result).toEqual({ orderId: '77', shipmentId: '88' });
+    const body = calls.find((c) => c.path === '/orders/create/return')!.body!;
+    expect(body).toMatchObject({
+      order_id: 'RET-0001',
+      pickup_customer_name: 'Asha',
+      pickup_last_name: 'Rao',
+      pickup_address: '12 MG Road, Kothrud',
+      pickup_city: 'Pune',
+      pickup_state: 'Maharashtra',
+      pickup_pincode: '411038',
+      pickup_phone: '9876543210',
+      pickup_country: 'India',
+      shipping_customer_name: 'Sharma Fresh',
+      shipping_address: 'Shop 4, MG Road',
+      shipping_pincode: '411001',
+      shipping_city: 'Pune',
+      shipping_state: 'Maharashtra',
+      shipping_country: 'India',
+      shipping_phone: '9822000000',
+      shipping_email: 'shop@x.in',
+      payment_method: 'Prepaid',
+      sub_total: 531,
+      weight: 0.5,
+      length: 10,
+      breadth: 10,
+      height: 10,
+    });
+    expect((body.order_items as Array<Record<string, unknown>>)[0]).toMatchObject({
+      name: 'Kurta',
+      units: 1,
+      selling_price: 531,
+      return_reason: 'Damaged',
+    });
+  });
+
+  test('the warehouse address and the forward pickup location share one pickup-address call', async () => {
+    const calls = mockFetch(returnRoutes);
+    const client = createShiprocketClient(creds);
+    expect(await client.pickupLocation()).toBe('Main');
+    expect(await client.warehouseAddress()).toEqual({
+      name: 'Sharma Fresh',
+      address: 'Shop 4, MG Road',
+      address2: '',
+      city: 'Pune',
+      state: 'Maharashtra',
+      pincode: '411001',
+      phone: '9822000000',
+      email: 'shop@x.in',
+    });
+    expect(calls.filter((c) => c.path === '/settings/company/pickup')).toHaveLength(1);
+  });
+
+  test('assignReturnAwb sends is_return 1', async () => {
+    const calls = mockFetch({
+      ...returnRoutes,
+      '/courier/assign/awb': () => ({
+        json: { awb_assign_status: 1, response: { data: { awb_code: 'R123', courier_name: 'Delhivery' } } },
+      }),
+    });
+    const result = await createShiprocketClient(creds).assignReturnAwb('88');
+    expect(result).toEqual({ awb: 'R123', courierName: 'Delhivery' });
+    expect(calls.find((c) => c.path === '/courier/assign/awb')!.body).toEqual({ shipment_id: 88, is_return: 1 });
+  });
+
+  test('bookReturn books end to end and asks for pickup', async () => {
+    mockFetch({
+      ...returnRoutes,
+      '/courier/assign/awb': () => ({
+        json: { awb_assign_status: 1, response: { data: { awb_code: 'R123', courier_name: 'Delhivery' } } },
+      }),
+    });
+    const result = await createShiprocketClient(creds).bookReturn(returnParcel);
+    expect(result).toEqual({
+      ok: true,
+      orderId: '77',
+      shipmentId: '88',
+      awb: 'R123',
+      courierName: 'Delhivery',
+      trackingUrl: 'https://shiprocket.co/tracking/R123',
+      pickupScheduledAt: '2026-10-04 14:00:00',
+    });
+  });
+
+  test("bookReturn keeps Shiprocket's ids when the AWB step fails", async () => {
+    const calls = mockFetch({
+      ...returnRoutes,
+      '/courier/assign/awb': () => ({ json: { awb_assign_status: 0, message: 'Wallet balance low' } }),
+    });
+    const client = createShiprocketClient(creds);
+    const first = await client.bookReturn(returnParcel);
+    expect(first).toEqual({ ok: false, stage: 'return_awb', orderId: '77', shipmentId: '88', error: 'Wallet balance low' });
+    expect(calls.filter((c) => c.path === '/orders/create/return')).toHaveLength(1);
+
+    await client.bookReturn(returnParcel, { orderId: first.orderId, shipmentId: first.shipmentId });
+    expect(calls.filter((c) => c.path === '/orders/create/return')).toHaveLength(1);
+    expect(calls.filter((c) => c.path === '/courier/assign/awb')).toHaveLength(2);
+  });
+
+  test('bookReturn reports a pickup failure as a warning on a booked return', async () => {
+    mockFetch({
+      ...returnRoutes,
+      '/courier/assign/awb': () => ({
+        json: { awb_assign_status: 1, response: { data: { awb_code: 'R123', courier_name: 'Delhivery' } } },
+      }),
+      '/courier/generate/pickup': () => ({ status: 400, json: { message: 'Pickup slot unavailable' } }),
+    });
+    const result = await createShiprocketClient(creds).bookReturn(returnParcel);
+    expect(result).toMatchObject({ ok: true, awb: 'R123', stage: 'pickup', error: 'Pickup slot unavailable' });
+  });
+});
+
+describe('tenDigitPhone', () => {
+  test('keeps the last ten digits and rejects short numbers', () => {
+    expect(tenDigitPhone('+91 98765 43210')).toBe('9876543210');
+    expect(tenDigitPhone('919876543210')).toBe('9876543210');
+    expect(tenDigitPhone('98765')).toBeNull();
   });
 });
 
