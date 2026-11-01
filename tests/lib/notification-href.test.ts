@@ -23,6 +23,7 @@ describe('notificationHref', () => {
     expect(notificationHref({ type: 'general', reference_type: 'khata_customer', reference_id: id })).toBe(`/customers/${id}`);
     expect(notificationHref({ type: 'general', reference_type: 'whatsapp_conversation', reference_id: id })).toBe(`/whatsapp/conversations?c=${id}`);
     expect(notificationHref({ type: 'general', reference_type: 'whatsapp_lead', reference_id: id })).toBe(`/whatsapp/leads?lead=${id}`);
+    expect(notificationHref({ type: 'general', reference_type: 'order_return', reference_id: id })).toBe(`/orders?view=returns&return=${id}`);
   });
 
   it('prefers an explicit action URL', () => {

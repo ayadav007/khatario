@@ -18,6 +18,8 @@ export type ItemStorePageValue = {
   store_badge: string;
   store_tagline: string;
   store_swatches: StoreSwatch[];
+  /** Shoppers may ask to return this product from their store account. */
+  store_returnable: boolean;
 };
 
 interface Props {
@@ -154,6 +156,21 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
           </Button>
         </div>
       </div>
+
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-border"
+          checked={value.store_returnable}
+          onChange={(e) => set({ store_returnable: e.target.checked })}
+        />
+        <span>
+          <span className="type-label block">Customers can return this online</span>
+          <span className="mt-0.5 block text-xs text-text-secondary dark:text-text-secondary-dark">
+            Turn off for items that cannot be taken back, such as made-to-order or hygiene products. The product page says it can&apos;t be returned.
+          </span>
+        </span>
+      </label>
 
       <div>
         <label htmlFor="store-video-url" className="type-label mb-1.5 block">Product video</label>

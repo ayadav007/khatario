@@ -13,6 +13,7 @@ import {
 } from '@/lib/returns/service';
 import { bookReturnPickup, type ReturnPickupResult } from '@/lib/returns/pickup';
 import { notifyReturnCustomer } from '@/lib/returns/notify';
+import { loadShiprocketCreds } from '@/lib/store/delivery';
 import { parsePickupBody, parseReturnMethod } from '@/lib/returns/request-body';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ const STATUSES = ['open', 'requested', 'approved', 'rejected', 'received', 'clos
 /**
  * GET /api/returns?status=open|requested|...|refund_pending&invoice_id=  list returns (session business only);
  *   refund_pending = a refund to the original payment is on its way
- * GET /api/returns?returnable_for=<invoice_id>             bill lines that can still be returned
+ * GET /api/returns?returnable_for=<invoice_id>             bill lines that can still be returned, and whether Shiprocket is connected
  */
 export async function GET(request: NextRequest) {
   const auth = await resolveHubAuth(request, 'read');
@@ -34,7 +35,12 @@ export async function GET(request: NextRequest) {
   if (returnableFor) {
     if (!UUID_RE.test(returnableFor)) return NextResponse.json({ error: 'Bill not found' }, { status: 404 });
     const lines = await returnableLines(getPool(), auth.scope.businessId, returnableFor);
-    return NextResponse.json({ lines });
+    // Lets the start-a-return form hide "Courier pickup" when Shiprocket is not connected.
+    const shiprocketConnected = await loadShiprocketCreds(auth.scope.businessId).then(
+      (creds) => creds !== null,
+      () => false,
+    );
+    return NextResponse.json({ lines, shiprocket_connected: shiprocketConnected });
   }
 
   const status = searchParams.get('status');

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { RETURN_REASON_LABELS, RETURN_REASONS, type ReturnReason } from '@/lib/returns/labels';
+import { initialMethodForm, methodBody, methodFormError, ReturnMethodFields, type ReturnMethodForm } from './ReturnMethodFields';
 
 interface Line {
   invoice_item_id: string;
@@ -13,6 +14,8 @@ interface Line {
   returnable_qty: number;
   unit_price: number;
   tax_rate: number;
+  /** False when the shop marked the product as not returnable online. */
+  store_returnable?: boolean;
 }
 
 const inr = (n: number) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -35,6 +38,8 @@ export function StartReturnDialog({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [way, setWay] = useState<ReturnMethodForm>(() => initialMethodForm({ shiprocketConnected: false }));
 
   useEffect(() => {
     let live = true;
@@ -48,6 +53,9 @@ export function StartReturnDialog({
         return;
       }
       const ls = (json.lines ?? []) as Line[];
+      setConnected(Boolean(json.shiprocket_connected));
+      // The server fills a blank pickup address, PIN and weight from the order.
+      setWay(initialMethodForm({ shiprocketConnected: Boolean(json.shiprocket_connected), serverFillsPickup: true }));
       setLines(ls);
       setQty(Object.fromEntries(ls.map((l) => [l.invoice_item_id, 0])));
     })();
@@ -58,6 +66,8 @@ export function StartReturnDialog({
 
   const chosen = (lines ?? []).filter((l) => (qty[l.invoice_item_id] ?? 0) > 0);
   const estimate = chosen.reduce((s, l) => s + l.unit_price * (qty[l.invoice_item_id] ?? 0) * (1 + l.tax_rate / 100), 0);
+
+  const wayError = methodFormError(way);
 
   function bump(l: Line, d: number) {
     setQty((q) => ({ ...q, [l.invoice_item_id]: Math.min(l.returnable_qty, Math.max(0, (q[l.invoice_item_id] ?? 0) + d)) }));
@@ -74,6 +84,7 @@ export function StartReturnDialog({
           invoice_id: invoiceId,
           reason,
           reason_note: note || undefined,
+          ...methodBody(way),
           lines: chosen.map((l) => ({ invoice_item_id: l.invoice_item_id, quantity: qty[l.invoice_item_id] })),
         }),
       });
@@ -125,6 +136,11 @@ export function StartReturnDialog({
                     <div className="text-xs text-slate-500">
                       {none ? 'Already returned' : `Sold ${l.sold_qty} · can return ${l.returnable_qty}`} · {inr(l.unit_price)} + {l.tax_rate}% GST
                     </div>
+                    {l.store_returnable === false ? (
+                      <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        Not returnable online
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -153,6 +169,15 @@ export function StartReturnDialog({
           </ul>
         )}
 
+        <div className="mt-4">
+          <ReturnMethodFields
+            value={way}
+            onChange={setWay}
+            shiprocketConnected={connected}
+            blankHint="Filled from the order if left empty"
+          />
+        </div>
+
         <label className="mt-4 block text-xs font-medium text-slate-500">Reason</label>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {RETURN_REASONS.map((r) => (
@@ -176,7 +201,7 @@ export function StartReturnDialog({
           onChange={(e) => setNote(e.target.value)}
         />
 
-        {error ? <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+        {error || wayError ? <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error || wayError}</div> : null}
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="text-sm text-slate-500">
@@ -188,7 +213,7 @@ export function StartReturnDialog({
               'Nothing picked yet'
             )}
           </div>
-          <Button onClick={() => void submit()} isLoading={busy} disabled={chosen.length === 0}>
+          <Button onClick={() => void submit()} isLoading={busy} disabled={chosen.length === 0 || Boolean(wayError)}>
             Start return
           </Button>
         </div>

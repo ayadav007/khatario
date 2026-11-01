@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ReturnStatusBadge } from './ReturnStatusBadge';
 import { ReturnDrawer } from './ReturnDrawer';
-import { RETURN_REASON_LABELS, type ReturnReason, type ReturnStatus } from '@/lib/returns/labels';
+import { ReturnChips } from './ReturnChips';
+import { RETURN_REASON_LABELS, type PickupStatus, type ReturnReason, type ReturnStatus } from '@/lib/returns/labels';
 
 interface Row {
   id: string;
@@ -19,6 +20,8 @@ interface Row {
   credit_amount: string;
   refunded_amount: string;
   requested_at: string;
+  pickup_status: PickupStatus | null;
+  gateway_refund_status: 'pending' | 'processed' | 'failed' | null;
 }
 
 const FILTERS: Array<{ key: string; label: string }> = [
@@ -26,6 +29,7 @@ const FILTERS: Array<{ key: string; label: string }> = [
   { key: 'requested', label: 'Requested' },
   { key: 'approved', label: 'Awaiting goods' },
   { key: 'received', label: 'Refund due' },
+  { key: 'refund_pending', label: 'Refund pending' },
   { key: 'closed', label: 'Closed' },
   { key: 'rejected', label: 'Rejected' },
   { key: '', label: 'All' },
@@ -35,12 +39,13 @@ const inr = (n: number | string) => `₹${(Number(n) || 0).toLocaleString('en-IN
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
 /** The "Returns" view of the orders hub. */
-export function ReturnsList({ onCounts }: { onCounts?: (c: Record<string, number>) => void }) {
+export function ReturnsList({ onCounts, openId }: { onCounts?: (c: Record<string, number>) => void; openId?: string | null }) {
   const [filter, setFilter] = useState('open');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  // A notification link opens its return straight away.
+  const [open, setOpen] = useState<string | null>(openId ?? null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -103,6 +108,9 @@ export function ReturnsList({ onCounts }: { onCounts?: (c: Record<string, number
                   </div>
                   <div className="text-right md:order-last md:text-left">
                     <ReturnStatusBadge status={r.status} />
+                    <div className="mt-1">
+                      <ReturnChips pickupStatus={r.status === 'approved' ? r.pickup_status : null} refundPending={r.gateway_refund_status === 'pending'} />
+                    </div>
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm">{r.customer_name || r.customer_phone || '—'}</div>

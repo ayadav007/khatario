@@ -44,6 +44,7 @@ export function notificationHref(n: NotificationRef): string | null {
   if (type === 'todo_reminder') return '/tools/todo';
   if (type === 'store_enquiry') return '/settings/online-store/enquiries';
   if (refType === 'khata_customer' && id) return `/customers/${id}`;
+  if (refType === 'order_return' && id) return `/orders?view=returns&return=${id}`;
   if (refType === 'khata_order') return '/settings/online-store/orders?khata=pending';
   if (type === 'gst_compliance') return '/reports/gst/compliance';
   if (refType === 'whatsapp_conversation' && id) return `/whatsapp/conversations?c=${id}`;

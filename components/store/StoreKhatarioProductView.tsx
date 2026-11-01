@@ -190,6 +190,7 @@ export function StoreKhatarioProductView({
               GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}
             </p>
           ) : null}
+          {product.returnable === false ? <p className="text-[11px] text-gray-500">This item can&apos;t be returned</p> : null}
         </div>
 
         <div className="mt-3 flex items-start gap-2 text-[13px]">

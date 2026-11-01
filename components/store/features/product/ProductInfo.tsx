@@ -74,6 +74,7 @@ export function ProductInfo({
             GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}
           </p>
         ) : null}
+        {product.returnable === false ? <p className="mt-1 text-xs opacity-60">This item can&apos;t be returned</p> : null}
       </div>
 
       {needsVariant ? <VariantPicker variants={variants} value={variantId} onChange={onVariantChange} /> : null}

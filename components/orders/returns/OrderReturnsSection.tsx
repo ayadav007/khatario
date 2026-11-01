@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { ReturnStatusBadge } from './ReturnStatusBadge';
 import { ReturnDrawer } from './ReturnDrawer';
+import { ReturnChips } from './ReturnChips';
 import { StartReturnDialog } from './StartReturnDialog';
-import type { ReturnStatus } from '@/lib/returns/labels';
+import type { PickupStatus, ReturnStatus } from '@/lib/returns/labels';
 
 interface Row {
   id: string;
@@ -14,6 +15,8 @@ interface Row {
   total_qty: string;
   credit_amount: string;
   requested_at: string;
+  pickup_status: PickupStatus | null;
+  gateway_refund_status: 'pending' | 'processed' | 'failed' | null;
 }
 
 const inr = (n: number | string) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -64,7 +67,10 @@ export function OrderReturnsSection({
                 <span className="font-medium">{r.return_number}</span>
                 <span className="text-xs text-slate-500">{Number(r.total_qty)} item(s)</span>
                 {Number(r.credit_amount) > 0 ? <span className="text-xs">{inr(r.credit_amount)}</span> : null}
-                <ReturnStatusBadge status={r.status} />
+                <span className="flex flex-wrap items-center justify-end gap-1">
+                  <ReturnStatusBadge status={r.status} />
+                  <ReturnChips pickupStatus={r.status === 'approved' ? r.pickup_status : null} refundPending={r.gateway_refund_status === 'pending'} />
+                </span>
               </button>
             </li>
           ))}

@@ -58,6 +58,7 @@ const EMPTY_STORE_PAGE: ItemStorePageValue = {
   store_badge: '',
   store_tagline: '',
   store_swatches: [],
+  store_returnable: true,
 };
 
 const ITEM_TYPES = [
@@ -514,6 +515,7 @@ export default function NewItemPage() {
               store_swatches: Array.isArray((item as { store_swatches?: unknown }).store_swatches)
                 ? ((item as { store_swatches: StoreSwatch[] }).store_swatches)
                 : [],
+              store_returnable: (item as { store_returnable?: boolean | null }).store_returnable !== false,
             };
             setStorePage(loadedExtras);
             setLoadedStorePage(loadedExtras);
@@ -860,6 +862,9 @@ export default function NewItemPage() {
       }
       if (extrasChanged(storePage.store_swatches, loadedStorePage.store_swatches)) {
         storePagePayload.store_swatches = extrasCheck.value.store_swatches ?? [];
+      }
+      if (storePage.store_returnable !== loadedStorePage.store_returnable) {
+        storePagePayload.store_returnable = storePage.store_returnable;
       }
 
       const basePayload = {

@@ -47,6 +47,8 @@ export interface StoreProduct {
   store_badge?: string | null;
   store_tagline?: string | null;
   store_swatches?: StoreSwatch[];
+  /** False when the shop marked the product as not returnable online (treated as returnable when absent). */
+  returnable?: boolean;
   variants: Array<{
     id: string;
     variant_name: string;

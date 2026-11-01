@@ -2,13 +2,25 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, ExternalLink, Loader2, PackageCheck, PackageX, RotateCcw, X } from 'lucide-react';
+import { CheckCircle2, Clock, ExternalLink, Loader2, PackageCheck, PackageX, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ReturnStatusBadge } from './ReturnStatusBadge';
+import { ReturnPickupCard, type ReturnPickupInfo } from './ReturnPickupCard';
+import { ReturnTimeline, type ReturnEventRow } from './ReturnTimeline';
+import {
+  initialMethodForm,
+  methodBody,
+  methodFormError,
+  ReturnMethodFields,
+  type ReturnMethodForm,
+  type SavedPickup,
+} from './ReturnMethodFields';
 import {
   REFUND_METHOD_LABELS,
+  RETURN_METHOD_LABELS,
   RETURN_REASON_LABELS,
   type ReturnCondition,
+  type ReturnMethod,
   type ReturnReason,
   type ReturnRefundMethod,
   type ReturnStatus,
@@ -25,7 +37,7 @@ interface ReturnLine {
   tax_rate: number;
 }
 
-interface ReturnDetail {
+interface ReturnDetail extends ReturnPickupInfo {
   id: string;
   return_number: string;
   status: ReturnStatus;
@@ -44,6 +56,15 @@ interface ReturnDetail {
   requested_at: string;
   lines: ReturnLine[];
   refunds: Array<{ id: string; amount: number; refund_date: string; mode: string; reference: string | null; voucher_number: string }>;
+  method: ReturnMethod | null;
+  instructions: string | null;
+  /** What approving would save (the parcel's address, PIN, phone, weight). */
+  pickup: SavedPickup | null;
+  shiprocket_connected: boolean;
+  default_instructions: string;
+  original_refund: { allowed: boolean; max: number; reason: string | null };
+  gateway_refund: { status: 'pending' | 'processed' | 'failed'; amount: number; error: string | null } | null;
+  events: ReturnEventRow[];
 }
 
 interface Payload {
@@ -68,6 +89,8 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
   const [busy, setBusy] = useState(false);
   const [got, setGot] = useState<Record<string, { qty: number; condition: ReturnCondition }>>({});
   const [method, setMethod] = useState<ReturnRefundMethod | 'later'>('cash');
+  const [way, setWay] = useState<ReturnMethodForm | null>(null);
+  const [changingWay, setChangingWay] = useState(false);
   const [amount, setAmount] = useState('');
   const [account, setAccount] = useState('');
   const [reference, setReference] = useState('');
@@ -82,6 +105,16 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
       ),
     );
     setAmount(json.refundable > 0 ? String(json.refundable) : '');
+    const r = json.return;
+    setWay(
+      initialMethodForm({
+        shiprocketConnected: r.shiprocket_connected,
+        pickup: r.pickup,
+        defaultInstructions: r.instructions || r.default_instructions,
+      }),
+    );
+    // Back to the original payment is first and preselected when the order was paid online.
+    setMethod((prev) => (r.original_refund?.allowed ? 'original_payment' : prev === 'original_payment' ? 'cash' : prev));
   }, []);
 
   const load = useCallback(async () => {
@@ -113,7 +146,11 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
       if (!res.ok) throw new Error(json.error || 'That did not work');
       apply(json);
       if (json.credit_note_number) setNotice(`Credit note ${json.credit_note_number} posted for ${inr(json.credit_amount)}.`);
+      else if (json.pickup?.ok && json.pickup.awb) setNotice(`Pickup booked. AWB ${json.pickup.awb}.`);
+      // The goods were received but the refund to the original payment did not go through; it can be tried again.
+      if (json.refund_error?.error) setError(json.refund_error.error);
       setRejecting(false);
+      setChangingWay(false);
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work');
@@ -124,6 +161,7 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
 
   function refundBody() {
     if (method === 'later') return undefined;
+    if (method === 'original_payment') return { method, amount: r?.status === 'received' ? amount || undefined : undefined };
     return {
       method,
       amount: method === 'store_credit' ? undefined : amount || undefined,
@@ -137,12 +175,18 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
     ? r.lines.reduce((s, l) => s + l.unit_price * (got[l.id]?.qty ?? 0) * (1 + l.tax_rate / 100), 0)
     : 0;
   const accounts = (data?.payment_accounts ?? []).filter((a) => (method === 'cash' ? a.kind === 'cash' : a.kind === 'bank'));
+  const original = r?.original_refund;
+  const gateway = r?.gateway_refund ?? null;
+  const refundChoices: ReturnRefundMethod[] = original?.allowed
+    ? ['original_payment', 'cash', 'upi', 'bank', 'store_credit']
+    : ['cash', 'upi', 'bank', 'store_credit'];
+  const wayError = way ? methodFormError(way) : null;
 
   const refundPicker = (
     <div className="space-y-2">
       <div className="text-xs font-medium text-slate-500">Pay back as</div>
       <div className="flex flex-wrap gap-1.5">
-        {(['cash', 'upi', 'bank', 'store_credit'] as const).map((m) => (
+        {refundChoices.map((m) => (
           <button
             key={m}
             type="button"
@@ -168,6 +212,16 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
       </div>
       {method === 'store_credit' ? (
         <p className="text-xs text-slate-500">The credit stays on the customer&apos;s account and is used on their next bill (exchanges too).</p>
+      ) : method === 'original_payment' ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">
+            Goes back to the UPI or card the customer paid with
+            {original ? ` · Up to ${inr(original.max)}` : ''}. It reaches them in 5 to 7 working days.
+          </p>
+          {r?.status === 'received' ? (
+            <input className={input} inputMode="decimal" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          ) : null}
+        </div>
       ) : method === 'later' ? null : (
         <div className="grid grid-cols-2 gap-2">
           {r?.status === 'received' ? (
@@ -245,6 +299,42 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                   ) : null}
                 </div>
               </section>
+
+              {r.status === 'approved' && r.pickup_status === 'arrived' ? (
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                  <PackageCheck className="h-4 w-4" />
+                  Arrived at shop, check the items
+                </div>
+              ) : null}
+
+              {r.status === 'approved' && r.method === 'courier_pickup' ? (
+                <ReturnPickupCard ret={r} busy={busy} onAction={(body) => void act(body)} />
+              ) : null}
+
+              {r.status === 'approved' && r.method && r.method !== 'courier_pickup' ? (
+                <section className="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold">{RETURN_METHOD_LABELS[r.method]}</span>
+                    {r.method === 'customer_sends' ? (
+                      <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setChangingWay((v) => !v)}>
+                        {changingWay ? 'Close' : 'Change'}
+                      </button>
+                    ) : null}
+                  </div>
+                  {r.method === 'customer_sends' && r.instructions && !changingWay ? (
+                    <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{r.instructions}</p>
+                  ) : null}
+                  {changingWay && way ? (
+                    <>
+                      <ReturnMethodFields value={way} onChange={setWay} shiprocketConnected={r.shiprocket_connected} />
+                      {wayError ? <p className="text-xs text-red-600">{wayError}</p> : null}
+                      <Button size="sm" isLoading={busy} disabled={Boolean(wayError)} onClick={() => void act({ action: 'set_method', ...methodBody(way) })}>
+                        Save
+                      </Button>
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
 
               <section>
                 <h3 className="mb-2 text-sm font-semibold">{r.status === 'approved' ? 'What came back?' : 'Items'}</h3>
@@ -331,9 +421,11 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                   <CheckCircle2 className="h-4 w-4" />
                   {r.refund_method === 'store_credit'
                     ? `Kept as credit (${inr(r.credit_amount)}) for the next bill.`
-                    : Number(r.refunded_amount) > 0
-                      ? `Paid back ${inr(r.refunded_amount)}.`
-                      : 'Settled against the unpaid bill.'}
+                    : r.refund_method === 'original_payment'
+                      ? `Refunded ${inr(r.refunded_amount)} to the original payment.`
+                      : Number(r.refunded_amount) > 0
+                        ? `Paid back ${inr(r.refunded_amount)}.`
+                        : 'Settled against the unpaid bill.'}
                 </div>
               ) : null}
 
@@ -358,13 +450,17 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                       </div>
                     </>
                   ) : (
-                    <div className="flex gap-2">
-                      <Button isLoading={busy} onClick={() => void act({ action: 'approve' })}>
-                        Approve return
-                      </Button>
-                      <Button variant="outline" onClick={() => setRejecting(true)}>
-                        Reject
-                      </Button>
+                    <div className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                      {way ? <ReturnMethodFields value={way} onChange={setWay} shiprocketConnected={r.shiprocket_connected} /> : null}
+                      {wayError ? <p className="text-xs text-red-600">{wayError}</p> : null}
+                      <div className="flex gap-2">
+                        <Button isLoading={busy} disabled={!way || Boolean(wayError)} onClick={() => way && void act({ action: 'approve', ...methodBody(way) })}>
+                          Approve
+                        </Button>
+                        <Button variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+                          Reject
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </section>
@@ -408,12 +504,35 @@ export function ReturnDrawer({ id, onClose, onChanged }: { id: string; onClose: 
                     <span className="text-sm font-semibold">Refund due</span>
                     <span className="text-lg font-semibold">{inr(data.refundable)}</span>
                   </div>
-                  {refundPicker}
-                  <Button isLoading={busy} disabled={method === 'later'} onClick={() => void act({ action: 'settle', refund: refundBody() })}>
-                    {method === 'store_credit' ? 'Keep as credit' : 'Record refund'}
-                  </Button>
+                  {gateway?.status === 'pending' ? (
+                    <div className="space-y-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Clock className="h-4 w-4" />
+                        Refund on its way ({inr(gateway.amount)})
+                      </div>
+                      {gateway.error ? <p className="text-xs">{gateway.error}</p> : null}
+                      <p className="text-xs">It closes by itself when the payment gateway confirms.</p>
+                      <Button size="sm" variant="outline" isLoading={busy} onClick={() => void act({ action: 'check_refund' })}>
+                        Check now
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {gateway?.status === 'failed' ? (
+                        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                          The refund to the original payment failed{gateway.error ? `: ${gateway.error}` : '.'} Try again, or pay back another way.
+                        </div>
+                      ) : null}
+                      {refundPicker}
+                      <Button isLoading={busy} disabled={method === 'later'} onClick={() => void act({ action: 'settle', refund: refundBody() })}>
+                        {method === 'store_credit' ? 'Keep as credit' : method === 'original_payment' ? 'Refund to original payment' : 'Record refund'}
+                      </Button>
+                    </>
+                  )}
                 </section>
               ) : null}
+
+              <ReturnTimeline events={r.events} />
             </>
           ) : null}
         </div>
