@@ -640,3 +640,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** the switch only applied when Price came straight after Name among the shown lines, so with Unit on in between it silently did nothing. Now, with the switch on and both lines shown, the price moves up into the name's row wherever it sits in the list; the other lines keep their order. Editor help text and spec updated.
 - **Shipped:** this commit (lib/store/engine/product-card.ts `nameAndPriceInRow`, lib/store/engine/theme-settings-schema.ts, tests in product-card.test.ts and card-render.test.ts, spec line). Store tests 125 suites / 1666 pass, `tsc` clean. Not pushed.
 - **Open:** check on staging with Unit on.
+
+## 2026-11-01: Hero words stay on the picture on phones
+- **Asked:** "On hero section, the text on desktop in on top of the image, but on mobile it comes below".
+- **Decided:** with Height "Fit the picture", the picture sized itself to its own shape and the words shared its grid cell; on a phone a wide picture is shorter than the words, so the card grew for the words while the picture stayed its own height at the top and the words sat mostly below it. The picture now stretches to the card's full height (still covering) whenever the words need more room; its own height stays the minimum. "Text below the picture on phones" still puts words below on purpose.
+- **Shipped:** this commit (components/store/engine/hero.css, one rule). Not pushed.
+- **Open:** check on staging with a wide picture on a phone.

@@ -29,7 +29,9 @@
 /* Fit the picture: the media joins the grid cell and the invisible sizer (.heroSizer) sets its height; the words keep
    the card's padding instead of the card. */
 .st-root.eng-root .eng-hero.hb-h-adapt{padding:0}
-.st-root.eng-root .hb-h-adapt .eng-hero-media{position:relative;inset:auto;grid-area:1/1;grid-auto-rows:auto}
+/* The picture's own height is the minimum; when the words need more (a wide picture on a phone), the picture stretches
+   to the card's full height and keeps covering it, so the words stay on the picture instead of below it. */
+.st-root.eng-root .hb-h-adapt .eng-hero-media{position:relative;inset:auto;grid-area:1/1;grid-auto-rows:1fr;align-self:stretch}
 .st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:38px 44px}
 
 /* Words: one of nine cells (rows top / middle / bottom, columns left / centre / right), lines aligned by hb-align-*. */
