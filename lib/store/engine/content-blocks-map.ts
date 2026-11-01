@@ -3,20 +3,22 @@ import type { Block, Section } from './types';
 // Client-safe and pure: no sanitiser here. The caller supplies each block's settings (the renderer passes
 // `blockSettings`, which has already re-sanitised any richtext).
 
-export type HeadingSize = 'small' | 'medium' | 'large';
+export type HeadingSize = 'small' | 'medium' | 'large' | 'xl' | 'xxl';
+export type TextStyle = 'body' | 'subtitle' | 'caps';
 export type ButtonStyle = 'filled' | 'outline';
 
 export type ContentBlock = { id: string } & (
   | { type: 'eyebrow'; text: string }
   | { type: 'heading'; text: string; size: HeadingSize }
-  | { type: 'text'; html: string }
+  | { type: 'text'; html: string; style: TextStyle }
   | { type: 'quote'; text: string; attribution: string }
   | { type: 'checklist_item'; title: string; text: string }
   | { type: 'button'; label: string; link: string; style: ButtonStyle }
   | { type: 'highlight_card'; eyebrow: string; title: string; text: string }
 );
 
-const SIZES: readonly HeadingSize[] = ['small', 'medium', 'large'];
+const SIZES: readonly HeadingSize[] = ['small', 'medium', 'large', 'xl', 'xxl'];
+const TEXT_STYLES: readonly TextStyle[] = ['body', 'subtitle', 'caps'];
 const STYLES: readonly ButtonStyle[] = ['filled', 'outline'];
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -32,7 +34,7 @@ function toContentBlock(id: string, block: Block, s: Record<string, unknown>): C
     case 'heading':
       return filled(str(s.text)) ? { id, type: 'heading', text: str(s.text), size: pick(s.size, SIZES, 'medium') } : null;
     case 'text':
-      return filled(str(s.content)) ? { id, type: 'text', html: str(s.content) } : null;
+      return filled(str(s.content)) ? { id, type: 'text', html: str(s.content), style: pick(s.style, TEXT_STYLES, 'body') } : null;
     case 'quote':
       return filled(str(s.text)) ? { id, type: 'quote', text: str(s.text), attribution: str(s.attribution) } : null;
     case 'checklist_item':

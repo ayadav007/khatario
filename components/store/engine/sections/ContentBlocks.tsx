@@ -20,7 +20,14 @@ function renderBlock(b: Exclude<ContentBlock, { type: 'button' }>): ReactNode {
       );
     case 'text':
       // `html` was re-sanitised by blockSettings before it got here.
-      return <div key={b.id} className="eng-cb eng-cb-text eng-rt" dangerouslySetInnerHTML={{ __html: b.html }} />;
+      // Body adds no class, so an existing text block renders exactly as before.
+      return (
+        <div
+          key={b.id}
+          className={`eng-cb eng-cb-text eng-rt${b.style === 'body' ? '' : ` eng-cb-text-${b.style}`}`}
+          dangerouslySetInnerHTML={{ __html: b.html }}
+        />
+      );
     case 'quote':
       return (
         <blockquote key={b.id} className="eng-cb eng-cb-quote">

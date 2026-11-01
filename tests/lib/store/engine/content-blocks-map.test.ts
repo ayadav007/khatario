@@ -34,7 +34,7 @@ describe('contentBlocksOf', () => {
     ]);
     expect(contentBlocksOf(section, plain)).toEqual([
       { id: 'heading-1', type: 'heading', text: 'Our story', size: 'small' },
-      { id: 'text-1', type: 'text', html: '<p>Hi</p>' },
+      { id: 'text-1', type: 'text', html: '<p>Hi</p>', style: 'body' },
       { id: 'quote-1', type: 'quote', text: 'Great', attribution: 'Asha' },
       { id: 'checklist-item-1', type: 'checklist_item', title: 'Fresh', text: 'Daily' },
       { id: 'button-1', type: 'button', label: 'Go', link: '/catalog', style: 'outline' },
@@ -51,6 +51,25 @@ describe('contentBlocksOf', () => {
       { id: 'heading-1', type: 'heading', text: 'H', size: 'medium' },
       { id: 'button-1', type: 'button', label: 'Go', link: '', style: 'filled' },
     ]);
+  });
+
+  it('keeps heading sizes xl and xxl and falls back to medium for anything else', () => {
+    const section = sec('rich-text', [
+      ['heading-1', blk('heading', { text: 'A', size: 'xl' })],
+      ['heading-2', blk('heading', { text: 'B', size: 'xxl' })],
+      ['heading-3', blk('heading', { text: 'C', size: 'huge' })],
+    ]);
+    expect(contentBlocksOf(section, plain).map((b) => (b.type === 'heading' ? b.size : null))).toEqual(['xl', 'xxl', 'medium']);
+  });
+
+  it('text style defaults to body and keeps subtitle and caps', () => {
+    const section = sec('rich-text', [
+      ['text-1', blk('text', { content: '<p>A</p>' })],
+      ['text-2', blk('text', { content: '<p>B</p>', style: 'subtitle' })],
+      ['text-3', blk('text', { content: '<p>C</p>', style: 'caps' })],
+      ['text-4', blk('text', { content: '<p>D</p>', style: 'shout' })],
+    ]);
+    expect(contentBlocksOf(section, plain).map((b) => (b.type === 'text' ? b.style : null))).toEqual(['body', 'subtitle', 'caps', 'body']);
   });
 
   it('drops blocks whose required text is empty or only spaces', () => {

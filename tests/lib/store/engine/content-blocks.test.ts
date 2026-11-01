@@ -9,8 +9,10 @@ describe('content blocks', () => {
     expect(setting('eyebrow', 'text')?.max_length).toBe(60);
     expect(setting('heading', 'text')?.max_length).toBe(120);
     expect(setting('heading', 'size')).toMatchObject({ type: 'select', default: 'medium' });
-    expect(setting('heading', 'size')?.options?.map((o) => o.value)).toEqual(['small', 'medium', 'large']);
+    expect(setting('heading', 'size')?.options?.map((o) => o.value)).toEqual(['small', 'medium', 'large', 'xl', 'xxl']);
     expect(setting('text', 'content')?.type).toBe('richtext');
+    expect(setting('text', 'style')).toMatchObject({ type: 'select', default: 'body' });
+    expect(setting('text', 'style')?.options?.map((o) => o.value)).toEqual(['body', 'subtitle', 'caps']);
     expect(setting('quote', 'text')?.max_length).toBe(400);
     expect(setting('quote', 'attribution')?.max_length).toBe(80);
     expect(setting('checklist_item', 'title')?.max_length).toBe(60);

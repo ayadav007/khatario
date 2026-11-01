@@ -16,11 +16,17 @@ export const CONTENT_BLOCK_RULES =
   `${R} .eng-cb-size-small{font-size:clamp(18px,3cqi,24px)}` +
   `${R} .eng-cb-size-medium{font-size:clamp(22px,3.4cqi,32px)}` +
   `${R} .eng-cb-size-large{font-size:clamp(28px,5cqi,44px)}` +
+  `${R} .eng-cb-size-xl{font-size:clamp(34px,6cqi,56px)}` +
+  `${R} .eng-cb-size-xxl{font-size:clamp(40px,7.5cqi,72px)}` +
   // Image with text keeps the heading size its stores had before blocks (the old .eng-heroTitle): medium is that size.
   `${R} .hero .heroCopy .eng-cb-heading{margin-top:12px}` +
   `${R} .hero .heroCopy .eng-cb-size-small{font-size:clamp(20px,4cqi,30px);line-height:1.1}` +
   `${R} .hero .heroCopy .eng-cb-size-medium{font-size:clamp(24px,5cqi,40px);line-height:1.1}` +
   `${R} .hero .heroCopy .eng-cb-size-large{font-size:clamp(30px,6.5cqi,52px);line-height:1.1}` +
+  `${R} .hero .heroCopy .eng-cb-size-xl{font-size:clamp(36px,8cqi,64px);line-height:1.1}` +
+  `${R} .hero .heroCopy .eng-cb-size-xxl{font-size:clamp(42px,9.5cqi,80px);line-height:1.05}` +
+  `${R} .eng-cb-text-subtitle{font-size:1.15em;opacity:.8}` +
+  `${R} .eng-cb-text-caps{text-transform:uppercase;letter-spacing:.08em}` +
   `${R} .eng-cb-quote{padding:2px 0 2px 16px;border-left:3px solid var(--c-accent,var(--primary));font-style:italic;font-size:1.15em;line-height:1.5;overflow-wrap:anywhere}` +
   `${R} .eng-cb-quote p{margin:0}` +
   `${R} .eng-cb-quote footer{margin-top:6px;font-size:.8em;font-style:normal;opacity:.7}` +

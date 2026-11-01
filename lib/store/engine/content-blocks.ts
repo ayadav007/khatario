@@ -23,6 +23,8 @@ export const CONTENT_BLOCKS: BlockSchema[] = [
           { value: 'small', label: 'Small' },
           { value: 'medium', label: 'Medium' },
           { value: 'large', label: 'Large' },
+          { value: 'xl', label: 'Extra large' },
+          { value: 'xxl', label: 'Huge' },
         ],
       },
     ],
@@ -30,7 +32,20 @@ export const CONTENT_BLOCKS: BlockSchema[] = [
   {
     type: 'text',
     name: 'Text',
-    settings: [{ id: 'content', type: 'richtext', label: 'Text', default: '' }],
+    settings: [
+      { id: 'content', type: 'richtext', label: 'Text', default: '' },
+      {
+        id: 'style',
+        type: 'select',
+        label: 'Style',
+        default: 'body',
+        options: [
+          { value: 'body', label: 'Body' },
+          { value: 'subtitle', label: 'Subtitle' },
+          { value: 'caps', label: 'Uppercase' },
+        ],
+      },
+    ],
   },
   {
     type: 'quote',

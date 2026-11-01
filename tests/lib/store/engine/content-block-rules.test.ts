@@ -26,6 +26,15 @@ describe('content block rules', () => {
     expect(ruleBody('.st-root.eng-root .eng-cb-size-medium')).toBe('font-size:clamp(22px,3.4cqi,32px)');
   });
 
+  it('has xl and xxl heading sizes, a hero scale for them, and the text styles', () => {
+    expect(ruleBody('.st-root.eng-root .eng-cb-size-xl')).toBe('font-size:clamp(34px,6cqi,56px)');
+    expect(ruleBody('.st-root.eng-root .eng-cb-size-xxl')).toBe('font-size:clamp(40px,7.5cqi,72px)');
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-size-xl')).toContain('font-size:');
+    expect(ruleBody('.st-root.eng-root .hero .heroCopy .eng-cb-size-xxl')).toContain('font-size:');
+    expect(ruleBody('.st-root.eng-root .eng-cb-text-subtitle')).toBe('font-size:1.15em;opacity:.8');
+    expect(ruleBody('.st-root.eng-root .eng-cb-text-caps')).toBe('text-transform:uppercase;letter-spacing:.08em');
+  });
+
   it('centred Image with text centres its column items and stretches block text', () => {
     expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy')).toContain('align-items:center');
     expect(ruleBody('.st-root.eng-root .eng-iwt-center .heroCopy :is(.eng-cb-text,.eng-cb-quote)')).toContain('align-self:stretch');
