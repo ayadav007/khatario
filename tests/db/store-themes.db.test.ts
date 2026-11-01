@@ -755,4 +755,109 @@ d('Store themes repository (real DB)', () => {
       expectConverted(ok(await getOrCreateWorkingDraft(biz, USER)).data);
     });
   });
+
+  describe('old hero sections', () => {
+    const made: string[] = [];
+    const newBiz = async (): Promise<string> => {
+      const id = randomUUID();
+      made.push(id);
+      await pool.query(
+        `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type) VALUES ($1, 'Hero test', '29AAAPA1234A1Z5', '29', 'regular')`,
+        [id],
+      );
+      return id;
+    };
+
+    afterAll(async () => {
+      await pool.query(`DELETE FROM store_theme_versions WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM store_themes WHERE business_id = ANY($1)`, [made]);
+      await pool.query(`DELETE FROM businesses WHERE id = ANY($1)`, [made]);
+    });
+
+    /** Puts an old-shape Image banner and an old-shape Slideshow on the home page of a raw theme. */
+    const addOldHeroSections = (raw: Record<string, any>) => {
+      raw.templates.home.sections['old-banner'] = {
+        type: 'image-banner',
+        settings: {
+          heading: 'Festive sale',
+          description: 'Up to 50% off <everything> & more',
+          button_text: 'Shop now',
+          link: '/catalog',
+          text_position: 'center',
+        },
+        blocks: {},
+        block_order: [],
+      };
+      raw.templates.home.sections['old-show'] = {
+        type: 'slideshow',
+        settings: { overlay: 30, text_color: '#ffffff' },
+        blocks: {
+          s1: { type: 'slide', settings: { heading: 'One' } },
+          s2: { type: 'slide', settings: { heading: 'Two', overlay: 10, text_color: '#112233', position: 'bottom-right' } },
+        },
+        block_order: ['s1', 's2'],
+      };
+      raw.templates.home.order.push('old-banner', 'old-show');
+    };
+
+    const expectConverted = (data: ThemeData) => {
+      const banner = data.templates.home.sections['old-banner'];
+      expect(banner.block_order).toEqual(['eyebrow-1', 'heading-1', 'text-1', 'button-1']);
+      expect(banner.blocks['eyebrow-1'].type).toBe('eyebrow');
+      expect(banner.blocks['eyebrow-1'].settings.text).toBe('SPECIAL OFFER');
+      expect(banner.blocks['heading-1'].type).toBe('heading');
+      expect(banner.blocks['heading-1'].settings.text).toBe('Festive sale');
+      expect(banner.blocks['text-1'].type).toBe('text');
+      expect(banner.blocks['text-1'].settings.content).toBe('<p>Up to 50% off &lt;everything&gt; &amp; more</p>');
+      expect(banner.blocks['button-1'].type).toBe('button');
+      expect(banner.blocks['button-1'].settings.label).toBe('Shop now');
+      expect(banner.blocks['button-1'].settings.link).toBe('/catalog');
+      expect(banner.settings.position).toBe('middle-center');
+      expect(banner.settings.align).toBe('center');
+      expect(banner.settings.align_mobile).toBe('center');
+      for (const old of ['heading', 'description', 'button_text', 'link', 'text_position']) expect(banner.settings).not.toHaveProperty(old);
+
+      const show = data.templates.home.sections['old-show'];
+      expect(show.block_order).toEqual(['s1', 's2']);
+      // A slide with no value of its own takes the section's; a slide with its own keeps it.
+      expect(show.blocks.s1.settings.overlay).toBe(30);
+      expect(show.blocks.s1.settings.text_color).toBe('#ffffff');
+      expect(show.blocks.s1.settings.position).toBe('middle-left');
+      expect(show.blocks.s2.settings.overlay).toBe(10);
+      expect(show.blocks.s2.settings.text_color).toBe('#112233');
+      expect(show.blocks.s2.settings.position).toBe('bottom-right');
+      expect(show.settings).not.toHaveProperty('overlay');
+      expect(show.settings).not.toHaveProperty('text_color');
+    };
+
+    it('saving an old-shape banner and slideshow stores them converted, and getTheme returns them converted', async () => {
+      const biz = await newBiz();
+      ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const draft = ok(await createTheme(biz, USER, { name: 'Old hero', preset: 'studio', ctx }));
+      const raw = JSON.parse(JSON.stringify(draft.data)) as Record<string, any>;
+      addOldHeroSections(raw);
+      const saved = ok(await saveTheme(biz, USER, draft.id, raw, null));
+      expectConverted(saved.data);
+      expectConverted((await getTheme(biz, draft.id))!.data);
+      const stored = await pool.query(`SELECT data FROM store_themes WHERE id = $1`, [draft.id]);
+      expectConverted(stored.rows[0].data as ThemeData);
+    });
+
+    it('a theme stored in the old shape is returned converted by getTheme and the working draft, and converting twice changes nothing', async () => {
+      const biz = await newBiz();
+      const liveRow = ok(await createTheme(biz, USER, { name: 'Main', preset: 'studio', ctx }));
+      const row = await pool.query(`SELECT data FROM store_themes WHERE id = $1`, [liveRow.id]);
+      const raw = row.rows[0].data as Record<string, any>;
+      addOldHeroSections(raw);
+      await pool.query(`UPDATE store_themes SET data = $2::jsonb WHERE id = $1`, [liveRow.id, JSON.stringify(raw)]);
+
+      const loaded = (await getTheme(biz, liveRow.id))!;
+      expectConverted(loaded.data);
+      expect(loaded.data).toEqual(sanitizeThemeData(raw));
+      expect(sanitizeThemeData(loaded.data)).toEqual(loaded.data);
+
+      const w = ok(await getOrCreateWorkingDraft(biz, USER));
+      expectConverted(w.data);
+    });
+  });
 });
