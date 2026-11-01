@@ -6,6 +6,7 @@ import { groceryPreset } from './grocery';
 import { khatarioPreset } from './khatario';
 import { heritagePreset } from './heritage';
 import { convertLegacyMenus } from '../menus-sanitize';
+import { convertLegacyHeroSections } from '../hero-convert';
 
 export interface PresetContext {
   businessName: string;
@@ -35,8 +36,9 @@ function buildPreset(preset: ThemePreset, ctx: PresetContext): ThemeData {
 
 /**
  * A preset's theme. The preset files still lay out the header and footer links as `menu_link` / `link_column` blocks;
- * they become the `main` and `footer` menus here, so every preset is already what `sanitizeThemeData` keeps.
+ * they become the `main` and `footer` menus here, so every preset is already what `sanitizeThemeData` keeps. Old Image
+ * banner settings become Hero banner blocks the same way.
  */
 export function presetTheme(preset: ThemePreset, ctx: PresetContext): ThemeData {
-  return convertLegacyMenus(buildPreset(preset, ctx) as unknown as Record<string, unknown>) as unknown as ThemeData;
+  return convertLegacyHeroSections(convertLegacyMenus(buildPreset(preset, ctx) as unknown as Record<string, unknown>)) as unknown as ThemeData;
 }

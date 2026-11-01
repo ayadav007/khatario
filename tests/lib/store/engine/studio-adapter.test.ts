@@ -43,11 +43,11 @@ describe('studio adapter', () => {
   });
 
   it('slideshow: text colour and photo darkening', () => {
-    const blocks: BlockSpec[] = [['a', 'slide', { heading: 'H' }]];
-    const out = slideshowSettings(sec('slideshow', { text_color: '#1c1917', overlay: 40 }, blocks));
+    const blocks: BlockSpec[] = [['a', 'slide', { heading: 'H', text_color: '#1c1917', overlay: 40 }]];
+    const out = slideshowSettings(sec('slideshow', {}, blocks));
     expect(out.textColor).toBe('#1c1917');
     expect(out.overlay).toBe(40);
-    const plain = slideshowSettings(sec('slideshow', {}, blocks));
+    const plain = slideshowSettings(sec('slideshow', {}, [['a', 'slide', { heading: 'H' }]]));
     expect(plain.textColor).toBeUndefined();
     expect(plain.overlay).toBe(0);
   });
@@ -126,9 +126,14 @@ describe('studio adapter', () => {
   });
 
   it('banner and announcement', () => {
-    expect(bannerSettings(sec('image-banner', { heading: 'B', description: 'D', button_text: 'Go', text_position: 'center' }))).toMatchObject({
+    const blocks: BlockSpec[] = [
+      ['h', 'heading', { text: 'B' }],
+      ['t', 'text', { content: '<p>D &amp; E</p>' }],
+      ['b', 'button', { label: 'Go' }],
+    ];
+    expect(bannerSettings(sec('image-banner', { align: 'center' }, blocks))).toMatchObject({
       title: 'B',
-      text: 'D',
+      text: 'D & E',
       button: 'Go',
       textAlign: 'center',
     });

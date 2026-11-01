@@ -65,7 +65,10 @@ export const PAGE_STARTERS: Record<'blank' | 'about' | 'sale' | 'contact', { lab
     label: 'Sale',
     build: () =>
       tpl([
-        sec('image-banner', { heading: 'Sale', button_text: 'Shop now', link: '/catalog' }),
+        sec('image-banner', {}, [
+          blk('heading', { text: 'Sale' }),
+          blk('button', { label: 'Shop now', link: '/catalog' }),
+        ]),
         sec('product-rail', { source: 'discounted', heading: 'On offer now', limit: 8 }),
       ]),
   },

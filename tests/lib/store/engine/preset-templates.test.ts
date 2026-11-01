@@ -16,7 +16,7 @@ describe('preset templates', () => {
   it('the Sale starter banner opens the catalog', () => {
     const t = PAGE_STARTERS.sale.build();
     const banner = t.order.map((id) => t.sections[id]).find((x) => x.type === 'image-banner');
-    expect(banner?.settings.link).toBe('/catalog');
+    expect(banner?.blocks['button-1'].settings.link).toBe('/catalog');
   });
 
   it('the default product template survives sanitising with every section', () => {

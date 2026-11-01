@@ -15,6 +15,7 @@ import { PRESET_LOOK, mixHex, schemesFor } from './presets/look';
 import { template } from './presets/shared';
 import { engineSection, engineUrl, keepImage, migrateStudioSections, studioContextFor, Warnings, withLegacyBlocks } from './migrate-studio';
 import { convertLegacyMenus } from './menus-sanitize';
+import { convertLegacyHeroSections } from './hero-convert';
 import { migratePackHome } from './migrate-packs';
 
 export interface MigrationContext {
@@ -186,6 +187,6 @@ export function migrateStoreTheme(raw: unknown, ctx: MigrationContext): Migratio
       catalog: { order: [], sections: {} },
     },
   };
-  // The old header and footer links become menus here too, so the result is already what `sanitizeThemeData` keeps.
-  return { preset: t.pack, name: STORE_THEME_PRESETS[t.pack].label, data: convertLegacyMenus(data as unknown as Record<string, unknown>) as unknown as ThemeData, warnings: w.all() };
+  // The old header and footer links become menus (and old banners Hero banners) here too, so the result is already what `sanitizeThemeData` keeps.
+  return { preset: t.pack, name: STORE_THEME_PRESETS[t.pack].label, data: convertLegacyHeroSections(convertLegacyMenus(data as unknown as Record<string, unknown>)) as unknown as ThemeData, warnings: w.all() };
 }

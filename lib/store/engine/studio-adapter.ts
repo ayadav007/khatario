@@ -66,7 +66,9 @@ export function slideshowDevices(section: Section): SlideDevice[] {
 
 export function slideshowSettings(section: Section): StudioSettings {
   const s = settingsOf(section);
-  const [first, ...rest] = blocksOf(section, 'slide').map(toSlide);
+  const slideBlocks = blocksOf(section, 'slide');
+  const firstSlide: Raw = slideBlocks[0] ?? {};
+  const [first, ...rest] = slideBlocks.map(toSlide);
   const speed = num(s.speed) ?? 5;
   const out: StudioSettings = {
     ...toStudioBox(section),
@@ -74,8 +76,9 @@ export function slideshowSettings(section: Section): StudioSettings {
     layout: pick(s.layout, ['full', 'image-text', 'text-image'] as const) ?? 'image-text',
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
     imageFit: pick(s.image_fit, ['cover', 'contain', 'natural'] as const) ?? 'cover',
-    overlay: Math.min(80, Math.max(0, num(s.overlay) ?? 0)),
-    ...(typeof s.text_color === 'string' && /^#[0-9a-f]{3,8}$/i.test(s.text_color) ? { textColor: s.text_color } : {}),
+    // Darkening and text colour live on each slide now; until the renderer is per slide, slide one's apply to all.
+    overlay: Math.min(80, Math.max(0, num(firstSlide.overlay) ?? 0)),
+    ...(typeof firstSlide.text_color === 'string' && /^#[0-9a-f]{3,8}$/i.test(firstSlide.text_color) ? { textColor: firstSlide.text_color } : {}),
     ...(first ?? {}),
   };
   const slides = rest.slice(0, MAX_EXTRA_SLIDES);
@@ -143,17 +146,35 @@ export function productSectionSettings(section: Section): StudioSettings {
   return out;
 }
 
+/** Plain text from a rich text value (the hero's text block): tags removed, entities decoded. */
+function plainText(html: string): string {
+  return html
+    .replace(/<\/p>\s*<p>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+// Until the hero renderer reads the section directly, the banner shows its first heading, text and button blocks.
 export function bannerSettings(section: Section): StudioSettings {
   const s = settingsOf(section);
+  const heading = blocksOf(section, 'heading')[0];
+  const body = blocksOf(section, 'text')[0];
+  const button = blocksOf(section, 'button')[0];
   return {
     ...toStudioBox(section),
     image: str(s.image),
-    title: str(s.heading),
-    text: str(s.description),
-    button: str(s.button_text),
-    link: str(s.link),
+    title: str(heading?.text),
+    text: plainText(str(body?.content)),
+    button: str(button?.label),
+    link: str(button?.link),
     height: pick(s.height, ['small', 'medium', 'large'] as const) ?? 'medium',
-    textAlign: pick(s.text_position, ['left', 'center', 'right'] as const) ?? 'left',
+    textAlign: pick(s.align, ['left', 'center', 'right'] as const) ?? 'left',
   };
 }
 

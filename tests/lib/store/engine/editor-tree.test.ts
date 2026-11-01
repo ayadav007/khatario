@@ -121,9 +121,9 @@ describe('editor tree helpers', () => {
       key: 'image-banner:0',
       type: 'image-banner',
       presetIndex: 0,
-      title: 'Image banner',
-      schemaName: 'Image banner',
-      presetName: 'Image banner',
+      title: 'Hero banner',
+      schemaName: 'Hero banner',
+      presetName: 'Hero banner',
       reason: null,
       reasonText: null,
     });
