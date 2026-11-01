@@ -177,7 +177,7 @@ test('the customer sees the approval and the pickup', async () => {
   await expect(card.getByText(/Return RET-\d+: Approved/)).toBeVisible({ timeout: 30_000 });
   await expectStepDone(card, 'Approved');
   await expect(card.getByText(/Pickup booked/)).toBeVisible();
-  await expect(card.getByRole('link', { name: new RegExp(`Track pickup \(AWB ${awb}\)`) })).toBeVisible();
+  await expect(card.getByRole('link', { name: new RegExp(`Track pickup \\(AWB ${awb}\\)`) })).toBeVisible();
 });
 
 test('Shiprocket tracking reaches the return, not the store order', async () => {
