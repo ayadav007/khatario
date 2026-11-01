@@ -44,6 +44,24 @@ export function heroImageLayers(o: { image: string; image2: string; mobileImage:
  * words (`hb-bare`) gets a height of its own, since nothing else holds the card open (not with `adapt`, where the
  * picture sets it); with only a phone picture it shows on phones only (`hb-phone-only`).
  */
+/**
+ * The owner's own heights (px) as CSS variables and classes; 0 or less keeps the Height choice, so a value is only
+ * set for a size the owner picked. Computers and phones are separate (hero.css applies each in its own width range).
+ */
+export function heroHeightStyle(desktop: number, mobile: number): { classes: string; vars: Record<string, string> } {
+  const classes: string[] = [];
+  const vars: Record<string, string> = {};
+  if (Number.isFinite(desktop) && desktop > 0) {
+    classes.push('hb-hpx');
+    vars['--hb-h'] = `${Math.round(desktop)}px`;
+  }
+  if (Number.isFinite(mobile) && mobile > 0) {
+    classes.push('hb-hpx-m');
+    vars['--hb-h-m'] = `${Math.round(mobile)}px`;
+  }
+  return { classes: classes.join(' '), vars };
+}
+
 export function heroRootClasses(o: {
   height: string;
   motion: string;

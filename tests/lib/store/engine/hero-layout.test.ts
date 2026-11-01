@@ -1,4 +1,4 @@
-import { heroGridClass, heroImageLayers, heroRootClasses, heroZoomScale, type HeroLayer } from '@/lib/store/engine/hero-layout';
+import { heroGridClass, heroImageLayers, heroHeightStyle, heroRootClasses, heroZoomScale, type HeroLayer } from '@/lib/store/engine/hero-layout';
 
 const POSITIONS = [
   'top-left',
@@ -168,5 +168,22 @@ describe('heroZoomScale', () => {
   it('is 1 for an empty window or hero', () => {
     expect(heroZoomScale(0, 0, 0)).toBe(1);
     expect(heroZoomScale(Number.NaN, 400, 800)).toBe(1);
+  });
+});
+
+describe('heroHeightStyle', () => {
+  it('sets nothing for 0, so the Height choice applies', () => {
+    expect(heroHeightStyle(0, 0)).toEqual({ classes: '', vars: {} });
+  });
+  it('sets computers and phones separately', () => {
+    expect(heroHeightStyle(520, 0)).toEqual({ classes: 'hb-hpx', vars: { '--hb-h': '520px' } });
+    expect(heroHeightStyle(0, 300)).toEqual({ classes: 'hb-hpx-m', vars: { '--hb-h-m': '300px' } });
+    expect(heroHeightStyle(600, 280)).toEqual({
+      classes: 'hb-hpx hb-hpx-m',
+      vars: { '--hb-h': '600px', '--hb-h-m': '280px' },
+    });
+  });
+  it('ignores negative and non-finite values', () => {
+    expect(heroHeightStyle(-20, Number.NaN)).toEqual({ classes: '', vars: {} });
   });
 });

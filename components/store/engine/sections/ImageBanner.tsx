@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { contentBlocksOf } from '@/lib/store/engine/content-blocks-map';
-import { heroGridClass, heroImageLayers, heroRootClasses } from '@/lib/store/engine/hero-layout';
+import { heroGridClass, heroHeightStyle, heroImageLayers, heroRootClasses } from '@/lib/store/engine/hero-layout';
 import type { EngineSectionProps } from '../registry';
 import { ContentBlocks } from './ContentBlocks';
 import { HeroMedia } from './HeroMedia';
@@ -33,10 +33,13 @@ export function ImageBanner({ section }: EngineSectionProps) {
     layers,
   });
   const flags = state.split(' ');
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0);
+  const sized = heroHeightStyle(num(s.height_px), num(s.height_px_mobile));
+  const style = { ...(textColor ? { '--hb-text': textColor } : {}), ...sized.vars };
   return (
     <div
-      className={`banner eng-hero ${state} ${heroGridClass(str(s.position), str(s.align))}`}
-      style={textColor ? ({ '--hb-text': textColor } as CSSProperties) : undefined}
+      className={['banner eng-hero', state, sized.classes, heroGridClass(str(s.position), str(s.align))].filter(Boolean).join(' ')}
+      style={Object.keys(style).length ? (style as CSSProperties) : undefined}
     >
       {layers.length ? (
         <HeroMedia layers={layers} shade={overlay / 100} adapt={flags.includes('hb-h-adapt')} zoom={flags.includes('hb-motion-zoom')} />

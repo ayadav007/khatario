@@ -15,6 +15,10 @@
 .st-root.eng-root .eng-hero.hb-bare.hb-h-small{min-height:240px}
 .st-root.eng-root .eng-hero.hb-bare.hb-h-medium{min-height:360px}
 @container store (min-width:641px){.st-root.eng-root .eng-hero.hb-phone-only{display:none}}
+/* The owner's own height (heroHeightStyle): computers and phones each in their own range, after the size rules. */
+@container store (min-width:641px){.st-root.eng-root .eng-hero.eng-hero.hb-hpx{min-height:var(--hb-h)}}
+/* Full width: the card runs to the section's edges with square corners. */
+.st-root.eng-root .eng-sec--full .banner.eng-hero{margin-left:0;margin-right:0;border-radius:0}
 
 /* Pictures: behind the words, filling the card's padding box; two pictures share the width. */
 .st-root.eng-root .eng-hero-media{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:minmax(0,1fr)}
@@ -112,4 +116,6 @@
 .st-root.eng-root .hb-below-m.hb-h-small .eng-hero-pic{min-height:180px}
 .st-root.eng-root .hb-below-m.hb-h-large .eng-hero-pic{min-height:320px}
 .st-root.eng-root .hb-below-m.hb-h-adapt .eng-hero-pic{min-height:0}
+.st-root.eng-root .eng-hero.eng-hero.hb-hpx-m:not(.hb-below-m){min-height:var(--hb-h-m)}
+.st-root.eng-root .hb-below-m.hb-hpx-m .eng-hero-pic{min-height:var(--hb-h-m)}
 }

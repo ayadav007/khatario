@@ -45,7 +45,7 @@ export const COMMON_SETTINGS: SettingSchema[] = [
     max: 96,
     step: 4,
     default: 0,
-    info: "Once set, replaces a slideshow card's own gap on this side",
+    info: "Once set, replaces a slideshow or hero card's own gap on this side",
   },
   {
     id: 'spacing_right',
@@ -55,7 +55,7 @@ export const COMMON_SETTINGS: SettingSchema[] = [
     max: 96,
     step: 4,
     default: 0,
-    info: "Once set, replaces a slideshow card's own gap on this side",
+    info: "Once set, replaces a slideshow or hero card's own gap on this side",
   },
   { id: 'full_width', type: 'checkbox', label: 'Full width', default: false },
 ];

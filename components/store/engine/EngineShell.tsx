@@ -88,10 +88,11 @@ const THEME_RULES =
   '.st-root.eng-root .eng-cats--circles .cat :is(b,small){padding-inline:4px}' +
   '.st-root.eng-root .eng-cats--cards .cat{background:var(--st-card,#fff);border:1px solid rgba(0,0,0,.08);box-shadow:0 2px 8px rgba(0,0,0,.06)}' +
   // A spacing the merchant set replaces the hero card's own margin on that side (render-helpers sectionFrameClass).
-  '.st-root.eng-root .eng-sec.eng-sp-t .hero{margin-top:0}' +
-  '.st-root.eng-root .eng-sec.eng-sp-b .hero{margin-bottom:0}' +
-  '.st-root.eng-root .eng-sec.eng-sp-l .hero{margin-left:0}' +
-  '.st-root.eng-root .eng-sec.eng-sp-r .hero{margin-right:0}' +
+  // The Hero banner keeps the old banner card's margins (and its centred width on wide screens) until a side is set.
+  '.st-root.eng-root .eng-sec.eng-sp-t :is(.hero,.eng-hero){margin-top:0}' +
+  '.st-root.eng-root .eng-sec.eng-sp-b :is(.hero,.eng-hero){margin-bottom:0}' +
+  '.st-root.eng-root .eng-sec.eng-sp-l :is(.hero,.eng-hero){margin-left:0}' +
+  '.st-root.eng-root .eng-sec.eng-sp-r :is(.hero,.eng-hero){margin-right:0}' +
   // Slideshow text colour (any layout, over the full-photo white).
   '.st-root.eng-root .hero .heroCopy.customText :is(h1,p,.eyebrow,.benefits){color:var(--hero-text)}' +
   '.st-root.eng-root .hero.noImg:not(.full){grid-template-columns:1fr}' +
