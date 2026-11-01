@@ -9,6 +9,7 @@ import type {
   VerifyWebhookParams,
   VerifyWebhookResult,
 } from '../types';
+import { GatewayRefundError, isDefiniteRefusalStatus } from '../gateway-refund-error';
 
 /**
  * Razorpay Payment Links API — credentials ONLY from {@link PaymentProviderConfig}
@@ -248,7 +249,7 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
-      throw new Error(`Razorpay refund failed: ${res.status}`);
+      throw new GatewayRefundError(`Razorpay refund failed: ${res.status}`, res.status, isDefiniteRefusalStatus(res.status));
     }
     const providerRefundId = typeof json.id === 'string' ? json.id : '';
     if (!providerRefundId) throw new Error('Razorpay refund response did not include a refund id');

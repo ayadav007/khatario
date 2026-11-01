@@ -1,4 +1,5 @@
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
+import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 
 describe('RazorpayPaymentProvider.fetchRefund', () => {
   const realFetch = global.fetch;
@@ -40,6 +41,23 @@ describe('RazorpayPaymentProvider.fetchRefund', () => {
     await expect(provider.fetchRefund({ providerPaymentId: 'pay_1', providerRefundId: 'rfnd_1' })).resolves.toEqual({
       status: 'pending',
     });
+  });
+
+  it('a refund refusal says whether it is definite', async () => {
+    const args = { providerPaymentId: 'pay_1', amountPaise: 100, idempotencyKey: 'key_1234567890' };
+    for (const [status, definite] of [
+      [400, true],
+      [404, true],
+      [409, false],
+      [429, false],
+      [500, false],
+      [502, false],
+    ] as const) {
+      stub({ error: {} }, status);
+      const err = await provider.refundCapturedPayment(args).catch((e) => e);
+      expect(err).toBeInstanceOf(GatewayRefundError);
+      expect(err).toMatchObject({ message: `Razorpay refund failed: ${status}`, httpStatus: status, definite });
+    }
   });
 
   it('fetchRefund throws when Razorpay refuses the lookup', async () => {

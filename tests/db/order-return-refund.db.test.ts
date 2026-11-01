@@ -36,6 +36,8 @@ import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { createInvoiceForStoreOrder, fulfillStoreOrderPayment } from '@/lib/store/fulfill-paid-order';
 import { createReturn, receiveReturn, settleReturn } from '@/lib/returns/service';
 import { listReturnEvents } from '@/lib/returns/events';
+import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
+import { StoreRefundError } from '@/lib/store/store-refund';
 import {
   applyReturnGatewayRefundResult,
   checkPendingReturnRefunds,
@@ -367,7 +369,7 @@ d('refund a return to the original payment (real DB)', () => {
       returnId: id,
       userId: A,
       requestRefund: async () => {
-        throw new Error('Razorpay refund failed: 400');
+        throw new GatewayRefundError('Razorpay refund failed: 400', 400, true);
       },
     });
     expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Razorpay refund failed: 400' });
@@ -384,6 +386,53 @@ d('refund a return to the original payment (real DB)', () => {
     expect(rows).toHaveLength(2);
     expect(rows[1].idempotency_key).not.toBe(failed.idempotency_key);
     expect(gw.calls[0].idempotencyKey).toBe(rows[1].idempotency_key);
+    expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  test('an Easebuzz refusal marks the attempt failed', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    const out = await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        throw new StoreRefundError('Easebuzz declined this refund', 502, 'REFUND_FAILED');
+      },
+    });
+    expect(out).toMatchObject({ status: 'failed', error: 'Easebuzz declined this refund' });
+    expect((await refundRows(id))[0].status).toBe('failed');
+  });
+
+  test('an unclear gateway error keeps the attempt open and a retry repeats it with the same key', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    for (const err of [new TypeError('fetch failed'), new GatewayRefundError('Razorpay refund failed: 503', 503, false)]) {
+      const out = await refundReturnToOriginalPayment({
+        businessId: B,
+        returnId: id,
+        userId: A,
+        requestRefund: async () => {
+          throw err;
+        },
+      });
+      expect(out).toEqual({ status: 'pending', amount: 118, providerRefundId: null, error: err.message });
+      const rows = await refundRows(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: 'pending', provider_refund_id: null, failure_reason: err.message });
+    }
+    const kinds = (await listReturnEvents(pool, B, id)).map((e) => e.kind);
+    expect(kinds).not.toContain('refund_failed');
+    expect((await returnRow(id)).status).toBe('received');
+
+    const [open] = await refundRows(id);
+    const gw = fakeGateway('processed');
+    const retry = await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+    expect(gw.calls[0]).toMatchObject({ idempotencyKey: open.idempotency_key, amountPaise: 11800 });
+    expect(retry.status).toBe('processed');
+    const rows = await refundRows(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'processed', failure_reason: null });
     expect((await returnRow(id)).status).toBe('closed');
   });
 
@@ -491,6 +540,43 @@ d('refund a return to the original payment (real DB)', () => {
     expect(asked).toContain(row.idempotency_key);
     expect(res.processed).toBeGreaterThanOrEqual(1);
     expect((await refundRows(id))[0].status).toBe('processed');
+    expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  test('checkPendingReturnRefunds re-sends a Razorpay attempt that never got a refund id, with the same key', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    // The gateway call never answered (a crash or timeout after the claim committed).
+    await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+    const [row] = await refundRows(id);
+    expect(row).toMatchObject({ status: 'pending', provider: 'razorpay', provider_refund_id: null });
+    await pool.query(`UPDATE return_gateway_refunds SET created_at = NOW() - INTERVAL '20 minutes' WHERE id = $1`, [row.id]);
+
+    const sent: { providerPaymentId: string; amountPaise: number; idempotencyKey: string }[] = [];
+    const resubmit: GatewayRequester = async (args) => {
+      if (args.idempotencyKey !== row.idempotency_key) throw new TypeError('not this test');
+      sent.push(args);
+      return { providerRefundId: `rfnd_re_${tag}`, status: 'processed' };
+    };
+    const asked: string[] = [];
+    const res = await checkPendingReturnRefunds({
+      fetchStatus: async (r) => {
+        asked.push(r.idempotency_key);
+        return null;
+      },
+      resubmit,
+    });
+    expect(sent).toEqual([{ providerPaymentId: row.provider_payment_id, amountPaise: 11800, idempotencyKey: row.idempotency_key }]);
+    expect(asked).not.toContain(row.idempotency_key);
+    expect(res.processed).toBeGreaterThanOrEqual(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: `rfnd_re_${tag}` });
     expect((await returnRow(id)).status).toBe('closed');
   });
 });
