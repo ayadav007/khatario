@@ -38,6 +38,7 @@ import { createReturn, receiveReturn, settleReturn } from '@/lib/returns/service
 import { listReturnEvents } from '@/lib/returns/events';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { StoreRefundError } from '@/lib/store/store-refund';
+import { applyCustomerCredit, listAvailableCustomerCredits } from '@/lib/credit-notes/customer-credit';
 import {
   applyReturnGatewayRefundResult,
   checkPendingReturnRefunds,
@@ -77,7 +78,7 @@ d('refund a return to the original payment (real DB)', () => {
   }
 
   /** A billed store order for `qty` widgets at ₹100 + 18% GST. `paid` adds a verified gateway payment. */
-  async function billedOrder(qty: number, paid = false): Promise<{ orderId: string; invoiceId: string }> {
+  async function billedOrder(qty: number, paid = false, buyerPhone = phone): Promise<{ orderId: string; invoiceId: string }> {
     const id = randomUUID();
     seq += 1;
     const total = qty * 118;
@@ -86,7 +87,7 @@ d('refund a return to the original payment (real DB)', () => {
          (id, business_id, branch_id, order_number, customer_name, customer_phone,
           status, payment_status, payment_provider, subtotal, tax_total, delivery_charge, discount_amount, grand_total, delivery_mode)
        VALUES ($1,$2,$3,$4,'Buyer',$5,'confirmed',$6,$7,$8,$9,0,0,$10,'delivery')`,
-      [id, B, BR, `RF-${tag}-${seq}`, phone, paid ? 'unpaid' : 'cod', paid ? 'razorpay' : null, qty * 100, qty * 18, total],
+      [id, B, BR, `RF-${tag}-${seq}`, buyerPhone, paid ? 'unpaid' : 'cod', paid ? 'razorpay' : null, qty * 100, qty * 18, total],
     );
     await pool.query(
       `INSERT INTO store_order_items (order_id, item_id, item_name, quantity, unit, unit_price, tax_rate, line_total)
@@ -577,6 +578,104 @@ d('refund a return to the original payment (real DB)', () => {
     expect(asked).not.toContain(row.idempotency_key);
     expect(res.processed).toBeGreaterThanOrEqual(1);
     expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: `rfnd_re_${tag}` });
+    expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  test('a pending refund holds its amount on the credit note, so the credit cannot also be spent on a bill', async () => {
+    // A buyer of their own, so no other credit notes are in play.
+    const ownPhone = `5${String(Date.now()).slice(-9)}`;
+    const { invoiceId } = await billedOrder(1, true, ownPhone);
+    const balBefore = await customerBalance(invoiceId);
+    const id = await receivedReturn(invoiceId);
+    const customerId = (await returnRow(id)).customer_id as string;
+    const noteId = (await returnRow(id)).credit_note_id as string;
+    const spendable = async () =>
+      (await tx((c) => listAvailableCustomerCredits(c, B, customerId))).notes.find((n) => n.id === noteId)?.available ?? 0;
+    expect(await spendable()).toBe(118);
+
+    const gw = fakeGateway('pending');
+    await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+    expect(await spendable()).toBe(0);
+
+    // A new bill for the same customer cannot use the credit that is on its way back to the card.
+    const { invoiceId: nextBill } = await billedOrder(1, false, ownPhone);
+    expect((await pool.query(`SELECT customer_id FROM invoices WHERE id = $1`, [nextBill])).rows[0].customer_id).toBe(customerId);
+    expect((await tx((c) => listAvailableCustomerCredits(c, B, customerId))).available).toBe(0);
+    await expect(
+      tx((c) => applyCustomerCredit(c, { businessId: B, customerId, invoiceId: nextBill, amount: 118, userId: A })),
+    ).rejects.toMatchObject({ code: 'EXCEEDS_CREDIT' });
+
+    // Its own hold does not block the refund it is holding for.
+    const [row] = await refundRows(id);
+    const s = await applyReturnGatewayRefundResult({
+      businessId: B,
+      refundRowId: row.id,
+      providerRefundId: gw.refundId,
+      providerStatus: 'processed',
+      actor: 'webhook',
+    });
+    expect(s).toBe('processed');
+    expect(await spendable()).toBe(0);
+    expect((await returnRow(id)).status).toBe('closed');
+    expect(await customerBalance(invoiceId)).toBeCloseTo(balBefore + 118, 2); // + the unpaid next bill
+    const v = (
+      await pool.query(
+        `SELECT SUM(debit)::float8 AS dr, SUM(credit)::float8 AS cr FROM ledger_entry_lines
+          WHERE voucher_id = $1 AND voucher_type = 'credit_note_refund'`,
+        [(await refundRows(id))[0].credit_note_refund_id],
+      )
+    ).rows[0];
+    expect(v).toEqual({ dr: 118, cr: 118 });
+  });
+
+  test('a refund the gateway made but the books could not post keeps its refund id and is posted by the check later', async () => {
+    const { orderId, invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    const settlement = (
+      await pool.query(
+        `SELECT p.settlement_account_id FROM store_orders o JOIN payments p ON p.id = o.receipt_payment_id WHERE o.id = $1`,
+        [orderId],
+      )
+    ).rows[0].settlement_account_id as string;
+    await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [settlement]);
+    let row: Record<string, string>;
+    const refundId = `rfnd_post_${tag}`;
+    try {
+      const out = await refundReturnToOriginalPayment({
+        businessId: B,
+        returnId: id,
+        userId: A,
+        requestRefund: fakeGateway('processed', refundId).requester,
+      });
+      expect(out).toMatchObject({ status: 'pending', amount: 118, providerRefundId: refundId });
+      expect(out.error).toMatch(/^Refunded at the gateway; posting failed: /);
+      [row] = await refundRows(id);
+      expect(row).toMatchObject({ status: 'pending', provider_refund_id: refundId });
+      expect(row.failure_reason).toBe(out.error);
+      expect((await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rowCount).toBe(0);
+    } finally {
+      await pool.query(`UPDATE accounts SET is_active = true WHERE id = $1`, [settlement]);
+    }
+
+    await pool.query(`UPDATE return_gateway_refunds SET created_at = NOW() - INTERVAL '20 minutes' WHERE id = $1`, [row.id]);
+    const looked: string[] = [];
+    const resent: string[] = [];
+    const res = await checkPendingReturnRefunds({
+      fetchStatus: async (r) => {
+        if (r.provider_refund_id !== refundId) return null;
+        looked.push(r.provider_refund_id);
+        return 'processed';
+      },
+      resubmit: async (args) => {
+        resent.push(args.idempotencyKey);
+        throw new TypeError('not this test');
+      },
+    });
+    expect(looked).toEqual([refundId]);
+    expect(resent).not.toContain(row.idempotency_key);
+    expect(res.processed).toBeGreaterThanOrEqual(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: refundId, failure_reason: null });
+    expect((await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rowCount).toBe(1);
     expect((await returnRow(id)).status).toBe('closed');
   });
 });

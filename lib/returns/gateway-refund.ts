@@ -99,18 +99,18 @@ export async function originalRefundRoom(client: Db, businessId: string, returnI
   if (!row.credit_note_id) return no('This return has no credit note', provider);
 
   const note = await refundableOnCreditNote(client as PoolClient, businessId, row.credit_note_id);
-  const sums = await client.query<{ this_pending: string; order_refunds: string; cancel_refunds: string }>(
+  const sums = await client.query<{ order_refunds: string; cancel_refunds: string }>(
     `SELECT
-       COALESCE(SUM(g.amount) FILTER (WHERE g.order_return_id = $3 AND g.status = 'pending'), 0)::text AS this_pending,
        COALESCE(SUM(g.amount) FILTER (WHERE g.status IN ('pending', 'processed')), 0)::text AS order_refunds,
        (SELECT COALESCE(SUM(s.amount), 0) FROM store_payment_refunds s
          WHERE s.order_id = $1 AND s.business_id = $2 AND s.status <> 'failed')::text AS cancel_refunds
        FROM return_gateway_refunds g
       WHERE g.store_order_id = $1 AND g.business_id = $2`,
-    [row.store_order_id, businessId, returnId],
+    [row.store_order_id, businessId],
   );
   const s = sums.rows[0];
-  const onNote = round2((note?.refundable ?? 0) - Number(s.this_pending));
+  // The note's refundable already leaves out refunds on their way (they hold their amount on the note).
+  const onNote = round2(note?.refundable ?? 0);
   const online = round2((Number(row.grand_total) || 0) - Number(s.cancel_refunds) - Number(s.order_refunds));
   const max = Math.max(0, round2(Math.min(onNote, online)));
   if (max <= 0.004) return no('Nothing is left to refund to the original payment', provider);
@@ -239,8 +239,10 @@ async function sendAttempt(
   actor: 'staff' | 'system',
   actorUserId: string | null,
 ): Promise<SendResult> {
-  const apply = (providerRefundId: string | null, providerStatus: 'processed' | 'pending' | 'failed', failureReason: string | null = null) =>
-    applyReturnGatewayRefundResult({
+  const apply = async (providerRefundId: string | null, providerStatus: 'processed' | 'pending' | 'failed', failureReason: string | null = null) =>
+    (await applyDetailed(providerRefundId, providerStatus, failureReason)).status;
+  const applyDetailed = (providerRefundId: string | null, providerStatus: 'processed' | 'pending' | 'failed', failureReason: string | null = null) =>
+    applyResult({
       businessId: attempt.businessId,
       refundRowId: attempt.rowId,
       providerRefundId,
@@ -275,8 +277,11 @@ async function sendAttempt(
     // A notice may have confirmed the attempt meanwhile; then there is no error to show.
     return status === 'processed' ? { status, providerRefundId: null } : { status, providerRefundId: null, error };
   }
-  const status = await apply(result.providerRefundId, result.status);
-  return { status, providerRefundId: result.providerRefundId };
+  // Posting can fail after the gateway refunded: the attempt stays pending and the reason comes back.
+  const applied = await applyDetailed(result.providerRefundId, result.status);
+  return applied.error
+    ? { status: applied.status, providerRefundId: result.providerRefundId, error: applied.error }
+    : { status: applied.status, providerRefundId: result.providerRefundId };
 }
 
 function defaultRequester(provider: Provider, businessId: string): () => Promise<GatewayRequester> {
@@ -330,11 +335,7 @@ async function settlementAccount(client: PoolClient, businessId: string, storeOr
   return accounts.find((a) => a.kind === 'bank')?.id ?? null;
 }
 
-/**
- * Records what the gateway said about one attempt. Idempotent: a processed attempt stays processed
- * and is posted once; a failed attempt stays failed.
- */
-export async function applyReturnGatewayRefundResult(input: {
+type ApplyInput = {
   businessId: string;
   refundRowId: string;
   providerRefundId: string | null;
@@ -342,7 +343,19 @@ export async function applyReturnGatewayRefundResult(input: {
   failureReason?: string | null;
   actor: 'staff' | 'webhook' | 'system';
   actorUserId?: string | null;
-}): Promise<'pending' | 'processed' | 'failed'> {
+};
+
+/**
+ * Records what the gateway said about one attempt. Idempotent: a processed attempt stays processed
+ * and is posted once; a failed attempt stays failed. When the gateway has refunded but the books
+ * cannot post it (locked period, closed account...), the attempt stays pending with its refund id
+ * and a note, so later checks look it up instead of sending it again.
+ */
+export async function applyReturnGatewayRefundResult(input: ApplyInput): Promise<'pending' | 'processed' | 'failed'> {
+  return (await applyResult(input)).status;
+}
+
+async function applyResult(input: ApplyInput): Promise<{ status: 'pending' | 'processed' | 'failed'; error?: string }> {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -370,7 +383,7 @@ export async function applyReturnGatewayRefundResult(input: {
     const row = locked.rows[0];
     if (row.status !== 'pending') {
       await client.query('COMMIT');
-      return row.status;
+      return { status: row.status };
     }
     if (row.provider_refund_id && input.providerRefundId && row.provider_refund_id !== input.providerRefundId) {
       throw new ReturnError(409, 'REFUND_CONFLICT', 'This refund attempt already has a different gateway refund');
@@ -391,7 +404,7 @@ export async function applyReturnGatewayRefundResult(input: {
         await recordReturnEvent(client, { ...event, kind: 'refund_pending', note: `₹${inr(amount)} on its way to the original payment` });
       }
       await client.query('COMMIT');
-      return 'pending';
+      return { status: 'pending' };
     }
 
     if (input.providerStatus === 'failed') {
@@ -404,9 +417,53 @@ export async function applyReturnGatewayRefundResult(input: {
       );
       await recordReturnEvent(client, { ...event, kind: 'refund_failed', note: reason });
       await client.query('COMMIT');
-      return 'failed';
+      return { status: 'failed' };
     }
 
+    // The money has left at the gateway. If posting fails, keep the refund id and say why.
+    await client.query('SAVEPOINT post_gateway_refund');
+    try {
+      await postProcessedRefund(client, input, { ...row, returnId, storeOrderId, refundId, amount, event, retId: ret.id });
+    } catch (e) {
+      await client.query('ROLLBACK TO SAVEPOINT post_gateway_refund');
+      const message = e instanceof Error ? e.message : String(e);
+      const error = `Refunded at the gateway; posting failed: ${message}`;
+      console.error('[return-refunds] posting failed', input.refundRowId, message);
+      await client.query(
+        `UPDATE return_gateway_refunds SET provider_refund_id = $3, failure_reason = $4, updated_at = NOW()
+          WHERE id = $1 AND business_id = $2`,
+        [input.refundRowId, input.businessId, refundId, error],
+      );
+      await client.query('COMMIT');
+      return { status: 'pending', error };
+    }
+    await client.query('COMMIT');
+    return { status: 'processed' };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Posts a processed gateway refund against the credit note and closes what it settles. Caller's transaction. */
+async function postProcessedRefund(
+  client: PoolClient,
+  input: ApplyInput,
+  row: {
+    credit_note_id: string | null;
+    created_by: string | null;
+    returnId: string;
+    storeOrderId: string | null;
+    refundId: string | null;
+    amount: number;
+    retId: string;
+    event: { businessId: string; returnId: string; actorType: ApplyInput['actor']; actorUserId: string | null };
+  },
+): Promise<void> {
+  const { returnId, storeOrderId, refundId, amount, event } = row;
+  {
     if (!row.credit_note_id) throw new ReturnError(409, 'NO_CREDIT_NOTE', 'This return has no credit note');
     const accountId = await settlementAccount(client, input.businessId, storeOrderId);
     let paid: Awaited<ReturnType<typeof refundCreditNote>>;
@@ -421,6 +478,7 @@ export async function applyReturnGatewayRefundResult(input: {
         date: today(),
         reference: refundId,
         orderReturnId: returnId,
+        gatewayRefundId: input.refundRowId,
       });
     } catch (e) {
       if (e instanceof CreditNoteRefundError) throw new ReturnError(e.status, e.code, e.message);
@@ -440,7 +498,7 @@ export async function applyReturnGatewayRefundResult(input: {
               closed_at = CASE WHEN $4::boolean THEN NOW() ELSE closed_at END,
               updated_at = NOW()
         WHERE id = $1 AND business_id = $2`,
-      [ret.id, input.businessId, paid.amount, paid.fullyRefunded],
+      [row.retId, input.businessId, paid.amount, paid.fullyRefunded],
     );
     if (storeOrderId) {
       // The sale stays paid until return refunds reach what was paid online.
@@ -458,13 +516,6 @@ export async function applyReturnGatewayRefundResult(input: {
       kind: 'refunded',
       note: `₹${inr(paid.amount)} back to the original payment${refundId ? ` (${refundId})` : ''}`,
     });
-    await client.query('COMMIT');
-    return 'processed';
-  } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw e;
-  } finally {
-    client.release();
   }
 }
 

@@ -34,6 +34,8 @@ export async function refundableOnCreditNote(
   client: PoolClient,
   businessId: string,
   creditNoteId: string,
+  /** The pending gateway refund being posted, so its own hold on the note does not block it. */
+  opts?: { excludeGatewayRefundId?: string | null },
 ): Promise<{ customerId: string; refundable: number } | null> {
   const note = await client.query<{ customer_id: string }>(
     `SELECT customer_id FROM credit_notes WHERE id = $1 AND business_id = $2 AND status = 'active'`,
@@ -41,7 +43,7 @@ export async function refundableOnCreditNote(
   );
   const customerId = note.rows[0]?.customer_id;
   if (!customerId) return null;
-  const credits = await listAvailableCustomerCredits(client, businessId, customerId);
+  const credits = await listAvailableCustomerCredits(client, businessId, customerId, opts);
   const found = credits.notes.find((n) => n.id === creditNoteId);
   return { customerId, refundable: round2(found?.available ?? 0) };
 }
@@ -59,6 +61,8 @@ export async function refundCreditNote(
     reference?: string | null;
     notes?: string | null;
     orderReturnId?: string | null;
+    /** mode `gateway`: the return_gateway_refunds row being posted (its hold is its own room). */
+    gatewayRefundId?: string | null;
   },
 ): Promise<{ id: string; voucherNumber: string; amount: number; fullyRefunded: boolean }> {
   const locked = await client.query<{ id: string; branch_id: string | null; credit_note_number: string; refund_amount: string | null }>(
@@ -69,7 +73,9 @@ export async function refundCreditNote(
   const note = locked.rows[0];
   if (!note) throw new CreditNoteRefundError(404, 'CREDIT_NOTE_NOT_FOUND', 'Credit note not found');
 
-  const room = await refundableOnCreditNote(client, p.businessId, p.creditNoteId);
+  const room = await refundableOnCreditNote(client, p.businessId, p.creditNoteId, {
+    excludeGatewayRefundId: p.mode === 'gateway' ? p.gatewayRefundId ?? null : null,
+  });
   const refundable = room?.refundable ?? 0;
   if (refundable <= 0.004) {
     throw new CreditNoteRefundError(409, 'NOTHING_TO_REFUND', 'This credit note has no unused credit left to pay back');
