@@ -14,6 +14,7 @@ import { createTheme, editorPath, listThemes } from '@/components/store/library/
 import { demoStoreUrl } from '@/lib/store/demo-store-url';
 import { LIMIT_NOTICE, NO_EDIT_NOTICE, canAddTheme } from '@/lib/store/engine/library';
 import { catalogTheme } from '@/lib/store/engine/theme-catalog';
+import { themeStorePaths } from '@/lib/store/engine/theme-store';
 
 const PREMIUM_OFF_NOTICE = "Premium themes aren't on for your store yet.";
 
@@ -62,7 +63,7 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
       <div role="note" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
         {text}
       </div>
-      <Link href="/themes" className="text-sm text-gray-700 underline">
+      <Link href={themeStorePaths(true).store} className="text-sm text-gray-700 underline">
         Back to themes
       </Link>
     </div>
@@ -116,7 +117,7 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
           Add and customise
         </button>
-        <Link href="/themes" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+        <Link href={themeStorePaths(true).store} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
           Back to themes
         </Link>
       </div>

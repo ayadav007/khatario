@@ -1,6 +1,6 @@
 import { THEME_CATALOG, type CatalogTheme } from '@/lib/store/engine/theme-catalog';
 import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
-import { applyHref, categoryCounts, filterThemes, popularityOrder, previewPath, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
+import { applyHref, categoryCounts, filterThemes, popularityOrder, previewPath, themeNameFor, themeStorePaths, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
 
 const popularity = { grocery: 9, studio: 4, heritage: 4 };
 const today = '2026-11-01';
@@ -106,5 +106,22 @@ describe('previewPath', () => {
     expect(previewPath('catalog', 'grocery')).toBe('/catalog');
     expect(previewPath('product', 'jewellery')).toBe(`/products/${DEMO_CATALOGS.jewellery.products[0].id}`);
     expect(previewPath('product', 'general')).toMatch(/^\/products\/ge-/);
+  });
+});
+
+describe('themeStorePaths', () => {
+  it('on the website: /themes pages, and Apply through applyHref', () => {
+    const p = themeStorePaths(false);
+    expect(p.store).toBe('/themes');
+    expect(p.detail('quick')).toBe('/themes/quick');
+    expect(p.apply('quick', false)).toBe(applyHref('quick', false));
+    expect(p.apply('quick', true)).toBe(applyHref('quick', true));
+  });
+
+  it('inside the app: the explore pages, and Apply always straight to the app page (the merchant is signed in)', () => {
+    const p = themeStorePaths(true);
+    expect(p.store).toBe('/settings/online-store/themes/explore');
+    expect(p.detail('heritage-couture')).toBe('/settings/online-store/themes/explore/heritage-couture');
+    expect(p.apply('heritage-couture', false)).toBe('/settings/online-store/themes/apply/heritage-couture');
   });
 });

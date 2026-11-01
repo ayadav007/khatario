@@ -37,6 +37,7 @@ import {
   publishTheme,
   resetWorkingDraft,
 } from './api';
+import { themeStorePaths } from '@/lib/store/engine/theme-store';
 import { ThemeRowCard, type RowKind } from './ThemeRowCard';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RenameDialog } from './RenameDialog';
@@ -300,7 +301,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
             Copy current store design
           </button>
           <Link
-            href="/themes"
+            href={themeStorePaths(true).store}
             className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
           >
             <Store className="h-3.5 w-3.5" aria-hidden />

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
 import type { CatalogTheme } from '@/lib/store/engine/theme-catalog';
+import { themeStorePaths } from '@/lib/store/engine/theme-store';
 import { ApplyThemeLink } from './ApplyThemeLink';
 import { ThemeLivePreview } from './ThemeLivePreview';
 
@@ -36,8 +37,9 @@ export function BlankSketch() {
 }
 
 /** One theme in the store: live preview, name, badge, one line, palette, Details and Apply theme. */
-export function ThemeCard({ theme, src }: { theme: CatalogTheme; src: string | null }) {
+export function ThemeCard({ theme, src, inApp = false }: { theme: CatalogTheme; src: string | null; inApp?: boolean }) {
   const blank = !theme.demo;
+  const detail = themeStorePaths(inApp).detail(theme.slug);
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
       <div className="relative border-b border-slate-100">
@@ -48,7 +50,7 @@ export function ThemeCard({ theme, src }: { theme: CatalogTheme; src: string | n
         )}
         {!blank ? (
           <Link
-            href={`/themes/${theme.slug}`}
+            href={detail}
             className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900/80 px-4 py-2 text-sm font-medium text-white backdrop-blur hover:bg-slate-900"
           >
             <Eye className="h-4 w-4" aria-hidden />
@@ -67,13 +69,13 @@ export function ThemeCard({ theme, src }: { theme: CatalogTheme; src: string | n
           <div className="flex gap-2">
             {!blank ? (
               <Link
-                href={`/themes/${theme.slug}`}
+                href={detail}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
               >
                 Details
               </Link>
             ) : null}
-            <ApplyThemeLink slug={theme.slug} className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+            <ApplyThemeLink slug={theme.slug} inApp={inApp} className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700">
               Apply theme
             </ApplyThemeLink>
           </div>

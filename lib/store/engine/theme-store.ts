@@ -105,3 +105,18 @@ export function previewPath(page: 'home' | 'catalog' | 'product', catalog: DemoC
   if (page === 'product') return `/products/${DEMO_CATALOGS[catalog].products[0].id}`;
   return '/';
 }
+
+/**
+ * Where the theme store's links go. On the website: /themes, and Apply by sign-in state (applyHref). Inside the app
+ * (Explore themes in the theme library): the explore pages under Settings, and Apply straight to the app's page,
+ * so a signed-in merchant never meets the website's Login / Start free trial.
+ */
+export function themeStorePaths(inApp: boolean): {
+  store: string;
+  detail: (slug: string) => string;
+  apply: (slug: string, signedIn: boolean) => string;
+} {
+  if (!inApp) return { store: '/themes', detail: (slug) => `/themes/${slug}`, apply: applyHref };
+  const store = '/settings/online-store/themes/explore';
+  return { store, detail: (slug) => `${store}/${slug}`, apply: (slug) => applyHref(slug, true) };
+}

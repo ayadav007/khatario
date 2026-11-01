@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Check, ExternalLink, Monitor, Smartphone } from 'lucide-react';
 import { clsx } from 'clsx';
 import { THEME_CATEGORIES, type CatalogTheme } from '@/lib/store/engine/theme-catalog';
+import { themeStorePaths } from '@/lib/store/engine/theme-store';
 import { ApplyThemeLink } from './ApplyThemeLink';
 import { PhoneFrame } from './DeviceFrames';
 import { PaletteDots, ThemeBadge } from './ThemeCard';
@@ -22,7 +23,18 @@ const PAGES: { id: Page; label: string }[] = [
  * One theme's page: a large live preview of its demo store with Computer / Phone and Home / Catalog / Product
  * switches (the preview scrolls; links inside do nothing), and a side panel with Apply theme and the details.
  */
-export function ThemeDetail({ theme, urls, open }: { theme: CatalogTheme; urls: Record<Page, string>; open: string }) {
+export function ThemeDetail({
+  theme,
+  urls,
+  open,
+  inApp = false,
+}: {
+  theme: CatalogTheme;
+  urls: Record<Page, string>;
+  open: string;
+  /** Inside the app (Settings → Themes → Explore themes): links stay in the app. */
+  inApp?: boolean;
+}) {
   const [device, setDevice] = useState<'computer' | 'phone'>('computer');
   const [page, setPage] = useState<Page>('home');
   const toggle = (on: boolean) =>
@@ -30,15 +42,16 @@ export function ThemeDetail({ theme, urls, open }: { theme: CatalogTheme; urls: 
   const good = theme.categories.map((c) => THEME_CATEGORIES.find((x) => x.id === c)?.label).filter(Boolean);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className={inApp ? '' : 'mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8'}>
       <nav className="mb-4 text-sm text-slate-500" aria-label="Breadcrumb">
-        <Link href="/themes" className="hover:text-slate-800">
+        <Link href={themeStorePaths(inApp).store} className="hover:text-slate-800">
           Themes
         </Link>{' '}
         / <span className="text-slate-800">{theme.name}</span>
       </nav>
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">{theme.name}</h1>
+        {/* Inside the app the settings frame already shows the name. */}
+        {inApp ? null : <h1 className="text-3xl font-bold tracking-tight text-slate-900">{theme.name}</h1>}
         <ThemeBadge premium={theme.premium} />
       </div>
       <p className="-mt-3 mb-6 max-w-3xl text-slate-600">{theme.summary}</p>
@@ -79,6 +92,7 @@ export function ThemeDetail({ theme, urls, open }: { theme: CatalogTheme; urls: 
         <aside className="flex flex-col gap-6 lg:sticky lg:top-28 lg:self-start">
           <ApplyThemeLink
             slug={theme.slug}
+            inApp={inApp}
             className="block rounded-xl bg-primary-600 px-5 py-3 text-center text-base font-semibold text-white hover:bg-primary-700"
           >
             Apply theme

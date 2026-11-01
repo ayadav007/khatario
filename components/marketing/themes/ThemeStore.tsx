@@ -25,20 +25,24 @@ const POINTS = [
 ];
 
 /**
- * The public theme store (khatario.com/themes): hero with the featured theme drawn live, search, categories, tabs,
- * sorting and the theme cards. `popularity` carries only an order (higher first), never store counts.
+ * The theme store: hero with the featured theme drawn live, search, categories, tabs, sorting and the theme cards.
+ * On the website (khatario.com/themes) it has the marketing hero; inside the app (`inApp`, Settings → Themes → Explore
+ * themes) it drops the hero, keeps search in its toolbar and links stay in the app. `popularity` carries only an order
+ * (higher first), never store counts.
  */
 export function ThemeStore({
   themes,
   urls,
   popularity,
   today,
+  inApp = false,
 }: {
   themes: CatalogTheme[];
   /** Each theme's embedded demo store address by slug: `home` at computer width, `phone` the same page. */
   urls: Record<string, { home: string; phone: string }>;
   popularity: Partial<Record<ThemePreset, number>>;
   today: string;
+  inApp?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<ThemeCategoryId | 'all'>('all');
@@ -50,9 +54,23 @@ export function ThemeStore({
     [themes, category, tab, query, sort, popularity, today],
   );
   const featured = themes.find((t) => t.featured && urls[t.slug]);
+  const search = (
+    <label className="flex w-full max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-white px-5 py-3 shadow-sm focus-within:ring-2 focus-within:ring-primary-300">
+      <Search className="h-5 w-5 text-slate-400" aria-hidden />
+      <span className="sr-only">Search themes</span>
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search themes (grocery, fashion, jewellery…)"
+        className="w-full border-0 bg-transparent p-0 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+      />
+    </label>
+  );
 
   return (
     <>
+      {inApp ? null : (
       <section className="bg-[#fbf6ee]">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:px-8 lg:py-16">
           <div>
@@ -63,17 +81,7 @@ export function ThemeStore({
             <p className="mt-4 max-w-xl text-lg text-slate-600">
               Professional, mobile-first themes to create your online store in minutes.
             </p>
-            <label className="mt-7 flex max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-white px-5 py-3.5 shadow-sm focus-within:ring-2 focus-within:ring-primary-300">
-              <Search className="h-5 w-5 text-slate-400" aria-hidden />
-              <span className="sr-only">Search themes</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search themes (grocery, fashion, jewellery…)"
-                className="w-full border-0 bg-transparent p-0 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
-              />
-            </label>
+            <div className="mt-7">{search}</div>
             <ul className="mt-8 grid gap-5 sm:grid-cols-3">
               {POINTS.map(({ icon: Icon, title, text }) => (
                 <li key={title} className="flex items-start gap-3">
@@ -116,8 +124,15 @@ export function ThemeStore({
           ) : null}
         </div>
       </section>
+      )}
 
-      <section className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[220px_1fr] lg:px-8">
+      {inApp ? <div className="mb-6">{search}</div> : null}
+      <section
+        className={clsx(
+          'grid gap-8 lg:grid-cols-[220px_1fr]',
+          inApp ? '' : 'mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8',
+        )}
+      >
         <nav aria-label="Theme categories">
           <h2 className="mb-3 hidden text-lg font-semibold text-slate-900 lg:block">Categories</h2>
           <ul className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible">
@@ -179,7 +194,7 @@ export function ThemeStore({
           {shown.length ? (
             <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {shown.map((t) => (
-                <ThemeCard key={t.slug} theme={t} src={urls[t.slug]?.home ?? null} />
+                <ThemeCard key={t.slug} theme={t} src={urls[t.slug]?.home ?? null} inApp={inApp} />
               ))}
             </div>
           ) : (
