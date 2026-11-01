@@ -5,8 +5,10 @@
  * Every rule is scoped under the engine root.
  */
 .st-root.eng-root .eng-hero{display:grid;grid-template-columns:minmax(0,1fr);gap:0;align-items:stretch;justify-content:normal;position:relative;overflow:hidden;isolation:isolate}
-/* Heights: small and large as the old banner's bh-small / bh-large; medium is the card's own padding. */
-.st-root.eng-root .eng-hero.hb-h-small{padding-block:22px}
+/* No top or bottom padding, at any width or preset: the old engine banner had none (noBox put an inline
+   padding-top/bottom of 0 on the card), so existing banners keep their height. That also made Small look like Medium,
+   which stays so; Large is the old bh-large height. The card keeps its side padding. */
+.st-root.eng-root .banner.eng-hero{padding-top:0;padding-bottom:0}
 .st-root.eng-root .eng-hero.hb-h-large{min-height:360px}
 
 /* Pictures: behind the words, filling the card's padding box; two pictures share the width. */
@@ -32,9 +34,10 @@
 .st-root.eng-root .hb-align-right .eng-hero-copy{text-align:right}
 .st-root.eng-root .hb-align-center .eng-cb-buttons{justify-content:center}
 .st-root.eng-root .hb-align-right .eng-cb-buttons{justify-content:flex-end}
-/* The old banner's spacing: label and heading 8px above the next block, the description 16px above the button; the
-   label stays small although .banner p sizes paragraphs. */
-.st-root.eng-root .eng-hero .eng-cb-eyebrow{font-size:11px;opacity:1}
+/* The old banner's spacing: label and heading 8px above the next block, the description 16px above the button. The
+   label looks like the old <small class="eyebrow"> (same .eyebrow size, spacing, capitals and colour) although .banner p
+   sizes paragraphs; its line is as tall as the old one, which sat in a line of the card's 16px text. */
+.st-root.eng-root .eng-hero .eng-cb-eyebrow{font-size:11px;line-height:1.75;opacity:1}
 .st-root.eng-root .eng-hero :is(.eng-cb-eyebrow,.eng-cb-heading):not(:last-child){margin-bottom:8px}
 .st-root.eng-root .eng-hero .eng-cb-text:not(:last-child){margin-bottom:16px}
 /* Quick sizes .banner h2 itself (quick-theme.css), which keeps its old banner heading at Medium; the other sizes
@@ -44,7 +47,9 @@
 .st-root.eng-root .eng-hero h2.eng-cb-size-xl{font-size:clamp(34px,6cqi,56px)}
 .st-root.eng-root .eng-hero h2.eng-cb-size-xxl{font-size:clamp(40px,7.5cqi,72px)}
 
-/* Box: the words on a card in the section's colours. */
+/* Box: the words on a card in the section's colours, kept off the banner's top and bottom edges (new setting, so the
+   padding the plain banner lacks is added here only). */
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:38px}
 .st-root.eng-root .hb-box .eng-hero-copy{background:var(--c-card,var(--st-card,#fff));color:var(--c-text,var(--text));padding:28px 32px;border-radius:12px;max-width:min(100%,560px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
 /* A chosen text colour wins everywhere; without a box or colour, words over a picture are white (desktop hb-white,
    phones hb-white-m, so a phone picture alone or words under it on phones are told apart). */
@@ -67,9 +72,11 @@
 
 @container store (max-width:900px){
 .st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:26px 24px}
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:26px}
 }
 @container store (max-width:640px){
 .st-root.eng-root .hb-h-adapt .eng-hero-inner{padding:22px 18px}
+.st-root.eng-root .hb-box:not(.hb-h-adapt) .eng-hero-inner{padding-block:22px}
 /* The phone picture replaces the others; two pictures stack, or only the first shows. */
 .st-root.eng-root .eng-hero.hb-has-phone .eng-hero-pic:not(.phone){display:none}
 .st-root.eng-root .eng-hero.hb-has-phone .eng-hero-pic.phone{display:block}

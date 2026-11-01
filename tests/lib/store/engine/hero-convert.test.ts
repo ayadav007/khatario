@@ -22,11 +22,13 @@ describe('convertLegacyHeroSections: Hero banner', () => {
         legacy('image-banner', { image: '/x.webp', heading: 'Sale', description: 'Up to 50%', button_text: 'Shop', link: '/catalog', text_position: 'center', height: 'large' }),
       ),
     );
-    expect(s.block_order).toEqual(['heading-1', 'text-1', 'button-1']);
+    expect(s.block_order).toEqual(['eyebrow-1', 'heading-1', 'text-1', 'button-1']);
+    // Every old engine banner showed Studio's default label above its heading.
+    expect(s.blocks['eyebrow-1']).toEqual({ type: 'eyebrow', settings: { text: 'SPECIAL OFFER' } });
     expect(s.blocks['heading-1']).toEqual({ type: 'heading', settings: { text: 'Sale' } });
     expect(s.blocks['text-1']).toEqual({ type: 'text', settings: { content: '<p>Up to 50%</p>' } });
     expect(s.blocks['button-1']).toEqual({ type: 'button', settings: { label: 'Shop', link: '/catalog' } });
-    expect(s.settings).toEqual({ image: '/x.webp', height: 'large', position: 'middle-center', align: 'center' });
+    expect(s.settings).toEqual({ image: '/x.webp', height: 'large', position: 'middle-center', align: 'center', align_mobile: 'center' });
     // The darkening is the schema default (40, the old fixed value): nothing is written.
     expect(s.settings).not.toHaveProperty('overlay');
     for (const k of ['heading', 'description', 'button_text', 'link', 'text_position']) expect(s.settings).not.toHaveProperty(k);
@@ -55,17 +57,28 @@ describe('convertLegacyHeroSections: Hero banner', () => {
 
   it('an explicitly empty button text means no button, and the result runs once', () => {
     const out = convertLegacyHeroSections(legacy('image-banner', { heading: 'Sale', button_text: '' }));
-    expect(section(out).block_order).toEqual(['heading-1']);
+    expect(section(out).block_order).toEqual(['eyebrow-1', 'heading-1']);
     expect(convertLegacyHeroSections(out)).toEqual(out);
     const withDefault = convertLegacyHeroSections(legacy('image-banner', { heading: 'Sale' }));
     expect(convertLegacyHeroSections(withDefault)).toEqual(withDefault);
   });
 
-  it('an empty old banner gets no blocks but its position', () => {
+  it('an empty old banner keeps only its label and its position', () => {
     const s = section(convertLegacyHeroSections(legacy('image-banner', { heading: '', description: '', button_text: '', link: '', text_position: 'right' })));
-    expect(s.block_order).toEqual([]);
-    expect(s.blocks).toEqual({});
-    expect(s.settings).toEqual({ position: 'middle-right', align: 'right' });
+    expect(s.block_order).toEqual(['eyebrow-1']);
+    expect(s.blocks).toEqual({ 'eyebrow-1': { type: 'eyebrow', settings: { text: 'SPECIAL OFFER' } } });
+    expect(s.settings).toEqual({ position: 'middle-right', align: 'right', align_mobile: 'right' });
+  });
+
+  it('the old text position also sets the phone alignment; without one the phone default (left) stays', () => {
+    for (const side of ['left', 'center', 'right']) {
+      const s = section(convertLegacyHeroSections(legacy('image-banner', { heading: 'H', text_position: side })));
+      expect(s.settings).toEqual({ position: `middle-${side}`, align: side, align_mobile: side });
+    }
+    const none = section(convertLegacyHeroSections(legacy('image-banner', { heading: 'H' })));
+    expect(none.settings).toEqual({});
+    const bad = section(convertLegacyHeroSections(legacy('image-banner', { heading: 'H', text_position: 'middle' })));
+    expect(bad.settings).toEqual({});
   });
 
   it('a banner with blocks is left alone', () => {
@@ -82,7 +95,7 @@ describe('convertLegacyHeroSections: Hero banner', () => {
     const banner = { type: 'image-banner', settings: { heading: 'H' }, blocks: {}, block_order: [] };
     const tpl = { order: ['a'], sections: { a: banner } };
     const out = convertLegacyHeroSections({ header_group: tpl, footer_group: tpl, templates: { 'page.x': tpl } });
-    for (const t of [out.header_group, out.footer_group, out.templates['page.x']]) expect(t.sections.a.block_order).toEqual(['heading-1', 'button-1']);
+    for (const t of [out.header_group, out.footer_group, out.templates['page.x']]) expect(t.sections.a.block_order).toEqual(['eyebrow-1', 'heading-1', 'button-1']);
   });
 
   it('is pure: the input is untouched, and other section types pass through', () => {
@@ -162,8 +175,9 @@ describe('through the sanitiser', () => {
     const once = sanitizeThemeData(raw);
     expect(sanitizeThemeData(once)).toEqual(once);
     const b = once.templates.home.sections.b;
-    expect(b.block_order).toEqual(['heading-1', 'text-1', 'button-1']);
-    expect(b.settings).toEqual({ image: '/b.webp', position: 'middle-center', align: 'center' });
+    expect(b.block_order).toEqual(['eyebrow-1', 'heading-1', 'text-1', 'button-1']);
+    expect(b.blocks['eyebrow-1'].settings.text).toBe('SPECIAL OFFER');
+    expect(b.settings).toEqual({ image: '/b.webp', position: 'middle-center', align: 'center', align_mobile: 'center' });
     const s = once.templates.home.sections.s;
     expect(s.settings).toEqual({});
     expect(s.blocks['slide-1'].settings).toEqual({ heading: 'A', overlay: 30, text_color: '#ffffff', position: 'middle-left' });

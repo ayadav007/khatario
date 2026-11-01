@@ -24,14 +24,18 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** The label every old engine banner showed above its heading (Studio's default banner eyebrow, studio-layout.ts). */
+const OLD_BANNER_LABEL = 'SPECIAL OFFER';
+
 /**
- * The blocks the old banner settings stood for, in order (heading, text, button), with ids as `presets/shared.ts section()`
- * makes them. Only the values the old settings held are written, so the block schema defaults apply at render. An empty
- * value makes no block, and so does an explicit empty button label; a missing `button_text` stands for the old default
- * "Shop now" (existing stores look the same).
+ * The blocks the old banner settings stood for, in order (label, heading, text, button), with ids as
+ * `presets/shared.ts section()` makes them. The old banner always showed the "SPECIAL OFFER" label, so every converted
+ * banner starts with that label block (the owner can now edit or remove it). Only the values the old settings held are
+ * written, so the block schema defaults apply at render. An empty value makes no block, and so does an explicit empty
+ * button label; a missing `button_text` stands for the old default "Shop now" (existing stores look the same).
  */
 function bannerBlocks(settings: Raw): Array<{ id: string; block: Raw }> {
-  const out: Array<{ id: string; block: Raw }> = [];
+  const out: Array<{ id: string; block: Raw }> = [{ id: 'eyebrow-1', block: { type: 'eyebrow', settings: { text: OLD_BANNER_LABEL } } }];
   const heading = text(settings.heading);
   if (heading.trim()) out.push({ id: 'heading-1', block: { type: 'heading', settings: { text: heading } } });
   const description = text(settings.description);
@@ -57,6 +61,8 @@ function convertBanner(section: Raw): Raw {
   if (ALIGNS.includes(side)) {
     kept.position = `middle-${side}`;
     kept.align = side;
+    // The old text position applied on phones too.
+    kept.align_mobile = side;
   }
   const made = bannerBlocks(settings);
   return {

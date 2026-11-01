@@ -65,7 +65,9 @@ export const PAGE_STARTERS: Record<'blank' | 'about' | 'sale' | 'contact', { lab
     label: 'Sale',
     build: () =>
       tpl([
+        // The old banner always showed the "SPECIAL OFFER" label; the starter keeps it as a block.
         sec('image-banner', {}, [
+          blk('eyebrow', { text: 'SPECIAL OFFER' }),
           blk('heading', { text: 'Sale' }),
           blk('button', { label: 'Shop now', link: '/catalog' }),
         ]),
