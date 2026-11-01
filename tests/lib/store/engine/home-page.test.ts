@@ -66,6 +66,17 @@ describe('loadEngineHome', () => {
     expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: CAT, search: null });
   });
 
+  it('hands the out-of-stock place of the theme to the section data, and nothing for stay', async () => {
+    const themed = (oos_place: string) => ({ theme: { ...theme, data: { ...theme.data, settings: { product_card: { oos_place } } } }, preview: false });
+    resolveMock.mockResolvedValue({});
+    loadMock.mockResolvedValue(themed('hide'));
+    await loadEngineHome(store, {});
+    expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: null, search: null, outOfStock: 'hide' });
+    loadMock.mockResolvedValue(themed('stay'));
+    await loadEngineHome(store, {});
+    expect(resolveMock).toHaveBeenLastCalledWith(store, expect.any(Map), { categoryId: null, search: null });
+  });
+
   it('narrows by disc (10, 25 or 50) for the Offers links, ignoring any other value', async () => {
     loadMock.mockResolvedValue({ theme, preview: false });
     resolveMock.mockResolvedValue({});

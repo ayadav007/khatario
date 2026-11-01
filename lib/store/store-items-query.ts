@@ -22,9 +22,16 @@ export interface StoreItemsQueryInput {
   ids?: string[];
   /** `name` (default) A-Z, `new` newest first, `bestsellers` most sold on the store first. */
   sort?: StoreItemsSort;
+  /**
+   * Where out-of-stock products go: `stay` (default, the query is unchanged), `end` (listed last, after the
+   * chosen sort; a `ids` list keeps its exact order) or `hide` (dropped from the list, the count and the facets).
+   */
+  outOfStock?: StoreItemsOutOfStock;
   limit: number;
   offset: number;
 }
+
+export type StoreItemsOutOfStock = 'stay' | 'end' | 'hide';
 
 export type StoreItemsSort =
   | 'name'
@@ -90,6 +97,17 @@ export function stockExprs(branchIdx: number | null, variantAlias: string) {
         WHERE biv.business_id = i.business_id AND biv.item_variant_id = ${variantAlias}.id
           AND biv.branch_id = $${branchIdx}), ${variantAlias}.current_stock, 0)`,
   };
+}
+
+/**
+ * True when the product is out of stock: a product with sizes only when every size is, otherwise its own
+ * (branch-aware) stock. The exact opposite of the in-stock filter. `branchIdx` is the bound branch param, if any.
+ */
+export function outOfStockSql(branchIdx: number | null): string {
+  const ex = stockExprs(branchIdx, 'ovs');
+  return `(CASE WHEN COALESCE(i.has_variants, false)
+        THEN NOT EXISTS (SELECT 1 FROM item_variants ovs WHERE ovs.item_id = i.id AND ${ex.variant} > 0)
+        ELSE ${ex.item} <= 0 END)`;
 }
 
 /** Units sold through the store (cancelled orders excluded); expects the business id at $1. */
@@ -225,6 +243,11 @@ export function buildStoreItemFilters(
         ELSE ${ex.item} > 0 END)`);
   }
 
+  if (input.outOfStock === 'hide') {
+    if (input.branchId && !branchIdx) branchIdx = bind(input.branchId);
+    conditions.push(`NOT ${outOfStockSql(branchIdx)}`);
+  }
+
   if (input.search) {
     const n = bind(`%${input.search}%`);
     conditions.push(`(i.name ILIKE $${n} OR i.code ILIKE $${n})`);
@@ -282,10 +305,14 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
       'CASE WHEN i.mrp > 0 THEN (i.mrp - i.selling_price) / i.mrp END DESC NULLS LAST, i.name ASC',
     rating: `(COALESCE(rs.sum, 0) + ${BAYES_PRIOR} * ${BAYES_WEIGHT}) / (COALESCE(rs.cnt, 0) + ${BAYES_WEIGHT}) DESC, COALESCE(rs.cnt, 0) DESC, i.name ASC`,
   };
-  // byIds keeps the caller's order regardless of sort.
-  const orderSql = filters.idsIdx
+  // byIds keeps the caller's order regardless of sort (and of where out-of-stock products go).
+  const sortSql = filters.idsIdx
     ? `array_position($${filters.idsIdx}::uuid[], i.id)`
     : sortOrders[sort];
+  const orderSql =
+    input.outOfStock === 'end' && !filters.idsIdx
+      ? `CASE WHEN ${outOfStockSql(branchIdx)} THEN 1 ELSE 0 END ASC, ${sortSql}`
+      : sortSql;
   const groupExtra =
     (sort === 'bestsellers' ? ', sold.sold' : '') + (sort === 'rating' ? ', rs.sum, rs.cnt' : '');
 
@@ -311,19 +338,27 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
        FROM items i
        WHERE ${whereSql}`;
 
+  // Hidden out-of-stock products are not counted in their category either.
+  const categoryParams: unknown[] = [input.businessId];
+  let categoryHide = '';
+  if (input.outOfStock === 'hide') {
+    if (input.branchId) categoryParams.push(input.branchId);
+    categoryHide = `
+         AND NOT ${outOfStockSql(input.branchId ? 2 : null)}`;
+  }
   const categorySql = `
        SELECT c.id, c.name, COUNT(i.id)::int AS item_count
        FROM categories c
        INNER JOIN items i ON i.category_id = c.id
        WHERE i.business_id = $1 AND i.show_in_store = true
          AND (i.is_active IS NULL OR i.is_active = true)
-         AND i.deleted_at IS NULL
+         AND i.deleted_at IS NULL${categoryHide}
        GROUP BY c.id, c.name
        ORDER BY c.name`;
 
   assertQueryBinds(listSql, listParams);
   assertQueryBinds(countSql, whereParams);
-  assertQueryBinds(categorySql, [input.businessId]);
+  assertQueryBinds(categorySql, categoryParams);
 
   return {
     listSql,
@@ -331,6 +366,6 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
     countSql,
     countParams: whereParams,
     categorySql,
-    categoryParams: [input.businessId],
+    categoryParams,
   };
 }

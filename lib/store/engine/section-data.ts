@@ -1,7 +1,11 @@
 import { queryRows } from '@/lib/db';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { mapStoreItemRow, type StoreItem } from '@/lib/store/map-store-product';
-import { buildStoreItemsQuery, type StoreItemsQueryInput } from '@/lib/store/store-items-query';
+import {
+  buildStoreItemsQuery,
+  type StoreItemsOutOfStock,
+  type StoreItemsQueryInput,
+} from '@/lib/store/store-items-query';
 import { getSectionSchema } from './registry';
 import type { SectionDataRequest } from './schema-types';
 import type { Template } from './types';
@@ -35,6 +39,8 @@ export interface ResolveOptions {
   search?: string | null;
   /** Narrows only `source: 'all'` requests (the `disc` URL key: 10, 25 or 50 percent off or more). */
   minDiscountPct?: number | null;
+  /** The theme's `product_card.oos_place`: where out-of-stock products go in every product load (default `stay`). */
+  outOfStock?: StoreItemsOutOfStock;
 }
 
 type ProductsRequest = NonNullable<SectionDataRequest['products']>;
@@ -83,6 +89,7 @@ function queryInput(
     branchId: opts.branchId ?? null,
     limit: p.limit,
     offset: 0,
+    ...(opts.outOfStock && opts.outOfStock !== 'stay' ? { outOfStock: opts.outOfStock } : {}),
   };
   switch (p.source) {
     case 'featured':
@@ -144,8 +151,18 @@ async function loadProducts(
 }
 
 /** A business's store categories (those with store products), by name, with item counts. */
-export async function storeCategories(businessId: string): Promise<SectionCategory[]> {
-  const q = buildStoreItemsQuery({ businessId, limit: 1, offset: 0 });
+export async function storeCategories(
+  businessId: string,
+  opts: Pick<ResolveOptions, 'branchId' | 'outOfStock'> = {},
+): Promise<SectionCategory[]> {
+  // With out-of-stock products hidden, a category counts only the products still listed.
+  const q = buildStoreItemsQuery({
+    businessId,
+    branchId: opts.branchId ?? null,
+    ...(opts.outOfStock === 'hide' ? { outOfStock: 'hide' as const } : {}),
+    limit: 1,
+    offset: 0,
+  });
   const rows = await queryRows<{ id: string; name: string; item_count: number }>(
     q.categorySql,
     q.categoryParams,
@@ -166,7 +183,7 @@ export async function storeCategories(businessId: string): Promise<SectionCatego
   return rows.map((r) => ({ id: r.id, name: r.name, item_count: r.item_count, image_url: photo.get(r.id) ?? null }));
 }
 
-async function loadCategories(store: StoreBusinessContext): Promise<SectionCategory[]> {
+async function loadCategories(store: StoreBusinessContext, opts: ResolveOptions): Promise<SectionCategory[]> {
   if (store.is_demo) {
     const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
     const demo = filterDemoCatalog({ pack: store.store_theme?.pack, page: 1, limit: 500 });
@@ -178,7 +195,7 @@ async function loadCategories(store: StoreBusinessContext): Promise<SectionCateg
       image_url: byName.find((i) => i.category_id === c.id && i.image_url)?.image_url ?? null,
     }));
   }
-  return storeCategories(store.business_id);
+  return storeCategories(store.business_id, opts);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -233,6 +250,7 @@ async function loadProductsById(store: StoreBusinessContext, ids: string[], opts
     businessId: store.business_id,
     branchId: opts.branchId ?? null,
     ids,
+    ...(opts.outOfStock && opts.outOfStock !== 'stay' ? { outOfStock: opts.outOfStock } : {}),
     limit: ids.length,
     offset: 0,
   });
@@ -284,7 +302,7 @@ export async function resolveSectionData(
   for (const [id, req] of requests) {
     if (req.products) sectionKey.set(id, productJob(req.products));
     if ((req.categories || req.shelves) && !categoriesJob) {
-      categoriesJob = loadCategories(store).then(
+      categoriesJob = loadCategories(store, opts).then(
         (items) => ({ items }),
         (e) => ({ error: message(e) }),
       );

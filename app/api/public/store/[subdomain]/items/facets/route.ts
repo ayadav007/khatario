@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
+import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { isUuid } from '@/lib/store/review-http';
 import { parseCatalogQuery } from '@/lib/store/query-params';
@@ -28,8 +29,11 @@ export async function GET(
     if (store.is_demo) return NextResponse.json(EMPTY_FACETS, { headers });
 
     const parsed = parseCatalogQuery(searchParams);
+    // Hidden out-of-stock products are not counted in any facet, so the numbers match the list.
+    const outOfStock = await storeOosPlace(store, searchParams);
     const queries = buildStoreFacetsQuery({
       ...parsed,
+      outOfStock,
       businessId: store.business_id,
       branchId: isUuid(searchParams.get('branch_id')) ? searchParams.get('branch_id') : null,
       limit: 0,

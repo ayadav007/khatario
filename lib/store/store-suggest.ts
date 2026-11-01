@@ -1,4 +1,4 @@
-import { assertQueryBinds } from '@/lib/store/store-items-query';
+import { assertQueryBinds, outOfStockSql, type StoreItemsOutOfStock } from '@/lib/store/store-items-query';
 
 const MAX_Q = 60;
 const VISIBLE =
@@ -17,6 +17,7 @@ export type SuggestResult = {
 export function buildSuggestQuery(
   businessId: string,
   q: string,
+  outOfStock: StoreItemsOutOfStock = 'stay',
 ): { products: { sql: string; params: unknown[] }; categories: { sql: string; params: unknown[] } } | null {
   const text = q.trim().slice(0, MAX_Q).trim();
   if (text.length < 2) return null;
@@ -24,12 +25,15 @@ export function buildSuggestQuery(
 
   // $2 prefix, $3 anywhere, $4 start of a later word.
   const productParams = [businessId, `${e}%`, `%${e}%`, `% ${e}%`];
+  // The theme's out-of-stock place applies to suggestions too (store-wide stock: suggestions have no branch).
+  const hideSql = outOfStock === 'hide' ? `\n        AND NOT ${outOfStockSql(null)}` : '';
+  const endSql = outOfStock === 'end' ? `CASE WHEN ${outOfStockSql(null)} THEN 1 ELSE 0 END, ` : '';
   const productSql = `
       SELECT i.id, i.name, i.image_url, i.selling_price::float8 AS selling_price, i.mrp::float8 AS mrp
       FROM items i
       WHERE i.business_id = $1 AND ${VISIBLE}
-        AND (i.name ILIKE $3 ESCAPE '\\' OR i.code ILIKE $3 ESCAPE '\\' OR i.brand ILIKE $3 ESCAPE '\\')
-      ORDER BY CASE WHEN i.name ILIKE $2 ESCAPE '\\' OR i.name ILIKE $4 ESCAPE '\\' THEN 0 ELSE 1 END,
+        AND (i.name ILIKE $3 ESCAPE '\\' OR i.code ILIKE $3 ESCAPE '\\' OR i.brand ILIKE $3 ESCAPE '\\')${hideSql}
+      ORDER BY ${endSql}CASE WHEN i.name ILIKE $2 ESCAPE '\\' OR i.name ILIKE $4 ESCAPE '\\' THEN 0 ELSE 1 END,
         i.name ASC
       LIMIT 6`;
 

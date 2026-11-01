@@ -1,5 +1,6 @@
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { loadEngineTheme } from './load-theme';
+import { themeOosPlace } from './oos-place';
 import { collectDataRequests, resolveSectionData, type SectionData } from './section-data';
 import type { PageTemplate, Template, ThemeData, ThemeRow } from './types';
 
@@ -98,10 +99,12 @@ export async function loadEnginePage(
       template ?? { order: [], sections: {} },
       theme.data.footer_group,
     ]);
+    const oosPlace = themeOosPlace(theme.data);
     const data = await resolveSectionData(store, requests, {
       categoryId: narrow?.categoryId ?? null,
       search: narrow?.search ?? null,
       ...(narrow?.minDiscountPct ? { minDiscountPct: narrow.minDiscountPct } : {}),
+      ...(oosPlace !== 'stay' ? { outOfStock: oosPlace } : {}),
     });
     // A demo theme is never stored, and a published version is read-only (D47), so neither can ever be edited.
     const editor = preview && !engine.demo && !engine.version && first(searchParams.editor) === '1';

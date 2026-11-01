@@ -32,4 +32,18 @@ describe('store suggest', () => {
     const q = buildSuggestQuery('b1', 'x'.repeat(100))!;
     expect(q.products.params).toContain('x'.repeat(60) + '%');
   });
+
+  it('applies the out-of-stock place to products only, and not at all by default', () => {
+    const plain = buildSuggestQuery('b1', 'milk')!;
+    expect(buildSuggestQuery('b1', 'milk', 'stay')).toEqual(plain);
+    expect(plain.products.sql).not.toContain('ovs');
+    const hide = buildSuggestQuery('b1', 'milk', 'hide')!;
+    expect(hide.products.sql).toContain('AND NOT (CASE WHEN COALESCE(i.has_variants, false)');
+    expect(hide.categories).toEqual(plain.categories);
+    expect(hide.products.params).toEqual(plain.products.params);
+    const end = buildSuggestQuery('b1', 'milk', 'end')!;
+    expect(end.products.sql).toMatch(/ORDER BY CASE WHEN \(CASE WHEN COALESCE\(i\.has_variants, false\)[\s\S]*THEN 1 ELSE 0 END, CASE WHEN/);
+    assertQueryBinds(hide.products.sql, hide.products.params);
+    assertQueryBinds(end.products.sql, end.products.params);
+  });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
+import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { isUuid } from '@/lib/store/review-http';
 import { parseCatalogQuery } from '@/lib/store/query-params';
@@ -101,6 +102,8 @@ export async function GET(
     }
 
     const { buildStoreItemsQuery } = await import('@/lib/store/store-items-query');
+    // Engine stores only: the store's theme decides where out-of-stock products go; any other store keeps them in place.
+    const outOfStock = await storeOosPlace(store, searchParams);
     const q = buildStoreItemsQuery({
       businessId: store.business_id,
       categoryId,
@@ -116,6 +119,7 @@ export async function GET(
       minDiscountPct: parsed.minDiscountPct,
       ids: parsed.ids,
       sort,
+      outOfStock,
       limit,
       offset,
     });

@@ -168,4 +168,77 @@ describe('buildStoreItemsQuery', () => {
     const q = buildStoreItemsQuery({ businessId, limit: 12, offset: 0 });
     expect(q.listSql).toContain('i.brand');
   });
+  describe('outOfStock placement', () => {
+    const base = { businessId, limit: 12, offset: 0 } as const;
+    const branchId = '22222222-2222-2222-2222-222222222222';
+
+    it('stay (or nothing) leaves the SQL and binds exactly as they were', () => {
+      const plain = buildStoreItemsQuery({ ...base });
+      const stay = buildStoreItemsQuery({ ...base, outOfStock: 'stay' });
+      expect(stay).toEqual(plain);
+      expect(plain.listSql).not.toContain('ovs');
+      expect(plain.listSql).toContain('ORDER BY i.name ASC');
+    });
+
+    it('end puts a leading out-of-stock term before the chosen sort', () => {
+      const q = buildStoreItemsQuery({ ...base, sort: 'price_asc', outOfStock: 'end' });
+      const order = q.listSql.slice(q.listSql.lastIndexOf('ORDER BY'));
+      expect(order).toMatch(/^ORDER BY CASE WHEN \(CASE WHEN COALESCE\(i\.has_variants, false\)/);
+      expect(order.indexOf('ovs.item_id = i.id')).toBeLessThan(order.indexOf('i.selling_price ASC'));
+      expect(order).toContain('THEN 1 ELSE 0 END ASC, i.selling_price ASC');
+      expect(q.countSql).not.toContain('ovs');
+      expect(q.listParams).toEqual([businessId, 12, 0]);
+    });
+
+    it('a product with sizes is out only when every size is out, one without uses its own stock', () => {
+      const q = buildStoreItemsQuery({ ...base, outOfStock: 'end' });
+      expect(q.listSql).toContain(
+        'THEN NOT EXISTS (SELECT 1 FROM item_variants ovs WHERE ovs.item_id = i.id AND COALESCE(ovs.current_stock, 0) > 0)',
+      );
+      expect(q.listSql).toContain('ELSE COALESCE(i.current_stock, 0) <= 0 END)');
+    });
+
+    it('end with a branch reads that branch stock through one shared bind', () => {
+      const q = buildStoreItemsQuery({ ...base, branchId, outOfStock: 'end' });
+      expect(q.listParams).toEqual([businessId, branchId, 12, 0]);
+      expect(q.listSql).toContain('bis.branch_id = $2');
+      expect(q.listSql).toContain('biv.branch_id = $2');
+    });
+
+    it('end leaves a by-ids list in the caller order', () => {
+      const a = '55555555-5555-5555-5555-555555555555';
+      const q = buildStoreItemsQuery({ ...base, ids: [a], outOfStock: 'end' });
+      expect(q.listSql).toMatch(/ORDER BY array_position\(/);
+      expect(q.listSql).not.toContain('THEN 1 ELSE 0 END');
+    });
+
+    it('hide filters the list and the count the same way and keeps the order alone', () => {
+      const q = buildStoreItemsQuery({ ...base, sort: 'new', outOfStock: 'hide' });
+      expect(q.listSql).toContain('NOT (CASE WHEN COALESCE(i.has_variants, false)');
+      expect(q.countSql).toContain('NOT (CASE WHEN COALESCE(i.has_variants, false)');
+      expect(q.listSql).toContain('ORDER BY i.created_at DESC NULLS LAST, i.name ASC');
+      expect(q.countParams).toEqual([businessId]);
+    });
+
+    it('hide with a branch binds it once for the filter and the list stock', () => {
+      const q = buildStoreItemsQuery({ ...base, branchId, outOfStock: 'hide' });
+      expect(q.countParams).toEqual([businessId, branchId]);
+      expect(q.listParams).toEqual([businessId, branchId, 12, 0]);
+    });
+
+    it('hide with the in-stock filter and a branch still binds the branch once', () => {
+      const q = buildStoreItemsQuery({ ...base, branchId, inStockOnly: true, search: 'x', outOfStock: 'hide' });
+      expect(q.countParams).toEqual([businessId, branchId, '%x%']);
+    });
+
+    it('hide removes hidden products from the category counts too', () => {
+      expect(buildStoreItemsQuery({ ...base }).categorySql).not.toContain('ovs');
+      const q = buildStoreItemsQuery({ ...base, outOfStock: 'hide' });
+      expect(q.categorySql).toContain('AND NOT (CASE WHEN COALESCE(i.has_variants, false)');
+      expect(q.categoryParams).toEqual([businessId]);
+      const b = buildStoreItemsQuery({ ...base, branchId, outOfStock: 'hide' });
+      expect(b.categoryParams).toEqual([businessId, branchId]);
+      expect(b.categorySql).toContain('bis.branch_id = $2');
+    });
+  });
 });

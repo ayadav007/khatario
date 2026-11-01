@@ -194,3 +194,51 @@ describe('products by id', () => {
     expect(out.s1.productsById).toEqual({});
   });
 });
+
+describe('out-of-stock place', () => {
+  const queryMock = queryRows as jest.Mock;
+  const a = '11111111-1111-4111-8111-111111111111';
+  const store = { business_id: '99999999-9999-4999-8999-999999999999', store_subdomain: 'ganesh' } as StoreBusinessContext;
+  const sqls = () => queryMock.mock.calls.map((c) => String(c[0]));
+
+  beforeEach(() => {
+    queryMock.mockReset();
+    queryMock.mockResolvedValue([]);
+  });
+
+  it('adds nothing for stay or no option: the product SQL stays as it was', async () => {
+    const req = new Map<string, SectionDataRequest>([['s', { products: { source: 'new', limit: 4 }, productIds: [a] }]]);
+    await resolveSectionData(store, req);
+    const plain = sqls();
+    queryMock.mockClear();
+    await resolveSectionData(store, req, { outOfStock: 'stay' });
+    expect(sqls()).toEqual(plain);
+    expect(plain.join('\n')).not.toContain('ovs');
+  });
+
+  it('end orders section products, hand-picked products keep their order', async () => {
+    await resolveSectionData(
+      store,
+      new Map<string, SectionDataRequest>([['s', { products: { source: 'new', limit: 4 }, productIds: [a] }]]),
+      { outOfStock: 'end' },
+    );
+    const [list, byIds] = sqls().sort((x, y) => (x.includes('array_position') ? 1 : 0) - (y.includes('array_position') ? 1 : 0));
+    expect(list).toContain('THEN 1 ELSE 0 END ASC, i.created_at DESC');
+    expect(byIds).toContain('array_position(');
+    expect(byIds).not.toContain('THEN 1 ELSE 0 END');
+  });
+
+  it('hide drops out-of-stock products from section lists, hand-picked ones and category counts', async () => {
+    await resolveSectionData(
+      store,
+      new Map<string, SectionDataRequest>([
+        ['s', { products: { source: 'featured', limit: 4 }, productIds: [a] }],
+        ['c', { categories: true }],
+      ]),
+      { outOfStock: 'hide' },
+    );
+    const itemQueries = sqls().filter((q) => q.includes('NOT (CASE WHEN COALESCE(i.has_variants'));
+    // featured list, by-ids list and the categories count
+    expect(itemQueries).toHaveLength(3);
+  });
+});

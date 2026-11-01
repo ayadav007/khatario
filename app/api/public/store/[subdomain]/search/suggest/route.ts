@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
+import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { buildSuggestQuery, type SuggestResult } from '@/lib/store/store-suggest';
 
@@ -24,8 +25,10 @@ export async function GET(
     const empty: SuggestResult = { products: [], categories: [] };
     if (store.is_demo) return NextResponse.json(empty, { headers });
 
-    const built = buildSuggestQuery(store.business_id, searchParams.get('q') ?? '');
-    if (!built) return NextResponse.json(empty, { headers });
+    const text = searchParams.get('q') ?? '';
+    // Too short to search: answer before the theme is even loaded.
+    if (!buildSuggestQuery(store.business_id, text)) return NextResponse.json(empty, { headers });
+    const built = buildSuggestQuery(store.business_id, text, await storeOosPlace(store, searchParams))!;
 
     const [products, categories] = await Promise.all([
       queryRows<SuggestResult['products'][number]>(built.products.sql, built.products.params),
