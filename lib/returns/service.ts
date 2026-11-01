@@ -5,7 +5,7 @@ import { refundCreditNote, refundableOnCreditNote, CreditNoteRefundError } from 
 import { transitionFulfilment } from '@/lib/fulfilment/service';
 import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
 import { recordReturnEvent, type ReturnEventKind } from './events';
-import { hasLivePickup, savePickupDetails, type PickupDetails } from './pickup';
+import { abandonHalfMadeOrder, hasLivePickup, savePickupDetails, type PickupDetails } from './pickup';
 
 /**
  * Order returns (RMA) for every channel: online store, WhatsApp, sales orders and manual bills.
@@ -396,6 +396,18 @@ function assertNoLivePickup(row: ReturnRow): void {
 }
 
 /**
+ * What choosing a way back leaves for the caller. `abandonedOrderId` is a half-made Shiprocket order
+ * (no AWB) that the change gave up on: cancel it after commit with `cancelAbandonedOrder`, or pass
+ * it to `bookReturnPickup` which does that before booking.
+ */
+export type ApproveReturnResult = {
+  method: ReturnMethod | null;
+  needsPickup: boolean;
+  received?: ReceiveReturnResult;
+  abandonedOrderId?: string;
+};
+
+/**
  * Chooses how an approved return comes back. Courier pickup saves the pickup details and asks the
  * caller to book after commit; customer sends stores the instructions; no return receives it now.
  */
@@ -409,7 +421,7 @@ async function applyReturnMethod(
     instructions?: string | null;
     pickup?: PickupDetails | null;
   },
-): Promise<{ method: ReturnMethod | null; needsPickup: boolean; received?: ReceiveReturnResult }> {
+): Promise<ApproveReturnResult> {
   if (!p.method) return { method: null, needsPickup: false };
   if (!isReturnMethod(p.method)) throw new ReturnError(400, 'INVALID_METHOD', 'Choose how the goods come back');
   if (p.method === 'no_return' && !p.userId) {
@@ -422,9 +434,13 @@ async function applyReturnMethod(
         WHERE id = $1 AND business_id = $2`,
       [p.returnId, p.businessId],
     );
-    await savePickupDetails(client, { businessId: p.businessId, returnId: p.returnId, details: p.pickup });
-    return { method: p.method, needsPickup: true };
+    const saved = await savePickupDetails(client, { businessId: p.businessId, returnId: p.returnId, details: p.pickup });
+    return { method: p.method, needsPickup: true, ...(saved.abandonedOrderId ? { abandonedOrderId: saved.abandonedOrderId } : {}) };
   }
+
+  // Any other way back leaves a half-made Shiprocket order (no AWB) behind: give it up here.
+  const abandoned = await abandonHalfMadeOrder(client, p.businessId, p.returnId);
+  const abandonedField = abandoned ? { abandonedOrderId: abandoned } : {};
 
   if (p.method === 'customer_sends') {
     const instructions =
@@ -434,7 +450,7 @@ async function applyReturnMethod(
         WHERE id = $1 AND business_id = $2`,
       [p.returnId, p.businessId, instructions],
     );
-    return { method: p.method, needsPickup: false };
+    return { method: p.method, needsPickup: false, ...abandonedField };
   }
 
   // no_return: the goods stay with the customer, so nothing goes back on the shelf.
@@ -450,10 +466,8 @@ async function applyReturnMethod(
     userId: p.userId as string,
     lines: items.rows.map((it) => ({ id: it.id, condition: 'damaged' as const })),
   });
-  return { method: p.method, needsPickup: false, received };
+  return { method: p.method, needsPickup: false, received, ...abandonedField };
 }
-
-export type ApproveReturnResult = { method: ReturnMethod | null; needsPickup: boolean; received?: ReceiveReturnResult };
 
 /**
  * Approves a buyer's request and chooses how the goods come back. With `needsPickup` the caller
@@ -506,7 +520,7 @@ export async function setReturnMethod(
     pickup?: PickupDetails | null;
     userId?: string | null;
   },
-): Promise<{ needsPickup: boolean; received?: ReceiveReturnResult }> {
+): Promise<Omit<ApproveReturnResult, 'method'>> {
   const row = await lockReturn(client, p.businessId, p.returnId);
   if (row.status !== 'approved') {
     throw new ReturnError(409, 'INVALID_STATUS', 'The way back can only be changed on an approved return');
@@ -514,7 +528,11 @@ export async function setReturnMethod(
   assertNotPickedUp(row);
   assertNoLivePickup(row);
   const out = await applyReturnMethod(client, p);
-  return { needsPickup: out.needsPickup, ...(out.received ? { received: out.received } : {}) };
+  return {
+    needsPickup: out.needsPickup,
+    ...(out.received ? { received: out.received } : {}),
+    ...(out.abandonedOrderId ? { abandonedOrderId: out.abandonedOrderId } : {}),
+  };
 }
 
 async function recordEnd(

@@ -35,8 +35,8 @@ import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
 import { ensureFulfilment, setFulfilmentShipping } from '@/lib/fulfilment/service';
-import { approveReturn, createReturn, returnableLines } from '@/lib/returns/service';
-import { bookReturnPickup, cancelReturnPickup, hasLivePickup } from '@/lib/returns/pickup';
+import { approveReturn, createReturn, returnableLines, setReturnMethod } from '@/lib/returns/service';
+import { bookReturnPickup, cancelAbandonedOrder, cancelReturnPickup, hasLivePickup } from '@/lib/returns/pickup';
 import { listReturnEvents } from '@/lib/returns/events';
 import type { ShiprocketBooking, ShiprocketClient, ShiprocketReturnParcel } from '@/lib/store/delivery/shiprocket';
 
@@ -366,6 +366,83 @@ d('return pickup booking (real DB)', () => {
     expect(await bookReturnPickup(B, returnId, { client: fakeClient() })).toMatchObject({ ok: false, code: 'NOT_APPROVED' });
     await pool.query(`UPDATE order_returns SET return_method = 'courier_pickup', status = 'cancelled' WHERE id = $1`, [returnId]);
     expect(await bookReturnPickup(B, returnId, { client: fakeClient() })).toMatchObject({ ok: false, code: 'NOT_APPROVED' });
+  });
+
+  test('a parcel already on its way back is never booked again', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([booked(9)]);
+    await bookReturnPickup(B, returnId, { client });
+    for (const status of ['in_transit', 'arrived']) {
+      await pool.query(`UPDATE order_returns SET pickup_status = $2 WHERE id = $1`, [returnId, status]);
+      const res = await bookReturnPickup(B, returnId, { client });
+      expect(res).toMatchObject({ ok: false, code: 'NOT_APPROVED', error: expect.stringContaining('on its way back') });
+    }
+    expect(client.bookReturn).toHaveBeenCalledTimes(1);
+    expect(await returnRow(returnId)).toMatchObject({ pickup_status: 'arrived', awb: `RAWB${tag}9`, carrier_order_id: '79' });
+  });
+
+  test('a corrected address after a failed booking is sent to Shiprocket as a new order', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([
+      { ok: false, stage: 'return_awb', orderId: '501', shipmentId: '601', error: 'Pickup pincode not serviceable' },
+      booked(10, { orderId: '502', shipmentId: '602' }),
+    ]);
+    const first = await bookReturnPickup(B, returnId, { client });
+    expect(first).toMatchObject({ ok: false, code: 'BOOKING_FAILED' });
+    const number = (await returnRow(returnId)).return_number as string;
+    expect(await returnRow(returnId)).toMatchObject({ carrier_order_id: '501', carrier_shipment_id: '601' });
+
+    // Saving the same details changes nothing: Book again would still continue the old order.
+    const same = await tx((c) => setReturnMethod(c, { businessId: B, returnId, method: 'courier_pickup' }));
+    expect(same.abandonedOrderId).toBeUndefined();
+    expect(await returnRow(returnId)).toMatchObject({ carrier_order_id: '501', pickup_attempt: 0 });
+
+    const fixed = await tx((c) =>
+      setReturnMethod(c, { businessId: B, returnId, method: 'courier_pickup', pickup: { pincode: '560001', address: '4 Church Street, Bengaluru' } }),
+    );
+    expect(fixed).toMatchObject({ needsPickup: true, abandonedOrderId: '501' });
+    expect(await returnRow(returnId)).toMatchObject({
+      carrier_order_id: null,
+      carrier_shipment_id: null,
+      pickup_attempt: 1,
+      pickup_pincode: '560001',
+      pickup_error: null,
+    });
+
+    const second = await bookReturnPickup(B, returnId, { client, abandonedOrderId: fixed.abandonedOrderId });
+    expect(second.ok).toBe(true);
+    expect(client.cancelOrders).toHaveBeenCalledWith(['501']);
+    const [parcel, existing] = client.bookReturn.mock.calls[1];
+    expect(parcel).toMatchObject({ ref: `${number}-2`, pincode: '560001', address: '4 Church Street, Bengaluru' });
+    expect(existing).toMatchObject({ orderId: null, shipmentId: null });
+    expect(await returnRow(returnId)).toMatchObject({ carrier_order_id: '502', pickup_status: 'booked', pickup_error: null });
+  });
+
+  test('a failed cancel of the abandoned order does not stop the new booking', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([
+      { ok: false, stage: 'return_awb', orderId: '511', shipmentId: '611', error: 'Wallet balance low' },
+      booked(11),
+    ]);
+    await bookReturnPickup(B, returnId, { client });
+    const out = await tx((c) => setReturnMethod(c, { businessId: B, returnId, method: 'courier_pickup', pickup: { phone: '9123456780' } }));
+    expect(out.abandonedOrderId).toBe('511');
+    client.cancelOrders.mockRejectedValueOnce(new Error('Shiprocket down'));
+    const res = await bookReturnPickup(B, returnId, { client, abandonedOrderId: out.abandonedOrderId });
+    expect(res).toMatchObject({ ok: true, warning: expect.stringContaining('511') });
+    expect(client.bookReturn.mock.calls[1][0].customerPhone).toBe('9123456780');
+    expect((await returnRow(returnId)).pickup_error).toContain('Shiprocket down');
+  });
+
+  test('switching to another way back gives up a half-made order', async () => {
+    const { returnId } = await approvedPickup();
+    const client = fakeClient([{ ok: false, stage: 'return_awb', orderId: '521', shipmentId: '621', error: 'Wallet balance low' }]);
+    await bookReturnPickup(B, returnId, { client });
+    const out = await tx((c) => setReturnMethod(c, { businessId: B, returnId, method: 'customer_sends' }));
+    expect(out).toMatchObject({ needsPickup: false, abandonedOrderId: '521' });
+    expect(await returnRow(returnId)).toMatchObject({ return_method: 'customer_sends', carrier_order_id: null, carrier_shipment_id: null, pickup_attempt: 1 });
+    expect(await cancelAbandonedOrder(B, '521', { client })).toEqual({ ok: true });
+    expect(client.cancelOrders).toHaveBeenCalledWith(['521']);
   });
 
   test("another business cannot book or cancel this return's pickup", async () => {

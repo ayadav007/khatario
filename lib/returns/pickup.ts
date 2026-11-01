@@ -133,7 +133,8 @@ async function loadLinks(db: Db, businessId: string, returnId: string): Promise<
   const r = await db.query(
     `SELECT invoice_id, fulfilment_id, store_order_id, sales_order_id, customer_id,
             pickup_address, pickup_pincode, pickup_phone,
-            pickup_weight_kg::text, pickup_length_cm::text, pickup_breadth_cm::text, pickup_height_cm::text
+            pickup_weight_kg::text, pickup_length_cm::text, pickup_breadth_cm::text, pickup_height_cm::text,
+            carrier_order_id, awb
        FROM order_returns WHERE id = $1 AND business_id = $2`,
     [returnId, businessId],
   );
@@ -141,16 +142,62 @@ async function loadLinks(db: Db, businessId: string, returnId: string): Promise<
 }
 
 /**
+ * Drops a half-made Shiprocket order (created, but no AWB yet) so the next booking creates a new
+ * one with the next reference (RET-0001-2). Returns the abandoned Shiprocket order id, which the
+ * caller cancels in Shiprocket after its transaction commits (`cancelAbandonedOrder`), or null
+ * when there was nothing to abandon. A booked return (with an AWB) is left alone: that one is
+ * cancelled with `cancelReturnPickup`.
+ */
+export async function abandonHalfMadeOrder(db: Db, businessId: string, returnId: string): Promise<string | null> {
+  const r = await db.query<{ carrier_order_id: string | null }>(
+    `UPDATE order_returns r
+        SET carrier_order_id = NULL, carrier_shipment_id = NULL, pickup_attempt = pickup_attempt + 1,
+            pickup_error = NULL, updated_at = NOW()
+       FROM (SELECT id, carrier_order_id FROM order_returns WHERE id = $1 AND business_id = $2 FOR UPDATE) old
+      WHERE r.id = old.id AND r.awb IS NULL AND (r.carrier_order_id IS NOT NULL OR r.carrier_shipment_id IS NOT NULL)
+      RETURNING old.carrier_order_id`,
+    [returnId, businessId],
+  );
+  return r.rows[0] ? (r.rows[0].carrier_order_id ?? '') || null : null;
+}
+
+/**
+ * Best-effort cancel of an order `abandonHalfMadeOrder` gave up on. Run outside any transaction.
+ * Never throws: a failure comes back as text for the caller to log or show.
+ */
+export async function cancelAbandonedOrder(
+  businessId: string,
+  orderId: string,
+  opts: { client?: ShiprocketClient } = {},
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const client = opts.client ?? (await shiprocketClientFor(businessId));
+    if (!client) return { ok: false, error: 'Shiprocket is not connected' };
+    await client.cancelOrders([orderId]);
+    return { ok: true };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Shiprocket could not cancel the earlier order';
+    console.warn(`[returns] could not cancel abandoned Shiprocket order ${orderId}: ${error}`);
+    return { ok: false, error };
+  }
+}
+
+/**
  * Saves where the parcel is collected and how big it is. Blanks are filled from what was already
  * saved on the return, then the original order (see `orderDefaults`), then 0.5 kg and 10 cm sides.
  * A phone or PIN is stored as given; booking checks them.
+ *
+ * When the address, PIN, phone or package differ from what a half-made Shiprocket order (no AWB yet)
+ * was created with, that order is abandoned (see `abandonHalfMadeOrder`) so Book again creates a
+ * new one with the corrected details. Returns the abandoned order's id for the caller to cancel
+ * after commit (`cancelAbandonedOrder`), else null.
  */
 export async function savePickupDetails(
   client: Db,
   p: { businessId: string; returnId: string; details?: PickupDetails | null },
-): Promise<void> {
+): Promise<{ abandonedOrderId: string | null }> {
   const saved = await loadLinks(client, p.businessId, p.returnId);
-  if (!saved) return;
+  if (!saved) return { abandonedOrderId: null };
   const defaults = await orderDefaults(client, p.businessId, p.returnId, saved);
   const d = p.details ?? {};
   const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
@@ -167,23 +214,29 @@ export async function savePickupDetails(
   const side = (given: number | null | undefined, savedKey: string, fromParcel: number | null) =>
     cleanDimCm(given) ?? cleanDimCm(savedNum(savedKey)) ?? fromParcel ?? DEFAULT_RETURN_SIDE_CM;
 
+  const length = side(d.lengthCm, 'pickup_length_cm', defaults.lengthCm);
+  const breadth = side(d.breadthCm, 'pickup_breadth_cm', defaults.breadthCm);
+  const height = side(d.heightCm, 'pickup_height_cm', defaults.heightCm);
+
   await client.query(
     `UPDATE order_returns
         SET pickup_address = $3, pickup_pincode = $4, pickup_phone = $5, pickup_weight_kg = $6,
             pickup_length_cm = $7, pickup_breadth_cm = $8, pickup_height_cm = $9, updated_at = NOW()
       WHERE id = $1 AND business_id = $2`,
-    [
-      p.returnId,
-      p.businessId,
-      address,
-      pincode || null,
-      phone || null,
-      weight,
-      side(d.lengthCm, 'pickup_length_cm', defaults.lengthCm),
-      side(d.breadthCm, 'pickup_breadth_cm', defaults.breadthCm),
-      side(d.heightCm, 'pickup_height_cm', defaults.heightCm),
-    ],
+    [p.returnId, p.businessId, address, pincode || null, phone || null, weight, length, breadth, height],
   );
+
+  const halfMade = Boolean(saved.carrier_order_id) && !saved.awb;
+  const changed =
+    (saved.pickup_address ?? null) !== address ||
+    (saved.pickup_pincode ?? null) !== (pincode || null) ||
+    (saved.pickup_phone ?? null) !== (phone || null) ||
+    savedNum('pickup_weight_kg') !== weight ||
+    savedNum('pickup_length_cm') !== length ||
+    savedNum('pickup_breadth_cm') !== breadth ||
+    savedNum('pickup_height_cm') !== height;
+  if (!halfMade || !changed) return { abandonedOrderId: null };
+  return { abandonedOrderId: await abandonHalfMadeOrder(client, p.businessId, p.returnId) };
 }
 
 export type ReturnPickupResult =
@@ -349,12 +402,21 @@ async function buildReturnParcel(
 export async function bookReturnPickup(
   businessId: string,
   returnId: string,
-  opts: { client?: ShiprocketClient; actorUserId?: string | null } = {},
+  opts: {
+    client?: ShiprocketClient;
+    actorUserId?: string | null;
+    /** An order the shop's last change gave up on (`abandonedOrderId` from approve / setReturnMethod): cancelled first, best effort. */
+    abandonedOrderId?: string | null;
+  } = {},
 ): Promise<ReturnPickupResult> {
   const row = await loadPickupRow(businessId, returnId);
   if (!row) return { ok: false, code: 'NOT_FOUND', error: 'Return not found' };
   if (row.status !== 'approved' || row.return_method !== 'courier_pickup') {
     return { ok: false, code: 'NOT_APPROVED', error: 'Approve the return with a courier pickup before booking it' };
+  }
+  if (row.pickup_status === 'in_transit' || row.pickup_status === 'arrived') {
+    // Booking again now would hand the parcel a second AWB and reset its status.
+    return { ok: false, code: 'NOT_APPROVED', error: 'The parcel is already on its way back; receive it instead' };
   }
   if (hasLivePickup(row) && row.awb) {
     return {
@@ -375,6 +437,15 @@ export async function bookReturnPickup(
   if (!client) return fail({ ok: false, code: 'NOT_CONFIGURED', error: NOT_CONNECTED });
   const built = await buildReturnParcel(businessId, row);
   if (!built.ok) return fail(built);
+
+  // The earlier order had the old details; free its Shiprocket reference before making the new one.
+  let cancelNote: string | null = null;
+  if (opts.abandonedOrderId) {
+    const cancelled = await cancelAbandonedOrder(businessId, opts.abandonedOrderId, { client });
+    if (!cancelled.ok) {
+      cancelNote = `The earlier Shiprocket order ${opts.abandonedOrderId} could not be cancelled: ${cancelled.error}`;
+    }
+  }
 
   const booked = await client.bookReturn(built.parcel, {
     orderId: row.carrier_order_id,
@@ -406,7 +477,7 @@ export async function bookReturnPickup(
         gotAwb ? (booked.courierName ?? 'Shiprocket') : null,
         gotAwb ? (booked.trackingUrl ?? shiprocketTrackingUrl(booked.awb as string)) : null,
         istTimestamp(booked.pickupScheduledAt),
-        booked.error ? booked.error.slice(0, 500) : null,
+        [booked.error, cancelNote].filter(Boolean).join(' · ').slice(0, 500) || null,
       ],
     );
     if (gotAwb) {
@@ -436,7 +507,7 @@ export async function bookReturnPickup(
     courierName: booked.courierName ?? 'Shiprocket',
     trackingUrl: booked.trackingUrl ?? shiprocketTrackingUrl(booked.awb as string),
     pickupScheduledAt: booked.pickupScheduledAt ?? null,
-    ...(booked.error ? { warning: `Booked, but pickup was not requested: ${booked.error}` } : {}),
+    ...(booked.error ? { warning: `Booked, but pickup was not requested: ${booked.error}` } : cancelNote ? { warning: cancelNote } : {}),
   };
 }
 
