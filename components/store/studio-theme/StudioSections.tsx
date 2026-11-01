@@ -25,7 +25,7 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
-import { cardBadgeList, cardDiscount, cardOutOfStock, cardRating, cardUnits, designedCardRoot, isDesignedCard } from '@/lib/store/engine/card-render';
+import { cardBadgeRow, cardDiscount, cardOutOfStock, cardRating, cardUnits, designedCardRoot, isDesignedCard } from '@/lib/store/engine/card-render';
 import type { ResolvedCardLook } from '@/lib/store/engine/product-card';
 import type { ColorScheme } from '@/lib/store/engine/types';
 import { heroGridClass } from '@/lib/store/engine/hero-layout';
@@ -890,8 +890,10 @@ function DesignedProductTile({
   const [altBroken, setAltBroken] = useState(false);
   useEffect(() => setBroken(false), [image]);
   useEffect(() => setAltBroken(false), [hoverImage]);
-  const { badges: allBadges, struck } = tileBadges(off, badges, hideDiscountBadge);
-  const shownBadges = cardBadgeList(look, allBadges);
+  // The discount beside the price, when the price line shows; it then replaces the automatic "% OFF" badge.
+  const priceShown = showPrice && look.lines.some((l) => l.id === 'price' && l.on);
+  const saving = priceShown ? cardDiscount(look.discount_style, price, mrp, off) : null;
+  const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving });
   const showAlt = !!hoverImage && hoverImage !== image && !broken && !altBroken;
   const oos = cardOutOfStock(look, outOfStock, !!add);
   const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: showAlt });
@@ -902,7 +904,6 @@ function DesignedProductTile({
       </svg>
     );
   const stars = cardRating(look.rating_style, rating, ratingCount);
-  const saving = cardDiscount(look.discount_style, price, mrp, off);
   const button =
     oos.button === 'none' ? null : oos.button === 'soldout' ? (
       <button type="button" className="addBtn pc-soldout" disabled>
@@ -945,7 +946,7 @@ function DesignedProductTile({
         ) : null;
       case 'rating':
         return stars ? (
-          <div key={u} className="prating" aria-label={stars.label}>
+          <div key={u} className="prating" role="img" aria-label={stars.label}>
             {stars.stars ? (
               <span className="pc-stars" style={{ '--pc-rate': `${stars.percent}%` } as CSSProperties} aria-hidden="true">
                 ★★★★★

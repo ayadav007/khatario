@@ -1,6 +1,7 @@
 // Client-safe and pure. What a product card draws when a card design is active (spec §4 of
 // docs/superpowers/specs/2026-11-01-store-product-cards-design.md). Theme's own never comes here: the tile keeps its old markup.
 import type { StudioBadge } from '@/lib/store/studio-sections';
+import { tileBadges } from './card-badges';
 import { cardSchemeVars } from './color-schemes';
 import { cardLookClasses, cardLookVars, nameAndPriceInRow, type CardLineId, type ProductCardSettings, type ResolvedCardLook } from './product-card';
 import type { ColorScheme } from './types';
@@ -64,7 +65,7 @@ export function cardRating(style: ProductCardSettings['rating_style'], rating: n
     percent: Math.round((Math.min(5, rating) / 5) * 100),
     number: style === 'number' ? rating.toFixed(1) : null,
     count: style === 'count' ? count : null,
-    label: `Rated ${rating} out of 5 by ${count} ${count === 1 ? 'customer' : 'customers'}`,
+    label: `Rated ${Math.round(rating * 10) / 10} out of 5, ${count} ${count === 1 ? 'review' : 'reviews'}`,
   };
 }
 
@@ -72,6 +73,19 @@ export function cardRating(style: ProductCardSettings['rating_style'], rating: n
 export function cardBadgeList(look: Pick<ResolvedCardLook, 'show_badges' | 'badge_shape'>, badges: StudioBadge[]): StudioBadge[] {
   if (!look.show_badges) return [];
   return badges.slice(0, look.badge_shape === 'pill' ? 2 : 1);
+}
+
+/**
+ * The badges a designed card shows and whether the MRP is struck. The automatic "% OFF" badge is left out when the price
+ * line already shows the discount (`discount`, the `cardDiscount` result: keyed on what is shown, so `save` without an
+ * MRP keeps the badge). The strike follows `off` alone, as on today's tile.
+ */
+export function cardBadgeRow(
+  look: Pick<ResolvedCardLook, 'show_badges' | 'badge_shape'>,
+  input: { off: number; badges: StudioBadge[]; hideDiscountBadge?: boolean; discount: CardDiscount | null },
+): { badges: StudioBadge[]; struck: boolean } {
+  const { badges, struck } = tileBadges(input.off, input.badges, !!input.hideDiscountBadge || input.discount != null);
+  return { badges: cardBadgeList(look, badges), struck };
 }
 
 /**

@@ -1,5 +1,6 @@
 import {
   cardBadgeList,
+  cardBadgeRow,
   cardDiscount,
   cardOutOfStock,
   cardRating,
@@ -77,8 +78,40 @@ describe('cardRating', () => {
   it('gives the fill percent and a spoken label', () => {
     const r = cardRating('stars', 4, 1)!;
     expect(r.percent).toBe(80);
-    expect(r.label).toBe('Rated 4 out of 5 by 1 customer');
-    expect(cardRating('count', 4.5, 12)!.label).toBe('Rated 4.5 out of 5 by 12 customers');
+    expect(r.label).toBe('Rated 4 out of 5, 1 review');
+    expect(cardRating('count', 4.5, 12)!.label).toBe('Rated 4.5 out of 5, 12 reviews');
+    expect(cardRating('stars', 4.46, 7)!.label).toBe('Rated 4.5 out of 5, 7 reviews');
+  });
+});
+
+describe('cardBadgeRow', () => {
+  const extra = [{ label: 'New', tone: 'new' as const }];
+  const row = (over: Partial<ResolvedCardLook>, input: Partial<Parameters<typeof cardBadgeRow>[1]> = {}) =>
+    cardBadgeRow(look(over), { off: 20, badges: extra, hideDiscountBadge: false, discount: null, ...input });
+
+  it('keeps the "% OFF" badge when the price line shows no discount', () => {
+    expect(row({ discount_style: 'none' }).badges.map((b) => b.label)).toEqual(['20% OFF', 'New']);
+  });
+
+  it('drops the "% OFF" badge when the price line shows the discount, keeping the MRP strike', () => {
+    const pct = row({}, { discount: { kind: 'percent', percent: 20 } });
+    expect(pct.badges.map((b) => b.label)).toEqual(['New']);
+    expect(pct.struck).toBe(true);
+    const save = row({}, { discount: { kind: 'save', amount: 20 } });
+    expect(save.badges.map((b) => b.label)).toEqual(['New']);
+  });
+
+  it('keys on the shown discount, not the style: save without an MRP keeps the badge', () => {
+    const discount = cardDiscount('save', 80, null, 20);
+    expect(discount).toBeNull();
+    expect(row({ discount_style: 'save' }, { discount }).badges.map((b) => b.label)).toEqual(['20% OFF', 'New']);
+  });
+
+  it('a product\'s own badge still replaces the discount badge, and the shape limit still applies', () => {
+    const own = [{ label: 'Handmade', tone: 'hot' as const }];
+    expect(row({}, { badges: own, hideDiscountBadge: true }).badges).toEqual(own);
+    expect(row({ badge_shape: 'ribbon', discount_style: 'none' }).badges.map((b) => b.label)).toEqual(['20% OFF']);
+    expect(row({ show_badges: false }).badges).toEqual([]);
   });
 });
 
