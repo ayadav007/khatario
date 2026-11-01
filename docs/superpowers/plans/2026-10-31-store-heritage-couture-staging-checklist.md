@@ -1,5 +1,7 @@
 # Heritage Couture (premium theme, plan 2): staging test checklist
 
+> **2026-11-01:** premium presets are free for every store (`PREMIUM_THEMES_FREE` in `lib/store/engine/premium.ts`), so skip any step below that turns `store_premium_themes` on or expects Heritage Couture to be hidden or refused; Heritage Couture is listed with its Premium pill for everyone.
+
 What to check on `https://staging.khatario.com` once plan 2 is deployed there. **Nothing in this list has ever been checked in a browser**: the plan was built without local browser checks (owner's rule: write the steps, test on staging). Migration 459 has only ever run on the disposable DB `kh_phase2_test`. The five e2e scenarios added in Task 7 (`e2e/store-studio2.spec.ts`, `e2e/store-theme-library.spec.ts`) are written, not run, and cover only structure; every look below is a human check.
 
 Branch `claude/heritage-couture` (worktree), base `658369e2` (plan 1 merged to `main`). Tasks 1 to 7. Nothing is pushed. Carry-over, rulings and deferred minors: `docs/superpowers/plans/2026-10-31-store-heritage-couture-carryover.md`. The checklist for the next design: `docs/store-engine/design-to-preset.md`.

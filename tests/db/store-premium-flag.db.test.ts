@@ -12,7 +12,7 @@ const d = url ? describe : describe.skip;
 jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { getPool, closePool } from '@/lib/db';
-import { premiumThemesEnabled } from '@/lib/store/engine/premium';
+import { PREMIUM_THEMES_FREE, premiumFlagOn, premiumThemesEnabled } from '@/lib/store/engine/premium';
 
 d('Premium themes flag (real DB)', () => {
   jest.setTimeout(60000);
@@ -36,20 +36,26 @@ d('Premium themes flag (real DB)', () => {
     await closePool();
   });
 
-  it('a fresh settings row has the flag off', async () => {
+  it('a fresh settings row has the stored switch off', async () => {
     const { rows } = await pool.query(`SELECT store_premium_themes FROM business_settings WHERE business_id = $1`, [BIZ]);
     expect(rows[0].store_premium_themes).toBe(false);
-    expect(await premiumThemesEnabled(BIZ)).toBe(false);
+    expect(await premiumFlagOn(BIZ)).toBe(false);
   });
 
-  it('turns on with the column and off again', async () => {
+  it('the stored switch turns on with the column and off again', async () => {
     await pool.query(`UPDATE business_settings SET store_premium_themes = true WHERE business_id = $1`, [BIZ]);
-    expect(await premiumThemesEnabled(BIZ)).toBe(true);
+    expect(await premiumFlagOn(BIZ)).toBe(true);
     await pool.query(`UPDATE business_settings SET store_premium_themes = false WHERE business_id = $1`, [BIZ]);
-    expect(await premiumThemesEnabled(BIZ)).toBe(false);
+    expect(await premiumFlagOn(BIZ)).toBe(false);
   });
 
-  it('a business without a settings row is off', async () => {
-    expect(await premiumThemesEnabled(randomUUID())).toBe(false);
+  it('a business without a settings row has the stored switch off', async () => {
+    expect(await premiumFlagOn(randomUUID())).toBe(false);
+  });
+
+  it('premium themes follow the stored switch only once they stop being free', async () => {
+    // While PREMIUM_THEMES_FREE every store may create premium presets, whatever its column says.
+    expect(await premiumThemesEnabled(BIZ)).toBe(PREMIUM_THEMES_FREE ? true : false);
+    expect(await premiumThemesEnabled(randomUUID())).toBe(PREMIUM_THEMES_FREE ? true : false);
   });
 });

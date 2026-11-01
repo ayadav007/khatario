@@ -449,30 +449,33 @@ test.describe('Store theme library', () => {
   });
   // ---- premium presets (written, not run) ----------------------------------------------------------
 
-  test('flag off: Add theme lists five presets, no Premium pill, and a direct POST is refused', async ({ page }) => {
+  // Premium presets are free for every store until pricing is decided (PREMIUM_THEMES_FREE in lib/store/engine/premium.ts):
+  // the stored column no longer hides or refuses them. When pricing lands, this scenario goes back to expecting six
+  // radios, no pill, `premium_enabled: false` and a 403 `premium_locked` from the POST.
+  test('stored switch off: premium presets are still free, so Heritage Couture is listed and a direct POST succeeds', async ({ page }) => {
     await setPremium(false);
     await openLibrary(page);
     await page.getByRole('button', { name: 'Add theme', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Add theme' });
     await expect(dialog).toBeVisible();
-    // Five presets (Studio, Quick, Premium Grocery, Khatario, Blank) plus "Your current store design".
-    await expect(dialog.getByRole('radio')).toHaveCount(6);
+    // Six presets (Studio, Quick, Premium Grocery, Khatario, Blank, Heritage Couture) plus "Your current store design".
+    await expect(dialog.getByRole('radio')).toHaveCount(7);
     const values = () => dialog.locator('input[type="radio"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-    expect(await values()).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'migrated']);
-    await expect(dialog.locator('label', { hasText: 'Heritage Couture' })).toHaveCount(0);
-    await expect(dialog.getByText('Premium', { exact: true })).toHaveCount(0);
+    expect(await values()).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'migrated']);
+    await expect(dialog.locator('label', { hasText: 'Heritage Couture' }).getByText('Premium', { exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toBeHidden();
 
-    // The server refuses too, whatever the modal shows.
     const list = await page.request.get('/api/settings/online-store/themes');
     expect(list.ok()).toBeTruthy();
-    expect((await list.json()).premium_enabled).toBe(false);
+    expect((await list.json()).premium_enabled).toBe(true);
     const before = await themeCount();
-    const res = await page.request.post('/api/settings/online-store/themes', { data: { preset: 'heritage' } });
-    expect(res.status()).toBe(403);
-    expect((await res.json()).code).toBe('premium_locked');
-    expect(await themeCount()).toBe(before);
+    const res = await page.request.post('/api/settings/online-store/themes', { data: { preset: 'heritage', name: 'Free premium check' } });
+    expect(res.ok()).toBeTruthy();
+    expect(await themeCount()).toBe(before + 1);
+    const body = (await res.json()) as { theme?: { id?: string }; id?: string };
+    const createdId = body.theme?.id ?? body.id;
+    if (createdId) await page.request.delete(`/api/settings/online-store/themes/${encodeURIComponent(createdId)}`);
   });
 
   test('flag on: Heritage Couture shows a Premium pill and creates a draft that starts with a Collage', async ({ page }) => {

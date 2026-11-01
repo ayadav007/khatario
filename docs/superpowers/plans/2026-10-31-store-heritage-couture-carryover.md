@@ -104,3 +104,7 @@ One line each, by task.
 
 **Final review, deferred**
 - A stale "Saved" pill waits in the e2e scenarios: they read or act while the editor's Saved indicator may still show an earlier save, so a wait on it can pass too early.
+
+## 2026-11-01: premium presets are free for now
+
+Owner decision: "make it free now, we will work on pricing later". `PREMIUM_THEMES_FREE = true` in `lib/store/engine/premium.ts` makes `premiumThemesEnabled` answer true for every store, so Heritage Couture is listed (with its Premium pill) and creatable everywhere on the online-store plan without touching `store_premium_themes`. The column, migration 459, `premiumFlagOn` and the POST refusal all stay: flipping the constant to `false` gates by the column again. The library e2e "stored switch off" scenario now expects the free behaviour; its comment says what to restore when pricing lands. Staging no longer needs the flag update in §1 of the checklist.
