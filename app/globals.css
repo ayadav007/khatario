@@ -544,12 +544,248 @@
    * saved teal portal theme on <html> does not cover the Khatario palette.
    */
   /**
-   * Desktop sidebar: deep green field, cream type, cream selected row, orange mark.
+   * Desktop sidebar: deep green field, cream type, solid colour tile per section,
+   * soft cream wash on the selected row and an orange mark beside it.
    */
   aside.khatario-sidebar {
     background-color: #032B23;
-    border-right: 1px solid rgba(248, 243, 233, 0.12);
+    background-image: linear-gradient(180deg, #04382D 0%, #032B23 38%, #021F19 100%);
+    border-right: 1px solid rgba(248, 243, 233, 0.10);
+    box-shadow: inset -1px 0 0 rgba(248, 243, 233, 0.04);
     color: #F8F3E9;
+  }
+
+  /* Business card and Jump to bar at the top */
+  aside.khatario-sidebar .kh-ws-card {
+    background-color: rgba(248, 243, 233, 0.06);
+    border: 1px solid rgba(248, 243, 233, 0.10);
+  }
+
+  aside.khatario-sidebar .kh-ws-logo {
+    background-color: #F8F3E9;
+    color: #032B23;
+    box-shadow: 0 0 0 2px rgba(248, 243, 233, 0.12);
+  }
+
+  aside.khatario-sidebar .kh-jump {
+    background-color: rgba(248, 243, 233, 0.06);
+    color: rgba(248, 243, 233, 0.6);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  aside.khatario-sidebar .kh-jump:hover {
+    background-color: rgba(248, 243, 233, 0.10);
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .kh-kbd {
+    border: 1px solid rgba(248, 243, 233, 0.18);
+    color: rgba(248, 243, 233, 0.55);
+  }
+
+  aside.khatario-sidebar .kh-edge-toggle {
+    background-color: #032B23;
+    border: 1px solid rgba(248, 243, 233, 0.22);
+    color: rgba(248, 243, 233, 0.8);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  aside.khatario-sidebar .kh-edge-toggle:hover {
+    background-color: #F8F3E9;
+    color: #032B23;
+  }
+
+  /* Menu rows */
+  aside.khatario-sidebar .kh-nav-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 12px), transparent 100%);
+  }
+
+  aside.khatario-sidebar .kh-nav-scroll:hover {
+    scrollbar-color: rgba(248, 243, 233, 0.22) transparent;
+  }
+
+  aside.khatario-sidebar .kh-nav-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  aside.khatario-sidebar .kh-nav-scroll::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 999px;
+  }
+
+  aside.khatario-sidebar .kh-nav-scroll:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(248, 243, 233, 0.22);
+  }
+
+  aside.khatario-sidebar .kh-nav-group {
+    color: rgba(248, 243, 233, 0.42);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  aside.khatario-sidebar .kh-nav-divider {
+    border-top: 1px solid rgba(248, 243, 233, 0.10);
+  }
+
+  aside.khatario-sidebar .kh-nav-link {
+    color: rgba(248, 243, 233, 0.84);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  aside.khatario-sidebar .kh-nav-link.is-sub {
+    color: rgba(248, 243, 233, 0.68);
+  }
+
+  aside.khatario-sidebar .kh-nav-link:hover,
+  aside.khatario-sidebar .kh-nav-section.is-open > .kh-nav-link {
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .kh-nav-link:hover {
+    background-color: rgba(248, 243, 233, 0.07);
+  }
+
+  aside.khatario-sidebar .kh-nav-link.is-active {
+    background-color: rgba(248, 243, 233, 0.12);
+    color: #F8F3E9;
+    font-weight: 500;
+  }
+
+  aside.khatario-sidebar .kh-nav-link.is-active:not(.is-sub)::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 25%;
+    height: 50%;
+    width: 3px;
+    border-radius: 999px;
+    background-color: #F58220;
+  }
+
+  aside.khatario-sidebar .kh-nav-link.is-sub.is-active::before {
+    content: '';
+    position: absolute;
+    left: -12.5px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    border-radius: 999px;
+    background-color: #F58220;
+    box-shadow: 0 0 0 2px #032B23;
+  }
+
+  aside.khatario-sidebar .kh-nav-link.is-locked {
+    color: rgba(248, 243, 233, 0.6);
+  }
+
+  aside.khatario-sidebar .kh-nav-tree {
+    margin-left: 22px;
+    padding-left: 8px;
+    border-left: 1px solid rgba(248, 243, 233, 0.14);
+  }
+
+  aside.khatario-sidebar .kh-nav-tree .kh-nav-tree {
+    margin-left: 12px;
+  }
+
+  aside.khatario-sidebar .kh-nav-reveal {
+    animation: kh-nav-reveal 180ms ease-out;
+  }
+
+  @keyframes kh-nav-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  aside.khatario-sidebar .kh-nav-chev {
+    color: rgba(248, 243, 233, 0.5);
+    transition: transform 200ms ease;
+  }
+
+  aside.khatario-sidebar .kh-nav-new {
+    color: rgba(248, 243, 233, 0.7);
+  }
+
+  aside.khatario-sidebar .kh-nav-new:hover {
+    background-color: rgba(248, 243, 233, 0.14);
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .kh-nav-badge {
+    border: 1px solid rgba(245, 130, 32, 0.6);
+    color: #F8A35A;
+  }
+
+  aside.khatario-sidebar .kh-nav-lockchip {
+    background-color: rgba(245, 130, 32, 0.16);
+    color: #F8A35A;
+  }
+
+  aside.khatario-sidebar .kh-nav-tip {
+    background-color: #F8F3E9;
+    color: #032B23;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  }
+
+  aside.khatario-sidebar .kh-nav-tip::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    transform: rotate(45deg);
+    background-color: #F8F3E9;
+  }
+
+  /* One solid tile colour per section; sub-items stay plain cream. */
+  aside.khatario-sidebar .kh-tile {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  }
+  aside.khatario-sidebar .kh-tone-home { background-color: #F8F3E9; color: #032B23; }
+  aside.khatario-sidebar .kh-tone-supplier { background-color: #5C6BC0; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-sales { background-color: #E0663E; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-purchases { background-color: #3F87D6; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-inventory { background-color: #E0A82E; color: #3A2A00; }
+  aside.khatario-sidebar .kh-tone-accounting { background-color: #3E9A43; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-reports { background-color: #7E57C2; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-staff { background-color: #D8578A; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-connect { background-color: #1597AB; color: #ffffff; }
+  aside.khatario-sidebar .kh-tone-more { background-color: rgba(248, 243, 233, 0.18); color: #F8F3E9; }
+
+  aside.khatario-sidebar .kh-muted {
+    color: rgba(248, 243, 233, 0.55);
+  }
+
+  aside.khatario-sidebar .kh-avatar {
+    background-color: rgba(248, 243, 233, 0.14);
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .kh-foot-btn {
+    color: rgba(248, 243, 233, 0.7);
+  }
+
+  aside.khatario-sidebar .kh-foot-btn:hover {
+    background-color: rgba(248, 243, 233, 0.12);
+    color: #F8F3E9;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    aside.khatario-sidebar .kh-nav-reveal {
+      animation: none;
+    }
+    aside.khatario-sidebar .kh-nav-chev {
+      transition: none;
+    }
   }
 
   aside.khatario-sidebar .border-border,

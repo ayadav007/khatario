@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 
+/** Dispatch on window to open the palette from outside the TopBar (e.g. the sidebar's Jump to bar). */
+export const COMMAND_PALETTE_OPEN_EVENT = 'khatario:command-palette-open' as const;
+
 /**
  * Hook to manage command palette (Cmd+K / Ctrl+K)
  * Always enabled - no feature flag required
@@ -10,6 +13,12 @@ export function useCommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
   const isOpenRef = useRef(isOpen);
   isOpenRef.current = isOpen;
+
+  useEffect(() => {
+    const onOpen = () => setIsOpen(true);
+    window.addEventListener(COMMAND_PALETTE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(COMMAND_PALETTE_OPEN_EVENT, onOpen);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
