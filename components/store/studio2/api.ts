@@ -129,6 +129,49 @@ export async function searchItems(search: string, signal?: AbortSignal, opts?: {
   return rows.map(itemOf).filter((i): i is ItemSummary => !!i);
 }
 
+/** What the card design gallery draws a store product with. */
+export interface CardSampleItem {
+  id: string;
+  name: string;
+  price: number;
+  mrp: number | null;
+  unit: string;
+  image: string;
+  brand: string | null;
+  tagline: string | null;
+}
+
+const textOrNull = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null);
+const numberOf = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN);
+
+/**
+ * The first product the online store sells that has a photo (from the product pickers' list), for the card design
+ * gallery; null when there is none or the list could not be read.
+ */
+export async function fetchCardSampleItem(signal?: AbortSignal): Promise<CardSampleItem | null> {
+  const res = await fetch('/api/items?search=&limit=20&store_only=1', { credentials: 'include', signal });
+  if (!res.ok) return null;
+  const rows = (await readJson(res)).items;
+  for (const raw of Array.isArray(rows) ? rows : []) {
+    const r = raw as Record<string, unknown> | null;
+    const image = textOrNull(r?.image_url);
+    const price = numberOf(r?.selling_price);
+    if (!r || typeof r.id !== 'string' || typeof r.name !== 'string' || !image || !Number.isFinite(price)) continue;
+    const mrp = numberOf(r.mrp);
+    return {
+      id: r.id,
+      name: r.name,
+      price,
+      mrp: Number.isFinite(mrp) && mrp > price ? mrp : null,
+      unit: typeof r.unit === 'string' ? r.unit : '',
+      image,
+      brand: textOrNull(r.brand),
+      tagline: textOrNull(r.store_tagline),
+    };
+  }
+  return null;
+}
+
 /** One product's name, for a picked chip; null when it is gone. */
 export async function fetchItem(id: string): Promise<ItemSummary | null> {
   const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { credentials: 'include' });

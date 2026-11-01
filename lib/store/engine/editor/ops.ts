@@ -1,5 +1,5 @@
-// Pure editor operations on a ThemeData. Client-safe: imports only shared, types, schema-types, registry and
-// presets/templates.
+// Pure editor operations on a ThemeData. Client-safe: imports only shared, types, schema-types, registry,
+// presets/templates and product-card.
 // No value coercion here: the server sanitises on save.
 import type { Block, ColorScheme, PageTemplate, Section, Template, TemplateKind, ThemeData } from '../types';
 import type { SectionSchema } from '../schema-types';
@@ -16,6 +16,7 @@ import {
   pageKey,
 } from '../shared';
 import { PAGE_STARTERS } from '../presets/templates';
+import { CARD_DESIGNS, PRODUCT_CARD_DEFAULTS, cloneProductCard, type CardDesignId } from '../product-card';
 
 export type GroupKey = 'header' | 'footer' | 'template';
 export interface SectionRef {
@@ -482,12 +483,31 @@ export function setPageMeta(
   return { ok: true, theme: { ...theme, templates: { ...theme.templates, [key]: out } } };
 }
 
+/** Theme settings that are objects, edited one field at a time through dotted ids (`social.instagram`, `product_card.radius`). */
+const NESTED_THEME_SETTINGS = ['social', 'product_card'] as const;
+
 export function setThemeSetting(theme: ThemeData, key: string, value: unknown): ThemeData {
-  if (key.startsWith('social.')) {
-    const sub = key.slice('social.'.length);
-    return { ...theme, settings: { ...theme.settings, social: { ...theme.settings.social, [sub]: value } } };
+  const dot = key.indexOf('.');
+  const parent = dot < 0 ? '' : key.slice(0, dot);
+  if ((NESTED_THEME_SETTINGS as readonly string[]).includes(parent)) {
+    const name = parent as (typeof NESTED_THEME_SETTINGS)[number];
+    const sub = key.slice(dot + 1);
+    return { ...theme, settings: { ...theme.settings, [name]: { ...theme.settings[name], [sub]: value } } };
   }
   return { ...theme, settings: { ...theme.settings, [key]: value } };
+}
+
+/**
+ * Writes a card design's full settings over the store's product card (`theme`: the defaults). The store's
+ * `oos_place` stays (where out-of-stock products sit is a store-wide choice); the design's `oos_look` is taken.
+ * An unknown id returns the same theme.
+ */
+export function applyCardDesign(theme: ThemeData, id: CardDesignId | 'theme'): ThemeData {
+  const source = id === 'theme' ? PRODUCT_CARD_DEFAULTS : hasOwn(CARD_DESIGNS, id) ? CARD_DESIGNS[id] : null;
+  if (!source) return theme;
+  // An old theme read before sanitising may have no card yet: it takes the default place.
+  const card = { ...cloneProductCard(source), oos_place: theme.settings.product_card?.oos_place ?? PRODUCT_CARD_DEFAULTS.oos_place };
+  return { ...theme, settings: { ...theme.settings, product_card: card } };
 }
 
 /** A new color_schemes array with one colour of one scheme changed; the same theme when the scheme is gone. */

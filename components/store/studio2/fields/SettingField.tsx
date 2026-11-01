@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
 import type { ColorScheme } from '@/lib/store/engine/types';
+import { normaliseLineList, type LineItem } from '@/lib/store/engine/shared';
 import {
   FONT_OPTIONS,
   HTML_MAX,
@@ -176,9 +177,11 @@ export function SettingField(props: SettingFieldProps) {
     case 'font':
     case 'icon': {
       const options = schema.type === 'font' ? FONT_OPTIONS : schema.type === 'icon' ? ICON_OPTIONS : schema.options ?? [];
-      const v = str(value);
+      // A setting stored as a number (the card's name lines) lists its values as text and is written back as a number.
+      const numeric = typeof schema.default === 'number';
+      const v = numeric && typeof value === 'number' ? String(value) : str(value);
       return shell(
-        <select id={fieldId} className={inputCls} value={v} onChange={(e) => onChange(e.target.value)}>
+        <select id={fieldId} className={inputCls} value={v} onChange={(e) => onChange(numeric ? Number(e.target.value) : e.target.value)}>
           {!options.some((o) => o.value === v) && <option value={v}>{v ? v : 'Choose…'}</option>}
           {options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -216,10 +219,17 @@ export function SettingField(props: SettingFieldProps) {
       );
 
     case 'color':
-      return shell(<ColorInput id={fieldId} value={str(value)} onChange={onChange} />);
+      // A colour whose default is empty (none) can be cleared again.
+      return shell(<ColorInput id={fieldId} value={str(value)} onChange={onChange} clearable={schema.default === ''} />);
 
     case 'color_scheme':
-      return shell(<SchemePicker value={str(value)} schemes={colorSchemes} onChange={onChange} />, { noFor: true });
+      // A scheme whose default is empty offers Default (clears the choice).
+      return shell(<SchemePicker value={str(value)} schemes={colorSchemes} onChange={onChange} allowNone={schema.default === ''} />, {
+        noFor: true,
+      });
+
+    case 'line_list':
+      return shell(<LineListInput id={fieldId} schema={schema} value={value} onChange={onChange} />, { noFor: true });
 
     case 'image':
       // StoreImageField has its own label; the shell only adds the info line.
@@ -446,8 +456,109 @@ function NumberInput({
   );
 }
 
-/** A swatch (always a valid colour) plus a hex box that commits only valid hex. */
-export function ColorInput({ id, value, onChange }: { id: string; value: string; onChange(v: string): void }) {
+/**
+ * An ordered on/off list (`line_list`): one row per line with a switch and up / down arrows (disabled at the ends).
+ * Every change writes the whole list. After a move, focus stays on the moved line's arrow (the other one at an end)
+ * and the new position is announced.
+ */
+function LineListInput({
+  id,
+  schema,
+  value,
+  onChange,
+}: {
+  id: string;
+  schema: SettingSchema;
+  value: unknown;
+  onChange(v: LineItem[]): void;
+}) {
+  const options = schema.options ?? [];
+  const ids = options.map((o) => o.value);
+  const defaults: LineItem[] = Array.isArray(schema.default) ? (schema.default as LineItem[]) : ids.map((x) => ({ id: x, on: true }));
+  const lines = normaliseLineList(value, ids, defaults);
+  const labelOf = (lineId: string) => options.find((o) => o.value === lineId)?.label ?? lineId;
+  const arrows = useRef(new Map<string, HTMLButtonElement>());
+  const [focus, setFocus] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
+  const [said, setSaid] = useState('');
+  const order = lines.map((l) => l.id).join(',');
+
+  useEffect(() => {
+    if (!focus) return;
+    const own = arrows.current.get(`${focus.id}:${focus.dir}`);
+    const other = arrows.current.get(`${focus.id}:${focus.dir === 'up' ? 'down' : 'up'}`);
+    (own && !own.disabled ? own : other)?.focus();
+    setFocus(null);
+  }, [focus, order]);
+
+  const move = (from: number, dir: 'up' | 'down') => {
+    const to = dir === 'up' ? from - 1 : from + 1;
+    if (to < 0 || to >= lines.length) return;
+    const next = lines.slice();
+    [next[from], next[to]] = [next[to], next[from]];
+    onChange(next);
+    setFocus({ id: lines[from].id, dir });
+    setSaid(`${labelOf(lines[from].id)} moved to position ${to + 1} of ${lines.length}`);
+  };
+
+  return (
+    <>
+      <ul aria-label={schema.label} className="space-y-1">
+        {lines.map((line, i) => {
+          const label = labelOf(line.id);
+          const switchId = `${id}-${line.id}`;
+          const arrow = (dir: 'up' | 'down') => (
+            <button
+              type="button"
+              ref={(el) => {
+                if (el) arrows.current.set(`${line.id}:${dir}`, el);
+                else arrows.current.delete(`${line.id}:${dir}`);
+              }}
+              aria-label={`Move ${label} ${dir}`}
+              disabled={dir === 'up' ? i === 0 : i === lines.length - 1}
+              onClick={() => move(i, dir)}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              {dir === 'up' ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
+            </button>
+          );
+          return (
+            <li key={line.id} className="flex items-center gap-2 rounded-md border border-gray-200 bg-white py-1 pl-2.5 pr-1">
+              <input
+                type="checkbox"
+                role="switch"
+                id={switchId}
+                className="h-4 w-4 shrink-0"
+                checked={line.on}
+                onChange={(e) => onChange(lines.map((l) => (l.id === line.id ? { ...l, on: e.target.checked } : l)))}
+              />
+              <label htmlFor={switchId} className={clsx('min-w-0 flex-1 truncate text-sm', line.on ? 'text-gray-800' : 'text-gray-400')}>
+                {label}
+              </label>
+              {arrow('up')}
+              {arrow('down')}
+            </li>
+          );
+        })}
+      </ul>
+      <p aria-live="polite" className="sr-only">
+        {said}
+      </p>
+    </>
+  );
+}
+
+/** A swatch (always a valid colour) plus a hex box that commits only valid hex; `clearable` adds a Clear button. */
+export function ColorInput({
+  id,
+  value,
+  onChange,
+  clearable = false,
+}: {
+  id: string;
+  value: string;
+  onChange(v: string): void;
+  clearable?: boolean;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
   const swatch = parseHex(value) ?? '#000000';
   const text = draft ?? value;
@@ -465,7 +576,7 @@ export function ColorInput({ id, value, onChange }: { id: string; value: string;
         id={id}
         className={clsx(inputCls, 'font-mono', invalid && 'border-red-400')}
         value={text}
-        placeholder="#000000"
+        placeholder={clearable ? 'None' : '#000000'}
         aria-invalid={invalid}
         maxLength={7}
         onChange={(e) => {
@@ -475,6 +586,18 @@ export function ColorInput({ id, value, onChange }: { id: string; value: string;
         }}
         onBlur={() => setDraft(null)}
       />
+      {clearable && value ? (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(null);
+            onChange('');
+          }}
+          className="shrink-0 text-xs font-medium text-gray-600 hover:text-gray-900 hover:underline"
+        >
+          Clear
+        </button>
+      ) : null}
     </div>
   );
 }

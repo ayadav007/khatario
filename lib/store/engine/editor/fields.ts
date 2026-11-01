@@ -1,9 +1,10 @@
 // Pure helpers for the Studio 2 settings panel (generated fields, pickers, merge keys).
-// Client-safe: imports only engine types/schema-types/theme-settings-schema/registry, ops types and the
+// Client-safe: imports only engine types/schema-types/theme-settings-schema/registry, ops and product-card types and the
 // import-free option lists in lib/store (store-theme pulls in only studio-sections).
 import type { ColorScheme, ThemeSettings } from '../types';
 import type { SettingSchema } from '../schema-types';
-import { EDITOR_HIDDEN_SETTINGS } from '../theme-settings-schema';
+import type { ProductCardSettings } from '../product-card';
+import { CARD_ROWS_UNDER_THEME, EDITOR_HIDDEN_SETTINGS } from '../theme-settings-schema';
 import { COMMON_SETTINGS } from '../registry';
 import { VIDEO_HOSTS } from '../shared';
 import type { SectionRef } from './ops';
@@ -29,7 +30,7 @@ export function settingValue(settings: Record<string, unknown> | undefined, sche
   return schema.default;
 }
 
-/** settingValue for theme settings, where `social.*` ids are nested. */
+/** settingValue for theme settings, where `social.*` and `product_card.*` ids are nested. */
 export function themeSettingValue(settings: ThemeSettings, schema: SettingSchema): unknown {
   const dot = schema.id.indexOf('.');
   if (dot < 0) return settingValue(settings as unknown as Record<string, unknown>, schema);
@@ -84,6 +85,15 @@ export function visibleSettings(schemas: readonly SettingSchema[], scope: FormSc
   return schemas.filter(
     (s) => !own.includes(s.id) && !((hidden.common as readonly string[]).includes(s.id) && COMMON_SETTINGS.includes(s)),
   );
+}
+
+/**
+ * The theme form's rows for the store's card: under Theme's own the card draws as the theme's and ignores its settings,
+ * so only the design and the out-of-stock place (store-wide, any design) show; a design shows every row.
+ */
+export function cardRowsShown(schemas: readonly SettingSchema[], card: Pick<ProductCardSettings, 'design'>): SettingSchema[] {
+  if (card.design !== 'theme') return schemas.slice();
+  return schemas.filter((s) => !s.id.startsWith('product_card') || CARD_ROWS_UNDER_THEME.includes(s.id));
 }
 
 export const CUSTOM_LINK = 'custom';

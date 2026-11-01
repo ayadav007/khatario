@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, Copy, Trash2 } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight, Copy, LayoutGrid, Trash2 } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import {
   OP_ERROR_TEXT,
@@ -20,6 +20,7 @@ import {
 } from '@/lib/store/engine/editor/ops';
 import {
   SCHEME_COLOR_FIELDS,
+  cardRowsShown,
   lengthCounter,
   schemeMergeKey,
   settingMergeKey,
@@ -33,6 +34,7 @@ import { blockLabel, isEditableSection, sectionLabel } from '@/lib/store/engine/
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import { THEME_SETTINGS_SCHEMA, lockedThemeSettings } from '@/lib/store/engine/theme-settings-schema';
 import { pageHandle } from '@/lib/store/engine/shared';
+import { CARD_DESIGN_LABELS, isCardDesignEdited, sanitizeProductCard, type ProductCardSettings } from '@/lib/store/engine/product-card';
 import type { SettingSchema } from '@/lib/store/engine/schema-types';
 import type { ColorScheme, Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
 import { SECTION_CSS_MAX } from '@/lib/store/studio-sections';
@@ -44,6 +46,7 @@ import { PanelHeader, actionBtn, dangerBtn } from './panel-ui';
 import { MenusPanel } from './menus/MenusPanel';
 import { MenuEditor } from './menus/MenuEditor';
 import { MenuItemForm } from './menus/MenuItemForm';
+import { CardDesignGallery } from './CardDesignGallery';
 
 const STRUCTURAL = { mergeKey: null, immediate: true } as const;
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
@@ -116,6 +119,7 @@ function SettingsForm({
   values,
   onSet,
   locked,
+  renderField,
 }: {
   schemas: SettingSchema[];
   scope: FormScope;
@@ -124,6 +128,8 @@ function SettingsForm({
   onSet: (key: string, value: unknown) => (t: ThemeData) => OpResult | ThemeData;
   /** Setting id to the text shown under it when the preset fixes it (theme settings only). */
   locked?: Readonly<Record<string, string>>;
+  /** Draws a setting its own way (the card design row); undefined keeps the generated field. */
+  renderField?: (s: SettingSchema) => ReactNode | undefined;
 }) {
   const { apply, readOnly, categories, pages, theme } = useStudio2();
   const toast = useToastContext();
@@ -133,6 +139,8 @@ function SettingsForm({
   return (
     <div className="space-y-4">
       {fields.map((s) => {
+        const own = renderField?.(s);
+        if (own !== undefined) return <div key={s.id}>{own}</div>;
         const lockText = locked && hasOwn(locked, s.id) ? locked[s.id] : undefined;
         return (
           <SettingField
@@ -413,6 +421,9 @@ function BlockPanel({ sref, section, blockId }: { sref: SectionRef; section: Sec
 
 function ThemePanel({ preset }: { preset?: ThemePreset }) {
   const { theme, apply } = useStudio2();
+  const card = useMemo(() => sanitizeProductCard(theme.settings.product_card), [theme.settings.product_card]);
+  // Under Theme's own the card ignores its settings, so only the design and the out-of-stock place show.
+  const schemas = useMemo(() => cardRowsShown(THEME_SETTINGS_SCHEMA, card), [card]);
   return (
     <div>
       <PanelHeader title="Theme settings" subtitle="Applies to the whole store" />
@@ -428,15 +439,41 @@ function ThemePanel({ preset }: { preset?: ThemePreset }) {
         </div>
         <div className="border-t border-gray-100 pt-4">
           <SettingsForm
-            schemas={THEME_SETTINGS_SCHEMA}
+            schemas={schemas}
             scope={{ kind: 'theme' }}
             target={{ kind: 'theme' }}
             values={(s) => themeSettingValue(theme.settings, s)}
             onSet={(key, value) => (t) => setThemeSetting(t, key, value)}
             locked={lockedThemeSettings(preset)}
+            renderField={(s) => (s.id === 'product_card.design' ? <CardDesignRow card={card} preset={preset} /> : undefined)}
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The store's card design: its name, "Edited" when the settings differ from it, and the gallery. */
+function CardDesignRow({ card, preset }: { card: ProductCardSettings; preset?: ThemePreset }) {
+  const [open, setOpen] = useState(false);
+  const edited = isCardDesignEdited(card);
+  return (
+    <div className="space-y-1.5">
+      <span className="text-xs font-medium text-gray-700">Card design</span>
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm text-gray-900">{CARD_DESIGN_LABELS[card.design]}</span>
+        {edited && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Edited</span>}
+      </div>
+      <button type="button" className={actionBtn} onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+        Choose a card design
+      </button>
+      <p className="text-[11px] text-gray-500">
+        {card.design === 'theme'
+          ? 'Theme’s own keeps the theme’s card. Pick a design to change the card’s lines, photo, price and buttons.'
+          : 'Every setting below can be changed. Product sections can also pick their own design under Card.'}
+      </p>
+      {open && <CardDesignGallery preset={preset} onClose={() => setOpen(false)} />}
     </div>
   );
 }

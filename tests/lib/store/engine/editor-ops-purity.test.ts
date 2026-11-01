@@ -39,6 +39,8 @@ describe('editor ops purity', () => {
     ['setBlockSetting', () => ops.setBlockSetting(theme, 'home', ref, blockId, 'k', 1)],
     ['setThemeSetting', () => ops.setThemeSetting(theme, 'social.instagram', 'z')],
     ['setThemeSetting top-level', () => ops.setThemeSetting(theme, 'font_body', 'z')],
+    ['setThemeSetting product_card', () => ops.setThemeSetting(theme, 'product_card.radius', 4)],
+    ['applyCardDesign', () => ops.applyCardDesign(theme, 'royal')],
   ];
 
   it.each(cases)('%s does not mutate a frozen theme', (_name, run) => {
@@ -50,7 +52,7 @@ describe('editor ops purity', () => {
 
   it('template ops keep untouched groups by reference', () => {
     for (const [name, run] of cases) {
-      if (name.startsWith('setThemeSetting')) continue;
+      if (name.startsWith('setThemeSetting') || name === 'applyCardDesign') continue;
       const r = run() as ops.OpResult;
       if (!r.ok) throw new Error(name);
       expect(r.theme.header_group).toBe(theme.header_group);

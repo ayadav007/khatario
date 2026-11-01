@@ -3,6 +3,7 @@ import {
   HTML_MAX,
   ICON_OPTIONS,
   SCHEME_COLOR_FIELDS,
+  cardRowsShown,
   clampNumber,
   encodeImageUrl,
   isLinkValue,
@@ -56,6 +57,31 @@ describe('settingValue', () => {
     expect(themeSettingValue(s, { id: 'social.instagram', type: 'text', label: 'I', default: '' })).toBe('https://i.example');
     expect(themeSettingValue(s, { id: 'social.youtube', type: 'text', label: 'Y', default: '' })).toBe('');
     expect(themeSettingValue(s, { id: 'font_body', type: 'font', label: 'F', default: 'inter' })).toBe('inter');
+  });
+
+  it('reads product_card.<field> from the card, else the default', () => {
+    const s = { product_card: { radius: 20, lines: [{ id: 'name', on: true }] } } as unknown as ThemeSettings;
+    const by = Object.fromEntries(THEME_SETTINGS_SCHEMA.map((x) => [x.id, x]));
+    expect(themeSettingValue(s, by['product_card.radius'])).toBe(20);
+    expect(themeSettingValue(s, by['product_card.lines'])).toEqual([{ id: 'name', on: true }]);
+    expect(themeSettingValue(s, by['product_card.padding'])).toBe(12);
+  });
+});
+
+describe('cardRowsShown', () => {
+  const ids = (list: SettingSchema[]) => list.map((s) => s.id);
+  const card = (design: string) => ({ design }) as never;
+
+  it("shows only the design and out-of-stock place under Theme's own", () => {
+    const shown = ids(cardRowsShown(THEME_SETTINGS_SCHEMA, card('theme')));
+    const cardRows = shown.filter((id) => id.startsWith('product_card'));
+    expect(cardRows).toEqual(['product_card_header', 'product_card.design', 'product_card_oos_header', 'product_card.oos_place']);
+    expect(shown).toContain('font_body');
+    expect(shown).toContain('social.youtube');
+  });
+
+  it('shows every row under a design', () => {
+    expect(cardRowsShown(THEME_SETTINGS_SCHEMA, card('royal'))).toEqual(THEME_SETTINGS_SCHEMA);
   });
 });
 

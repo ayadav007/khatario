@@ -1,4 +1,7 @@
-// Client-safe: types only. The engine shell's root classes (D27) and the phone kit rule (D29).
+// Client-safe: no server imports. The engine shell's root classes (D27), the phone kit rule (D29) and the root's
+// theme variables.
+import { storeFontStack, type StoreFontFamily } from '@/lib/store/store-theme';
+import { schemeCssVars, studioSchemeVars } from './color-schemes';
 import type { ThemePreset, ThemeSettings } from './types';
 
 const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage'];
@@ -49,4 +52,23 @@ export function engineRootClass(input: {
     if (cls) list.push(cls);
   }
   return { className: list.join(' '), kit, quick };
+}
+
+function fontStack(id: string): string {
+  return storeFontStack(id as StoreFontFamily);
+}
+
+/** Theme-level CSS variables on the engine root: scheme 1, Studio names, fonts and button radius. */
+export function engineRootStyle(settings: ThemeSettings): Record<string, string | number | undefined> {
+  const scheme = settings.color_schemes[0];
+  const body = fontStack(settings.font_body);
+  return {
+    ...(scheme ? studioSchemeVars(scheme, true) : {}),
+    ...(scheme ? schemeCssVars(scheme, true) : {}),
+    '--font-heading': fontStack(settings.font_heading),
+    '--font-body': body,
+    '--btn-radius': `${settings.button_radius}px`,
+    fontFamily: body,
+    backgroundColor: scheme?.background,
+  };
 }

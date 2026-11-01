@@ -1,8 +1,9 @@
 import { presetTheme } from '@/lib/store/engine/presets';
 import { defaultTemplate } from '@/lib/store/engine/presets/templates';
 import type { ThemeData } from '@/lib/store/engine/types';
+import { CARD_DESIGNS, CARD_DESIGN_IDS, PRODUCT_CARD_DEFAULTS, isCardDesignEdited } from '@/lib/store/engine/product-card';
 import {
-  addBlock, addSection, canAddBlock, canAddSection, duplicateBlock, duplicateSection, fillTemplate, getGroup, moveBlock,
+  addBlock, addSection, applyCardDesign, canAddBlock, canAddSection, duplicateBlock, duplicateSection, fillTemplate, getGroup, moveBlock,
   moveSection, removeBlock, removeSection, setBlockSetting, setSectionSetting, setThemeSetting, templateKind,
   toggleBlock, toggleSection, updateSection,
 } from '@/lib/store/engine/editor/ops';
@@ -313,5 +314,87 @@ describe('fillTemplate', () => {
     expect(fillTemplate(t, 'product', defaultTemplate('product'))).toEqual({ ok: false, reason: 'not_found' });
     const { catalog: _gone, ...rest } = t.templates;
     expect(fillTemplate({ ...t, templates: rest }, 'catalog', defaultTemplate('catalog'))).toEqual({ ok: false, reason: 'not_found' });
+  });
+});
+
+describe('product card ops', () => {
+  it('setThemeSetting writes product_card.<field> inside product_card and keeps the rest', () => {
+    const t = fixture();
+    const n = setThemeSetting(t, 'product_card.radius', 20);
+    expect(n.settings.product_card.radius).toBe(20);
+    expect({ ...n.settings.product_card, radius: t.settings.product_card.radius }).toEqual(t.settings.product_card);
+    expect(n.settings.social).toBe(t.settings.social);
+    expect(t.settings.product_card.radius).toBe(PRODUCT_CARD_DEFAULTS.radius);
+  });
+
+  it('setThemeSetting writes product_card.lines as the full list', () => {
+    const t = fixture();
+    const lines = [...t.settings.product_card.lines].reverse();
+    const n = setThemeSetting(t, 'product_card.lines', lines);
+    expect(n.settings.product_card.lines).toEqual(lines);
+    expect(n.settings.product_card.design).toBe(t.settings.product_card.design);
+  });
+
+  it('setThemeSetting does not touch other settings or the input theme', () => {
+    const t = fixture();
+    const snapshot = JSON.stringify(t);
+    const n = setThemeSetting(t, 'product_card.oos_place', 'hide');
+    expect(JSON.stringify(t)).toBe(snapshot);
+    expect(n.settings.product_card.oos_place).toBe('hide');
+    expect(n.settings.font_body).toBe(t.settings.font_body);
+    expect((n.settings as unknown as Record<string, unknown>)['product_card.oos_place']).toBeUndefined();
+  });
+
+  it('applyCardDesign writes the design over the card and sets design', () => {
+    const t = setThemeSetting(fixture(), 'product_card.radius', 3);
+    const n = applyCardDesign(t, 'royal');
+    expect(n.settings.product_card).toEqual(CARD_DESIGNS.royal);
+    expect(n.settings.product_card.design).toBe('royal');
+  });
+
+  it("applyCardDesign keeps the store's oos_place and takes the design's oos_look", () => {
+    let t = setThemeSetting(fixture(), 'product_card.oos_place', 'end');
+    t = setThemeSetting(t, 'product_card.oos_look', 'faded');
+    const n = applyCardDesign(t, 'grocery');
+    expect(n.settings.product_card.oos_place).toBe('end');
+    expect(n.settings.product_card.oos_look).toBe(CARD_DESIGNS.grocery.oos_look);
+    expect({ ...n.settings.product_card, oos_place: 'stay' }).toEqual(CARD_DESIGNS.grocery);
+  });
+
+  it("applyCardDesign 'theme' gives the defaults with the store's oos_place", () => {
+    let t = applyCardDesign(fixture(), 'dark');
+    t = setThemeSetting(t, 'product_card.oos_place', 'hide');
+    const n = applyCardDesign(t, 'theme');
+    expect(n.settings.product_card).toEqual({ ...PRODUCT_CARD_DEFAULTS, oos_place: 'hide' });
+  });
+
+  it('applyCardDesign shares nothing with CARD_DESIGNS and leaves the input alone', () => {
+    const t = fixture();
+    const snapshot = JSON.stringify(t);
+    const n = applyCardDesign(t, 'classic');
+    expect(JSON.stringify(t)).toBe(snapshot);
+    expect(n.settings.product_card).not.toBe(CARD_DESIGNS.classic);
+    expect(n.settings.product_card.lines).not.toBe(CARD_DESIGNS.classic.lines);
+    expect(n.settings.product_card.lines[0]).not.toBe(CARD_DESIGNS.classic.lines[0]);
+    expect(n.settings.social).toBe(t.settings.social);
+  });
+
+  it('applyCardDesign ignores an unknown design', () => {
+    const t = fixture();
+    expect(applyCardDesign(t, 'nope' as never)).toBe(t);
+  });
+
+  it('isCardDesignEdited compares with the design, ignoring oos_place', () => {
+    for (const id of CARD_DESIGN_IDS) {
+      const card = applyCardDesign(fixture(), id).settings.product_card;
+      expect(isCardDesignEdited(card)).toBe(false);
+      expect(isCardDesignEdited({ ...card, oos_place: 'hide' })).toBe(false);
+      expect(isCardDesignEdited({ ...card, radius: card.radius === 5 ? 6 : 5 })).toBe(true);
+      expect(isCardDesignEdited({ ...card, oos_look: card.oos_look === 'faded' ? 'label' : 'faded' })).toBe(true);
+      expect(isCardDesignEdited({ ...card, lines: [...card.lines].reverse() })).toBe(true);
+    }
+    expect(isCardDesignEdited(PRODUCT_CARD_DEFAULTS)).toBe(false);
+    expect(isCardDesignEdited({ ...PRODUCT_CARD_DEFAULTS, oos_place: 'end' })).toBe(false);
+    expect(isCardDesignEdited({ ...PRODUCT_CARD_DEFAULTS, radius: 0 })).toBe(true);
   });
 });

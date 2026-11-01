@@ -1,5 +1,4 @@
-import type { StoreCategoryStyle, StoreFontFamily } from '@/lib/store/store-theme';
-import { storeFontStack } from '@/lib/store/store-theme';
+import type { StoreCategoryStyle } from '@/lib/store/store-theme';
 import { groceryCategoryEmoji } from '@/lib/store/grocery';
 import { schemeCssVars, studioSchemeVars } from './color-schemes';
 import { toStudioBox } from './studio-adapter';
@@ -9,24 +8,8 @@ import type { ColorScheme, Section, ThemeSettings } from './types';
 
 type Style = Record<string, string | number | undefined>;
 
-function fontStack(id: string): string {
-  return storeFontStack(id as StoreFontFamily);
-}
-
-/** Theme-level CSS variables on the engine root: scheme 1, Studio names, fonts and button radius. */
-export function engineRootStyle(settings: ThemeSettings): Style {
-  const scheme = settings.color_schemes[0];
-  const body = fontStack(settings.font_body);
-  return {
-    ...(scheme ? studioSchemeVars(scheme, true) : {}),
-    ...(scheme ? schemeCssVars(scheme, true) : {}),
-    '--font-heading': fontStack(settings.font_heading),
-    '--font-body': body,
-    '--btn-radius': `${settings.button_radius}px`,
-    fontFamily: body,
-    backgroundColor: scheme?.background,
-  };
-}
+// The root's variables are client-safe (the Studio 2 card gallery draws cards with them); kept importable from here.
+export { engineRootStyle } from './root-class';
 
 const SPACING_EDGES = [
   ['spacing_top', 'eng-sp-t'],

@@ -399,6 +399,22 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
   }),
 };
 
+/**
+ * True when the card no longer matches its design (`theme`: the defaults), so the editor shows "Edited". `oos_place`
+ * is left out: it is store-wide and picking a design keeps it.
+ */
+export function isCardDesignEdited(card: ProductCardSettings): boolean {
+  const source = card.design === 'theme' ? PRODUCT_CARD_DEFAULTS : CARD_DESIGNS[card.design];
+  if (!source) return true;
+  for (const key of Object.keys(source) as (keyof ProductCardSettings)[]) {
+    if (key === 'oos_place' || key === 'lines') continue;
+    if (card[key] !== source[key]) return true;
+  }
+  const a = card.lines;
+  const b = source.lines;
+  return !Array.isArray(a) || a.length !== b.length || a.some((l, i) => l.id !== b[i].id || l.on !== b[i].on);
+}
+
 // ---- Resolving and drawing ----
 
 /** What the card draws: the settings that apply, with the section's switches folded in. */
