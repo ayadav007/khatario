@@ -13,12 +13,15 @@ import { LandingHero } from '@/components/marketing/landing/LandingHero';
 import { LandingFaq } from '@/components/marketing/landing/LandingFaq';
 import { LandingTemplateGallery } from '@/components/marketing/landing/LandingTemplateGallery';
 import { LandingPricing } from '@/components/marketing/landing/LandingPricing';
-import { LandingSocialProof } from '@/components/marketing/landing/LandingSocialProof';
-import { LandingWalkthrough } from '@/components/marketing/landing/LandingWalkthrough';
-import { LandingFeatureBento } from '@/components/marketing/landing/LandingFeatureBento';
-import { LandingWhatsAppBand } from '@/components/marketing/landing/LandingWhatsAppBand';
-import { LandingPrintLanguages } from '@/components/marketing/landing/LandingPrintLanguages';
-import { LandingStaffApp } from '@/components/marketing/landing/LandingStaffApp';
+import { LandingSuite } from '@/components/marketing/landing/LandingSuite';
+import { LandingIndustries } from '@/components/marketing/landing/LandingIndustries';
+import { LandingProductTour } from '@/components/marketing/landing/LandingProductTour';
+import { LandingAiTools } from '@/components/marketing/landing/LandingAiTools';
+import { LandingOnlineStore } from '@/components/marketing/landing/LandingOnlineStore';
+import { LandingWhatsAppMarketing } from '@/components/marketing/landing/LandingWhatsAppMarketing';
+import { LandingStaffManagement } from '@/components/marketing/landing/LandingStaffManagement';
+import { LandingSwitchHelp } from '@/components/marketing/landing/LandingSwitchHelp';
+import { LandingEverywhere } from '@/components/marketing/landing/LandingEverywhere';
 import { LandingTestimonials } from '@/components/marketing/landing/LandingTestimonials';
 import { LandingScrollTrialModal } from '@/components/marketing/landing/LandingScrollTrialModal';
 import { LandingScrollProgress } from '@/components/marketing/landing/LandingScrollProgress';
@@ -38,14 +41,17 @@ export function LandingDefaultSections() {
   return (
     <>
       <LandingHero />
-      <LandingSocialProof />
-      <LandingWalkthrough />
-      <LandingFeatureBento />
-      <LandingWhatsAppBand />
+      <LandingSuite />
+      <LandingIndustries />
+      <LandingProductTour />
+      <LandingAiTools />
       <LandingTemplateGallery />
-      <LandingPrintLanguages />
-      <LandingStaffApp />
+      <LandingOnlineStore />
+      <LandingWhatsAppMarketing />
+      <LandingStaffManagement />
+      <LandingSwitchHelp />
       <LandingTestimonials />
+      <LandingEverywhere />
       <LandingPricing />
       <LandingFaq />
       <LandingFinalCta />

@@ -61,6 +61,11 @@ export function useLandingProduct(): LandingProductContextValue {
   return ctx;
 }
 
+/** The home page's product switch, or null on pages without one (the site header uses links there). */
+export function useOptionalLandingProduct(): LandingProductContextValue | null {
+  return useContext(LandingProductContext);
+}
+
 export function readProductLineFromSearchParam(
   value: string | null | undefined,
 ): ProductLine {

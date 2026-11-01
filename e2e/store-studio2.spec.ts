@@ -350,7 +350,7 @@ test.describe('Studio 2 store design editor', () => {
     const id = snap!.working.id;
     // Enter through the online store settings button.
     await page.goto('/settings/online-store', { waitUntil: 'domcontentloaded', timeout: SLOW });
-    await page.getByRole('button', { name: 'Edit store design (beta)' }).click({ timeout: SLOW });
+    await page.getByRole('button', { name: 'Edit store design', exact: true }).first().click({ timeout: SLOW });
     await page.waitForURL((u) => u.pathname === editorUrl(id), { timeout: SLOW });
     await waitForEditor(page);
 

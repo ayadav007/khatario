@@ -265,7 +265,7 @@ test.describe('Store theme library', () => {
 
   test('library shows live card and working copy', async ({ page }) => {
     await page.goto('/settings/online-store', { waitUntil: 'domcontentloaded', timeout: SLOW });
-    await page.getByRole('link', { name: 'Themes (beta)' }).click();
+    await page.getByRole('link', { name: 'Themes', exact: true }).first().click();
     await page.waitForURL((u) => u.pathname === LIBRARY, { timeout: SLOW });
 
     await expect(page.getByRole('heading', { name: 'Themes', exact: true })).toBeVisible({ timeout: SLOW });
@@ -421,7 +421,7 @@ test.describe('Store theme library', () => {
     await page.waitForURL((u) => /\/settings\/online-store\/themes\/[^/]+\/editor$/.test(u.pathname), { timeout: SLOW });
     await expect(page.getByRole('navigation', { name: 'Sections' })).toBeVisible({ timeout: SLOW });
     // Back is now "Themes" and opens the library.
-    await expect(page.getByRole('link', { name: 'Themes', exact: true })).toHaveAttribute('href', LIBRARY);
+    await expect(page.getByRole('link', { name: 'Themes', exact: true }).first()).toHaveAttribute('href', LIBRARY);
 
     await page.getByRole('button', { name: 'History', exact: true }).click();
     const drawer = historyDrawer(page);

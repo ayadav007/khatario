@@ -48,6 +48,30 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
       a: 'Yes. The Free plan includes unlimited GST invoices, customers and items, and you can send invoices on WhatsApp from your own number. New accounts also start with a trial of the full product, and no card is needed to begin.',
     },
     {
+      q: 'Can Khatario read my supplier bills?',
+      a: 'Yes. Take a photo or upload the PDF of a supplier bill (JPG, PNG or PDF, up to 10 MB). Khatario reads the supplier, GSTIN, bill number, date, items with HSN, quantity, rate and GST, and opens the purchase entry filled in for you to check and save.',
+    },
+    {
+      q: 'What can the Khatario AI do?',
+      a: 'It reads supplier bills into purchase entries, answers questions about your business in plain words ("How was sale today?", "Who owes me the most?", "Low stock") in the app or on WhatsApp, and on Khatario Connect it replies to customers on WhatsApp from your item list.',
+    },
+    {
+      q: 'Can I sell online with Khatario?',
+      a: 'Yes. Your items become an online store with your name, using one of the [store themes](/themes). Each order turns into a GST tax invoice, and online orders hold stock so you never sell the same pack twice.',
+    },
+    {
+      q: 'Can I send offers to my customers on WhatsApp?',
+      a: 'Bills, statements and payment reminders go out free from your own number. For festival offers, a shared team inbox and AI replies, Khatario Connect uses the official WhatsApp Business API on your own Meta account, and you pay Meta directly with no markup from us.',
+    },
+    {
+      q: 'Do you charge a markup on WhatsApp messages?',
+      a: 'No. Khatario Connect runs on your own WhatsApp Business account with Meta, so Meta bills you directly for messages at its own rates. Many WhatsApp tools resell messages with their own margin added; we add nothing on top. You pay Khatario only the fixed Connect plan fee.',
+    },
+    {
+      q: 'Can I track staff attendance and salary?',
+      a: 'Yes. Staff check in from their own phone at the shop; location, shop Wi-Fi and the device are checked so fake GPS does not work. Salary is worked out from attendance and leave. HR Lite for up to 30 staff comes with every Billing plan.',
+    },
+    {
       q: 'Can my staff and other branches use it too?',
       a: 'Yes. Growth includes up to 3 users. Business includes up to 10 users and up to 3 branches, each with their own login and permissions.',
     },

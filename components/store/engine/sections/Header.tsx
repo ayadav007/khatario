@@ -28,6 +28,7 @@ export function Header({ section, data, store, theme }: EngineSectionProps) {
     separator: v.separator !== false,
   });
   const logoStyle = logoWidthStyle(logoWidth(v.logo_width, 300), logoWidth(v.logo_width_mobile, 200));
+  const logoUrl = str(v.logo_url) || theme.settings.logo_url || store.logo_url || null;
   return (
     <EngineHeader
       s={{
@@ -39,7 +40,8 @@ export function Header({ section, data, store, theme }: EngineSectionProps) {
         showCartCount: v.show_cart_count !== false,
         iconsPosition: v.icons_position === 'left' ? 'left' : 'right',
       }}
-      logoUrl={str(v.logo_url) || theme.settings.logo_url || store.logo_url || null}
+      logoUrl={logoUrl}
+      hideName={Boolean(logoUrl) && v.show_store_name === false}
       menu={{ items, layout: menuLayout, caps: v.menu_caps === true }}
       layoutClass={layoutClass}
       logoStyle={logoStyle}

@@ -19,8 +19,8 @@ export type BillingHeadlineCopy = {
 };
 
 export const DEFAULT_BILLING_HEADLINE: BillingHeadlineCopy = {
-  lead: 'Still billing by hand at closing time?',
-  accent: 'There is a',
+  lead: 'GST billing software for small shops.',
+  accent: 'Close the day the',
   words: ['calmer', 'simpler'],
   tail: 'way.',
 };

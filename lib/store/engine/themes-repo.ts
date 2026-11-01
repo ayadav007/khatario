@@ -263,6 +263,27 @@ function workingDraftName(liveName: string): string {
   return withSuffix(baseName(liveName), EDITING_SUFFIX);
 }
 
+/**
+ * M6: moves the store to the new design. Under the business lock it gives the store its migrated design as the live
+ * theme when it has none (D33), then turns `store_engine` on. `no_store_design` when there is no store settings row.
+ */
+export async function switchStoreToEngine(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
+  return inTransaction(async (client) => {
+    await lockBusinessThemes(client, businessId);
+    let live = (await client.query(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND role = 'live'`, [businessId]))
+      .rows[0] as ThemeRow | undefined;
+    if (!live) {
+      const input = await migrationInputFor(businessId, client);
+      if (!input) return fail<ThemeRow>('no_store_design');
+      const migrated = await insertMigratedLiveLocked(client, businessId, userId, input);
+      if (!migrated) return fail<ThemeRow>('limit');
+      live = migrated.theme;
+    }
+    await client.query(`UPDATE business_settings SET store_engine = true WHERE business_id = $1`, [businessId]);
+    return good(cleanRow(live));
+  });
+}
+
 async function insertWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
   return inTransaction(async (client) => {
     await lockBusinessThemes(client, businessId);

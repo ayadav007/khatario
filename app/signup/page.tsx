@@ -20,6 +20,7 @@ import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
 import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import { trackSignupComplete } from '@/components/marketing/SignupMetaPixel';
 import { loginHrefFor } from '@/lib/auth/login-href';
+import { SIGNUP_PHONE_STORAGE_KEY } from '@/lib/signup-prefill';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -131,6 +132,18 @@ function SignupPageContent() {
   const [partnerRef, setPartnerRef] = useState<string | null>(null);
   const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [leadNotice, setLeadNotice] = useState<string | null>(null);
+
+  // The home page hero hands over the mobile number through session storage, never the URL.
+  useEffect(() => {
+    try {
+      const phone = sessionStorage.getItem(SIGNUP_PHONE_STORAGE_KEY);
+      if (!phone) return;
+      sessionStorage.removeItem(SIGNUP_PHONE_STORAGE_KEY);
+      setFormData((prev) => (prev.userPhone ? prev : { ...prev, userPhone: phone }));
+    } catch {
+      // Storage blocked: the visitor types the number here instead.
+    }
+  }, []);
 
   useEffect(() => {
     try {

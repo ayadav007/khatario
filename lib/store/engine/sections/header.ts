@@ -8,6 +8,13 @@ export const header: SectionSchema = {
   limit: 1,
   settings: [
     { id: 'logo_url', type: 'image', label: 'Logo', default: '' },
+    {
+      id: 'show_store_name',
+      type: 'checkbox',
+      label: 'Show store name beside the logo',
+      default: true,
+      info: 'The name always shows when there is no logo. The Quick header shows the logo only.',
+    },
     { id: 'show_search', type: 'checkbox', label: 'Show search', default: true },
     { id: 'search_placeholder', type: 'text', label: 'Search placeholder', default: 'Search products', max_length: 60 },
     { id: 'delivery_eta', type: 'text', label: 'Delivery estimate', default: '', max_length: 40 },

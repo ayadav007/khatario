@@ -1233,6 +1233,7 @@ CREATE INDEX IF NOT EXISTS store_theme_versions_business ON store_theme_versions
 ALTER TABLE store_themes ADD COLUMN IF NOT EXISTS is_working boolean NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS store_themes_one_working ON store_themes (business_id) WHERE is_working;
 ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS store_engine BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE business_settings ALTER COLUMN store_engine SET DEFAULT true;
 
 -- Migration 460: order returns release 1 (return method, Shiprocket pickup, gateway refunds, timeline, not-returnable products).
 -- order_returns, credit_note_refunds and store_orders come from their own migrations (380, 281).

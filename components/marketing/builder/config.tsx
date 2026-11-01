@@ -71,6 +71,21 @@ import {
 } from '@/components/marketing/landing/LandingPrintLanguages';
 import { LandingStaffApp, LANDING_STAFF_APP_DEFAULTS } from '@/components/marketing/landing/LandingStaffApp';
 import { LandingTestimonials, LANDING_TESTIMONIALS_DEFAULTS } from '@/components/marketing/landing/LandingTestimonials';
+import { LandingSuite, LANDING_SUITE_DEFAULTS } from '@/components/marketing/landing/LandingSuite';
+import { LandingIndustries, LANDING_INDUSTRIES_DEFAULTS } from '@/components/marketing/landing/LandingIndustries';
+import { LandingProductTour, LANDING_PRODUCT_TOUR_DEFAULTS } from '@/components/marketing/landing/LandingProductTour';
+import { LandingAiTools, LANDING_AI_TOOLS_DEFAULTS } from '@/components/marketing/landing/LandingAiTools';
+import { LandingOnlineStore, LANDING_ONLINE_STORE_DEFAULTS } from '@/components/marketing/landing/LandingOnlineStore';
+import {
+  LandingWhatsAppMarketing,
+  LANDING_WHATSAPP_MARKETING_DEFAULTS,
+} from '@/components/marketing/landing/LandingWhatsAppMarketing';
+import {
+  LandingStaffManagement,
+  LANDING_STAFF_MANAGEMENT_DEFAULTS,
+} from '@/components/marketing/landing/LandingStaffManagement';
+import { LandingSwitchHelp, LANDING_SWITCH_HELP_DEFAULTS } from '@/components/marketing/landing/LandingSwitchHelp';
+import { LandingEverywhere, LANDING_EVERYWHERE_DEFAULTS } from '@/components/marketing/landing/LandingEverywhere';
 import { BRAND_COLOR_OPTIONS, brandStyle, HEADING_FONT_OPTIONS } from '@/lib/marketing-builder/brand';
 import { CONTENT_BLOCKS, KHATARIO_BLOCKS, LAYOUT_BLOCKS } from '@/lib/marketing-builder/block-types';
 
@@ -669,6 +684,7 @@ export const marketingConfig: Config = {
         subhead: area('Sub-heading'),
         footnote: text('Small reassurance line'),
         trustItems: list('Highlights row', { icon: icon(), label: text('Label') }, (t) => String(t.label ?? ''), { icon: 'check', label: 'Highlight' }, 6),
+        proof: list('Proof numbers (true claims only)', { value: text('Big text'), label: text('Label') }, (p) => String(p.value ?? ''), { value: '4.8 ★', label: 'Google Play rating' }, 4),
         primaryCta: text('Main button label (links to sign-up)'),
         secondaryLabel: text('Second button label'),
         secondaryHref: link('Second button link'),
@@ -942,6 +958,175 @@ export const marketingConfig: Config = {
       },
       defaultProps: LANDING_FINAL_CTA_DEFAULTS,
       render: renderAs(LandingFinalCta),
+    },
+
+    Suite: {
+      label: 'One app: product cards',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        products: list(
+          'Product cards (the first card is dark)',
+          { title: text('Title'), text: area('Text'), tag: text('Tag'), href: link('Card link') },
+          (p) => String(p.title ?? ''),
+          { title: 'Product', text: '', tag: '', href: '#tour' },
+          4,
+        ),
+      },
+      defaultProps: LANDING_SUITE_DEFAULTS,
+      render: renderAs(LandingSuite),
+    },
+
+    Industries: {
+      label: 'Industries (colour cards)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        industries: list(
+          'Industries',
+          {
+            icon: choice('Icon and colour', [
+              ['grocery', 'Grocery (green basket)'],
+              ['pharmacy', 'Pharmacy (blue pill)'],
+              ['clothing', 'Clothing (pink shirt)'],
+              ['mobile', 'Mobile (purple phone)'],
+              ['hardware', 'Hardware (amber hammer)'],
+              ['restaurant', 'Restaurant (orange cutlery)'],
+              ['wholesale', 'Wholesale (teal truck)'],
+              ['services', 'Services (indigo wrench)'],
+            ]),
+            name: text('Name'),
+            text: area('Text'),
+            tags: text('Tags (separate with commas)'),
+            href: link('Link to the industry page (leave empty for no link)'),
+          },
+          (it) => String(it.name ?? ''),
+          { icon: 'grocery', name: 'Industry', text: '', tags: '', href: '' },
+          12,
+        ),
+      },
+      defaultProps: LANDING_INDUSTRIES_DEFAULTS,
+      render: renderAs(LandingIndustries),
+    },
+
+    ProductTour: {
+      label: 'Product tour (tabs with screenshots)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        tabs: list(
+          'Tabs',
+          {
+            label: text('Tab name'),
+            title: text('Title'),
+            text: area('Text'),
+            points: area('Tick points (one per line)'),
+            image: image('Screenshot'),
+            imageAlt: text('Screenshot alt text'),
+          },
+          (t) => String(t.label ?? ''),
+          { label: 'Tab', title: '', text: '', points: '', image: '', imageAlt: '' },
+          6,
+        ),
+      },
+      defaultProps: LANDING_PRODUCT_TOUR_DEFAULTS,
+      render: renderAs(LandingProductTour),
+    },
+
+    AiTools: {
+      label: 'Khatario AI (dark)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        scanTitle: text('Bill-scan card title'),
+        scanText: area('Bill-scan card text'),
+        scanPoints: list('Bill-scan points', { text: text('Point') }, (p) => String(p.text ?? ''), { text: 'Point' }, 5),
+        askTitle: text('Ask card title'),
+        askText: area('Ask card text'),
+        askQuestions: list('Example questions', { text: text('Question') }, (q) => String(q.text ?? ''), { text: 'Question?' }, 8),
+        replyTitle: text('AI replies card title'),
+        replyText: area('AI replies card text'),
+      },
+      defaultProps: LANDING_AI_TOOLS_DEFAULTS,
+      render: renderAs(LandingAiTools),
+    },
+
+    OnlineStore: {
+      label: 'Online store',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        points: list('Points', { title: text('Bold start'), text: text('Rest of the line') }, (p) => String(p.title ?? ''), { title: 'Point', text: '' }, 6),
+        ctaLabel: text('Button label'),
+        ctaHref: link('Button link'),
+      },
+      defaultProps: LANDING_ONLINE_STORE_DEFAULTS,
+      render: renderAs(LandingOnlineStore),
+    },
+
+    WhatsAppMarketing: {
+      label: 'WhatsApp marketing + no markup',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        cards: list('Cards', { tier: text('Small label'), title: text('Title'), text: area('Text') }, (c) => String(c.title ?? ''), { tier: '', title: 'Card', text: '' }, 6),
+        ctaLabel: text('Button label'),
+        ctaHref: link('Button link'),
+        markupTitle: text('No-markup band title (empty hides the band)'),
+        markupText: area('No-markup band text'),
+        markupNote: text('No-markup band note'),
+      },
+      defaultProps: LANDING_WHATSAPP_MARKETING_DEFAULTS,
+      render: renderAs(LandingWhatsAppMarketing),
+    },
+
+    StaffManagement: {
+      label: 'Staff management',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        freeLine: text('Free badge line'),
+        points: list('Points', { title: text('Title'), text: area('Text') }, (p) => String(p.title ?? ''), { title: 'Point', text: '' }, 6),
+        ctaLabel: text('Button label'),
+        ctaHref: link('Button link'),
+      },
+      defaultProps: LANDING_STAFF_MANAGEMENT_DEFAULTS,
+      render: renderAs(LandingStaffManagement),
+    },
+
+    SwitchHelp: {
+      label: 'Switching help (steps + photo)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        steps: list('Steps', { title: text('Title'), text: area('Text') }, (s) => String(s.title ?? ''), { title: 'Step', text: '' }, 6),
+        ctaLabel: text('Button label'),
+        ctaHref: link('Button link'),
+        image: image('Photo'),
+        imageAlt: text('Photo alt text'),
+      },
+      defaultProps: LANDING_SWITCH_HELP_DEFAULTS,
+      render: renderAs(LandingSwitchHelp),
+    },
+
+    Everywhere: {
+      label: 'Works everywhere + trust (dark)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        intro: area('Intro'),
+        chips: list('Device chips', { label: text('Label') }, (c) => String(c.label ?? ''), { label: 'Label' }, 8),
+        trust: list('Trust cards', { title: text('Title'), text: area('Text') }, (t) => String(t.title ?? ''), { title: 'Card', text: '' }, 7),
+      },
+      defaultProps: LANDING_EVERYWHERE_DEFAULTS,
+      render: renderAs(LandingEverywhere),
     },
   },
 };

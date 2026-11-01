@@ -124,7 +124,14 @@ function packChrome(
       { type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } },
       ...(sectionEnabled(t, 'offers') ? [{ type: 'menu_link', settings: { label: 'Offers', link: '/catalog?disc=10' } }] : []),
     ];
-    const rebuilt = withLegacyBlocks(engineSection('header', { ...header.settings, show_category_chips: sectionEnabled(t, 'categories') }), links);
+    const rebuilt = withLegacyBlocks(
+      engineSection('header', {
+        ...header.settings,
+        show_category_chips: sectionEnabled(t, 'categories'),
+        show_store_name: t.show_store_name,
+      }),
+      links,
+    );
     head = { ...header, settings: rebuilt.settings, blocks: rebuilt.blocks, block_order: rebuilt.block_order };
   } else {
     head = { ...header, color_scheme: 'scheme-4' };

@@ -176,6 +176,7 @@ export function logoSizeClass(base: string, style?: CSSProperties | Record<strin
 export function StudioHeader({
   s,
   logoUrl,
+  hideName,
   search,
   nav,
   cartCount,
@@ -190,6 +191,8 @@ export function StudioHeader({
 }: {
   s: StudioSettings;
   logoUrl?: string | null;
+  /** Engine header: the logo without the store name beside it. */
+  hideName?: boolean;
   /**
    * Engine header layout classes (`headerLayoutClasses`) on the header root. `hdr-logo-center` puts the logo between
    * a left and a right group: search (or the inline menu) on the left, icons (and search after an inline menu) right.
@@ -224,10 +227,13 @@ export function StudioHeader({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logoUrl} alt="" />
       ) : null}
-      <span className="logoText">
-        <b>{s.logo || 'My store'}</b>
-        {s.tagline ? <small>{s.tagline}</small> : null}
-      </span>
+      {hideName ? <span className="sr-only">{s.logo || 'My store'}</span> : null}
+      {!hideName || s.tagline ? (
+        <span className="logoText">
+          {hideName ? null : <b>{s.logo || 'My store'}</b>}
+          {s.tagline ? <small>{s.tagline}</small> : null}
+        </span>
+      ) : null}
     </a>
   );
   const searchBox =

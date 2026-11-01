@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart, Palette } from 'lucide-react';
@@ -9,7 +9,7 @@ import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor';
-import { StoreAppearanceStudio } from '@/components/store/admin/StoreAppearanceStudio';
+import { StoreDesignCard } from '@/components/store/admin/StoreDesignCard';
 import { StoreLivePreview } from '@/components/store/admin/StoreLivePreview';
 import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager';
 import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
@@ -23,11 +23,6 @@ import {
   sanitizeStorePromoSheet,
   type StorePromoSheetConfig,
 } from '@/lib/store/promo-sheet';
-import {
-  DEFAULT_STORE_THEME,
-  sanitizeStoreTheme,
-  type StoreTheme,
-} from '@/lib/store/store-theme';
 import clsx from 'clsx';
 
 type EditorTab = 'appearance' | 'promo' | 'setup' | 'pages';
@@ -43,7 +38,6 @@ interface StoreSettings {
   store_delivery_provider?: string;
   store_about_md?: string | null;
   store_contact_md?: string | null;
-  store_theme?: unknown;
   store_hide_khatario_badge?: boolean;
   store_shiprocket_email?: string | null;
   shiprocket_webhook_configured?: boolean;
@@ -51,8 +45,6 @@ interface StoreSettings {
   store_cart_reminder_enabled?: boolean;
   store_cart_reminder_hours?: number;
   store_engine?: boolean;
-  logo_url?: string | null;
-  categories?: Array<{ id: string; name: string }>;
 }
 
 const TABS: Array<{ id: EditorTab; label: string }> = [
@@ -101,6 +93,7 @@ export default function OnlineStoreSettingsPage() {
   const router = useRouter();
   const [storeEngine, setStoreEngine] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [pendingReviews, setPendingReviews] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -133,11 +126,7 @@ export default function OnlineStoreSettingsPage() {
   const [shipWebhookConfigured, setShipWebhookConfigured] = useState(false);
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
-  const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [businessLogo, setBusinessLogo] = useState('');
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     if (!business?.id) return;
@@ -176,19 +165,6 @@ export default function OnlineStoreSettingsPage() {
         setAllowCod(data.store_allow_cod !== false);
         setReturnDays(String(data.store_return_window_days ?? 7));
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
-        const nextTheme = sanitizeStoreTheme(data.store_theme);
-        if (nextTheme.hero_slides.length === 0 && data.store_hero_image_url) {
-          nextTheme.hero_slides = [
-            {
-              image_url: data.store_hero_image_url,
-              title: data.store_tagline ?? '',
-              subtitle: nextTheme.hero_subtitle,
-              viewport: 'both',
-            },
-          ];
-        }
-        setTheme(nextTheme);
-        setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
         setCartReminderOn(data.store_cart_reminder_enabled === true);
         setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
@@ -199,7 +175,6 @@ export default function OnlineStoreSettingsPage() {
         const nextPromo = sanitizeStorePromoSheet(data.store_promo_sheet);
         setPromo(nextPromo);
         setSavedPromo(nextPromo);
-        setCategories(data.categories ?? []);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(typeof data.error === 'string' ? data.error : 'Failed to load settings');
@@ -249,7 +224,7 @@ export default function OnlineStoreSettingsPage() {
           store_enabled: enabled,
           store_tagline: tagline.trim() || null,
           store_min_order_amount: parseFloat(minOrder) || 0,
-          store_hero_image_url: theme.hero_slides[0]?.image_url || heroUrl.trim() || null,
+          store_hero_image_url: heroUrl.trim() || null,
           store_about_md: aboutMd || null,
           store_contact_md: contactMd || null,
           store_privacy_md: privacyMd || null,
@@ -258,7 +233,6 @@ export default function OnlineStoreSettingsPage() {
           store_allow_cod: allowCod,
           store_return_window_days: Number(returnDays) || 0,
           store_delivery_provider: deliveryProvider,
-          store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
           store_cart_reminder_enabled: cartReminderOn,
           store_cart_reminder_hours: Math.min(72, Math.max(1, Math.round(Number(cartReminderHours)) || 3)),
@@ -301,7 +275,6 @@ export default function OnlineStoreSettingsPage() {
     allowCod,
     returnDays,
     deliveryProvider,
-    theme,
     hideBadge,
     cartReminderOn,
     cartReminderHours,
@@ -332,58 +305,38 @@ export default function OnlineStoreSettingsPage() {
     return () => window.clearTimeout(id);
   }, [loading, storefrontBase]);
 
-  const handleUpdatePreview = useCallback(async () => {
-    const base = storefrontBase();
-    if (!base) {
-      setError('Set a store URL under Store setup first.');
+  const switchToNewDesign = useCallback(async () => {
+    if (!business?.id) return;
+    if (
+      !window.confirm(
+        'Switch your store to the new design? Your current design is copied into it and shoppers see it straight away. After this you edit your design in the store design editor.',
+      )
+    ) {
       return;
     }
-    setPreviewBusy(true);
+    setSwitching(true);
     setError(null);
     try {
-      const res = await fetch('/api/settings/online-store/preview-draft', {
+      const res = await fetch('/api/settings/online-store/switch-engine', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business?.id,
-          theme: sanitizeStoreTheme({
-            ...theme,
-            logo_url: theme.logo_url || businessLogo,
-          }),
-        }),
+        body: JSON.stringify({ business_id: business.id }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || typeof data.token !== 'string') {
-        setError(typeof data.error === 'string' ? data.error : 'Could not update preview');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === 'string' ? data.error : 'Could not switch to the new design');
         return;
       }
-      setPreviewSrc(`${base}/?td=${encodeURIComponent(data.token)}`);
+      setStoreEngine(true);
+      const base = storefrontBase();
+      if (base) setPreviewSrc(`${base}/?v=${Date.now()}`);
     } catch {
-      setError('Could not update preview');
+      setError('Could not switch to the new design');
     } finally {
-      setPreviewBusy(false);
+      setSwitching(false);
     }
-  }, [storefrontBase, business?.id, theme, businessLogo]);
-
-  const sectionsSig = theme.homepage_sections.map((s) => `${s.id}:${s.enabled ? 1 : 0}`).join('|');
-  const previewContentSig = [
-    sectionsSig,
-    theme.category_style,
-    JSON.stringify(theme.category_images),
-    JSON.stringify(theme.overlay_bands),
-  ].join('|');
-  const skipSectionPreview = useRef(true);
-  useEffect(() => {
-    if (loading) return;
-    if (skipSectionPreview.current) {
-      skipSectionPreview.current = false;
-      return;
-    }
-    const t = window.setTimeout(() => void handleUpdatePreview(), 400);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- previewContentSig only
-  }, [previewContentSig, loading]);
+  }, [business?.id, storefrontBase]);
 
   const handleCopy = useCallback(() => {
     if (storeUrl) {
@@ -392,11 +345,6 @@ export default function OnlineStoreSettingsPage() {
       setTimeout(() => setCopied(false), 2000);
     }
   }, [storeUrl]);
-
-  const previewTheme: StoreTheme = {
-    ...theme,
-    logo_url: theme.logo_url || businessLogo,
-  };
 
   if (loading) {
     return (
@@ -411,7 +359,7 @@ export default function OnlineStoreSettingsPage() {
   return (
     <SettingsPageShell
       title="Store editor"
-      description="Pick and customise your theme in Studio. The settings here (logo, banners, collections, fonts) are saved with Save."
+      description="Your store's look is edited in the store design editor. Promo, store setup and pages are saved here with Save."
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
@@ -423,7 +371,7 @@ export default function OnlineStoreSettingsPage() {
               className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
             >
               {openingEditor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              Edit store design (beta)
+              Edit store design
             </button>
           ) : null}
           {storeEngine ? (
@@ -432,16 +380,9 @@ export default function OnlineStoreSettingsPage() {
               className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               <Palette className="h-3.5 w-3.5" />
-              Themes (beta)
+              Themes
             </Link>
           ) : null}
-          <Link
-            href="/settings/online-store/studio"
-            className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Themes &amp; Studio
-          </Link>
           <Link
             href="/settings/online-store/enquiries"
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
@@ -511,18 +452,13 @@ export default function OnlineStoreSettingsPage() {
           </div>
 
           {tab === 'appearance' ? (
-            <StoreAppearanceStudio
-              theme={theme}
-              setTheme={setTheme}
-              hideBadge={hideBadge}
-              setHideBadge={setHideBadge}
-              tagline={tagline}
-              setTagline={setTagline}
-              categories={categories}
-              hostSuffix={hostSuffix}
-              storeUrl={storeUrl}
-              onUpdate={() => void handleUpdatePreview()}
-              updating={previewBusy}
+            <StoreDesignCard
+              storeEngine={storeEngine}
+              storeHref={storefrontBase()}
+              opening={openingEditor}
+              switching={switching}
+              onEdit={() => void openStoreDesignEditor()}
+              onSwitch={() => void switchToNewDesign()}
             />
           ) : null}
 
@@ -917,6 +853,17 @@ export default function OnlineStoreSettingsPage() {
                 ) : null}
               </Card>
               <Card className="p-5">
+                <label className="flex items-center justify-between gap-3 text-sm">
+                  <span>
+                    Hide “Powered by Khatario”
+                    <span className="block text-xs text-gray-500">
+                      Removes the Khatario line from your store&apos;s footer.
+                    </span>
+                  </span>
+                  <Toggle on={hideBadge} onToggle={() => setHideBadge((v) => !v)} />
+                </label>
+              </Card>
+              <Card className="p-5">
                 {business?.id ? <StoreCouponManager businessId={business.id} /> : null}
               </Card>
               <Card className="p-5">
@@ -975,15 +922,7 @@ export default function OnlineStoreSettingsPage() {
         {showPreview ? (
           <aside className="mt-6 hidden xl:block">
             <div className="sticky top-24">
-              <StoreLivePreview
-                storeName={business?.name ?? 'Your store'}
-                tagline={tagline}
-                heroUrl={heroUrl}
-                theme={previewTheme}
-                categories={categories}
-                iframeSrc={previewSrc}
-                updating={previewBusy}
-              />
+              <StoreLivePreview iframeSrc={previewSrc} />
             </div>
           </aside>
         ) : null}
@@ -991,15 +930,7 @@ export default function OnlineStoreSettingsPage() {
 
       <div className="mt-6 xl:hidden">
         {showPreview ? (
-          <StoreLivePreview
-            storeName={business?.name ?? 'Your store'}
-            tagline={tagline}
-            heroUrl={heroUrl}
-            theme={previewTheme}
-            categories={categories}
-            iframeSrc={previewSrc}
-            updating={previewBusy}
-          />
+          <StoreLivePreview iframeSrc={previewSrc} />
         ) : null}
       </div>
     </SettingsPageShell>

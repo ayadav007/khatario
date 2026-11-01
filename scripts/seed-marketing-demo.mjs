@@ -30,7 +30,7 @@ const BUSINESS = {
   state: 'Maharashtra',
   state_code: '27',
   pincode: '411038',
-  gstin: '27AAPFS4821K1Z6',
+  gstin: '27AAPFS4821K1ZP',
   pan: 'AAPFS4821K',
   gst_registration_type: 'regular',
 };
@@ -64,11 +64,11 @@ const ITEMS = [
 ];
 
 const CUSTOMERS = [
-  { name: 'Sharma & Sons', company_name: 'Sharma & Sons', phone: '9000000101', gstin: '27AAFFS2345K1Z8', city: 'Pune', state: 'Maharashtra', pincode: '411004', address: '12, FC Road, Shivajinagar', credit_days: 15, b2b: true },
-  { name: 'Patil Tiffin Services', company_name: 'Patil Tiffin Services', phone: '9000000102', gstin: '27ABCPP4567L1Z3', city: 'Pune', state: 'Maharashtra', pincode: '411052', address: 'Warje Malwadi Road', credit_days: 15, b2b: true },
-  { name: 'Hotel Sai Palace', company_name: 'Hotel Sai Palace', phone: '9000000103', gstin: '27AAKFH7890M1Z2', city: 'Nashik', state: 'Maharashtra', pincode: '422002', address: 'College Road', credit_days: 30, b2b: true },
-  { name: 'Deshmukh Caterers', company_name: 'Deshmukh Caterers', phone: '9000000104', gstin: '27AAQFD1234N1Z6', city: 'Pune', state: 'Maharashtra', pincode: '411030', address: 'Sadashiv Peth', credit_days: 15, b2b: true },
-  { name: 'Green Leaf Café', company_name: 'Green Leaf Café', phone: '9000000105', gstin: '29AAHFG5678P1Z4', city: 'Bengaluru', state: 'Karnataka', pincode: '560034', address: '80 Feet Road, Koramangala', credit_days: 30, b2b: true },
+  { name: 'Sharma & Sons', company_name: 'Sharma & Sons', phone: '9000000101', gstin: '27AAFFS2345K1Z0', city: 'Pune', state: 'Maharashtra', pincode: '411004', address: '12, FC Road, Shivajinagar', credit_days: 15, b2b: true },
+  { name: 'Patil Tiffin Services', company_name: 'Patil Tiffin Services', phone: '9000000102', gstin: '27ABCPP4567L1Z5', city: 'Pune', state: 'Maharashtra', pincode: '411052', address: 'Warje Malwadi Road', credit_days: 15, b2b: true },
+  { name: 'Hotel Sai Palace', company_name: 'Hotel Sai Palace', phone: '9000000103', gstin: '27AAKFH7890M1ZI', city: 'Nashik', state: 'Maharashtra', pincode: '422002', address: 'College Road', credit_days: 30, b2b: true },
+  { name: 'Deshmukh Caterers', company_name: 'Deshmukh Caterers', phone: '9000000104', gstin: '27AAQFD1234N1Z4', city: 'Pune', state: 'Maharashtra', pincode: '411030', address: 'Sadashiv Peth', credit_days: 15, b2b: true },
+  { name: 'Green Leaf Café', company_name: 'Green Leaf Café', phone: '9000000105', gstin: '29AAHFG5678P1ZE', city: 'Bengaluru', state: 'Karnataka', pincode: '560034', address: '80 Feet Road, Koramangala', credit_days: 30, b2b: true },
   { name: 'Rohan Kulkarni', phone: '9000000106', city: 'Pune', state: 'Maharashtra', pincode: '411038' },
   { name: 'Sneha Joshi', phone: '9000000107', city: 'Pune', state: 'Maharashtra', pincode: '411029' },
   { name: 'Amit Verma', phone: '9000000108', city: 'Pune', state: 'Maharashtra', pincode: '411045' },
@@ -77,8 +77,8 @@ const CUSTOMERS = [
 ];
 
 const SUPPLIERS = [
-  { name: 'Pune Wholesale Traders', phone: '9000000201', gstin: '27AAECP1111Q1Z9', city: 'Pune', state: 'Maharashtra', address: 'Market Yard, Gultekdi' },
-  { name: 'Deccan FMCG Distributors', phone: '9000000202', gstin: '27AAGFD2222R1Z1', city: 'Pune', state: 'Maharashtra', address: 'Bhosari MIDC' },
+  { name: 'Pune Wholesale Traders', phone: '9000000201', gstin: '27AAECP1111Q1ZC', city: 'Pune', state: 'Maharashtra', address: 'Market Yard, Gultekdi' },
+  { name: 'Deccan FMCG Distributors', phone: '9000000202', gstin: '27AAGFD2222R1Z8', city: 'Pune', state: 'Maharashtra', address: 'Bhosari MIDC' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -314,6 +314,8 @@ async function main() {
       invoice_date: date,
       due_date: addDays(date, b2b ? customer.credit_days || 15 : 0),
       status: 'final',
+      // Demo history is entered after the fact, so earlier-month bills need the app's back-date reason.
+      backdate_reason: 'Demo data entered after the sale',
       document_type: 'tax_invoice',
       place_of_supply_state_code: customer?.stateCode ?? '27',
       items: lines,

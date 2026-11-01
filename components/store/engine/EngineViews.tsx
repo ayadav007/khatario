@@ -258,6 +258,7 @@ function CategoryChips({ chips }: { chips: Chip[] }) {
 export function EngineHeader({
   s,
   logoUrl,
+  hideName,
   menu,
   layoutClass,
   logoStyle,
@@ -268,6 +269,8 @@ export function EngineHeader({
 }: {
   s: StudioSettings;
   logoUrl: string | null;
+  /** The logo alone, without the store name beside it (the Header's "Show store name" off, with a logo). */
+  hideName?: boolean;
   /** The header's resolved menu, its layout and whether top items are in capitals. */
   menu: { items: ResolvedItem[]; layout: 'below' | 'inline'; caps: boolean };
   /** Logo position and separator classes (`headerLayoutClasses`); empty for today's layout. */
@@ -330,6 +333,7 @@ export function EngineHeader({
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
+      hideName={hideName}
       layoutClass={layoutClass}
       logoStyle={sizedLogo as CSSProperties | undefined}
       menuSlot={menu.layout === 'below' ? bar : null}

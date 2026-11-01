@@ -197,9 +197,12 @@ function ProductCard({
   }, [cart, product]);
 
   const outOfStock = product.current_stock <= 0 && !product.has_variants;
-  const discount = sectionEnabled(theme, 'offers')
+  // M6: on the new design the old Store editor's "Today's offers" and "Add to bag" switches no longer apply; the
+  // card's own design and lines decide.
+  const discount = engineLook || sectionEnabled(theme, 'offers')
     ? storeDiscountPercent(product.mrp, product.selling_price)
     : 0;
+  const listingAdd = engineLook ? true : theme.show_listing_add;
 
   const handleAdd = useCallback(
     (e: React.MouseEvent) => {
@@ -264,7 +267,7 @@ function ProductCard({
 
   if (look.studioTile) {
     const open = inCart > 0 && !product.has_variants;
-    const add = !theme.show_listing_add ? null : open ? (
+    const add = !listingAdd ? null : open ? (
       <div className="stepper">
         <button type="button" onClick={handleDecrement} aria-label="Decrease quantity">
           <Minus strokeWidth={2.4} />
@@ -423,7 +426,7 @@ function ProductCard({
               </span>
             ) : null}
           </div>
-          {theme.show_listing_add ? (
+          {listingAdd ? (
             <div className="mt-auto pt-3">
               {outOfStock ? (
                 <span className="g-line flex h-10 w-full items-center justify-center rounded-xl border text-[12px] font-semibold" style={{ opacity: 0.5 }}>
@@ -522,7 +525,7 @@ function ProductCard({
           }}
         />
       </button>
-      {theme.show_listing_add ? (
+      {listingAdd ? (
         <ChowkAddControl
           accent={accent}
           ink={ink}

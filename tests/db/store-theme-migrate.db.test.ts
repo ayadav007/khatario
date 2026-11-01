@@ -88,8 +88,8 @@ d('Store theme migration runner (real DB)', () => {
         [id, `Migrate test ${i}`],
       );
       await pool.query(
-        `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_tagline, store_theme)
-         VALUES ($1, $2, true, 'Fresh every day', $3::jsonb)`,
+        `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_tagline, store_theme, store_engine)
+         VALUES ($1, $2, true, 'Fresh every day', $3::jsonb, false)`,
         [id, `mg${SEED}${i}`, JSON.stringify(THEMES[id])],
       );
     }
@@ -196,6 +196,22 @@ d('Store theme migration runner (real DB)', () => {
     expect(out.rows[0]).toMatchObject({ business_id: ONLY_A, status: 'migrated', preset: 'khatario' });
     expect(await themeCount([ONLY_A])).toBe(1);
     expect(await themeCount([ONLY_B, WD_FRESH, POST_FRESH, PREVIEW])).toBe(0);
+  });
+
+  it('switchOn turns the flag on once each store has a live theme, never on a dry run (M6)', async () => {
+    const flags = async () =>
+      (await pool.query(`SELECT business_id, store_engine FROM business_settings WHERE business_id = ANY($1)`, [[GROCERY, ONLY_B]])).rows;
+    const dry = await runStoreThemeMigration({ businessIds: [GROCERY, ONLY_B], dryRun: true, switchOn: true });
+    expect(dry.rows.every((r) => r.switched_on === undefined)).toBe(true);
+    for (const f of await flags()) expect(f.store_engine).toBe(false);
+
+    const out = await runStoreThemeMigration({ businessIds: [GROCERY, ONLY_B], switchOn: true });
+    expect(rowFor(out.rows, GROCERY)).toMatchObject({ status: 'skipped_live', switched_on: true });
+    expect(rowFor(out.rows, ONLY_B)).toMatchObject({ status: 'migrated', switched_on: true });
+    for (const f of await flags()) expect(f.store_engine).toBe(true);
+
+    const again = await runStoreThemeMigration({ businessIds: [GROCERY, ONLY_B], switchOn: true });
+    expect(again.rows.map((r) => r.switched_on)).toEqual([false, false]);
   });
 
   it('reports an unknown business as not_found', async () => {

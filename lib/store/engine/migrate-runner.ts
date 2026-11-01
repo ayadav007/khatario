@@ -1,6 +1,7 @@
 // Server-only. D33/D34: the store's first live engine theme is its migrated design. `runStoreThemeMigration` runs
 // the migration for many stores (scripts/migrate-store-themes.mjs).
-// It never writes business_settings (store_engine, store_theme): only store_themes rows of the business being migrated.
+// It writes only store_themes rows of the business being migrated, plus `store_engine = true` with `switchOn` (M6);
+// never store_theme.
 import { getPool, query } from '@/lib/db';
 import { migrateStoreTheme } from './migrate';
 import { migrationInputFor } from './migration-input';
@@ -42,6 +43,8 @@ export interface MigrationOptions {
   dryRun?: boolean;
   allowDatabase?: string | null;
   previewLinks?: boolean;
+  /** M6: also turn `store_engine` on for each store that ends with a live theme (migrated or already there). */
+  switchOn?: boolean;
 }
 
 export interface MigrationReportRow {
@@ -53,6 +56,8 @@ export interface MigrationReportRow {
   warnings: string[];
   preview_path?: string;
   error?: string;
+  /** With `switchOn`: true when `store_engine` was turned on by this run (false when it already was). */
+  switched_on?: boolean;
 }
 
 /**
@@ -134,6 +139,13 @@ async function migrateOne(
           }
         }
       }
+    }
+    if (opts.switchOn && !opts.dryRun && (row.status === 'migrated' || row.status === 'skipped_live')) {
+      const on = await client.query(
+        `UPDATE business_settings SET store_engine = true WHERE business_id = $1 AND store_engine IS DISTINCT FROM true`,
+        [target.business_id],
+      );
+      row.switched_on = (on.rowCount ?? 0) > 0;
     }
     await client.query(opts.dryRun ? 'ROLLBACK' : 'COMMIT');
     return row;
