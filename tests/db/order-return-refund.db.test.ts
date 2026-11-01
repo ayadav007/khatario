@@ -38,11 +38,13 @@ import { createInvoiceForStoreOrder, fulfillStoreOrderPayment } from '@/lib/stor
 import { createReturn, receiveReturn, settleReturn } from '@/lib/returns/service';
 import { listReturnEvents } from '@/lib/returns/events';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
 import { StoreRefundError } from '@/lib/store/store-refund';
 import { applyCustomerCredit, listAvailableCustomerCredits } from '@/lib/credit-notes/customer-credit';
 import * as providerConfig from '@/lib/payments/business-provider-config';
 import * as gatewayRefund from '@/lib/returns/gateway-refund';
 import { POST as razorpayWebhook } from '@/app/api/webhooks/store/razorpay/route';
+import { PATCH as cancelCreditNote } from '@/app/api/credit-notes/[id]/cancel/route';
 import {
   applyReturnGatewayRefundResult,
   checkPendingReturnRefunds,
@@ -642,15 +644,19 @@ d('refund a return to the original payment (real DB)', () => {
         [orderId],
       )
     ).rows[0].settlement_account_id as string;
-    await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [settlement]);
     let row: Record<string, string>;
     const refundId = `rfnd_post_${tag}`;
+    const gw = fakeGateway('processed', refundId);
     try {
       const out = await refundReturnToOriginalPayment({
         businessId: B,
         returnId: id,
         userId: A,
-        requestRefund: fakeGateway('processed', refundId).requester,
+        // The account is closed while the refund is at the gateway (after the claim checked it).
+        requestRefund: async (args) => {
+          await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [settlement]);
+          return gw.requester(args);
+        },
       });
       expect(out).toMatchObject({ status: 'pending', amount: 118, providerRefundId: refundId });
       expect(out.error).toMatch(/^Refunded at the gateway; posting failed: /);
@@ -682,6 +688,218 @@ d('refund a return to the original payment (real DB)', () => {
     expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: refundId, failure_reason: null });
     expect((await pool.query(`SELECT 1 FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rowCount).toBe(1);
     expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  /** A billed online order paid through Easebuzz instead of Razorpay. */
+  async function easebuzzOrder(qty: number): Promise<{ orderId: string; invoiceId: string }> {
+    const out = await billedOrder(qty, true);
+    await pool.query(`UPDATE store_orders SET payment_provider = 'easebuzz' WHERE id = $1`, [out.orderId]);
+    return out;
+  }
+
+  test('an Easebuzz refund answered with status false marks the attempt failed, and a retry makes a new attempt', async () => {
+    const { invoiceId } = await easebuzzOrder(1);
+    const id = await receivedReturn(invoiceId);
+    const easebuzz = new EasebuzzPaymentProvider({ clientId: 'EBKEY_RETURNS', clientSecret: 'EBSALT_RETURNS' });
+    const realFetch = global.fetch;
+    global.fetch = jest.fn(async () =>
+      new Response(JSON.stringify({ status: false, reason: 'Refund not allowed for this transaction' }), { status: 200 }),
+    ) as typeof fetch;
+    let out: Awaited<ReturnType<typeof refundReturnToOriginalPayment>>;
+    try {
+      out = await refundReturnToOriginalPayment({
+        businessId: B,
+        returnId: id,
+        userId: A,
+        requestRefund: (a) => easebuzz.refundPayment({ easebuzzId: a.providerPaymentId, amountPaise: a.amountPaise, merchantRefundId: a.idempotencyKey }),
+      });
+    } finally {
+      global.fetch = realFetch;
+    }
+    expect(out).toEqual({ status: 'failed', amount: 118, providerRefundId: null, error: 'Easebuzz refund failed: Refund not allowed for this transaction' });
+    const [failed] = await refundRows(id);
+    expect(failed).toMatchObject({ status: 'failed', provider: 'easebuzz', provider_refund_id: null });
+    expect(await originalRefundRoom(pool, B, id)).toMatchObject({ allowed: true, max: 118, provider: 'easebuzz' });
+
+    const gw = fakeGateway('pending', 'ebz_retry');
+    const retry = await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+    expect(retry.status).toBe('pending');
+    const rows = await refundRows(id);
+    expect(rows).toHaveLength(2);
+    expect(gw.calls[0].idempotencyKey).toBe(rows[1].idempotency_key);
+    expect(rows[1].idempotency_key).not.toBe(failed.idempotency_key);
+  });
+
+  test('an Easebuzz attempt whose send never answered is re-sent by the check, with the same key, once Easebuzz has no such refund', async () => {
+    const { invoiceId } = await easebuzzOrder(1);
+    const id = await receivedReturn(invoiceId);
+    const out = await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: id,
+      userId: A,
+      requestRefund: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+    expect(out).toMatchObject({ status: 'pending', providerRefundId: null, error: 'fetch failed' });
+    const [row] = await refundRows(id);
+    expect(row).toMatchObject({ status: 'pending', provider: 'easebuzz', provider_refund_id: null, failure_reason: 'fetch failed' });
+    await pool.query(`UPDATE return_gateway_refunds SET created_at = NOW() - INTERVAL '20 minutes' WHERE id = $1`, [row.id]);
+
+    const sent: { providerPaymentId: string; amountPaise: number; idempotencyKey: string }[] = [];
+    const resubmit: GatewayRequester = async (args) => {
+      sent.push(args);
+      return { providerRefundId: args.idempotencyKey, status: 'processed' };
+    };
+    // Easebuzz knows the refund and it is still on its way: nothing is sent again.
+    await checkPendingReturnRefunds({ businessId: B, returnId: id, fetchStatus: async () => 'pending', resubmit });
+    expect(sent).toHaveLength(0);
+    expect((await refundRows(id))[0].status).toBe('pending');
+
+    // Easebuzz has no refund under our key: the attempt is sent again with the same key and amount.
+    const asked: string[] = [];
+    const res = await checkPendingReturnRefunds({
+      businessId: B,
+      returnId: id,
+      fetchStatus: async (r) => {
+        asked.push(r.idempotency_key);
+        return null;
+      },
+      resubmit,
+    });
+    expect(asked).toEqual([row.idempotency_key]);
+    expect(sent).toEqual([{ providerPaymentId: row.provider_payment_id, amountPaise: 11800, idempotencyKey: row.idempotency_key }]);
+    expect(res).toMatchObject({ checked: 1, processed: 1 });
+    expect(await refundRows(id)).toHaveLength(1);
+    expect((await refundRows(id))[0]).toMatchObject({ status: 'processed', provider_refund_id: row.idempotency_key, failure_reason: null });
+    expect((await returnRow(id)).status).toBe('closed');
+  });
+
+  test('the claim takes the credit note lock, so credit being spent on a bill at the same time is never also refunded', async () => {
+    const ownPhone = `8${String(Date.now()).slice(-9)}`;
+    const { invoiceId } = await billedOrder(1, true, ownPhone);
+    const id = await receivedReturn(invoiceId);
+    const customerId = (await returnRow(id)).customer_id as string;
+    const { invoiceId: nextBill } = await billedOrder(1, false, ownPhone);
+
+    // Staff spend the whole credit on the next bill; that transaction is still open.
+    const spender = await pool.connect();
+    let released = false;
+    try {
+      await spender.query('BEGIN');
+      await applyCustomerCredit(spender, { businessId: B, customerId, invoiceId: nextBill, amount: 118, userId: A });
+
+      const gw = fakeGateway('processed');
+      const refund = refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester }).then(
+        (v) => ({ ok: true as const, v }),
+        (e: unknown) => ({ ok: false as const, e }),
+      );
+      await new Promise((r) => setTimeout(r, 500));
+      // The claim waits for the note instead of reading credit that is being spent.
+      expect(gw.calls).toHaveLength(0);
+
+      await spender.query('COMMIT');
+      spender.release();
+      released = true;
+      const res = await refund;
+      expect(res.ok).toBe(false);
+      expect(!res.ok && res.e).toMatchObject({ status: 409, code: 'CANNOT_REFUND_ORIGINAL' });
+      expect(gw.calls).toHaveLength(0);
+      expect(await refundRows(id)).toHaveLength(0);
+    } finally {
+      if (!released) {
+        await spender.query('ROLLBACK').catch(() => {});
+        spender.release();
+      }
+    }
+  });
+
+  test('with no account to refund from, the claim is refused before the gateway is asked', async () => {
+    const { orderId, invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    const settlement = (
+      await pool.query(
+        `SELECT p.settlement_account_id FROM store_orders o JOIN payments p ON p.id = o.receipt_payment_id WHERE o.id = $1`,
+        [orderId],
+      )
+    ).rows[0].settlement_account_id as string;
+    await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [settlement]);
+    const gw = fakeGateway('processed');
+    try {
+      await expect(
+        refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester }),
+      ).rejects.toMatchObject({ status: 409, code: 'NO_SETTLEMENT_ACCOUNT' });
+    } finally {
+      await pool.query(`UPDATE accounts SET is_active = true WHERE id = $1`, [settlement]);
+    }
+    expect(gw.calls).toHaveLength(0);
+    expect(await refundRows(id)).toHaveLength(0);
+  });
+
+  test('a refund confirmed after the staff member who sent it was removed is posted as the business owner', async () => {
+    const { invoiceId } = await billedOrder(1, true);
+    const id = await receivedReturn(invoiceId);
+    const gw = fakeGateway('pending');
+    await refundReturnToOriginalPayment({ businessId: B, returnId: id, userId: A, requestRefund: gw.requester });
+    const [row] = await refundRows(id);
+    // What ON DELETE SET NULL leaves behind when that user is deleted.
+    await pool.query(`UPDATE return_gateway_refunds SET created_by = NULL WHERE id = $1`, [row.id]);
+    const s = await applyReturnGatewayRefundResult({
+      businessId: B,
+      refundRowId: row.id,
+      providerRefundId: gw.refundId,
+      providerStatus: 'processed',
+      actor: 'webhook',
+    });
+    expect(s).toBe('processed');
+    const cnr = (await pool.query(`SELECT created_by FROM credit_note_refunds WHERE order_return_id = $1`, [id])).rows[0];
+    expect(cnr.created_by).toBe(A);
+  });
+
+  test('a credit note cannot be cancelled while a refund to the original payment is on its way or done', async () => {
+    const cancel = (noteId: string) =>
+      cancelCreditNote(
+        new NextRequest(`http://localhost/api/credit-notes/${noteId}/cancel`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'x-authenticated-user-id': A, 'x-authenticated-business-id': B },
+          body: JSON.stringify({ reason: 'Raised by mistake' }),
+        }),
+        { params: { id: noteId } },
+      ).then(async (res) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> }));
+    const blocked = {
+      status: 409,
+      body: { error: 'A refund to the original payment is in progress or done on this credit note', code: 'GATEWAY_REFUND_ON_NOTE' },
+    };
+
+    // On its way.
+    const pending = await receivedReturn((await billedOrder(1, true)).invoiceId);
+    await refundReturnToOriginalPayment({ businessId: B, returnId: pending, userId: A, requestRefund: fakeGateway('pending').requester });
+    const pendingNote = (await returnRow(pending)).credit_note_id as string;
+    expect(await cancel(pendingNote)).toMatchObject(blocked);
+
+    // Done (part of the note, so the note is still active with credit left).
+    const { invoiceId } = await billedOrder(2, true);
+    const done = await receivedReturn(invoiceId);
+    await refundReturnToOriginalPayment({ businessId: B, returnId: done, userId: A, amount: 50, requestRefund: fakeGateway('processed').requester });
+    const doneNote = (await returnRow(done)).credit_note_id as string;
+    expect(await cancel(doneNote)).toMatchObject(blocked);
+    for (const note of [pendingNote, doneNote]) {
+      expect((await pool.query(`SELECT status FROM credit_notes WHERE id = $1`, [note])).rows[0].status).toBe('active');
+    }
+
+    // A refused attempt moved no money: the note can still be cancelled.
+    const refused = await receivedReturn((await billedOrder(1, true)).invoiceId);
+    await refundReturnToOriginalPayment({
+      businessId: B,
+      returnId: refused,
+      userId: A,
+      requestRefund: async () => {
+        throw new GatewayRefundError('Razorpay refund failed: 400', 400, true);
+      },
+    });
+    const refusedNote = (await returnRow(refused)).credit_note_id as string;
+    expect((await cancel(refusedNote)).status).toBe(200);
+    expect((await pool.query(`SELECT status FROM credit_notes WHERE id = $1`, [refusedNote])).rows[0].status).toBe('cancelled');
   });
 
   describe('Razorpay refund notices and the pending-refund cron', () => {

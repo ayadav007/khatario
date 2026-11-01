@@ -8,6 +8,7 @@ import {
   mapEasebuzzStatus,
   redactEasebuzzForLogs,
 } from '@/lib/payments/providers/easebuzz-payment-provider';
+import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 
 const KEY = 'TESTKEY123';
 const SALT = 'TESTSALT456';
@@ -233,5 +234,77 @@ describe('EasebuzzPaymentProvider.createHostedPaymentLink', () => {
     await expect(
       provider.createHostedPaymentLink({ businessId: 'b', orderId: 'o', amount: 10 }),
     ).rejects.toThrow('Invalid email');
+  });
+});
+
+describe('EasebuzzPaymentProvider refunds', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  function stub(body: unknown, status = 200) {
+    global.fetch = jest.fn(async () =>
+      new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }),
+    ) as typeof fetch;
+  }
+
+  const provider = new EasebuzzPaymentProvider({ clientId: KEY, clientSecret: SALT });
+  const args = { easebuzzId: 'E2409040A97T7L', amountPaise: 11800, merchantRefundId: 'key-1234567890' };
+
+  it('an accepted refund is pending under our merchant refund id', async () => {
+    stub({ status: true, reason: 'Refund request accepted' });
+    await expect(provider.refundPayment(args)).resolves.toEqual({ providerRefundId: 'key-1234567890', status: 'pending' });
+  });
+
+  it('a refund Easebuzz answers with status false, or a 4xx, is a definite refusal', async () => {
+    for (const [body, status] of [
+      [{ status: false, reason: 'Refund amount exceeds the transaction amount' }, 200],
+      [{ status: 0, error: 'Refund not allowed' }, 200],
+      [{ status: false }, 400],
+      [{}, 404],
+    ] as const) {
+      stub(body, status);
+      const err = await provider.refundPayment(args).catch((e) => e);
+      expect(err).toBeInstanceOf(GatewayRefundError);
+      expect(err).toMatchObject({ httpStatus: status, definite: true });
+      expect(err.message).toMatch(/^Easebuzz refund failed: /);
+    }
+  });
+
+  it('a 5xx, a rate limit or a broken reply may still have created the refund: not definite', async () => {
+    for (const [body, status] of [
+      [{ status: false }, 500],
+      [{}, 503],
+      [{}, 429],
+      ['<html>bad gateway</html>', 200],
+    ] as const) {
+      stub(body, status);
+      const err = await provider.refundPayment(args).catch((e) => e);
+      expect(err).toBeInstanceOf(GatewayRefundError);
+      expect(err).toMatchObject({ httpStatus: status, definite: false });
+    }
+  });
+
+  it('a network error is passed on as is (not definite)', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    await expect(provider.refundPayment(args)).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('the refund status lookup throws when Easebuzz cannot answer, so nobody takes it for "no refund"', async () => {
+    stub({}, 502);
+    await expect(provider.fetchRefundStatus('E2409040A97T7L', 'key-1234567890')).rejects.toThrow(
+      'Easebuzz refund lookup failed: HTTP 502',
+    );
+    stub({ status: true, refunds: [] });
+    await expect(provider.fetchRefundStatus('E2409040A97T7L', 'key-1234567890')).resolves.toBeNull();
+    stub({ status: true, refunds: [{ merchant_refund_id: 'key-1234567890', refund_status: 'refunded', refund_amount: '118.00' }] });
+    await expect(provider.fetchRefundStatus('E2409040A97T7L', 'key-1234567890')).resolves.toEqual({
+      providerRefundId: 'key-1234567890',
+      status: 'processed',
+      amount: 118,
+    });
   });
 });

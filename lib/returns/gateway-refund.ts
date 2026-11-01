@@ -28,8 +28,10 @@ import { lockReturn, ReturnError } from './service';
  * An unclear gateway error (network, timeout, 5xx) leaves the attempt `pending` with the message as a
  * note: the refund may exist, so staff retry, Check now and the cron repeat the same key and amount.
  *
- * Locks are always taken return -> store order -> refund row, so the claim, a webhook and the
- * pending check serialise per order and two clicks cannot both claim room beyond the cap.
+ * Locks are always taken return -> store order -> refund row -> credit note, so the claim, a webhook
+ * and the pending check serialise per order and two clicks cannot both claim room beyond the cap. The
+ * claim locks the credit note before reading its room, as applying customer credit to a bill does, so
+ * the same credit is never both spent on a bill and refunded.
  * Order cancellations use store_payment_refunds (lib/store/store-refund.ts), never this table.
  */
 
@@ -100,6 +102,16 @@ export async function originalRefundRoom(client: Db, businessId: string, returnI
   if (!row.credit_note_id) return no('This return has no credit note', provider);
 
   const note = await refundableOnCreditNote(client as PoolClient, businessId, row.credit_note_id);
+  // The note's refundable already leaves out refunds on their way (they hold their amount on the note).
+  const onNote = round2(note?.refundable ?? 0);
+  const online = await onlineLeft(client, businessId, row.store_order_id, row.grand_total);
+  const max = Math.max(0, round2(Math.min(onNote, online)));
+  if (max <= 0.004) return no('Nothing is left to refund to the original payment', provider);
+  return { allowed: true, max, provider, reason: null };
+}
+
+/** What is left of the order's online payment after cancellation refunds and return refunds (pending or processed). */
+async function onlineLeft(client: Db, businessId: string, storeOrderId: string, grandTotal: string | null): Promise<number> {
   const sums = await client.query<{ order_refunds: string; cancel_refunds: string }>(
     `SELECT
        COALESCE(SUM(g.amount) FILTER (WHERE g.status IN ('pending', 'processed')), 0)::text AS order_refunds,
@@ -107,15 +119,56 @@ export async function originalRefundRoom(client: Db, businessId: string, returnI
          WHERE s.order_id = $1 AND s.business_id = $2 AND s.status <> 'failed')::text AS cancel_refunds
        FROM return_gateway_refunds g
       WHERE g.store_order_id = $1 AND g.business_id = $2`,
-    [row.store_order_id, businessId],
+    [storeOrderId, businessId],
   );
   const s = sums.rows[0];
-  // The note's refundable already leaves out refunds on their way (they hold their amount on the note).
-  const onNote = round2(note?.refundable ?? 0);
-  const online = round2((Number(row.grand_total) || 0) - Number(s.cancel_refunds) - Number(s.order_refunds));
-  const max = Math.max(0, round2(Math.min(onNote, online)));
-  if (max <= 0.004) return no('Nothing is left to refund to the original payment', provider);
-  return { allowed: true, max, provider, reason: null };
+  return round2((Number(grandTotal) || 0) - Number(s.cancel_refunds) - Number(s.order_refunds));
+}
+
+export type OriginalRefundOffer = {
+  /** The order was paid online through a gateway we refund through, with a captured payment and its receipt. */
+  eligible: boolean;
+  /** Roughly how much could go back: the return's value (or, once received, the room) capped by the online payment left. */
+  estimatedMax: number | null;
+  provider: Provider | null;
+};
+
+/**
+ * Whether *Back to original payment* can be offered for this return whatever its status, so the
+ * receive step can preselect it (spec section 2, step 4). `room` is originalRefundRoom's answer.
+ */
+export async function originalRefundOffer(
+  client: Db,
+  businessId: string,
+  returnId: string,
+  room: OriginalRefundRoom,
+): Promise<OriginalRefundOffer> {
+  const r = await client.query<{
+    status: string;
+    store_order_id: string | null;
+    provider_payment_id: string | null;
+    receipt_payment_id: string | null;
+    payment_provider: string | null;
+    grand_total: string | null;
+    value: string;
+  }>(
+    `SELECT r.status, r.store_order_id, o.provider_payment_id, o.receipt_payment_id, o.payment_provider, o.grand_total::text,
+            (SELECT COALESCE(SUM(i.quantity * i.unit_price * (1 + i.tax_rate / 100)), 0)
+               FROM order_return_items i WHERE i.return_id = r.id)::text AS value
+       FROM order_returns r
+       LEFT JOIN store_orders o ON o.id = r.store_order_id AND o.business_id = r.business_id
+      WHERE r.id = $1 AND r.business_id = $2`,
+    [returnId, businessId],
+  );
+  const row = r.rows[0];
+  const provider = row?.provider_payment_id ? onlineProvider(row.payment_provider) : null;
+  if (!row || !row.store_order_id || !row.provider_payment_id || !row.receipt_payment_id || !provider) {
+    return { eligible: false, estimatedMax: null, provider: null };
+  }
+  if (row.status === 'received') return { eligible: true, estimatedMax: room.max, provider };
+  if (row.status !== 'requested' && row.status !== 'approved') return { eligible: true, estimatedMax: null, provider };
+  const online = await onlineLeft(client, businessId, row.store_order_id, row.grand_total);
+  return { eligible: true, estimatedMax: Math.max(0, round2(Math.min(Number(row.value) || 0, online))), provider };
 }
 
 type Claim = {
@@ -176,6 +229,16 @@ async function claimGatewayRefund(input: {
       return { fresh: false, rowId: o.id, idempotencyKey: o.idempotency_key, amount: Number(o.amount), provider: o.provider, providerPaymentId: o.provider_payment_id };
     }
 
+    const noteLink = await client.query<{ credit_note_id: string | null }>(
+      `SELECT credit_note_id FROM order_returns WHERE id = $1 AND business_id = $2`,
+      [input.returnId, input.businessId],
+    );
+    const noteId = noteLink.rows[0]?.credit_note_id ?? null;
+    if (noteId) {
+      // Spending customer credit on a bill locks the customer's notes, then reads what is left; so does this.
+      await client.query(`SELECT 1 FROM credit_notes WHERE id = $1 AND business_id = $2 FOR UPDATE`, [noteId, input.businessId]);
+    }
+
     const room = await originalRefundRoom(client, input.businessId, input.returnId);
     if (!room.allowed || !room.provider) {
       throw new ReturnError(409, 'CANNOT_REFUND_ORIGINAL', room.reason ?? 'This return cannot be refunded to the original payment');
@@ -183,6 +246,15 @@ async function claimGatewayRefund(input: {
     const amount = wanted ?? room.max;
     if (amount > room.max + 0.005) {
       throw new ReturnError(400, 'EXCEEDS_MAX', `Only ₹${inr(room.max)} can go back to the original payment`);
+    }
+
+    // Posting needs the account the money leaves from: refuse now, before any money leaves.
+    if (!(await usableSettlementAccount(client, input.businessId, storeOrderId))) {
+      throw new ReturnError(
+        409,
+        'NO_SETTLEMENT_ACCOUNT',
+        'There is no active bank account to post this refund from. Add or reactivate a bank account, or pay back another way.',
+      );
     }
 
     const order = await client.query<{ provider_payment_id: string; credit_note_id: string }>(
@@ -336,6 +408,32 @@ async function settlementAccount(client: PoolClient, businessId: string, storeOr
   return accounts.find((a) => a.kind === 'bank')?.id ?? null;
 }
 
+/** The account posting would use, when it can take a gateway refund (an active bank or gateway clearing account). */
+async function usableSettlementAccount(client: PoolClient, businessId: string, storeOrderId: string | null): Promise<string | null> {
+  const id = await settlementAccount(client, businessId, storeOrderId);
+  if (!id) return null;
+  const { listSettlementAccounts } = await import('@/lib/accounting/settlement-accounts-db');
+  return (await listSettlementAccounts(businessId)).some((a) => a.id === id) ? id : null;
+}
+
+/**
+ * Who a refund is posted as: the staff member who sent it, else the one acting now, else (a notice or
+ * the cron after that user was removed) the business owner, else the business's first user.
+ */
+async function postingUser(client: PoolClient, businessId: string, ...candidates: (string | null | undefined)[]): Promise<string> {
+  for (const id of candidates) {
+    if (!id) continue;
+    const found = await client.query(`SELECT 1 FROM users WHERE id = $1 AND business_id = $2`, [id, businessId]);
+    if (found.rows.length > 0) return id;
+  }
+  const fallback = await client.query<{ id: string }>(
+    `SELECT id FROM users WHERE business_id = $1 ORDER BY is_primary_admin DESC NULLS LAST, created_at LIMIT 1`,
+    [businessId],
+  );
+  if (!fallback.rows[0]) throw new ReturnError(409, 'NO_USER', 'This business has no user to post the refund as');
+  return fallback.rows[0].id;
+}
+
 type ApplyInput = {
   businessId: string;
   refundRowId: string;
@@ -484,7 +582,7 @@ async function postProcessedRefund(
     try {
       paid = await refundCreditNote(client, {
         businessId: input.businessId,
-        userId: (row.created_by ?? input.actorUserId ?? null) as string,
+        userId: await postingUser(client, input.businessId, row.created_by, input.actorUserId),
         creditNoteId: row.credit_note_id,
         amount,
         mode: 'gateway',
@@ -616,7 +714,10 @@ export async function checkPendingReturnRefunds(opts?: {
     provider_refund_id: string | null;
     idempotency_key: string;
   }) => Promise<'processed' | 'pending' | 'failed' | null>;
-  /** Re-sends a Razorpay attempt that never got a refund id; defaults to the business's Razorpay keys. */
+  /**
+   * Re-sends an attempt that never got a refund id (Razorpay always; Easebuzz when it has no refund
+   * under our key); defaults to the business's gateway keys.
+   */
   resubmit?: GatewayRequester;
 }): Promise<{ checked: number; processed: number; failed: number }> {
   const minutes = opts?.olderThanMinutes ?? 10;
@@ -633,31 +734,40 @@ export async function checkPendingReturnRefunds(opts?: {
     [minutes, opts?.businessId ?? null, opts?.returnId ?? null],
   );
   const out = { checked: 0, processed: 0, failed: 0 };
+  const resend = async (row: PendingRow) => {
+    const given = opts?.resubmit;
+    const sent = await sendAttempt(
+      {
+        businessId: row.business_id,
+        rowId: row.id,
+        providerPaymentId: row.provider_payment_id,
+        amount: Number(row.amount),
+        idempotencyKey: row.idempotency_key,
+        fresh: false,
+      },
+      given ? async () => given : defaultRequester(row.provider, row.business_id),
+      'system',
+      null,
+    );
+    if (sent.status === 'processed') out.processed += 1;
+    if (sent.status === 'failed') out.failed += 1;
+  };
   for (const row of rows.rows) {
     out.checked += 1;
     try {
       if (row.provider === 'razorpay' && !row.provider_refund_id) {
         // The first send never answered: Razorpay returns the same refund for the same key and amount,
         // so sending it again cannot refund twice.
-        const given = opts?.resubmit;
-        const sent = await sendAttempt(
-          {
-            businessId: row.business_id,
-            rowId: row.id,
-            providerPaymentId: row.provider_payment_id,
-            amount: Number(row.amount),
-            idempotencyKey: row.idempotency_key,
-            fresh: false,
-          },
-          given ? async () => given : defaultRequester('razorpay', row.business_id),
-          'system',
-          null,
-        );
-        if (sent.status === 'processed') out.processed += 1;
-        if (sent.status === 'failed') out.failed += 1;
+        await resend(row);
         continue;
       }
       const status = await fetchStatus(row);
+      if (status == null && row.provider === 'easebuzz' && !row.provider_refund_id) {
+        // Easebuzz has no refund under our key, so the first send never reached it (a lookup that could
+        // not answer throws instead). The Easebuzz requester looks the key up again before sending.
+        await resend(row);
+        continue;
+      }
       if (status !== 'processed' && status !== 'failed') continue;
       const applied = await applyReturnGatewayRefundResult({
         businessId: row.business_id,

@@ -471,6 +471,45 @@ d('return API actions (real DB)', () => {
     expect(sent('return_refunded')).toHaveLength(1);
   });
 
+  test('an approved return on an online-paid order offers the original payment, and one click receives and refunds', async () => {
+    const { invoiceId } = await order({ paid: true });
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'wrong_item', initiatedBy: 'merchant', userId: A }));
+    expect((await returnRow(id)).status).toBe('approved');
+
+    // Before the goods are in there is no credit note yet, but the order was paid online: offer it.
+    const before = await getOne(id);
+    expect(before.status).toBe(200);
+    expect(before.json.return.original_refund).toEqual({
+      allowed: false,
+      max: 0,
+      reason: 'Receive the goods before refunding',
+      eligible: true,
+      estimated_max: 118,
+    });
+
+    const refundId = `rfnd_${randomUUID().slice(0, 8)}`;
+    mockRequester.mockResolvedValueOnce({ providerRefundId: refundId, status: 'pending' });
+    const res = await patch(id, { action: 'receive', refund: { method: 'original_payment' } });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ ok: true, credit_amount: 118, refund: { status: 'pending', amount: 118, providerRefundId: refundId } });
+    expect(res.json.credit_note_number).toBeTruthy();
+    const ret = await returnRow(id);
+    expect(ret.credit_note_id).toBeTruthy();
+    // Claimed against the credit note the receive just posted.
+    const rows = (await pool.query(`SELECT * FROM return_gateway_refunds WHERE order_return_id = $1`, [id])).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'pending', credit_note_id: ret.credit_note_id, provider_refund_id: refundId });
+    expect(mockRequester).toHaveBeenCalledWith({ providerPaymentId: rows[0].provider_payment_id, amountPaise: 11800, idempotencyKey: rows[0].id });
+    expect(res.json.return).toMatchObject({ status: 'received', gateway_refund: { status: 'pending', amount: 118 } });
+  });
+
+  test('a COD return is not offered the original payment', async () => {
+    const { invoiceId } = await order();
+    const id = await tx((c) => createReturn(c, { businessId: B, invoiceId, reason: 'wrong_item', initiatedBy: 'merchant', userId: A }));
+    const got = await getOne(id);
+    expect(got.json.return.original_refund).toMatchObject({ allowed: false, eligible: false, estimated_max: null });
+  });
+
   test('a pincode that is not 6 digits is refused', async () => {
     const { invoiceId } = await order();
     const id = await customerRequest(invoiceId);

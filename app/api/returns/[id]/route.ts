@@ -30,7 +30,12 @@ import {
   withReturnPickupLock,
   type ReturnPickupResult,
 } from '@/lib/returns/pickup';
-import { checkPendingReturnRefunds, originalRefundRoom, refundReturnToOriginalPayment } from '@/lib/returns/gateway-refund';
+import {
+  checkPendingReturnRefunds,
+  originalRefundOffer,
+  originalRefundRoom,
+  refundReturnToOriginalPayment,
+} from '@/lib/returns/gateway-refund';
 import { notifyReturnCustomer } from '@/lib/returns/notify';
 import { parsePickupBody, parseReturnMethod } from '@/lib/returns/request-body';
 import { refundableOnCreditNote } from '@/lib/credit-notes/refund';
@@ -61,6 +66,7 @@ async function load(businessId: string, id: string, branchIds: string[] | null) 
     const accounts = await listCashBankAccounts(client, businessId);
     const pickup = await pickupDetailsFor(client, businessId, id);
     const room = await originalRefundRoom(client, businessId, id);
+    const offer = await originalRefundOffer(client, businessId, id, room);
     return {
       return: {
         ...row,
@@ -76,7 +82,15 @@ async function load(businessId: string, id: string, branchIds: string[] | null) 
         },
         shiprocket_connected: await shiprocketConnected(businessId),
         default_instructions: await defaultReturnInstructions(client, businessId, id),
-        original_refund: { allowed: room.allowed, max: room.max, reason: room.reason },
+        // allowed / max: what can be refunded now (received returns). eligible / estimated_max: the order
+        // was paid online, so the receive step offers and preselects the original payment.
+        original_refund: {
+          allowed: room.allowed,
+          max: room.max,
+          reason: room.reason,
+          eligible: offer.eligible,
+          estimated_max: offer.estimatedMax,
+        },
       },
       refundable,
       payment_accounts: accounts,
