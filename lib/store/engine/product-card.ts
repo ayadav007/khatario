@@ -60,6 +60,10 @@ export interface ProductCardSettings {
   badge_colors: 'accent' | 'button';
   // Buttons
   button_style: 'full' | 'pill_on_photo' | 'icon' | 'icon_full' | 'none';
+  button_fill: 'filled' | 'outline';
+  button_shape: 'rounded' | 'pill';
+  /** `hover`: the button appears on hover on devices with a mouse; touch screens always show it. */
+  button_reveal: 'always' | 'hover';
   button_action: 'add' | 'buy';
   after_add: 'button' | 'stepper';
   wishlist: 'off' | 'top-left' | 'top-right';
@@ -118,6 +122,9 @@ export const PRODUCT_CARD_DEFAULTS: ProductCardSettings = {
   badge_icon: 'none',
   badge_colors: 'accent',
   button_style: 'full',
+  button_fill: 'filled',
+  button_shape: 'rounded',
+  button_reveal: 'always',
   button_action: 'add',
   after_add: 'stepper',
   wishlist: 'top-right',
@@ -160,6 +167,9 @@ const ENUMS = {
   badge_icon: ['none', 'crown', 'star', 'flame', 'sparkle'],
   badge_colors: ['accent', 'button'],
   button_style: ['full', 'pill_on_photo', 'icon', 'icon_full', 'none'],
+  button_fill: ['filled', 'outline'],
+  button_shape: ['rounded', 'pill'],
+  button_reveal: ['always', 'hover'],
   button_action: ['add', 'buy'],
   after_add: ['button', 'stepper'],
   wishlist: ['off', 'top-left', 'top-right'],
@@ -246,7 +256,7 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
     image_shape: 'square',
     button_style: 'full',
   }),
-  // Name and price on one line; a small + button (the hover-only reveal is not a setting, so the button stays visible).
+  // Name and price on one line; the full Add button appears on hover (always shown on touch screens).
   minimal: design('minimal', {
     lines: lineSet(['name', 'price', 'buttons']),
     name_price_row: true,
@@ -258,7 +268,8 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
     radius: 0,
     padding: 0,
     image_shape: 'square',
-    button_style: 'icon',
+    button_style: 'full',
+    button_reveal: 'hover',
     wishlist: 'off',
   }),
   // Square photo, a small ADD pill on it that becomes - 1 +, unit under the name, MRP crossed out.
@@ -345,13 +356,14 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
     padding: 10,
     hover: 'lift',
   }),
-  // Round, soft shadow, centred, a pill-shaped button on the photo.
+  // Round, soft shadow, centred, a pill-shaped full button.
   soft: design('soft', {
     lines: lineSet(['name', 'unit', 'price', 'buttons']),
     align: 'center',
     image_padding: 8,
     image_radius: 18,
-    button_style: 'pill_on_photo',
+    button_style: 'full',
+    button_shape: 'pill',
     wishlist_bg: 'circle',
     badge_shape: 'pill',
     border: 0,
@@ -374,7 +386,7 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
     padding: 0,
     shadow: 'none',
   }),
-  // The theme's dark scheme, light text, accent price.
+  // The theme's dark scheme, light text, accent price, an outline button.
   dark: design('dark', {
     lines: lineSet(['name', 'unit', 'rating', 'price', 'buttons']),
     color_scheme: 'scheme-3',
@@ -382,6 +394,7 @@ export const CARD_DESIGNS: Record<CardDesignId, ProductCardSettings> = {
     discount_style: 'text',
     image_radius: 8,
     button_style: 'full',
+    button_fill: 'outline',
     border: 1,
     radius: 14,
     padding: 12,
@@ -463,6 +476,9 @@ export function cardLookClasses(look: ResolvedCardLook): string {
     `pc-disc-${look.discount_style}`,
     `pc-oos-${look.oos_look}`,
   ];
+  if (look.button_fill !== 'filled') c.push(`pc-btn-${look.button_fill}`);
+  if (look.button_shape !== 'rounded') c.push(`pc-btn-${look.button_shape}`);
+  if (look.button_reveal !== 'always') c.push(`pc-btn-reveal-${look.button_reveal}`);
   if (look.badge_icon !== 'none') c.push(`pc-icon-${look.badge_icon}`);
   if (look.image_swipe) c.push('pc-swipe');
   if (!look.show_mrp) c.push('pc-nomrp');

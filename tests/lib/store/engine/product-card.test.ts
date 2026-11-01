@@ -54,6 +54,9 @@ describe('PRODUCT_CARD_DEFAULTS', () => {
       badge_icon: 'none',
       badge_colors: 'accent',
       button_style: 'full',
+      button_fill: 'filled',
+      button_shape: 'rounded',
+      button_reveal: 'always',
       button_action: 'add',
       after_add: 'stepper',
       wishlist: 'top-right',
@@ -105,6 +108,9 @@ describe('sanitizeProductCard fields', () => {
     ['badge_icon', ['none', 'crown', 'star', 'flame', 'sparkle']],
     ['badge_colors', ['accent', 'button']],
     ['button_style', ['full', 'pill_on_photo', 'icon', 'icon_full', 'none']],
+    ['button_fill', ['filled', 'outline']],
+    ['button_shape', ['rounded', 'pill']],
+    ['button_reveal', ['always', 'hover']],
     ['button_action', ['add', 'buy']],
     ['after_add', ['button', 'stepper']],
     ['wishlist', ['off', 'top-left', 'top-right']],
@@ -306,6 +312,15 @@ describe('the ten designs', () => {
     expect(CARD_DESIGNS.soft).toMatchObject({ radius: 24, shadow: 'soft', align: 'center' });
   });
 
+  it('Minimal shows its full Add button on hover, Soft has a pill button and Dark an outline one', () => {
+    expect(CARD_DESIGNS.minimal).toMatchObject({ button_style: 'full', button_reveal: 'hover' });
+    expect(CARD_DESIGNS.soft).toMatchObject({ button_style: 'full', button_shape: 'pill' });
+    expect(CARD_DESIGNS.dark).toMatchObject({ button_style: 'full', button_fill: 'outline' });
+    for (const id of ['classic', 'royal', 'deal'] as const) {
+      expect(CARD_DESIGNS[id]).toMatchObject({ button_fill: 'filled', button_shape: 'rounded', button_reveal: 'always' });
+    }
+  });
+
   it('Minimal puts name and price on one line; Grocery has a pill on the photo that becomes a stepper', () => {
     expect(CARD_DESIGNS.minimal.name_price_row).toBe(true);
     expect(nameAndPriceInRow(CARD_DESIGNS.minimal)).toBe(true);
@@ -425,6 +440,18 @@ describe('cardLookClasses and cardLookVars', () => {
     expect(v.startsWith('url("')).toBe(true);
     expect(v.endsWith('")')).toBe(true);
     expect(v.slice(5, -2)).not.toMatch(/["\\\n]/);
+  });
+
+  it('name the button fill, shape and reveal only when they are not the defaults', () => {
+    const classes = (over: Partial<ProductCardSettings>) => cardLookClasses(resolveCardLook({ ...CARD_DESIGNS.classic, ...over }, 'store', {})).split(' ');
+    const plain = classes({});
+    for (const c of ['pc-btn-outline', 'pc-btn-pill', 'pc-btn-reveal-hover']) expect(plain).not.toContain(c);
+    expect(classes({ button_fill: 'outline' })).toContain('pc-btn-outline');
+    expect(classes({ button_shape: 'pill' })).toContain('pc-btn-pill');
+    expect(classes({ button_reveal: 'hover' })).toContain('pc-btn-reveal-hover');
+    expect(cardLookClasses(resolveCardLook(CARD_DESIGNS.soft, 'store', {}))).toContain('pc-btn-pill');
+    const theme = resolveCardLook({ ...PRODUCT_CARD_DEFAULTS, button_fill: 'outline', button_shape: 'pill', button_reveal: 'hover' }, 'store', {});
+    expect(cardLookClasses(theme)).toBe('');
   });
 
   it('follow the out-of-stock look and the name-price row', () => {
