@@ -37,7 +37,7 @@ Veg / non-veg mark, "Notify me when back", "Bought 50+ this week", quick view, c
 |---|---|---|---|
 | — | `design` | `theme` \| `classic` \| `minimal` \| `grocery` \| `boutique` \| `list` \| `royal` \| `deal` \| `soft` \| `editorial` \| `dark` | `theme` |
 | Lines | `lines` | ordered list of `{ id: 'brand'\|'name'\|'unit'\|'rating'\|'tagline'\|'price'\|'swatches'\|'buttons', on: boolean }`, each id once | today's order |
-| | `name_price_row` | boolean (applies when price follows name) | false |
+| | `name_price_row` | boolean (moves the price into the name's row whenever both are shown) | false |
 | | `name_font` | `heading` \| `body` | `body` |
 | | `name_case` | `normal` \| `caps` | `normal` |
 | | `name_lines` | 1 \| 2 | 2 |

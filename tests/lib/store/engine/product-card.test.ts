@@ -501,17 +501,17 @@ describe('cardLookClasses and cardLookVars', () => {
 describe('nameAndPriceInRow', () => {
   const lines = (...ids: Array<[string, boolean]>) => ids.map(([id, onFlag]) => ({ id, on: onFlag })) as ProductCardSettings['lines'];
 
-  it('is true only when the switch is on and price is the next visible line after name', () => {
+  it('is true when the switch is on and both name and price are shown, wherever price sits', () => {
     const base = ['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'swatches', 'buttons'] as const;
     const mk = (flags: Record<string, boolean>, order: readonly string[] = base) =>
       withLines(order.map((id) => ({ id, on: flags[id] ?? false })) as ProductCardSettings['lines'], { name_price_row: true });
     expect(nameAndPriceInRow(mk({ name: true, price: true }))).toBe(true);
-    expect(nameAndPriceInRow(mk({ name: true, unit: true, price: true }))).toBe(false);
+    expect(nameAndPriceInRow(mk({ name: true, unit: true, price: true }))).toBe(true);
     expect(nameAndPriceInRow(mk({ name: true, unit: false, rating: false, tagline: false, price: true, buttons: true }))).toBe(true);
     expect(nameAndPriceInRow(mk({ brand: true, name: true, price: true }))).toBe(true);
     expect(nameAndPriceInRow(mk({ name: false, price: true }))).toBe(false);
     expect(nameAndPriceInRow(mk({ name: true, price: false, buttons: true }))).toBe(false);
-    expect(nameAndPriceInRow(mk({ name: true, price: true }, ['price', 'name', 'brand', 'unit', 'rating', 'tagline', 'swatches', 'buttons']))).toBe(false);
+    expect(nameAndPriceInRow(mk({ name: true, price: true }, ['price', 'name', 'brand', 'unit', 'rating', 'tagline', 'swatches', 'buttons']))).toBe(true);
     expect(nameAndPriceInRow({ ...mk({ name: true, price: true }), name_price_row: false })).toBe(false);
     expect(nameAndPriceInRow(withLines(lines(['name', true], ['price', true]), { name_price_row: true }))).toBe(true);
   });

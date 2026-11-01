@@ -461,12 +461,14 @@ export function resolveCardLook(store: ProductCardSettings, sectionDesign: strin
   };
 }
 
-/** Name and price share one row: the switch is on, name is shown, and price is the next shown line after it. */
+/**
+ * Name and price share one row: the switch is on and both are shown. The price moves up into the name's row wherever it
+ * sits in the list (an owner who ticks the switch expects it to happen, not to depend on the line order).
+ */
 export function nameAndPriceInRow(look: Pick<ProductCardSettings, 'name_price_row' | 'lines'>): boolean {
   if (!look.name_price_row) return false;
-  const shown = look.lines.filter((l) => l.on);
-  const i = shown.findIndex((l) => l.id === 'name');
-  return i >= 0 && shown[i + 1]?.id === 'price';
+  const shown = new Set(look.lines.filter((l) => l.on).map((l) => l.id));
+  return shown.has('name') && shown.has('price');
 }
 
 /** One set of classes for the card root; empty for `theme`, so existing stores keep today's markup. */

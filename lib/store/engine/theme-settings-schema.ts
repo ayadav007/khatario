@@ -43,7 +43,7 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
     type: 'checkbox',
     label: 'Name and price on one line',
     default: CARD.name_price_row,
-    info: 'When Price comes right after Name',
+    info: 'Moves the price up next to the name, wherever Price is in the list',
   },
   { id: 'product_card.name_font', type: 'select', label: 'Name font', default: CARD.name_font, options: opts(['heading', 'Heading font'], ['body', 'Body font']) },
   { id: 'product_card.name_case', type: 'select', label: 'Name letters', default: CARD.name_case, options: opts(['normal', 'As typed'], ['caps', 'All capitals']) },

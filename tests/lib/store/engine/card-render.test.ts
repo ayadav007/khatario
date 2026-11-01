@@ -37,13 +37,14 @@ describe('cardUnits', () => {
     expect(cardUnits(CARD_DESIGNS.minimal as ResolvedCardLook)).toEqual(['name-price', 'buttons']);
   });
 
-  it('keeps them apart when price does not follow name', () => {
+  it('pulls the price up into the name row when other lines sit between them', () => {
     const lines = [
       { id: 'name' as const, on: true },
       { id: 'unit' as const, on: true },
       { id: 'price' as const, on: true },
     ];
-    expect(cardUnits(look({ name_price_row: true, lines }))).toEqual(['name', 'unit', 'price']);
+    expect(cardUnits(look({ name_price_row: true, lines }))).toEqual(['name-price', 'unit']);
+    expect(cardUnits(look({ name_price_row: false, lines }))).toEqual(['name', 'unit', 'price']);
   });
 });
 
