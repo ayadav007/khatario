@@ -62,6 +62,15 @@
 .st-root.eng-root .hero .heroCopy.hs-look .st-btn.eng-cta[data-style=outline]{background:transparent;color:var(--c-btn,var(--primary));border:1px solid var(--c-btn,var(--primary))}
 .st-root.eng-root .hero.full .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:#fff;border-color:#fff}
 
+/* Over the photo with no picture on any slide (noImg, e.g. a new Quick theme): Studio's white words and white button
+   are made for a photo, so on the plain panel they use the section's colours instead, as words under the picture do.
+   A chosen text colour (customText) still wins. */
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText){color:var(--text)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText) p{color:var(--st-muted)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy:not(.customText) .eyebrow{color:var(--primary)}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy .st-btn:not([data-style=outline]){background:var(--c-btn,var(--primary));color:var(--c-btn-text,var(--on-primary))}
+.st-root.eng-root.eng-root .hero.full.noImg .heroCopy.hs-look:not(.hs-box):not(.customText) .st-btn.eng-cta[data-style=outline]{color:var(--c-btn,var(--primary));border-color:var(--c-btn,var(--primary))}
+
 @container store (max-width:640px){
 /* Phone alignment: the lines, the words' column and the buttons, over the desktop column. */
 .st-root.eng-root .hero .heroCopy.hs-look.hs-malign-left{text-align:left;align-items:flex-start}
