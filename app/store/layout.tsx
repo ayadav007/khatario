@@ -14,6 +14,8 @@ import {
   DM_Serif_Display,
   Lora,
   Poppins,
+  Anton,
+  Space_Grotesk,
 } from 'next/font/google';
 import { StoreApp } from '@/components/store/StoreApp';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
@@ -116,6 +118,21 @@ const poppins = Poppins({
   preload: false,
 });
 
+const anton = Anton({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-store-anton',
+  display: 'swap',
+  preload: false,
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-store-space-grotesk',
+  display: 'swap',
+  preload: false,
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   const store = await currentStore();
   if (!store) return { robots: { index: true, follow: true } };
@@ -149,7 +166,7 @@ export default function StoreLayout({
 }) {
   const subdomain = extractStoreSubdomain(headers().get('host'));
   return (
-    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} ${cinzel.variable} ${newsreader.variable} ${manrope.variable} ${dmSerif.variable} ${lora.variable} ${poppins.variable} store-root`}>
+    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} ${cinzel.variable} ${newsreader.variable} ${manrope.variable} ${dmSerif.variable} ${lora.variable} ${poppins.variable} ${anton.variable} ${spaceGrotesk.variable} store-root`}>
       <StoreApp subdomain={subdomain}>{children}</StoreApp>
     </div>
   );
