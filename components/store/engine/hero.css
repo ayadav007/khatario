@@ -48,9 +48,8 @@
 /* The hero's countdown block: boxes follow the copy's alignment (left unless centred or right) and add no margin of their own. */
 .st-root.eng-root .eng-hero .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-start;margin-bottom:0}
 .st-root.eng-root .eng-hero .eng-cb-countdown>b{font-variant-numeric:tabular-nums}
-.st-root.eng-root .hb-align-center .eng-cb-countdown .eng-countdown-boxes,.st-root.eng-root .eng-hero.hb-malign-center .eng-cb-countdown .eng-countdown-boxes{justify-content:center}
-.st-root.eng-root .hb-align-right .eng-cb-countdown .eng-countdown-boxes,.st-root.eng-root .eng-hero.hb-malign-right .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-end}
-.st-root.eng-root .eng-hero.hb-malign-left .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-start}
+.st-root.eng-root .hb-align-center .eng-cb-countdown .eng-countdown-boxes{justify-content:center}
+.st-root.eng-root .hb-align-right .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-end}
 .st-root.eng-root .eng-hero .eng-cb-countdown-label{font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .st-root.eng-root .eng-hero div.eng-cb-countdown>.eng-cb-countdown-label{display:block;margin-bottom:6px}
 /* The old banner's spacing: label and heading 8px above the next block, the description 16px above the button. The
@@ -130,6 +129,9 @@
 .st-root.eng-root .eng-hero.hb-malign-left .eng-cb-buttons{justify-content:flex-start}
 .st-root.eng-root .eng-hero.hb-malign-center .eng-cb-buttons{justify-content:center}
 .st-root.eng-root .eng-hero.hb-malign-right .eng-cb-buttons{justify-content:flex-end}
+.st-root.eng-root .eng-hero.hb-malign-left .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-start}
+.st-root.eng-root .eng-hero.hb-malign-center .eng-cb-countdown .eng-countdown-boxes{justify-content:center}
+.st-root.eng-root .eng-hero.hb-malign-right .eng-cb-countdown .eng-countdown-boxes{justify-content:flex-end}
 .st-root.eng-root .hb-white-m .eng-hero-copy,.st-root.eng-root .hb-white-m .eng-hero-copy .eyebrow{color:#fff}
 .st-root.eng-root .hb-white-m .eng-cta[data-style=outline]{color:#fff;border-color:#fff}
 .st-root.eng-root .hb-box .eng-hero-copy{padding:20px 22px}

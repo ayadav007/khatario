@@ -14,7 +14,7 @@ describe('countdownUnits', () => {
     expect(countdownUnits(countdownParts(end, endMs - 90_061_000))).toEqual([['Days', 1], ['Hrs', 1], ['Min', 1], ['Sec', 1]]);
   });
 
-  it('shows zeros, not negatives, for a past time, and nothing to show for unreadable input is a null parts', () => {
+  it('shows zeros for a past end time, and has no parts for an empty or unreadable one', () => {
     expect(countdownUnits(countdownParts('2020-01-01T00:00:00Z', Date.now()))).toEqual([['Hrs', 0], ['Min', 0], ['Sec', 0]]);
     expect(countdownParts('', 0)).toBeNull();
     expect(countdownParts('soon', 0)).toBeNull();
