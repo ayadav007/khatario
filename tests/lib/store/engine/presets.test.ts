@@ -474,6 +474,29 @@ describe('drop preset', () => {
     expect(catalogGrid.settings).toMatchObject({ columns_desktop: 4, columns_mobile: 2 });
   });
 
+  it('the Main catalog has one promo tile, after the fifth product', () => {
+    const p = presetTheme('drop', CTX);
+    const grid = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
+    expect(grid.block_order).toHaveLength(1);
+    const tile = grid.blocks[grid.block_order[0]];
+    expect(tile.type).toBe('promo');
+    expect(tile.settings).toEqual({
+      image: '/store-presets/drop/promo-1.svg',
+      heading: 'Any 3 tees @ ₹999',
+      text: 'Mix any tees',
+      link: '/catalog',
+      position: 5,
+    });
+    const kept = sanitizeThemeData(p).templates.catalog.sections;
+    const keptGrid = Object.values(kept).find((s) => s.type === 'main-catalog')!;
+    expect(keptGrid.block_order).toHaveLength(1);
+    expect(keptGrid.blocks[keptGrid.block_order[0]].settings).toMatchObject({ heading: 'Any 3 tees @ ₹999', position: 5 });
+    // A demo store's own picture replaces the sample one.
+    const demo = presetTheme('drop', { ...CTX, images: { 'promo-1': '/theme-demos/streetwear/promo-denim.webp' } });
+    const demoGrid = Object.values(demo.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(demoGrid.blocks[demoGrid.block_order[0]].settings.image).toBe('/theme-demos/streetwear/promo-denim.webp');
+  });
+
   it('ignores the store accent', () => {
     expect(presetTheme('drop', CTX).settings.color_schemes).toEqual(presetTheme('drop', bare).settings.color_schemes);
     expect(presetTheme('drop', CTX).settings.color_schemes[0].accent).toBe('#d4ff3a');

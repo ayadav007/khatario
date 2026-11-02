@@ -77,7 +77,13 @@ export function dropPreset(ctx: PresetContext): ThemeData {
   const catalog = defaultTemplate('catalog');
   for (const s of Object.values(catalog.sections)) {
     if (s.type === 'catalog-banner') s.color_scheme = SMOKE;
-    if (s.type === 'main-catalog') s.settings = { ...s.settings, columns_desktop: 4, columns_mobile: 2 };
+    if (s.type === 'main-catalog') {
+      s.settings = { ...s.settings, columns_desktop: 4, columns_mobile: 2 };
+      // One promo tile in the grid, after the fifth product, in the same picture as the home page's Combo card.
+      const promo = block('promo', { image: pic('promo-1'), heading: 'Any 3 tees @ ₹999', text: 'Mix any tees', link: '/catalog', position: 5 });
+      s.blocks = { 'promo-1': promo };
+      s.block_order = ['promo-1'];
+    }
   }
 
   const gallery: Record<string, unknown> = { layout: 'grid', columns: 4 };
