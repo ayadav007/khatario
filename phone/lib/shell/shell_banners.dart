@@ -11,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../session.dart';
 import '../theme.dart';
+import '../upgrade/upgrade_copy.dart';
+import '../upgrade/upgrade_sheet.dart';
 
 /// Where `SubscriptionBanner` renders (`getSubscriptionBannerPlacement`).
 enum BannerPlacement { dashboard, compact, hidden }
@@ -209,6 +211,22 @@ class ShellBanners extends StatelessWidget {
   /// `GlobalSubscriptionUsageStrip`: pages without their own usage banner.
   final bool usageStrip;
 
+  /// Trial banners open the trial sheet; grace and cancelled banners go straight to the plans.
+  void _upgrade(BuildContext context, Map<String, dynamic> subscription) {
+    final s = SubscriptionBanner.state(subscription, DateTime.now());
+    if (s == null || (s.$1 != 'trial_ending' && s.$1 != 'trial_expired')) {
+      onOpen('Subscription');
+      return;
+    }
+    showUpgradeSheet(
+      context,
+      request: UpgradeRequest(UpgradeVariant.trial, trialDaysLeft: s.$1 == 'trial_expired' ? -1 : s.$2),
+      api: controller.session.api,
+      businessId: controller.session.businessId,
+      onSeePlans: () => onOpen('Subscription'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (controller.session.isConnectAgent || placement == BannerPlacement.hidden) return const SizedBox.shrink();
@@ -225,7 +243,7 @@ class ShellBanners extends StatelessWidget {
               SubscriptionBanner(
                 subscription: controller.subscription!,
                 compact: placement == BannerPlacement.compact,
-                onUpgrade: () => onOpen('Subscription'),
+                onUpgrade: () => _upgrade(context, controller.subscription!),
                 onDismiss: controller.dismissSubscription,
               ),
             if (worst != null)

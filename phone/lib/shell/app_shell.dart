@@ -52,6 +52,8 @@ import 'mobile_nav.dart';
 import 'mobile_nav_editor.dart';
 import 'module_settings_sheet.dart';
 import 'shell_banners.dart';
+import '../upgrade/upgrade_copy.dart';
+import '../upgrade/upgrade_sheet.dart';
 
 /// Copy of the mobile app shell in `app/(app)/layout.tsx`: TopBar (mobile app bar,
 /// BusinessSwitcher, dashboard date stepper), page body and BottomNav.
@@ -245,8 +247,25 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  /// Any write the plan refuses ("not in your plan", "limit reached") opens the upgrade sheet.
+  void _onUpgradeNeeded(String method, ApiException error) {
+    final request = UpgradeRequest.fromApi(method, error);
+    if (request == null || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showUpgradeSheet(
+        context,
+        request: request,
+        api: _api,
+        businessId: widget.session.businessId,
+        onSeePlans: () => _openAnything('Subscription'),
+      );
+    });
+  }
+
   @override
   void dispose() {
+    if (_api.onUpgradeNeeded == _onUpgradeNeeded) _api.onUpgradeNeeded = null;
     widget.pushTaps?.removeListener(_onPushTap);
     _banners.dispose();
     super.dispose();
@@ -255,6 +274,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _api.onUpgradeNeeded = _onUpgradeNeeded;
     _tab = _homeTab;
     _banners.start();
     _banners.loadUsage();

@@ -1086,7 +1086,7 @@ export const BusinessProfileTab: React.FC = () => {
             {showWarehouseUpgradePrompt && (
               <UpgradePrompt
                 featureKey="settings_multi_warehouse"
-                featureName="Multi-Warehouse"
+                featureName="Warehouses"
                 onClose={() => setShowWarehouseUpgradePrompt(false)}
               />
             )}

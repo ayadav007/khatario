@@ -153,16 +153,28 @@ export async function isBusinessEmailReady(businessId: string): Promise<boolean>
   return Boolean(resolveSmtpPassword(row));
 }
 
+/** `code` is set only when the plan's daily email limit is used up. */
+export interface BusinessEmailSendResult {
+  success: boolean;
+  error?: string;
+  code?: 'SUBSCRIPTION_LIMIT_EXCEEDED';
+  limit?: number;
+  current?: number;
+}
+
 export async function sendBusinessEmail(
   businessId: string,
   options: BusinessEmailSendOptions
-): Promise<{ success: boolean; error?: string }> {
+): Promise<BusinessEmailSendResult> {
   const { checkLimit } = await import('@/lib/subscription');
   const emailLimit = await checkLimit(businessId, 'email');
   if (!emailLimit.allowed) {
     return {
       success: false,
       error: emailLimit.message ?? 'Daily email limit reached for your plan.',
+      code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+      limit: emailLimit.limit,
+      current: emailLimit.current,
     };
   }
 

@@ -82,7 +82,12 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/reports/cash-flow', featureId: 'reports_advanced' },
   { prefix: '/reports/trial-balance', featureId: 'reports_advanced' },
   { prefix: '/reports/aging', featureId: 'reports_advanced' },
+  // These two sit under Reports but their data needs a higher plan than the Reports section.
+  { prefix: '/reports/profit-by-invoice', featureId: 'profit_reports_basic' },
+  { prefix: '/reports/builder', featureId: 'report_builder' },
   { prefix: '/reports', featureId: 'reports_basic' },
+  { prefix: '/items/barcodes', featureId: 'barcode_label_printing' },
+  { prefix: '/settings/label-templates', featureId: 'barcode_label_templates' },
   { prefix: '/settings/whatsapp/notifications', featureId: 'whatsapp_auto_reminders' },
   { prefix: '/settings/whatsapp', featureId: 'settings_whatsapp' },
   { prefix: '/settings/backup', featureId: 'settings_backup' },

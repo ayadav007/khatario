@@ -81,7 +81,8 @@ export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission:
       return NextResponse.json(
         {
           error: limitCheck.message || 'WhatsApp message limit exceeded',
-          code: 'LIMIT_EXCEEDED',
+          code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          limit_type: 'whatsapp',
           current: limitCheck.current,
           limit: limitCheck.limit,
         },
@@ -94,7 +95,8 @@ export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission:
       return NextResponse.json(
         {
           error: `Cannot send ${messagesToSend} reminders. Daily limit would be exceeded (${limitCheck.current + messagesToSend}/${limitCheck.limit})`,
-          code: 'LIMIT_EXCEEDED',
+          code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          limit_type: 'whatsapp',
           current: limitCheck.current,
           limit: limitCheck.limit,
         },

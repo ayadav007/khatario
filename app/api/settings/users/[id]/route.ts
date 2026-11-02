@@ -222,6 +222,7 @@ export async function PATCH(
             limit: limitCheck.limit,
             current: limitCheck.current,
             seat_type: targetSeat,
+            limit_type: seatLimitType(targetSeat),
             code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
           },
           { status: 403 },

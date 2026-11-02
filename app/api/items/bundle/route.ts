@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
           limit: limitCheck.limit,
           current: limitCheck.current,
           code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          limit_type: 'items',
         },
         { status: 403 },
       );

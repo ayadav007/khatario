@@ -13,6 +13,7 @@ export async function limitExceededResponse(
       {
         error: check.message ?? 'Limit reached',
         code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+        limit_type: limitType,
         limit: check.limit,
         current: check.current,
       },

@@ -45,4 +45,12 @@ describe('featureIdForPath', () => {
     expect(featureIdForPath('/whatsapp/send-message')).toBe('integration_whatsapp_manual');
     expect(featureIdForPath('/api/whatsapp/status')).toBeNull();
   });
+
+  it('gates pages whose data needs a higher plan than their section', () => {
+    expect(featureIdForPath('/reports/profit-by-invoice')).toBe('profit_reports_basic');
+    expect(featureIdForPath('/reports/builder')).toBe('report_builder');
+    expect(featureIdForPath('/items/barcodes')).toBe('barcode_label_printing');
+    expect(featureIdForPath('/settings/label-templates/new')).toBe('barcode_label_templates');
+    expect(featureIdForPath('/reports/sales')).toBe('reports_basic');
+  });
 });

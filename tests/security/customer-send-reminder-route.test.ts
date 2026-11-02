@@ -147,3 +147,18 @@ it('blocks WhatsApp agent seats from sending reminders', async () => {
   expect(res.status).toBe(403);
   expect(mockSend).not.toHaveBeenCalled();
 });
+
+it('answers a used-up WhatsApp limit with the standard limit reply', async () => {
+  mockCheckLimit.mockResolvedValue({ allowed: false, current: 20, limit: 20, message: 'Daily limit reached' });
+  const res = await post({ business_id: BIZ });
+  expect(res.status).toBe(403);
+  expect(await res.json()).toMatchObject({ code: 'SUBSCRIPTION_LIMIT_EXCEEDED', limit_type: 'whatsapp', limit: 20, current: 20 });
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+it('answers a batch that would pass the limit with the standard limit reply', async () => {
+  mockCheckLimit.mockResolvedValue({ allowed: true, current: 20, limit: 20 });
+  const res = await post({ business_id: BIZ });
+  expect(res.status).toBe(403);
+  expect(await res.json()).toMatchObject({ code: 'SUBSCRIPTION_LIMIT_EXCEEDED', limit_type: 'whatsapp' });
+});

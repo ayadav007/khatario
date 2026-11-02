@@ -4,11 +4,15 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, ArrowLeft, Settings, AlertTriangle, Key, Folder } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { UpgradeLockedPanel } from '@/components/subscription/upgrade/UpgradeLockedPanel';
+import { ADDON_FEATURE_KEYS } from '@/lib/upgrade/upgrade-request';
 
 interface AccessDeniedProps {
   message?: string;
   details?: string;
   code?: string;
+  /** Plan feature id from a FEATURE_NOT_IN_PLAN reply, for the upgrade panel's copy. */
+  feature?: string;
   module?: string; // e.g., 'invoices', 'customers', 'items', 'employees'
   action?: string; // e.g., 'view', 'create', 'update', 'delete'
   onRetry?: () => void;
@@ -58,6 +62,7 @@ export function AccessDenied({
   message,
   details,
   code,
+  feature,
   module,
   action,
   onRetry,
@@ -66,6 +71,15 @@ export function AccessDenied({
   const router = useRouter();
 
   const isPlanDenial = code === 'FEATURE_NOT_IN_PLAN';
+  if (isPlanDenial) {
+    const addon = !!feature && ADDON_FEATURE_KEYS.has(feature);
+    return (
+      <UpgradeLockedPanel
+        className={className}
+        request={{ variant: addon ? 'addon' : 'feature', ...(feature ? { featureKey: feature } : {}) }}
+      />
+    );
+  }
 
   // Generate user-friendly message if module/action provided
   let displayMessage = message || 'Access Denied';

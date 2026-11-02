@@ -88,7 +88,7 @@ export function ConnectLockedCard({ title, description }: { title: string; descr
       title={title}
       description={description}
       cta="Get Connect"
-      featureName="Khatario Connect"
+      featureName={title}
       moduleKey="connect"
       initialPlanId="connect"
     />

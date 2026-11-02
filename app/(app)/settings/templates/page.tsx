@@ -470,7 +470,7 @@ export default function TemplatesPage() {
       {showUpgradeModal && (
         <UpgradeModal
           limitType="feature"
-          featureName="Template Customization"
+          featureName="Template customisation"
           onClose={() => setShowUpgradeModal(false)}
         />
       )}
