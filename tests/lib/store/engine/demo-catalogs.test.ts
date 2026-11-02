@@ -65,6 +65,24 @@ describe('demo catalogues', () => {
     for (const p of products) expect(p.current_stock).toBeGreaterThan(0);
   });
 
+  it("streetwear's newest-first row (the demo's \"new\" sort shows the list from the end) leads with sized tees and co-ords", () => {
+    const { products } = DEMO_CATALOGS.streetwear;
+    const firstEight = [...products].reverse().slice(0, 8);
+    expect(firstEight.every((p) => p.has_variants)).toBe(true);
+    expect(firstEight.slice(0, 4).map((p) => p.category_name)).toEqual(['Tees', 'Tees', 'Tees', 'Tees']);
+    // The featured flag still marks the same eight products as before.
+    expect(products.filter((p) => p.featured_in_store).map((p) => p.id).sort()).toEqual(
+      ['sw-1', 'sw-2', 'sw-3', 'sw-4', 'sw-5', 'sw-6', 'sw-7', 'sw-8'],
+    );
+  });
+
+  it('every row of the credits table has the same number of columns (no stray | in a name)', () => {
+    const rows = credits.split('\n').filter((l) => l.startsWith('|'));
+    const cols = (l: string) => l.split('|').length;
+    expect(rows.length).toBeGreaterThan(10);
+    for (const r of rows) expect(cols(r)).toBe(cols(rows[0]));
+  });
+
   it('ids are unique across all catalogues', () => {
     const all = IDS.flatMap((id) => DEMO_CATALOGS[id].products.map((p) => p.id));
     expect(new Set(all).size).toBe(all.length);

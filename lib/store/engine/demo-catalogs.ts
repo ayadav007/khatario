@@ -16,35 +16,48 @@ const pic = (folder: string, file: string) => `/theme-demos/${folder}/${file}.we
 
 type Row = [id: string, name: string, price: number, mrp: number | null, category: string, file: string, extra?: Partial<StoreProduct>];
 
-function catalog(folder: DemoCatalogId, categories: { id: string; name: string }[], rows: Row[], heroes: string[]): DemoCatalog {
+/**
+ * `newestLast`: the rows are listed oldest first, so the demo's "new" sort (the end of the list first) leads with the
+ * last rows. Ratings and the featured flag follow each row's place from the newest end, as if listed newest first.
+ */
+function catalog(
+  folder: DemoCatalogId,
+  categories: { id: string; name: string }[],
+  rows: Row[],
+  heroes: string[],
+  newestLast = false,
+): DemoCatalog {
   const nameOf = (id: string) => categories.find((c) => c.id === id)?.name ?? null;
-  const products = rows.map(([id, name, price, mrp, category, file, extra], i): StoreProduct => ({
-    id,
-    name,
-    code: null,
-    description: 'Sample product in a Khatario theme demo store. Checkout is off.',
-    selling_price: price,
-    mrp,
-    unit: 'PCS',
-    image_url: pic(folder, file),
-    category_id: category,
-    category_name: nameOf(category),
-    current_stock: 20,
-    has_variants: false,
-    tax_rate: folder === 'grocery' ? 5 : 3,
-    gst_included: true,
-    images: [],
-    // A spread of believable ratings, the same every time.
-    rating_avg: [4.8, 4.6, 4.9, 4.4, 4.7, 4.2, 4.5][i % 7],
-    rating_count: 8 + ((i * 17) % 90),
-    featured_in_store: i < 8,
-    store_badge: null,
-    store_tagline: null,
-    store_fit_note: null,
-    store_swatches: [],
-    variants: [],
-    ...extra,
-  }));
+  const products = rows.map(([id, name, price, mrp, category, file, extra], at): StoreProduct => {
+    const i = newestLast ? rows.length - 1 - at : at;
+    return {
+      id,
+      name,
+      code: null,
+      description: 'Sample product in a Khatario theme demo store. Checkout is off.',
+      selling_price: price,
+      mrp,
+      unit: 'PCS',
+      image_url: pic(folder, file),
+      category_id: category,
+      category_name: nameOf(category),
+      current_stock: 20,
+      has_variants: false,
+      tax_rate: folder === 'grocery' ? 5 : 3,
+      gst_included: true,
+      images: [],
+      // A spread of believable ratings, the same every time.
+      rating_avg: [4.8, 4.6, 4.9, 4.4, 4.7, 4.2, 4.5][i % 7],
+      rating_count: 8 + ((i * 17) % 90),
+      featured_in_store: i < 8,
+      store_badge: null,
+      store_tagline: null,
+      store_fit_note: null,
+      store_swatches: [],
+      variants: [],
+      ...extra,
+    };
+  });
   return { categories, products, heroes: heroes.map((h) => pic('heroes', h)) };
 }
 
@@ -187,21 +200,23 @@ const STREETWEAR = catalog(
     { id: 'sw-cat-accessories', name: 'Accessories' },
   ],
   [
-    ['sw-1', 'Heavyweight boxy tee', 599, 799, 'sw-cat-tees', 'tee-boxy-white', { ...sized('sw-1', 599, TEE_SIZES, [6, 9, 12, 4, 0]), store_badge: 'Selling fast', store_fit_note: 'Boxy cut: take your usual size for a loose fit, size down for a snug one.' }],
-    ['sw-2', 'Graphic print tee', 499, null, 'sw-cat-tees', 'tee-graphic-black', { ...sized('sw-2', 499, TEE_SIZES, [8, 14, 10, 6, 3]), store_badge: 'Any 3 @ ₹999' }],
-    ['sw-3', 'Black and white tee', 549, 699, 'sw-cat-tees', 'tee-duo-bw', { ...sized('sw-3', 549, TEE_SIZES, [0, 7, 11, 8, 5]), store_badge: 'Any 3 @ ₹999' }],
-    ['sw-4', 'Sage cotton tee', 549, null, 'sw-cat-tees', 'tee-duo-green', { ...sized('sw-4', 549, TEE_SIZES, [5, 8, 9, 5, 2]), store_badge: 'New' }],
-    ['sw-5', 'Navy zip co-ord', 2499, 2999, 'sw-cat-coords', 'coord-navy', { ...sized('sw-5', 2499, TEE_SIZES, [3, 5, 6, 4, 2]), store_fit_note: 'Relaxed fit. The model is 5 ft 6 in and wears S.' }],
-    ['sw-6', 'Sunshine fleece set', 2299, null, 'sw-cat-coords', 'coord-yellow', { ...sized('sw-6', 2299, TEE_SIZES, [4, 6, 3, 0, 0]), store_badge: 'New' }],
-    ['sw-7', 'Doodle print set', 2799, 3299, 'sw-cat-coords', 'coord-orange', { ...sized('sw-7', 2799, TEE_SIZES, [2, 4, 5, 3, 1]), store_badge: 'Selling fast' }],
-    ['sw-8', 'Slim indigo jeans', 1699, null, 'sw-cat-denim', 'denim-straight', { ...sized('sw-8', 1699, WAISTS, [4, 8, 10, 7, 3]), store_fit_note: 'Slim through the thigh with a little stretch. Order your usual waist.' }],
-    ['sw-9', 'Distressed light-wash jeans', 1899, 2299, 'sw-cat-denim', 'denim-distressed', { ...sized('sw-9', 1899, WAISTS, [3, 6, 0, 5, 2]), store_fit_note: 'Runs a little small: go one waist size up.' }],
-    ['sw-10', 'Carpenter jeans', 1999, null, 'sw-cat-denim', 'promo-denim', { ...sized('sw-10', 1999, WAISTS, [5, 7, 9, 6, 4]) }],
-    ['sw-11', 'Washed dad cap', 499, null, 'sw-cat-accessories', 'cap-grey', { store_tagline: 'One size, adjustable strap' }],
-    ['sw-12', 'Mesh trucker cap', 449, 549, 'sw-cat-accessories', 'cap-white'],
     ['sw-13', 'Sunny curved cap', 499, null, 'sw-cat-accessories', 'cap-yellow'],
+    ['sw-12', 'Mesh trucker cap', 449, 549, 'sw-cat-accessories', 'cap-white'],
+    ['sw-11', 'Washed dad cap', 499, null, 'sw-cat-accessories', 'cap-grey', { store_tagline: 'One size, adjustable strap' }],
+    ['sw-10', 'Carpenter jeans', 1999, null, 'sw-cat-denim', 'promo-denim', { ...sized('sw-10', 1999, WAISTS, [5, 7, 9, 6, 4]) }],
+    ['sw-9', 'Distressed light-wash jeans', 1899, 2299, 'sw-cat-denim', 'denim-distressed', { ...sized('sw-9', 1899, WAISTS, [3, 6, 0, 5, 2]), store_fit_note: 'Runs a little small: go one waist size up.' }],
+    ['sw-8', 'Slim indigo jeans', 1699, null, 'sw-cat-denim', 'denim-straight', { ...sized('sw-8', 1699, WAISTS, [4, 8, 10, 7, 3]), store_fit_note: 'Slim through the thigh with a little stretch. Order your usual waist.' }],
+    ['sw-7', 'Doodle print set', 2799, 3299, 'sw-cat-coords', 'coord-orange', { ...sized('sw-7', 2799, TEE_SIZES, [2, 4, 5, 3, 1]), store_badge: 'Selling fast' }],
+    ['sw-6', 'Sunshine fleece set', 2299, null, 'sw-cat-coords', 'coord-yellow', { ...sized('sw-6', 2299, TEE_SIZES, [4, 6, 3, 0, 0]), store_badge: 'New' }],
+    ['sw-5', 'Navy zip co-ord', 2499, 2999, 'sw-cat-coords', 'coord-navy', { ...sized('sw-5', 2499, TEE_SIZES, [3, 5, 6, 4, 2]), store_fit_note: 'Relaxed fit. The model is 5 ft 6 in and wears S.' }],
+    ['sw-4', 'Sage cotton tee', 549, null, 'sw-cat-tees', 'tee-duo-green', { ...sized('sw-4', 549, TEE_SIZES, [5, 8, 9, 5, 2]), store_badge: 'New' }],
+    ['sw-3', 'Black and white tee', 549, 699, 'sw-cat-tees', 'tee-duo-bw', { ...sized('sw-3', 549, TEE_SIZES, [0, 7, 11, 8, 5]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-2', 'Graphic print tee', 499, null, 'sw-cat-tees', 'tee-graphic-black', { ...sized('sw-2', 499, TEE_SIZES, [8, 14, 10, 6, 3]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-1', 'Heavyweight boxy tee', 599, 799, 'sw-cat-tees', 'tee-boxy-white', { ...sized('sw-1', 599, TEE_SIZES, [6, 9, 12, 4, 0]), store_badge: 'Selling fast', store_fit_note: 'Boxy cut: take your usual size for a loose fit, size down for a snug one.' }],
   ],
   ['streetwear-1', 'streetwear-2', 'streetwear-3'],
+  // Listed oldest first: Drop Culture's "Just dropped" row sorts by new, which the demo shows from the end of the list.
+  true,
 );
 
 export const DEMO_CATALOGS: Record<DemoCatalogId, DemoCatalog> = {
