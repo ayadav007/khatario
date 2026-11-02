@@ -148,6 +148,7 @@ export function CardDesignGallery({ preset, onClose }: { preset?: ThemePreset; o
     editor: false,
     schemeBackground: settings.color_schemes?.[0]?.background,
     style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
+    headingFont: settings.font_heading,
   });
   const rootStyle = useMemo(() => engineRootStyle(settings), [settings]);
   const themeLines = PRESET_CARD_FIELDS[preset ?? 'studio'] ?? PRESET_CARD_FIELDS.studio;

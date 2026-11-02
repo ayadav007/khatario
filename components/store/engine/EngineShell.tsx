@@ -288,6 +288,7 @@ export function EngineShell({
     editor,
     schemeBackground: settings.color_schemes?.[0]?.background,
     style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
+    headingFont: settings.font_heading,
   });
   const { kit, quick } = root;
   const cardFields = PRESET_CARD_FIELDS[theme.preset] ?? PRESET_CARD_FIELDS.studio;

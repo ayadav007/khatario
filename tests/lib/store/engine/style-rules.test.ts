@@ -16,3 +16,10 @@ it('texture images and sizes are !important so they beat a section\'s inline bac
     expect(decls.some((d) => /^background(-color)?:/.test(d))).toBe(false); // the section's own colour stays
   }
 });
+
+it('stops synthetic bold on headings under eng-heading-anton only', () => {
+  const rule = STYLE_RULES.split('}').find((r) => r.includes('.eng-root.eng-heading-anton')) ?? '';
+  expect(rule).toContain('font-weight:400');
+  expect(rule).toContain('font-synthesis-weight:none');
+  for (const sel of ['h1', 'h2', 'h3']) expect(rule).toContain(sel);
+});

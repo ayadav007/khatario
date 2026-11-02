@@ -34,6 +34,13 @@ describe('engineRootClass', () => {
     expect(r.quick).toBe(false);
   });
 
+  it('adds eng-heading-anton only when the heading font is Anton (it has one weight, so headings must not be bolded)', () => {
+    const base = { preset: 'drop' as const, phoneKit: false, editor: false, schemeBackground: '#0d0d0d', style };
+    expect(classes(engineRootClass({ ...base, headingFont: 'anton' }).className)).toContain('eng-heading-anton');
+    expect(classes(engineRootClass({ ...base, headingFont: 'poppins' }).className)).not.toContain('eng-heading-anton');
+    expect(classes(engineRootClass(base).className)).not.toContain('eng-heading-anton');
+  });
+
   it('grocery follows the phone kit setting', () => {
     const off = engineRootClass({ preset: 'grocery', phoneKit: false, editor: false, schemeBackground: '#f6f7f4', style });
     expect(off.kit).toBe(false);

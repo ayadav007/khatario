@@ -6,6 +6,8 @@ const R = '.st-root.eng-root';
 const ink = 'color-mix(in srgb,currentColor 10%,transparent)';
 
 export const STYLE_RULES =
+  // Anton has a single weight (400); headings are written at 700, so without this the browser fakes a bold Anton.
+  `${R}.eng-heading-anton :is(h1,h2,h3,.logo b,.eng-logo-name,.pc-namefont-heading .pname){font-weight:400;font-synthesis-weight:none}` +
   // Spaced capitals on small labels, badges, the add-to-cart button, buttons and header menu links.
   `${R}.eng-labels-caps :is(.eyebrow,.badges em,.addBtn,.st-btn,.nav a){text-transform:uppercase;letter-spacing:.12em}` +
   // A thin accent border, with a faint inner line, on cards and images. Product cards are article.g-surface (the
