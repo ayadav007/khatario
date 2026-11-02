@@ -89,6 +89,21 @@ export async function GET(request: NextRequest) {
       console.warn('online-store categories query failed:', catErr);
     }
 
+    let storeProductCount: number | null = null;
+    try {
+      const countRow = await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n
+         FROM items i
+         WHERE i.business_id = $1 AND i.show_in_store = true
+           AND (i.is_active IS NULL OR i.is_active = true)
+           AND i.deleted_at IS NULL`,
+        [businessId],
+      );
+      storeProductCount = Number(countRow?.n ?? 0);
+    } catch (countErr) {
+      console.warn('online-store product count query failed:', countErr);
+    }
+
     return NextResponse.json({
       store_subdomain: row?.store_subdomain ?? null,
       store_enabled: row?.store_enabled ?? false,
@@ -117,6 +132,7 @@ export async function GET(request: NextRequest) {
       store_engine: (row as { store_engine?: boolean })?.store_engine === true,
       logo_url: logoRow?.logo_url ?? null,
       categories,
+      store_product_count: storeProductCount,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load store settings';

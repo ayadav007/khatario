@@ -37,9 +37,11 @@ interface Branch {
 
 interface DeliveryZoneEditorProps {
   businessId: string;
+  /** Called with the number of saved, active zones whenever they load or change. */
+  onActiveZonesChange?: (count: number) => void;
 }
 
-export function DeliveryZoneEditor({ businessId }: DeliveryZoneEditorProps) {
+export function DeliveryZoneEditor({ businessId, onActiveZonesChange }: DeliveryZoneEditorProps) {
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +71,10 @@ export function DeliveryZoneEditor({ businessId }: DeliveryZoneEditorProps) {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!loading) onActiveZonesChange?.(zones.filter((z) => z.id && z.is_active).length);
+  }, [loading, zones, onActiveZonesChange]);
 
   const unconfiguredBranches = branches.filter(
     (b) => !zones.some((z) => z.branch_id === b.id),
