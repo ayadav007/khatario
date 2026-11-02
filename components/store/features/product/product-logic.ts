@@ -164,3 +164,12 @@ export function valueInStock(
     .find((a) => a.key === key)
     ?.values.some((v) => v.value === value && v.inStock) ?? false;
 }
+
+/**
+ * Photo grid shape from md up: two columns, but a single tile gets one (no empty half) and an odd last tile
+ * spans both columns so the grid has no hole.
+ */
+export function galleryGridSpans(count: number): { columns: 1 | 2; wideLast: boolean } {
+  if (count <= 1) return { columns: 1, wideLast: false };
+  return { columns: 2, wideLast: count % 2 === 1 };
+}

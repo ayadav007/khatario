@@ -9,6 +9,7 @@ import {
   DOUBLE_TAP_ZOOM,
   clampPan,
   clampScale,
+  galleryGridSpans,
   isDoubleTap,
   stepIndex,
   swipeDirection,
@@ -42,6 +43,21 @@ const CARD: React.CSSProperties = {
   boxShadow: '0 12px 32px -20px rgba(0,0,0,.4)',
 };
 
+const WIDE_QUERY = '(min-width: 768px)';
+
+/** True from md up, after mount (false on the server and on the first client render, so the carousel comes first). */
+function useWideScreen(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  return wide;
+}
+
 /** Product photos (and an optional video, always last) with swipe, hover zoom and a lightbox. */
 export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Props) {
   const pics = useMemo(() => images.filter(Boolean), [images]);
@@ -57,6 +73,7 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
   const swiped = useRef(false);
   const side = thumbs === 'side';
   const grid = thumbs === 'grid';
+  const wide = useWideScreen();
 
   const firstKey = slides[0]?.src ?? '';
   useEffect(() => {
@@ -97,6 +114,19 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
     const y = Math.min(100, Math.max(0, ((e.clientY - r.top) / r.height) * 100));
     setZoomAtPos(`${x}% ${y}%`);
   };
+
+  const lightboxEl =
+    lightbox !== null ? (
+      <Lightbox
+        images={pics}
+        start={lightbox}
+        alt={alt}
+        onClose={(i) => {
+          setLightbox(null);
+          setIndex(i);
+        }}
+      />
+    ) : null;
 
   const carousel = (
     <div className={clsx('flex flex-col gap-2', side && 'lg:flex-row-reverse lg:items-start')}>
@@ -290,28 +320,20 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
         </div>
       ) : null}
 
-      {lightbox !== null ? (
-        <Lightbox
-          images={pics}
-          start={lightbox}
-          alt={alt}
-          onClose={(i) => {
-            setLightbox(null);
-            setIndex(i);
-          }}
-        />
-      ) : null}
+      {lightboxEl}
     </div>
   );
 
-  if (!grid) return carousel;
+  // Grid: the swipe gallery on phones, every photo (then the video) in columns from md. The grid mounts only once the
+  // screen is known to be wide, so a phone never loads the video or iframe a hidden grid would hold. The lightbox
+  // portal renders from either layout.
+  if (!grid || !wide) return carousel;
 
-  // Grid: the swipe gallery on phones, every photo (then the video) in two columns from md. The lightbox
-  // renders in a portal from the carousel, so a tap on a grid photo opens it even while the carousel is hidden.
+  const { columns, wideLast } = galleryGridSpans(count);
   return (
     <>
-      <div className="md:hidden">{carousel}</div>
-      <div className="hidden grid-cols-2 gap-3 md:grid">
+      {lightboxEl}
+      <div className={clsx('grid gap-3', columns === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
         {slides.map((s, i) =>
           s.kind === 'image' ? (
             <button
@@ -319,7 +341,10 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
               type="button"
               aria-label={`Open ${label(s, i).toLowerCase()}`}
               onClick={() => setLightbox(i)}
-              className="aspect-[4/5] cursor-zoom-in overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              className={clsx(
+                'cursor-zoom-in overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]',
+                wideLast && i === count - 1 ? 'col-span-2 aspect-[8/5]' : 'aspect-[4/5]',
+              )}
               style={CARD}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -332,7 +357,13 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
               />
             </button>
           ) : (
-            <div key={`${s.kind}-${s.src}-${i}`} className="flex aspect-[4/5] items-center overflow-hidden rounded-2xl bg-black">
+            <div
+              key={`${s.kind}-${s.src}-${i}`}
+              className={clsx(
+                'flex items-center overflow-hidden rounded-2xl bg-black',
+                wideLast && i === count - 1 ? 'col-span-2 aspect-[8/5]' : 'aspect-[4/5]',
+              )}
+            >
               {s.kind === 'youtube' ? (
                 <iframe
                   src={s.src}
