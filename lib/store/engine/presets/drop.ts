@@ -113,8 +113,8 @@ export function dropPreset(ctx: PresetContext): ThemeData {
           [1, 2, 3].map((n) => block('category_image', { image: pic(`category-${n}`) })),
         ),
         onScheme(section('video', { heading: 'On the streets', video_url: '' }), CONCRETE),
-        // Promo cards carry no colour scheme of their own, so the Volt and Alarm colours are the cards' pictures.
-        section('promo-cards', { style: 'split', columns: 2 }, [
+        // Promo cards carry no colour scheme of their own, so the Volt and Alarm colours are the cards' pictures, shown full-card (overlay).
+        section('promo-cards', { style: 'overlay', columns: 2 }, [
           block('card', { eyebrow: 'Combo', heading: 'Any 3 @ ₹999', button_text: 'Shop now', link: '/catalog', image: pic('promo-1') }),
           block('card', { eyebrow: 'Last call', heading: 'Up to 40% off', button_text: 'Shop now', link: '/catalog', image: pic('promo-2') }),
         ]),
@@ -133,6 +133,7 @@ export function dropPreset(ctx: PresetContext): ThemeData {
           block('price', {}),
           block('variant_picker', { low_stock_at: 3 }),
           block('buy_buttons', {}),
+          block('description', {}),
           block('delivery_check', {}),
           block('collapsible_tab', { heading: 'Details', content: '<p>Tell shoppers about the fit, the cut and the feel of this piece.</p>' }),
           block('collapsible_tab', { heading: 'Fabric and care', content: '<p>Add the fabric and how to wash and dry it.</p>' }),

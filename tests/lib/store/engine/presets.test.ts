@@ -411,7 +411,7 @@ describe('drop preset', () => {
     const main = product.sections['main-product'];
     expect(main.settings).toMatchObject({ thumbs: 'grid', sticky_info: true, sticky_buy_bar: true });
     expect(main.block_order.map((id) => main.blocks[id].type)).toEqual([
-      'title', 'price', 'variant_picker', 'buy_buttons', 'delivery_check', 'collapsible_tab', 'collapsible_tab', 'collapsible_tab',
+      'title', 'price', 'variant_picker', 'buy_buttons', 'description', 'delivery_check', 'collapsible_tab', 'collapsible_tab', 'collapsible_tab',
     ]);
     expect(blocksOf(main, 'variant_picker')).toEqual([expect.objectContaining({ low_stock_at: 3 })]);
     expect(blocksOf(main, 'collapsible_tab').map((b) => b.heading)).toEqual(['Details', 'Fabric and care', 'Exchange and returns']);
@@ -447,6 +447,7 @@ describe('drop preset', () => {
     expect(s.video.color_scheme).toBe('scheme-2');
     expect(resolved(s.video)).toMatchObject({ heading: 'On the streets', video_url: '' });
     const promos = s['promo-cards'];
+    expect(promos.settings).toMatchObject({ style: 'overlay', columns: 2 });
     expect(promos.block_order.map((id) => promos.blocks[id].settings)).toEqual([
       expect.objectContaining({ eyebrow: 'Combo', heading: 'Any 3 @ ₹999', image: '/store-presets/drop/promo-1.svg' }),
       expect.objectContaining({ eyebrow: 'Last call', heading: 'Up to 40% off', image: '/store-presets/drop/promo-2.svg' }),

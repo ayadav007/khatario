@@ -140,7 +140,7 @@ const THEME_RULES =
   '.st-root.eng-root .eng-news-error{flex-basis:100%;margin:0;color:#b91c1c;font-size:14px}' +
   '.st-root.eng-root .eng-countdown{text-align:center}' +
   '.st-root.eng-root .eng-countdown-boxes{display:flex;justify-content:center;gap:12px;margin-bottom:14px}' +
-  '.st-root.eng-root .eng-countdown-boxes>div{min-width:64px;padding:10px 6px;border-radius:var(--btn-radius,10px);background:color-mix(in srgb,currentColor 8%,transparent)}' +
+  '.st-root.eng-root .eng-countdown-boxes>div{min-width:64px;padding:10px 6px;border-radius:var(--btn-radius,10px);background:rgba(0,0,0,.06);background:color-mix(in srgb,currentColor 8%,transparent)}' +
   '.st-root.eng-root .eng-countdown-boxes b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}' +
   '.st-root.eng-root .eng-countdown-boxes span{font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
   '@container store (max-width: 640px){.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding:0 16px}.st-root.eng-root .eng-collections-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
