@@ -9,6 +9,7 @@ import {
 } from '@/lib/store/engine/sanitize';
 import { SECTION_SCHEMAS } from '@/lib/store/engine/registry';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
+import { defaultSettings } from '@/lib/store/engine/shared';
 import type { TemplateKind } from '@/lib/store/engine/types';
 
 const sec = (type: string, extra: Record<string, unknown> = {}) => ({ type, settings: {}, blocks: {}, block_order: [], ...extra });
@@ -330,4 +331,17 @@ it('keeps valid style settings and defaults the rest', () => {
   expect(t.settings).toMatchObject({ label_style: 'caps', frame_style: 'accent', texture: 'linen' });
   const d = sanitizeThemeData({ settings: { label_style: 'CAPS', texture: 'stripes' } });
   expect(d.settings).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
+});
+
+describe('main-product thumbs', () => {
+  const mainProduct = (thumbs: unknown) => {
+    const section = sanitizeSection(sec('main-product', { settings: { thumbs } }), 'product');
+    const schema = SECTION_SCHEMAS['main-product'];
+    return { ...defaultSettings(schema.settings), ...section?.settings }.thumbs;
+  };
+
+  it('keeps thumbs grid and falls back to side for unknown values', () => {
+    expect(mainProduct('grid')).toBe('grid');
+    expect(mainProduct('mosaic')).toBe('side');
+  });
 });

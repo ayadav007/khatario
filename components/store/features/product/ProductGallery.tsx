@@ -23,8 +23,11 @@ type Props = {
   images: string[];
   videoUrl?: string | null;
   alt: string;
-  /** 'side' puts thumbnails in a column on the left from 1024 px; default is below. */
-  thumbs?: 'side' | 'bottom';
+  /**
+   * 'side' puts thumbnails in a column on the left from 1024 px; default is below.
+   * 'grid' shows every photo in two columns from 768 px (no thumbnails) and the swipe gallery below that.
+   */
+  thumbs?: 'side' | 'bottom' | 'grid';
 };
 
 const HOVER_ZOOM = '(hover: hover) and (pointer: fine) and (min-width: 1024px)';
@@ -53,6 +56,7 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
   const start = useRef<{ id: number; x: number; y: number } | null>(null);
   const swiped = useRef(false);
   const side = thumbs === 'side';
+  const grid = thumbs === 'grid';
 
   const firstKey = slides[0]?.src ?? '';
   useEffect(() => {
@@ -94,7 +98,7 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
     setZoomAtPos(`${x}% ${y}%`);
   };
 
-  return (
+  const carousel = (
     <div className={clsx('flex flex-col gap-2', side && 'lg:flex-row-reverse lg:items-start')}>
       <div className="min-w-0 flex-1">
         <div
@@ -298,6 +302,54 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
         />
       ) : null}
     </div>
+  );
+
+  if (!grid) return carousel;
+
+  // Grid: the swipe gallery on phones, every photo (then the video) in two columns from md. The lightbox
+  // renders in a portal from the carousel, so a tap on a grid photo opens it even while the carousel is hidden.
+  return (
+    <>
+      <div className="md:hidden">{carousel}</div>
+      <div className="hidden grid-cols-2 gap-3 md:grid">
+        {slides.map((s, i) =>
+          s.kind === 'image' ? (
+            <button
+              key={`${s.kind}-${s.src}-${i}`}
+              type="button"
+              aria-label={`Open ${label(s, i).toLowerCase()}`}
+              onClick={() => setLightbox(i)}
+              className="aspect-[4/5] cursor-zoom-in overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              style={CARD}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={s.src}
+                alt={count > 1 ? `${alt} – photo ${i + 1}` : alt}
+                loading={i < 2 ? undefined : 'lazy'}
+                draggable={false}
+                className="h-full w-full object-cover"
+              />
+            </button>
+          ) : (
+            <div key={`${s.kind}-${s.src}-${i}`} className="flex aspect-[4/5] items-center overflow-hidden rounded-2xl bg-black">
+              {s.kind === 'youtube' ? (
+                <iframe
+                  src={s.src}
+                  title={`${alt} video`}
+                  loading="lazy"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  allowFullScreen
+                  className="aspect-video w-full border-0"
+                />
+              ) : (
+                <video src={s.src} controls playsInline preload="metadata" className="max-h-full w-full" aria-label={`${alt} video`} />
+              )}
+            </div>
+          ),
+        )}
+      </div>
+    </>
   );
 }
 

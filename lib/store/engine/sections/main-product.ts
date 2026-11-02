@@ -29,6 +29,7 @@ export const mainProduct: SectionSchema = {
       options: [
         { value: 'side', label: 'Beside the image' },
         { value: 'bottom', label: 'Below the image' },
+        { value: 'grid', label: 'Photos in a grid' },
       ],
     },
     { id: 'sticky_info', type: 'checkbox', label: 'Keep product info in view while scrolling', default: true },

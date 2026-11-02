@@ -318,7 +318,7 @@ export function EngineMainProduct({
 }: {
   blocks: ProductBlockProps[];
   galleryPosition: 'left' | 'right';
-  thumbs: 'side' | 'bottom';
+  thumbs: 'side' | 'bottom' | 'grid';
   stickyInfo: boolean;
   stickyBuyBar?: boolean;
 }) {
