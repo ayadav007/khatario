@@ -29,6 +29,16 @@ export function buyButtonState(input: {
 }
 
 /**
+ * The chosen variant's size for display: its `size` attribute (any key case or spacing), else its variant name
+ * (a colour-only variant is named "Red"). Empty when it has neither.
+ */
+export function variantSizeLabel(variant: { variant_name: string; attributes?: unknown }): string {
+  const axes = variantOptions([variant as StoreVariantInput]);
+  const size = axes.find((a) => a.key === 'size')?.values[0]?.value;
+  return size ?? String(variant.variant_name ?? '').trim();
+}
+
+/**
  * The "Only N left in <size>" note under the size buttons: when the chosen variant has stock but no more than `threshold`.
  * The size is the variant's `size` attribute, found the way the picker finds it (any key case or spacing); a variant with
  * no size (colour only, or just a name) is named by its variant name. A threshold of 0 hides the note.
@@ -40,9 +50,7 @@ export function lowStockNote(
   if (!variant || !(threshold > 0)) return null;
   const stock = Number(variant.current_stock);
   if (!Number.isFinite(stock) || stock <= 0 || stock > threshold) return null;
-  const axes = variantOptions([variant as StoreVariantInput]);
-  const size = axes.find((a) => a.key === 'size')?.values[0]?.value;
-  const name = size ?? String(variant.variant_name ?? '').trim();
+  const name = variantSizeLabel(variant);
   return name ? `Only ${stock} left in ${name}` : `Only ${stock} left`;
 }
 

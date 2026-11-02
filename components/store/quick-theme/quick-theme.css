@@ -284,8 +284,8 @@
 }
 @media (max-width:767px){
 .st-root.store-quick .eng-buybar{bottom:calc(64px + env(safe-area-inset-bottom))}
-/* Room for the bar under the footer. */
-body[data-eng-buy-bar="on"] .st-root .st-cq{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+/* Room for the bar under the footer (the footer wrapper only: the sticky header is also an .st-cq and must not change size). */
+body[data-eng-buy-bar="on"] .st-root.eng-root .eng-footer-wrap{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
 }
 /* One bar at the bottom: while the Add to bag bar shows, the phone kit's cart bar (and Quick's) steps aside. */
 body[data-eng-buy-bar="on"] .qk-kit,body[data-eng-buy-bar="on"] .qk-cartBar{display:none}

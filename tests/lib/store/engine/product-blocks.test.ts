@@ -1,4 +1,4 @@
-import { buyButtonState, lowStockNote, stickyBuyBarVisible } from '@/components/store/engine/product/product-blocks';
+import { buyButtonState, lowStockNote, stickyBuyBarVisible, variantSizeLabel } from '@/components/store/engine/product/product-blocks';
 
 const base = { canAdd: true, stock: 5, needsVariant: false, variantChosen: false, inCart: false, quantity: 0 };
 
@@ -68,5 +68,17 @@ describe('stickyBuyBarVisible', () => {
           }
     expect(shown).toBe(1);
     expect(stickyBuyBarVisible({ enabled: true, phone: true, buyInView: false, hasProduct: true })).toBe(true);
+  });
+});
+
+describe('variantSizeLabel', () => {
+  it('shows the size attribute, not the whole variant name', () => {
+    expect(variantSizeLabel({ variant_name: 'Red / XL', attributes: { Colour: 'Red', Size: 'XL' } })).toBe('XL');
+    expect(variantSizeLabel({ variant_name: 'Red / XL', attributes: { ' SIZE ': ' xl ' } })).toBe('xl');
+  });
+
+  it('falls back to the variant name when there is no size', () => {
+    expect(variantSizeLabel({ variant_name: 'Red', attributes: { Colour: 'Red' } })).toBe('Red');
+    expect(variantSizeLabel({ variant_name: ' Red ', attributes: null })).toBe('Red');
   });
 });

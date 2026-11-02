@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
-import { stickyBuyBarVisible } from './product-blocks';
+import { stickyBuyBarVisible, variantSizeLabel } from './product-blocks';
 
 const PHONE_QUERY = '(max-width: 767px)';
 
@@ -75,7 +75,7 @@ export function StickyBuyBar({ buyBlockId, optionsBlockId }: { buyBlockId: strin
     >
       <div className="min-w-0 flex-1 leading-tight">
         <p className="text-base font-bold tabular-nums">{inr(offer.price)}</p>
-        {needsVariant && variant ? <p className="truncate text-xs opacity-70">{variant.variant_name}</p> : null}
+        {needsVariant && variant ? <p className="truncate text-xs opacity-70">{variantSizeLabel(variant)}</p> : null}
       </div>
       {state === 'stepper' ? (
         <BuyStepper quantity={quantity} stock={offer.stock} onChange={setQuantity} />

@@ -410,7 +410,7 @@ export function EngineShell({
             {children}
           </main>
         )}
-        <div className="st-cq">{footer}</div>
+        <div className="st-cq eng-footer-wrap">{footer}</div>
         {quick ? (
           <>
             {/* Not inside .qk-kit: Quick's bar shows on every width (it hides itself when the cart is empty). */}
