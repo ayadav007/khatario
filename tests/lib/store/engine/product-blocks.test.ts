@@ -1,4 +1,4 @@
-import { buyButtonState, lowStockNote } from '@/components/store/engine/product/product-blocks';
+import { buyButtonState, lowStockNote, stickyBuyBarVisible } from '@/components/store/engine/product/product-blocks';
 
 const base = { canAdd: true, stock: 5, needsVariant: false, variantChosen: false, inCart: false, quantity: 0 };
 
@@ -51,5 +51,22 @@ describe('lowStockNote', () => {
 
   it('shows nothing without a variant', () => {
     expect(lowStockNote(null, 3)).toBeNull();
+  });
+});
+
+describe('stickyBuyBarVisible', () => {
+  it('shows the sticky bar only on phones when the buy buttons are out of view', () => {
+    const bools = [false, true];
+    let shown = 0;
+    for (const enabled of bools)
+      for (const phone of bools)
+        for (const buyInView of bools)
+          for (const hasProduct of bools) {
+            const expected = enabled && phone && !buyInView && hasProduct;
+            expect(stickyBuyBarVisible({ enabled, phone, buyInView, hasProduct })).toBe(expected);
+            if (expected) shown += 1;
+          }
+    expect(shown).toBe(1);
+    expect(stickyBuyBarVisible({ enabled: true, phone: true, buyInView: false, hasProduct: true })).toBe(true);
   });
 });

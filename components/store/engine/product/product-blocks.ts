@@ -45,3 +45,13 @@ export function lowStockNote(
   const name = size ?? String(variant.variant_name ?? '').trim();
   return name ? `Only ${stock} left in ${name}` : `Only ${stock} left`;
 }
+
+/** The phone "Add to bag" bar: only when the merchant turned it on, on a phone, with a product, and the page's buy buttons are out of view. */
+export function stickyBuyBarVisible(input: {
+  enabled: boolean;
+  phone: boolean;
+  buyInView: boolean;
+  hasProduct: boolean;
+}): boolean {
+  return input.enabled && input.phone && input.hasProduct && !input.buyInView;
+}

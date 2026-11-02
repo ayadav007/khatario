@@ -1,23 +1,17 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Heart, Minus, Plus, Share2, Truck } from 'lucide-react';
+import { Heart, Share2, Truck } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
 import { StoreStars } from '@/components/store/StoreStars';
 import { ProductGallery, ProductInfoTabs, VariantPicker } from '@/components/store/features/product';
 import { shareUrl } from '@/lib/store/engine/links';
 import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, storePinKey } from '@/lib/store/store-pincode';
 import { useEngineProduct } from './EngineProductContext';
-import { buyButtonState, lowStockNote, type ProductBlockProps } from './product-blocks';
+import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
+import { lowStockNote, type ProductBlockProps } from './product-blocks';
+import { StickyBuyBar } from './StickyBuyBar';
 
-const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-
-// Buttons follow the section's colour scheme (button / button text), else the store's primary colour.
-const BTN: CSSProperties = {
-  background: 'var(--c-btn, var(--primary))',
-  color: 'var(--c-btn-text, var(--on-primary, #fff))',
-  borderRadius: 'var(--btn-radius, 10px)',
-};
 const OUTLINE: CSSProperties = {
   borderColor: 'color-mix(in srgb, currentColor 20%, transparent)',
   borderRadius: 'var(--btn-radius, 10px)',
@@ -112,44 +106,15 @@ function VariantBlock({ id, settings }: ProductBlockProps) {
 }
 
 function BuyButtonsBlock({ id, settings }: ProductBlockProps) {
-  const { product, offer, needsVariant, variant, cartItem, add, setQuantity } = useEngineProduct();
+  const buy = useBuyState();
   const { favoriteIds, toggleFavorite } = useStore();
-  if (!product || !offer) return null;
-  const quantity = cartItem?.quantity ?? 0;
-  const state = buyButtonState({
-    canAdd: offer.canAdd,
-    stock: offer.stock,
-    needsVariant,
-    variantChosen: variant != null,
-    inCart: !!cartItem,
-    quantity,
-  });
+  if (!buy) return null;
+  const { product, offer, state, quantity, add, setQuantity } = buy;
   const favorite = favoriteIds.includes(product.id);
   return (
     <div data-eng-block={id} className="flex items-stretch gap-3">
       {state === 'stepper' ? (
-        <div className="inline-flex min-h-12 items-center" style={BTN}>
-          <button
-            type="button"
-            className="flex h-12 w-12 items-center justify-center"
-            aria-label="Decrease quantity"
-            onClick={() => setQuantity(quantity - 1)}
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-          <span className="min-w-[2rem] text-center font-medium tabular-nums" aria-live="polite">
-            {quantity}
-          </span>
-          <button
-            type="button"
-            className="flex h-12 w-12 items-center justify-center disabled:opacity-40"
-            aria-label="Increase quantity"
-            disabled={quantity >= offer.stock}
-            onClick={() => setQuantity(quantity + 1)}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
+        <BuyStepper quantity={quantity} stock={offer.stock} onChange={setQuantity} />
       ) : (
         <button
           type="button"
@@ -349,11 +314,13 @@ export function EngineMainProduct({
   galleryPosition,
   thumbs,
   stickyInfo,
+  stickyBuyBar = false,
 }: {
   blocks: ProductBlockProps[];
   galleryPosition: 'left' | 'right';
   thumbs: 'side' | 'bottom';
   stickyInfo: boolean;
+  stickyBuyBar?: boolean;
 }) {
   const { product } = useEngineProduct();
   if (!product) return null;
@@ -372,6 +339,12 @@ export function EngineMainProduct({
           return Block ? <Block key={b.id} {...b} /> : null;
         })}
       </div>
+      {stickyBuyBar ? (
+        <StickyBuyBar
+          buyBlockId={blocks.find((b) => b.type === 'buy_buttons')?.id ?? null}
+          optionsBlockId={blocks.find((b) => b.type === 'variant_picker')?.id ?? null}
+        />
+      ) : null}
     </div>
   );
 }

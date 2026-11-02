@@ -32,6 +32,7 @@ export const mainProduct: SectionSchema = {
       ],
     },
     { id: 'sticky_info', type: 'checkbox', label: 'Keep product info in view while scrolling', default: true },
+    { id: 'sticky_buy_bar', type: 'checkbox', label: 'Show an Add to bag bar on phones', default: false },
   ],
   blocks: [
     {

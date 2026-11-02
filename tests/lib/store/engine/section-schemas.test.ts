@@ -18,6 +18,7 @@ describe('main-product schema', () => {
     expect(setting('gallery_position')).toMatchObject({ type: 'select', default: 'left' });
     expect(setting('thumbs')).toMatchObject({ type: 'select', default: 'side' });
     expect(setting('sticky_info')).toMatchObject({ type: 'checkbox', default: true });
+    expect(setting('sticky_buy_bar')).toMatchObject({ type: 'checkbox', default: false });
     const blocks = Object.fromEntries((schema.blocks ?? []).map((b) => [b.type, b]));
     expect(Object.keys(blocks)).toEqual([
       'title',

@@ -24,6 +24,7 @@ export function MainProduct({ section, route }: EngineSectionProps) {
       galleryPosition={str(s.gallery_position) === 'right' ? 'right' : 'left'}
       thumbs={str(s.thumbs) === 'bottom' ? 'bottom' : 'side'}
       stickyInfo={s.sticky_info !== false}
+      stickyBuyBar={s.sticky_buy_bar === true}
     />
   );
 }
