@@ -37,6 +37,7 @@ export const PRESET_LOOK: Record<ThemePreset, PresetLook> = {
   grocery: { canvas: PACK_CANVAS.grocery, accent: STORE_THEME_PRESETS.grocery.accent, font_heading: 'inter', font_body: 'inter', button_radius: 24, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' },
   heritage: { canvas: '#fcf9f3', accent: '#7a0c1e', font_heading: 'newsreader', font_body: 'manrope', button_radius: 0, card_style: 'bordered', label_style: 'caps', frame_style: 'accent', texture: 'dots' },
   khatario: { canvas: PACK_CANVAS.khatario, accent: STORE_THEME_PRESETS.khatario.accent, font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' },
+  drop: { canvas: '#0d0d0d', accent: '#d4ff3a', font_heading: 'anton', font_body: 'space-grotesk', button_radius: 0, card_style: 'plain', label_style: 'caps', frame_style: 'none', texture: 'none' },
 };
 
 const RGB_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -107,6 +108,25 @@ function heritageLight(id: string, name: string, background: string): ColorSchem
   };
 }
 
+/** A Drop Culture scheme: border and card are the text mixed into the background, like Heritage's dark schemes. */
+function dropScheme(n: number, name: string, background: string, text: string, accent: string, button: string, button_text: string): ColorScheme {
+  return {
+    id: `scheme-${n}`,
+    name,
+    background,
+    text,
+    accent,
+    button,
+    button_text,
+    border: mixHex(text, background, 0.12),
+    card: mixHex(text, background, 0.06),
+  };
+}
+
+const DROP_INK = '#0d0d0d';
+const DROP_BONE = '#f2f0ea';
+const DROP_VOLT = '#d4ff3a';
+
 /**
  * Presets whose six schemes are a fixed table rather than derived from a paper and an accent. `schemesFor` returns
  * the table as it is, whatever the store's accent: the merchant edits the schemes in Studio 2 for their own colour.
@@ -149,6 +169,14 @@ export const PRESET_SCHEMES: Partial<Record<ThemePreset, ColorScheme[]>> = {
       border: mixHex(HERITAGE_INK, HERITAGE_GOLD, 0.2),
       card: mixHex('#ffffff', HERITAGE_GOLD, 0.2),
     },
+  ],
+  drop: [
+    dropScheme(1, 'Ink', DROP_INK, DROP_BONE, DROP_VOLT, DROP_VOLT, DROP_INK),
+    dropScheme(2, 'Concrete', '#1f1f1f', DROP_BONE, DROP_VOLT, DROP_BONE, DROP_INK),
+    dropScheme(3, 'Bone', DROP_BONE, DROP_INK, DROP_INK, DROP_INK, DROP_BONE),
+    dropScheme(4, 'Volt', DROP_VOLT, DROP_INK, DROP_INK, DROP_INK, DROP_VOLT),
+    dropScheme(5, 'Alarm', '#ff4d2e', DROP_INK, DROP_INK, DROP_INK, '#ff4d2e'),
+    dropScheme(6, 'Smoke', '#2a2a2a', DROP_BONE, DROP_VOLT, DROP_VOLT, DROP_INK),
   ],
 };
 

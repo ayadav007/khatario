@@ -26,6 +26,14 @@ describe('engineRootClass', () => {
     expect(r.quick).toBe(false);
   });
 
+  it('adds eng-preset-drop', () => {
+    const r = engineRootClass({ preset: 'drop', phoneKit: false, editor: false, schemeBackground: '#0d0d0d', style: { label_style: 'caps', frame_style: 'none', texture: 'none' } });
+    const c = classes(r.className);
+    expect(c).toEqual(expect.arrayContaining(['eng-preset-drop', 'eng-labels-caps', 'is-dark']));
+    expect(c).not.toContain('eng-preset-studio');
+    expect(r.quick).toBe(false);
+  });
+
   it('grocery follows the phone kit setting', () => {
     const off = engineRootClass({ preset: 'grocery', phoneKit: false, editor: false, schemeBackground: '#f6f7f4', style });
     expect(off.kit).toBe(false);

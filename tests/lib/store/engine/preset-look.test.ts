@@ -184,3 +184,51 @@ describe('heritage schemes', () => {
     });
   });
 });
+
+describe('drop schemes', () => {
+  const SCHEMES: [string, string, string, string, string, string][] = [
+    ['Ink', '#0d0d0d', '#f2f0ea', '#d4ff3a', '#d4ff3a', '#0d0d0d'],
+    ['Concrete', '#1f1f1f', '#f2f0ea', '#d4ff3a', '#f2f0ea', '#0d0d0d'],
+    ['Bone', '#f2f0ea', '#0d0d0d', '#0d0d0d', '#0d0d0d', '#f2f0ea'],
+    ['Volt', '#d4ff3a', '#0d0d0d', '#0d0d0d', '#0d0d0d', '#d4ff3a'],
+    ['Alarm', '#ff4d2e', '#0d0d0d', '#0d0d0d', '#0d0d0d', '#ff4d2e'],
+    ['Smoke', '#2a2a2a', '#f2f0ea', '#d4ff3a', '#d4ff3a', '#0d0d0d'],
+  ];
+
+  it('holds the PRESET_LOOK.drop values', () => {
+    expect(PRESET_LOOK.drop).toEqual({ canvas: '#0d0d0d', accent: '#d4ff3a', font_heading: 'anton', font_body: 'space-grotesk', button_radius: 0, card_style: 'plain', label_style: 'caps', frame_style: 'none', texture: 'none' });
+  });
+
+  it('holds the spec table, with borders and cards mixed from text and background', () => {
+    const s = schemesFor('drop', undefined);
+    expect(s).toEqual(
+      SCHEMES.map(([name, background, text, accent, button, button_text], i) => ({
+        id: `scheme-${i + 1}`, name, background, text, accent, button, button_text,
+        border: mixHex(text, background, 0.12),
+        card: mixHex(text, background, 0.06),
+      })),
+    );
+  });
+
+  it('drop ignores the store accent', () => {
+    const base = schemesFor('drop', '#004537');
+    for (const accent of ['nope', '', undefined]) expect(schemesFor('drop', accent)).toEqual(base);
+    expect(schemesFor('drop', '#004537', '#ffffff')).toEqual(base);
+  });
+
+  it('every drop accent and button reads on its background (3:1)', () => {
+    for (const x of schemesFor('drop', undefined)) {
+      expect(contrastRatio(x.accent, x.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(x.button, x.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(x.button_text, x.button)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('survives sanitising unchanged and gives Drop its fonts, corners and style fields', () => {
+    const s = schemesFor('drop', undefined);
+    expect(sanitizeColorSchemes(s)).toEqual(s);
+    expect(presetSettings({ businessName: 'X', tagline: '' }, 'drop')).toMatchObject({
+      font_heading: 'anton', font_body: 'space-grotesk', button_radius: 0, card_style: 'plain', label_style: 'caps', frame_style: 'none', texture: 'none',
+    });
+  });
+});

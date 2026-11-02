@@ -5,6 +5,7 @@ import { quickPreset } from './quick';
 import { groceryPreset } from './grocery';
 import { khatarioPreset } from './khatario';
 import { heritagePreset } from './heritage';
+import { dropPreset } from './drop';
 import { convertLegacyMenus } from '../menus-sanitize';
 import { convertLegacyHeroSections } from '../hero-convert';
 
@@ -31,6 +32,8 @@ function buildPreset(preset: ThemePreset, ctx: PresetContext): ThemeData {
       return khatarioPreset(ctx);
     case 'heritage':
       return heritagePreset(ctx);
+    case 'drop':
+      return dropPreset(ctx);
     case 'studio':
     default:
       return studioPreset(ctx);
