@@ -757,6 +757,9 @@ export interface StudioProductTileProps {
   tagline?: string | null;
   /** Colour dots under the price. */
   swatches?: StoreSwatch[];
+  /** Card design: size chips for the `sizes` line, sold-out ones marked, and how many more sizes there are. */
+  sizes?: { value: string; soldOut: boolean }[];
+  moreSizes?: number;
   /** Leaves out the "% OFF" badge (a product's own badge replaces it); the struck-through MRP stays. */
   hideDiscountBadge?: boolean;
   /** Card design: the brand line. */
@@ -927,6 +930,8 @@ function DesignedProductTile({
   actions,
   tagline,
   swatches,
+  sizes,
+  moreSizes,
   hideDiscountBadge,
   card,
 }: StudioProductTileProps & { card: NonNullable<StudioProductTileProps['card']> }) {
@@ -1038,6 +1043,18 @@ function DesignedProductTile({
             {priceLine}
           </div>
         );
+      case 'sizes':
+        return sizes?.length ? (
+          <div key={u} className="psizes">
+            {sizes.map((s) => (
+              <span key={s.value} className={s.soldOut ? 'is-out' : undefined}>
+                {s.value}
+                {s.soldOut ? <span className="pc-sr"> (sold out)</span> : null}
+              </span>
+            ))}
+            {moreSizes && moreSizes > 0 ? <span className="pc-more">+{moreSizes}</span> : null}
+          </div>
+        ) : null;
       case 'swatches':
         return swatches?.length ? (
           <div key={u} className="pswatches">

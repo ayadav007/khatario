@@ -13,6 +13,8 @@ import { useEngineCardLook } from './engine/EngineCardContext';
 import { productCardLook } from '@/lib/store/engine/card-look';
 import { isDesignedCard } from '@/lib/store/engine/card-render';
 import { cardBadges } from '@/lib/store/engine/card-badges';
+import { cardSizes } from '@/lib/store/engine/card-sizes';
+import type { StoreVariantInput } from '@/lib/store/variant-options';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -311,6 +313,8 @@ function ProductCard({
     const designed = engineLook && isDesignedCard(engineLook.card) ? { look: engineLook.card, schemes: engineLook.schemes } : undefined;
     const tagline = designed ? product.store_tagline : (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
     const swatches = designed ? product.store_swatches : (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
+    // Size chips for the `sizes` line: only a product with options has sizes; one without a size option gets none.
+    const sizeChips = product.has_variants ? cardSizes(product.variants as StoreVariantInput[]) : null;
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
     // A card design draws its own buttons from these (its button style, Buy now, the stepper); Theme's own gets none of it.
     const designedExtras = designed
@@ -346,6 +350,8 @@ function ProductCard({
         badges={badges}
         tagline={tagline}
         swatches={swatches}
+        sizes={sizeChips?.sizes}
+        moreSizes={sizeChips?.more}
         rating={product.rating_avg}
         ratingCount={product.rating_count}
         lowStock={lowStockCount(product)}
