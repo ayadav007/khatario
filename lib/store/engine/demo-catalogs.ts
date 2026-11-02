@@ -40,6 +40,7 @@ function catalog(folder: DemoCatalogId, categories: { id: string; name: string }
     featured_in_store: i < 8,
     store_badge: null,
     store_tagline: null,
+    store_fit_note: null,
     store_swatches: [],
     variants: [],
     ...extra,

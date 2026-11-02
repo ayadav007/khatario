@@ -57,6 +57,7 @@ const EMPTY_STORE_PAGE: ItemStorePageValue = {
   size_chart: null,
   store_badge: '',
   store_tagline: '',
+  store_fit_note: '',
   store_swatches: [],
   store_returnable: true,
 };
@@ -512,6 +513,7 @@ export default function NewItemPage() {
               size_chart: ((item as { size_chart?: SizeChart | null }).size_chart as SizeChart | null) ?? null,
               store_badge: (item as { store_badge?: string | null }).store_badge ?? '',
               store_tagline: (item as { store_tagline?: string | null }).store_tagline ?? '',
+              store_fit_note: (item as { store_fit_note?: string | null }).store_fit_note ?? '',
               store_swatches: Array.isArray((item as { store_swatches?: unknown }).store_swatches)
                 ? ((item as { store_swatches: StoreSwatch[] }).store_swatches)
                 : [],
@@ -835,6 +837,7 @@ export default function NewItemPage() {
         size_chart: storePage.size_chart,
         store_badge: storePage.store_badge,
         store_tagline: storePage.store_tagline,
+        store_fit_note: storePage.store_fit_note,
         store_swatches: storePage.store_swatches,
       });
       if (!extrasCheck.ok) {
@@ -859,6 +862,9 @@ export default function NewItemPage() {
       }
       if (extrasChanged(storePage.store_tagline.trim(), loadedStorePage.store_tagline.trim())) {
         storePagePayload.store_tagline = extrasCheck.value.store_tagline ?? null;
+      }
+      if (extrasChanged(storePage.store_fit_note.trim(), loadedStorePage.store_fit_note.trim())) {
+        storePagePayload.store_fit_note = extrasCheck.value.store_fit_note ?? null;
       }
       if (extrasChanged(storePage.store_swatches, loadedStorePage.store_swatches)) {
         storePagePayload.store_swatches = extrasCheck.value.store_swatches ?? [];

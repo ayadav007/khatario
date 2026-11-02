@@ -92,18 +92,20 @@ function PriceBlock({ id, settings }: ProductBlockProps) {
 }
 
 function VariantBlock({ id, settings }: ProductBlockProps) {
-  const { needsVariant, variants, variant, variantId, setVariantId } = useEngineProduct();
-  if (!needsVariant) return null;
+  const { product, needsVariant, variants, variant, variantId, setVariantId } = useEngineProduct();
+  const fitNote = product?.store_fit_note?.trim() || null;
+  if (!needsVariant && !fitNote) return null;
   const threshold = Math.min(10, Math.max(0, Math.floor(Number(settings.low_stock_at) || 0)));
-  const note = lowStockNote(variant, threshold);
+  const note = needsVariant ? lowStockNote(variant, threshold) : null;
   return (
     <div data-eng-block={id}>
-      <VariantPicker variants={variants} value={variantId} onChange={setVariantId} />
+      {needsVariant ? <VariantPicker variants={variants} value={variantId} onChange={setVariantId} /> : null}
       {note ? (
         <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--c-accent, var(--primary))' }} aria-live="polite">
           {note}
         </p>
       ) : null}
+      {fitNote ? <p className="mt-2 text-sm opacity-70">{fitNote}</p> : null}
     </div>
   );
 }

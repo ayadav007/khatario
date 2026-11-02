@@ -421,7 +421,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
-    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_fit_note', 'store_swatches', 'store_returnable'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -585,6 +585,10 @@ export async function POST(request: NextRequest) {
         if (v.store_tagline !== undefined) {
           vals.push(v.store_tagline);
           sets.push(`store_tagline = $${vals.length}`);
+        }
+        if (v.store_fit_note !== undefined) {
+          vals.push(v.store_fit_note);
+          sets.push(`store_fit_note = $${vals.length}`);
         }
         if (v.store_swatches !== undefined) {
           vals.push(JSON.stringify(v.store_swatches));

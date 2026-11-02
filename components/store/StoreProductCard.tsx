@@ -48,6 +48,8 @@ export interface StoreProduct {
   seo_image_url?: string | null;
   store_badge?: string | null;
   store_tagline?: string | null;
+  /** Fit advice shown under the size buttons on the product page. */
+  store_fit_note?: string | null;
   store_swatches?: StoreSwatch[];
   /** False when the shop marked the product as not returnable online (treated as returnable when absent). */
   returnable?: boolean;

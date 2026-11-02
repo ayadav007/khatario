@@ -17,6 +17,7 @@ export type ItemStorePageValue = {
   size_chart: SizeChart | null;
   store_badge: string;
   store_tagline: string;
+  store_fit_note: string;
   store_swatches: StoreSwatch[];
   /** Shoppers may ask to return this product from their store account. */
   store_returnable: boolean;
@@ -69,6 +70,7 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
     size_chart: value.size_chart,
     store_badge: value.store_badge,
     store_tagline: value.store_tagline,
+    store_fit_note: value.store_fit_note,
     store_swatches: value.store_swatches,
   });
   const error = check.ok ? null : check.error;
@@ -110,6 +112,20 @@ export function ItemStorePageFields({ value, onChange, categoryChart, serverErro
             value={value.store_tagline}
             onChange={(e) => set({ store_tagline: e.target.value })}
           />
+        </div>
+        <div>
+          <label htmlFor="store-fit-note" className="type-label mb-1.5 block">Fit note</label>
+          <input
+            id="store-fit-note"
+            className="input w-full"
+            maxLength={80}
+            placeholder="e.g. Oversized fit. Size down for a regular fit."
+            value={value.store_fit_note}
+            onChange={(e) => set({ store_fit_note: e.target.value })}
+          />
+          <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+            Shown under the size buttons, like &quot;Oversized fit. Size down for a regular fit.&quot;
+          </p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">

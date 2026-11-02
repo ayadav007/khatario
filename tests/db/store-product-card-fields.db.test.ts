@@ -1,7 +1,7 @@
 /**
- * Product card fields (badge, tagline, colour swatches) against real PostgreSQL: saved on the item and
+ * Product card fields (badge, tagline, fit note, colour swatches) against real PostgreSQL: saved on the item and
  * returned by the shared store items query. Runs only when PHASE2_TEST_DATABASE_URL points at a
- * disposable database with migration 458 applied.
+ * disposable database with migrations 458 and 462 applied.
  */
 import { randomUUID } from 'crypto';
 import type { Pool } from 'pg';
@@ -58,6 +58,21 @@ d('Store product card fields (real DB)', () => {
       store_tagline: 'Varanasi',
       store_swatches: [{ name: 'Gold', hex: '#c89d53' }],
     });
+  });
+
+  it('saves and returns store_fit_note', async () => {
+    const FIT = randomUUID();
+    await pool.query(
+      `INSERT INTO items (id, business_id, name, unit, purchase_price, selling_price, tax_rate, show_in_store)
+       VALUES ($1, $2, 'Boxy tee', 'PCS', 50, 100, 5, true)`,
+      [FIT, BIZ],
+    );
+    // The item update path stores the cleaned value: `store_fit_note = $n`.
+    await pool.query(`UPDATE items SET store_fit_note = $1 WHERE id = $2 AND business_id = $3`, ['Oversized fit', FIT, BIZ]);
+    const q = buildStoreItemsQuery({ businessId: BIZ, limit: 10, offset: 0 });
+    const rows = (await pool.query(q.listSql, q.listParams)).rows.map(mapStoreItemRow);
+    expect(rows.find((r) => r.id === FIT)?.store_fit_note).toBe('Oversized fit');
+    expect(rows.find((r) => r.id === PLAIN)?.store_fit_note).toBeNull();
   });
 
   it('gives items without card fields a null badge, null tagline and no swatches', async () => {
