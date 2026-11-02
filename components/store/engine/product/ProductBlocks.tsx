@@ -7,7 +7,7 @@ import { StoreStars } from '@/components/store/StoreStars';
 import { ProductGallery, ProductInfoTabs, VariantPicker } from '@/components/store/features/product';
 import { shareUrl } from '@/lib/store/engine/links';
 import { useEngineProduct } from './EngineProductContext';
-import { buyButtonState, type ProductBlockProps } from './product-blocks';
+import { buyButtonState, lowStockNote, type ProductBlockProps } from './product-blocks';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
@@ -91,12 +91,19 @@ function PriceBlock({ id, settings }: ProductBlockProps) {
   );
 }
 
-function VariantBlock({ id }: ProductBlockProps) {
-  const { needsVariant, variants, variantId, setVariantId } = useEngineProduct();
+function VariantBlock({ id, settings }: ProductBlockProps) {
+  const { needsVariant, variants, variant, variantId, setVariantId } = useEngineProduct();
   if (!needsVariant) return null;
+  const threshold = Math.min(10, Math.max(0, Math.floor(Number(settings.low_stock_at) || 0)));
+  const note = lowStockNote(variant, threshold);
   return (
     <div data-eng-block={id}>
       <VariantPicker variants={variants} value={variantId} onChange={setVariantId} />
+      {note ? (
+        <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--c-accent, var(--primary))' }} aria-live="polite">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }

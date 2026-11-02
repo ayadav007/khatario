@@ -51,7 +51,23 @@ export const mainProduct: SectionSchema = {
       limit: 1,
       settings: [{ id: 'show_tax_note', type: 'checkbox', label: 'Show GST note', default: true }],
     },
-    { type: 'variant_picker', name: 'Options', limit: 1, settings: [] },
+    {
+      type: 'variant_picker',
+      name: 'Options',
+      limit: 1,
+      settings: [
+        {
+          id: 'low_stock_at',
+          type: 'range',
+          label: 'Show "Only N left" at',
+          min: 0,
+          max: 10,
+          step: 1,
+          default: 0,
+          info: '0 hides it',
+        },
+      ],
+    },
     {
       type: 'buy_buttons',
       name: 'Buy buttons',
