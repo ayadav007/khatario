@@ -6,7 +6,7 @@ import { useStore } from '@/lib/store/store-context';
 import { StoreStars } from '@/components/store/StoreStars';
 import { ProductGallery, ProductInfoTabs, VariantPicker } from '@/components/store/features/product';
 import { shareUrl } from '@/lib/store/engine/links';
-import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, storePinKey } from '@/lib/store/store-pincode';
+import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, pincodeToSave, storePinKey } from '@/lib/store/store-pincode';
 import { useEngineProduct } from './EngineProductContext';
 import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
 import { lowStockNote, type ProductBlockProps } from './product-blocks';
@@ -209,8 +209,10 @@ function DeliveryCheckBlock({ id, settings }: ProductBlockProps) {
     const next = cleanPincode(typed);
     setTyped(next);
     setChecked(next);
+    const toSave = pincodeToSave(next);
+    if (!toSave) return;
     try {
-      localStorage.setItem(storePinKey(subdomain), next);
+      localStorage.setItem(storePinKey(subdomain), toSave);
     } catch {
       /* storage blocked */
     }

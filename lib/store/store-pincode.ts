@@ -12,6 +12,12 @@ export function cleanPincode(value: string): string {
   return value.replace(/\D/g, '').slice(0, 6);
 }
 
+/** The pincode worth remembering for the whole store: a full 6-digit one, else null (a half-typed pin is not saved). */
+export function pincodeToSave(value: string): string | null {
+  const pin = cleanPincode(value);
+  return pin.length === 6 ? pin : null;
+}
+
 /**
  * Whether the branch can take orders for this pincode. True while nothing is entered, when the branch lists no
  * pincodes, or when it delivers all over India.

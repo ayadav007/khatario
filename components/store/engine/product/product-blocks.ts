@@ -38,6 +38,11 @@ export function variantSizeLabel(variant: { variant_name: string; attributes?: u
   return size ?? String(variant.variant_name ?? '').trim();
 }
 
+/** The sticky bar's button text while no variant is chosen: "Select size" only when the variants have a size axis. */
+export function pickPromptLabel(variants: StoreVariantInput[]): string {
+  return variantOptions(variants).some((a) => a.key === 'size') ? 'Select size' : 'Choose an option';
+}
+
 /**
  * The "Only N left in <size>" note under the size buttons: when the chosen variant has stock but no more than `threshold`.
  * The size is the variant's `size` attribute, found the way the picker finds it (any key case or spacing); a variant with

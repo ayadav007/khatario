@@ -1,4 +1,4 @@
-import { buyButtonState, lowStockNote, stickyBuyBarVisible, variantSizeLabel } from '@/components/store/engine/product/product-blocks';
+import { buyButtonState, lowStockNote, pickPromptLabel, stickyBuyBarVisible, variantSizeLabel } from '@/components/store/engine/product/product-blocks';
 
 const base = { canAdd: true, stock: 5, needsVariant: false, variantChosen: false, inCart: false, quantity: 0 };
 
@@ -80,5 +80,26 @@ describe('variantSizeLabel', () => {
   it('falls back to the variant name when there is no size', () => {
     expect(variantSizeLabel({ variant_name: 'Red', attributes: { Colour: 'Red' } })).toBe('Red');
     expect(variantSizeLabel({ variant_name: ' Red ', attributes: null })).toBe('Red');
+  });
+});
+
+describe('pickPromptLabel', () => {
+  const variant = (id: string, attributes: unknown) => ({
+    id,
+    variant_name: id,
+    selling_price: '100',
+    current_stock: 3,
+    attributes,
+  });
+
+  it('says Select size only when the variants have a size axis', () => {
+    expect(pickPromptLabel([variant('a', { Size: 'S' }), variant('b', { Size: 'M' })])).toBe('Select size');
+    expect(pickPromptLabel([variant('a', { Colour: 'Red', ' SIZE ': 'S' })])).toBe('Select size');
+  });
+
+  it('says Choose an option for colour-only or unnamed variants', () => {
+    expect(pickPromptLabel([variant('a', { Colour: 'Red' }), variant('b', { Colour: 'Blue' })])).toBe('Choose an option');
+    expect(pickPromptLabel([variant('a', null)])).toBe('Choose an option');
+    expect(pickPromptLabel([])).toBe('Choose an option');
   });
 });

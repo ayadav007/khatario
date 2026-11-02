@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
-import { stickyBuyBarVisible, variantSizeLabel } from './product-blocks';
+import { useEngineProduct } from './EngineProductContext';
+import { pickPromptLabel, stickyBuyBarVisible, variantSizeLabel } from './product-blocks';
 
 const PHONE_QUERY = '(max-width: 767px)';
 
@@ -19,6 +20,7 @@ function blockElement(id: string | null): Element | null {
  */
 export function StickyBuyBar({ buyBlockId, optionsBlockId }: { buyBlockId: string | null; optionsBlockId: string | null }) {
   const buy = useBuyState();
+  const { variants } = useEngineProduct();
   const [phone, setPhone] = useState(false);
   // Starts "in view" so the bar does not flash at the top of the page before the observer reports.
   const [buyInView, setBuyInView] = useState(true);
@@ -81,7 +83,7 @@ export function StickyBuyBar({ buyBlockId, optionsBlockId }: { buyBlockId: strin
         <BuyStepper quantity={quantity} stock={offer.stock} onChange={setQuantity} />
       ) : pickSize ? (
         <button type="button" onClick={scrollToOptions} className="min-h-12 shrink-0 px-6 text-sm font-semibold" style={BTN}>
-          Select size
+          {pickPromptLabel(variants)}
         </button>
       ) : (
         <button
