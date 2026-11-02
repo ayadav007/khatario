@@ -27,6 +27,7 @@ describe('main-product schema', () => {
       'description',
       'collapsible_tab',
       'delivery_estimate',
+      'delivery_check',
       'share',
       'custom_text',
     ]);
@@ -37,6 +38,15 @@ describe('main-product schema', () => {
     expect(blocks.custom_text.limit).toBeUndefined();
     expect(blocks.delivery_estimate.settings.find((s) => s.id === 'text')?.default).toBe('Delivered in 1–2 days');
     expect(blocks.collapsible_tab.settings.find((s) => s.id === 'content')?.type).toBe('richtext');
+  });
+
+  it('has a delivery check block, absent from the default product template', () => {
+    const schema = getSectionSchema('main-product')!;
+    const block = (schema.blocks ?? []).find((b) => b.type === 'delivery_check');
+    expect(block).toMatchObject({ name: 'Delivery check', limit: 1 });
+    expect(block!.settings.find((s) => s.id === 'heading')).toMatchObject({ type: 'text', default: 'Check delivery', max_length: 40 });
+    expect(block!.settings.find((s) => s.id === 'button_label')).toMatchObject({ type: 'text', default: 'Check', max_length: 20 });
+    expect(schema.presets.flatMap((p) => (p.blocks ?? []).map((b) => b.type))).not.toContain('delivery_check');
   });
 
   it('presets title, price, options, buy buttons and description in that order', () => {

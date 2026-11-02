@@ -90,6 +90,15 @@ export const mainProduct: SectionSchema = {
       settings: [{ id: 'text', type: 'text', label: 'Text', default: 'Delivered in 1–2 days', max_length: 80 }],
     },
     {
+      type: 'delivery_check',
+      name: 'Delivery check',
+      limit: 1,
+      settings: [
+        { id: 'heading', type: 'text', label: 'Heading', default: 'Check delivery', max_length: 40 },
+        { id: 'button_label', type: 'text', label: 'Button label', default: 'Check', max_length: 20 },
+      ],
+    },
+    {
       type: 'share',
       name: 'Share',
       limit: 1,

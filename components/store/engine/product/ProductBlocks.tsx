@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store/store-context';
 import { StoreStars } from '@/components/store/StoreStars';
 import { ProductGallery, ProductInfoTabs, VariantPicker } from '@/components/store/features/product';
 import { shareUrl } from '@/lib/store/engine/links';
+import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, storePinKey } from '@/lib/store/store-pincode';
 import { useEngineProduct } from './EngineProductContext';
 import { buyButtonState, lowStockNote, type ProductBlockProps } from './product-blocks';
 
@@ -221,6 +222,74 @@ function DeliveryBlock({ id, settings }: ProductBlockProps) {
   );
 }
 
+/** "Check delivery": the shopper's pincode against the branch's list, shown only when the branch has its own list. */
+function DeliveryCheckBlock({ id, settings }: ProductBlockProps) {
+  const { store, branches, selectedBranchId } = useStore();
+  const subdomain = store?.store_subdomain ?? '';
+  const [typed, setTyped] = useState('');
+  const [checked, setChecked] = useState('');
+  useEffect(() => {
+    if (!subdomain) return;
+    try {
+      const saved = cleanPincode(localStorage.getItem(storePinKey(subdomain)) ?? '');
+      setTyped(saved);
+      setChecked(saved);
+    } catch {
+      /* storage blocked */
+    }
+  }, [subdomain]);
+  const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
+  if (!deliveryCheckShown(branch)) return null;
+  const check = () => {
+    const next = cleanPincode(typed);
+    setTyped(next);
+    setChecked(next);
+    try {
+      localStorage.setItem(storePinKey(subdomain), next);
+    } catch {
+      /* storage blocked */
+    }
+  };
+  const heading = text(settings.heading);
+  const answer = deliveryCheckAnswer(branch, checked);
+  return (
+    <div data-eng-block={id}>
+      {heading ? (
+        <p className="flex items-center gap-2 text-sm font-semibold">
+          <Truck className="h-4 w-4 opacity-60" aria-hidden />
+          {heading}
+        </p>
+      ) : null}
+      <form
+        className="mt-2 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          check();
+        }}
+      >
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="postal-code"
+          maxLength={6}
+          value={typed}
+          onChange={(e) => setTyped(cleanPincode(e.target.value))}
+          placeholder="Pincode"
+          aria-label={heading || 'Delivery pincode'}
+          className="min-h-[44px] w-full min-w-0 flex-1 border bg-transparent px-3 text-sm"
+          style={OUTLINE}
+        />
+        <button type="submit" className="min-h-[44px] shrink-0 px-5 text-sm font-semibold" style={BTN}>
+          {text(settings.button_label) || 'Check'}
+        </button>
+      </form>
+      <p aria-live="polite" className="mt-1 min-h-[1.25rem] text-sm">
+        {answer}
+      </p>
+    </div>
+  );
+}
+
 function ShareBlock({ id, settings }: ProductBlockProps) {
   const { product } = useEngineProduct();
   const [copied, setCopied] = useState(false);
@@ -269,6 +338,7 @@ const BLOCKS: Record<string, (p: ProductBlockProps) => JSX.Element | null> = {
   description: DescriptionBlock,
   collapsible_tab: CollapsibleTabBlock,
   delivery_estimate: DeliveryBlock,
+  delivery_check: DeliveryCheckBlock,
   share: ShareBlock,
   custom_text: CustomTextBlock,
 };
