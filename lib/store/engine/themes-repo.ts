@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { getPool, queryOne, queryRows } from '@/lib/db';
-import { STORE_THEME_PRESETS } from '@/lib/store/store-theme';
+import { sanitizeStoreTheme, STORE_THEME_PRESETS } from '@/lib/store/store-theme';
 import type { ThemeData, ThemeListRow, ThemePreset, ThemeRow } from './types';
 import { ENGINE_LIMITS, sanitizeThemeData, themeTooLarge } from './sanitize';
 import { presetTheme, type PresetContext } from './presets';
@@ -140,12 +140,16 @@ export async function insertMigratedLiveLocked(
   let data = sanitizeThemeData(result.data);
   if (themeTooLarge(data)) {
     // The store facts presetContextFor reads, taken from the input so nothing is read outside this transaction.
-    const ctx = presetContextFromRow({
-      name: input.ctx.businessName,
-      tagline: input.ctx.tagline,
-      store_theme: input.raw,
-      hero_url: input.ctx.heroUrl,
-    });
+    // A migrated store keeps its own colour, so the fallback carries the store's accent as the migration does.
+    const ctx = {
+      ...presetContextFromRow({
+        name: input.ctx.businessName,
+        tagline: input.ctx.tagline,
+        store_theme: input.raw,
+        hero_url: input.ctx.heroUrl,
+      }),
+      accent: sanitizeStoreTheme(input.raw).accent,
+    };
     preset = 'studio';
     name = STORE_THEME_PRESETS.studio.label;
     data = sanitizeThemeData(presetTheme('studio', ctx));

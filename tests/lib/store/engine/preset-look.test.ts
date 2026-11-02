@@ -94,12 +94,16 @@ describe('schemesFor', () => {
 });
 
 describe('presetContextFromRow', () => {
-  it('uses the pack accent for a named preset', () => {
-    expect(presetContextFromRow({ name: 'A', store_theme: { preset: 'grocery', accent: '#ff0000' } }).accent).toBe('#176b45');
+  it('carries no store accent, so an added theme starts in its own colours', () => {
+    expect(presetContextFromRow({ name: 'A', store_theme: { preset: 'grocery', accent: '#ff0000' } }).accent).toBeUndefined();
+    expect(presetContextFromRow({ name: 'A', store_theme: { preset: 'custom', accent: '#ff0000' } }).accent).toBeUndefined();
   });
 
-  it('uses the stored accent for a custom theme', () => {
-    expect(presetContextFromRow({ name: 'A', store_theme: { preset: 'custom', accent: '#ff0000' } }).accent).toBe('#ff0000');
+  it('gives an added preset its own accent whatever the store accent', () => {
+    for (const p of ['studio', 'quick', 'grocery', 'khatario'] as ThemePreset[]) {
+      const ctx = presetContextFromRow({ name: 'A', store_theme: { preset: 'custom', accent: '#ff0000' } });
+      expect(presetSettings(ctx, p).color_schemes[0].accent).toBe(PRESET_LOOK[p].accent);
+    }
   });
 
   it('fills the rest of the context', () => {
