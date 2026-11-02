@@ -31,13 +31,14 @@ interface PendingActionsButtonProps {
   };
 }
 
-export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data }) => {
-  const [isOpen, setIsOpen] = useState(false);
+export type PendingActionsState = ReturnType<typeof usePendingActions>;
+
+/** Pending counts for the dashboard: shared by the "Needs your attention" tile and the side panel. */
+export function usePendingActions(data: PendingActionsButtonProps['data']) {
   const [itcPending, setItcPending] = useState<{ count: number | null; note: string | null }>({
     count: null,
     note: null,
   });
-  const containerRef = useRef<HTMLDivElement>(null);
   const { isPrimaryAdmin } = useAuth();
   const { currentBranchId } = useBranch();
 
@@ -128,9 +129,27 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
     ];
   }, [data, isPrimaryAdmin, currentBranchId, itcPending]);
 
-  // Calculate total pending count
   const totalPending = pendingActions.reduce((sum, action) => sum + action.count, 0);
   const hasPendingActions = totalPending > 0 || Boolean(itcPending.note);
+  return { pendingActions, totalPending, hasPendingActions, itcPending };
+}
+
+interface PendingActionsPanelProps {
+  pending: PendingActionsState;
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+  /** The orange "PENDING" strip on the right edge. Off when the page opens the panel itself. */
+  showTrigger?: boolean;
+}
+
+export const PendingActionsButton: React.FC<PendingActionsPanelProps> = ({
+  pending,
+  isOpen,
+  setIsOpen,
+  showTrigger = true,
+}) => {
+  const { pendingActions, totalPending, hasPendingActions, itcPending } = pending;
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside
   useEffect(() => {
@@ -144,11 +163,12 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
   return (
     <div ref={containerRef} className="fixed right-0 top-1/2 -translate-y-1/2 z-50">
       {/* Main Button - Vertical Strip */}
+      {showTrigger ? (
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`relative w-8 h-32 flex items-center justify-center shadow-lg hover:shadow-xl transition-all transform hover:scale-105 rounded-l-lg ${
@@ -173,6 +193,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
           </span>
         )}
       </button>
+      ) : null}
 
       {/* Expanded Menu */}
       {isOpen && (

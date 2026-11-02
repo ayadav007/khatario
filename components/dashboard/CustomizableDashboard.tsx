@@ -2,7 +2,23 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, Edit, Save, X, Layout } from 'lucide-react';
+import {
+  Plus,
+  Edit,
+  Save,
+  X,
+  Layout,
+  BarChart3,
+  Receipt,
+  Users,
+  Wallet,
+  Clock,
+  Package,
+  TrendingUp,
+  Trophy,
+  Snowflake,
+  type LucideIcon,
+} from 'lucide-react';
 import { Widget, WidgetConfig } from './Widget';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -14,23 +30,26 @@ interface AvailableWidget {
   id: string;
   type: string;
   title: string;
-  icon: string;
+  icon: LucideIcon;
   /** Optional feature flag gating availability in the picker + renderer. */
   featureId?: string;
 }
 
 // Available widget types
 const AVAILABLE_WIDGETS: AvailableWidget[] = [
-  { id: 'sales-summary', type: 'sales_summary', title: 'Sales Summary', icon: '📊' },
-  { id: 'recent-invoices', type: 'recent_invoices', title: 'Recent Invoices', icon: '🧾' },
-  { id: 'top-customers', type: 'top_customers', title: 'Top Customers', icon: '👥' },
-  { id: 'cash-flow', type: 'cash_flow', title: 'Cash Flow', icon: '💰' },
-  { id: 'pending-payments', type: 'pending_payments', title: 'Pending Payments', icon: '⏰' },
-  { id: 'inventory-alerts', type: 'inventory_alerts', title: 'Inventory Alerts', icon: '📦' },
-  { id: 'sales-chart', type: 'sales_chart', title: 'Sales Chart', icon: '📈' },
-  { id: 'top-products', type: 'top_products', title: 'Top Products', icon: '🏆' },
-  { id: 'dead-stock', type: 'dead_stock', title: 'Dead Stock', icon: '🧊', featureId: 'dead_stock_widget' },
+  { id: 'sales-summary', type: 'sales_summary', title: 'Sales Summary', icon: BarChart3 },
+  { id: 'recent-invoices', type: 'recent_invoices', title: 'Recent Invoices', icon: Receipt },
+  { id: 'top-customers', type: 'top_customers', title: 'Top Customers', icon: Users },
+  { id: 'cash-flow', type: 'cash_flow', title: 'Cash Flow', icon: Wallet },
+  { id: 'pending-payments', type: 'pending_payments', title: 'Pending Payments', icon: Clock },
+  { id: 'inventory-alerts', type: 'inventory_alerts', title: 'Inventory Alerts', icon: Package },
+  { id: 'sales-chart', type: 'sales_chart', title: 'Sales Chart', icon: TrendingUp },
+  { id: 'top-products', type: 'top_products', title: 'Top Products', icon: Trophy },
+  { id: 'dead-stock', type: 'dead_stock', title: 'Dead Stock', icon: Snowflake, featureId: 'dead_stock_widget' },
 ];
+
+/** Offered as one-click tiles while the dashboard has no widgets. */
+const SUGGESTED_WIDGET_TYPES = ['top_customers', 'top_products', 'pending_payments', 'dead_stock'];
 
 interface CustomizableDashboardProps {
   businessId: string;
@@ -84,19 +103,22 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
     }
   };
 
+  const persistWidgets = async (list: WidgetConfig[]) => {
+    const response = await fetch('/api/dashboard/widgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_id: businessId,
+        widgets: list,
+      }),
+    });
+    return response.ok;
+  };
+
   const saveWidgets = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/dashboard/widgets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: businessId,
-          widgets,
-        }),
-      });
-
-      if (response.ok) {
+      if (await persistWidgets(widgets)) {
         setIsEditMode(false);
       }
     } catch (error) {
@@ -107,17 +129,41 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
     }
   };
 
+  const newWidgetConfig = (type: string, title: string, index: number): WidgetConfig => ({
+    id: `widget-${Date.now()}`,
+    type,
+    title,
+    position: { x: 0, y: index * 2 },
+    size: { width: 1, height: 1 },
+  });
+
   const addWidget = (type: string, title: string) => {
-    const newWidget: WidgetConfig = {
-      id: `widget-${Date.now()}`,
-      type,
-      title,
-      position: { x: 0, y: widgets.length * 2 },
-      size: { width: 1, height: 1 },
-    };
-    setWidgets([...widgets, newWidget]);
+    setWidgets([...widgets, newWidgetConfig(type, title, widgets.length)]);
     setShowAddWidget(false);
   };
+
+  /** Suggested tile: add the widget and save straight away, no edit mode. */
+  const quickAddWidget = async (type: string, title: string) => {
+    const previous = widgets;
+    const next = [...widgets, newWidgetConfig(type, title, widgets.length)];
+    setWidgets(next);
+    setLoading(true);
+    try {
+      if (!(await persistWidgets(next))) throw new Error('save failed');
+    } catch (error) {
+      console.error('Failed to add widget:', error);
+      setWidgets(previous);
+      toast.error('Could not add the widget');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const iconForType = (type: string) => AVAILABLE_WIDGETS.find((w) => w.type === type)?.icon;
+
+  const suggestedWidgets = SUGGESTED_WIDGET_TYPES.map((type) =>
+    availableWidgets.find((w) => w.type === type)
+  ).filter((w): w is AvailableWidget => Boolean(w));
 
   const removeWidget = (id: string) => {
     setWidgets(widgets.filter(w => w.id !== id));
@@ -202,22 +248,49 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
 
   if (widgets.length === 0 && !isEditMode && !showAddWidget) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-background/80 px-3 py-2 dark:bg-slate-900/40">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Layout className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
-          <p className="truncate text-xs text-text-secondary">Add a widget to this dashboard</p>
+      <section className="space-y-3 rounded-2xl border border-dashed border-border bg-surface/60 p-3 dark:bg-slate-900/40 md:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-1.5 text-sm font-bold text-text-primary md:text-base">
+              <Layout className="h-4 w-4 shrink-0" aria-hidden />
+              My Dashboard
+            </h2>
+            <p className="truncate text-caption text-text-secondary md:text-xs">Add a widget to this dashboard</p>
+          </div>
+          <Button
+            type="button"
+            onClick={() => setIsEditMode(true)}
+            variant="secondary"
+            size="sm"
+            className="h-8 shrink-0 gap-1 px-2.5 text-xs md:h-9 md:px-3 md:text-sm"
+            disabled={!widgetsLoaded}
+          >
+            <Edit className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            Customize
+          </Button>
         </div>
-        <Button
-          type="button"
-          onClick={() => setIsEditMode(true)}
-          variant="secondary"
-          size="sm"
-          className="h-8 shrink-0 px-2.5 text-xs"
-          disabled={!widgetsLoaded}
-        >
-          Customize
-        </Button>
-      </div>
+        {suggestedWidgets.length > 0 ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-3 lg:grid-cols-4">
+            {suggestedWidgets.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => void quickAddWidget(w.type, w.title)}
+                disabled={!widgetsLoaded || loading}
+                className="flex min-h-[64px] items-center gap-3 rounded-xl border border-dashed border-border bg-surface p-3 text-left transition-colors hover:border-accent-500 disabled:opacity-60 md:p-4"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-100 text-accent-800">
+                  <Plus className="h-4 w-4" aria-hidden />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-text-primary">{w.title}</span>
+                  <span className="block text-caption text-text-secondary">Add widget</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
     );
   }
 
@@ -227,7 +300,7 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <Layout className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400 md:h-5 md:w-5" />
-          <h2 className="truncate text-sm font-semibold text-text-primary md:text-base">
+          <h2 className="truncate text-sm font-bold text-text-primary md:text-base">
             My Dashboard
           </h2>
         </div>
@@ -290,6 +363,7 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
           >
             <Widget
               widget={widget}
+              icon={iconForType(widget.type)}
               onRemove={removeWidget}
               onResize={resizeWidget}
               isDragging={draggedWidget === widget.id}
@@ -300,6 +374,22 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
           </div>
         ))}
       </div>
+
+      {!isEditMode ? (
+        <button
+          type="button"
+          onClick={() => {
+            setIsEditMode(true);
+            setShowAddWidget(true);
+          }}
+          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface/60 text-sm font-bold text-text-primary transition-colors hover:border-accent-500 dark:bg-slate-900/40"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-100 text-accent-800">
+            <Plus className="h-4 w-4" aria-hidden />
+          </span>
+          Add widget
+        </button>
+      ) : null}
 
       {/* Add Widget Modal */}
       {showAddWidget && (
@@ -316,18 +406,23 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              {availableWidgets.map((widgetType) => (
-                <button
-                  key={widgetType.id}
-                  onClick={() => addWidget(widgetType.type, widgetType.title)}
-                  className="p-4 border border-border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-primary-500 dark:hover:border-primary-400 transition-all text-left"
-                >
-                  <div className="text-2xl mb-2">{widgetType.icon}</div>
-                  <div className="font-medium text-text-primary">
-                    {widgetType.title}
-                  </div>
-                </button>
-              ))}
+              {availableWidgets.map((widgetType) => {
+                const Icon = widgetType.icon;
+                return (
+                  <button
+                    key={widgetType.id}
+                    onClick={() => addWidget(widgetType.type, widgetType.title)}
+                    className="p-4 border border-border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-primary-500 dark:hover:border-primary-400 transition-all text-left"
+                  >
+                    <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-slate-700 dark:text-slate-100">
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <div className="font-medium text-text-primary">
+                      {widgetType.title}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

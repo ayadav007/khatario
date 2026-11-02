@@ -38,6 +38,9 @@ const KIND_LABEL: Record<string, string> = {
   expense: 'Expense',
 };
 
+/** Kinds that bring money in (green); everything else is money out (orange). Fixed colours, not brand. */
+const MONEY_IN_KINDS = new Set(['invoice', 'payment_in', 'purchase_return']);
+
 function transactionHref(tx: { id: string; kind: string }): string {
   switch (tx.kind) {
     case 'invoice':
@@ -147,31 +150,35 @@ export function RecentTransactionsFeed() {
   return (
     <Card className="overflow-hidden" padding="none">
       <div className="z-20 border-b border-border bg-surface/95 backdrop-blur-md lg:sticky lg:top-0">
-        <div className="px-4 pb-2 pt-3 md:px-6 md:pt-5">
-          <h2 className="text-base font-semibold text-text-primary md:text-lg">Recent transactions</h2>
-          <div className="relative mt-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search number or party"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-text-primary outline-none ring-primary-500 focus:ring-2"
-              aria-label="Search transactions"
-            />
+        <div className="px-4 pt-3 md:px-6 md:pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <h2 className="text-base font-bold text-text-primary md:text-lg">Recent transactions</h2>
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search number or party"
+                className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-text-primary outline-none ring-primary-500 focus:ring-2"
+                aria-label="Search transactions"
+              />
+            </div>
           </div>
-          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          <div className="mt-2 flex gap-5 overflow-x-auto" role="tablist" aria-label="Transaction type">
             {RECENT_TX_FILTERS.map((item) => {
               const active = item === filter;
               return (
                 <button
                   key={item}
                   type="button"
+                  role="tab"
+                  aria-selected={active}
                   onClick={() => setFilter(item)}
-                  className={
+                  className={`shrink-0 border-b-2 px-1 py-2.5 text-xs font-semibold transition-colors md:text-sm ${
                     active
-                      ? 'shrink-0 rounded-full bg-primary-600 px-3 py-1 text-xs font-semibold text-white'
-                      : 'shrink-0 rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-text-secondary'
-                  }
+                      ? 'border-accent-500 text-text-primary'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
                 >
                   {FILTER_LABEL[item]}
                 </button>
@@ -193,33 +200,55 @@ export function RecentTransactionsFeed() {
         </div>
       ) : (
         <div className="divide-y divide-border">
-          {rows.map((tx) => (
-            <Link
-              key={`${tx.kind}-${tx.id}`}
-              href={transactionHref(tx)}
-              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-100/90 dark:hover:bg-slate-800/70 md:px-6"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-semibold text-primary-600 dark:text-primary-400">
-                    {KIND_LABEL[tx.kind] || tx.kind}
+          {rows.map((tx) => {
+            const date = tx.doc_date ? new Date(tx.doc_date) : null;
+            const moneyIn = MONEY_IN_KINDS.has(tx.kind);
+            return (
+              <Link
+                key={`${tx.kind}-${tx.id}`}
+                href={transactionHref(tx)}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-100/90 dark:hover:bg-slate-800/70 md:gap-4 md:px-6"
+              >
+                <div
+                  className={`w-11 shrink-0 rounded-lg py-1 text-center md:w-12 ${
+                    moneyIn ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-background dark:bg-slate-800/60'
+                  }`}
+                  title={date ? format(date, 'dd MMM yyyy') : undefined}
+                >
+                  <p className="text-sm font-extrabold leading-tight tabular-nums text-text-primary md:text-base">
+                    {date ? format(date, 'dd') : '—'}
+                  </p>
+                  <p className="text-2xs font-bold uppercase text-text-secondary">
+                    {date ? format(date, 'MMM') : ''}
+                  </p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-text-primary">
+                    <span
+                      className={
+                        moneyIn ? 'text-emerald-700 dark:text-emerald-300' : 'text-orange-700 dark:text-orange-300'
+                      }
+                    >
+                      {KIND_LABEL[tx.kind] || tx.kind}
+                    </span>
                     {tx.doc_number ? ` · ${tx.doc_number}` : ''}
                   </p>
-                  <p className="shrink-0 text-sm font-bold tabular-nums text-text-primary">
-                    ₹ {Number(tx.amount || 0).toLocaleString('en-IN')}
-                  </p>
+                  <p className="truncate text-xs text-text-secondary">{tx.party}</p>
                 </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-secondary">
-                  <span className="truncate">{tx.party}</span>
-                  <span className="shrink-0 text-text-muted">·</span>
-                  <span className="shrink-0 text-text-muted">
-                    {tx.doc_date ? format(new Date(tx.doc_date), 'dd MMM yyyy') : '—'}
-                  </span>
+                <div className="hidden shrink-0 sm:block">
                   <StatusBadge status={tx.status || 'final'} />
                 </div>
-              </div>
-            </Link>
-          ))}
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-extrabold tabular-nums text-text-primary md:text-base">
+                    ₹ {Number(tx.amount || 0).toLocaleString('en-IN')}
+                  </p>
+                  <div className="sm:hidden">
+                    <StatusBadge status={tx.status || 'final'} />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
 

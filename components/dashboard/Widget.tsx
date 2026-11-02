@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GripVertical, X, Maximize2, Minimize2 } from 'lucide-react';
+import { GripVertical, X, Maximize2, Minimize2, type LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 
 export interface WidgetConfig {
@@ -15,6 +15,7 @@ export interface WidgetConfig {
 
 interface WidgetProps {
   widget: WidgetConfig;
+  icon?: LucideIcon;
   onRemove: (id: string) => void;
   onResize: (id: string, size: { width: number; height: number }) => void;
   isDragging?: boolean;
@@ -24,6 +25,7 @@ interface WidgetProps {
 
 export const Widget: React.FC<WidgetProps> = ({
   widget,
+  icon: Icon,
   onRemove,
   onResize,
   isDragging = false,
@@ -55,14 +57,19 @@ export const Widget: React.FC<WidgetProps> = ({
     >
       <Card className="h-full flex flex-col">
         {/* Widget Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 p-4 pb-2">
+          <div className="flex min-w-0 items-center gap-2.5">
             {isEditMode && (
               <div className="drag-handle cursor-grab active:cursor-grabbing">
                 <GripVertical className="w-4 h-4 text-text-muted" />
               </div>
             )}
-            <h3 className="font-semibold text-text-primary">
+            {Icon ? (
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-slate-700 dark:text-slate-100">
+                <Icon className="h-4 w-4" aria-hidden />
+              </span>
+            ) : null}
+            <h3 className="truncate text-sm font-bold text-text-primary">
               {widget.title}
             </h3>
           </div>
@@ -92,7 +99,7 @@ export const Widget: React.FC<WidgetProps> = ({
         </div>
 
         {/* Widget Content */}
-        <div className="flex-1 p-4 overflow-auto">
+        <div className="flex-1 overflow-auto px-4 pb-4 pt-1">
           {children}
         </div>
       </Card>

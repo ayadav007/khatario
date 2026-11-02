@@ -222,7 +222,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
           <path
             d={path}
             fill="none"
-            stroke="#032B23"
+            className="stroke-primary-600 dark:stroke-primary-300"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -234,10 +234,11 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               cx={point.x}
               cy={point.y}
               r="5"
-              fill="#032B23"
               stroke={c.pointStroke}
               strokeWidth="2"
-              className="cursor-pointer"
+              className={`cursor-pointer ${
+                i === points.length - 1 ? 'fill-accent-500' : 'fill-primary-600 dark:fill-primary-300'
+              }`}
               aria-label={`${point.fullMonth}: ₹${point.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
             />
           ))}
@@ -297,9 +298,9 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
 
   return (
     <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
-      <div className="mb-2 flex items-center justify-between gap-2 px-3 pt-3 md:mb-3 md:px-5 md:pt-4">
+      <div className="mb-3 flex items-center justify-between gap-2 px-3 pt-3 md:mb-4 md:px-5 md:pt-5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
+          <h3 className="truncate text-sm font-bold text-text-primary md:text-base">
             Cash Flow
           </h3>
           <div className="relative group shrink-0">
@@ -330,7 +331,9 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </select>
       </div>
 
-      <div>
+      <CashFlowSummary data={data} openingDate={openingDate} closingDate={closingDate} />
+
+      <div className="mt-auto pt-3 md:pt-4">
         {chartBody}
         {data && data.months.length > 1 && (() => {
           const closings = data.months.map((m) => m.closing);
@@ -347,13 +350,26 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         })()}
       </div>
 
-      {/* Summary Panel */}
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-3 py-3 md:grid-cols-4 md:gap-3 md:px-5 md:py-4">
-        <div className="group relative flex flex-col">
+    </Card>
+  );
+});
+
+function CashFlowSummary({
+  data,
+  openingDate,
+  closingDate,
+}: {
+  data: CashFlowData | null;
+  openingDate: string;
+  closingDate: string;
+}) {
+  return (
+      <div className="grid grid-cols-2 gap-2 px-3 md:grid-cols-4 md:px-5">
+        <div className="group relative flex flex-col rounded-lg bg-background px-2.5 py-2 dark:bg-slate-800/60 md:px-3 md:py-2.5">
           <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
-            Cash as on {openingDate}
+            Cash on {openingDate}
           </p>
-          <p className="cursor-help text-sm font-bold tabular-nums text-text-primary md:text-base">
+          <p className="cursor-help text-sm font-extrabold tabular-nums text-text-primary md:text-base">
             ₹{(data?.summary.opening_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
@@ -366,10 +382,10 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </div>
         
         {/* Incoming with breakdown tooltip */}
-        <div className="group relative flex flex-col">
+        <div className="group relative flex flex-col rounded-lg bg-emerald-50 px-2.5 py-2 dark:bg-emerald-950/30 md:px-3 md:py-2.5">
           <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">Incoming</p>
-          <p className="cursor-help text-sm font-bold tabular-nums text-green-600 md:text-base">
-            <span className="text-green-600">+</span> ₹{(data?.summary.total_incoming || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          <p className="cursor-help text-sm font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300 md:text-base">
+            <span>+</span> ₹{(data?.summary.total_incoming || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           {data?.summary.breakdown && (
             <div className="absolute left-0 bottom-full mb-2 w-72 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
@@ -390,10 +406,10 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </div>
 
         {/* Outgoing with breakdown tooltip */}
-        <div className="group relative flex flex-col">
+        <div className="group relative flex flex-col rounded-lg bg-orange-50 px-2.5 py-2 dark:bg-orange-950/30 md:px-3 md:py-2.5">
           <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">Outgoing</p>
-          <p className="cursor-help text-sm font-bold tabular-nums text-red-600 md:text-base">
-            <span className="text-red-600">-</span> ₹{(data?.summary.total_outgoing || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          <p className="cursor-help text-sm font-extrabold tabular-nums text-orange-700 dark:text-orange-300 md:text-base">
+            <span>−</span> ₹{(data?.summary.total_outgoing || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           {data?.summary.breakdown && (
             <div className="absolute left-0 bottom-full mb-2 w-72 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
@@ -420,12 +436,12 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </div>
 
         {/* Closing Balance with calculation tooltip */}
-        <div className="group relative flex flex-col">
-          <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
-            Cash as on {closingDate}
+        <div className="group relative flex flex-col rounded-lg bg-primary-600 px-2.5 py-2 text-on-primary md:px-3 md:py-2.5">
+          <p className="mb-0.5 text-2xs leading-tight opacity-75 md:text-xs">
+            Cash on {closingDate}
           </p>
-          <p className="cursor-help text-sm font-bold tabular-nums text-gray-900 md:text-base">
-            <span className="text-text-secondary">=</span> ₹{(data?.summary.closing_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          <p className="cursor-help text-sm font-extrabold tabular-nums md:text-base">
+            <span>=</span> ₹{(data?.summary.closing_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
             <p className="font-semibold mb-2">Closing Balance Calculation:</p>
@@ -451,8 +467,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
           </div>
         </div>
       </div>
-    </Card>
   );
-});
+}
 
 

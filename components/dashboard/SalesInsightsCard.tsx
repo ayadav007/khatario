@@ -146,11 +146,12 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     }
 
     const maxValue = Math.max(...buckets.map((b) => b.sales), 1);
+    const peakKey = buckets.reduce((best, b) => (b.sales > best.sales ? b : best), buckets[0]).key;
     const width = 800;
     const height = plotHeight;
     const paddingLeft = 52;
     const paddingRight = 8;
-    const paddingTop = 2;
+    const paddingTop = 18;
     const paddingBottom = preset === 'day' && data?.granularity === 'hour' ? 22 : 26;
     const chartWidth = width - paddingLeft - paddingRight;
     const chartHeight = height - paddingTop - paddingBottom;
@@ -200,6 +201,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
               maxValue > 0 ? Math.max(salesValue > 0 ? 2 : 0, (salesValue / maxValue) * chartHeight) : 0;
             const y = paddingTop + chartHeight - barH;
             const showLabel = i % labelEvery === 0 || i === buckets.length - 1;
+            const isPeak = bucket.key === peakKey && salesValue > 0;
 
             return (
               <g key={bucket.key}>
@@ -209,12 +211,23 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
                     y={y}
                     width={barWidth}
                     height={barH}
-                    rx={2}
-                    fill="#032B23"
+                    rx={4}
                     data-bucket-key={bucket.key}
-                    className="opacity-90"
+                    className={isPeak ? 'fill-accent-500' : 'fill-primary-600 opacity-90 dark:fill-primary-400'}
                     aria-label={`${bucket.label}: ${formatInr(salesValue)} (${bucket.receipt_count} receipts)`}
                   />
+                )}
+                {isPeak && (
+                  <text
+                    x={x + barWidth / 2}
+                    y={y - 5}
+                    textAnchor="middle"
+                    fontSize="11"
+                    fontWeight="700"
+                    className="fill-text-primary"
+                  >
+                    {formatCompactInr(salesValue)}
+                  </text>
                 )}
                 {showLabel && (
                   <text
@@ -236,27 +249,26 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
   }, [data?.buckets, data?.granularity, isDarkMode, plotHeight, preset]);
 
   const summary = data?.summary;
+  const busiestNote =
+    data?.granularity === 'hour'
+      ? 'Busiest hour highlighted'
+      : data?.granularity === 'week'
+        ? 'Week starting · busiest week highlighted'
+        : 'Busiest day highlighted';
 
   return (
-    <Card padding="none" className="overflow-hidden border border-border !shadow-none">
-      <div className="mb-3 flex flex-col gap-3 px-3 pt-3 sm:flex-row sm:items-center sm:justify-between md:px-5 md:pt-4">
+    <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
+      <div className="flex flex-col gap-3 px-3 pt-3 sm:flex-row sm:items-start sm:justify-between md:px-5 md:pt-5">
         <div className="flex min-w-0 items-center gap-2">
           <TrendingUp className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-text-primary md:text-base">Sales insights</h2>
+            <h2 className="text-sm font-bold text-text-primary md:text-base">Sales insights</h2>
             <p className="text-caption text-text-secondary md:text-xs">{chartSubtitle}</p>
           </div>
         </div>
 
-      </div>
-
-      {loading ? (
-        <div className="flex h-40 items-center justify-center md:h-52">
-          <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
-        </div>
-      ) : (
-        <>
-          <div className="mx-3 mb-0 grid grid-cols-3 gap-2 border-y border-border py-3 md:mx-5 md:gap-4 md:py-4">
+        {!loading ? (
+          <div className="grid grid-cols-3 gap-3 sm:flex sm:gap-6 md:gap-7">
             <SummaryStat
               label="Receipts"
               value={String(summary?.receipt_count ?? 0)}
@@ -266,7 +278,6 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
               label="Net sales"
               value={formatInr(summary?.net_sales ?? 0)}
               hint="Incl. GST"
-              prominent
             />
             <SummaryStat
               label="Avg sale"
@@ -274,38 +285,35 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
               hint="Per receipt"
             />
           </div>
+        ) : null}
+      </div>
 
-          <div>{chartBody}</div>
-        </>
+      {loading ? (
+        <div className="flex h-40 items-center justify-center md:h-52">
+          <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
+        </div>
+      ) : (
+        <div className="mt-auto pt-3 md:pt-4">
+          {chartBody}
+          {data?.buckets.some((b) => b.sales > 0) ? (
+            <p className="px-3 pb-3 text-2xs text-text-muted md:px-5 md:pb-4 md:text-caption">{busiestNote}</p>
+          ) : null}
+        </div>
       )}
     </Card>
   );
 });
 
-function SummaryStat({
-  label,
-  value,
-  hint,
-  prominent = false,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  prominent?: boolean;
-}) {
+function SummaryStat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="text-center">
-      <p className="text-2xs font-medium uppercase tracking-wide text-text-secondary md:text-caption">
+    <div className="min-w-0">
+      <p className="text-2xs font-semibold uppercase tracking-wider text-text-secondary md:text-caption">
         {label}
       </p>
-      <p
-        className={`mt-0.5 truncate text-sm font-bold md:text-lg ${
-          prominent ? 'text-gray-900 dark:text-gray-100' : 'text-text-primary'
-        }`}
-      >
+      <p className="mt-0.5 truncate text-sm font-extrabold tabular-nums text-text-primary md:text-lg">
         {value}
       </p>
-      <p className="mt-0.5 hidden text-2xs text-text-muted sm:block">{hint}</p>
+      <p className="hidden text-2xs text-text-muted sm:block">{hint}</p>
     </div>
   );
 }

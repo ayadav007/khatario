@@ -22,16 +22,20 @@ export function DashboardChartsSection({
   }
 
   return (
-    <div ref={ref} className="grid grid-cols-1 gap-stack-section md:gap-stack-page lg:grid-cols-2">
+    <div ref={ref} className="grid grid-cols-1 gap-stack-section md:gap-stack-page lg:grid-cols-12">
       {mounted ? (
         <>
-          <CashFlowChart businessId={businessId} />
-          <SalesVsPurchasesChart businessId={businessId} dateRange={chartDateRange} />
+          <div className="min-w-0 lg:col-span-7">
+            <CashFlowChart businessId={businessId} />
+          </div>
+          <div className="min-w-0 lg:col-span-5">
+            <SalesVsPurchasesChart businessId={businessId} dateRange={chartDateRange} />
+          </div>
         </>
       ) : (
         <>
-          <div className="h-36 rounded-lg border border-border bg-surface md:h-48" aria-hidden />
-          <div className="h-36 rounded-lg border border-border bg-surface md:h-48" aria-hidden />
+          <div className="h-36 rounded-lg border border-border bg-surface md:h-48 lg:col-span-7" aria-hidden />
+          <div className="h-36 rounded-lg border border-border bg-surface md:h-48 lg:col-span-5" aria-hidden />
         </>
       )}
     </div>
