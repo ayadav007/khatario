@@ -95,9 +95,9 @@ A `delivery_check` product block (limit 1):
 | `heading` | text, 40 | `Check delivery` |
 | `button_label` | text, 20 | `Check` |
 
-- It reuses `lib/store/store-pincode.ts`. `cleanPincode` reads the input, `pincodeServiceable` checks it against the store's delivery areas, and `pincodeLine` gives the answer line.
+- It reuses `lib/store/store-pincode.ts`: `cleanPincode` reads the input and `pincodeServiceable` checks it against the selected branch. The answer is "Delivers to 560001" or "We don't deliver to 560001 yet".
 - The pincode is remembered under `storePinKey`, so the Quick header and this block share it.
-- The block renders nothing when the store has no delivery areas.
+- The block renders nothing when the branch lists no pincodes or delivers all over India, because then every pincode passes and the check says nothing.
 - Existing product templates don't have the block.
 
 ### 2.8 Sticky "Add to bag" bar on phones
