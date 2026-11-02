@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { countdownParts } from './countdown-logic';
+import { countdownParts, countdownUnits } from './countdown-logic';
 import { useFollowLink } from '../EngineViews';
 
 /** Ticks every second. Renders nothing on the server (the clock belongs to the visitor), then the boxes after mount. */
@@ -46,6 +46,57 @@ export function EngineCountdown({
           {buttonLabel} →
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The countdown block inside the hero: a label with the time left, as boxes or one line. Ticks like EngineCountdown and
+ * renders nothing on the server. An unreadable end time hides it whatever `hideWhenOver` says; a past one hides it
+ * when `hideWhenOver` is set, and otherwise shows zeros.
+ */
+export function EngineInlineCountdown({
+  label,
+  endsAt,
+  style,
+  hideWhenOver,
+}: {
+  label: string;
+  endsAt: string;
+  style: 'boxes' | 'inline';
+  hideWhenOver: boolean;
+}) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  if (now === null) return null;
+  if (!Number.isFinite(Date.parse(endsAt))) return null;
+  const parts = countdownParts(endsAt, now);
+  if (!parts && hideWhenOver) return null;
+  const units = countdownUnits(parts);
+  if (style === 'inline') {
+    const text = units.map(([unit, n]) => `${String(n).padStart(2, '0')} ${unit}`).join(' : ');
+    return (
+      <p className="eng-cb eng-cb-countdown" role="timer" aria-label={label || 'Countdown'}>
+        {label ? <span className="eng-cb-countdown-label">{label} </span> : null}
+        <b>{text}</b>
+      </p>
+    );
+  }
+  return (
+    <div className="eng-cb eng-cb-countdown">
+      {label ? <span className="eng-cb-countdown-label">{label}</span> : null}
+      <div className="eng-countdown-boxes" role="timer" aria-label={label || 'Countdown'}>
+        {units.map(([unit, n]) => (
+          <div key={unit}>
+            <b>{String(n).padStart(2, '0')}</b>
+            <span>{unit}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

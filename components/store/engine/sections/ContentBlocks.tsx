@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ContentBlock } from '@/lib/store/engine/content-blocks-map';
 import { EngineCtaButton } from '../EngineViews';
+import { EngineInlineCountdown } from './EngineCountdown';
 
 type ButtonBlock = Extract<ContentBlock, { type: 'button' }>;
 
@@ -55,6 +56,8 @@ function renderBlock(b: Exclude<ContentBlock, { type: 'button' }>): ReactNode {
           {b.text ? <span>{b.text}</span> : null}
         </aside>
       );
+    case 'countdown':
+      return <EngineInlineCountdown key={b.id} label={b.label} endsAt={b.endsAt} style={b.style} hideWhenOver={b.hideWhenOver} />;
   }
 }
 

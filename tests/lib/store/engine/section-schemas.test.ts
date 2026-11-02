@@ -93,3 +93,18 @@ describe('small block upgrades', () => {
     expect(getSectionSchema('multicolumn')!.blocks![0].settings.find((s) => s.id === 'image')).toMatchObject({ type: 'image' });
   });
 });
+
+describe('hero countdown block', () => {
+  it('offers one countdown block in the hero and none in rich text', () => {
+    const countdown = getSectionSchema('image-banner')!.blocks?.find((b) => b.type === 'countdown');
+    expect(countdown).toMatchObject({ type: 'countdown', name: 'Countdown', limit: 1 });
+    const ids = (countdown?.settings ?? []).map((s) => s.id);
+    expect(ids).toEqual(['label', 'ends_at', 'style', 'hide_when_over']);
+    expect(countdown?.settings.find((s) => s.id === 'label')).toMatchObject({ default: 'Ends in', max_length: 40 });
+    expect(countdown?.settings.find((s) => s.id === 'style')).toMatchObject({ type: 'select', default: 'boxes' });
+    expect(countdown?.settings.find((s) => s.id === 'hide_when_over')).toMatchObject({ type: 'checkbox', default: true });
+    for (const type of ['rich-text', 'image-with-text']) {
+      expect(getSectionSchema(type)!.blocks?.some((b) => b.type === 'countdown')).toBe(false);
+    }
+  });
+});

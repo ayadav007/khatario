@@ -1,5 +1,5 @@
 import type { BlockSchema, SectionSchema, SettingSchema } from '../schema-types';
-import { CONTENT_BLOCKS } from '../content-blocks';
+import { CONTENT_BLOCKS, COUNTDOWN_BLOCK } from '../content-blocks';
 
 const HERO_BLOCK_TYPES = ['eyebrow', 'heading', 'text', 'button'];
 
@@ -11,7 +11,7 @@ const HERO_BLOCKS: BlockSchema[] = CONTENT_BLOCKS.filter((b) => HERO_BLOCK_TYPES
   if (b.type === 'button') return { ...b, limit: 2 };
   if (b.type === 'eyebrow') return { ...b, name: 'Label' };
   return b;
-});
+}).concat(COUNTDOWN_BLOCK);
 
 /** The nine places the words can sit; the slideshow's slides use the same list. */
 export const POSITION_OPTIONS: SettingSchema['options'] = [

@@ -228,7 +228,7 @@ describe('schemas', () => {
     const schema = getSectionSchema('image-banner')!;
     expect(schema.name).toBe('Hero banner');
     expect(schema.max_blocks).toBe(8);
-    expect(schema.blocks!.map((b) => b.type)).toEqual(['eyebrow', 'heading', 'text', 'button']);
+    expect(schema.blocks!.map((b) => b.type)).toEqual(['eyebrow', 'heading', 'text', 'button', 'countdown']);
     expect(schema.blocks!.find((b) => b.type === 'button')!.limit).toBe(2);
     // Image with text and Rich text share the content blocks: no button cap or rename leaked into them.
     expect(CONTENT_BLOCKS.find((b) => b.type === 'button')!.limit).toBeUndefined();

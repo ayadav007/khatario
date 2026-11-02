@@ -6,6 +6,7 @@ import type { Block, Section } from './types';
 export type HeadingSize = 'small' | 'medium' | 'large' | 'xl' | 'xxl';
 export type TextStyle = 'body' | 'subtitle' | 'caps';
 export type ButtonStyle = 'filled' | 'outline';
+export type CountdownStyle = 'boxes' | 'inline';
 
 export type ContentBlock = { id: string } & (
   | { type: 'eyebrow'; text: string }
@@ -15,11 +16,13 @@ export type ContentBlock = { id: string } & (
   | { type: 'checklist_item'; title: string; text: string }
   | { type: 'button'; label: string; link: string; style: ButtonStyle }
   | { type: 'highlight_card'; eyebrow: string; title: string; text: string }
+  | { type: 'countdown'; label: string; endsAt: string; style: CountdownStyle; hideWhenOver: boolean }
 );
 
 const SIZES: readonly HeadingSize[] = ['small', 'medium', 'large', 'xl', 'xxl'];
 const TEXT_STYLES: readonly TextStyle[] = ['body', 'subtitle', 'caps'];
 const STYLES: readonly ButtonStyle[] = ['filled', 'outline'];
+const COUNTDOWN_STYLES: readonly CountdownStyle[] = ['boxes', 'inline'];
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const filled = (s: string): boolean => s.trim() !== '';
@@ -48,6 +51,18 @@ function toContentBlock(id: string, block: Block, s: Record<string, unknown>): C
       // A card with nothing in it would draw an empty box over the image.
       return filled(card.eyebrow + card.title + card.text) ? { id, type: 'highlight_card', ...card } : null;
     }
+    case 'countdown':
+      // Without an end time there is nothing to count to, whatever "hide when over" says.
+      return filled(str(s.ends_at))
+        ? {
+            id,
+            type: 'countdown',
+            label: str(s.label),
+            endsAt: str(s.ends_at).trim(),
+            style: pick(str(s.style).toLowerCase(), COUNTDOWN_STYLES, 'boxes'),
+            hideWhenOver: s.hide_when_over !== false,
+          }
+        : null;
     default:
       return null;
   }
