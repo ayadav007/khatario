@@ -1,3 +1,4 @@
+import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
 import { demoThemeData, engineDemoStore } from '@/lib/store/engine/demo-stores';
 import { demoCatalogOptions, filterDemoCatalog, themeDemoProducts, themeDemoStore } from '@/lib/store/theme-demo';
 import { isReservedStoreSubdomain, reservedStoreUrlChange } from '@/lib/store/resolve-store';
@@ -42,6 +43,28 @@ describe('demoThemeData', () => {
     expect(json).toContain('/theme-demos/');
     expect(json).not.toContain('/store-presets/heritage/hero-1.svg');
     expect(json).toContain('Welcome to Aarna Jewels');
+  });
+
+  it('draws the drop demo store', () => {
+    const store = engineDemoStore('demo-drop-culture')!;
+    expect(store).toMatchObject({ name: 'VOLTX', demo_preset: 'drop', demo_catalog: 'streetwear', store_tagline: 'Drops every Friday' });
+    const data = demoThemeData(store);
+    const home = JSON.stringify(data.templates.home);
+    expect(data.settings.color_schemes.map((c) => c.name)).toEqual(['Ink', 'Concrete', 'Bone', 'Volt', 'Alarm', 'Smoke']);
+    expect(data.settings.color_schemes[3].background).toBe('#d4ff3a');
+    expect(home).toContain('/theme-demos/heroes/streetwear-1.webp');
+    expect(home).toContain('/theme-demos/streetwear/lookbook-1.webp');
+    expect(home).not.toContain('/store-presets/drop/');
+    expect(home).not.toContain('/store-presets/heritage/');
+    // The three category tiles point at real streetwear categories, so their pictures show.
+    const grid = Object.values(data.templates.home.sections).find((s) => s.type === 'category-grid')!;
+    const tiles = (grid.block_order ?? []).map((id) => grid.blocks![id].settings);
+    expect(tiles.map((t) => t.category)).toEqual(['sw-cat-tees', 'sw-cat-coords', 'sw-cat-denim']);
+    const ids = new Set(DEMO_CATALOGS.streetwear.categories.map((c) => c.id));
+    for (const t of tiles) {
+      expect(ids.has(t.category as string)).toBe(true);
+      expect(String(t.image)).toMatch(/^\/theme-demos\/streetwear\/[a-z-]+\.webp$/);
+    }
   });
 
   it('a slideshow theme gets the catalogue hero and the brand name', () => {

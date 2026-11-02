@@ -160,11 +160,56 @@ const GENERAL = catalog(
   ['general-1', 'general-2'],
 );
 
+const TEE_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
+const WAISTS = ['28', '30', '32', '34', '36'];
+
+/** The sized fields of a product: one variant per size (`stock` lists the units left in each, in the same order). */
+function sized(id: string, price: number, sizes: string[], stock: number[]): Partial<StoreProduct> {
+  return {
+    has_variants: true,
+    current_stock: stock.reduce((sum, n) => sum + n, 0),
+    variants: sizes.map((size, i) => ({
+      id: `${id}-${size}`,
+      variant_name: size,
+      selling_price: price,
+      current_stock: stock[i],
+      attributes: { size },
+    })),
+  };
+}
+
+const STREETWEAR = catalog(
+  'streetwear',
+  [
+    { id: 'sw-cat-tees', name: 'Tees' },
+    { id: 'sw-cat-coords', name: 'Co-ords' },
+    { id: 'sw-cat-denim', name: 'Denim' },
+    { id: 'sw-cat-accessories', name: 'Accessories' },
+  ],
+  [
+    ['sw-1', 'Heavyweight boxy tee', 599, 799, 'sw-cat-tees', 'tee-boxy-white', { ...sized('sw-1', 599, TEE_SIZES, [6, 9, 12, 4, 0]), store_badge: 'Selling fast', store_fit_note: 'Boxy cut: take your usual size for a loose fit, size down for a snug one.' }],
+    ['sw-2', 'Graphic print tee', 499, null, 'sw-cat-tees', 'tee-graphic-black', { ...sized('sw-2', 499, TEE_SIZES, [8, 14, 10, 6, 3]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-3', 'Black and white tee', 549, 699, 'sw-cat-tees', 'tee-duo-bw', { ...sized('sw-3', 549, TEE_SIZES, [0, 7, 11, 8, 5]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-4', 'Sage cotton tee', 549, null, 'sw-cat-tees', 'tee-duo-green', { ...sized('sw-4', 549, TEE_SIZES, [5, 8, 9, 5, 2]), store_badge: 'New' }],
+    ['sw-5', 'Navy zip co-ord', 2499, 2999, 'sw-cat-coords', 'coord-navy', { ...sized('sw-5', 2499, TEE_SIZES, [3, 5, 6, 4, 2]), store_fit_note: 'Relaxed fit. The model is 5 ft 6 in and wears S.' }],
+    ['sw-6', 'Sunshine fleece set', 2299, null, 'sw-cat-coords', 'coord-yellow', { ...sized('sw-6', 2299, TEE_SIZES, [4, 6, 3, 0, 0]), store_badge: 'New' }],
+    ['sw-7', 'Doodle print set', 2799, 3299, 'sw-cat-coords', 'coord-orange', { ...sized('sw-7', 2799, TEE_SIZES, [2, 4, 5, 3, 1]), store_badge: 'Selling fast' }],
+    ['sw-8', 'Slim indigo jeans', 1699, null, 'sw-cat-denim', 'denim-straight', { ...sized('sw-8', 1699, WAISTS, [4, 8, 10, 7, 3]), store_fit_note: 'Slim through the thigh with a little stretch. Order your usual waist.' }],
+    ['sw-9', 'Distressed light-wash jeans', 1899, 2299, 'sw-cat-denim', 'denim-distressed', { ...sized('sw-9', 1899, WAISTS, [3, 6, 0, 5, 2]), store_fit_note: 'Runs a little small: go one waist size up.' }],
+    ['sw-10', 'Carpenter jeans', 1999, null, 'sw-cat-denim', 'promo-denim', { ...sized('sw-10', 1999, WAISTS, [5, 7, 9, 6, 4]) }],
+    ['sw-11', 'Washed dad cap', 499, null, 'sw-cat-accessories', 'cap-grey', { store_tagline: 'One size, adjustable strap' }],
+    ['sw-12', 'Mesh trucker cap', 449, 549, 'sw-cat-accessories', 'cap-white'],
+    ['sw-13', 'Sunny curved cap', 499, null, 'sw-cat-accessories', 'cap-yellow'],
+  ],
+  ['streetwear-1', 'streetwear-2', 'streetwear-3'],
+);
+
 export const DEMO_CATALOGS: Record<DemoCatalogId, DemoCatalog> = {
   jewellery: JEWELLERY,
   fashion: FASHION,
   grocery: GROCERY,
   general: GENERAL,
+  streetwear: STREETWEAR,
 };
 
 export function demoCatalog(id: DemoCatalogId): DemoCatalog {

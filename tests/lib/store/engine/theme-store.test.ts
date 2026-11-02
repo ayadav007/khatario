@@ -25,9 +25,10 @@ describe('filterThemes', () => {
 
   it('tabs: free hides premium, premium shows only premium, new keeps themes added in the last 90 days', () => {
     expect(run({ tab: 'free' })).not.toContain('heritage');
-    expect(run({ tab: 'free' })).toHaveLength(THEME_CATALOG.length - 1);
-    expect(run({ tab: 'premium' })).toEqual(['heritage']);
-    expect(run({ tab: 'new' })).toEqual(['heritage']);
+    expect(run({ tab: 'free' })).toHaveLength(THEME_CATALOG.length - 2);
+    expect(run({ tab: 'free' })).not.toContain('drop');
+    expect(run({ tab: 'premium' }).sort()).toEqual(['drop', 'heritage']);
+    expect(run({ tab: 'new' }).sort()).toEqual(['drop', 'heritage']);
     expect(filterThemes(THEME_CATALOG, { category: 'all', tab: 'new', query: '', sort: 'popular', popularity, today: '2026-06-15' }).length).toBe(
       THEME_CATALOG.length,
     );
@@ -46,7 +47,7 @@ describe('filterThemes', () => {
     expect(byName[byName.length - 1]).toBe('blank');
     const names = byName.slice(0, -1).map((p) => THEME_CATALOG.find((t) => t.preset === p)!.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
-    expect(run({ sort: 'newest' })[0]).toBe('heritage');
+    expect(run({ sort: 'newest' }).slice(0, 2)).toEqual(['drop', 'heritage']);
     expect(run({ sort: 'newest' }).slice(-1)).toEqual(['blank']);
   });
 

@@ -3,7 +3,7 @@ import { PRESET_CHOICES } from '@/lib/store/engine/library';
 
 describe('THEME_CATALOG', () => {
   it('lists every preset exactly once, with unique slugs and known categories', () => {
-    expect(THEME_CATALOG.map((t) => t.preset).sort()).toEqual(['blank', 'grocery', 'heritage', 'khatario', 'quick', 'studio']);
+    expect(THEME_CATALOG.map((t) => t.preset).sort()).toEqual(['blank', 'drop', 'grocery', 'heritage', 'khatario', 'quick', 'studio']);
     expect(new Set(THEME_CATALOG.map((t) => t.slug)).size).toBe(THEME_CATALOG.length);
     for (const t of THEME_CATALOG) {
       expect(t.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
@@ -26,8 +26,33 @@ describe('THEME_CATALOG', () => {
     expect(THEME_CATALOG.filter((t) => t.featured).map((t) => t.slug)).toEqual(['heritage-couture']);
   });
 
-  it('only Heritage Couture is premium', () => {
-    expect(THEME_CATALOG.filter((t) => t.premium).map((t) => t.preset)).toEqual(['heritage']);
+  it('only Heritage Couture and Drop Culture are premium', () => {
+    expect(THEME_CATALOG.filter((t) => t.premium).map((t) => t.preset)).toEqual(['heritage', 'drop']);
+  });
+
+  it('lists Drop Culture as premium with its demo store', () => {
+    const t = catalogTheme('drop-culture')!;
+    expect(t).toMatchObject({
+      preset: 'drop',
+      name: 'Drop Culture',
+      premium: true,
+      categories: ['fashion'],
+      palette: ['#0d0d0d', '#d4ff3a', '#f2f0ea'],
+      canvas: '#0d0d0d',
+      accent: '#d4ff3a',
+      added: '2026-11-02',
+      summary: 'Ink black and acid lime with loud caps headings, for streetwear and drop brands',
+      demo: { subdomain: 'demo-drop-culture', brand: 'VOLTX', tagline: 'Drops every Friday', catalog: 'streetwear' },
+    });
+    expect(t.features).toEqual([
+      'Drop countdown in the hero',
+      'Size chips on product cards',
+      '"Only N left" per size',
+      'Sticky Add to bag on phones',
+      'Delivery check by pincode',
+      'Photos in a grid',
+    ]);
+    expect(catalogThemeByPreset('drop')).toBe(t);
   });
 
   it('finds a theme by slug or preset', () => {

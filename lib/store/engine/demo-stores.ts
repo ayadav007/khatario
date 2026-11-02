@@ -22,6 +22,24 @@ const HERITAGE_PICTURES: Record<string, string> = {
   look: '/theme-demos/heroes/jewellery-2.webp',
 };
 
+/** Drop Culture's sample pictures, swapped for the streetwear photos in its demo store. */
+const DROP_PICTURES: Record<string, string> = {
+  'hero-1': '/theme-demos/heroes/streetwear-1.webp',
+  'promo-1': '/theme-demos/streetwear/promo-tees.webp',
+  'promo-2': '/theme-demos/streetwear/promo-denim.webp',
+  'look-1': '/theme-demos/streetwear/look-patchwork.webp',
+  'gallery-1': '/theme-demos/streetwear/lookbook-1.webp',
+  'gallery-2': '/theme-demos/streetwear/lookbook-2.webp',
+  'gallery-3': '/theme-demos/streetwear/lookbook-3.webp',
+  'gallery-4': '/theme-demos/streetwear/lookbook-4.webp',
+  'category-1': '/theme-demos/streetwear/tee-boxy-white.webp',
+  'category-2': '/theme-demos/streetwear/coord-navy.webp',
+  'category-3': '/theme-demos/streetwear/denim-straight.webp',
+};
+
+/** The streetwear categories Drop's three category tiles show, in tile order (the preset's tiles have no category of their own). */
+const DROP_TILE_CATEGORIES = ['sw-cat-tees', 'sw-cat-coords', 'sw-cat-denim'];
+
 /** The demo store at `subdomain` (demo-<slug>, any case), or null: Blank and unknown themes have none. */
 export function engineDemoStore(subdomain: string): StoreBusinessContext | null {
   const sd = subdomain.trim().toLowerCase();
@@ -63,10 +81,23 @@ export function engineDemoStore(subdomain: string): StoreBusinessContext | null 
 export function demoThemeData(store: StoreBusinessContext): ThemeData {
   const preset = store.demo_preset ?? 'studio';
   const heroes = store.demo_catalog ? DEMO_CATALOGS[store.demo_catalog].heroes : [];
-  return presetTheme(preset, {
+  const data = presetTheme(preset, {
     businessName: store.name,
     tagline: store.store_tagline ?? '',
     heroUrl: heroes[0],
-    images: preset === 'heritage' ? HERITAGE_PICTURES : undefined,
+    images: preset === 'heritage' ? HERITAGE_PICTURES : preset === 'drop' ? DROP_PICTURES : undefined,
   });
+  if (preset === 'drop') pointDropTilesAtCategories(data);
+  return data;
+}
+
+/** Gives Drop's category tiles the streetwear categories, so each tile's picture shows in the demo store. */
+function pointDropTilesAtCategories(data: ThemeData): void {
+  for (const section of Object.values(data.templates.home?.sections ?? {})) {
+    if (section.type !== 'category-grid') continue;
+    (section.block_order ?? []).forEach((id, i) => {
+      const block = section.blocks?.[id];
+      if (block && DROP_TILE_CATEGORIES[i]) block.settings = { ...block.settings, category: DROP_TILE_CATEGORIES[i] };
+    });
+  }
 }

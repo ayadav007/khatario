@@ -17,7 +17,7 @@ export const THEME_CATEGORIES: { id: ThemeCategoryId; label: string }[] = [
 ];
 
 /** The sample catalogues demo stores draw from (lib/store/engine/demo-catalogs.ts). */
-export type DemoCatalogId = 'jewellery' | 'fashion' | 'grocery' | 'general';
+export type DemoCatalogId = 'jewellery' | 'fashion' | 'grocery' | 'general' | 'streetwear';
 
 export interface CatalogTheme {
   preset: ThemePreset;
@@ -140,6 +140,29 @@ export const THEME_CATALOG: CatalogTheme[] = [
     added: '2026-10-31',
     featured: true,
     demo: { subdomain: 'demo-heritage-couture', brand: 'Aarna Jewels', tagline: 'Timeless jewellery for every occasion', catalog: 'jewellery' },
+  },
+  {
+    preset: 'drop',
+    slug: 'drop-culture',
+    name: 'Drop Culture',
+    summary: 'Ink black and acid lime with loud caps headings, for streetwear and drop brands',
+    about:
+      'A near-black streetwear store with acid lime accents, loud caps headings and size-first product cards. Built for limited drops, with a countdown in the hero, low-stock notes per size and a delivery check by pincode. Comes with sample pictures to replace with yours.',
+    categories: ['fashion'],
+    features: [
+      'Drop countdown in the hero',
+      'Size chips on product cards',
+      '"Only N left" per size',
+      'Sticky Add to bag on phones',
+      'Delivery check by pincode',
+      'Photos in a grid',
+    ],
+    palette: ['#0d0d0d', '#d4ff3a', '#f2f0ea'],
+    canvas: '#0d0d0d',
+    accent: '#d4ff3a',
+    premium: true,
+    added: '2026-11-02',
+    demo: { subdomain: 'demo-drop-culture', brand: 'VOLTX', tagline: 'Drops every Friday', catalog: 'streetwear' },
   },
 ];
 
