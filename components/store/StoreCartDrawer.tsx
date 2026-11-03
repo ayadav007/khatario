@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
+import { cartLineAddsGst, cartLineTotal } from '@/lib/store/pricing';
 import { useStore } from '@/lib/store/store-context';
 import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
@@ -119,7 +120,8 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
                       {item.variantName || item.unit}
                     </p>
                     <p className="mt-1 text-[14px] font-medium tabular-nums">
-                      ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                      ₹{cartLineTotal(item).toLocaleString('en-IN')}
+                      {cartLineAddsGst(item) ? <span className="ml-1 text-[10px] font-normal" style={{ opacity: 0.55 }}>incl. {item.taxRate}% GST</span> : null}
                     </p>
                   </div>
                   <div className={clsx('flex items-center', soft && 'rounded-xl')} style={{ border: hair }}>

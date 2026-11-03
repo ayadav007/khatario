@@ -1,6 +1,7 @@
 import { queryRows } from '@/lib/db';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { mapStoreItemRow, type StoreItem } from '@/lib/store/map-store-product';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 import {
   buildStoreItemsQuery,
   type StoreItemsOutOfStock,
@@ -147,7 +148,8 @@ async function loadProducts(
 
   const q = buildStoreItemsQuery(input);
   const rows = await queryRows<Record<string, unknown>>(q.listSql, q.listParams);
-  return rows.map(mapStoreItemRow);
+  const collectsGst = await storeCollectsGst({ businessId: store.business_id, branchId: opts.branchId });
+  return rows.map((r) => withStoreGst(mapStoreItemRow(r), collectsGst));
 }
 
 /** A business's store categories (those with store products), by name, with item counts. */
@@ -255,7 +257,8 @@ async function loadProductsById(store: StoreBusinessContext, ids: string[], opts
     offset: 0,
   });
   const rows = await queryRows<Record<string, unknown>>(q.listSql, q.listParams);
-  return rows.map(mapStoreItemRow);
+  const collectsGst = await storeCollectsGst({ businessId: store.business_id, branchId: opts.branchId });
+  return rows.map((r) => withStoreGst(mapStoreItemRow(r), collectsGst));
 }
 
 function message(e: unknown): string {

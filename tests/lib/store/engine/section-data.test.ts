@@ -1,4 +1,8 @@
 jest.mock('@/lib/db', () => ({ queryRows: jest.fn() }));
+jest.mock('@/lib/store/seller-gst', () => ({
+  storeCollectsGst: jest.fn().mockResolvedValue(true),
+  withStoreGst: (item: unknown) => item,
+}));
 
 import { queryRows } from '@/lib/db';
 import { collectDataRequests, collectProductIds, productRequestKey, resolveSectionData } from '@/lib/store/engine/section-data';

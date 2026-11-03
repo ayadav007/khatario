@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Tag, Trash2 } from 'lucide-react';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
+import { cartLineAddsGst, cartLineTotal } from '@/lib/store/pricing';
 import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress, type StoreOfferCoupon } from '@/lib/store/quick';
 import type { StoreProduct } from '../StoreProductCard';
 import { rupees } from '../studio-theme/StudioSections';
@@ -145,10 +146,13 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
                 )}
                 <div>
                   <p>{item.name}</p>
-                  <small>{item.variantName || item.unit}</small>
+                  <small>
+                    {item.variantName || item.unit}
+                    {cartLineAddsGst(item) ? ` · incl. ${item.taxRate}% GST` : ''}
+                  </small>
                   <b>
-                    {rupees(item.price * item.quantity)}
-                    {item.mrp && item.mrp > item.price ? <del>{rupees(item.mrp * item.quantity)}</del> : null}
+                    {rupees(cartLineTotal(item))}
+                    {item.mrp && item.mrp * item.quantity > cartLineTotal(item) ? <del>{rupees(item.mrp * item.quantity)}</del> : null}
                   </b>
                 </div>
                 <Stepper
@@ -281,6 +285,7 @@ export function QuickVariantSheet({ product, open, onClose }: { product: StorePr
                     unit: product.unit,
                     maxStock: v.current_stock,
                     taxRate: product.tax_rate,
+                    gstIncluded: !!product.gst_included,
                   })
                 }
               >

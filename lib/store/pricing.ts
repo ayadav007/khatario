@@ -20,6 +20,29 @@ export function lineAmounts(input: {
   return { lineTotal: roundMoney(gross + tax), tax, taxable: gross };
 }
 
+/** True when GST is added on top of this cart line's price at checkout. */
+export function cartLineAddsGst(line: { taxRate?: number; gstIncluded?: boolean }): boolean {
+  return line.gstIncluded === false && (line.taxRate ?? 0) > 0;
+}
+
+/**
+ * What a cart line costs the shopper, the same figure the checkout quote works out. Lines saved
+ * before `gstIncluded` existed count at their price until the quote prices them.
+ */
+export function cartLineTotal(line: {
+  price: number;
+  quantity: number;
+  taxRate?: number;
+  gstIncluded?: boolean;
+}): number {
+  return lineAmounts({
+    unitPrice: line.price,
+    quantity: line.quantity,
+    taxRate: cartLineAddsGst(line) ? line.taxRate ?? 0 : 0,
+    gstIncluded: false,
+  }).lineTotal;
+}
+
 export function applyCouponDiscount(input: {
   subtotal: number;
   discountType: 'percent' | 'flat';

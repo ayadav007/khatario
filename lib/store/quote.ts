@@ -2,6 +2,7 @@ import { queryRows, queryOne } from '@/lib/db';
 import { applyCouponDiscount, lineAmounts, roundMoney } from './pricing';
 import { buildStoreInvoicePlan, StoreInvoicePlanError } from './store-invoice-plan';
 import { getBranchDelivery, quoteDeliveryForBranch } from './delivery';
+import { storeCollectsGst } from './seller-gst';
 import type { DeliveryMode } from './delivery/self';
 
 export interface QuoteCartItem {
@@ -97,6 +98,8 @@ export async function buildStoreQuote(input: {
       : [];
   const varById = new Map(variants.map((v) => [v.id, v]));
 
+  const collectsGst = await storeCollectsGst({ businessId: input.businessId, branchId: input.branchId });
+
   const lines: StoreQuote['lines'] = [];
   let subtotal = 0;
   let taxTotal = 0;
@@ -116,8 +119,8 @@ export async function buildStoreQuote(input: {
       unitPrice = parseFloat(v.selling_price) || unitPrice;
       variantName = v.variant_name;
     }
-    const taxRate = parseFloat(item.tax_rate) || 0;
-    const gstIncluded = !!item.gst_included;
+    const taxRate = collectsGst ? parseFloat(item.tax_rate) || 0 : 0;
+    const gstIncluded = collectsGst && !!item.gst_included;
     const amt = lineAmounts({
       unitPrice,
       quantity: cart.quantity,

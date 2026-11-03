@@ -96,6 +96,7 @@ export function StoreKhatarioProductView({
       unit: product.unit,
       maxStock: displayStock,
       taxRate: product.tax_rate,
+      gstIncluded: !!product.gst_included,
     });
   }, [product, selectedVariantId, selectedVariant, displayPrice, displayStock, addToCart]);
 
@@ -184,7 +185,9 @@ export function StoreKhatarioProductView({
               </span>
             ) : null}
           </p>
-          <p className="mt-0.5 text-[11px] text-gray-500">Inclusive of all taxes</p>
+          {product.tax_rate > 0 && !product.gst_included ? null : (
+            <p className="mt-0.5 text-[11px] text-gray-500">Inclusive of all taxes</p>
+          )}
           {product.tax_rate > 0 ? (
             <p className="text-[11px] text-gray-400">
               GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}

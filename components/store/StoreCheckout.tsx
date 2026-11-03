@@ -5,6 +5,7 @@ import {
   ArrowLeft, MapPin, User, Phone, Mail, FileText,
   Truck, Package, Loader2, CheckCircle2,
 } from 'lucide-react';
+import { cartLineTotal } from '@/lib/store/pricing';
 import { useStore } from '@/lib/store/store-context';
 import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
 import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
@@ -564,7 +565,7 @@ export function StoreCheckout({
                       <span className="text-gray-400">x{c.quantity}</span>
                     </span>
                     <span className="font-medium text-gray-900">
-                      &#x20B9;{(c.price * c.quantity).toLocaleString('en-IN')}
+                      &#x20B9;{cartLineTotal(c).toLocaleString('en-IN')}
                     </span>
                   </div>
                 ))}

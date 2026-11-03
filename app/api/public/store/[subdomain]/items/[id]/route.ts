@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +63,12 @@ export async function GET(
     [params.id],
   );
 
-  return NextResponse.json({
+  const collectsGst = await storeCollectsGst({
+    businessId: store.business_id,
+    branchId: request.nextUrl.searchParams.get('branch_id'),
+  });
+
+  return NextResponse.json(withStoreGst({
     ...item,
     selling_price: parseFloat(item.selling_price as string) || 0,
     mrp: item.mrp ? parseFloat(item.mrp as string) : null,
@@ -88,5 +94,5 @@ export async function GET(
       selling_price: parseFloat(v.selling_price) || 0,
       current_stock: parseFloat(v.current_stock) || 0,
     })),
-  });
+  }, collectsGst));
 }

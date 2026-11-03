@@ -85,6 +85,7 @@ export function ShopTheLookClient({
         unit: p.unit,
         maxStock: p.current_stock,
         taxRate: p.tax_rate,
+        gstIncluded: !!p.gst_included,
         mrp: p.mrp != null && p.mrp > p.selling_price ? p.mrp : undefined,
       }),
     [addToCart],

@@ -3,6 +3,7 @@ import { queryRows } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
 import { CART_MAX_LINES, CartError, readCart, saveCart, type CartLine } from '@/lib/store/abandoned-carts';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,8 @@ type CatalogRow = {
   image_url: string | null;
   unit: string | null;
   stock: string;
+  tax_rate: string | null;
+  gst_included: boolean | null;
 };
 
 async function sessionFor(request: NextRequest, subdomain: string) {
@@ -46,7 +49,7 @@ async function catalogFor(businessId: string, lines: { item_id: string; variant_
   const rows = await queryRows<CatalogRow>(
     `SELECT i.id AS item_id, v.id AS variant_id, i.name AS item_name, v.variant_name,
             i.selling_price::text AS item_price, v.selling_price::text AS variant_price,
-            i.image_url, i.unit,
+            i.image_url, i.unit, i.tax_rate::text AS tax_rate, i.gst_included,
             COALESCE(CASE WHEN v.id IS NULL THEN i.current_stock ELSE v.current_stock END, 0)::text AS stock
        FROM items i
        LEFT JOIN item_variants v ON v.item_id = i.id AND v.id = ANY($3::uuid[])
@@ -77,6 +80,7 @@ export async function GET(request: NextRequest, { params }: { params: { subdomai
   if ('error' in scoped) return scoped.error;
   const saved = await readCart(scoped.store.business_id, scoped.session.customerId);
   const catalog = await catalogFor(scoped.store.business_id, saved);
+  const collectsGst = await storeCollectsGst({ businessId: scoped.store.business_id });
   // Lines no longer in the store are left out; unit, stock and the split name help the storefront.
   const lines = saved.flatMap((l) => {
     const r = catalog.get(keyOf(l.item_id, l.variant_id ?? null));
@@ -88,6 +92,7 @@ export async function GET(request: NextRequest, { params }: { params: { subdomai
         variant_name: r.variant_name,
         unit: r.unit || 'PCS',
         stock: parseFloat(r.stock) || 0,
+        ...withStoreGst({ tax_rate: parseFloat(r.tax_rate ?? '') || 0, gst_included: !!r.gst_included }, collectsGst),
       },
     ];
   });
