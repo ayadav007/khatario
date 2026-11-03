@@ -111,10 +111,12 @@ function PurchaseDetailContent() {
           }
           trailing={
             <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => router.push(`/purchases/${purchaseId}/edit`)}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
+            {purchase.status === 'draft' && (
+              <Button variant="secondary" onClick={() => router.push(`/purchases/new?edit=${purchaseId}`)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => window.open(`/api/purchases/${purchaseId}/pdf?user_id=${user?.id}`, '_blank')}>
               <Download className="w-4 h-4 mr-2" />
               PDF

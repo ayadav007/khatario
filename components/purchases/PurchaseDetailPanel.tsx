@@ -213,7 +213,7 @@ export function PurchaseDetailPanel({ purchaseId, onClose }: PurchaseDetailPanel
       activeTab={activeTab}
       onTabChange={(id) => setActiveTab(id as TabId)}
       onClose={onClose}
-      onEdit={() => router.push(`/purchases/new?edit=${purchaseId}`)}
+      onEdit={purchase.status === 'draft' ? () => router.push(`/purchases/new?edit=${purchaseId}`) : undefined}
       moreActions={moreActions}
     >
       {activeTab === 'overview' && (
