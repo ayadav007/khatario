@@ -17,6 +17,8 @@ const CARD_STYLES = ['plain', 'bordered', 'shadow'] as const;
 const LABEL_STYLES = ['normal', 'caps'] as const;
 const FRAME_STYLES = ['none', 'accent'] as const;
 const TEXTURES = ['none', 'dots', 'linen', 'grid'] as const;
+const CART_HEADING_MAX = 40;
+const CART_HEADING_DEFAULT = 'Pair it with';
 
 /** `value` when it is one of `allowed`, else `fallback`. */
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -171,6 +173,10 @@ function sanitizeThemeSettings(raw: unknown): ThemeSettings {
     },
     menus: sanitizeMenus(r.menus),
     product_card: sanitizeProductCard(r.product_card, new Set(color_schemes.map((s) => s.id))),
+    cart_free_ship_bar: r.cart_free_ship_bar === true,
+    cart_suggestions: r.cart_suggestions === true,
+    cart_suggestions_heading: clip(r.cart_suggestions_heading, CART_HEADING_MAX) ?? CART_HEADING_DEFAULT,
+    cart_whatsapp_order: r.cart_whatsapp_order === true,
   };
 }
 

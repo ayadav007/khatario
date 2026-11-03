@@ -21,6 +21,7 @@ import { findAnchor } from '@/lib/store/engine/anchors';
 import { stickyHeaderState, type StickyMode } from '@/lib/store/engine/header-layout';
 import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
+import type { EngineCart } from '../CartExtras';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { engineRootClass } from '@/lib/store/engine/root-class';
 import { PRESET_CARD_FIELDS, type EngineCardLook } from '@/lib/store/engine/card-look';
@@ -277,7 +278,7 @@ export function EngineShell({
   children: ReactNode;
 }) {
   const settings = theme.data.settings;
-  const { cartCount, branches, selectedBranchId, setEngineActive } = useStore();
+  const { cartCount, branches, selectedBranchId, setEngineActive, store } = useStore();
   const pathname = usePathname();
   const [cartOpen, setCartOpen] = useState(false);
   const openCart = useCallback(() => setCartOpen(true), []);
@@ -369,6 +370,29 @@ export function EngineShell({
   const hideCartBar = pathname === '/checkout' || pathname === '/cart';
   const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
   const freeAbove = branch?.free_delivery_above ?? null;
+  const isDemo = !!store?.is_demo;
+  // The theme's Cart settings for the drawer (and the phone cart sheet). `=== true` / `||`: an unsaved editor value
+  // may not be sanitised yet.
+  const engineCart = useMemo<EngineCart>(
+    () => ({
+      freeAbove,
+      freeShipBar: settings.cart_free_ship_bar === true,
+      suggestions: settings.cart_suggestions === true,
+      suggestionsHeading: settings.cart_suggestions_heading || 'Pair it with',
+      whatsappOrder: settings.cart_whatsapp_order === true,
+      whatsappLink: settings.social?.whatsapp ?? '',
+      isDemo,
+    }),
+    [
+      freeAbove,
+      settings.cart_free_ship_bar,
+      settings.cart_suggestions,
+      settings.cart_suggestions_heading,
+      settings.cart_whatsapp_order,
+      settings.social?.whatsapp,
+      isDemo,
+    ],
+  );
   // Quick mounts its own cart bar (always, as the old Quick shell did); the kit bar is for the other presets.
   const showKitBar = !quick && kit && !hideCartBar && cartCount > 0;
   const deepVars = useMemo(() => deepSchemeVars(settings), [settings]);
@@ -433,6 +457,7 @@ export function EngineShell({
             setCartOpen(false);
             window.location.href = '/checkout';
           }}
+          engineCart={engineCart}
         />
         {preview ? (
           <div

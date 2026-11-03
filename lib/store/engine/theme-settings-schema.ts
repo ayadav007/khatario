@@ -268,6 +268,17 @@ export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'social.facebook', type: 'text', label: 'Facebook', default: '', info: 'Full link, e.g. https://facebook.com/yourstore' },
   { id: 'social.youtube', type: 'text', label: 'YouTube', default: '', info: 'Full link, e.g. https://youtube.com/@yourstore' },
   ...PRODUCT_CARD_SETTINGS,
+  { id: 'cart_header', type: 'header', label: 'Cart' },
+  {
+    id: 'cart_free_ship_bar',
+    type: 'checkbox',
+    label: 'Show progress to free delivery',
+    default: false,
+    info: 'Only when the branch has one free-delivery amount',
+  },
+  { id: 'cart_suggestions', type: 'checkbox', label: 'Suggest products in the cart', default: false, info: 'In-stock products from the same categories' },
+  { id: 'cart_suggestions_heading', type: 'text', label: 'Suggestions heading', default: 'Pair it with', max_length: 40 },
+  { id: 'cart_whatsapp_order', type: 'checkbox', label: 'Order on WhatsApp button', default: false, info: 'Uses the WhatsApp link above' },
 ];
 
 // Settings the editor hides because the renderer does not use them yet (M2 D13). Empty since M3 wired

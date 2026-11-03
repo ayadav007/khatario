@@ -6,6 +6,7 @@ import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackCl
 import { ClosedNotice } from './engine/OpenStatusBadge';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
+import { CartSuggestionsRow, FreeShipBar, useCartSuggestions, type EngineCart } from './CartExtras';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -13,6 +14,8 @@ interface StoreCartDrawerProps {
   open: boolean;
   onClose: () => void;
   onCheckout?: () => void;
+  /** Theme (engine) stores only: the cart settings from the theme. The old storefront passes none. */
+  engineCart?: EngineCart;
 }
 
 export function StoreCartDrawer(props: StoreCartDrawerProps) {
@@ -23,7 +26,7 @@ export function StoreCartDrawer(props: StoreCartDrawerProps) {
   return <CartDrawer {...props} />;
 }
 
-function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
+function CartDrawer({ open, onClose, onCheckout, engineCart }: StoreCartDrawerProps) {
   const { cart, updateCartQuantity, cartTotal, store, cartCount } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
@@ -32,6 +35,7 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;
+  const suggestions = useCartSuggestions(open, !!engineCart?.suggestions);
 
   useEffect(() => {
     if (!open) return;
@@ -93,6 +97,10 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
           </button>
         </div>
 
+        {engineCart?.freeShipBar && cart.length > 0 ? (
+          <FreeShipBar subtotal={cartTotal} freeAbove={engineCart.freeAbove} accent={accent} className="px-4 py-3" />
+        ) : null}
+
         {cart.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center px-4">
             <p className="text-2xl font-semibold">{soft ? 'Your cart is empty' : 'Nothing in the bag'}</p>
@@ -149,6 +157,16 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
                 </div>
               );
             })}
+            {engineCart?.suggestions ? (
+              <CartSuggestionsRow
+                heading={engineCart.suggestionsHeading}
+                items={suggestions}
+                accent={accent}
+                onAccent={chowkOnAccent(accent)}
+                onNavigate={onClose}
+                className="py-4"
+              />
+            ) : null}
           </div>
         )}
 

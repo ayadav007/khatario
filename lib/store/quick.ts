@@ -15,6 +15,13 @@ export function freeDeliveryProgress(subtotal: number, freeAbove: number | null 
   return { remaining, ratio: Math.min(1, Math.max(0, subtotal / freeAbove)) };
 }
 
+/** The cart drawer's free-delivery line (theme setting `cart_free_ship_bar`). */
+export function freeShipText(progress: FreeDeliveryProgress): string {
+  return progress.remaining > 0
+    ? `Add ₹${progress.remaining.toLocaleString('en-IN')} more for free delivery`
+    : 'You have free delivery';
+}
+
 /** What the shopper saves against MRP across the cart. Lines without an MRP add nothing. */
 export function cartSavings(lines: Array<{ price: number; mrp?: number | null; quantity: number }>): number {
   return Math.round(

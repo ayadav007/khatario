@@ -88,6 +88,11 @@ function migrateSettings(t: StoreTheme, ctx: MigrationContext, w: Warnings): The
     },
     menus: [],
     product_card: cloneProductCard(PRODUCT_CARD_DEFAULTS),
+    // The old store had none of these cart extras: they start off, as on a new theme.
+    cart_free_ship_bar: false,
+    cart_suggestions: false,
+    cart_suggestions_heading: 'Pair it with',
+    cart_whatsapp_order: false,
   };
 }
 

@@ -253,5 +253,9 @@ export function presetSettings(ctx: PresetContext, preset: ThemePreset = 'studio
     social: { instagram: '', whatsapp: '', facebook: '', youtube: '' },
     menus: [],
     product_card: cloneProductCard(PRODUCT_CARD_DEFAULTS),
+    cart_free_ship_bar: false,
+    cart_suggestions: false,
+    cart_suggestions_heading: 'Pair it with',
+    cart_whatsapp_order: false,
   };
 }

@@ -11,6 +11,7 @@ import { ClosedNotice } from '../engine/OpenStatusBadge';
 import { VariantPicker } from '../features/product/VariantPicker';
 import { findVariant, toVariantInputs } from '../features/product/product-view';
 import { ReviewSummaryCompact } from '../features/reviews/ReviewSummary';
+import { CartSuggestionsRow, useCartSuggestions, type EngineCart } from '../CartExtras';
 
 /** Same key checkout reads, so a coupon picked in the cart is already applied there. */
 function couponKey(subdomain: string) {
@@ -43,11 +44,26 @@ function Stepper({
   );
 }
 
-/** Cart as a bottom sheet: lines, savings, listed coupons, bill and a sticky checkout button. */
-export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; onClose: () => void; onCheckout?: () => void }) {
+/**
+ * Cart as a bottom sheet: lines, savings, listed coupons, bill and a sticky checkout button. Its free-delivery card
+ * already shows whenever the branch has a free-delivery amount, so the theme's `cart_free_ship_bar` adds no second bar
+ * here; `engineCart.suggestions` adds the suggestions row under the lines.
+ */
+export function QuickCartSheet({
+  open,
+  onClose,
+  onCheckout,
+  engineCart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCheckout?: () => void;
+  engineCart?: EngineCart;
+}) {
   const { cart, cartTotal, cartCount, updateCartQuantity, store, branches, selectedBranchId } = useStore();
   const [coupons, setCoupons] = useState<StoreOfferCoupon[]>([]);
   const [applied, setApplied] = useState('');
+  const suggestions = useCartSuggestions(open, !!engineCart?.suggestions);
 
   useEffect(() => {
     if (!open || !store) return;
@@ -163,6 +179,16 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
               </li>
             ))}
           </ul>
+          {engineCart?.suggestions ? (
+            <CartSuggestionsRow
+              heading={engineCart.suggestionsHeading}
+              items={suggestions}
+              accent="var(--primary)"
+              onAccent="var(--on-primary)"
+              onNavigate={onClose}
+              className="my-3"
+            />
+          ) : null}
           {outlook.length ? (
             <section className="qk-offers">
               <h3>Offers for you</h3>
