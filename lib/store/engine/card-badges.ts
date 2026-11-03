@@ -23,13 +23,17 @@ export function cardBadges(
 
 /**
  * The badge row and the strike-through decision of a Studio tile. `off` is the discount percent; the "% OFF" badge
- * comes first, and `hideDiscountBadge` drops only that badge: the struck-through MRP follows `off` alone.
+ * comes first, and `hideDiscountBadge` drops only that badge: the struck-through MRP follows `off` alone. With
+ * `format: 'rupees'` and `rupeesOff` above zero the badge reads "₹91 OFF" instead; without rupees it keeps the percent.
  */
 export function tileBadges(
   off: number,
   badges: StudioBadge[],
   hideDiscountBadge = false,
+  opts: { rupeesOff?: number; format?: 'percent' | 'rupees' } = {},
 ): { badges: StudioBadge[]; struck: boolean } {
-  const sale: StudioBadge[] = off > 0 && !hideDiscountBadge ? [{ label: `${off}% OFF`, tone: 'sale' }] : [];
+  const rupees = opts.format === 'rupees' && opts.rupeesOff != null && opts.rupeesOff > 0 ? Math.round(opts.rupeesOff) : 0;
+  const label = rupees > 0 ? `₹${rupees.toLocaleString('en-IN')} OFF` : `${off}% OFF`;
+  const sale: StudioBadge[] = off > 0 && !hideDiscountBadge ? [{ label, tone: 'sale' }] : [];
   return { badges: [...sale, ...badges], struck: off > 0 };
 }

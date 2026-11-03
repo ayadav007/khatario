@@ -283,6 +283,13 @@
   font-weight: 400;
   color: var(--st-muted);
 }
+/* The price per kg or litre sits on its own line under the price. */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .price .pc-unitprice {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--st-muted);
+}
 .st-root.eng-root .product.pc-on.pc-on.pc-on .pc-disc {
   font-size: 12px;
   font-weight: 700;

@@ -41,6 +41,8 @@ describe('PRODUCT_CARD_DEFAULTS', () => {
       price_color: 'text',
       show_mrp: true,
       discount_style: 'text',
+      unit_price: false,
+      discount_badge: 'percent',
       image_shape: 'square',
       image_fit: 'fill',
       image_padding: 0,
@@ -87,6 +89,19 @@ describe('PRODUCT_CARD_DEFAULTS', () => {
   });
 });
 
+describe('unit price and savings badge settings', () => {
+  it('start off and percent, so every existing card looks as it did', () => {
+    expect(PRODUCT_CARD_DEFAULTS.unit_price).toBe(false);
+    expect(PRODUCT_CARD_DEFAULTS.discount_badge).toBe('percent');
+    for (const id of CARD_DESIGN_IDS) expect(CARD_DESIGNS[id]).toMatchObject({ unit_price: false, discount_badge: 'percent' });
+  });
+
+  it('discount_badge falls back to percent on a value that is not exactly an option', () => {
+    expect(sanitizeProductCard({ discount_badge: 'RUPEES' }).discount_badge).toBe('percent');
+    expect(sanitizeProductCard({ discount_badge: 'rupees' }).discount_badge).toBe('rupees');
+  });
+});
+
 describe('sanitizeProductCard fields', () => {
   const D = PRODUCT_CARD_DEFAULTS as unknown as Record<string, unknown>;
   const enums: Array<[string, string[]]> = [
@@ -99,6 +114,7 @@ describe('sanitizeProductCard fields', () => {
     ['price_size', ['s', 'm', 'l']],
     ['price_color', ['text', 'accent']],
     ['discount_style', ['none', 'text', 'pill', 'save']],
+    ['discount_badge', ['percent', 'rupees']],
     ['image_shape', ['square', 'portrait', 'landscape', 'natural']],
     ['image_fit', ['fill', 'contain']],
     ['image_hover', ['none', 'second', 'zoom']],
@@ -129,7 +145,7 @@ describe('sanitizeProductCard fields', () => {
     }
   });
 
-  const flags = ['name_price_row', 'show_mrp', 'image_swipe'] as const;
+  const flags = ['name_price_row', 'show_mrp', 'image_swipe', 'unit_price'] as const;
   it.each(flags)('%s takes only a real boolean', (key) => {
     expect(sanitizeProductCard({ [key]: true })[key]).toBe(true);
     expect(sanitizeProductCard({ [key]: false })[key]).toBe(false);

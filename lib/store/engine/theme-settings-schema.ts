@@ -68,6 +68,13 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
     default: CARD.discount_style,
     options: opts(['none', 'Don’t show'], ['text', '20% off'], ['pill', '20% off in a pill'], ['save', 'Save ₹20']),
   },
+  {
+    id: 'product_card.unit_price',
+    type: 'checkbox',
+    label: 'Show price per kg or litre',
+    default: CARD.unit_price,
+    info: 'Only when the pack is a plain weight or volume, such as 500 g or 1 L',
+  },
   { id: 'product_card_photo_header', type: 'header', label: 'Photo' },
   {
     id: 'product_card.image_shape',
@@ -112,6 +119,13 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
     options: opts(['none', 'None'], ['crown', 'Crown'], ['star', 'Star'], ['flame', 'Flame'], ['sparkle', 'Sparkle']),
   },
   { id: 'product_card.badge_colors', type: 'select', label: 'Badge colours', default: CARD.badge_colors, options: opts(['accent', 'Accent colour'], ['button', 'Button colours']) },
+  {
+    id: 'product_card.discount_badge',
+    type: 'select',
+    label: 'Savings badge',
+    default: CARD.discount_badge,
+    options: opts(['percent', '14% OFF'], ['rupees', '₹91 OFF']),
+  },
   { id: 'product_card_buttons_header', type: 'header', label: 'Buttons' },
   {
     id: 'product_card.button_style',

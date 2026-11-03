@@ -14,6 +14,7 @@ import { productCardLook } from '@/lib/store/engine/card-look';
 import { isDesignedCard } from '@/lib/store/engine/card-render';
 import { cardBadges } from '@/lib/store/engine/card-badges';
 import { cardSizes } from '@/lib/store/engine/card-sizes';
+import { packLabelFromName } from '@/lib/store/unit-price';
 import type { StoreVariantInput } from '@/lib/store/variant-options';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
@@ -361,6 +362,7 @@ function ProductCard({
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}
         add={add}
+        packLabel={product.has_variants ? null : packLabelFromName(product.name)}
         {...designedExtras}
       />
     );

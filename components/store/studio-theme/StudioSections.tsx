@@ -29,6 +29,7 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
+import { unitPrice } from '@/lib/store/unit-price';
 import {
   cardBadgeRow,
   cardButtonPlan,
@@ -775,6 +776,8 @@ export interface StudioProductTileProps {
   placeholderLogo?: string | null;
   /** Card design: what the buttons do; the design's button style draws them. Without it the card shows `add` as given. */
   actions?: StudioCardActions;
+  /** Card design: the pack's size as a label ("500 g", "1 L"); with `unit_price` on, the price per kg or litre is worked out from it. */
+  packLabel?: string | null;
 }
 
 /** A designed card's buttons: add, buy now and the − 1 + stepper. Handlers are optional (previews draw them inert). */
@@ -934,6 +937,7 @@ function DesignedProductTile({
   moreSizes,
   hideDiscountBadge,
   card,
+  packLabel,
 }: StudioProductTileProps & { card: NonNullable<StudioProductTileProps['card']> }) {
   const { look, schemes } = card;
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
@@ -954,7 +958,11 @@ function DesignedProductTile({
   // The discount beside the price, when the price line shows; it then replaces the automatic "% OFF" badge.
   const priceShown = showPrice && look.lines.some((l) => l.id === 'price' && l.on);
   const saving = priceShown ? cardDiscount(look.discount_style, price, mrp, off) : null;
-  const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving });
+  // "₹91 OFF" instead of "14% OFF": only when that automatic badge would show today.
+  const badgeShows = off > 0 && !hideDiscountBadge && saving == null;
+  const rupeesOff = badgeShows && mrp && mrp > price ? Math.round(mrp - price) : 0;
+  const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving, rupeesOff });
+  const perUnit = look.unit_price ? unitPrice(packLabel, price) : null;
   const hasAdd = !!add || !!actions;
   const oos = cardOutOfStock(look, outOfStock, hasAdd);
   const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: !!photo.hover });
@@ -992,6 +1000,7 @@ function DesignedProductTile({
       <span className="pc-now">{rupees(price)}</span>
       {look.show_mrp && struck && mrp ? <del>{rupees(mrp)}</del> : null}
       {saving ? <span className="pc-disc">{saving.kind === 'save' ? `Save ${rupees(saving.amount)}` : `${saving.percent}% off`}</span> : null}
+      {perUnit ? <span className="punit pc-unitprice">{perUnit}</span> : null}
     </div>
   ) : null;
 

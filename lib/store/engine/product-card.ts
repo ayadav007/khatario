@@ -42,6 +42,8 @@ export interface ProductCardSettings {
   price_color: 'text' | 'accent';
   show_mrp: boolean;
   discount_style: 'none' | 'text' | 'pill' | 'save';
+  /** The price per kg or litre under the price, when the pack is a plain weight or volume. */
+  unit_price: boolean;
   // Photo
   image_shape: 'square' | 'portrait' | 'landscape' | 'natural';
   image_fit: 'fill' | 'contain';
@@ -56,6 +58,8 @@ export interface ProductCardSettings {
   badge_position: 'top-left' | 'top-right';
   badge_icon: 'none' | 'crown' | 'star' | 'flame' | 'sparkle';
   badge_colors: 'accent' | 'button';
+  /** The automatic savings badge: "14% OFF" or "₹91 OFF". */
+  discount_badge: 'percent' | 'rupees';
   // Buttons
   button_style: 'full' | 'pill_on_photo' | 'icon' | 'icon_full' | 'none';
   button_fill: 'filled' | 'outline';
@@ -108,6 +112,7 @@ export const PRODUCT_CARD_DEFAULTS: ProductCardSettings = {
   price_color: 'text',
   show_mrp: true,
   discount_style: 'text',
+  unit_price: false,
   image_shape: 'square',
   image_fit: 'fill',
   image_padding: 0,
@@ -120,6 +125,7 @@ export const PRODUCT_CARD_DEFAULTS: ProductCardSettings = {
   badge_position: 'top-left',
   badge_icon: 'none',
   badge_colors: 'accent',
+  discount_badge: 'percent',
   button_style: 'full',
   button_fill: 'filled',
   button_shape: 'rounded',
@@ -165,6 +171,7 @@ const ENUMS = {
   badge_position: ['top-left', 'top-right'],
   badge_icon: ['none', 'crown', 'star', 'flame', 'sparkle'],
   badge_colors: ['accent', 'button'],
+  discount_badge: ['percent', 'rupees'],
   button_style: ['full', 'pill_on_photo', 'icon', 'icon_full', 'none'],
   button_fill: ['filled', 'outline'],
   button_shape: ['rounded', 'pill'],
@@ -182,7 +189,7 @@ const ENUMS = {
 } as const;
 
 type EnumKey = keyof typeof ENUMS;
-const BOOLEANS = ['name_price_row', 'show_mrp', 'image_swipe'] as const;
+const BOOLEANS = ['name_price_row', 'show_mrp', 'unit_price', 'image_swipe'] as const;
 const RANGES = {
   image_padding: [0, 24],
   image_radius: [0, 32],

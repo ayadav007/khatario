@@ -116,6 +116,13 @@ describe('cardBadgeRow', () => {
     expect(row({ badge_shape: 'ribbon', discount_style: 'none' }).badges.map((b) => b.label)).toEqual(['20% OFF']);
     expect(row({ show_badges: false }).badges).toEqual([]);
   });
+
+  it('reads "₹ OFF" when the look asks for rupees and the badge shows', () => {
+    expect(row({ discount_style: 'none', discount_badge: 'rupees' }, { rupeesOff: 91 }).badges.map((b) => b.label)).toEqual(['₹91 OFF', 'New']);
+    expect(row({ discount_style: 'none', discount_badge: 'percent' }, { rupeesOff: 91 }).badges.map((b) => b.label)).toEqual(['20% OFF', 'New']);
+    // The price line already shows the discount: no badge, whatever the format.
+    expect(row({ discount_badge: 'rupees' }, { rupeesOff: 91, discount: { kind: 'percent', percent: 20 } }).badges.map((b) => b.label)).toEqual(['New']);
+  });
 });
 
 describe('cardBadgeList', () => {
