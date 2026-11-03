@@ -2,7 +2,8 @@ import { storeInfoView, todayHoursLabel } from '@/lib/store/engine/store-info-ma
 import type { StoreHours } from '@/lib/store/store-hours';
 
 const day = { open: '07:00', close: '22:00' };
-const HOURS: StoreHours = { mon: day, tue: day, wed: day, thu: day, fri: day, sat: null, sun: day };
+const wed = { open: '09:30', close: '20:00' };
+const HOURS: StoreHours = { mon: day, tue: day, wed, thu: day, fri: day, sat: null, sun: day };
 
 const base = {
   storeName: 'Sharma Kirana',
@@ -77,9 +78,12 @@ describe('storeInfoView', () => {
 
 describe('todayHoursLabel', () => {
   it('reads today in India time, not the clock zone', () => {
-    // 2026-11-03 is a Tuesday. 20:00 UTC on Tuesday is already 01:30 Wednesday in India.
+    // 2026-11-03 is a Tuesday. 20:00 UTC on Tuesday is already 01:30 Wednesday in India (Wednesday has other hours).
     expect(todayHoursLabel(HOURS, new Date('2026-11-03T05:00:00Z'))).toBe('Open today 7 AM – 10 PM');
-    expect(todayHoursLabel(HOURS, new Date('2026-11-03T20:00:00Z'))).toBe('Open today 7 AM – 10 PM');
+    expect(todayHoursLabel(HOURS, new Date('2026-11-03T20:00:00Z'))).toBe('Open today 9:30 AM – 8 PM');
+    // 19:00 UTC Wednesday is 00:30 Thursday in India.
+    expect(todayHoursLabel(HOURS, new Date('2026-11-04T19:00:00Z'))).toBe('Open today 7 AM – 10 PM');
+    expect(todayHoursLabel(HOURS, new Date('2026-11-04T10:00:00Z'))).toBe('Open today 9:30 AM – 8 PM');
     // 19:00 UTC Friday is 00:30 Saturday in India, the closed day.
     expect(todayHoursLabel(HOURS, new Date('2026-11-06T19:00:00Z'))).toBe('Closed today');
     // 02:00 UTC Saturday is 07:30 Saturday in India: closed all day.

@@ -9,6 +9,8 @@ describe('whatsappNumber', () => {
     ['https://instagram.com/x', null],
     ['', null],
     ['https://wa.me/12345', null],
+    ['https://wa.me/%E0%A4%A', null],
+    ['https://wa.me/100%', null],
   ])('reads the number from a WhatsApp link: %s', (input, expected) => {
     expect(whatsappNumber(input)).toBe(expected);
   });

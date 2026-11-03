@@ -16,8 +16,14 @@ export function whatsappNumber(link: string): string | null {
   if (url.protocol !== 'https:') return null;
   const host = url.hostname.replace(/^www\./, '');
   let raw: string | null = null;
-  if (host === 'wa.me') raw = decodeURIComponent(url.pathname.split('/')[1] ?? '');
-  else if (host === 'api.whatsapp.com' && /^\/send\/?$/.test(url.pathname)) raw = url.searchParams.get('phone');
+  if (host === 'wa.me') {
+    // A malformed escape (`%E0%A4%A`, a lone `%`) must never throw: this runs while the page renders.
+    try {
+      raw = decodeURIComponent(url.pathname.split('/')[1] ?? '');
+    } catch {
+      return null;
+    }
+  } else if (host === 'api.whatsapp.com' && /^\/send\/?$/.test(url.pathname)) raw = url.searchParams.get('phone');
   if (!raw) return null;
   return indianMobile(raw);
 }

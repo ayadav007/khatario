@@ -129,7 +129,7 @@ export const PREMIUM_SECTION_RULES =
   `${R} .eng-info-today{font-weight:600}` +
   `${R} .eng-info-address{opacity:.8;overflow-wrap:anywhere}` +
   `${R} .eng-info-hours{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}` +
-  `${R} .eng-info-live>div{justify-content:flex-start;padding:0}` +
+  `${R} .eng-info-live>span{margin-left:0!important}` +
   `${R} .eng-info-actions{display:flex;flex-wrap:wrap;gap:8px}` +
   `${R} .eng-info-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 20px;border-radius:var(--btn-radius,10px);font-weight:600;text-decoration:none}` +
   `${R} .eng-info-btn--line{border:1px solid currentColor;color:inherit}` +
