@@ -189,6 +189,7 @@ export function StudioHeader({
   menuButton,
   layoutClass,
   logoStyle,
+  nameBadge,
 }: {
   s: StudioSettings;
   logoUrl?: string | null;
@@ -214,6 +215,8 @@ export function StudioHeader({
   inlineSlot?: ReactNode;
   /** Phone menu button, before the logo. */
   menuButton?: ReactNode;
+  /** Small status pill beside the store name (open or closed); it adds no row. */
+  nameBadge?: ReactNode;
 }) {
   const highlight = (s.highlightLink ?? '').trim().toLowerCase();
   const links: StudioLink[] =
@@ -229,9 +232,16 @@ export function StudioHeader({
         <img src={logoUrl} alt="" />
       ) : null}
       {hideName ? <span className="sr-only">{s.logo || 'My store'}</span> : null}
-      {!hideName || s.tagline ? (
+      {!hideName || s.tagline || nameBadge ? (
         <span className="logoText">
-          {hideName ? null : <b>{s.logo || 'My store'}</b>}
+          {nameBadge ? (
+            <span style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              {hideName ? null : <b>{s.logo || 'My store'}</b>}
+              {nameBadge}
+            </span>
+          ) : hideName ? null : (
+            <b>{s.logo || 'My store'}</b>
+          )}
           {s.tagline ? <small>{s.tagline}</small> : null}
         </span>
       ) : null}

@@ -31,40 +31,38 @@ export function Header({ section, data, store, theme }: EngineSectionProps) {
   const logoStyle = logoWidthStyle(logoWidth(v.logo_width, 300), logoWidth(v.logo_width_mobile, 200));
   const logoUrl = str(v.logo_url) || theme.settings.logo_url || store.logo_url || null;
   return (
-    <>
-      <EngineHeader
-        s={{
-          logo: store.name,
-          tagline: str(v.delivery_eta),
-          showSearch: v.show_search !== false,
-          showAccount: v.show_account !== false,
-          showCart: v.show_cart !== false,
-          showCartCount: v.show_cart_count !== false,
-          iconsPosition: v.icons_position === 'left' ? 'left' : 'right',
-        }}
-        logoUrl={logoUrl}
-        hideName={Boolean(logoUrl) && v.show_store_name === false}
-        menu={{ items, layout: menuLayout, caps: v.menu_caps === true }}
-        layoutClass={layoutClass}
-        logoStyle={logoStyle}
-        subdomain={store.store_subdomain}
-        searchPlaceholder={str(v.search_placeholder) || 'Search products'}
-        chips={
-          v.show_category_chips === true && data?.categories?.length
-            ? data.categories.map((c) => ({ id: c.id, name: c.name }))
-            : undefined
-        }
-        quick={{
-          name: store.name,
-          eta: str(v.delivery_eta),
-          links,
-          categories: (data?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
-          showSearch: v.show_search !== false,
-          showAccount: v.show_account !== false,
-          showCart: v.show_cart !== false,
-        }}
-      />
-      {v.show_open_status === true ? <OpenStatusBadge hours={store.store_hours} /> : null}
-    </>
+    <EngineHeader
+      s={{
+        logo: store.name,
+        tagline: str(v.delivery_eta),
+        showSearch: v.show_search !== false,
+        showAccount: v.show_account !== false,
+        showCart: v.show_cart !== false,
+        showCartCount: v.show_cart_count !== false,
+        iconsPosition: v.icons_position === 'left' ? 'left' : 'right',
+      }}
+      logoUrl={logoUrl}
+      hideName={Boolean(logoUrl) && v.show_store_name === false}
+      menu={{ items, layout: menuLayout, caps: v.menu_caps === true }}
+      layoutClass={layoutClass}
+      logoStyle={logoStyle}
+      statusBadge={v.show_open_status === true ? <OpenStatusBadge hours={store.store_hours} /> : undefined}
+      subdomain={store.store_subdomain}
+      searchPlaceholder={str(v.search_placeholder) || 'Search products'}
+      chips={
+        v.show_category_chips === true && data?.categories?.length
+          ? data.categories.map((c) => ({ id: c.id, name: c.name }))
+          : undefined
+      }
+      quick={{
+        name: store.name,
+        eta: str(v.delivery_eta),
+        links,
+        categories: (data?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+        showSearch: v.show_search !== false,
+        showAccount: v.show_account !== false,
+        showCart: v.show_cart !== false,
+      }}
+    />
   );
 }

@@ -19,27 +19,49 @@ function useOpenState(hours: StoreHours | null | undefined): StoreOpenState | nu
   return state;
 }
 
-/** "Open · till 10 PM" / "Closed · opens 7 AM" pill for the header; nothing without hours, before mount, or when unknown. */
+/** Pill height; the margins below cancel it, so the badge never makes its line taller. */
+const PILL = 20;
+
+/**
+ * "Open · till 10 PM" / "Closed · opens 7 AM" pill, drawn inline beside the store name. Before mount (or when the
+ * state is unknown) an empty span of the same height stands in, so the badge appearing shifts nothing vertically.
+ * Nothing at all without hours.
+ */
 export function OpenStatusBadge({ hours }: { hours: StoreHours | null }) {
   const state = useOpenState(hours);
+  if (!hours) return null;
   const label = state ? openStatusLabel(state) : null;
-  if (!state || !label) return null;
+  if (!state || !label) {
+    return <span aria-hidden="true" style={{ display: 'inline-block', height: PILL, margin: `${-3}px 0` }} />;
+  }
   const open = state.state === 'open';
   return (
-    <div className="flex justify-center px-4 py-1.5">
+    <span
+      role="status"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        flexShrink: 0,
+        height: PILL,
+        margin: '-3px 0 -3px 8px',
+        padding: '0 8px',
+        borderRadius: 999,
+        border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+        fontSize: 11,
+        fontWeight: 600,
+        lineHeight: 1,
+        letterSpacing: 'normal',
+        textTransform: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
       <span
-        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-        style={{ border: '1px solid color-mix(in srgb, currentColor 18%, transparent)' }}
-        role="status"
-      >
-        <span
-          aria-hidden="true"
-          className="inline-block h-2 w-2 rounded-full"
-          style={{ backgroundColor: open ? '#16a34a' : '#9ca3af' }}
-        />
-        {label}
-      </span>
-    </div>
+        aria-hidden="true"
+        style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: open ? '#16a34a' : '#9ca3af' }}
+      />
+      {label}
+    </span>
   );
 }
 

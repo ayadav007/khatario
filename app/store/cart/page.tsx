@@ -1,11 +1,12 @@
 'use client';
 
 import { StoreShell } from '@/components/store/StoreShell';
+import { ClosedNotice } from '@/components/store/engine/OpenStatusBadge';
 import { useStore } from '@/lib/store/store-context';
 import Link from 'next/link';
 
 export default function StoreCartPage() {
-  const { cart, cartTotal, updateCartQuantity, removeFromCart } = useStore();
+  const { cart, cartTotal, updateCartQuantity, removeFromCart, store } = useStore();
 
   return (
     <StoreShell>
@@ -14,6 +15,7 @@ export default function StoreCartPage() {
         <p className="text-sm text-gray-500">Your cart is empty.</p>
       ) : (
         <div className="space-y-4">
+          <ClosedNotice hours={store?.store_hours} />
           {cart.map((c) => (
             <div
               key={`${c.itemId}:${c.variantId ?? ''}`}
