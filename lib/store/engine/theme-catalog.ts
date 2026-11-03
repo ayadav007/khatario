@@ -17,7 +17,7 @@ export const THEME_CATEGORIES: { id: ThemeCategoryId; label: string }[] = [
 ];
 
 /** The sample catalogues demo stores draw from (lib/store/engine/demo-catalogs.ts). */
-export type DemoCatalogId = 'jewellery' | 'fashion' | 'grocery' | 'general' | 'streetwear';
+export type DemoCatalogId = 'jewellery' | 'fashion' | 'grocery' | 'general' | 'streetwear' | 'kirana';
 
 export interface CatalogTheme {
   preset: ThemePreset;
@@ -163,6 +163,29 @@ export const THEME_CATALOG: CatalogTheme[] = [
     premium: true,
     added: '2026-11-02',
     demo: { subdomain: 'demo-drop-culture', brand: 'VOLTX', tagline: 'Drops every Friday', catalog: 'streetwear' },
+  },
+  {
+    preset: 'bazaar',
+    slug: 'bazaar-bright',
+    name: 'Bazaar Bright',
+    summary: 'Saffron and navy supermarket with pack sizes on every card, buy again and store hours, for kirana shops',
+    about:
+      'A saffron and navy supermarket for kirana shops. Every card shows its pack sizes and the price per kg or litre, regular customers get a Buy again row, and a badge says whether the shop is open. The cart can show how much more buys free delivery and send the order on WhatsApp. Comes with sample pictures to replace with yours.',
+    categories: ['grocery'],
+    features: [
+      'Pack sizes and price per kg on cards',
+      'Buy again for regular customers',
+      'Open now / closed badge and store hours',
+      'Order on WhatsApp from the cart',
+      'Free-delivery bar in the cart',
+      'Categories down the left',
+    ],
+    palette: ['#e8590c', '#14213d', '#ffc300'],
+    canvas: '#ffffff',
+    accent: '#e8590c',
+    premium: true,
+    added: '2026-11-03',
+    demo: { subdomain: 'demo-bazaar-bright', brand: 'Sharma General Store', tagline: 'Your neighbourhood kirana, now online', catalog: 'kirana' },
   },
 ];
 

@@ -12,7 +12,8 @@ export interface DemoCatalog {
   heroes: string[];
 }
 
-const pic = (folder: string, file: string) => `/theme-demos/${folder}/${file}.webp`;
+/** A photo in the catalogue's own folder, or `folder/file` for one shared from another catalogue's folder. */
+const pic = (folder: string, file: string) => `/theme-demos/${file.includes('/') ? file : `${folder}/${file}`}.webp`;
 
 type Row = [id: string, name: string, price: number, mrp: number | null, category: string, file: string, extra?: Partial<StoreProduct>];
 
@@ -43,7 +44,7 @@ function catalog(
       category_name: nameOf(category),
       current_stock: 20,
       has_variants: false,
-      tax_rate: folder === 'grocery' ? 5 : 3,
+      tax_rate: folder === 'grocery' || folder === 'kirana' ? 5 : 3,
       gst_included: true,
       images: [],
       // A spread of believable ratings, the same every time.
@@ -219,19 +220,76 @@ const STREETWEAR = catalog(
   true,
 );
 
+/** The pack fields of a product: one variant per pack, `[label, price, units left]` smallest pack first (the product's own price is the first pack's). */
+function packs(id: string, rows: [label: string, price: number, stock: number][]): Partial<StoreProduct> {
+  return {
+    has_variants: true,
+    selling_price: rows[0][1],
+    current_stock: rows.reduce((sum, [, , n]) => sum + n, 0),
+    variants: rows.map(([label, price, stock], i) => ({
+      id: `${id}-${i + 1}`,
+      variant_name: label,
+      selling_price: price,
+      current_stock: stock,
+      attributes: { size: label },
+    })),
+  };
+}
+
+// Unbranded on purpose: a demo store must not show another company's name or pack. Photos are the new kirana/ set and the
+// grocery/ photos that show no brand marks (not the milk carton or the crisp packets).
+const KIRANA = catalog(
+  'kirana',
+  [
+    { id: 'ki-cat-veg', name: 'Vegetables' },
+    { id: 'ki-cat-fruit', name: 'Fruits' },
+    { id: 'ki-cat-dairy', name: 'Dairy & eggs' },
+    { id: 'ki-cat-staples', name: 'Atta rice & dal' },
+    { id: 'ki-cat-masala', name: 'Masala' },
+    { id: 'ki-cat-snacks', name: 'Snacks & drinks' },
+  ],
+  [
+    ['ki-1', 'Chakki atta', 245, 270, 'ki-cat-staples', 'atta', { ...packs('ki-1', [['5 kg', 245, 14], ['10 kg', 470, 9]]), store_badge: 'Bestseller' }],
+    ['ki-2', 'Basmati rice', 110, 125, 'ki-cat-staples', 'grocery/rice', { ...packs('ki-2', [['1 kg', 110, 18], ['5 kg', 520, 7], ['10 kg', 990, 0]]) }],
+    ['ki-3', 'Toor dal', 78, null, 'ki-cat-staples', 'dal', { ...packs('ki-3', [['500 g', 78, 16], ['1 kg', 150, 12], ['2 kg', 288, 5]]) }],
+    ['ki-4', 'Sunflower oil', 140, 155, 'ki-cat-staples', 'oil', { ...packs('ki-4', [['1 L', 140, 20], ['5 L', 670, 6]]), store_badge: 'Deal' }],
+    ['ki-5', 'Sugar', 48, null, 'ki-cat-staples', 'sugar', { ...packs('ki-5', [['1 kg', 48, 25], ['5 kg', 230, 0]]) }],
+    ['ki-6', 'Toned milk', 30, null, 'ki-cat-dairy', 'milk', { ...packs('ki-6', [['500 ml', 30, 30], ['1 L', 58, 22]]), store_badge: 'Fresh today' }],
+    ['ki-7', 'Brown eggs', 72, 84, 'ki-cat-dairy', 'grocery/eggs', { ...packs('ki-7', [['6 pcs', 72, 20], ['12 pcs', 138, 14], ['30 pcs', 330, 4]]) }],
+    ['ki-8', 'Tomatoes', 22, 26, 'ki-cat-veg', 'grocery/tomatoes', { ...packs('ki-8', [['500 g', 22, 24], ['1 kg', 40, 18], ['2 kg', 76, 8]]) }],
+    ['ki-9', 'Onions', 38, null, 'ki-cat-veg', 'onions', { ...packs('ki-9', [['1 kg', 38, 30], ['2 kg', 72, 15], ['5 kg', 170, 6]]) }],
+    ['ki-10', 'Spinach bunch', 25, null, 'ki-cat-veg', 'grocery/spinach', { store_badge: 'Fresh today' }],
+    ['ki-11', 'Mixed veg basket', 199, 249, 'ki-cat-veg', 'grocery/vegetables', { store_tagline: 'Seasonal vegetables, about 3 kg' }],
+    ['ki-12', 'Bananas, 1 dozen', 60, null, 'ki-cat-fruit', 'grocery/bananas', { unit: 'DOZ' }],
+    ['ki-13', 'Red apples', 95, null, 'ki-cat-fruit', 'grocery/apples', { ...packs('ki-13', [['500 g', 95, 12], ['1 kg', 180, 10]]) }],
+    ['ki-14', 'Mosambi, 1 kg', 85, null, 'ki-cat-fruit', 'grocery/limes', { unit: 'KG' }],
+    ['ki-15', 'Fruit yogurt cups', 90, 110, 'ki-cat-dairy', 'grocery/yogurt'],
+    ['ki-16', 'Red chilli powder', 38, null, 'ki-cat-masala', 'grocery/spice-powders', { ...packs('ki-16', [['100 g', 38, 20], ['200 g', 68, 15], ['500 g', 160, 6]]) }],
+    ['ki-17', 'Masala jar set', 349, 399, 'ki-cat-masala', 'grocery/spice-jars', { store_tagline: 'Ten everyday spices' }],
+    ['ki-18', 'Tea leaves', 120, null, 'ki-cat-snacks', 'tea', { ...packs('ki-18', [['250 g', 120, 14], ['500 g', 230, 9], ['1 kg', 440, 4]]) }],
+    ['ki-19', 'Roasted peanuts', 45, null, 'ki-cat-snacks', 'peanuts', { ...packs('ki-19', [['200 g', 45, 18], ['500 g', 105, 8]]), store_badge: 'New' }],
+    ['ki-20', 'Orange juice', 30, 36, 'ki-cat-snacks', 'grocery/orange-juice', { ...packs('ki-20', [['200 ml', 30, 24], ['1 L', 125, 10]]) }],
+  ],
+  ['grocery-1', 'grocery-2'],
+);
+
 export const DEMO_CATALOGS: Record<DemoCatalogId, DemoCatalog> = {
   jewellery: JEWELLERY,
   fashion: FASHION,
   grocery: GROCERY,
   general: GENERAL,
   streetwear: STREETWEAR,
+  kirana: KIRANA,
 };
 
 /**
  * Product ids a demo store's Buy again section shows (the demo has no shopper or orders), newest first; ids must be in
  * that catalogue. A catalogue without a list shows no Buy again section.
  */
-export const DEMO_BUY_AGAIN: Partial<Record<DemoCatalogId, string[]>> = {};
+export const DEMO_BUY_AGAIN: Partial<Record<DemoCatalogId, string[]>> = {
+  // Milk, eggs, atta, dal, tomatoes, onions: what a regular orders every week.
+  kirana: ['ki-6', 'ki-7', 'ki-1', 'ki-3', 'ki-8', 'ki-9'],
+};
 
 export function demoCatalog(id: DemoCatalogId): DemoCatalog {
   return DEMO_CATALOGS[id];

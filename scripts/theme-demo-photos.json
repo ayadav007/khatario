@@ -614,5 +614,61 @@
     "source": "https://unsplash.com/photos/man-in-black-jacket-posing-YhgXfs80RJo",
     "licence": "Unsplash Licence (free for commercial use), photo by Clem Onojeghuo",
     "alt": "Man in a black jacket posing"
+  },
+  {
+    "file": "kirana/atta.webp",
+    "url": "https://images.unsplash.com/photo-1714842981153-ffeaf74e7a1a?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/a-bowl-of-flour-sitting-on-top-of-a-table-quVArOn8-30",
+    "licence": "Unsplash Licence (free for commercial use), photo by Roman Matveev",
+    "alt": "Bowl of wheat flour with ears of wheat"
+  },
+  {
+    "file": "kirana/dal.webp",
+    "url": "https://images.unsplash.com/photo-1708436477916-f97964f3ccf1?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/a-person-touching-a-bowl-of-lentils-on-a-table-Vznty-DJTIk",
+    "licence": "Unsplash Licence (free for commercial use), photo by Monika Borys",
+    "alt": "Bowls of dried lentils and split pulses"
+  },
+  {
+    "file": "kirana/oil.webp",
+    "url": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/uOBApnN_K7w",
+    "licence": "Unsplash Licence (free for commercial use), photo by Roberta Sorge",
+    "alt": "Glass bottle of cooking oil with olives"
+  },
+  {
+    "file": "kirana/onions.webp",
+    "url": "https://images.unsplash.com/photo-1605197378298-02bf0af1c896?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/red-onion-on-brown-wooden-crate-SSIwIRCu7bM",
+    "licence": "Unsplash Licence (free for commercial use), photo by Paul Magdas",
+    "alt": "Red onions in a crate at a market"
+  },
+  {
+    "file": "kirana/sugar.webp",
+    "url": "https://images.unsplash.com/photo-1634612831148-03a8550e1d52?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/a-wooden-bowl-filled-with-sugar-on-top-of-a-wooden-table-u_Mwofs_zu0",
+    "licence": "Unsplash Licence (free for commercial use), photo by Faran Raufi",
+    "alt": "Wooden bowl of white sugar"
+  },
+  {
+    "file": "kirana/tea.webp",
+    "url": "https://images.unsplash.com/photo-1628153792464-21bffac488d4?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/brown-and-black-round-food-T9yWxecVV2Q",
+    "licence": "Unsplash Licence (free for commercial use), photo by petr sidorov",
+    "alt": "Dry black tea leaves in a cup, seen from above"
+  },
+  {
+    "file": "kirana/milk.webp",
+    "url": "https://images.unsplash.com/photo-1639151082235-406d8eb262b9?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/c6TKtsi8C1k",
+    "licence": "Unsplash Licence (free for commercial use), photo by Mary Skrynnikova",
+    "alt": "Glass bottle of milk next to a glass of milk"
+  },
+  {
+    "file": "kirana/peanuts.webp",
+    "url": "https://images.unsplash.com/photo-1596503799872-5c5f052c27b9?auto=format&fit=max&w=1800&q=85",
+    "source": "https://unsplash.com/photos/brown-beans-in-white-ceramic-bowl-4-lD-BSL99I",
+    "licence": "Unsplash Licence (free for commercial use), photo by Fidias Cervantes",
+    "alt": "Bowl of roasted peanuts on a blue background"
   }
 ]

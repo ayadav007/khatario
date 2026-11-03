@@ -3,6 +3,7 @@
 import { DEFAULT_STORE_PROMO } from '@/lib/store/promo-sheet';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
 import { DEMO_CATALOGS } from './demo-catalogs';
+import { STORE_DAYS, type StoreHours } from '@/lib/store/store-hours';
 import { presetTheme } from './presets';
 import { THEME_CATALOG } from './theme-catalog';
 import type { ThemeData } from './types';
@@ -40,6 +41,26 @@ const DROP_PICTURES: Record<string, string> = {
 /** The streetwear categories Drop's three category tiles show, in tile order (the preset's tiles have no category of their own). */
 const DROP_TILE_CATEGORIES = ['sw-cat-tees', 'sw-cat-coords', 'sw-cat-denim'];
 
+/** Bazaar Bright's sample pictures, swapped for the kirana photos in its demo store (the hero is the grocery one). */
+const BAZAAR_PICTURES: Record<string, string> = {
+  'hero-1': '/theme-demos/heroes/grocery-1.webp',
+  'promo-1': '/theme-demos/grocery/vegetables.webp',
+  'promo-2': '/theme-demos/kirana/atta.webp',
+  'catalog-promo': '/theme-demos/kirana/dal.webp',
+  'category-1': '/theme-demos/grocery/tomatoes.webp',
+  'category-2': '/theme-demos/grocery/apples.webp',
+  'category-3': '/theme-demos/kirana/milk.webp',
+  'category-4': '/theme-demos/kirana/atta.webp',
+  'category-5': '/theme-demos/grocery/spice-powders.webp',
+  'category-6': '/theme-demos/kirana/peanuts.webp',
+};
+
+/** The kirana categories Bazaar's category tiles show, in tile order (the preset's eight tiles have no category of their own; the demo has six). */
+const BAZAAR_TILE_CATEGORIES = ['ki-cat-veg', 'ki-cat-fruit', 'ki-cat-dairy', 'ki-cat-staples', 'ki-cat-masala', 'ki-cat-snacks'];
+
+/** The demo shop opens 7 AM to 10 PM every day, India time. */
+const DEMO_STORE_HOURS = Object.fromEntries(STORE_DAYS.map((day) => [day, { open: '07:00', close: '22:00' }])) as StoreHours;
+
 /** The demo store at `subdomain` (demo-<slug>, any case), or null: Blank and unknown themes have none. */
 export function engineDemoStore(subdomain: string): StoreBusinessContext | null {
   const sd = subdomain.trim().toLowerCase();
@@ -59,7 +80,8 @@ export function engineDemoStore(subdomain: string): StoreBusinessContext | null 
     store_tagline: tagline,
     store_hero_image_url: DEMO_CATALOGS[catalog].heroes[0],
     store_min_order_amount: 0,
-    store_hours: null,
+    // Only Bazaar Bright shows hours; the other themes ignore them.
+    store_hours: theme.preset === 'bazaar' ? DEMO_STORE_HOURS : null,
     portal_theme: null,
     store_theme: null,
     store_about_md: `${brand} is a Khatario theme demo store. Its products are samples; your own appear when you use the ${theme.name} theme.`,
@@ -86,9 +108,10 @@ export function demoThemeData(store: StoreBusinessContext): ThemeData {
     businessName: store.name,
     tagline: store.store_tagline ?? '',
     heroUrl: heroes[0],
-    images: preset === 'heritage' ? HERITAGE_PICTURES : preset === 'drop' ? DROP_PICTURES : undefined,
+    images: preset === 'heritage' ? HERITAGE_PICTURES : preset === 'drop' ? DROP_PICTURES : preset === 'bazaar' ? BAZAAR_PICTURES : undefined,
   });
   if (preset === 'drop') pointDropTilesAtCategories(data);
+  if (preset === 'bazaar') pointBazaarTilesAtCategories(data);
   return data;
 }
 
@@ -100,5 +123,21 @@ function pointDropTilesAtCategories(data: ThemeData): void {
       const block = section.blocks?.[id];
       if (block && DROP_TILE_CATEGORIES[i]) block.settings = { ...block.settings, category: DROP_TILE_CATEGORIES[i] };
     });
+  }
+}
+
+/** Gives Bazaar's category tiles the kirana categories (one per tile, tiles beyond the six categories dropped), so each tile's picture shows. */
+function pointBazaarTilesAtCategories(data: ThemeData): void {
+  for (const section of Object.values(data.templates.home?.sections ?? {})) {
+    if (section.type !== 'category-grid') continue;
+    const order = (section.block_order ?? []).slice(0, BAZAAR_TILE_CATEGORIES.length);
+    const blocks: NonNullable<typeof section.blocks> = {};
+    order.forEach((id, i) => {
+      const block = section.blocks?.[id];
+      if (block) blocks[id] = { ...block, settings: { ...block.settings, category: BAZAAR_TILE_CATEGORIES[i] } };
+    });
+    section.blocks = blocks;
+    section.block_order = order;
+    section.settings = { ...section.settings, columns: BAZAAR_TILE_CATEGORIES.length };
   }
 }
