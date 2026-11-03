@@ -1,5 +1,6 @@
 // Pure helpers for the `main-product` blocks (no React, no server code).
 import { variantOptions, type StoreVariantInput } from '@/lib/store/variant-options';
+import { packPriceShowsMrp } from '@/lib/store/engine/card-packs';
 
 /** One block the server hands the client: settings over their defaults, richtext already sanitised. */
 export interface ProductBlockProps {
@@ -67,4 +68,14 @@ export function stickyBuyBarVisible(input: {
   hasProduct: boolean;
 }): boolean {
   return input.enabled && input.phone && input.hasProduct && !input.buyInView;
+}
+
+/**
+ * "You save ₹N": the MRP less the price, only when the price on show is the product's own (the MRP belongs to it, not to a
+ * pack at another price) and the MRP is above it. Null otherwise.
+ */
+export function youSave(price: number, productPrice: number, mrp: number | null): number | null {
+  if (mrp == null || !packPriceShowsMrp(price, productPrice) || !(mrp > price)) return null;
+  const saved = Math.round((mrp - price) * 100) / 100;
+  return saved > 0 ? saved : null;
 }

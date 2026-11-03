@@ -9,7 +9,7 @@ import { shareUrl } from '@/lib/store/engine/links';
 import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, pincodeToSave, storePinKey } from '@/lib/store/store-pincode';
 import { useEngineProduct } from './EngineProductContext';
 import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
-import { lowStockNote, type ProductBlockProps } from './product-blocks';
+import { lowStockNote, youSave, type ProductBlockProps } from './product-blocks';
 import { StickyBuyBar } from './StickyBuyBar';
 
 const OUTLINE: CSSProperties = {
@@ -60,6 +60,7 @@ function TitleBlock({ id, settings }: ProductBlockProps) {
 function PriceBlock({ id, settings }: ProductBlockProps) {
   const { product, offer } = useEngineProduct();
   if (!product || !offer) return null;
+  const saved = youSave(offer.price, Number(product.selling_price) || 0, offer.mrp);
   return (
     <div data-eng-block={id}>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -76,6 +77,11 @@ function PriceBlock({ id, settings }: ProductBlockProps) {
           </>
         ) : null}
       </p>
+      {saved != null ? (
+        <p className="mt-1 text-sm font-semibold" style={{ color: 'var(--c-accent, var(--primary))' }}>
+          You save {inr(saved)}
+        </p>
+      ) : null}
       {on(settings.show_tax_note) && product.tax_rate > 0 ? (
         <p className="mt-1 text-xs opacity-60">
           GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}
@@ -94,7 +100,15 @@ function VariantBlock({ id, settings }: ProductBlockProps) {
   const note = needsVariant ? lowStockNote(variant, threshold) : null;
   return (
     <div data-eng-block={id}>
-      {needsVariant ? <VariantPicker variants={variants} value={variantId} onChange={setVariantId} /> : null}
+      {needsVariant ? (
+        <VariantPicker
+          variants={variants}
+          value={variantId}
+          onChange={setVariantId}
+          tiles={settings.style === 'tiles'}
+          basePrice={Number(product?.selling_price) || 0}
+        />
+      ) : null}
       {note ? (
         <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--c-accent, var(--primary))' }} aria-live="polite">
           {note}

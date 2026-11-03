@@ -1,4 +1,11 @@
-import { buyButtonState, lowStockNote, pickPromptLabel, stickyBuyBarVisible, variantSizeLabel } from '@/components/store/engine/product/product-blocks';
+import {
+  buyButtonState,
+  lowStockNote,
+  pickPromptLabel,
+  stickyBuyBarVisible,
+  variantSizeLabel,
+  youSave,
+} from '@/components/store/engine/product/product-blocks';
 
 const base = { canAdd: true, stock: 5, needsVariant: false, variantChosen: false, inCart: false, quantity: 0 };
 
@@ -101,5 +108,15 @@ describe('pickPromptLabel', () => {
     expect(pickPromptLabel([variant('a', { Colour: 'Red' }), variant('b', { Colour: 'Blue' })])).toBe('Choose an option');
     expect(pickPromptLabel([variant('a', null)])).toBe('Choose an option');
     expect(pickPromptLabel([])).toBe('Choose an option');
+  });
+});
+
+describe('youSave', () => {
+  it("says you save only for the product's own price", () => {
+    expect(youSave(549, 549, 640)).toBe(91);
+    expect(youSave(1050, 549, 640)).toBeNull();
+    expect(youSave(549, 549, null)).toBeNull();
+    expect(youSave(549, 549, 549)).toBeNull();
+    expect(youSave(549, 549, 500)).toBeNull();
   });
 });

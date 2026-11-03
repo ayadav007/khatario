@@ -50,6 +50,19 @@ describe('main-product schema', () => {
     expect(schema.presets.flatMap((p) => (p.blocks ?? []).map((b) => b.type))).not.toContain('delivery_check');
   });
 
+  it('offers tiles on the Options block, default buttons', () => {
+    const block = (getSectionSchema('main-product')!.blocks ?? []).find((b) => b.type === 'variant_picker')!;
+    const style = block.settings.find((s) => s.id === 'style');
+    expect(style).toMatchObject({
+      type: 'select',
+      default: 'buttons',
+      options: [
+        { value: 'buttons', label: 'Buttons' },
+        { value: 'tiles', label: 'Tiles with price' },
+      ],
+    });
+  });
+
   it('presets title, price, options, buy buttons and description in that order', () => {
     const preset = getSectionSchema('main-product')!.presets[0];
     expect((preset.blocks ?? []).map((b) => b.type)).toEqual(['title', 'price', 'variant_picker', 'buy_buttons', 'description']);

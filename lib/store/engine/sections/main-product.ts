@@ -59,6 +59,17 @@ export const mainProduct: SectionSchema = {
       limit: 1,
       settings: [
         {
+          id: 'style',
+          type: 'select',
+          label: 'Option style',
+          default: 'buttons',
+          options: [
+            { value: 'buttons', label: 'Buttons' },
+            { value: 'tiles', label: 'Tiles with price' },
+          ],
+          info: 'Tiles show each pack with its price. They apply to products with one option (a size or weight).',
+        },
+        {
           id: 'low_stock_at',
           type: 'range',
           label: 'Show "Only N left" at',
