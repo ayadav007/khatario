@@ -1000,7 +1000,7 @@ function DesignedProductTile({
       <span className="pc-now">{rupees(price)}</span>
       {look.show_mrp && struck && mrp ? <del>{rupees(mrp)}</del> : null}
       {saving ? <span className="pc-disc">{saving.kind === 'save' ? `Save ${rupees(saving.amount)}` : `${saving.percent}% off`}</span> : null}
-      {perUnit ? <span className="punit pc-unitprice">{perUnit}</span> : null}
+      {perUnit ? <span className="pc-unitprice">{perUnit}</span> : null}
     </div>
   ) : null;
 
