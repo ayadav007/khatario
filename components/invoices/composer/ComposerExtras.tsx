@@ -14,6 +14,7 @@ export function NotesAndAttachments({
   onRemoveAttachment,
   uploading,
   readOnly,
+  notesReadOnly = readOnly,
 }: {
   notes: string;
   setNotes: (v: string) => void;
@@ -22,6 +23,8 @@ export function NotesAndAttachments({
   onRemoveAttachment: (id: string) => void;
   uploading: boolean;
   readOnly: boolean;
+  /** Notes stay editable while amending a final invoice; attachments do not. */
+  notesReadOnly?: boolean;
 }) {
   const [showNotes, setShowNotes] = useState(!!notes.trim());
   const fileRef = useRef<HTMLInputElement>(null);
@@ -36,12 +39,12 @@ export function NotesAndAttachments({
         <div className="mb-2 flex items-center justify-between">
           <SectionLabel>Notes &amp; terms</SectionLabel>
         </div>
-        {showNotes || readOnly ? (
+        {showNotes || notesReadOnly ? (
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            disabled={readOnly}
-            autoFocus={!readOnly && !notes}
+            disabled={notesReadOnly}
+            autoFocus={!notesReadOnly && !notes}
             rows={4}
             placeholder="Thank you for your business. Goods once sold will not be taken back."
             className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-primary-500 focus:ring-4 focus:ring-primary-100 disabled:bg-slate-50 dark:disabled:bg-slate-800/50"

@@ -118,8 +118,12 @@ const CLASSIC_DESKTOP_FORM_KEY = 'invoiceClassicDesktop';
 /** A registered buyer's place of supply defaults to the state in their GSTIN, not the typed address. */
 const stateFromGstin = (gstin: string | null | undefined): string | undefined => {
   const code = gstin && /^\d{2}/.test(gstin.trim()) ? gstin.trim().slice(0, 2) : '';
-  return code ? INDIAN_STATES.find((s) => getStateCode(s) === code) : undefined;
+  return stateFromCode(code);
 };
+
+/** Saved invoices store the place of supply as a code ("29"); the form works in state names. */
+const stateFromCode = (code: string | null | undefined): string | undefined =>
+  code ? INDIAN_STATES.find((s) => getStateCode(s) === code) : undefined;
 
 interface CustomerAutocompleteProps {
   customers: Customer[];
@@ -460,6 +464,8 @@ function NewInvoiceContent() {
   const [offlineDisplayNumber, setOfflineDisplayNumber] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isInvoiceLocked, setIsInvoiceLocked] = useState(false);
+  /** Customer whose addresses and place of supply are already on the form (a pick, or a saved invoice). */
+  const partiesFilledForRef = useRef<string | null>(null);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [createCustomerModalOpen, setCreateCustomerModalOpen] = useState(false);
   const [createCustomerDraft, setCreateCustomerDraft] = useState<CreateCustomerDraft>({});
@@ -723,6 +729,7 @@ function NewInvoiceContent() {
     searchParams.get('amend') === '1' &&
     savedStatus === 'final' &&
     documentType !== 'proforma_invoice';
+  // Read-only state of the fields an amendment may change: dates, bill-to, ship-to, notes and references.
   const datesReadOnly = isInvoiceLocked || (isFinal && !isAmendMode);
   
   // PHASE 1: Initialize prefix and number as null - API is the single source of truth
@@ -2115,6 +2122,19 @@ function NewInvoiceContent() {
           due_date: dueDate || null,
           billing_address: billingAddress,
           billing_name: billingName,
+          shipping_address: shippingAddress,
+          notes,
+          payment_terms: paymentTerms,
+          purchase_order_number: purchaseOrderNumber,
+          purchase_order_date: purchaseOrderDate || null,
+          reference_number: referenceNumber,
+          delivery_note: deliveryNote,
+          other_references: otherReferences,
+          dispatched_through: dispatchedThrough,
+          destination,
+          terms_of_delivery: termsOfDelivery,
+          eway_bill_number: ewayBillNumber,
+          eway_bill_date: ewayBillDate || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2129,7 +2149,7 @@ function NewInvoiceContent() {
     } finally {
       setLoading(false);
     }
-  }, [savedInvoiceId, isInvoiceLocked, lockReason, invoiceDate, dueDate, billingAddress, billingName, router, toastCtx]);
+  }, [savedInvoiceId, isInvoiceLocked, lockReason, invoiceDate, dueDate, billingAddress, billingName, shippingAddress, notes, paymentTerms, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, otherReferences, dispatchedThrough, destination, termsOfDelivery, ewayBillNumber, ewayBillDate, router, toastCtx]);
 
   const handleSave = useCallback(async (targetStatus: 'draft' | 'final') => {
     if (isAmendMode) {
@@ -2560,9 +2580,10 @@ function NewInvoiceContent() {
           const data = await res.json();
           const inv = data.invoice || data;
           setSavedInvoiceId(editId);
-          setIsInvoiceLocked(inv.is_editable === false);
+          // is_editable is false on every final invoice; only a filed GSTR-1 locks an amendment.
+          setIsInvoiceLocked(inv.gstr1_filed === true);
           setLockReason(
-            inv.is_editable === false
+            inv.gstr1_filed === true
               ? 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'
               : null,
           ); 
@@ -2572,6 +2593,7 @@ function NewInvoiceContent() {
             ? (inv.estimate_status === 'converted' ? 'final' : 'draft')
             : (inv.status || 'draft');
           setSavedStatus(statusToSave as 'draft' | 'final'); 
+          partiesFilledForRef.current = inv.customer_id || null;
           setCustomerId(inv.customer_id || ''); 
           setInvoiceDate(inv.invoice_date?.split('T')[0] || '');
           setDueDate(inv.due_date?.split('T')[0] || '');
@@ -2586,7 +2608,7 @@ function NewInvoiceContent() {
             setInvoicePrefix(null);
             setInvoiceNumber(inv.invoice_number || '');
           }
-          setPlaceOfSupply(inv.place_of_supply_state_code || ''); 
+          setPlaceOfSupply(stateFromCode(inv.place_of_supply_state_code) || ''); 
           setPricesIncludeGst(inv.prices_include_gst === true);
           // Set document type but don't trigger form reset in edit mode
           const newDocType = inv.document_type || 'tax_invoice';
@@ -2601,6 +2623,13 @@ function NewInvoiceContent() {
           setBillingAddress(inv.billing_address || '');
           setBillingName(inv.billing_name || inv.customer_name || '');
           setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || '');
+          // Load the references too: a re-save or amendment sends them back, so a blank here would erase them.
+          setEwayBillNumber(inv.eway_bill_number || ''); setEwayBillDate(inv.eway_bill_date?.split('T')[0] || '');
+          setPurchaseOrderNumber(inv.purchase_order_number || ''); setPurchaseOrderDate(inv.purchase_order_date?.split('T')[0] || '');
+          setReferenceNumber(inv.reference_number || ''); setDeliveryNote(inv.delivery_note || '');
+          setPaymentTerms(inv.payment_terms || ''); setOtherReferences(inv.other_references || '');
+          setDispatchedThrough(inv.dispatched_through || ''); setDestination(inv.destination || '');
+          setTermsOfDelivery(inv.terms_of_delivery || '');
           const loadedSupply = String(inv.supply_type || '');
           const loadedKind: 'taxable' | 'exempt' | 'export' | 'sez' =
             (business as { gst_registration_type?: string } | null)?.gst_registration_type === 'composition'
@@ -2663,15 +2692,23 @@ function NewInvoiceContent() {
 
   const workOrderShipRef = useRef<string | null>(null);
   useEffect(() => {
+    // Fill addresses and place of supply from the customer master once per pick. This effect also re-runs
+    // on tax-context changes and after a save; refilling then undid a chosen place of supply and a saved
+    // invoice's own parties.
+    const fillParties = !!customerId && partiesFilledForRef.current !== customerId;
+    if (!customerId) partiesFilledForRef.current = null;
     if (!customerId || !business) { if (!savedInvoiceId) { setSelectedCustomer(null); setBillingAddress(''); setShippingAddress(''); setPlaceOfSupply(business?.state || ''); setCreditMetrics(null); } return; }
     fetch(`/api/customers/${customerId}?user_id=${user?.id}`).then(r => r.json()).then(d => {
       const c = d.customer;
       if (!c) { console.error('Customer not found:', customerId); return; }
       setSelectedCustomer(c);
-      setBillingAddress(c.billing_address || c.address || '');
-      setShippingAddress(workOrderShipRef.current || c.shipping_address || c.address || '');
-      setPlaceOfSupply(stateFromGstin(c.gstin) || c.state || business.state || '');
-      setRows(prev => prev.map(r => calculateRow(r, true)));
+      if (fillParties) {
+        partiesFilledForRef.current = customerId;
+        setBillingAddress(c.billing_address || c.address || '');
+        setShippingAddress(workOrderShipRef.current || c.shipping_address || c.address || '');
+        setPlaceOfSupply(stateFromGstin(c.gstin) || c.state || business.state || '');
+        setRows(prev => prev.map(r => calculateRow(r, true)));
+      }
       
       // PHASE 6: Fetch credit metrics for customer
       if (c.credit_limit !== undefined && c.current_balance !== undefined) {
@@ -3248,7 +3285,7 @@ function NewInvoiceContent() {
       )}
       {isAmendMode && !isInvoiceLocked && (
         <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 text-sm text-primary-900">
-          Amend this invoice: you can change the date, due date, billing address, and the name printed on this bill. Items and amounts stay as posted.
+          Amend this invoice: you can change the date, due date, bill-to name and address, ship-to address, notes, and the PO, e-way bill and dispatch details. Place of supply, items and amounts stay as posted.
         </div>
       )}
       {!posMode && (
@@ -3427,29 +3464,29 @@ function NewInvoiceContent() {
                   el.style.height = `${el.scrollHeight}px`;
                 }}
                 placeholder="Shipping Address"
-                disabled={isFinal}
+                disabled={datesReadOnly}
               />
             </div>
           </div>
         </div>
       )}
-      {!posMode && !isFinal && (
+      {!posMode && (!isFinal || isAmendMode) && (
         <div className="bg-transparent rounded-lg border border-transparent">
           <button type="button" onClick={() => setShowAdditionalInfo(!showAdditionalInfo)} className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 dark:hover:bg-slate-800/80 rounded-lg transition-colors"><h3 className="text-sm font-semibold text-text-primary">Additional Information</h3><ChevronDown className={`w-5 h-5 text-text-muted transition-transform ${showAdditionalInfo ? 'transform rotate-180' : ''}`} /></button>
           {showAdditionalInfo && (
             <div className="mt-2 p-4 bg-surface rounded-lg border border-border shadow-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="12 digits, or add it after the bill" disabled={isFinal} /></div> : null}
-                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} placeholder="PO number" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Reference number" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Delivery Note</label><Input type="text" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} placeholder="Delivery note number" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Mode/Terms of Payment</label><Input type="text" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="Payment terms" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Other References</label><Input type="text" value={otherReferences} onChange={(e) => setOtherReferences(e.target.value)} placeholder="Other references" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Dispatched through</label><Input type="text" value={dispatchedThrough} onChange={(e) => setDispatchedThrough(e.target.value)} placeholder="Dispatched through" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Destination</label><Input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Terms of Delivery</label><textarea value={termsOfDelivery} onChange={(e) => setTermsOfDelivery(e.target.value)} placeholder="Terms of delivery" disabled={isFinal} className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent" rows={2} /></div>
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="12 digits, or add it after the bill" disabled={datesReadOnly} /></div> : null}
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={datesReadOnly} /></div> : null}
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} placeholder="PO number" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Reference number" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Delivery Note</label><Input type="text" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} placeholder="Delivery note number" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Mode/Terms of Payment</label><Input type="text" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="Payment terms" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Other References</label><Input type="text" value={otherReferences} onChange={(e) => setOtherReferences(e.target.value)} placeholder="Other references" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Dispatched through</label><Input type="text" value={dispatchedThrough} onChange={(e) => setDispatchedThrough(e.target.value)} placeholder="Dispatched through" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Destination</label><Input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" disabled={datesReadOnly} /></div>
+                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Terms of Delivery</label><textarea value={termsOfDelivery} onChange={(e) => setTermsOfDelivery(e.target.value)} placeholder="Terms of delivery" disabled={datesReadOnly} className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent" rows={2} /></div>
               </div>
               <div className="mt-4 pt-4 border-t border-border">
                 <label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Attachments</label>
@@ -3506,7 +3543,7 @@ function NewInvoiceContent() {
       <ItemsTable rows={displayRows} onUpdateRow={updateRow} onChangeUnit={changeRowUnit} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
+          <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={datesReadOnly} /></div>
           <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
           <ActionsBar
             onPreview={handlePreview}
@@ -3644,7 +3681,7 @@ function NewInvoiceContent() {
       <>
         {isAmendMode && !isInvoiceLocked && (
           <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-100">
-            Amend this invoice: you can change the date, due date, billing address, and the name printed on this bill. Items and amounts stay as posted.
+            Amend this invoice: you can change the date, due date, bill-to name and address, ship-to address, notes, and the PO, e-way bill and dispatch details. Place of supply, items and amounts stay as posted.
           </div>
         )}
         {isInvoiceLocked && (
@@ -3972,7 +4009,7 @@ function NewInvoiceContent() {
                 </div>
                 <div>
                   <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
-                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
+                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={datesReadOnly} />
                 </div>
               </>
             ) : null}
@@ -4128,7 +4165,7 @@ function NewInvoiceContent() {
               ))}
             </div>
           ) : null}
-          <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
+          <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={datesReadOnly} />
         </div>
         <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0, classification: '' }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} chargesNotice={chargesNotice} />
         {words ? <p className="text-[10px] leading-snug text-text-muted">{words}</p> : null}
@@ -4169,22 +4206,22 @@ function NewInvoiceContent() {
             ))}
           </div>
         ) : null}
-        {!isFinal && (
+        {(!isFinal || isAmendMode) && (
           <div className="space-y-3 border-t border-border pt-3">
             <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">More details</p>
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3">
-                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div> : null}
-                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Delivery Note</label><Input type="text" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Mode/Terms of Payment</label><Input type="text" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Other References</label><Input type="text" value={otherReferences} onChange={(e) => setOtherReferences(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Dispatched through</label><Input type="text" value={dispatchedThrough} onChange={(e) => setDispatchedThrough(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Destination</label><Input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Terms of Delivery</label><textarea value={termsOfDelivery} onChange={(e) => setTermsOfDelivery(e.target.value)} disabled={isFinal} className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background text-text-primary" rows={2} /></div>
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={datesReadOnly} /></div> : null}
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={datesReadOnly} /></div> : null}
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Delivery Note</label><Input type="text" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Mode/Terms of Payment</label><Input type="text" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Other References</label><Input type="text" value={otherReferences} onChange={(e) => setOtherReferences(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Dispatched through</label><Input type="text" value={dispatchedThrough} onChange={(e) => setDispatchedThrough(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Destination</label><Input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} disabled={datesReadOnly} /></div>
+                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Terms of Delivery</label><textarea value={termsOfDelivery} onChange={(e) => setTermsOfDelivery(e.target.value)} disabled={datesReadOnly} className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background text-text-primary" rows={2} /></div>
                 </div>
                 <div className="pt-2 border-t border-border">
                   <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Attachments</label>

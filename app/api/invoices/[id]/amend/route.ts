@@ -5,6 +5,8 @@ import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-h
 import { reverseInvoicePostingForRepost } from '@/lib/invoices/invoice-edit-postings';
 import { activeLedgerLineSql } from '@/lib/ledger-reversal';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { isInvoiceInFiledGstr1 } from '@/lib/invoices/gstr1-filed';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,10 +32,30 @@ function parseDate(value: unknown): string | null | 'invalid' {
   return s;
 }
 
+/** Printed fields that do not touch the tax. Each one changes only when the request sends it. */
+const AMEND_TEXT_FIELDS: Array<{ column: string; label: string; max: number }> = [
+  { column: 'shipping_address', label: 'Ship-to address', max: 2000 },
+  { column: 'notes', label: 'Notes', max: 5000 },
+  { column: 'payment_terms', label: 'Terms of payment', max: 1000 },
+  { column: 'terms_of_delivery', label: 'Terms of delivery', max: 1000 },
+  { column: 'purchase_order_number', label: 'PO number', max: 100 },
+  { column: 'reference_number', label: 'Reference number', max: 100 },
+  { column: 'eway_bill_number', label: 'E-way bill number', max: 100 },
+  { column: 'delivery_note', label: 'Delivery note', max: 255 },
+  { column: 'other_references', label: 'Other references', max: 255 },
+  { column: 'dispatched_through', label: 'Dispatched through', max: 255 },
+  { column: 'destination', label: 'Destination', max: 255 },
+];
+const AMEND_DATE_FIELDS: Array<{ column: string; label: string }> = [
+  { column: 'purchase_order_date', label: 'PO date' },
+  { column: 'eway_bill_date', label: 'E-way bill date' },
+];
+
 /**
  * PATCH /api/invoices/[id]/amend
- * After finalization, change only the invoice date, due date, billing address,
- * and the name printed on this bill. Amounts, items, and the customer master stay put.
+ * After finalization, change the invoice date, due date, billing address, the name printed
+ * on this bill, the ship-to address, notes, and the PO / e-way bill / dispatch references.
+ * Place of supply, items, amounts, and the customer master stay put.
  * A date change reverses the invoice voucher and posts it again on the new date.
  */
 export async function PATCH(
@@ -72,6 +94,24 @@ export async function PATCH(
     return NextResponse.json({ error: 'Customer name is too long.', code: 'NAME_TOO_LONG' }, { status: 400 });
   }
 
+  const extras: Array<{ column: string; value: string | null }> = [];
+  for (const f of AMEND_TEXT_FIELDS) {
+    if (!(f.column in body)) continue;
+    const value = body[f.column] == null ? '' : String(body[f.column]).trim();
+    if (value.length > f.max) {
+      return NextResponse.json({ error: `${f.label} is too long.`, code: 'FIELD_TOO_LONG' }, { status: 400 });
+    }
+    extras.push({ column: f.column, value: value || null });
+  }
+  for (const f of AMEND_DATE_FIELDS) {
+    if (!(f.column in body)) continue;
+    const value = parseDate(body[f.column]);
+    if (value === 'invalid') {
+      return NextResponse.json({ error: `Enter a valid ${f.label}, or leave it blank.`, code: 'INVALID_DATE' }, { status: 400 });
+    }
+    extras.push({ column: f.column, value });
+  }
+
   const pool = getPool();
   const existing = await pool.query<{
     id: string;
@@ -82,9 +122,10 @@ export async function PATCH(
     invoice_date: string | Date;
     due_date: string | Date | null;
     customer_name: string | null;
+    eway_bill_number: string | null;
   }>(
     `SELECT i.id, i.branch_id, i.status, i.document_type, i.invoice_number, i.invoice_date, i.due_date,
-            c.name AS customer_name
+            i.eway_bill_number, c.name AS customer_name
        FROM invoices i
        LEFT JOIN customers c ON c.id = i.customer_id AND c.deleted_at IS NULL
       WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
@@ -103,16 +144,7 @@ export async function PATCH(
       { status: 409 },
     );
   }
-  // is_editable is false on every finalized invoice, so it cannot tell whether a GSTR-1 was filed.
-  // Ask the filing itself.
-  const filed = await pool.query(
-    `SELECT 1 FROM gstr1_filing_invoices fi
-       JOIN gstr1_filings f ON f.id = fi.gstr1_filing_id
-      WHERE fi.invoice_id = $1 AND f.status = 'filed'
-      LIMIT 1`,
-    [params.id],
-  );
-  if (filed.rows.length > 0) {
+  if (await isInvoiceInFiledGstr1(pool, params.id)) {
     return NextResponse.json(
       {
         error: 'This invoice is locked and cannot be amended because it was included in a GSTR-1 filing.',
@@ -131,6 +163,16 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();
     throw error;
+  }
+
+  const newEwayBill = extras.find((e) => e.column === 'eway_bill_number')?.value;
+  if (newEwayBill && newEwayBill !== (inv.eway_bill_number || '').trim()) {
+    try {
+      await assertFeatureAccess(businessId, 'eway_bill');
+    } catch (error) {
+      if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+      throw error;
+    }
   }
 
   const previousDate = dateOnly(inv.invoice_date);
@@ -198,6 +240,11 @@ export async function PATCH(
       );
     }
 
+    // Column names come from the fixed lists above, never from the request.
+    const extraSet = (firstParam: number) =>
+      extras.map((e, i) => `,\n                ${e.column} = $${firstParam + i}`).join('');
+    const extraValues = extras.map((e) => e.value);
+
     await client.query('SAVEPOINT amend_invoice');
     try {
       await client.query(
@@ -205,10 +252,10 @@ export async function PATCH(
             SET invoice_date = $3::date,
                 due_date = $4::date,
                 billing_address = $5,
-                billing_name = $6,
+                billing_name = $6${extraSet(7)},
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
-        [params.id, businessId, invoiceDate, dueDate, address, printedName],
+        [params.id, businessId, invoiceDate, dueDate, address, printedName, ...extraValues],
       );
       await client.query('RELEASE SAVEPOINT amend_invoice');
     } catch (error: any) {
@@ -228,10 +275,10 @@ export async function PATCH(
         `UPDATE invoices
             SET invoice_date = $3::date,
                 due_date = $4::date,
-                billing_address = $5,
+                billing_address = $5${extraSet(6)},
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
-        [params.id, businessId, invoiceDate, dueDate, address],
+        [params.id, businessId, invoiceDate, dueDate, address, ...extraValues],
       );
     }
 
@@ -289,6 +336,7 @@ export async function PATCH(
       due_date: dueDate,
       billing_address: address,
       billing_name: printedName,
+      ...Object.fromEntries(extras.map((e) => [e.column, e.value])),
     });
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => undefined);
