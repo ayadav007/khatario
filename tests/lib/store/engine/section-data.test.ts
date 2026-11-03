@@ -242,3 +242,42 @@ describe('out-of-stock place', () => {
     expect(itemQueries).toHaveLength(3);
   });
 });
+
+describe('store address', () => {
+  const queryMock = queryRows as jest.Mock;
+  const store = { business_id: '99999999-9999-4999-8999-999999999999', store_subdomain: 'ganesh' } as StoreBusinessContext;
+  const req = new Map<string, SectionDataRequest>([['info', { storeAddress: true }]]);
+  const branch = (id: string, address: string | null) => ({
+    id,
+    name: id,
+    location_lat: null,
+    location_lng: null,
+    location_address: address,
+    delivery_mode: 'all_india',
+    delivery_radius_km: 0,
+    serviceable_pincodes: [],
+    allow_pickup: true,
+    free_delivery_above: null,
+  });
+
+  beforeEach(() => queryMock.mockReset());
+
+  it('uses the picked branch, else the first branch that has an address', async () => {
+    queryMock.mockResolvedValue([branch('a', null), branch('b', ' 12 MG Road '), branch('c', '9 Park Street')]);
+    expect((await resolveSectionData(store, req)).info.storeAddress).toBe('12 MG Road');
+    expect((await resolveSectionData(store, req, { branchId: 'c' })).info.storeAddress).toBe('9 Park Street');
+  });
+
+  it('gives null when no branch has an address or the lookup fails, and does not fail the section', async () => {
+    queryMock.mockResolvedValue([branch('a', null)]);
+    expect((await resolveSectionData(store, req)).info).toEqual({ storeAddress: null });
+    queryMock.mockRejectedValue(new Error('down'));
+    expect((await resolveSectionData(store, req)).info).toEqual({ storeAddress: null });
+  });
+
+  it('is not looked up when no section asks', async () => {
+    queryMock.mockResolvedValue([]);
+    await resolveSectionData(store, new Map<string, SectionDataRequest>([['x', {}]]));
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+});

@@ -34,6 +34,11 @@ const IST_OFFSET_MINUTES = 330;
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** The weekday it is in India at `now`, whatever the server or visitor clock says. */
+export function storeDayOf(now: Date): StoreDay {
+  return BY_UTC_DAY[new Date(now.getTime() + IST_OFFSET_MINUTES * 60_000).getUTCDay()];
+}
+
 function minutesOf(hhmm: string): number {
   return Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 }

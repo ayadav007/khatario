@@ -12,8 +12,8 @@ function allSettingLists(): Array<{ where: string; settings: SettingSchema[] }> 
 }
 
 describe('section registry', () => {
-  it('registers 32 section types keyed by their own type', () => {
-    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(32);
+  it('registers 33 section types keyed by their own type', () => {
+    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(33);
     for (const [key, schema] of Object.entries(SECTION_SCHEMAS)) expect(schema.type).toBe(key);
   });
 
@@ -65,5 +65,23 @@ describe('section registry', () => {
       products: { source: 'price_max', priceMax: 500, limit: 4 },
     });
     expect(getSectionSchema('category-grid')!.data!({})).toEqual({ categories: true });
+  });
+});
+
+describe('store-info section', () => {
+  it('is registered for the home and page templates in the Info category', () => {
+    const s = getSectionSchema('store-info')!;
+    expect(s.category).toBe('Info');
+    expect(s.templates).toEqual(['home', 'page']);
+    expect(s.settings.slice(0, 4).map((x) => [x.id, x.type, x.default])).toEqual([
+      ['heading', 'text', ''],
+      ['show_hours', 'checkbox', true],
+      ['show_address', 'checkbox', true],
+      ['show_buttons', 'checkbox', true],
+    ]);
+    expect(s.data!({})).toEqual({ storeAddress: true });
+    expect(s.data!({ show_address: false })).toEqual({});
+    expect(sectionsForTemplate('home').map((x) => x.type)).toContain('store-info');
+    expect(sectionsForTemplate('page').map((x) => x.type)).toContain('store-info');
   });
 });

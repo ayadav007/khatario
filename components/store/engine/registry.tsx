@@ -24,6 +24,7 @@ import { MainCatalog } from './sections/MainCatalog';
 import { Collage } from './sections/Collage';
 import { ShopTheLook } from './sections/ShopTheLook';
 import { ImageGallery } from './sections/ImageGallery';
+import { StoreInfo } from './sections/StoreInfo';
 import { CollectionList } from './sections/CollectionList';
 import { LogoList } from './sections/LogoList';
 import { Video } from './sections/Video';
@@ -78,6 +79,7 @@ export const SECTION_COMPONENTS: Record<string, ComponentType<EngineSectionProps
   collage: Collage,
   'shop-the-look': ShopTheLook,
   'image-gallery': ImageGallery,
+  'store-info': StoreInfo,
   'collection-list': CollectionList,
   'logo-list': LogoList,
   video: Video,

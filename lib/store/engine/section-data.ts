@@ -26,6 +26,8 @@ export interface SectionData {
   categoriesFailed?: true;
   /** The products-by-id lookup failed: `productsById` is `{}` so the section still renders without them, but it is not the truth. */
   productsFailed?: true;
+  /** The store address a section asked for; null when no branch has one (or the lookup failed). */
+  storeAddress?: string | null;
   /** Category shelves: one entry per category with products, in category order. */
   shelves?: Array<{ category: SectionCategory; products: StoreItem[] }>;
   error?: string;
@@ -198,6 +200,19 @@ async function loadCategories(store: StoreBusinessContext, opts: ResolveOptions)
   return storeCategories(store.business_id, opts);
 }
 
+/** The branch address the shopper picked, else the first active branch that has one; null for demo stores and on any failure. */
+async function loadStoreAddress(store: StoreBusinessContext, opts: ResolveOptions): Promise<string | null> {
+  if (store.is_demo) return null;
+  try {
+    const { getStoreBranches } = await import('@/lib/store/resolve-store');
+    const withAddress = (await getStoreBranches(store.business_id)).filter((b) => b.location_address?.trim());
+    const picked = withAddress.find((b) => b.id === opts.branchId) ?? withAddress[0];
+    return picked?.location_address?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -285,6 +300,8 @@ export async function resolveSectionData(
         )
       : null;
 
+  let addressJob: Promise<string | null> | null = null;
+
   const productJob = (p: ProductsRequest): string => {
     const key = productRequestKey(p, opts);
     if (!productJobs.has(key)) {
@@ -301,6 +318,7 @@ export async function resolveSectionData(
 
   for (const [id, req] of requests) {
     if (req.products) sectionKey.set(id, productJob(req.products));
+    if (req.storeAddress && !addressJob) addressJob = loadStoreAddress(store, opts);
     if ((req.categories || req.shelves) && !categoriesJob) {
       categoriesJob = loadCategories(store, opts).then(
         (items) => ({ items }),
@@ -363,6 +381,7 @@ export async function resolveSectionData(
       } else if (r.error) data.error = data.error ?? r.error;
       else data.categories = r.items;
     }
+    if (req.storeAddress && addressJob) data.storeAddress = await addressJob;
     const plan = shelfPlans.get(id);
     if (plan) {
       if (plan.error) data.error = data.error ?? plan.error;

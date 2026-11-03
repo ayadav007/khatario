@@ -58,6 +58,8 @@ export interface SectionDataRequest {
   /** Products by id, at most 12; each section gets the ones found, keyed by id. */
   productIds?: string[];
   categories?: boolean;
+  /** The store's address (the shopper's branch, else the first branch that has one); a failed lookup gives none. */
+  storeAddress?: boolean;
   /** A failed categories lookup gives this section no categories instead of an error (the section still renders). */
   categoriesOptional?: boolean;
   /** Category shelves: the first `maxCategories` categories with products, `perShelf` products each. */
@@ -74,6 +76,7 @@ export interface SectionSchema {
     | 'Text'
     | 'Media'
     | 'Social proof'
+    | 'Info'
     | 'Product page'
     | 'Catalog'
     | 'Advanced';
