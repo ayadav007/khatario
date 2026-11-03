@@ -64,7 +64,7 @@
 .st-root.eng-root .product.pc-on.pc-on.pc-on.pc-align-center {
   text-align: center;
 }
-.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-align-center :is(.prating, .price, .pswatches, .psizes, .pc-np) {
+.st-root.eng-root .product.pc-on.pc-on.pc-on.pc-align-center :is(.prating, .price, .pswatches, .psizes, .ppacks, .pc-np) {
   justify-content: center;
 }
 
@@ -118,7 +118,7 @@
 }
 
 /* ---------- Lines: each sits in the order the design gives; the gap spaces them ---------- */
-.st-root.eng-root .product.pc-on.pc-on.pc-on :is(.pc-brand, .ptag, .pname, .punit, .prating, .price, .pswatches, .psizes, .plow) {
+.st-root.eng-root .product.pc-on.pc-on.pc-on :is(.pc-brand, .ptag, .pname, .punit, .prating, .price, .pswatches, .psizes, .ppacks, .plow) {
   margin: 0;
 }
 .st-root.eng-root .product.pc-on.pc-on.pc-on .addWrap {
@@ -170,6 +170,60 @@
   color: var(--st-muted);
 }
 .st-root.eng-root .product.pc-on.pc-on.pc-on .psizes .pc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Pack chips: pick a pack (500 g / 1 kg / 5 kg) to add; the chosen one is filled, sold-out ones are faded ---------- */
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > :is(button, a) {
+  min-width: 34px;
+  min-height: 28px;
+  margin: 0;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > button[aria-pressed='true'] {
+  border-color: var(--c-btn, var(--primary));
+  background: color-mix(in srgb, var(--c-btn, var(--primary)) 12%, transparent);
+  color: var(--c-btn, var(--primary));
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > button:disabled {
+  opacity: 0.45;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > button:focus-visible,
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > a:focus-visible {
+  outline: 2px solid var(--c-btn, var(--primary));
+  outline-offset: 1px;
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks > .pc-more {
+  border-color: transparent;
+  color: var(--st-muted);
+}
+.st-root.eng-root .product.pc-on.pc-on.pc-on .ppacks .pc-sr {
   position: absolute;
   width: 1px;
   height: 1px;

@@ -76,7 +76,7 @@ describe('THEME_SETTINGS_SCHEMA', () => {
     const by = Object.fromEntries(THEME_SETTINGS_SCHEMA.map((s) => [s.id, s]));
     const card = presetSettings({ accent: '#111111' } as never).product_card as unknown as Record<string, unknown>;
     expect(by['product_card.lines'].type).toBe('line_list');
-    expect(by['product_card.lines'].options?.map((o) => o.value)).toEqual(['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'sizes', 'swatches', 'buttons']);
+    expect(by['product_card.lines'].options?.map((o) => o.value)).toEqual(['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'packs', 'sizes', 'swatches', 'buttons']);
     expect(by['product_card.design'].options?.map((o) => o.value)).toEqual(['theme', ...CARD_DESIGN_IDS]);
     for (const s of THEME_SETTINGS_SCHEMA.filter((x) => x.id.startsWith('product_card.') && x.type === 'select')) {
       const field = s.id.slice('product_card.'.length);

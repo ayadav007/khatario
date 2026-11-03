@@ -33,6 +33,7 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
       ['rating', 'Rating'],
       ['tagline', 'Tagline'],
       ['price', 'Price'],
+      ['packs', 'Pack sizes to pick'],
       ['sizes', 'Sizes'],
       ['swatches', 'Colour swatches'],
       ['buttons', 'Buttons'],

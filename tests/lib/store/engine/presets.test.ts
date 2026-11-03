@@ -403,6 +403,7 @@ describe('drop preset', () => {
       { id: 'unit', on: false },
       { id: 'rating', on: false },
       { id: 'tagline', on: false },
+      { id: 'packs', on: false },
       { id: 'swatches', on: false },
     ]);
     expect(card.lines.map((l) => l.id).sort()).toEqual([...CARD_LINE_IDS].sort());

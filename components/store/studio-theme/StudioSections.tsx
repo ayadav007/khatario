@@ -761,6 +761,15 @@ export interface StudioProductTileProps {
   /** Card design: size chips for the `sizes` line, sold-out ones marked, and how many more sizes there are. */
   sizes?: { value: string; soldOut: boolean }[];
   moreSizes?: number;
+  /** Card design: pack chips for the `packs` line (a product with one option axis), the chosen one pressed, sold-out ones disabled. */
+  packs?: { id: string; label: string; soldOut: boolean }[];
+  /** How many more packs there are ("+N"). */
+  morePacks?: number;
+  /** The chosen pack's id. */
+  packId?: string | null;
+  onPack?: (id: string) => void;
+  /** "+N" opens the option chooser (phones); without it "+N" links to the product. */
+  onMorePacks?: () => void;
   /** Leaves out the "% OFF" badge (a product's own badge replaces it); the struck-through MRP stays. */
   hideDiscountBadge?: boolean;
   /** Card design: the brand line. */
@@ -935,6 +944,11 @@ function DesignedProductTile({
   swatches,
   sizes,
   moreSizes,
+  packs,
+  morePacks,
+  packId,
+  onPack,
+  onMorePacks,
   hideDiscountBadge,
   card,
   packLabel,
@@ -1052,6 +1066,47 @@ function DesignedProductTile({
             {priceLine}
           </div>
         );
+      case 'packs':
+        return packs?.length ? (
+          <div key={u} className="ppacks" role="group" aria-label="Pack size">
+            {packs.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={p.id === packId}
+                disabled={p.soldOut}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onPack?.(p.id);
+                }}
+              >
+                {p.label}
+                {p.soldOut ? <span className="pc-sr"> (sold out)</span> : null}
+              </button>
+            ))}
+            {morePacks && morePacks > 0 ? (
+              onMorePacks ? (
+                <button
+                  type="button"
+                  className="pc-more"
+                  aria-label={`${morePacks} more ${morePacks === 1 ? 'pack' : 'packs'}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onMorePacks();
+                  }}
+                >
+                  +{morePacks}
+                </button>
+              ) : (
+                <a className="pc-more" href={href} aria-label={`${morePacks} more ${morePacks === 1 ? 'pack' : 'packs'}`}>
+                  +{morePacks}
+                </a>
+              )
+            ) : null}
+          </div>
+        ) : null;
       case 'sizes':
         return sizes?.length ? (
           <div key={u} className="psizes">

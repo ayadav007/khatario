@@ -27,8 +27,8 @@ describe('PRODUCT_CARD_DEFAULTS', () => {
   it('matches the spec table', () => {
     const d = PRODUCT_CARD_DEFAULTS;
     expect(d.design).toBe('theme');
-    expect(d.lines.map((l) => l.id)).toEqual(['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'sizes', 'swatches', 'buttons']);
-    expect(d.lines.map((l) => l.on)).toEqual([false, true, true, true, true, true, false, true, true]);
+    expect(d.lines.map((l) => l.id)).toEqual(['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'packs', 'sizes', 'swatches', 'buttons']);
+    expect(d.lines.map((l) => l.on)).toEqual([false, true, true, true, true, true, false, false, true, true]);
     expect(d).toMatchObject({
       layout: 'stack',
       name_price_row: false,
@@ -233,6 +233,7 @@ describe('normaliseLines', () => {
       { id: 'unit', on: false },
       { id: 'rating', on: false },
       { id: 'tagline', on: false },
+      { id: 'packs', on: false },
       { id: 'sizes', on: false },
       { id: 'swatches', on: false },
     ]);
@@ -250,14 +251,37 @@ describe('normaliseLines', () => {
 
   it('is applied by sanitizeProductCard', () => {
     const out = sanitizeProductCard({ lines: [{ id: 'price', on: true }, { id: 'price', on: true }, { id: 'x', on: true }] });
-    expect(out.lines.map((l) => l.id)).toEqual(['price', 'brand', 'name', 'unit', 'rating', 'tagline', 'sizes', 'swatches', 'buttons']);
+    expect(out.lines.map((l) => l.id)).toEqual(['price', 'brand', 'name', 'unit', 'rating', 'tagline', 'packs', 'sizes', 'swatches', 'buttons']);
   });
 
   it('adds the sizes line off, after price', () => {
     const lines = PRODUCT_CARD_DEFAULTS.lines;
     const at = lines.findIndex((l) => l.id === 'price');
-    expect(lines[at + 1]).toEqual({ id: 'sizes', on: false });
-    expect(sanitizeProductCard({}).lines[at + 1]).toEqual({ id: 'sizes', on: false });
+    expect(lines[at + 2]).toEqual({ id: 'sizes', on: false });
+    expect(sanitizeProductCard({}).lines[at + 2]).toEqual({ id: 'sizes', on: false });
+  });
+
+  it('adds the packs line off, right after price', () => {
+    const lines = PRODUCT_CARD_DEFAULTS.lines;
+    const at = lines.findIndex((l) => l.id === 'price');
+    expect(lines[at + 1]).toEqual({ id: 'packs', on: false });
+    expect(sanitizeProductCard({}).lines[at + 1]).toEqual({ id: 'packs', on: false });
+  });
+
+  it('appends packs off to a saved card that lacks it', () => {
+    const saved = [
+      { id: 'price', on: true },
+      { id: 'name', on: true },
+      { id: 'brand', on: true },
+      { id: 'unit', on: false },
+      { id: 'rating', on: true },
+      { id: 'tagline', on: false },
+      { id: 'sizes', on: true },
+      { id: 'swatches', on: true },
+      { id: 'buttons', on: false },
+    ];
+    expect(normaliseLines(saved)).toEqual([...saved, { id: 'packs', on: false }]);
+    expect(sanitizeProductCard({ lines: saved }).lines).toEqual([...saved, { id: 'packs', on: false }]);
   });
 
   it('keeps a saved card without sizes unchanged otherwise', () => {
@@ -271,8 +295,8 @@ describe('normaliseLines', () => {
       { id: 'swatches', on: true },
       { id: 'buttons', on: false },
     ];
-    expect(normaliseLines(saved)).toEqual([...saved, { id: 'sizes', on: false }]);
-    expect(sanitizeProductCard({ lines: saved }).lines).toEqual([...saved, { id: 'sizes', on: false }]);
+    expect(normaliseLines(saved)).toEqual([...saved, { id: 'packs', on: false }, { id: 'sizes', on: false }]);
+    expect(sanitizeProductCard({ lines: saved }).lines).toEqual([...saved, { id: 'packs', on: false }, { id: 'sizes', on: false }]);
   });
 });
 

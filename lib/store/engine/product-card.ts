@@ -2,7 +2,7 @@
 // pure helpers the cards and the editor share (spec: docs/superpowers/specs/2026-11-01-store-product-cards-design.md).
 import { ID_RE, isHexColor, normaliseLineList, sanitizeImageLink } from './shared';
 
-export const CARD_LINE_IDS = ['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'sizes', 'swatches', 'buttons'] as const;
+export const CARD_LINE_IDS = ['brand', 'name', 'unit', 'rating', 'tagline', 'price', 'packs', 'sizes', 'swatches', 'buttons'] as const;
 export type CardLineId = (typeof CARD_LINE_IDS)[number];
 export interface CardLine {
   id: CardLineId;
@@ -94,6 +94,7 @@ const DEFAULT_LINES: readonly CardLine[] = [
   { id: 'rating', on: true },
   { id: 'tagline', on: true },
   { id: 'price', on: true },
+  { id: 'packs', on: false },
   { id: 'sizes', on: false },
   { id: 'swatches', on: true },
   { id: 'buttons', on: true },
