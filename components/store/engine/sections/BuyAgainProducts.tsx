@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { engineProductHref } from '@/lib/store/engine/links';
+import { packsLineOn } from '@/lib/store/engine/card-packs';
+import { buyAgainCards } from '@/lib/store/buy-again-cards';
 import type { StudioSettings } from '@/lib/store/studio-sections';
 import { StoreProductCard, type StoreProduct } from '../../StoreProductCard';
 import { StudioProductsSection } from '../../studio-theme/StudioSections';
+import { useEngineCardLook } from '../EngineCardContext';
 
 type BuyAgainProduct = StoreProduct & { buy_again_variant_id: string | null };
 
@@ -37,6 +40,7 @@ export function BuyAgainProducts({
   const { customer, selectedBranchId } = useStore();
   const router = useRouter();
   const editor = useEngineEditor();
+  const packsLine = packsLineOn(useEngineCardLook());
   const [items, setItems] = useState<BuyAgainProduct[]>([]);
   const customerId = customer?.id ?? null;
 
@@ -64,7 +68,8 @@ export function BuyAgainProducts({
     };
   }, [subdomain, demo, customerId, selectedBranchId]);
 
-  const shown = items.slice(0, maxItems);
+  // One card per pack only when the card shows that pack as a chip; otherwise one card per product (its newest pack).
+  const shown = buyAgainCards(items, packsLine).slice(0, maxItems);
   if (!shown.length) {
     return editor ? (
       <p className="py-4 text-center text-[13px]" style={{ opacity: 0.6 }} data-eng-placeholder>

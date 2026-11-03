@@ -1,4 +1,5 @@
 import { buyAgainPairs, attachBuyAgainVariants } from '@/lib/store/buy-again';
+import { buyAgainCards } from '@/lib/store/buy-again-cards';
 
 const row = (item_id: string, variant_id: string | null, ordered_at: string) => ({ item_id, variant_id, ordered_at });
 
@@ -66,5 +67,56 @@ describe('attachBuyAgainVariants', () => {
       ['rice', null],
       ['rice', 'rice-1kg'],
     ]);
+  });
+});
+
+describe('buyAgainCards', () => {
+  const v = (id: string, name: string, attributes: Record<string, string> | null = null) => ({
+    id,
+    variant_name: name,
+    selling_price: 100,
+    current_stock: 5,
+    attributes,
+  });
+  const rice = { id: 'rice', has_variants: true, selling_price: 100, variants: [v('r1', '1 kg'), v('r5', '5 kg')] };
+  const dal = { id: 'dal', has_variants: false, selling_price: 90, variants: [] };
+  const list = [
+    { ...rice, buy_again_variant_id: 'r1' },
+    { ...dal, buy_again_variant_id: null },
+    { ...rice, buy_again_variant_id: 'r5' },
+  ];
+  const cards = (items: typeof list, packsLine: boolean) => buyAgainCards(items, packsLine).map((c) => [c.id, c.buy_again_variant_id]);
+
+  it('keeps one card per pack when the card shows pack chips', () => {
+    expect(cards(list, true)).toEqual([
+      ['rice', 'r1'],
+      ['dal', null],
+      ['rice', 'r5'],
+    ]);
+  });
+
+  it('collapses to one card per product, the newest pack, when the card shows no pack chips', () => {
+    expect(cards(list, false)).toEqual([
+      ['rice', 'r1'],
+      ['dal', null],
+    ]);
+  });
+
+  it('collapses a product with two option axes even with the packs line on', () => {
+    const shirt = {
+      id: 'shirt',
+      has_variants: true,
+      selling_price: 500,
+      variants: [v('s-r', 'S Red', { size: 'S', colour: 'Red' }), v('m-b', 'M Blue', { size: 'M', colour: 'Blue' })],
+    };
+    expect(
+      cards(
+        [
+          { ...shirt, buy_again_variant_id: 'm-b' },
+          { ...shirt, buy_again_variant_id: 's-r' },
+        ],
+        true,
+      ),
+    ).toEqual([['shirt', 'm-b']]);
   });
 });

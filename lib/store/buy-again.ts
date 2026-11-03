@@ -78,7 +78,7 @@ export async function loadBuyAgainItems(opts: {
       WHERE so.business_id = $1
         AND so.store_customer_id = $2
         AND so.status <> 'cancelled'
-      ORDER BY so.created_at DESC, so.id
+      ORDER BY so.created_at DESC, so.id, soi.id
       LIMIT ${BUY_AGAIN_LINES}`,
     [opts.businessId, opts.customerId],
   );

@@ -14,7 +14,7 @@ import { productCardLook } from '@/lib/store/engine/card-look';
 import { isDesignedCard } from '@/lib/store/engine/card-render';
 import { cardBadges } from '@/lib/store/engine/card-badges';
 import { cardSizes } from '@/lib/store/engine/card-sizes';
-import { cardPacks, cartLineFor, packPriceShowsMrp } from '@/lib/store/engine/card-packs';
+import { cartLineFor, packPriceShowsMrp, packsLineOn, productCardPacks } from '@/lib/store/engine/card-packs';
 import { initialVariantId } from './features/product/product-logic';
 import { packLabelFromName } from '@/lib/store/unit-price';
 import type { StoreVariantInput } from '@/lib/store/variant-options';
@@ -208,19 +208,15 @@ function ProductCard({
 
   // The `packs` line of a card design: a product with exactly one option axis shows its packs (500 g / 1 kg / 5 kg) as
   // chips and adds the chosen pack itself, each pack its own cart line. Off, or with two axes, the card is as before.
-  const packsOn =
-    look.studioTile &&
-    product.has_variants &&
-    !!engineLook &&
-    isDesignedCard(engineLook.card) &&
-    engineLook.card.lines.some((l) => l.id === 'packs' && l.on);
-  const packChips = useMemo(() => {
-    if (!packsOn) return null;
-    // A variant without its own price sells at the product's, as on the product page.
-    const variants = product.variants.map((v) => ({ ...v, selling_price: v.selling_price ?? product.selling_price }));
-    const r = cardPacks(variants as StoreVariantInput[]);
-    return r.axisCount === 1 && r.packs.length > 0 ? r : null;
-  }, [packsOn, product.variants, product.selling_price]);
+  // (packsLineOn and productCardPacks are shared with the Buy again section, which needs the same answer.)
+  const packsOn = look.studioTile && product.has_variants && packsLineOn(engineLook);
+  const packChips = useMemo(
+    () =>
+      packsOn
+        ? productCardPacks({ has_variants: true, selling_price: product.selling_price, variants: product.variants })
+        : null,
+    [packsOn, product.variants, product.selling_price],
+  );
   const [chosenPackId, setChosenPackId] = useState<string | null>(null);
   // Starts on `initialPackId` when it is one of the chips, else on the product page's first choice (the first pack in
   // stock); one that is not a chip falls back to the first chip in stock.
