@@ -4,7 +4,7 @@ import { storeFontStack, type StoreFontFamily } from '@/lib/store/store-theme';
 import { schemeCssVars, studioSchemeVars } from './color-schemes';
 import type { ThemePreset, ThemeSettings } from './types';
 
-const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop'];
+const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop', 'bazaar'];
 
 // Each non-default style setting is one root class; the rules live in components/store/engine/style-rules.ts.
 const STYLE_CLASSES: { [K in 'label_style' | 'frame_style' | 'texture']: Readonly<Record<string, string>> } = {

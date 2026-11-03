@@ -38,6 +38,7 @@ export const PRESET_LOOK: Record<ThemePreset, PresetLook> = {
   heritage: { canvas: '#fcf9f3', accent: '#7a0c1e', font_heading: 'newsreader', font_body: 'manrope', button_radius: 0, card_style: 'bordered', label_style: 'caps', frame_style: 'accent', texture: 'dots' },
   khatario: { canvas: PACK_CANVAS.khatario, accent: STORE_THEME_PRESETS.khatario.accent, font_heading: 'inter', font_body: 'inter', button_radius: 12, card_style: 'plain', label_style: 'normal', frame_style: 'none', texture: 'none' },
   drop: { canvas: '#0d0d0d', accent: '#d4ff3a', font_heading: 'anton', font_body: 'space-grotesk', button_radius: 0, card_style: 'plain', label_style: 'caps', frame_style: 'none', texture: 'none' },
+  bazaar: { canvas: '#ffffff', accent: '#e8590c', font_heading: 'baloo', font_body: 'poppins', button_radius: 12, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' },
 };
 
 const RGB_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -127,6 +128,25 @@ const DROP_INK = '#0d0d0d';
 const DROP_BONE = '#f2f0ea';
 const DROP_VOLT = '#d4ff3a';
 
+/** A Bazaar Bright scheme: border and card are the text mixed lightly into the background. */
+function bazaarScheme(n: number, name: string, background: string, text: string, accent: string, button: string, button_text: string): ColorScheme {
+  return {
+    id: `scheme-${n}`,
+    name,
+    background,
+    text,
+    accent,
+    button,
+    button_text,
+    border: mixHex(text, background, 0.12),
+    card: mixHex(text, background, 0.04),
+  };
+}
+
+const BAZAAR_SAFFRON = '#e8590c';
+const BAZAAR_NAVY = '#14213d';
+const BAZAAR_MARIGOLD = '#ffc300';
+
 /**
  * Presets whose six schemes are a fixed table rather than derived from a paper and an accent. `schemesFor` returns
  * the table as it is, whatever the store's accent: the merchant edits the schemes in Studio 2 for their own colour.
@@ -177,6 +197,15 @@ export const PRESET_SCHEMES: Partial<Record<ThemePreset, ColorScheme[]>> = {
     dropScheme(4, 'Volt', DROP_VOLT, DROP_INK, DROP_INK, DROP_INK, DROP_VOLT),
     dropScheme(5, 'Alarm', '#ff4d2e', DROP_INK, DROP_INK, DROP_INK, '#ff4d2e'),
     dropScheme(6, 'Smoke', '#2a2a2a', DROP_BONE, DROP_VOLT, DROP_VOLT, DROP_INK),
+  ],
+  bazaar: [
+    bazaarScheme(1, 'White', '#ffffff', BAZAAR_NAVY, BAZAAR_SAFFRON, BAZAAR_SAFFRON, '#ffffff'),
+    bazaarScheme(2, 'Cream', '#fff6ea', BAZAAR_NAVY, BAZAAR_SAFFRON, BAZAAR_NAVY, '#ffffff'),
+    // White, not marigold: marigold reads only 2.2:1 on saffron, white 3.6:1 (as on Leaf).
+    bazaarScheme(3, 'Saffron', BAZAAR_SAFFRON, '#ffffff', '#ffffff', BAZAAR_NAVY, '#ffffff'),
+    bazaarScheme(4, 'Navy', BAZAAR_NAVY, '#ffffff', BAZAAR_MARIGOLD, BAZAAR_MARIGOLD, BAZAAR_NAVY),
+    bazaarScheme(5, 'Marigold', BAZAAR_MARIGOLD, BAZAAR_NAVY, BAZAAR_NAVY, BAZAAR_NAVY, '#ffffff'),
+    bazaarScheme(6, 'Leaf', '#2a9d4b', '#ffffff', '#ffffff', '#ffffff', '#1d6b33'),
   ],
 };
 

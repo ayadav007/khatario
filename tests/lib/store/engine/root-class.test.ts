@@ -34,6 +34,15 @@ describe('engineRootClass', () => {
     expect(r.quick).toBe(false);
   });
 
+  it('adds eng-preset-bazaar', () => {
+    const r = engineRootClass({ preset: 'bazaar', phoneKit: false, editor: false, schemeBackground: '#ffffff', style });
+    const c = classes(r.className);
+    expect(c).toContain('eng-preset-bazaar');
+    expect(c).not.toContain('eng-preset-studio');
+    expect(c).not.toContain('is-dark');
+    expect(r.quick).toBe(false);
+  });
+
   it('adds eng-heading-anton only when the heading font is Anton (it has one weight, so headings must not be bolded)', () => {
     const base = { preset: 'drop' as const, phoneKit: false, editor: false, schemeBackground: '#0d0d0d', style };
     expect(classes(engineRootClass({ ...base, headingFont: 'anton' }).className)).toContain('eng-heading-anton');

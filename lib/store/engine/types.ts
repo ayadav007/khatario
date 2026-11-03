@@ -1,7 +1,7 @@
 import type { ProductCardSettings } from './product-card';
 
 export type TemplateKind = 'home' | 'product' | 'catalog' | 'page' | 'header' | 'footer';
-export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage' | 'drop';
+export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage' | 'drop' | 'bazaar';
 export type ThemeRole = 'live' | 'draft';
 
 export interface Block {

@@ -232,3 +232,52 @@ describe('drop schemes', () => {
     });
   });
 });
+
+describe('bazaar schemes', () => {
+  const SCHEMES: [string, string, string, string, string, string][] = [
+    ['White', '#ffffff', '#14213d', '#e8590c', '#e8590c', '#ffffff'],
+    ['Cream', '#fff6ea', '#14213d', '#e8590c', '#14213d', '#ffffff'],
+    // The spec gives Saffron a marigold accent (#ffc300), which reads only 2.2:1 on saffron; white reads 3.6:1, like Leaf.
+    ['Saffron', '#e8590c', '#ffffff', '#ffffff', '#14213d', '#ffffff'],
+    ['Navy', '#14213d', '#ffffff', '#ffc300', '#ffc300', '#14213d'],
+    ['Marigold', '#ffc300', '#14213d', '#14213d', '#14213d', '#ffffff'],
+    ['Leaf', '#2a9d4b', '#ffffff', '#ffffff', '#ffffff', '#1d6b33'],
+  ];
+
+  it('holds the PRESET_LOOK.bazaar values', () => {
+    expect(PRESET_LOOK.bazaar).toEqual({ canvas: '#ffffff', accent: '#e8590c', font_heading: 'baloo', font_body: 'poppins', button_radius: 12, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none' });
+  });
+
+  it('holds the spec table, with borders and cards mixed from text and background', () => {
+    expect(schemesFor('bazaar', undefined)).toEqual(
+      SCHEMES.map(([name, background, text, accent, button, button_text], i) => ({
+        id: `scheme-${i + 1}`, name, background, text, accent, button, button_text,
+        border: mixHex(text, background, 0.12),
+        card: mixHex(text, background, 0.04),
+      })),
+    );
+  });
+
+  it('bazaar ignores the store accent', () => {
+    const base = schemesFor('bazaar', '#004537');
+    for (const accent of ['nope', '', undefined, '#e11d48']) expect(schemesFor('bazaar', accent)).toEqual(base);
+    expect(schemesFor('bazaar', '#004537', '#000000')).toEqual(base);
+    expect(base[0].accent).toBe('#e8590c');
+  });
+
+  it('every bazaar accent, button and button text reads 3:1', () => {
+    for (const x of schemesFor('bazaar', undefined)) {
+      expect(contrastRatio(x.accent, x.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(x.button, x.background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(x.button_text, x.button)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('survives sanitising unchanged and gives Bazaar its fonts, corners and style fields', () => {
+    const s = schemesFor('bazaar', undefined);
+    expect(sanitizeColorSchemes(s)).toEqual(s);
+    expect(presetSettings({ businessName: 'X', tagline: '' }, 'bazaar')).toMatchObject({
+      font_heading: 'baloo', font_body: 'poppins', button_radius: 12, card_style: 'bordered', label_style: 'normal', frame_style: 'none', texture: 'none',
+    });
+  });
+});

@@ -4,6 +4,7 @@ import { section, template } from '@/lib/store/engine/presets/shared';
 import { heritagePreset } from '@/lib/store/engine/presets/heritage';
 import { getSectionSchema } from '@/lib/store/engine/registry';
 import { dropPreset } from '@/lib/store/engine/presets/drop';
+import { bazaarPreset } from '@/lib/store/engine/presets/bazaar';
 import { defaultSettings } from '@/lib/store/engine/shared';
 import { CARD_LINE_IDS } from '@/lib/store/engine/product-card';
 import type { Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
@@ -546,5 +547,212 @@ describe('existing presets keep the new pieces off', () => {
       // `thumbs` was `side` (the default, never set by a preset) before the photo grid existed.
       expect(resolved(m)).toMatchObject({ sticky_buy_bar: false, thumbs: 'side' });
     }
+  });
+});
+
+describe('existing presets keep the Bazaar pieces off', () => {
+  const EXISTING: ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop'];
+
+  it.each(EXISTING)('%s', (name) => {
+    const p = sanitizeThemeData(presetTheme(name, ctx));
+    const card = p.settings.product_card;
+    expect(card.lines.find((l) => l.id === 'packs')).toEqual({ id: 'packs', on: false });
+    expect(card.unit_price).toBe(false);
+    expect(card.discount_badge).toBe('percent');
+    expect(p.settings).toMatchObject({
+      cart_free_ship_bar: false,
+      cart_suggestions: false,
+      cart_suggestions_heading: 'Pair it with',
+      cart_whatsapp_order: false,
+    });
+    const sections = allSections(p);
+    const headers = sections.filter((x) => x.type === 'header');
+    expect(headers.length).toBeGreaterThan(0);
+    for (const h of headers) expect(resolved(h).show_open_status).toBe(false);
+    const mains = sections.filter((x) => x.type === 'main-product');
+    expect(mains.length).toBeGreaterThan(0);
+    for (const m of mains) for (const v of blocksOf(m, 'variant_picker')) expect(v.style).toBe('buttons');
+    expect(sections.map((s) => s.type)).not.toContain('buy-again');
+    expect(sections.map((s) => s.type)).not.toContain('store-info');
+  });
+});
+
+describe('bazaar preset', () => {
+  const bare = { businessName: 'X', tagline: '' };
+
+  it('bazaar uses only registry sections and unique ids', () => {
+    for (const s of allSections(presetTheme('bazaar', ctx))) {
+      const schema = getSectionSchema(s.type);
+      expect(schema).not.toBeNull();
+      for (const b of Object.values(s.blocks)) expect(schema!.blocks?.some((bs) => bs.type === b.type)).toBe(true);
+    }
+    const p = presetTheme('bazaar', ctx);
+    const ids = [...p.header_group.order, ...p.templates.home.order, ...p.footer_group.order];
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const tpl of [p.header_group, p.footer_group, ...Object.values(p.templates)]) {
+      for (const id of tpl.order) expect(id).toMatch(ID_RE);
+      expect(new Set(tpl.order).size).toBe(tpl.order.length);
+      for (const s of Object.values(tpl.sections)) {
+        for (const id of s.block_order) expect(id).toMatch(ID_RE);
+        expect(new Set(s.block_order).size).toBe(s.block_order.length);
+      }
+    }
+    expect(stable(presetTheme('bazaar', ctx))).toEqual(stable(presetTheme('bazaar', ctx)));
+    expect(JSON.stringify(p).length).toBeLessThan(65536);
+  });
+
+  it('sanitizeThemeData(bazaar) equals bazaar', () => {
+    const long = { businessName: `Sharma & Sons <Kirana> ${'x'.repeat(200)}`, tagline: `Atta & <dal> ${'x'.repeat(600)}` };
+    for (const c of [ctx, bare, { businessName: '', tagline: '' }, long]) {
+      const p = presetTheme('bazaar', c);
+      expect(sanitizeThemeData(p)).toEqual(p);
+    }
+  });
+
+  it('bazaar ignores the store accent', () => {
+    expect(presetTheme('bazaar', ctx).settings.color_schemes).toEqual(presetTheme('bazaar', bare).settings.color_schemes);
+    expect(presetTheme('bazaar', ctx).settings.color_schemes[0].accent).toBe('#e8590c');
+  });
+
+  it('bazaar turns on its pieces', () => {
+    const p = sanitizeThemeData(presetTheme('bazaar', ctx));
+    const card = p.settings.product_card;
+    expect(card).toMatchObject({
+      design: 'grocery',
+      image_shape: 'square',
+      image_bg: '#fff6ea',
+      radius: 18,
+      border: 1,
+      badge_shape: 'pill',
+      discount_badge: 'rupees',
+      unit_price: true,
+      button_style: 'full',
+      after_add: 'stepper',
+      oos_look: 'faded',
+      oos_place: 'end',
+    });
+    expect(card.lines).toEqual([
+      { id: 'name', on: true },
+      { id: 'packs', on: true },
+      { id: 'price', on: true },
+      { id: 'buttons', on: true },
+      { id: 'brand', on: false },
+      { id: 'unit', on: false },
+      { id: 'rating', on: false },
+      { id: 'tagline', on: false },
+      { id: 'sizes', on: false },
+      { id: 'swatches', on: false },
+    ]);
+    expect(card.lines.map((l) => l.id).sort()).toEqual([...CARD_LINE_IDS].sort());
+    expect(p.settings).toMatchObject({
+      cart_free_ship_bar: true,
+      cart_suggestions: true,
+      cart_suggestions_heading: 'You may also need',
+      cart_whatsapp_order: true,
+    });
+    const header = p.header_group.sections.header;
+    expect(header.color_scheme).toBe('scheme-3');
+    expect(header.settings).toMatchObject({ show_open_status: true, show_category_chips: true, search_placeholder: 'Search atta, dal, milk, masala…' });
+    const main = p.templates.product.sections[p.templates.product.order[0]];
+    expect(main.type).toBe('main-product');
+    expect(blocksOf(main, 'variant_picker')).toEqual([expect.objectContaining({ style: 'tiles', low_stock_at: 3 })]);
+    expect(sectionTypes(p.templates.home)).toEqual(expect.arrayContaining(['buy-again', 'store-info']));
+    const grid = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
+    expect(grid.settings.layout).toBe('rail');
+  });
+
+  it('has the pages from the spec', () => {
+    const p = presetTheme('bazaar', ctx);
+    expect(p.header_group.order).toEqual(['announcement', 'header']);
+    const a = p.header_group.sections.announcement;
+    expect(a.color_scheme).toBe('scheme-4');
+    expect(a.settings.text).toBe('Free delivery above ₹299 · Cash, UPI or khata on delivery');
+    expect(p.header_group.sections.header.settings.logo_url).toBe('https://example.com/logo.png');
+
+    const h = p.templates.home;
+    expect(sectionTypes(h)).toEqual([
+      'category-grid', 'image-banner', 'buy-again', 'featured-products', 'promo-cards', 'category-shelves', 'multicolumn', 'store-info', 'newsletter',
+    ]);
+    const s = h.sections;
+    const cats = s['category-grid'];
+    expect(cats.settings).toMatchObject({ heading: 'Shop by category', style: 'tiles', columns: 8 });
+    expect(cats.block_order.map((id) => cats.blocks[id].settings.image)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/store-presets/bazaar/category-${n}.svg`));
+
+    const hero = s['image-banner'];
+    expect(hero.color_scheme).toBe('scheme-4');
+    expect(hero.settings).toMatchObject({ layout: 'over', image: '/store-presets/bazaar/hero-1.svg' });
+    const heroBlocks = hero.block_order.map((id) => hero.blocks[id]);
+    expect(heroBlocks.map((b) => b.type)).toEqual(['eyebrow', 'heading', 'countdown', 'button']);
+    expect(heroBlocks[0].settings).toMatchObject({ text: 'Maha Bachat Week' });
+    expect(heroBlocks[1].settings).toMatchObject({ text: 'Up to 40% off on staples', size: 'xl' });
+    expect(heroBlocks[2].settings.ends_at).toBe('');
+    expect(heroBlocks[3].settings).toMatchObject({ label: 'Shop deals', link: '/catalog' });
+
+    expect(s['featured-products'].settings).toMatchObject({ heading: "Today's deals", source: 'discounted', columns: 5, mobile_columns: '2' });
+    const promos = s['promo-cards'];
+    expect(promos.block_order.map((id) => promos.blocks[id].settings)).toEqual([
+      expect.objectContaining({ heading: 'Fresh every morning', text: 'Sabzi from the mandi', image: '/store-presets/bazaar/promo-1.svg' }),
+      expect.objectContaining({ heading: 'Monthly ration pack', text: 'Save on atta, rice and dal', image: '/store-presets/bazaar/promo-2.svg' }),
+    ]);
+    expect(s['category-shelves'].settings.max_categories).toBe(2);
+    expect(s.multicolumn.color_scheme).toBe('scheme-2');
+    expect(s.multicolumn.block_order.map((id) => s.multicolumn.blocks[id].settings.title)).toEqual([
+      'Cash, UPI or khata on delivery', 'Fresh or we replace it', 'Free delivery above ₹299', 'Order on call or WhatsApp',
+    ]);
+    expect(s.newsletter.color_scheme).toBe('scheme-2');
+    expect(s.newsletter.settings.heading).toBe('Get offers first');
+
+    const grid = Object.values(p.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(grid.settings).toMatchObject({ layout: 'rail', columns_desktop: 4, columns_mobile: 2, show_filters: true, show_sort: true });
+    expect(grid.block_order).toHaveLength(1);
+    expect(grid.blocks[grid.block_order[0]]).toEqual({
+      type: 'promo',
+      settings: { image: '/store-presets/bazaar/catalog-promo.svg', heading: 'Monthly ration', text: 'Atta + rice + dal, save ₹250', link: '/catalog', position: 5 },
+    });
+
+    const product = p.templates.product;
+    expect(sectionTypes(product)).toEqual(['main-product', 'related-products', 'recently-viewed']);
+    const main = product.sections['main-product'];
+    expect(main.settings).toMatchObject({ thumbs: 'bottom', sticky_info: true, sticky_buy_bar: true });
+    expect(main.block_order.map((id) => main.blocks[id].type)).toEqual([
+      'title', 'price', 'variant_picker', 'buy_buttons', 'delivery_check', 'description', 'collapsible_tab', 'collapsible_tab', 'collapsible_tab',
+    ]);
+    expect(blocksOf(main, 'collapsible_tab').map((b) => b.heading)).toEqual(['Product details', 'Storage and shelf life', 'Returns']);
+    expect(product.sections['related-products'].settings.heading).toBe('You may also need');
+
+    const f = p.footer_group.sections.footer;
+    expect(f.color_scheme).toBe('scheme-4');
+    expect(f.settings).toMatchObject({ show_payment_icons: true, about: 'Fresh finds, fast delivery' });
+    expect(presetTheme('bazaar', bare).footer_group.sections.footer.settings.about).toBeUndefined();
+  });
+
+  it('a demo store swaps the sample pictures for its own', () => {
+    const demo = presetTheme('bazaar', { ...ctx, images: { 'hero-1': '/theme-demos/kirana/hero.webp', 'catalog-promo': '/theme-demos/kirana/promo.webp' } });
+    expect(demo.templates.home.sections['image-banner'].settings.image).toBe('/theme-demos/kirana/hero.webp');
+    const grid = Object.values(demo.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(grid.blocks[grid.block_order[0]].settings.image).toBe('/theme-demos/kirana/promo.webp');
+  });
+
+  it('points every sample image at a small file that ships', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const urls = new Set(JSON.stringify(bazaarPreset(ctx)).match(/\/store-presets\/bazaar\/[a-z0-9-]+\.svg/g) ?? []);
+    expect([...urls].sort()).toEqual(
+      ['hero-1', 'promo-1', 'promo-2', 'catalog-promo', ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `category-${n}`)]
+        .map((n) => `/store-presets/bazaar/${n}.svg`)
+        .sort(),
+    );
+    for (const u of urls) {
+      const file = path.join(process.cwd(), 'public', u);
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeLessThan(4096);
+    }
+  });
+
+  it('invents no reviews or press', () => {
+    const types = allSections(bazaarPreset(ctx)).map((s) => s.type);
+    expect(types).not.toContain('testimonials');
+    expect(types).not.toContain('product-reviews');
+    expect(types).not.toContain('logo-list');
   });
 });
