@@ -23,6 +23,10 @@ type DashboardFinancialSnapshotProps = {
   items: DashboardKpiItem[];
   /** Period the totals cover, e.g. "Today" or "01 Sep – 02 Nov". */
   periodLabel: string;
+  /** Shown at the right of the heading, e.g. the date range picker. */
+  actions?: React.ReactNode;
+  /** Hide the period text on desktop when the picker there already says it (Today, This Week…). */
+  hideDesktopPeriodLabel?: boolean;
   onItemClick?: (type: DashboardKpiClickType) => void;
 };
 
@@ -30,14 +34,25 @@ type DashboardFinancialSnapshotProps = {
 export const DashboardFinancialSnapshot = memo(function DashboardFinancialSnapshot({
   items,
   periodLabel,
+  actions,
+  hideDesktopPeriodLabel = false,
   onItemClick,
 }: DashboardFinancialSnapshotProps) {
   probeDashboardRefresh('kpi-strip-rerender');
   return (
     <section className="space-y-2 md:space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <h2 className="text-base font-bold text-text-primary md:text-lg">How the business did</h2>
-        <p className="text-caption font-medium text-text-secondary md:text-xs">{periodLabel}</p>
+        <div className="flex items-center gap-3">
+          <p
+            className={`text-caption font-medium text-text-secondary md:text-xs ${
+              hideDesktopPeriodLabel ? 'lg:hidden' : ''
+            }`}
+          >
+            {periodLabel}
+          </p>
+          {actions}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2 md:gap-3 lg:grid-cols-4">
         {items.map((kpi) => {

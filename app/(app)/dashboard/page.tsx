@@ -23,6 +23,7 @@ import {
 } from '@/components/dashboard/LowStockRestockMenu';
 import { PendingActionsButton, usePendingActions } from '@/components/dashboard/PendingActionsButton';
 import { NeedsAttentionStrip } from '@/components/dashboard/NeedsAttentionStrip';
+import { DashboardPeriodPicker } from '@/components/dashboard/DashboardPeriodPicker';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
 import { KhataDashboardCard } from '@/components/dashboard/KhataDashboardCard';
@@ -400,6 +401,13 @@ function DashboardPage() {
         <DashboardFinancialSnapshot
           items={financialSnapshotItems}
           periodLabel={periodLabel}
+          hideDesktopPeriodLabel={['Today', 'This Week', 'This Month'].includes(periodLabel)}
+          actions={
+            // Desktop only; phones keep the date stepper in the top bar.
+            <div className="hidden lg:block">
+              <DashboardPeriodPicker />
+            </div>
+          }
           onItemClick={handleKpiClick}
         />
 
