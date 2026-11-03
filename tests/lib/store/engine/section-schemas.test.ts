@@ -119,3 +119,16 @@ describe('hero countdown block', () => {
     }
   });
 });
+
+describe('header open status', () => {
+  it('header has show_open_status off by default, after the delivery estimate', () => {
+    const settings = getSectionSchema('header')!.settings;
+    expect(settings.find((x) => x.id === 'show_open_status')).toMatchObject({
+      type: 'checkbox',
+      label: 'Show open or closed',
+      default: false,
+    });
+    const ids = settings.map((x) => x.id);
+    expect(ids.indexOf('show_open_status')).toBe(ids.indexOf('delivery_eta') + 1);
+  });
+});

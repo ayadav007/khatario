@@ -7,6 +7,7 @@ import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress, type Sto
 import type { StoreProduct } from '../StoreProductCard';
 import { rupees } from '../studio-theme/StudioSections';
 import { QuickSheet } from './QuickChrome';
+import { ClosedNotice } from '../engine/OpenStatusBadge';
 import { VariantPicker } from '../features/product/VariantPicker';
 import { findVariant, toVariantInputs } from '../features/product/product-view';
 import { ReviewSummaryCompact } from '../features/reviews/ReviewSummary';
@@ -121,6 +122,7 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
         </div>
       ) : (
         <>
+          <ClosedNotice hours={store.store_hours} className="mb-2" />
           {saved + couponSaving > 0 ? (
             <div className="qk-saved">
               <Tag /> You save {rupees(saved + couponSaving)} on this order

@@ -3,6 +3,7 @@
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
 import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
+import { ClosedNotice } from './engine/OpenStatusBadge';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
 import clsx from 'clsx';
@@ -101,6 +102,7 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 py-2">
+            <ClosedNotice hours={store?.store_hours} className="mb-2" />
             {cart.map((item) => {
               const key = item.variantId ? `${item.itemId}::${item.variantId}` : item.itemId;
               return (

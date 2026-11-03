@@ -10,6 +10,7 @@ import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
 import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
 import UpiPayActions from '@/components/payments/UpiPayActions';
 import type { upiAppLinks } from '@/lib/payments/upi-pay-link';
+import { ClosedNotice } from '@/components/store/engine/OpenStatusBadge';
 import clsx from 'clsx';
 
 type UpiLinks = ReturnType<typeof upiAppLinks>;
@@ -621,6 +622,7 @@ export function StoreCheckout({
           </div>
 
           <div className="shrink-0 border-t border-gray-200 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <ClosedNotice hours={store?.store_hours} className="mb-3" />
             <button
               type="submit"
               disabled={submitting || cart.length === 0 || quote?.serviceable === false}

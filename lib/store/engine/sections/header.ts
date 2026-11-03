@@ -19,6 +19,13 @@ export const header: SectionSchema = {
     { id: 'search_placeholder', type: 'text', label: 'Search placeholder', default: 'Search products', max_length: 60 },
     { id: 'delivery_eta', type: 'text', label: 'Delivery estimate', default: '', max_length: 40 },
     {
+      id: 'show_open_status',
+      type: 'checkbox',
+      label: 'Show open or closed',
+      default: false,
+      info: 'Needs opening hours in Online store settings',
+    },
+    {
       id: 'icons_position',
       type: 'select',
       label: 'Icons position',
