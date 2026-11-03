@@ -849,3 +849,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** a seller who cannot charge GST sells at the item's listed price with no GST, for both GST-extra and GST-included items (rule in `lib/store/seller-gst.ts`, using the same scheme policy as invoices; with no branch picked, the default branch's GSTIN decides). The catalog APIs return rate 0 for them, so no GST note shows. Orders that already charged GST bill as a Bill of Supply for the amount the shopper paid, so they stop being stuck; the order's stored `tax_total` is not rewritten. Cart lines saved before `gstIncluded` existed stay at their price until the checkout quote.
 - **Shipped:** nothing committed. Working-tree change: `lib/store/seller-gst.ts`, `lib/store/quote.ts`, `lib/store/fulfill-paid-order.ts`, `lib/store/pricing.ts`, `lib/store/quick.ts`, `lib/store/cart-sync.ts`, `lib/store/store-context.tsx`, `lib/store/engine/section-data.ts`, store item and cart APIs, cart and product components; tests `tests/lib/store/seller-gst.test.ts`, `tests/db/store-gst-seller.db.test.ts`.
 - **Open:** not checked in a browser. Check on staging: GST-extra item in the cart, drawer and quick sheet shows the same total as checkout; a composition store shows no GST. WhatsApp shop not reviewed. Earlier orders from these sellers will post a Bill of Supply when accounts next catch up; how to treat GST already collected on them is a question for the CA.
+
+## 2026-11-03: Correction, store GST fix was pushed
+- **Asked:** "yes, commit and push" for the store GST fix.
+- **Decided:** corrects the earlier entry's "nothing committed".
+- **Shipped:** 51d6746 pushed to main.
+- **Open:** the Deploy VPS run for 51d6746 failed with "missing server host", so the `VPS_HOST` secret looks missing and this did not reach staging through that workflow. The staging checks in the earlier entry are still to do.
