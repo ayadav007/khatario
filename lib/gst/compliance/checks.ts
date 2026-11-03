@@ -526,6 +526,16 @@ export interface RcmUnregisteredBill {
   reverse_charge?: boolean;
 }
 
+function rcmSupplyLabel(b: RcmUnregisteredBill): string {
+  const kind = b.document === 'expense' ? 'Expense' : 'Bill';
+  const ref = b.bill_number ? b.bill_number : `dated ${formatDate(b.bill_date)}`;
+  return `${kind} ${ref}${b.supplier_name ? ` from ${b.supplier_name}` : ''}`;
+}
+
+function joinAnd(parts: string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]): ComplianceFinding | null {
   const evaluated = bills.map((b) => {
     const supply: Rule47aSupply = {
@@ -550,8 +560,13 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
   const firstDue = deadlines[0]?.result.due ?? null;
   const daysLeft = firstDue ? daysBetween(asOn, firstDue) : null;
   const tax = round2([...deadlines, ...unverified].reduce((s, e) => s + e.bill.tax, 0));
+  // Name up to three bills so the alert (and its notification) says which ones need details.
+  const unverifiedWho =
+    unverified.length && unverified.length <= 3
+      ? joinAnd(unverified.map((e) => rcmSupplyLabel(e.bill)))
+      : plural(unverified.length, 'supply');
   const unverifiedNote = unverified.length
-    ? ` ${plural(unverified.length, 'supply')} still ${unverified.length === 1 ? 'has' : 'have'} an unverified Rule 47A deadline.`
+    ? ` ${unverifiedWho} still ${unverified.length === 1 ? 'has' : 'have'} an unverified Rule 47A deadline.`
     : '';
   return {
     checkId: 'rcm_self_invoice',
@@ -574,6 +589,7 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
     details: {
       rcm_bills: deadlines.slice(0, 20).map((e) => ({
         purchase_id: e.bill.purchase_id,
+        document: e.bill.document ?? 'purchase',
         bill_number: e.bill.bill_number,
         bill_date: e.bill.bill_date,
         supplier_name: e.bill.supplier_name,
@@ -582,6 +598,11 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
       })),
       unverified: unverified.slice(0, 20).map((e) => ({
         purchase_id: e.bill.purchase_id,
+        document: e.bill.document ?? 'purchase',
+        bill_number: e.bill.bill_number,
+        bill_date: e.bill.bill_date,
+        supplier_name: e.bill.supplier_name,
+        tax: round2(e.bill.tax),
         message: e.result.kind === 'unverified' ? e.result.message : '',
       })),
     },

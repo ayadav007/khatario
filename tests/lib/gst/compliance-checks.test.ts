@@ -260,6 +260,27 @@ describe('RCM self-invoice', () => {
     expect(unknown.dueDate).toBeNull();
     expect(rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20', { registration_status: 'registered' })])).toBeNull();
   });
+
+  it('names the bills whose deadline is unverified and says what is missing', () => {
+    const f = rcmSelfInvoiceFinding('2026-10-10', [bill(null, { purchase_id: 'p1' })])!;
+    expect(f.message).toMatch(/Bill RC-1 from Local transporter still has an unverified Rule 47A deadline/);
+    expect(f.details.unverified).toEqual([
+      {
+        purchase_id: 'p1',
+        document: 'purchase',
+        bill_number: 'RC-1',
+        bill_date: '2026-09-01',
+        supplier_name: 'Local transporter',
+        tax: 900,
+        message: 'Rule 47A may apply. The deadline is unverified until the receipt date is entered.',
+      },
+    ]);
+    const expense = rcmSelfInvoiceFinding('2026-10-10', [
+      bill(null, { purchase_id: 'e1', document: 'expense', bill_number: null, supplier_name: null }),
+      bill('2026-09-20', { purchase_id: 'p2', registration_status: 'unknown', bill_number: 'RC-2' }),
+    ])!;
+    expect(expense.message).toMatch(/Expense dated 1 Sept? 2026 and Bill RC-2 from Local transporter still have/);
+  });
 });
 
 describe('return periods for marking GSTR-3B filed', () => {

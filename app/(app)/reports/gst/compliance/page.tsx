@@ -12,6 +12,11 @@ import { askAssistant } from '@/components/assistant/events';
 import { MarkGstr3bFiledDialog } from '@/components/gst/MarkGstr3bFiled';
 
 type Severity = 'info' | 'warning' | 'critical';
+type RcmDocument = 'purchase' | 'expense';
+
+function rcmDocumentHref(id: string, document?: RcmDocument) {
+  return document === 'expense' ? `/expenses/new?edit=${id}` : `/purchases/${id}`;
+}
 
 interface Alert {
   id: string;
@@ -31,7 +36,8 @@ interface Alert {
     bills?: Array<{ purchase_id: string; bill_number: string | null; bill_date: string; supplier_name: string | null; unpaid: number; itc_at_stake: number; to_reverse?: number; days_outstanding: number }>;
     invoices?: Array<{ supplier_gstin: string; supplier_name: string | null; invoice_number: string; invoice_date: string; itc: number }>;
     sales?: Array<{ invoice_id: string; invoice_number: string; invoice_date: string; customer_name: string | null; grand_total: number }>;
-    rcm_bills?: Array<{ purchase_id: string; bill_number: string | null; bill_date: string; supplier_name: string | null; self_invoice_by: string; tax: number }>;
+    rcm_bills?: Array<{ purchase_id: string; document?: RcmDocument; bill_number: string | null; bill_date: string; supplier_name: string | null; self_invoice_by: string; tax: number }>;
+    unverified?: Array<{ purchase_id: string; document?: RcmDocument; bill_number?: string | null; bill_date?: string; supplier_name?: string | null; tax?: number; message: string }>;
     period?: string;
     label?: string;
     can_mark_filed?: boolean;
@@ -235,6 +241,7 @@ export default function GstCompliancePage() {
           const invoices = a.details.invoices ?? [];
           const sales = a.details.sales ?? [];
           const rcmBills = a.details.rcm_bills ?? [];
+          const unverified = a.details.unverified ?? [];
           return (
             <div key={a.id} className={`border rounded-xl p-5 shadow-sm ${s.box} ${a.dismissed ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-3">
@@ -352,8 +359,8 @@ export default function GstCompliancePage() {
                           {rcmBills.slice(0, 8).map((b) => (
                             <tr key={b.purchase_id} className="border-t border-gray-200/70">
                               <td className="py-1 pr-4">
-                                <Link href={`/purchases/${b.purchase_id}`} className="text-primary-700 hover:underline">
-                                  {b.bill_number || 'Bill'}
+                                <Link href={rcmDocumentHref(b.purchase_id, b.document)} className="text-primary-700 hover:underline">
+                                  {b.bill_number || (b.document === 'expense' ? 'Expense' : 'Bill')}
                                 </Link>{' '}
                                 <span className="text-gray-500">{dateLabel(b.bill_date)}</span>
                               </td>
@@ -365,6 +372,38 @@ export default function GstCompliancePage() {
                         </tbody>
                       </table>
                       {rcmBills.length > 8 && <p className="text-xs text-gray-500 mt-1">and {rcmBills.length - 8} more</p>}
+                    </div>
+                  )}
+
+                  {unverified.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <p className="text-xs font-medium text-gray-700">Needs details</p>
+                      <table className="min-w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-gray-500">
+                            <th className="py-1 pr-4 font-medium">Bill</th>
+                            <th className="py-1 pr-4 font-medium">Supplier</th>
+                            <th className="py-1 pr-4 font-medium">What is missing</th>
+                            <th className="py-1 font-medium text-right">Tax</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unverified.slice(0, 8).map((b) => (
+                            <tr key={b.purchase_id} className="border-t border-gray-200/70">
+                              <td className="py-1 pr-4">
+                                <Link href={rcmDocumentHref(b.purchase_id, b.document)} className="text-primary-700 hover:underline">
+                                  {b.bill_number || (b.document === 'expense' ? 'Expense' : 'Bill')}
+                                </Link>{' '}
+                                {b.bill_date && <span className="text-gray-500">{dateLabel(b.bill_date)}</span>}
+                              </td>
+                              <td className="py-1 pr-4 text-gray-700">{b.supplier_name || '—'}</td>
+                              <td className="py-1 pr-4 text-gray-700">{b.message}</td>
+                              <td className="py-1 text-right text-gray-900">{b.tax != null ? inr(b.tax) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {unverified.length > 8 && <p className="text-xs text-gray-500 mt-1">and {unverified.length - 8} more</p>}
                     </div>
                   )}
 
