@@ -6,7 +6,7 @@ import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackCl
 import { ClosedNotice } from './engine/OpenStatusBadge';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
-import { CartSuggestionsRow, FreeShipBar, useCartSuggestions, type EngineCart } from './CartExtras';
+import { CartSuggestionsRow, FreeShipBar, WhatsappOrderButton, useCartSuggestions, type EngineCart } from './CartExtras';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -203,6 +203,7 @@ function CartDrawer({ open, onClose, onCheckout, engineCart }: StoreCartDrawerPr
             >
               {soft ? `Proceed to Checkout · ₹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
             </button>
+            <WhatsappOrderButton engineCart={engineCart} className="mt-2" />
           </div>
         ) : null}
       </aside>

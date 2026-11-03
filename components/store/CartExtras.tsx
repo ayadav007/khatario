@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { MessageCircle, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { freeDeliveryProgress, freeShipText } from '@/lib/store/quick';
 import { cartCategoryIds, cartLookupParams, pickSuggestions, suggestionsParams } from '@/lib/store/cart-suggestions';
 import { engineProductHref } from '@/lib/store/engine/links';
+import { storePinKey } from '@/lib/store/store-pincode';
+import { whatsappNumber, whatsappOrderText, whatsappOrderUrl } from '@/lib/store/whatsapp-order';
 import type { StoreProduct } from './StoreProductCard';
 
 /**
@@ -20,7 +22,7 @@ export interface EngineCart {
   freeShipBar: boolean;
   suggestions: boolean;
   suggestionsHeading: string;
-  /** Task 10: "Order on WhatsApp instead". */
+  /** "Order on WhatsApp instead" under Checkout, from the store's WhatsApp link. */
   whatsappOrder: boolean;
   whatsappLink: string;
   isDemo: boolean;
@@ -185,5 +187,55 @@ export function CartSuggestionsRow({
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * "Order on WhatsApp instead", shown under Checkout when the theme turns it on and the store's WhatsApp link holds an
+ * Indian mobile number. It opens a chat with the cart as the message (and the shopper's saved pincode) in a new tab
+ * and leaves the cart as it is. A demo store shows a notice instead, so no real chat opens.
+ */
+export function WhatsappOrderButton({ engineCart, className }: { engineCart?: EngineCart; className?: string }) {
+  const { store, cart } = useStore();
+  const [demoNotice, setDemoNotice] = useState(false);
+  const number = engineCart?.whatsappOrder ? whatsappNumber(engineCart.whatsappLink) : null;
+  if (!engineCart || !number || !store || !cart.length) return null;
+
+  const open = () => {
+    if (engineCart.isDemo) {
+      setDemoNotice(true);
+      return;
+    }
+    let pincode = '';
+    try {
+      pincode = localStorage.getItem(storePinKey(store.store_subdomain)) ?? '';
+    } catch {
+      /* private mode: no pincode line */
+    }
+    const text = whatsappOrderText(
+      store.name,
+      cart.map((c) => ({ name: c.name, pack: c.variantName, quantity: c.quantity, price: c.price })),
+      pincode,
+    );
+    window.open(whatsappOrderUrl(number, text), '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        onClick={open}
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-0 px-4 py-3 text-[14px] font-semibold"
+        style={{ backgroundColor: '#15803d', color: '#ffffff' }}
+      >
+        <MessageCircle className="h-4 w-4" aria-hidden />
+        Order on WhatsApp instead
+      </button>
+      {demoNotice ? (
+        <p className="mt-1.5 text-center text-[12px]" role="status">
+          This is a demo store
+        </p>
+      ) : null}
+    </div>
   );
 }

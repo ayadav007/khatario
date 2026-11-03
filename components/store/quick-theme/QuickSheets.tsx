@@ -11,7 +11,7 @@ import { ClosedNotice } from '../engine/OpenStatusBadge';
 import { VariantPicker } from '../features/product/VariantPicker';
 import { findVariant, toVariantInputs } from '../features/product/product-view';
 import { ReviewSummaryCompact } from '../features/reviews/ReviewSummary';
-import { CartSuggestionsRow, useCartSuggestions, type EngineCart } from '../CartExtras';
+import { CartSuggestionsRow, WhatsappOrderButton, useCartSuggestions, type EngineCart } from '../CartExtras';
 
 /** Same key checkout reads, so a coupon picked in the cart is already applied there. */
 function couponKey(subdomain: string) {
@@ -121,13 +121,16 @@ export function QuickCartSheet({
       }
       footer={
         cart.length ? (
-          <button type="button" className="qk-cta" onClick={onCheckout} disabled={belowMin}>
-            <span>
-              <b>{rupees(Math.max(0, cartTotal - couponSaving))}</b>
-              <small>{couponSaving ? 'after coupon' : 'total'}</small>
-            </span>
-            <span>{belowMin ? `Add ${rupees(minOrder - cartTotal)} more` : 'Proceed to checkout →'}</span>
-          </button>
+          <>
+            <button type="button" className="qk-cta" onClick={onCheckout} disabled={belowMin}>
+              <span>
+                <b>{rupees(Math.max(0, cartTotal - couponSaving))}</b>
+                <small>{couponSaving ? 'after coupon' : 'total'}</small>
+              </span>
+              <span>{belowMin ? `Add ${rupees(minOrder - cartTotal)} more` : 'Proceed to checkout →'}</span>
+            </button>
+            <WhatsappOrderButton engineCart={engineCart} className="mt-2" />
+          </>
         ) : null
       }
     >
