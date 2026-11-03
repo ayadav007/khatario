@@ -76,6 +76,8 @@ interface StoreProductCardProps {
   /** Studio: show the product's tagline / colour swatches; undefined follows the theme preset. */
   showTagline?: boolean;
   showSwatches?: boolean;
+  /** A card with the `packs` line starts on this pack when the product has it (Buy again: the pack ordered before). */
+  initialPackId?: string | null;
 }
 
 /** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
@@ -177,6 +179,7 @@ function ProductCard({
   highlight,
   showTagline,
   showSwatches,
+  initialPackId,
   onOptions,
 }: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
@@ -219,19 +222,20 @@ function ProductCard({
     return r.axisCount === 1 && r.packs.length > 0 ? r : null;
   }, [packsOn, product.variants, product.selling_price]);
   const [chosenPackId, setChosenPackId] = useState<string | null>(null);
-  // Starts on the product page's first choice (the first pack in stock); one that is not a chip falls back to the first
-  // chip in stock.
+  // Starts on `initialPackId` when it is one of the chips, else on the product page's first choice (the first pack in
+  // stock); one that is not a chip falls back to the first chip in stock.
   const pack = useMemo(() => {
     if (!packChips) return null;
     const { packs } = packChips;
     const start = initialVariantId(product.variants as StoreVariantInput[]);
     return (
       packs.find((p) => p.id === chosenPackId) ??
+      (initialPackId ? packs.find((p) => p.id === initialPackId) : undefined) ??
       packs.find((p) => p.id === start) ??
       packs.find((p) => !p.soldOut) ??
       packs[0]
     );
-  }, [packChips, chosenPackId, product.variants]);
+  }, [packChips, chosenPackId, initialPackId, product.variants]);
   // The MRP belongs to the product's own price; a pack at another price shows none.
   const packMrp = pack && packPriceShowsMrp(pack.price, product.selling_price) ? product.mrp : null;
   const packLine = pack ? cartLineFor(cart, product.id, pack.id) ?? null : null;

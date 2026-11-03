@@ -227,6 +227,12 @@ export const DEMO_CATALOGS: Record<DemoCatalogId, DemoCatalog> = {
   streetwear: STREETWEAR,
 };
 
+/**
+ * Product ids a demo store's Buy again section shows (the demo has no shopper or orders), newest first; ids must be in
+ * that catalogue. A catalogue without a list shows no Buy again section.
+ */
+export const DEMO_BUY_AGAIN: Partial<Record<DemoCatalogId, string[]>> = {};
+
 export function demoCatalog(id: DemoCatalogId): DemoCatalog {
   return DEMO_CATALOGS[id];
 }

@@ -33,6 +33,7 @@ import { collage } from './sections/collage';
 import { shopTheLook } from './sections/shop-the-look';
 import { imageGallery } from './sections/image-gallery';
 import { storeInfo } from './sections/store-info';
+import { buyAgain } from './sections/buy-again';
 
 /** Appended to every non-group section. Colour scheme, CSS class and custom CSS live on the Section itself. */
 export const COMMON_SETTINGS: SettingSchema[] = [
@@ -102,6 +103,7 @@ const ALL: SectionSchema[] = [
   shopTheLook,
   imageGallery,
   storeInfo,
+  buyAgain,
 ].map(withCommon);
 
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = Object.fromEntries(ALL.map((s) => [s.type, s]));
