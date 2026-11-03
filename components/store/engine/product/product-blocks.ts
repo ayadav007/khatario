@@ -79,3 +79,8 @@ export function youSave(price: number, productPrice: number, mrp: number | null)
   const saved = Math.round((mrp - price) * 100) / 100;
   return saved > 0 ? saved : null;
 }
+
+/** The struck MRP and "% off" show only when the MRP is above the price on show and that price is the product's own (not another pack's). */
+export function showsMrp(price: number, productPrice: number, mrp: number | null): boolean {
+  return mrp != null && mrp > price && packPriceShowsMrp(price, productPrice);
+}

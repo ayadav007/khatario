@@ -9,7 +9,7 @@ import { shareUrl } from '@/lib/store/engine/links';
 import { cleanPincode, deliveryCheckAnswer, deliveryCheckShown, pincodeToSave, storePinKey } from '@/lib/store/store-pincode';
 import { useEngineProduct } from './EngineProductContext';
 import { BTN, BuyStepper, inr, useBuyState } from './buy-action';
-import { lowStockNote, youSave, type ProductBlockProps } from './product-blocks';
+import { lowStockNote, showsMrp, youSave, type ProductBlockProps } from './product-blocks';
 import { StickyBuyBar } from './StickyBuyBar';
 
 const OUTLINE: CSSProperties = {
@@ -60,12 +60,14 @@ function TitleBlock({ id, settings }: ProductBlockProps) {
 function PriceBlock({ id, settings }: ProductBlockProps) {
   const { product, offer } = useEngineProduct();
   if (!product || !offer) return null;
-  const saved = youSave(offer.price, Number(product.selling_price) || 0, offer.mrp);
+  const productPrice = Number(product.selling_price) || 0;
+  const saved = youSave(offer.price, productPrice, offer.mrp);
+  const mrpShown = showsMrp(offer.price, productPrice, offer.mrp);
   return (
     <div data-eng-block={id}>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-3xl font-bold tabular-nums">{inr(offer.price)}</span>
-        {offer.mrp ? (
+        {offer.mrp && mrpShown ? (
           <>
             <span className="text-sm tabular-nums line-through opacity-50">
               <span className="sr-only">MRP </span>

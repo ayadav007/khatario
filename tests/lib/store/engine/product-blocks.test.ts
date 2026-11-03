@@ -4,6 +4,7 @@ import {
   pickPromptLabel,
   stickyBuyBarVisible,
   variantSizeLabel,
+  showsMrp,
   youSave,
 } from '@/components/store/engine/product/product-blocks';
 
@@ -118,5 +119,21 @@ describe('youSave', () => {
     expect(youSave(549, 549, null)).toBeNull();
     expect(youSave(549, 549, 549)).toBeNull();
     expect(youSave(549, 549, 500)).toBeNull();
+  });
+});
+
+describe('showsMrp', () => {
+  it("shows the struck MRP and % off only at the product's own price", () => {
+    expect(showsMrp(549, 549, 640)).toBe(true);
+    // A cheaper or dearer pack gets no MRP: 300 vs a 640 MRP would be a false 53% off.
+    expect(showsMrp(300, 549, 640)).toBe(false);
+    expect(showsMrp(1050, 549, 1200)).toBe(false);
+    // No MRP, or MRP not above the price.
+    expect(showsMrp(549, 549, null)).toBe(false);
+    expect(showsMrp(549, 549, 549)).toBe(false);
+  });
+
+  it('keeps a product without variants as it is today (price is the product price)', () => {
+    expect(showsMrp(100, 100, 120)).toBe(true);
   });
 });
