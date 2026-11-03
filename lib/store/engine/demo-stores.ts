@@ -59,6 +59,7 @@ export function engineDemoStore(subdomain: string): StoreBusinessContext | null 
     store_tagline: tagline,
     store_hero_image_url: DEMO_CATALOGS[catalog].heroes[0],
     store_min_order_amount: 0,
+    store_hours: null,
     portal_theme: null,
     store_theme: null,
     store_about_md: `${brand} is a Khatario theme demo store. Its products are samples; your own appear when you use the ${theme.name} theme.`,

@@ -46,6 +46,13 @@ import {
   setupSelectClass,
 } from '@/components/store/admin/StoreSetupLayout';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
+import {
+  StoreHoursCard,
+  storeHoursDraft,
+  storeHoursFromDraft,
+  type StoreHoursDraft,
+} from '@/components/store/admin/StoreHoursCard';
+import type { StoreHours } from '@/lib/store/store-hours';
 import { storeHostSuffix } from '@/lib/store/subdomain';
 import { editorPath, openWorkingDraft } from '@/components/store/studio2/api';
 import { pendingBadgeText } from '@/lib/store/review-admin-helpers';
@@ -65,6 +72,7 @@ interface StoreSettings {
   store_tagline: string | null;
   store_hero_image_url: string | null;
   store_min_order_amount: number;
+  store_hours?: StoreHours | null;
   store_allow_cod?: boolean;
   store_return_window_days?: number;
   store_delivery_provider?: string;
@@ -118,6 +126,7 @@ export default function OnlineStoreSettingsPage() {
   const [enabled, setEnabled] = useState(false);
   const [tagline, setTagline] = useState('');
   const [minOrder, setMinOrder] = useState('');
+  const [hours, setHours] = useState<StoreHoursDraft>(() => storeHoursDraft(null));
   const [heroUrl, setHeroUrl] = useState('');
   const [aboutMd, setAboutMd] = useState('');
   const [contactMd, setContactMd] = useState('');
@@ -174,6 +183,7 @@ export default function OnlineStoreSettingsPage() {
         setEnabled(data.store_enabled);
         setTagline(data.store_tagline ?? '');
         setMinOrder(data.store_min_order_amount ? String(data.store_min_order_amount) : '');
+        setHours(storeHoursDraft(data.store_hours));
         setHeroUrl(data.store_hero_image_url ?? '');
         setAboutMd(data.store_about_md ?? '');
         setContactMd(data.store_contact_md ?? '');
@@ -249,11 +259,12 @@ export default function OnlineStoreSettingsPage() {
       JSON.stringify([
         subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
         allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail,
-        sanitizeStorePromoSheet(promo),
+        sanitizeStorePromoSheet(promo), storeHoursFromDraft(hours),
       ]),
     [
       subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
       allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail, promo,
+      hours,
     ],
   );
 
@@ -285,6 +296,7 @@ export default function OnlineStoreSettingsPage() {
           store_enabled: enabled,
           store_tagline: tagline.trim() || null,
           store_min_order_amount: parseFloat(minOrder) || 0,
+          store_hours: storeHoursFromDraft(hours),
           store_hero_image_url: heroUrl.trim() || null,
           store_about_md: aboutMd || null,
           store_contact_md: contactMd || null,
@@ -344,6 +356,7 @@ export default function OnlineStoreSettingsPage() {
     enabled,
     tagline,
     minOrder,
+    hours,
     heroUrl,
     aboutMd,
     contactMd,
@@ -940,6 +953,8 @@ export default function OnlineStoreSettingsPage() {
                   </SetupRow>
                 ) : null}
               </SetupGroup>
+
+              <StoreHoursCard value={hours} onChange={setHours} />
 
               <SetupGroup icon={Truck} title="Delivery and returns" testId="store-setup-delivery">
                 <SetupRow label="Delivered by" htmlFor="store-delivery-provider">
