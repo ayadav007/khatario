@@ -16,6 +16,7 @@ import {
   Poppins,
   Anton,
   Space_Grotesk,
+  Baloo_2,
 } from 'next/font/google';
 import { StoreApp } from '@/components/store/StoreApp';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
@@ -133,6 +134,14 @@ const spaceGrotesk = Space_Grotesk({
   preload: false,
 });
 
+const baloo = Baloo_2({
+  subsets: ['latin', 'devanagari'],
+  weight: ['500', '600', '700', '800'],
+  variable: '--font-store-baloo',
+  display: 'swap',
+  preload: false,
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   const store = await currentStore();
   if (!store) return { robots: { index: true, follow: true } };
@@ -166,7 +175,7 @@ export default function StoreLayout({
 }) {
   const subdomain = extractStoreSubdomain(headers().get('host'));
   return (
-    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} ${cinzel.variable} ${newsreader.variable} ${manrope.variable} ${dmSerif.variable} ${lora.variable} ${poppins.variable} ${anton.variable} ${spaceGrotesk.variable} store-root`}>
+    <div className={`${fraunces.variable} ${nunito.variable} ${playfair.variable} ${outfit.variable} ${inter.variable} ${cormorant.variable} ${sourceSerif.variable} ${cinzel.variable} ${newsreader.variable} ${manrope.variable} ${dmSerif.variable} ${lora.variable} ${poppins.variable} ${anton.variable} ${spaceGrotesk.variable} ${baloo.variable} store-root`}>
       <StoreApp subdomain={subdomain}>{children}</StoreApp>
     </div>
   );

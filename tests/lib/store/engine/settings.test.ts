@@ -142,3 +142,8 @@ it('accepts anton and space-grotesk as heading and body fonts', () => {
   expect(data.settings.font_heading).toBe('anton');
   expect(data.settings.font_body).toBe('space-grotesk');
 });
+
+it('accepts baloo as a heading font', () => {
+  const data = sanitizeThemeData({ settings: { font_heading: 'baloo' } });
+  expect(data.settings.font_heading).toBe('baloo');
+});

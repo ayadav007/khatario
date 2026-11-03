@@ -343,6 +343,10 @@ describe('options lists', () => {
     for (const o of FONT_OPTIONS) expect(sanitizeSettingValue(schema, o.value)).toBe(o.value);
   });
 
+  it('labels baloo as Baloo 2', () => {
+    expect(FONT_OPTIONS.find((o) => o.value === 'baloo')?.label).toBe('Baloo 2');
+  });
+
   it('icons are the USP icons', () => {
     expect(ICON_OPTIONS.map((o) => o.value)).toEqual([...STUDIO_USP_ICONS]);
   });

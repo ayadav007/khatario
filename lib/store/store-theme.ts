@@ -97,6 +97,7 @@ export const STORE_FONT_FAMILIES = [
   'poppins',
   'anton',
   'space-grotesk',
+  'baloo',
 ] as const;
 
 export type StoreFontFamily = (typeof STORE_FONT_FAMILIES)[number];
@@ -598,6 +599,8 @@ export function storeFontStack(family: StoreFontFamily): string {
       return 'var(--font-store-anton), Impact, sans-serif';
     case 'space-grotesk':
       return 'var(--font-store-space-grotesk), system-ui, sans-serif';
+    case 'baloo':
+      return 'var(--font-store-baloo), system-ui, sans-serif';
     default:
       return 'system-ui, sans-serif';
   }

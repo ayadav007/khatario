@@ -19,3 +19,8 @@ it('maps them to their variables', () => {
   expect(storeFontStack('anton')).toBe('var(--font-store-anton), Impact, sans-serif');
   expect(storeFontStack('space-grotesk')).toBe('var(--font-store-space-grotesk), system-ui, sans-serif');
 });
+
+it('lists baloo and maps it to its variable', () => {
+  expect(STORE_FONT_FAMILIES).toContain('baloo');
+  expect(storeFontStack('baloo')).toBe('var(--font-store-baloo), system-ui, sans-serif');
+});
