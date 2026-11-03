@@ -51,24 +51,6 @@ export function useFeatureRegistry() {
       setFeaturesByCategory(data.features || {});
       setEnabledIds(data.enabledIds || []);
       setSource(data.source || null);
-      
-      // Debug logging (remove in production)
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[FeatureRegistry] Source:', data.source);
-        console.log('[FeatureRegistry] Enabled IDs:', data.enabledIds);
-        console.log('[FeatureRegistry] Features by category:', Object.keys(data.features || {}));
-        // Log specific feature status for debugging
-        if (data.features?.sales) {
-          const estimatesFeature = data.features.sales.find((f: any) => f.id === 'sales_estimates');
-          if (estimatesFeature) {
-            console.log('[FeatureRegistry] sales_estimates feature:', {
-              id: estimatesFeature.id,
-              enabled: estimatesFeature.enabled,
-              inEnabledIds: data.enabledIds?.includes('sales_estimates')
-            });
-          }
-        }
-      }
     } catch (error) {
       console.error('Error fetching features:', error);
       setFeaturesByCategory({});
@@ -92,14 +74,8 @@ export function useFeatureRegistry() {
   useEffect(() => {
     const handleFeatureRegistryUpdate = (event?: CustomEvent) => {
       if (business?.id) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[FeatureRegistry] Received feature-registry-updated event', event?.detail);
-        }
         // Small delay to ensure backend cache is cleared
         setTimeout(() => {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[FeatureRegistry] Refreshing features after event...');
-          }
           fetchFeatures();
         }, 100);
       }

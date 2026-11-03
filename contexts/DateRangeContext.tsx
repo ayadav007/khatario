@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef, useMemo } from 'react';
 import type { DateRange as DayPickerRange } from 'react-day-picker';
 
@@ -26,7 +24,6 @@ interface DateRangeContextType {
 const DateRangeContext = createContext<DateRangeContextType | undefined>(undefined);
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
-  useRenderLoopProbe('DateRangeProvider');
   const [dateRange, setDateRangeState] = useState<DateRange | null>(null);
   const [preset, setPreset] = useState<string>('today');
   const [customRange, setCustomRange] = useState<DayPickerRange | undefined>(undefined);

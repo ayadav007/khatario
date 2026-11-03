@@ -95,64 +95,6 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // If no data found, check if there are any invoices/purchases at all for this business
-    if (chartData.length === 0) {
-      const hasAnyInvoices = await queryRows<{ count: number }>(
-        `SELECT COUNT(*) as count FROM invoices 
-         WHERE business_id = $1 
-           AND deleted_at IS NULL
-           AND status = 'final'
-           AND (document_type IS NULL OR document_type != 'proforma_invoice')`,
-        [businessId]
-      );
-      const hasAnyPurchases = await queryRows<{ count: number }>(
-        `SELECT COUNT(*) as count FROM purchases WHERE business_id = $1 AND deleted_at IS NULL AND status != 'cancelled'`,
-        [businessId]
-      );
-
-      // Get the actual date range of invoices and purchases
-      const invoiceDateRange = await queryRows<{ min_date: string; max_date: string }>(
-        `SELECT 
-          MIN(DATE(invoice_date))::text as min_date,
-          MAX(DATE(invoice_date))::text as max_date
-        FROM invoices 
-        WHERE business_id = $1 
-          AND deleted_at IS NULL
-          AND status = 'final'
-          AND (document_type IS NULL OR document_type != 'proforma_invoice')`,
-        [businessId]
-      );
-      
-      const purchaseDateRange = await queryRows<{ min_date: string; max_date: string }>(
-        `SELECT 
-          MIN(DATE(bill_date))::text as min_date,
-          MAX(DATE(bill_date))::text as max_date
-        FROM purchases 
-        WHERE business_id = $1 AND deleted_at IS NULL AND status != 'cancelled'`,
-        [businessId]
-      );
-
-      console.log('[Dashboard Charts] No data in date range, but business has:', {
-        totalInvoices: hasAnyInvoices[0]?.count || 0,
-        totalPurchases: hasAnyPurchases[0]?.count || 0,
-        requestedDateRange: { startDate, endDate },
-        actualInvoiceDateRange: invoiceDateRange[0] || null,
-        actualPurchaseDateRange: purchaseDateRange[0] || null,
-      });
-    }
-
-    // Debug logging (can be removed in production)
-    console.log('[Dashboard Charts]', {
-      businessId,
-      startDate,
-      endDate,
-      salesCount: salesData.length,
-      purchasesCount: purchasesData.length,
-      chartDataCount: chartData.length,
-      sampleSales: salesData.slice(0, 3),
-      samplePurchases: purchasesData.slice(0, 3),
-      sampleChartData: chartData.slice(0, 3),
-    });
 
     return NextResponse.json({ chartData });
   } catch (error: any) {

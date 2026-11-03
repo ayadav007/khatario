@@ -85,7 +85,6 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
       oscillator2.stop(audioContext.currentTime + 0.15);
     } catch (err) {
       // Fallback: silently fail if audio context is not available
-      console.debug('Could not play beep sound:', err);
     }
   };
 
@@ -265,11 +264,9 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
           if (navigator.permissions && navigator.permissions.query) {
             const permissionResult = await navigator.permissions.query({ name: 'camera' as PermissionName });
             permissionState = permissionResult.state;
-            console.log('Camera permission state:', permissionState);
           }
         } catch (permQueryErr) {
           // Permissions API might not be supported, continue anyway
-          console.log('Permissions API not available, proceeding with getUserMedia');
         }
 
         // If permission is denied, show helpful message
@@ -410,15 +407,6 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
                 try {
                   const item = await searchItemByBarcode(barcode);
                   if (item) {
-                    // Debug: Log the item structure
-                    console.log('[ContinuousScanner] Item found:', {
-                      id: item.id,
-                      name: item.name,
-                      barcode: item.barcode,
-                      selling_price: item.selling_price,
-                      tax_rate: item.tax_rate,
-                      fullItem: item
-                    });
                     
                     // Check if name is actually the barcode
                     if (item.name === item.barcode || item.name === barcode) {
@@ -461,16 +449,8 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
                 }
               }
             },
-            (errorMessage) => {
-              // Error callback - log for debugging but don't show to user
-              // Most errors are just "no barcode found" which is normal during scanning
-              if (errorMessage && 
-                  !errorMessage.includes('No QR code') && 
-                  !errorMessage.includes('NotFoundException') &&
-                  !errorMessage.includes('No MultiFormat Readers')) {
-                // Only log actual errors, not normal "not found" messages
-                console.debug('[Continuous Barcode Scanner] Error:', errorMessage);
-              }
+            () => {
+              // Most errors are just "no barcode found", which is normal while scanning.
             }
           );
           
@@ -616,7 +596,6 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
                           stream.getTracks().forEach(track => track.stop());
                           
                           // Permission granted! Re-initialize the scanner
-                          console.log('Permission granted, re-initializing scanner...');
                           if (initScannerRef.current) {
                             // Reset the initialization flag so it can run again
                             isInitializingRef.current = false;

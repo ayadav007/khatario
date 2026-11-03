@@ -31,11 +31,6 @@ export async function GET(request: NextRequest) {
     try {
       const enabledSet = await getAllFeatureAccessForBusiness(businessId);
       enabledFeatureIds = Array.from(enabledSet);
-      console.log('[Features API] Enabled features for business:', {
-        businessId,
-        enabledCount: enabledFeatureIds.length,
-        enabledIds: enabledFeatureIds
-      });
     } catch (error: any) {
       console.error('[Features API] Error in getAllFeatureAccessForBusiness:', error);
       console.error('[Features API] Error stack:', error.stack);

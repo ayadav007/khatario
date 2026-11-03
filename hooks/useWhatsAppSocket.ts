@@ -100,7 +100,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
 
   const handleEvent = useCallback((event: WSEvent) => {
     const handlers = handlersRef.current;
-    console.log('[SSE] event received', { type: event.type, businessId: event.businessId, conversationId: event.conversationId || (event as WSEvent).messageId });
     
     // Route events to appropriate handlers
     switch (event.type) {
@@ -147,7 +146,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
       const eventSource = new EventSource(url);
 
       eventSource.onopen = () => {
-        console.log('[SSE] connected', { businessId, url, readyState: eventSource.readyState });
         setConnected(true);
         reconnectAttemptsRef.current = 0;
         isConnectingRef.current = false;
@@ -168,7 +166,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
         // EventSource will automatically try to reconnect
         // Only mark as disconnected if it's actually closed
         if (eventSource.readyState === EventSource.CLOSED) {
-          console.log('[SSE] disconnected (EventSource closed)', { businessId });
           setConnected(false);
           isConnectingRef.current = false;
 
@@ -176,7 +173,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
           reconnectAttemptsRef.current++;
           const delay = Math.min(30_000, reconnectDelay * 2 ** Math.min(reconnectAttemptsRef.current - 1, 5));
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log(`[SSE] manual reconnect attempt ${reconnectAttemptsRef.current}`, { businessId });
             if (eventSourceRef.current) {
               eventSourceRef.current.close();
               eventSourceRef.current = null;
@@ -265,7 +261,6 @@ export function useWhatsAppSocket(options: UseWhatsAppSocketOptions): UseWhatsAp
 
     if (eventSourceRef.current) {
       try {
-        console.log('[SSE] disconnect() called (closing EventSource)', { hadSource: true });
         eventSourceRef.current.close();
       } catch (err) {
         // Ignore errors during close

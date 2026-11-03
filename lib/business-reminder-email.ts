@@ -12,7 +12,6 @@ export async function sendDailyInvoiceSummaryEmail(businessId: string): Promise<
     `, [businessId]);
 
     if (!business?.email) {
-      console.log(`No email found for business ${businessId}`);
       return false;
     }
 

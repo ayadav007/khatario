@@ -53,7 +53,6 @@ export async function GET(
            ORDER BY variant_name`,
           [itemId]
         );
-        console.log(`[Items API] Found ${variantRows.length} variants for item ${itemId}`);
         variants = variantRows.map((v: any) => ({
           id: v.id,
           name: v.variant_name,
@@ -70,8 +69,6 @@ export async function GET(
         // If variants table doesn't exist, just return empty array
         variants = [];
       }
-    } else {
-      console.log(`[Items API] Item ${itemId} does not have variants (has_variants = ${item.has_variants})`);
     }
 
     const reservedRow = await queryOne<{ reserved_qty: string }>(

@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, {
   createContext,
   useCallback,
@@ -64,7 +62,6 @@ export function NetworkStatusProvider({
 }: {
   children: React.ReactNode;
 }) {
-  useRenderLoopProbe('NetworkStatusProvider');
   const [isOnline, setIsOnline] = useState(resolveInitialOnline);
   /** False until first browser/Capacitor sync + optional server probe (avoids false offline flash). */
   const [networkReady, setNetworkReady] = useState(false);

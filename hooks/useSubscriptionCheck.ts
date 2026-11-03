@@ -139,7 +139,6 @@ export function useSubscriptionCheck(businessId: string | undefined) {
         const data = await response.json();
         const fetchedAddons = Array.isArray(data.addons) ? data.addons : [];
         setAddons(fetchedAddons);
-        console.log('[SubscriptionCheck] Fetched addons:', fetchedAddons);
       }
     } catch (error) {
       console.error('Error fetching addons:', error);
@@ -179,12 +178,6 @@ export function useSubscriptionCheck(businessId: string | undefined) {
 
     // For plan-based features: Use Feature Registry if available
     const hasInRegistry = enabledFeatures.includes(registryFeatureKey);
-    if (process.env.NODE_ENV === 'development') {
-      console.log(
-        `[SubscriptionCheck] hasFeature('${featureKey}' -> '${registryFeatureKey}'):`,
-        hasInRegistry
-      );
-    }
     return hasInRegistry;
   }, [enabledFeatures]);
 

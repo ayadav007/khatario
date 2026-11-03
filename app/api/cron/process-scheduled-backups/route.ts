@@ -16,7 +16,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-    console.log(`[Scheduled Backups] Processing at ${now.toISOString()}`);
 
     // Find all schedules that are due
     const dueSchedules = await db.queryRows(`
@@ -34,13 +33,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`[Scheduled Backups] Found ${dueSchedules.length} due schedules`);
 
     const results = [];
 
     for (const schedule of dueSchedules) {
       try {
-        console.log(`[Scheduled Backups] Processing backup for business ${schedule.business_id}`);
 
         // Create backup
         const backup = await createBackup(schedule.business_id);
@@ -86,7 +83,6 @@ export async function GET(request: NextRequest) {
           next_run_at: nextRunAt,
         });
 
-        console.log(`[Scheduled Backups] Backup completed for business ${schedule.business_id}`);
 
       } catch (error: any) {
         console.error(`[Scheduled Backups] Error for business ${schedule.business_id}:`, error);
@@ -128,7 +124,6 @@ export async function GET(request: NextRequest) {
             WHERE id = $1
           `, [schedule.id]);
           
-          console.log(`[Scheduled Backups] Disabled schedule for business ${schedule.business_id} after 5 failures`);
         }
       }
     }
@@ -250,9 +245,6 @@ async function sendBackupNotification(
   errorMessage?: string
 ): Promise<void> {
   // TODO: Implement email sending
-  // For now, just log
-  console.log(`[Backup Notification] Sending ${status} email to ${email} for business ${businessId}`);
-  console.log(`Records: ${recordCount}, Error: ${errorMessage || 'None'}`);
 }
 
 /**

@@ -143,7 +143,6 @@ export const GET = withWhatsAppPremiumApi<{ phone: string }>({ inboxPermission: 
             }
           } catch (err: any) {
             // Profile picture not available (404) or other error - this is normal
-            console.log(`[Contact API] Profile picture not available for ${jid}:`, err.message);
             profilePictureUrl = null;
           }
         }

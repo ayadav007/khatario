@@ -127,10 +127,8 @@ export default function BackupRestorePage() {
     try {
       const response = await fetch(`/api/backup/history?business_id=${business?.id}&limit=10`);
       const data = await response.json();
-      console.log('Backup history response:', data); // DEBUG
       if (data.success) {
         setHistory(data.backups);
-        console.log('Loaded backups:', data.backups); // DEBUG
       } else {
         console.error('Failed to load history:', data); // DEBUG
       }

@@ -385,12 +385,6 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
       setMessages((prev) => {
         const wasEmpty = prev.length === 0;
         const merged = mergeMessageLists(prev, list);
-        console.log('[SSE-UI] message merge (catch-up)', {
-          openThread: conversationId,
-          fetched: list.length,
-          prevCount: prev.length,
-          mergedCount: merged.length
-        });
         if (wasEmpty) {
           const oc = data.oldest_cursor as { created_at?: string; message_id?: string } | undefined;
           queueMicrotask(() => {
@@ -1025,12 +1019,6 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
                 `temp-${Date.now()}`
             } as Message;
             const next = mergeMessageLists(prev, [incoming]);
-            console.log('[SSE-UI] message merged in state', {
-              conversationId: event.conversationId,
-              message_id: incomingMid,
-              prevCount: prev.length,
-              mergedCount: next.length
-            });
             return next;
           });
         }
@@ -1320,7 +1308,6 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
           if (isConnected && wasOffline) {
             setTimeout(() => {
               if (!wsConnectedForFallbackRef.current) {
-                console.log('[SSE-UI] fallback refetch (SSE not connected 3s after WA reconnect)');
                 void fetchConversationsRef.current?.(true, false, 0);
                 const cid = selectedConvIdSseRef.current;
                 if (cid) {

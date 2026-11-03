@@ -74,7 +74,6 @@ export async function processCampaign(campaignId: string): Promise<{
       const subscription = await getBusinessSubscription(campaign.business_id);
       if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
         await query('ROLLBACK');
-        console.log(`Skipping campaign ${campaignId}: business ${campaign.business_id} subscription inactive or expired`);
         return { processed: 0, sent: 0, failed: 0, errors: ['Business subscription inactive or expired'] };
       }
 
@@ -86,7 +85,6 @@ export async function processCampaign(campaignId: string): Promise<{
         
         if (endDate < today) {
           await query('ROLLBACK');
-          console.log(`Skipping campaign ${campaignId}: business ${campaign.business_id} subscription expired on ${subscription.end_date}`);
           return { processed: 0, sent: 0, failed: 0, errors: [`Business subscription expired on ${subscription.end_date}`] };
         }
       }
@@ -175,27 +173,22 @@ export async function processCampaign(campaignId: string): Promise<{
         // Prepare buttons for button messages (preserve type, phone, url information)
         let buttons: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }> | undefined = undefined;
         if (campaign.message_type === 'button' && campaign.buttons) {
-          console.log('[Campaign Processor] Processing button message. Raw buttons data:', campaign.buttons);
           const buttonsData = typeof campaign.buttons === 'string' 
             ? JSON.parse(campaign.buttons) 
             : campaign.buttons;
           
-          console.log('[Campaign Processor] Parsed buttons data:', buttonsData);
           
           if (Array.isArray(buttonsData)) {
             buttons = buttonsData
               .filter((b: any) => {
                 if (!b.id || !b.title) {
-                  console.log('[Campaign Processor] Filtered out button (missing id/title):', b);
                   return false;
                 }
                 // For call and url buttons, validate phone/url fields
                 if (b.type === 'call' && !b.phone) {
-                  console.log('[Campaign Processor] Filtered out call button (missing phone):', b);
                   return false;
                 }
                 if (b.type === 'url' && !b.url) {
-                  console.log('[Campaign Processor] Filtered out url button (missing url):', b);
                   return false;
                 }
                 return true;
@@ -207,12 +200,9 @@ export async function processCampaign(campaignId: string): Promise<{
                 phone: b.phone,
                 url: b.url
               }));
-            console.log('[Campaign Processor] Final buttons array:', buttons);
           } else {
             console.warn('[Campaign Processor] Buttons data is not an array:', typeof buttonsData);
           }
-        } else {
-          console.log('[Campaign Processor] Not processing buttons. message_type:', campaign.message_type, 'has buttons:', !!campaign.buttons);
         }
 
         // Send message
@@ -223,7 +213,6 @@ export async function processCampaign(campaignId: string): Promise<{
           messageText = campaign.message_text + '\n\n' + campaign.footer;
         }
         
-        console.log('[Campaign Processor] Sending message. Type:', campaign.message_type, 'Buttons:', buttons?.length || 0, 'Media:', !!media);
         
         const messageResult = await sendWhatsAppMessage(
           campaign.business_id,
@@ -254,8 +243,6 @@ export async function processCampaign(campaignId: string): Promise<{
         // Log if message ID is missing, but don't fail - message might still be sent
         if (!messageId) {
           console.warn(`[Campaign Processor] ⚠️ Message sent to ${recipient.phone} but no message ID returned. Result:`, typeof messageResult, messageResult ? Object.keys(messageResult) : 'null');
-        } else {
-          console.log(`[Campaign Processor] Message sent to ${recipient.phone}, message ID: ${messageId}`);
         }
 
         // Update recipient status with message ID (only if still pending - prevents duplicate sends)
@@ -267,7 +254,6 @@ export async function processCampaign(campaignId: string): Promise<{
 
         // If recipient was already processed (not pending anymore), skip updating counters
         if (updateResult.rowCount !== undefined && updateResult.rowCount === 0) {
-          console.log(`[Campaign Processor] Recipient ${recipient.id} already processed, skipping duplicate send`);
           processed--; // Don't count as processed
           continue; // Skip to next recipient
         }

@@ -86,9 +86,6 @@ async function processReminders(request?: NextRequest) {
         const timeStr = reminderTimeToHhMm(business.reminder_send_time);
         const tz = (business.reminder_send_timezone || 'Asia/Kolkata').trim() || 'Asia/Kolkata';
         if (!ignoreSendWindow && !isInReminderSendWindow(tz, timeStr)) {
-          console.log(
-            `[payment-reminders] Skipping business ${business.business_id}: outside send window (local ${timeStr} ${tz})`
-          );
           results.push({
             business_id: business.business_id,
             schedule_skipped: true,
@@ -102,7 +99,6 @@ async function processReminders(request?: NextRequest) {
         // Skip processing if subscription is inactive or expired
         const subscription = await getBusinessSubscription(business.business_id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-          console.log(`Skipping business ${business.business_id}: subscription inactive or expired`);
           results.push({
             business_id: business.business_id,
             payment_due: { sent: 0, skipped: 1, errors: 0 },
@@ -118,7 +114,6 @@ async function processReminders(request?: NextRequest) {
           today.setHours(0, 0, 0, 0);
           
           if (endDate < today) {
-            console.log(`Skipping business ${business.business_id}: subscription expired on ${subscription.end_date}`);
             results.push({
               business_id: business.business_id,
               payment_due: { sent: 0, skipped: 1, errors: 0 },

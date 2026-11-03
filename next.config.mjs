@@ -137,7 +137,7 @@ const nextConfig = {
     ];
   },
   compiler: {
-    // Keep console.error in production so the render-loop probe (and real errors)
+    // Keep console.error in production so real errors
     // remain visible on staging. log/warn/info are still stripped.
     removeConsole:
       process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false,

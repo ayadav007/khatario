@@ -22,7 +22,6 @@ async function extractPhoneFromJid(socket: any, jid: string): Promise<string | n
   // Note: This can be slow for many participants, so we'll batch resolve them
   if (jid.endsWith('@lid')) {
     try {
-      console.log(`[Phone Extraction] Attempting to resolve LID JID: ${jid}`);
       // Use Promise.race with timeout to avoid hanging
       const timeoutPromise = new Promise<null>((resolve) => 
         setTimeout(() => resolve(null), 3000) // 3 second timeout
@@ -32,7 +31,6 @@ async function extractPhoneFromJid(socket: any, jid: string): Promise<string | n
         if (result && result.length > 0 && result[0]?.jid) {
           // Got the phone number JID from the resolution
           const phoneJid = result[0].jid;
-          console.log(`[Phone Extraction] ✅ Resolved LID ${jid} to ${phoneJid}`);
           // Recursively extract from the resolved JID
           return extractPhoneFromJid(socket, phoneJid);
         }
@@ -41,10 +39,9 @@ async function extractPhoneFromJid(socket: any, jid: string): Promise<string | n
       
       const phone = await Promise.race([resolvePromise, timeoutPromise]);
       if (phone) return phone;
-    } catch (err: any) {
-      console.log(`[Phone Extraction] ❌ Failed to resolve LID JID ${jid}:`, err.message);
+    } catch {
+      /* unresolved: treated as no phone */
     }
-    console.log(`[Phone Extraction] ⚠️ LID JID ${jid} could not be resolved to phone number`);
     return null;
   }
   
@@ -59,13 +56,9 @@ async function extractPhoneFromJid(socket: any, jid: string): Promise<string | n
   // WhatsApp numbers can be 8-15 digits with country code
   // Some valid formats: 8 digits (local), 10 digits (US), 12 digits (India with country code), etc.
   if (cleaned.length < 8 || cleaned.length > 15) {
-    // Log for debugging
-    console.log(`[Phone Extraction] Invalid length for JID ${jid}: ${cleaned.length} digits (expected 8-15)`);
     return null;
   }
   
-  // Log successful extraction
-  console.log(`[Phone Extraction] ✅ Extracted ${cleaned.length}-digit number from JID ${jid}: ${cleaned}`);
   
   return cleaned;
 }

@@ -363,19 +363,8 @@ function NewInvoiceContent() {
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [limitCheckDone, setLimitCheckDone] = useState(false);
   // PHASE 6: Use global branch context - check if branch context is ready
-  const { currentBranchId, isLoading: branchLoading, accessibleBranches, isAdmin } = useBranch();
+  const { currentBranchId, isLoading: branchLoading, isAdmin } = useBranch();
   const { warehousesEnabled } = useLayoutData();
-  
-  // Debug: Log branch context state
-  useEffect(() => {
-    console.log('[Invoice Page] Branch context state:', {
-      currentBranchId,
-      branchLoading,
-      accessibleBranchesCount: accessibleBranches.length,
-      accessibleBranches: accessibleBranches.map(b => ({ id: b.id, name: b.name })),
-      isAdmin
-    });
-  }, [currentBranchId, branchLoading, accessibleBranches, isAdmin]);
   const [showContinuousScanner, setShowContinuousScanner] = useState(false);
   // A scanned barcode shared by several sizes: the item waiting for the cashier to pick one.
   const [sizeChoice, setSizeChoice] = useState<any | null>(null);
@@ -515,7 +504,6 @@ function NewInvoiceContent() {
       // Don't fetch warehouses if no specific branch is selected or if 'All Branches' is selected
       // currentBranchId could be null, undefined, or a special 'all' value
       if (!currentBranchId || currentBranchId === 'all' || currentBranchId === '') {
-        console.log('[Warehouses] No specific branch selected, hiding warehouse selector');
         setWarehouses([]);
         setSelectedWarehouseId('');
         return;
@@ -532,17 +520,14 @@ function NewInvoiceContent() {
           const warehouseList = data.warehouses || [];
           setWarehouses(warehouseList);
           
-          console.log('[Warehouses] Fetched for branch:', currentBranchId, 'Count:', warehouseList.length);
           
           // Auto-select primary warehouse (is_primary = true) or fallback to first
           if (warehouseList.length > 0) {
             const defaultWarehouse = warehouseList.find((w: any) => w.is_primary === true) || warehouseList[0];
             if (defaultWarehouse) {
               setSelectedWarehouseId(prev => prev || defaultWarehouse.id);
-              console.log('[Warehouses] Auto-selected:', defaultWarehouse.name, 'is_primary:', defaultWarehouse.is_primary);
             }
           } else {
-            console.log('[Warehouses] No warehouses linked to this branch');
             setSelectedWarehouseId('');
           }
         }
@@ -796,12 +781,6 @@ function NewInvoiceContent() {
         branch_id: currentBranchId // Explicitly pass branch_id from React state
       });
       
-      console.log('[fetchDocumentSeries] Fetching series:', {
-        businessId: business.id,
-        branchId: currentBranchId,
-        documentType: docType,
-        apiUrl
-      });
       
       const res = await fetch(apiUrl);
       
@@ -816,7 +795,6 @@ function NewInvoiceContent() {
       }
       
       const data = await res.json();
-      console.log('[fetchDocumentSeries] API response:', data);
       
       // PHASE 2: Only set prefix and number from API response
       if (data.prefix && data.invoice_number) {
@@ -833,10 +811,6 @@ function NewInvoiceContent() {
         } catch {
           /* ignore */
         }
-        console.log('[fetchDocumentSeries] Successfully set prefix and number:', {
-          prefix: data.prefix,
-          number: data.invoice_number
-        });
       } else {
         console.error('[fetchDocumentSeries] Invalid response:', data);
         throw new Error('Invalid response from series API: missing prefix or invoice_number');
@@ -1607,7 +1581,6 @@ function NewInvoiceContent() {
 
   // Handle print bill (POS mode) - must be after totals calculation
   const handlePrintBill = useCallback(async () => {
-    console.log('[POS] handlePrintBill called', { savedInvoiceId, rowsCount: rows.length, businessId: business?.id });
 
     if (documentType !== 'proforma_invoice') {
       const profileContext = getInvoiceProfileContext(
@@ -1624,7 +1597,6 @@ function NewInvoiceContent() {
       let loadingTimeout: NodeJS.Timeout | null = null;
       try {
         setLoading(true);
-        console.log('[POS] Starting invoice save...');
         
         // Set a timeout to prevent infinite loading (40 seconds - longer than fetch timeout)
         loadingTimeout = setTimeout(() => {
@@ -1661,19 +1633,6 @@ function NewInvoiceContent() {
             tax_rate: charge.classification === 'separate_supply' ? charge.taxPercent : undefined,
           }));
         
-        console.log('[POS] Validation passed, preparing payload...');
-        console.log('[POS] Invoice data:', {
-          invoiceNumber,
-          invoiceDate,
-          customerId,
-          rowsCount: rows.length,
-          subtotal,
-          totalTax,
-          grandTotal,
-          totalPaid,
-          balance,
-          paymentsCount: payments.length,
-        });
         
         const payload = {
           business_id: business.id, 
@@ -1827,47 +1786,13 @@ function NewInvoiceContent() {
           }
         }
 
-        console.log('[POS] ========== PAYLOAD BEING SENT TO API ==========');
-        console.log('[POS] Full payload:', JSON.stringify(requestPayload, null, 2));
-        console.log('[POS] Payload summary:', {
-          business_id: requestPayload.business_id,
-          customer_id: requestPayload.customer_id,
-          invoice_number: requestPayload.invoice_number,
-          invoice_date: requestPayload.invoice_date,
-          status: requestPayload.status,
-          items_count: requestPayload.items?.length || 0,
-          items: requestPayload.items?.map((i: any) => ({
-            item_name: i.item_name,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-            tax_rate: i.tax_rate,
-          })),
-          subtotal: requestPayload.subtotal,
-          tax_total: requestPayload.tax_total,
-          grand_total: requestPayload.grand_total,
-          payments_count: requestPayload.payments?.length || 0,
-          payments: requestPayload.payments,
-          paid_amount: requestPayload.paid_amount,
-          balance_amount: requestPayload.balance_amount,
-        });
-        console.log('[POS] ================================================');
         
-        console.log('[POS] Sending API request...', { invoiceNumber, itemsCount: rows.length });
         
         const requestStartTime = Date.now();
-        console.log('[POS] Fetch call initiated at:', new Date().toISOString());
         
         let res;
         try {
           res = await postInvoiceWithBackdateReason(requestPayload, { signal: controller.signal });
-          const requestDuration = Date.now() - requestStartTime;
-          console.log('[POS] ✅ Fetch promise resolved', { 
-            duration: `${requestDuration}ms`,
-            status: res.status,
-            statusText: res.statusText,
-            ok: res.ok,
-            headers: Object.fromEntries(res.headers.entries()),
-          });
         } catch (fetchError: any) {
           const requestDuration = Date.now() - requestStartTime;
           console.error('[POS] ❌ Fetch promise rejected', {
@@ -1881,36 +1806,11 @@ function NewInvoiceContent() {
         
         clearTimeout(timeoutId);
         if (loadingTimeout) clearTimeout(loadingTimeout);
-        
-        console.log('[POS] API response received', { status: res.status, ok: res.ok, statusText: res.statusText });
-        console.log('[POS] Starting to read response body...');
-        
+
         let data;
         try {
-          const responseTextStartTime = Date.now();
           const responseText = await res.text();
-          const responseTextDuration = Date.now() - responseTextStartTime;
-          console.log('[POS] ✅ Response text read', {
-            duration: `${responseTextDuration}ms`,
-            length: responseText.length,
-            preview: responseText.substring(0, 500),
-          });
-          
-          const parseStartTime = Date.now();
           data = JSON.parse(responseText);
-          const parseDuration = Date.now() - parseStartTime;
-          console.log('[POS] ✅ JSON parsed', { duration: `${parseDuration}ms` });
-          console.log('[POS] ========== API RESPONSE RECEIVED ==========');
-          console.log('[POS] Response data:', JSON.stringify(data, null, 2));
-          console.log('[POS] Response summary:', {
-            success: res.ok,
-            status: res.status,
-            invoice_id: data?.invoice?.id,
-            invoice_number: data?.invoice?.invoice_number,
-            error: data?.error,
-            message: data?.message,
-          });
-          console.log('[POS] ============================================');
         } catch (parseError) {
           console.error('[POS] Failed to parse response:', parseError);
           setLoading(false);
@@ -1935,11 +1835,6 @@ function NewInvoiceContent() {
         }
         
         const invoiceId = data.invoice.id;
-        console.log('[POS] ✅ Invoice saved successfully', { 
-          invoiceId, 
-          invoiceNumber: data.invoice.invoice_number,
-          status: data.invoice.status,
-        });
         
         setSavedInvoiceId(invoiceId);
         setSavedStatus('final');
@@ -1953,7 +1848,6 @@ function NewInvoiceContent() {
         });
 
         if (useBluetooth) {
-          console.log('[POS] Auto-sending receipt to Bluetooth printer...');
           try {
             const identifier =
               data.invoice.invoice_number ||
@@ -1996,7 +1890,6 @@ function NewInvoiceContent() {
 
         // Start new bill after print
         setTimeout(() => {
-          console.log('[POS] Starting new bill...');
           startNewBill();
           setLoading(false);
         }, 500);
@@ -2083,14 +1976,6 @@ function NewInvoiceContent() {
         invoiceBalance
       );
       
-      console.log('[Credit Warning] Projected metrics:', {
-        invoiceBalance,
-        grandTotal,
-        totalPaid,
-        currentBalance: creditMetrics.current.current_balance,
-        creditLimit: creditMetrics.current.credit_limit,
-        projectedMetrics,
-      });
       
       setCreditMetrics(prev => prev ? { ...prev, projected: projectedMetrics } : null);
     } else {
@@ -2525,7 +2410,6 @@ function NewInvoiceContent() {
     const init = async () => {
       // PHASE 6: Don't initialize if branch context is not ready
       if (branchLoading || !business?.id) {
-        console.log('[Invoice Init] Waiting for branch context:', { branchLoading, businessId: business?.id });
         return;
       }
       
@@ -2538,7 +2422,6 @@ function NewInvoiceContent() {
         return;
       }
       
-      console.log('[Invoice Init] Initializing with branch:', { currentBranchId, businessId: business.id });
       const editId = searchParams.get('edit');
       let custData: any[] = [];
 
@@ -2684,7 +2567,6 @@ function NewInvoiceContent() {
       return;
     }
     // Re-fetch series when branch changes
-    console.log('[Branch Change] Re-fetching series for branch:', currentBranchId);
     fetchDocumentSeries(documentType);
   }, [currentBranchId, business?.id, documentType, branchLoading, savedInvoiceId, fetchDocumentSeries]);
 
@@ -2718,20 +2600,8 @@ function NewInvoiceContent() {
         // Use the proper calculateCreditMetrics function
         const currentMetrics = calculateCreditMetrics(creditLimit, currentBalance);
         
-        console.log('[Credit Warning] Customer credit data:', {
-          customerName: c.name,
-          creditLimit,
-          currentBalance,
-          currentMetrics,
-        });
         
         setCreditMetrics({ current: currentMetrics });
-      } else {
-        console.log('[Credit Warning] Customer missing credit data:', {
-          customerName: c.name,
-          hasCreditLimit: c.credit_limit !== undefined,
-          hasCurrentBalance: c.current_balance !== undefined,
-        });
       }
     });
   }, [customerId, business, calculateRow, savedInvoiceId, user?.id]);

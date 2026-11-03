@@ -155,7 +155,6 @@ export async function POST(request: NextRequest) {
           }
         }
       } catch (fuzzyError) {
-        console.log('Fuzzy matching not available (pg_trgm extension might not be installed)');
         
         // Fallback: simple ILIKE matching
         const likeMatches = await queryRows(

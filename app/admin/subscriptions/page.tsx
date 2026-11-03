@@ -49,7 +49,6 @@ export default function AdminSubscriptionsPage() {
       const data = await response.json();
       
       if (response.ok) {
-        console.log('Subscriptions data:', data);
         setSubscriptions(data.subscriptions || []);
         calculateStats(data.subscriptions || []);
       } else {

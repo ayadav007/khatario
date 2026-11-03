@@ -238,7 +238,6 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      console.log(`[Warehouses Setting] Updated for business ${business_id}: ${updatedSettings.warehouses_enabled}`);
       
       return NextResponse.json({ 
         warehouses_enabled: updatedSettings.warehouses_enabled === true,

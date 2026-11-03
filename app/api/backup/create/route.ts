@@ -15,7 +15,6 @@ async function safeQuery(query: string, params: any[]): Promise<any[]> {
   } catch (error: any) {
     // If table doesn't exist (42P01) or column doesn't exist (42703), return empty array
     if (error.code === '42P01' || error.code === '42703') {
-      console.log(`Table/column not found in query, skipping: ${error.message}`);
       return [];
     }
     // Re-throw other errors

@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import { 
   LayoutDashboard, 
   Users, 
@@ -134,7 +133,6 @@ function NavTile({ icon: Icon, tone }: { icon: LucideIcon; tone?: NavTone }) {
 }
 
 export const Sidebar = React.memo(function Sidebar() {
-  useRenderLoopProbe('Sidebar');
   const { sidebarCollapsed, toggleSidebar } = useLayout();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -469,7 +467,6 @@ export const Sidebar = React.memo(function Sidebar() {
           setReportRouteMap({});
         }
       } catch (error) {
-        console.debug('[Sidebar] Report definitions not available, using legacy mapping');
         if (!cancelled) setReportRouteMap({});
       } finally {
         if (!cancelled) setReportsDefinitionsResolved(true);
@@ -509,7 +506,6 @@ export const Sidebar = React.memo(function Sidebar() {
           }
         }
       } catch (error) {
-        console.debug('[Sidebar] Error checking supplier status (offline or unavailable):', error);
         if (!cancelled) setIsSupplier(false);
       } finally {
         if (!cancelled) setSupplierStatusResolved(true);

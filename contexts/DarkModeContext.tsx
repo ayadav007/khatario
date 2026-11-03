@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 
 interface DarkModeContextType {
@@ -12,7 +10,6 @@ interface DarkModeContextType {
 const DarkModeContext = createContext<DarkModeContextType | undefined>(undefined);
 
 export function DarkModeProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('DarkModeProvider');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [mounted, setMounted] = useState(false);
 

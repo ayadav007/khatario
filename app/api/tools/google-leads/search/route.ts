@@ -49,19 +49,16 @@ export async function POST(request: NextRequest) {
     // Validate maxResults (1 to 100)
     const maxResultsLimit = typeof maxResults === 'number' ? Math.max(1, Math.min(100, maxResults)) : 50;
 
-    console.log(`[Google Leads] Starting search: keyword="${keyword}", location="${location}", radius=${radiusInMeters}m, maxResults=${maxResultsLimit}, useFreeAPI=${useFreeAPI}`);
 
     let uniqueLeads: (NormalizedLead | OSMNormalizedLead)[] = [];
     let source = 'google';
 
     if (useFreeAPI) {
       // Use OpenStreetMap (FREE, no API key required)
-      console.log('[Google Leads] Using OpenStreetMap (FREE) API');
       
       try {
         // Step 1: Geocode location
         const coordinates = await geocodeLocationOSM(location);
-        console.log(`[Google Leads] Geocoded location: ${coordinates.lat}, ${coordinates.lng}`);
         
         // Step 2: Search places
         const places = await searchPlacesOSM(
@@ -70,7 +67,6 @@ export async function POST(request: NextRequest) {
           radiusInMeters,
           maxResultsLimit
         );
-        console.log(`[Google Leads] Found ${places.length} places`);
         
         if (places.length === 0) {
           return NextResponse.json({
@@ -101,13 +97,11 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Use Google Places API (requires API key, has free tier)
-      console.log('[Google Leads] Using Google Places API');
       
       // Step 1: Geocode location
       let coordinates;
       try {
         coordinates = await geocodeLocation(location);
-        console.log(`[Google Leads] Geocoded location: ${coordinates.lat}, ${coordinates.lng}`);
       } catch (error: any) {
         console.error('[Google Leads] Geocoding error:', error);
         return NextResponse.json(
@@ -125,7 +119,6 @@ export async function POST(request: NextRequest) {
           radiusInMeters,
           maxResultsLimit
         );
-        console.log(`[Google Leads] Found ${places.length} places`);
       } catch (error: any) {
         console.error('[Google Leads] Places search error:', error);
         return NextResponse.json(
@@ -146,19 +139,15 @@ export async function POST(request: NextRequest) {
       const placeIds = places.map(p => p.place_id);
       let placeDetails;
       try {
-        console.log(`[Google Leads] Fetching details for ${placeIds.length} places...`);
         // Rate limit: 200ms delay between requests to stay within free tier limits
         // Note: Google Places API charges per request. With $200 free credit:
         // - Place Details: ~11,764 requests/month free
         // - Nearby Search: ~6,250 requests/month free
         placeDetails = await getPlaceDetailsBatch(placeIds, 200); // 200ms delay to be conservative
-        console.log(`[Google Leads] Successfully fetched ${placeDetails.length} place details`);
       } catch (error: any) {
         console.error('[Google Leads] Place details error:', error);
         // Return partial results if we got some place details
-        if (placeDetails && placeDetails.length > 0) {
-          console.log(`[Google Leads] Returning ${placeDetails.length} partial results`);
-        } else {
+        if (!placeDetails || placeDetails.length === 0) {
           return NextResponse.json(
             { error: `Failed to fetch place details: ${error.message}` },
             { status: 500 }
@@ -174,7 +163,6 @@ export async function POST(request: NextRequest) {
       source = 'google';
     }
 
-    console.log(`[Google Leads] Final results: ${uniqueLeads.length} unique leads after deduplication`);
 
     return NextResponse.json({
       leads: uniqueLeads,

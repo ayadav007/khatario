@@ -55,18 +55,7 @@ export async function GET(request: NextRequest) {
     // They should be visible across all branches of the business
     // The query filters only by business_id and is_active - no branch filtering
     // This ensures all suppliers for a business are visible regardless of which branch the user is in
-    
-    // Debug: Log total suppliers for this business (including inactive ones for debugging)
-    const totalSuppliersDebug = await db.queryOne<{ total: number }>(
-      `SELECT COUNT(*) as total FROM suppliers WHERE business_id = $1 AND deleted_at IS NULL`,
-      [businessId]
-    );
-    const activeSuppliersDebug = await db.queryOne<{ total: number }>(
-      `SELECT COUNT(*) as total FROM suppliers WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true`,
-      [businessId]
-    );
-    console.log(`[Suppliers API] Business ${businessId}: Total suppliers: ${totalSuppliersDebug?.total || 0}, Active: ${activeSuppliersDebug?.total || 0}`);
-    
+
     let sql = `
       SELECT 
         id, business_id, name, phone, email, address,
@@ -110,8 +99,6 @@ export async function GET(request: NextRequest) {
 
     const suppliers = await db.queryRows<Supplier>(sql, params);
     
-    // Debug: Log what was returned
-    console.log(`[Suppliers API] Business ${businessId}: Returning ${suppliers.length} suppliers (page ${page}, limit ${limit}, total: ${total})`);
 
     return NextResponse.json({ 
       suppliers,
@@ -136,7 +123,6 @@ export async function GET(request: NextRequest) {
  * Create a new supplier (optionally link to a business account)
  */
 export async function POST(request: NextRequest) {
-  console.log('[SupplierAPI] POST /api/suppliers called');
   try {
     const body = await request.json();
     const session = await requireStrictSession(request);
@@ -166,7 +152,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.log('[SupplierAPI] business_id:', business_id, 'name:', name);
 
     if (!name) {
       return NextResponse.json(

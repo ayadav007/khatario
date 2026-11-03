@@ -56,14 +56,12 @@ import {
 } from '@/lib/offline/repositories/entity-cache-repository';
 import { markAppSynced } from '@/lib/sync-timestamp';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import {
   probeDashboardRefresh,
   probeDashboardRefreshKeyBump,
 } from '@/lib/debug/dashboard-refresh-probe';
 
 function DashboardPage() {
-  useRenderLoopProbe('DashboardPage');
   useLayoutEffect(() => {
     bumpDashboardRenderCounter();
   });

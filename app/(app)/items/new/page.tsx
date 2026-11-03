@@ -949,33 +949,6 @@ export default function NewItemPage() {
         patchPayload.allow_sale_when_out_of_stock = null;
       }
 
-      console.log('[Item Form] Submitting payload:', {
-        has_variants: formData.has_variants,
-        variants_count: variants.length,
-        variants: variants,
-        variant_details: variants.map(v => ({
-          name: v.name,
-          sku: v.sku,
-          barcode: v.barcode,
-          purchase_price: v.purchase_price,
-          selling_price: v.selling_price,
-          opening_stock: v.opening_stock,
-          attributes: v.attributes,
-          has_all_fields: !!(v.name && v.attributes)
-        })),
-        payload: {
-          ...payload,
-          variants: (payload.variants as unknown[]).map((v: any) => ({
-            name: v.name,
-            sku: v.sku,
-            barcode: v.barcode,
-            purchase_price: v.purchase_price,
-            selling_price: v.selling_price,
-            opening_stock: v.opening_stock,
-            attributes: v.attributes
-          }))
-        }
-      });
 
       let res: Response;
       if (isEditMode && editId) {
@@ -1014,11 +987,6 @@ export default function NewItemPage() {
         const data = await res.json();
         const itemId = data.item?.id || data.id;
         
-        console.log('[Item Form] Item saved successfully:', {
-          itemId,
-          has_variants: data.item?.has_variants,
-          response: data
-        });
         
         // If item has variants, verify they were created
         if (formData.has_variants && variants.length > 0 && itemId) {
@@ -1026,11 +994,6 @@ export default function NewItemPage() {
             const verifyRes = await fetch(`/api/items/${itemId}?business_id=${business.id}`);
             if (verifyRes.ok) {
               const verifyData = await verifyRes.json();
-              console.log('[Item Form] Variant verification:', {
-                expected: variants.length,
-                found: verifyData.variantCount || 0,
-                variants: verifyData.variants
-              });
               
               if ((verifyData.variantCount || 0) < variants.length) {
                 console.warn('[Item Form] WARNING: Not all variants were saved!', {
@@ -1038,8 +1001,6 @@ export default function NewItemPage() {
                   found: verifyData.variantCount || 0
                 });
                 toast.warning(`Warning: Only ${verifyData.variantCount || 0} out of ${variants.length} variants were saved. Please check the console for details.`);
-              } else {
-                console.log('[Item Form] All variants saved successfully!');
               }
             }
           } catch (verifyError) {
