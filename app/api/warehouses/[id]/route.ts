@@ -4,6 +4,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { checkWarehousePlace } from '@/lib/gst/registration';
+import { foreignBranchIds } from '@/lib/warehouse-ownership';
 
 export const dynamic = 'force-dynamic';
 
@@ -135,6 +136,14 @@ export async function PATCH(
         { error: 'Warehouse not found' },
         { status: 404 }
       );
+    }
+
+    // A branch from the body must be this business's own; authorize skips this check for owners.
+    if (branch_id) {
+      const foreign = await foreignBranchIds([branch_id], businessId);
+      if (foreign.length > 0) {
+        return NextResponse.json({ error: 'Branch does not belong to this business' }, { status: 400 });
+      }
     }
 
     // AUTHORIZATION: Check update permission (PBAC will check warehouse access, business ownership, active status, branch access)
@@ -274,9 +283,12 @@ export async function PATCH(
     if (branch_id !== undefined && branch_id) {
       await db.query(`
         INSERT INTO branch_warehouses (branch_id, warehouse_id, is_primary)
-        VALUES ($1, $2, true)
+        SELECT b.id, w.id, true
+        FROM branches b
+        JOIN warehouses w ON w.business_id = b.business_id
+        WHERE b.id = $1 AND w.id = $2 AND b.business_id = $3
         ON CONFLICT (branch_id, warehouse_id) DO NOTHING
-      `, [branch_id, params.id]);
+      `, [branch_id, params.id, businessId]);
     }
 
     return NextResponse.json({ warehouse });
