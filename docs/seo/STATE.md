@@ -3,6 +3,7 @@
 Updated by the scheduled SEO tasks after every run. Newest entries at the top of each log.
 
 ## Current status
+- 2026-11-05 (writer): first article drafted via the API (201): "GST bill kaise banaye mobile se" (Hinglish, 1,894 words, kw "gst bill kaise banaye", top backlog item; GSC still shows no queries, so no query override). Research: top results (Vyapar, myBillBook, Swipe help pages, Winvesta) are English, desktop-first, no rupee examples, no ₹200 rule, no HSN-digit guidance, no walk-in-customer handling; the article fills those gaps (Rule 46 checklist, ₹500 charger CGST/SGST vs IGST table, MRP back-calculation, Section 31(3)(b), Rule 49/5(1)(f), Notification 78/2020, 5-question FAQ). Internal links: /solution/accounting, /signup, /guides. Owner: review and publish in /admin/blog. Next backlog item: "How to send a GST invoice on WhatsApp".
 - 2026-11-05: covers 11-03 (run failed on the weekly usage limit after saving its JSON) and 11-04 (no run). GSC unchanged: 0 clicks, 62 impressions (range to 2026-11-03); 10-31 through 11-03 all 0 impressions, so the late-October `/guides` burst (non-India, desktop) has stopped. Still no visible queries. `/`, `/solution/accounting` and `/guides` recrawled 2026-11-03; all 6 key URLs indexed. Health all green. **Production deploy landed:** `/themes` and theme demo pages live, sitemap now 14 URLs; but the home page body is still the old Site Builder document (old H1, no Ask Khatario section) → top owner action is now only Reset + Publish the home page in the Site Builder. Blog still 0 posts: the writer runs of 10-26 and 10-29 each ended within 15 s without a draft; a new writer run started alongside this one at 07:25 IST — owner should check it. No page optimised (no trigger met). Committed the orphaned 2026-11-03.json.
 - 2026-11-02: GSC unchanged: 0 clicks, 62 impressions (range to 2026-10-31; 10-31 shows 0 so far, provisional); `/guides` 61 impressions at avg position 7.6, still no visible queries; breakdown re-queried: 0 India, 62/62 desktop. All 6 key URLs indexed, no new crawls. Health all green. Blog still 0 posts: writer run of 2026-10-29 still stuck "running"; next writer run is today 11:13 — flagged. No page optimised (no trigger met). **New:** production still serves the old home page (H1 "Still billing by hand at closing time?…") while `main` has the rebuilt page with the keyword H1 "GST billing software for small shops…"; top owner action is deploy `main` then Reset + Publish the home page in the Site Builder (the page renders from the published builder document).
 - 2026-11-01: GSC 0 clicks, 62 impressions (range to 2026-10-30), up from 57; `/guides` 61 impressions at avg position 7.6 (only 5 on 10-30 at 8.8), still no visible queries. New country/device breakdown: **0 impressions from India, 62/62 desktop** (Bangladesh, Brazil, Indonesia, Russia lead), so the `/guides` CTR trigger is not meaningful until Indian impressions appear. All 6 key URLs indexed, no new crawls. Health all green. Blog still 0 posts: writer run of 2026-10-29 still stuck "running"; next writer run Mon 2026-11-02 — flagged to owner again. No page optimised (no trigger met). The `/guides` H1 is in shared `components/help/HowToBlogAccordion.tsx` (outside allowed files), so it is an owner recommendation (optional `title` prop), not an agent change.
@@ -17,7 +18,7 @@ Updated by the scheduled SEO tasks after every run. Newest entries at the top of
 - 2026-10-24: sitemap submitted (8 URLs, read successfully); only `/` indexed so far. www → apex redirect live.
 
 ## Content backlog (writer takes the top unchecked item)
-- [ ] GST bill kaise banaye mobile se — step by step (Hinglish) — kw: "gst bill kaise banaye"
+- [x] GST bill kaise banaye mobile se — step by step (Hinglish) — kw: "gst bill kaise banaye" (drafted 2026-11-05)
 - [ ] How to send a GST invoice on WhatsApp (and get paid faster with a UPI QR) — kw: "send gst invoice on whatsapp"
 - [ ] Udhaar khata app: track customer credit and send WhatsApp reminders (Hinglish) — kw: "udhaar khata app"
 - [ ] Billing software for fertilizer shops (khad beej dukan): batch, expiry, GST — kw: "fertilizer shop billing software"
@@ -36,6 +37,7 @@ Updated by the scheduled SEO tasks after every run. Newest entries at the top of
 ## Articles drafted
 | Date | Title | Slug | Draft id | Keyword | Status |
 |---|---|---|---|---|---|
+| 2026-11-05 | GST bill kaise banaye mobile se: step by step guide (Hinglish) | gst-bill-kaise-banaye-mobile-se | c89704d8-86a2-48f5-b0ae-40ff401fbf4a | gst bill kaise banaye | draft, awaiting owner review in /admin/blog |
 
 ## Changes made
 | Date | Job | Change | Files / URL |
