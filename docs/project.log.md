@@ -956,3 +956,37 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   `settings-ui-scale` only remaps text-size tokens inside `<main>`: body 14px, page title 20px, inputs 16px.
 - **Shipped:** nothing committed. Report published as a private artifact: https://claude.ai/artifact/Nxps1XFwbeGDd3GhqcWZY9
 - **Open:** screenshots, and checking each finding in the browser, once `QA_STAGING_PASSWORD` is available (one finding, N5 stale hash highlight, is marked "confirm in a browser"). Fix batches 1–6 wait for approval. Merge email-settings-simplify before batch 2, because both touch `EmailSettingsTab`.
+
+## 2026-11-05: Settings layout fixes, batches 1–6
+- **Asked:** "commit it and start fixing all in batches what you have already noted down" (the settings layout audit above).
+- **Decided:**
+  - **Save bar:** measures `<main>` instead of using sticky, because the shell's `overflow-x-hidden` wrappers stop sticky from working.
+  - **Two-column layouts:** move to xl/2xl breakpoints (ProfileSection gets a context so WhatsApp settings split at 2xl). Container queries were rejected because `container-type` can contain fixed-position dialogs and save bars.
+  - **Dark mode:**
+    - Paper and logo previews stay white.
+    - Changes to the shared website theme store components (`components/marketing/themes`) were reverted, because the dark class is site-wide and would change khatario.com/themes.
+    - The marketing theme components and `InvoiceDesignTab` keep their light-only colours and still need their own pass.
+  - **Not done, flagged for you:**
+    - **S9 save placement rule:** changes behaviour (offer letter has two saves, long HR forms save at the bottom), so it needs your sign-off.
+    - **P15 `/settings/holidays` redirect:** the page uses a different table than holiday lists, so redirecting it could hide data.
+    - **N10 links leaving settings:** not changed.
+    - **Settings group headers:** still `<Link href="#">`, not `<button>`.
+    - **Dark-mode lint rule:** not added; the repo has no ESLint config.
+  - **Hub role rule:** the blanket warehouse role bypass was removed so the hub follows the sidebar's rule.
+- **Shipped:** on branch `fix/settings-layout-audit` (pushed, not merged):
+  - 60192a7 save bar and breakpoints
+  - ce5e2a8 dark mode
+  - ac61f6c shared callout, empty state and input styles
+  - 10935fe shell, widths, padding, dialogs
+  - f39590d settings navigation
+  - 25a1bf6 page fixes
+
+  New files: `components/ui/InfoCallout.tsx`, `components/ui/EmptyState.tsx`, `lib/settings-link-lock.ts`, `tests/lib/settings-link-lock.test.ts`. `tsc` is clean after each batch. Settings nav and lock tests pass (3 suites, 11 tests).
+- **Open:**
+  - Nothing has been seen in a browser: no staging login, because `QA_STAGING_PASSWORD` was not set.
+  - Before merge, screenshot at 1440, at 1280 with the Schedule panel open, and on iPhone 13 in light and dark mode. Check especially:
+    - the save bar position with the sidebar collapsed;
+    - the WhatsApp settings and templates layouts;
+    - the hub focus trap;
+    - the mobile settings sheet.
+  - `graphify` is not installed here, so `graphify update .` was not run.
