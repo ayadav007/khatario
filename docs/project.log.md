@@ -1014,3 +1014,16 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** nothing new; result recorded.
 - **Shipped:** nothing committed (log entry only).
 - **Open:** RLS is OFF on both databases. `check-rls.sql` run on the VPS as postgres: 0 of 477 tables have RLS, no policies, `khatario_user` is not superuser and does not bypass RLS. Staging (`khatario`) and production (`khatario_prod`) identical. Tenant isolation is app-code only. Decide whether to add RLS as a defence-in-depth layer (session variable + per-table `business_id` policies, FORCE RLS).
+
+## 2026-11-05: Row Level Security design and implementation plan
+- **Asked:** a complete RLS implementation plan from the actual repository and schema: tenant tables and ownership, tables that stay global, policy definitions, API and background-job changes, pool and transaction handling, cross-tenant tests, staging rollout and rollback.
+- **Decided:**
+  - Tenant travels in session settings `khatario.business_id` / `khatario.user_id` set on every pool checkout in `lib/db.ts` from an `AsyncLocalStorage` context with a fallback to the middleware's trusted headers via `next/headers`. Chosen over per-route wrappers because 1,072 route files and 226 own-client call sites would otherwise each need a change.
+  - Bypass is a second role `khatario_system` (`BYPASSRLS`) behind a second pool, used for pre-auth, platform admin (auto from `x-platform-admin-id`), cron enumeration, store resolution, webhooks and platform-private tables. Rejected: a bypass setting (flippable by injected SQL).
+  - Child tables get `EXISTS` policies against the parent (no data migration, instant rollback); denormalising `business_id` is a later optimisation.
+  - Policies carry no `TO` clause so tests can use `SET ROLE` on `kh_phase2_test`.
+  - Migration 465 ships inert policies; enabling and disabling are scripts (`scripts/rls/enable.js --confirm <db>`), so rollback is seconds and no migration is reverted. Migration 466 makes it permanent only after production is stable.
+  - App-level `RLS_CONTEXT_MODE` (`warn` → `enforce`) proves context coverage on staging before the database flag flips.
+  - Inventory from the SQL: 473 tables parsed (live has 477; Task 1 reconciles): 319 with `business_id` (221 NOT NULL, 98 nullable to audit), about 90 child tables, 14 multi-party supplier-hub tables, 3 identity tables, 27 global catalog tables, 30 platform-private tables, 4 views needing `security_invoker`.
+- **Shipped:** nothing committed in this session beyond the two documents: `docs/superpowers/specs/2026-11-05-row-level-security-design.md`, `docs/superpowers/plans/2026-11-05-row-level-security.md`; roadmap card under Next. No migrations written.
+- **Open:** owner review of the spec's decisions (role split, `EXISTS` child policies, the `businesses` read policy for the supplier hub). Confirm Postgres major version on the VPS is 15 or later (`SHOW server_version`). Nullable `business_id` audit on staging decides which of the 98 tables become strict. `graphify` not installed here.
