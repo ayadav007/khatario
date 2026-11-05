@@ -93,6 +93,21 @@ describe('Rule 37 findings', () => {
     expect((findings[0].details.bills as unknown[]).length).toBe(1);
   });
 
+  it('names the GSTR-3B tables and estimates interest on the part to reverse', () => {
+    const [f] = rule37Findings(
+      [bill({ days: 200, status: 'overdue', target_reversal: { igst: 0, cgst: 900, sgst: 900, cess: 0 }, already_reversed: zero })],
+      '2026-07-20',
+    );
+    expect(f.message).toMatch(/Table 4\(B\)\(2\)/);
+    expect(f.message).toMatch(/Table 4\(A\)\(5\)/);
+    expect(f.message).toMatch(/Table 4\(D\)\(1\)/);
+    const [b] = f.details.bills as Array<{ to_reverse: number; interest_if_utilised: number }>;
+    expect(b.to_reverse).toBe(1800);
+    expect(b.interest_if_utilised).toBeGreaterThan(0);
+    expect(f.details.interest_if_utilised).toBe(b.interest_if_utilised);
+    expect(f.details.bill_count).toBe(1);
+  });
+
   it('ignores paid and within-window bills', () => {
     expect(rule37Findings([bill({ days: 160, status: 'approaching', unpaid: 0 }), bill({ days: 90, status: 'within' })], '2026-06-10')).toEqual([]);
   });
