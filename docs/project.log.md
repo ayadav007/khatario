@@ -1008,3 +1008,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** the cloud session cannot reach the VPS (outbound proxy is HTTPS-only, no SSH or Postgres tunnelling), so the check is a read-only SQL script the user runs on the VPS. Code-level finding: none of the 490 migrations enables RLS or creates a policy; tenant isolation is entirely in application code (PBAC + `business_id` filtering), and the app role holds full table privileges. Live state is expected to match (zero tables with RLS) unless it was enabled by hand on the server.
 - **Shipped:** `database/scripts/check-rls.sql` (lists tables with RLS enabled/forced, policies, and whether the app role bypasses RLS). No migrations written.
 - **Open:** run the script on both `khatario` and `khatario_prod` and paste the output back to confirm the live state. `graphify update .` not run (tool not installed here).
+
+## 2026-11-05: RLS audit result confirmed
+- **Asked:** confirm the live RLS state from the script output.
+- **Decided:** nothing new; result recorded.
+- **Shipped:** nothing committed (log entry only).
+- **Open:** RLS is OFF on both databases. `check-rls.sql` run on the VPS as postgres: 0 of 477 tables have RLS, no policies, `khatario_user` is not superuser and does not bypass RLS. Staging (`khatario`) and production (`khatario_prod`) identical. Tenant isolation is app-code only. Decide whether to add RLS as a defence-in-depth layer (session variable + per-table `business_id` policies, FORCE RLS).
