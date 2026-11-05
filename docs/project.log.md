@@ -1054,3 +1054,13 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - `/_next/image` (excluded by the matcher) checked: its internal fetch of a local `/api/` URL goes through middleware and is refused without a session (tested on `next dev` only).
 - **Shipped:** branch `security/r7-middleware-header-fix`: `06cea03` (middleware fix + `tests/security/middleware-static-suffix-identity.test.ts`, 44 cases), plus this log and the roadmap card. No migrations.
 - **Open:** owner review; merge order relative to `security/p1-remediation-fixes`; staging probe after deploy (owner approval); Playwright auth specs not run (need a seeded database and E2E credentials); production exposure through Cloudflare unverified (nginx passes the headers through); R5 still open.
+
+## 2026-11-05: Security remediation pushed to main
+- **Asked:** push all the security changes to main.
+- **Decided:** fast-forward `main` from `2b16521` to the R7 branch tip `9a51227`, which contains `security/p1-remediation`, `security/p1-remediation-fixes` and `security/r7-middleware-header-fix` in a straight line. No merge commit, no force push.
+- **Shipped:** `main` now includes the 14 security commits (`7bd2bb9`..`9a51227`) and this entry. Nothing deployed. Migrations 465 and 466 are not applied to staging or production.
+- **Open:**
+  - Before the next staging deploy (which runs `db:migrate:pending`): run the two read-only membership count queries for migration 466, and the multi-primary warehouse query for 465 (review reports 09 and the remediation summary).
+  - The R7 review's requested change is still open: one runtime-level suffix-path case in `e2e/identity-boundary.spec.ts`.
+  - Infrastructure: nginx stripping of trusted headers on every vhost, origin locked to Cloudflare, Node listeners confirmed loopback-only on the VPS (staging `next start` has no `-H`).
+  - `app/api/invoices/extract` GET fails open; R5 actor fields still open.
