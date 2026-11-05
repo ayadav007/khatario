@@ -79,7 +79,7 @@ Tenant code that reads these today (7 files read `platform_settings`, 12 read te
 
 ## 3. Policy definitions
 
-All policies are generated from the manifest by `scripts/rls/generate-policies.js` into one migration so that the SQL and the manifest cannot drift. Helper functions, in migration 465:
+All policies are generated from the manifest by `scripts/rls/generate-policies.js` into one migration so that the SQL and the manifest cannot drift. Helper functions, in migration 467:
 
 ```sql
 CREATE OR REPLACE FUNCTION khatario_business_id() RETURNS uuid
@@ -343,14 +343,14 @@ Guardrail from `AGENTS.md`: nobody but the owner runs migrations against staging
 
 ### 7.1 What a deploy carries
 
-- Migration 465 creates the two functions, all policies, and the view option. **Policies on a table with RLS disabled are inert**, so this migration changes nothing observable and goes out with the normal `scripts/deploy-vps.sh` (which runs `npm run db:migrate:pending` before the build).
+- Migration 467 creates the two functions, all policies, and the view option. **Policies on a table with RLS disabled are inert**, so this migration changes nothing observable and goes out with the normal `scripts/deploy-vps.sh` (which runs `npm run db:migrate:pending` before the build).
 - Enabling and disabling RLS are not migrations. `scripts/rls/enable.js --confirm <dbname>` and `scripts/rls/disable.js --confirm <dbname>` generate `ALTER TABLE ... ENABLE/FORCE` or `NO FORCE/DISABLE` for every manifest table from the manifest and run them in one transaction as `postgres` (through `MIGRATION_DATABASE_URL`). They refuse to run without the exact database name, and refuse `kh_phase2_test` unless `--allow-test`.
 - Index creation (§3.8) runs as `scripts/rls/create-indexes.js` with `CONCURRENTLY`, before enabling.
 
 ### 7.2 Staging sequence
 
 1. **Roles and env.** On the VPS as `postgres`: `database/scripts/create-rls-system-role.sql` (prompts for the password; nothing stored in git). Add `DB_SYSTEM_USER`, `DB_SYSTEM_PASSWORD`, `DB_POOL_MAX`, `DB_SYSTEM_POOL_MAX` to `/var/www/khatario/.env` and `RLS_CONTEXT_MODE=warn`. Record `SHOW server_version` (must be 15 or later for `security_invoker`) and `SHOW max_connections`.
-2. **Deploy the code** with migration 465. RLS is off; the app now sets the session settings on every checkout and logs missing-context statements.
+2. **Deploy the code** with migration 467. RLS is off; the app now sets the session settings on every checkout and logs missing-context statements.
 3. **Null audit.** Run `scripts/rls/audit-nullable.js` (counts NULL `business_id` per T-nullable table) and fix orphans with the follow-up migration it prints. Run `scripts/rls/create-indexes.js`.
 4. **Burn-in, warn mode, at least three working days** covering a cron cycle, a WhatsApp reconnect, a storefront order, an employee-portal check-in and a platform-admin session. `pm2 logs khatario | grep rls-context` must be empty for a full day before moving on. Each hit is a code fix (§4.3, §4.4).
 5. **Enforce mode in the app**: `RLS_CONTEXT_MODE=enforce`, `pm2 reload`. Same checks for two days. The database still has RLS off, so a missed path fails loudly with a 500 that names the table, not with wrong data.
@@ -362,7 +362,7 @@ Guardrail from `AGENTS.md`: nobody but the owner runs migrations against staging
 
 - **Database (seconds, no data change):** `node scripts/rls/disable.js --confirm khatario`. Policies stay in place but inert; a later `enable.js` turns them back on without re-running any migration.
 - **App:** set `RLS_CONTEXT_MODE=warn` (or `off`) and `pm2 reload`. The context plumbing is harmless with RLS disabled.
-- **Code:** the previous release through the existing deploy script (`git checkout <previous tag>` then `bash scripts/deploy-vps.sh`); migration 465 does not need reverting because inert policies and the two functions cannot break old code.
+- **Code:** the previous release through the existing deploy script (`git checkout <previous tag>` then `bash scripts/deploy-vps.sh`); migration 467 does not need reverting because inert policies and the two functions cannot break old code.
 - **If a policy is wrong for one table only:** `ALTER TABLE <t> DISABLE ROW LEVEL SECURITY` for that table, fix the manifest, regenerate, re-enable. The coverage test fails until the manifest and the database agree again.
 
 ### 7.4 Production
@@ -371,7 +371,7 @@ Same sequence on `/var/www/khatario-prod`, `.env.production`, database `khatario
 
 ### 7.5 After production: make it permanent
 
-Migration 466 (`466_rls_enforce.sql`) runs `ENABLE` and `FORCE` for every manifest table so that a fresh database built by `scripts/setup-khatario-production.sh` (which copies the staging schema with `pg_dump --schema-only`) and any future environment start with RLS on. It is written only after production has been stable for two weeks, and `enable.js` becomes idempotent housekeeping.
+Migration 468 (`466_rls_enforce.sql`) runs `ENABLE` and `FORCE` for every manifest table so that a fresh database built by `scripts/setup-khatario-production.sh` (which copies the staging schema with `pg_dump --schema-only`) and any future environment start with RLS on. It is written only after production has been stable for two weeks, and `enable.js` becomes idempotent housekeeping.
 
 ## 8. Known limits
 

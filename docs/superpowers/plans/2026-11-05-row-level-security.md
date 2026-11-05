@@ -17,7 +17,10 @@
 - Setting names are exactly `khatario.business_id` and `khatario.user_id`; functions are `khatario_business_id()` and `khatario_user_id()`; policies are named `tenant_isolation`, or `tenant_read` / `tenant_write` / `tenant_update` / `tenant_delete` where split (spec §3).
 - Policies carry no `TO` clause (spec §1).
 - Every protected table gets both `ENABLE` and `FORCE ROW LEVEL SECURITY`.
-- Migration numbering continues from 465. Migration 465 must be inert on a database with RLS disabled.
+- Migration numbering continues from 467. Migration 467 must be inert on a database with RLS disabled.
+  (Renumbered from 465/466 on 2026-11-05: 465 and 466 are taken by the security remediation migrations
+  `465_default_warehouse_same_business.sql` and `466_user_businesses_role_from_primary_admin.sql`, which must
+  run before RLS enforcement so the 466 data fix is never filtered by a forced policy.)
 - No DB password or secret in any committed file or log line.
 - `graphify update .` after code changes if the tool is installed.
 
@@ -72,7 +75,7 @@ test('renders the spec §3 SQL for one table of each class', () => {
   expect(sql).toContain('WHERE p.id = invoice_items.invoice_id');
   expect(sql).toContain("khatario_business_id() IN (buyer_business_id, vendor_business_id)");
   expect(sql).not.toMatch(/CREATE POLICY \w+ ON platform_admins/);
-  expect(sql).not.toMatch(/ROW LEVEL SECURITY/);   // 465 is inert: no ENABLE here
+  expect(sql).not.toMatch(/ROW LEVEL SECURITY/);   // 467 is inert: no ENABLE here
 });
 test('renderEnable emits ENABLE and FORCE for every non-global table and nothing for global ones', () => { /* ... */ });
 ```
@@ -208,7 +211,7 @@ git commit -m "rls: tenant-aware pool, system pool and context guard"
 
 ---
 
-### Task 4: Migration 465 applied to the test database
+### Task 4: Migration 467 applied to the test database
 
 **Files:**
 - Already generated: `database/migrations/465_rls_policies.sql` (Task 1)
@@ -218,7 +221,7 @@ git commit -m "rls: tenant-aware pool, system pool and context guard"
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-test('465 creates khatario_business_id() and one policy set per manifest table', ...)   // pg_policies count by table matches manifest classes tenant/child/multi/identity
+test('467 creates khatario_business_id() and one policy set per manifest table', ...)   // pg_policies count by table matches manifest classes tenant/child/multi/identity
 test('with RLS disabled the policies are inert', ...)                                   // SET ROLE kh_rls_app, no setting, SELECT count(*) FROM invoices equals the superuser count
 test('all four views have security_invoker', ...)                                       // pg_class.reloptions
 ```
@@ -228,7 +231,7 @@ test('all four views have security_invoker', ...)                               
 Run: `RLS_DB_TEST=1 npx jest tests/db/rls-policies-inert.db.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Apply 465 to the test database**
+- [ ] **Step 3: Apply 467 to the test database**
 
 Run: `node scripts/run-migration.js database/migrations/465_rls_policies.sql` with `.env` pointing at `kh_phase2_test` (the runner refuses otherwise only through the repo convention; confirm `DB_NAME` before running).
 
@@ -408,7 +411,7 @@ git commit -m "rls: tenant context in cron routes, queues and workers"
 
 - [ ] **Step 1: Write `rls-isolation.db.test.ts`** with the thirteen cases from spec §6.2, each asserting the exact expected count or the SQLSTATE `42501`.
 - [ ] **Step 2: Write `rls-coverage.db.test.ts`.**
-- [ ] **Step 3: Enable RLS on the test database** (`node scripts/rls/enable.js --confirm kh_phase2_test --allow-test`) and run both: `RLS_DB_TEST=1 npx jest tests/db/rls-isolation.db.test.ts tests/db/rls-coverage.db.test.ts`. Expected: PASS. Fix the manifest and regenerate 465 for any policy found too narrow or too wide; re-apply 465 to the test database.
+- [ ] **Step 3: Enable RLS on the test database** (`node scripts/rls/enable.js --confirm kh_phase2_test --allow-test`) and run both: `RLS_DB_TEST=1 npx jest tests/db/rls-isolation.db.test.ts tests/db/rls-coverage.db.test.ts`. Expected: PASS. Fix the manifest and regenerate 467 for any policy found too narrow or too wide; re-apply 467 to the test database.
 - [ ] **Step 4: Run the whole db suite under the app role**: `npm run test:db:rls`. Record every failure in `docs/qa/rls-suite-run.md` with its cause (missing context in library code → fix in code; policy too narrow → fix in manifest). Repeat until green.
 - [ ] **Step 5: Run the existing suites once more without the role** (`npx jest`) to confirm nothing regressed for superuser runs.
 - [ ] **Step 6: Disable RLS on the test database** (`node scripts/rls/disable.js --confirm kh_phase2_test --allow-test`) so other work is unaffected; note in `docs/qa/README.md` how to turn it on.
@@ -419,10 +422,10 @@ git commit -m "rls: tenant context in cron routes, queues and workers"
 ### Task 10: Runbook, live regressions, roadmap
 
 **Files:**
-- Modify: `docs/SERVER_INFRASTRUCTURE.md`: new section "Row Level Security (migration 465, staging first)" with spec §7.2, §7.3, §7.4 as numbered owner steps, including the backup row-count check (`pg_restore --list` plus `SELECT count(*) FROM invoices` on a scratch restore, or `pg_dump ... | grep -c '^COPY public.invoices'` with a non-zero row block)
+- Modify: `docs/SERVER_INFRASTRUCTURE.md`: new section "Row Level Security (migration 467, staging first)" with spec §7.2, §7.3, §7.4 as numbered owner steps, including the backup row-count check (`pg_restore --list` plus `SELECT count(*) FROM invoices` on a scratch restore, or `pg_dump ... | grep -c '^COPY public.invoices'` with a non-zero row block)
 - Modify: `tests/live/run-security-regressions.mjs`: the cross-tenant id probes and the `check-rls.sql` count assertion from spec §6.4 (the SSH step reads `STAGING_SSH` from the environment and is skipped when unset)
 - Modify: `database/scripts/check-rls.sql`: add a fourth section that counts tables per manifest class when `database/rls/manifest.json` is present (as a `\set` of the expected total written by the generator into `database/rls/expected-counts.sql`)
-- Modify: `docs/roadmap.md`: card under **Next**: "Row Level Security: built on main, test suite green under the app role; next: owner runs the role script and env on staging, deploy with 465, warn-mode burn-in, enforce, enable (spec §7.2) [[docs/superpowers/specs/2026-11-05-row-level-security-design.md]] [[docs/superpowers/plans/2026-11-05-row-level-security.md]]"
+- Modify: `docs/roadmap.md`: card under **Next**: "Row Level Security: built on main, test suite green under the app role; next: owner runs the role script and env on staging, deploy with 467, warn-mode burn-in, enforce, enable (spec §7.2) [[docs/superpowers/specs/2026-11-05-row-level-security-design.md]] [[docs/superpowers/plans/2026-11-05-row-level-security.md]]"
 - Append: `docs/project.log.md` entry
 
 - [ ] **Step 1: Write the runbook section** and have each command match the scripts' real flags (`--confirm khatario`, `--confirm khatario_prod`).
@@ -432,10 +435,10 @@ git commit -m "rls: tenant context in cron routes, queues and workers"
 
 ---
 
-### Task 11 (after production is stable for two weeks): migration 466
+### Task 11 (after production is stable for two weeks): migration 468
 
 **Files:**
 - Create: `database/migrations/466_rls_enforce.sql` (output of `renderEnable(manifest, true)` with a header stating it is idempotent and that `scripts/rls/disable.js` remains the rollback)
-- Test: `tests/scripts/rls-manifest.test.ts` gains `466 matches renderEnable(manifest, true)` so the file cannot drift from the manifest.
+- Test: `tests/scripts/rls-manifest.test.ts` gains `468 matches renderEnable(manifest, true)` so the file cannot drift from the manifest.
 
-- [ ] **Step 1: Generate, test, commit** `rls: enforce RLS for fresh databases (466)`.
+- [ ] **Step 1: Generate, test, commit** `rls: enforce RLS for fresh databases (468)`.
