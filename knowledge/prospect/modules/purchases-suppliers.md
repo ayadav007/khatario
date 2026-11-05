@@ -23,7 +23,7 @@ Yes. Create purchase orders for suppliers, convert them into purchases when good
 
 ## Can I track business expenses?
 
-Yes. Record expenses such as rent, electricity or transport by category, with GST where applicable, either paid immediately or as a bill to pay later.
+Yes. Enter an expense as its own bill, the way a purchase is entered: the supplier, bill number and date, then one line per expense item (rent, electricity, transport and so on) with its amount and GST where it applies. Pick or add the supplier, category and expense item straight from the dropdown. Mark it paid now or keep it as a bill to pay later.
 
 ## Can I see how much I owe each supplier?
 

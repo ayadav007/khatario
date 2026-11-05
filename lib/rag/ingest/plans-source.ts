@@ -40,6 +40,27 @@ const LIMIT_LABELS: Record<string, string> = {
 
 const CATEGORY_LABELS: Record<string, string> = { hr: 'HR', gst: 'GST', crm: 'CRM' };
 
+/** HR limits, left out of Billing plans while HR is not launched. */
+const HR_LIMIT_KEYS = new Set([
+  'max_employees', 'max_departments', 'max_designations', 'max_shifts', 'max_holidays',
+  'max_attendance_records_per_month', 'max_leave_requests_per_month', 'max_payroll_records_per_month',
+  'max_salary_advances_per_month', 'max_employee_expenses_per_month', 'max_commissions_per_month',
+  'max_employee_tasks_per_month', 'max_performance_reviews_per_month',
+]);
+
+/**
+ * Plan descriptions are typed in Admin → Plans and may name the bundled HR plan ("HR Lite included.").
+ * While HR is not launched, drop each sentence that mentions HR so the plans document does not
+ * contradict "coming soon".
+ */
+export function withoutHrMentions(text: string): string {
+  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [];
+  return sentences
+    .filter((s) => !/\bHR\b/.test(s))
+    .join('')
+    .trim();
+}
+
 type PlanRow = {
   id: string;
   name: string;
@@ -123,9 +144,10 @@ export async function buildPlansMarkdown(): Promise<string> {
   for (const plan of plans) {
     const productLine = PRODUCT_LINE_LABELS[normalizeProductLine(plan.product_line)];
     lines.push(`## ${plan.display_name} plan (${productLine})`, '');
-    if (plan.description) lines.push(plan.description.trim(), '');
+    const description = HR_LAUNCHED ? plan.description?.trim() : withoutHrMentions(plan.description ?? '');
+    if (description) lines.push(description, '');
     lines.push(priceLine(plan));
-    if (plan.bundled_hr_plan_id) {
+    if (HR_LAUNCHED && plan.bundled_hr_plan_id) {
       lines.push(`Includes the ${planNameById.get(plan.bundled_hr_plan_id) ?? plan.bundled_hr_plan_id} HR plan at no extra cost.`);
     }
     if (typeof plan.features?.trial_days === 'number' && plan.features.trial_days > 0) {
@@ -133,7 +155,9 @@ export async function buildPlansMarkdown(): Promise<string> {
     }
     lines.push('');
 
-    const limits = Object.entries(plan.features?.limits ?? {}).filter(([key]) => LIMIT_LABELS[key]);
+    const limits = Object.entries(plan.features?.limits ?? {}).filter(
+      ([key]) => LIMIT_LABELS[key] && (HR_LAUNCHED || !HR_LIMIT_KEYS.has(key)),
+    );
     if (limits.length) {
       lines.push(`### ${plan.display_name} plan limits`, '');
       for (const [key, value] of limits.sort(([a], [b]) => a.localeCompare(b))) {
@@ -145,7 +169,8 @@ export async function buildPlansMarkdown(): Promise<string> {
     const enabled = Object.entries(plan.features?.features ?? {})
       .filter(([, on]) => on === true)
       .map(([id]) => featureById.get(id))
-      .filter((f): f is { id: string; label: string; category: string } => Boolean(f));
+      .filter((f): f is { id: string; label: string; category: string } => Boolean(f))
+      .filter((f) => HR_LAUNCHED || f.category !== 'hr');
     if (enabled.length) {
       lines.push(`### ${plan.display_name} plan features`, '');
       const byCategory = new Map<string, string[]>();

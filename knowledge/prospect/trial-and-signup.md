@@ -35,4 +35,4 @@ If your mobile number already has a Khatario account, you will be asked to log i
 
 ## Do I need to install anything?
 
-No. Khatario works in your web browser. You can optionally install it on your phone's home screen or use the Android app.
+No. During the trial and on paid plans Khatario works in your web browser, and you can also use the Android phone app from the Play Store. The Free plan works only in the Android app.

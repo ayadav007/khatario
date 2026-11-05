@@ -22,7 +22,7 @@ Khatario prepares your GSTR-1 from the bills you make. You can export it as Exce
 - GST reconciliation alerts
 - Tax-wise sales and purchase reports
 
-GST reports are included in the Business and Enterprise plans and during the free trial.
+GST reports are included in every Billing plan, including Free, and during the free trial.
 
 ## How does GSTR-2B reconciliation help?
 
@@ -38,4 +38,4 @@ Yes. GSTIN format is validated when you add customers and suppliers, and there i
 
 ## Does Khatario support e-invoicing (IRN) or e-way bill generation?
 
-No. Khatario does not generate e-invoices (IRN) or e-way bills with the government portals. You can store and print an e-way bill number on the invoice.
+No. Khatario does not generate e-invoices (IRN) or e-way bills with the government portals. It does make the e-way bill JSON for the portal's bulk upload from a delivery challan, records e-way bill numbers on invoices and challans so they print, and imports the e-way bills suppliers generated against your GSTIN (see "What Khatario does not do yet").

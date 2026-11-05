@@ -26,7 +26,7 @@ Yes. Service businesses can bill services with SAC codes, send quotations and es
 
 ## Is Khatario good for restaurants or cafés?
 
-No. Khatario does not have kitchen order tickets (KOT), table management, or other restaurant tools. It is built for shops, wholesalers, and service businesses.
+Partly. A restaurant or café can make GST bills, track stock and keep its accounts in Khatario, and the Restaurant / food service business type keeps the books from claiming input tax credit, as a standalone restaurant at 5% GST can't. Khatario does not have kitchen order tickets (KOT), table management or other restaurant tools; it is built for shops, wholesalers and service businesses.
 
 ## Which industries use Khatario?
 

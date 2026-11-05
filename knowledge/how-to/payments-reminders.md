@@ -23,7 +23,7 @@ All of these go out from your QR-linked number. You do not need Khatario Connect
 
 ## How do I add a payment link to invoices?
 
-Connect your gateway account (Razorpay, Cashfree, PayU, PhonePe Business or Instamojo) in Settings > Payment providers. Invoices and reminders can then include a link for the customer to pay online, and the payment is recorded automatically. Payment gateway integration is part of the Enterprise plan and the free trial.
+Connect your gateway account (Razorpay, Cashfree, PayU, PhonePe Business, Instamojo or Easebuzz) in Settings > Payment providers. Invoices and reminders can then include a link for the customer to pay online, and the payment is recorded automatically. Payment gateway integration is included from the Starter plan upwards and in the free trial.
 
 ## How do I record a payment I received in cash or UPI?
 

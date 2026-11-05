@@ -44,7 +44,7 @@ Go to Settings > Organization > Financial years. Tap "Use current Indian FY (Apr
 
 ## How do I add another branch?
 
-Go to Settings > Organization > Branches and create a branch with its name, GSTIN, State Code, address and an Invoice Prefix (for example MUM or DEL). Having more than one branch needs the Multi-Branch feature, available on the Enterprise plan; on other plans the page shows an upgrade prompt.
+Go to Settings > Organization > Branches and create a branch with its name, GSTIN, State Code, address and an Invoice Prefix (for example MUM or DEL). Having more than one branch needs the Multi-Branch feature, available on the Business plan; on other plans the page shows an upgrade prompt.
 
 ## How do I know which items are running low?
 

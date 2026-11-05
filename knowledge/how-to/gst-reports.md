@@ -52,4 +52,4 @@ Yes. Reports > GST Reports > GSTR-9 summarises the year.
 
 ## Why can't I see GST reports?
 
-GST reports are included in the Business and Enterprise plans and in the free trial. On other plans the menu shows an upgrade prompt.
+GST reports are included in every Billing plan, including Free, and in the free trial. If the menu is missing, your role may not have permission for GST reports; ask the business owner.

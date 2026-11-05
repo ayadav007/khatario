@@ -22,7 +22,7 @@ No. Invoices, purchases, expenses and payments create the accounting entries aut
 - Financial years and period locks, so closed months cannot be changed
 - Fixed assets and depreciation
 
-Ledger accounting is included in the Business and Enterprise plans and during the trial.
+Ledger accounting is included from the Growth plan upwards and during the trial.
 
 ## Which reports does Khatario have?
 
@@ -35,7 +35,7 @@ Ledger accounting is included in the Business and Enterprise plans and during th
 - Inter-branch reconciliation
 - A custom report builder
 
-Basic reports are on Professional; advanced reports and GST reports are on Business and Enterprise. See the plans document for exact details.
+Basic reports and GST reports are on every plan, including Free; advanced reports start on Growth; the custom report builder and analytics are on Business. See the plans document for exact details.
 
 ## Can I export reports for my CA?
 

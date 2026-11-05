@@ -25,7 +25,7 @@ Not yet. SMS messaging is shown as Coming soon in Settings > Integrations. Use W
 ## How do I add my UPI ID or a payment gateway?
 
 Go to Settings > Integrations > Payment providers.
-- **Automatic Payments**: connect Razorpay, Cashfree, PayU, PhonePe Business or Instamojo. Payments made through the link are confirmed automatically. If you connect more than one, choose the Preferred provider.
+- **Automatic Payments**: connect Razorpay, Cashfree, PayU, PhonePe Business, Instamojo or Easebuzz. Payments made through the link are confirmed automatically. If you connect more than one, choose the Preferred provider.
 - **Manual Payments**: tap Add Payment Method, choose Method Type UPI (or Bank Transfer, Wallet), enter a Method Name and your UPI ID (for example yourname@ybl), and tick Default (used for payment links). This UPI ID is used in payment links sent on WhatsApp when no gateway is connected.
 
 ## How do I set up the AI sales agent for WhatsApp?

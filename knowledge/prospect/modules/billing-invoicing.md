@@ -34,7 +34,7 @@ Which of these you can use depends on your plan; see the plans and pricing docum
 
 ## Can I record e-way bill details on an invoice?
 
-You can store and print the e-way bill number and date on an invoice. Khatario does not generate e-way bills or e-invoices (IRN) with the government portal.
+You can store and print the e-way bill number and date on an invoice or delivery challan, and download the e-way bill JSON from a challan for the portal's bulk upload. Khatario does not generate e-way bills or e-invoices (IRN) with the government portal itself.
 
 ## Can I customise how my invoice looks?
 
