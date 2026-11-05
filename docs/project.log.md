@@ -1027,3 +1027,20 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Inventory from the SQL: 473 tables parsed (live has 477; Task 1 reconciles): 319 with `business_id` (221 NOT NULL, 98 nullable to audit), about 90 child tables, 14 multi-party supplier-hub tables, 3 identity tables, 27 global catalog tables, 30 platform-private tables, 4 views needing `security_invoker`.
 - **Shipped:** nothing committed in this session beyond the two documents: `docs/superpowers/specs/2026-11-05-row-level-security-design.md`, `docs/superpowers/plans/2026-11-05-row-level-security.md`; roadmap card under Next. No migrations written.
 - **Open:** owner review of the spec's decisions (role split, `EXISTS` child policies, the `businesses` read policy for the supplier hub). Confirm Postgres major version on the VPS is 15 or later (`SHOW server_version`). Nullable `business_id` audit on staging decides which of the 98 tables become strict. `graphify` not installed here.
+
+## 2026-11-05: Security P1 remediation and independent review fixes
+- **Asked:** fix P1-1 to P1-6 and client-controlled actor fields from the security assessment on a dedicated branch, with regression tests; then an independent review of that branch; then fix the review's pre-merge findings (R1, R2, R3, R4, R6) on a new branch with real-database tests, keeping R5 and R7 separate. No deploy, no merge.
+- **Decided:**
+  - Branch `security/p1-remediation` (7 commits, `7bd2bb9`..`fd51a08`): expense voucher/PDF/attachments need a session and tenant scope; warehouse branch links check ownership; tax-provision payments scoped, locked and permission-checked; supplier aliases scoped; Shiprocket cache keyed by credentials; business switch grants admin only to `is_primary_admin` users (migration 466 demotes backfilled staff memberships); six actor fields from the session.
+  - Independent review: DO NOT MERGE as is. R1 (`emp.user_id` does not exist, every expense voucher request 500s), R2 (expense and leave POST forgeable with a fake portal cookie), R3 (warehouse create and the warehouse-mode default picker still cross-business), R4 (permission changes lock out staff/Accountant), R6 (465/466 collide with the RLS plan).
+  - R4: staff may open their own expense voucher and attachments (employees.id is the user id), matching the portal rule. Tax-provision payments keep the `journal` permission with no role-template change (owner's decision): the route has no UI caller, owners are unaffected, Accountants need journal granted per business.
+  - R6: RLS migrations move to 467 (policies) and 468 (enforce) (owner's decision), so forced RLS can never run before the 466 membership data fix. Correction to the RLS entry above: its "Migration 465/466" are now 467/468.
+  - Migration 465 now orders each step by `created_at, id`; it had not been applied anywhere shared.
+  - Real-database tests use a harness (`tests/db/helpers/security-db.ts`) that refuses anything but a local `kh_phase2_test`; authorize, RBAC and SQL run for real, only plan/subscription gates are stubbed.
+- **Shipped:** branch `security/p1-remediation-fixes` from `fd51a08`: `db64994` (R1 + staff own-expense), `28085d2` (R2), `2dffb5c` (R3, migration 465 edited), `0b976d4` (R6 docs), plus this log and roadmap. Migrations 465 and 466 applied to a disposable local test database only.
+- **Open:**
+  - R7 urgent: middleware skips identity-header stripping for paths ending in static-file suffixes, including `/api/...` (roadmap Now). Needs approval for its own branch.
+  - R5: seven remaining client-supplied actor fields (roadmap Next).
+  - The repo cannot rebuild `kh_phase2_test` from source: `database/schema.sql` is partial and 16 of 490 migrations fail on top of it (001, 005, 008, 049, 075, 076, 111, 125, 130, 143, 204–206, 237, 238, 255, 338). The tests ran on that partial build after checking every table they touch exists.
+  - Before applying 466 anywhere shared, run the two read-only membership count queries (review report).
+  - Playwright not run (needs a running app and seeded database). `tests/lib` has six suites failing identically on `main`. `graphify` not installed here.
