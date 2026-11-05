@@ -1,6 +1,6 @@
 /**
  * Returns and filing per GSTIN: the filed-period lock, the GST credit/cash ledgers, unbranched
- * ledger lines, GSTR-2B matching (migration 450) and the compliance "filed" view.
+ * ledger lines, GSTR-2B matching (migration 466) and the compliance "filed" view.
  * PHASE2_TEST_DATABASE_URL=postgresql://…/kh_phase2_test npx jest tests/db/gst-returns-per-gstin.db.test.ts --runInBand
  */
 import fs from 'fs';
@@ -44,7 +44,7 @@ d('returns and filing per GSTIN (real DB)', () => {
   beforeAll(async () => {
     pool = getPool();
     await pool.query(
-      fs.readFileSync(path.join(__dirname, '../../database/migrations/450_gstr2b_recipient_gstin.sql'), 'utf8')
+      fs.readFileSync(path.join(__dirname, '../../database/migrations/466_gstr2b_recipient_gstin.sql'), 'utf8')
     );
     await pool.query(
       `INSERT INTO businesses (id, name, gstin, state, state_code, gst_registration_type)

@@ -1,4 +1,4 @@
--- Migration 449: credit and debit note numbers unique per GSTIN, not per business
+-- Migration 465: credit and debit note numbers unique per GSTIN, not per business
 -- Rule 53: each GSTIN issues its notes in its own consecutive series. debit_notes had one
 -- business-wide unique number, so a second GSTIN could not start its own DN-001; credit_notes had
 -- no uniqueness at all. As with invoices (migration 319), the database keeps numbers unique per

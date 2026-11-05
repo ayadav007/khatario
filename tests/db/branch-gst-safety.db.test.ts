@@ -1,5 +1,5 @@
 /**
- * Branch GST safety: note series per GSTIN (migration 449), the inter-branch customer is never a
+ * Branch GST safety: note series per GSTIN (migration 465), the inter-branch customer is never a
  * shopper, and expenses take the branch registration's state.
  * PHASE2_TEST_DATABASE_URL=postgresql://…/kh_phase2_test npx jest tests/db/branch-gst-safety.db.test.ts --runInBand
  */
@@ -34,7 +34,7 @@ d('branch GST safety (real DB)', () => {
   beforeAll(async () => {
     pool = getPool();
     await pool.query(
-      fs.readFileSync(path.join(__dirname, '../../database/migrations/449_note_series_per_gstin.sql'), 'utf8')
+      fs.readFileSync(path.join(__dirname, '../../database/migrations/465_note_series_per_gstin.sql'), 'utf8')
     );
     await pool.query(
       `INSERT INTO businesses (id, name, gstin, state, state_code, gst_registration_type)

@@ -1,6 +1,6 @@
 /**
  * Inter-branch invoice raised for the dispatched quantity, and settlement of the inter-branch
- * receivable/payable between the two branches (migration 451).
+ * receivable/payable between the two branches (migration 467).
  * PHASE2_TEST_DATABASE_URL=postgresql://…/kh_phase2_test npx jest tests/db/inter-branch-settlement.db.test.ts --runInBand
  */
 import fs from 'fs';
@@ -67,7 +67,7 @@ d('inter-branch invoice at dispatch and settlement (real DB)', () => {
   beforeAll(async () => {
     pool = getPool();
     await pool.query(
-      fs.readFileSync(path.join(__dirname, '../../database/migrations/451_inter_branch_settlements.sql'), 'utf8')
+      fs.readFileSync(path.join(__dirname, '../../database/migrations/467_inter_branch_settlements.sql'), 'utf8')
     );
     await pool.query(
       `INSERT INTO businesses (id, name, gstin, state, state_code, gst_registration_type) VALUES ($1, 'Settle Co', $2, 'Karnataka', '29', 'regular')`,

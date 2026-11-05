@@ -1,4 +1,4 @@
--- Migration 450: GSTR-2B imports carry the GSTIN they were issued to
+-- Migration 466: GSTR-2B imports carry the GSTIN they were issued to
 -- Each GSTIN has its own GSTR-2B and its own ITC (s.16, s.25(4)). Imports accepted any GSTIN of
 -- the business but did not record which one, so one branch's 2B could match another GSTIN's
 -- purchases and open its ITC gate. `recipient_gstin` is the GSTIN on the 2B; reconciliation only

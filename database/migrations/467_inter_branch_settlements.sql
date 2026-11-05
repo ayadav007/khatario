@@ -1,4 +1,4 @@
--- Migration 451: settling inter-branch balances
+-- Migration 467: settling inter-branch balances
 -- An inter-branch invoice leaves Inter-Branch Receivables (1109) at the sending branch and
 -- Inter-Branch Payables (2111) at the receiving branch. Customer payments cannot clear them (they
 -- post to 1103), so each settlement is recorded here and posted as voucher type
