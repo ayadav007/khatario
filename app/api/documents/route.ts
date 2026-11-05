@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       fileTypeCategory = 'spreadsheet';
     }
 
-    const userId = getUserIdFromRequest(request) || request.headers.get('x-user-id') || null;
+    const userId = getUserIdFromRequest(request);
 
     // Insert into database
     const document = await queryOne(

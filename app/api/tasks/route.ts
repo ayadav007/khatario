@@ -5,7 +5,8 @@ import { Task } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getEmployeeIdForUser } from '@/lib/hr/manager-scope';
 
 /**
  * GET /api/tasks
@@ -105,10 +106,13 @@ export async function POST(request: NextRequest) {
       title,
       description,
       assigned_to,
-      assigned_by,
       priority = 'medium',
       due_date,
     } = body;
+    // assigned_by is the session user's employee record (null for an owner without one); a body
+    // assigned_by is never used.
+    const actorUserId = getAuthenticatedUserId(request);
+    const assigned_by = actorUserId ? await getEmployeeIdForUser(actorUserId, business_id) : null;
 
     if (!business_id || !title) {
       return NextResponse.json(
