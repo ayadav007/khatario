@@ -78,6 +78,19 @@ describe('demo catalogues', () => {
     );
   });
 
+  it('kirana: fresh vegetables, fruit, eggs and milk are GST-exempt (0%); packaged goods keep 5%', () => {
+    const { products } = DEMO_CATALOGS.kirana;
+    const byId = (id: string) => products.find((p) => p.id === id)!;
+    for (const p of products.filter((x) => x.category_id === 'ki-cat-veg' || x.category_id === 'ki-cat-fruit')) {
+      expect({ id: p.id, tax_rate: p.tax_rate }).toEqual({ id: p.id, tax_rate: 0 });
+    }
+    expect(byId('ki-6').tax_rate).toBe(0); // toned milk
+    expect(byId('ki-7').tax_rate).toBe(0); // eggs
+    for (const id of ['ki-1', 'ki-2', 'ki-3', 'ki-4', 'ki-5', 'ki-15', 'ki-16', 'ki-17', 'ki-18', 'ki-19', 'ki-20']) {
+      expect({ id, tax_rate: byId(id).tax_rate }).toEqual({ id, tax_rate: 5 });
+    }
+  });
+
   it('kirana products: unbranded, pack sizes cheaper per kg or L in bigger packs, some packs sold out', () => {
     const { products, categories } = DEMO_CATALOGS.kirana;
     expect(categories.map((c) => c.name)).toEqual(['Vegetables', 'Fruits', 'Dairy & eggs', 'Atta rice & dal', 'Masala', 'Snacks & drinks']);
