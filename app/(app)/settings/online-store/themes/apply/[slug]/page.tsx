@@ -60,10 +60,10 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
   );
   const note = (text: string) => (
     <div className="space-y-4">
-      <div role="note" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+      <div role="note" className="rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 px-4 py-3 text-sm text-text-secondary">
         {text}
       </div>
-      <Link href={themeStorePaths(true).store} className="text-sm text-gray-700 underline">
+      <Link href={themeStorePaths(true).store} className="text-sm text-text-secondary underline">
         Back to themes
       </Link>
     </div>
@@ -74,7 +74,7 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
   if (mayEdit === null || state.kind === 'loading') {
     return shell(
       <div className="flex justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
       </div>,
     );
   }
@@ -96,11 +96,11 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
 
   return shell(
     <div className="max-w-3xl space-y-5">
-      <p className="text-base text-gray-900">
+      <p className="text-base text-text-primary">
         Add <strong>{theme.demo ? theme.name : 'a blank theme'}</strong> to your themes? It opens in the editor, filled with your
         store&apos;s name; your live store doesn&apos;t change until you publish.
       </p>
-      <div className="overflow-hidden rounded-xl border border-gray-200">
+      <div className="overflow-hidden rounded-xl border border-border">
         {theme.demo && preview ? (
           <ThemeLivePreview src={preview} width={1440} height={900} interactive={false} palette={theme.palette} title={`${theme.name} demo store`} />
         ) : (
@@ -117,7 +117,7 @@ export default function ApplyThemePage({ params }: { params: { slug: string } })
           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
           Add and customise
         </button>
-        <Link href={themeStorePaths(true).store} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+        <Link href={themeStorePaths(true).store} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-primary hover:bg-gray-50 dark:hover:bg-slate-800/60">
           Back to themes
         </Link>
       </div>

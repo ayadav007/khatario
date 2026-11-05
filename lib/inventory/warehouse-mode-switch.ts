@@ -20,6 +20,7 @@ export async function defaultWarehouseForBranch(client: PoolClient, branchId: st
   const res = await client.query<{ id: string }>(
     `SELECT w.id
        FROM warehouses w
+       JOIN branches br ON br.id = $1 AND br.business_id = w.business_id
        LEFT JOIN branch_warehouses bw ON bw.warehouse_id = w.id AND bw.branch_id = $1
       WHERE COALESCE(w.is_active, true) = true
         AND (bw.branch_id IS NOT NULL OR w.branch_id = $1)

@@ -247,7 +247,7 @@ export default function RolesPage() {
         description="Manage role-based access control"
         icon={Shield}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           {/* Roles List */}
           <Card>
             <div className="flex items-center justify-between mb-4">
@@ -273,8 +273,8 @@ export default function RolesPage() {
                     onClick={() => setSelectedRole(role.id)}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
                       selectedRole === role.id
-                        ? 'bg-slate-50 text-primary-600 font-medium'
-                        : 'hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 text-text-primary'
+                        ? 'bg-slate-50 dark:bg-slate-800/50 text-primary-600 font-medium'
+                        : 'hover:bg-gray-50 dark:hover:bg-slate-800/70 text-text-primary'
                     }`}
                   >
                     <div className="font-medium">{role.role_name}</div>
@@ -288,8 +288,8 @@ export default function RolesPage() {
                     <p className="text-sm text-text-secondary mb-3">
                       No roles found. Create your first role.
                     </p>
-                    <div className="bg-slate-50 border border-primary-200 rounded-lg p-3 text-left">
-                      <p className="text-xs text-primary-800">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3 text-left">
+                      <p className="text-xs text-primary-800 dark:text-primary-200">
                         <strong>First-time setup:</strong> You can create your first role without specific permissions. 
                         After creating your first role, normal permission checks will apply.
                       </p>
@@ -302,8 +302,8 @@ export default function RolesPage() {
 
           {/* Permissions */}
           {selectedRole && (
-            <Card className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-4">
+            <Card className="min-w-0 xl:col-span-2">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-text-primary">Permissions</h2>
                 {(() => {
                   const role = roles.find((r) => r.id === selectedRole);
@@ -335,7 +335,7 @@ export default function RolesPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-6 max-h-[600px] overflow-y-auto">
+                <div className="space-y-6">
                   {(() => {
                     const selectedRoleData = roles.find(r => r.id === selectedRole);
                     const isPrimaryAdminRole = selectedRoleData?.role_key === 'primary_admin';
@@ -343,8 +343,8 @@ export default function RolesPage() {
                     return (
                       <>
                         {isPrimaryAdminRole && (
-                          <div className="bg-slate-50 border border-primary-200 rounded-lg p-3 mb-4">
-                            <p className="text-sm text-primary-800">
+                          <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3 mb-4">
+                            <p className="text-sm text-primary-800 dark:text-primary-200">
                               <strong>Primary Admin:</strong> This role has all permissions enabled by default and cannot be modified.
                             </p>
                           </div>
@@ -352,12 +352,12 @@ export default function RolesPage() {
                         {sortedModuleEntries.map(([moduleKey, moduleData]) => (
                           <div key={moduleKey} className="border-b border-border pb-4 last:border-b-0">
                             <h3 className="font-semibold text-text-primary mb-3">{moduleData.module_name}</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                               {moduleData.permissions.map((perm) => (
                                 <label
                                   key={perm.id}
                                   className={`flex items-center gap-2 p-2 rounded-lg ${
-                                    isPrimaryAdminRole ? 'cursor-not-allowed opacity-75' : 'hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 cursor-pointer'
+                                    isPrimaryAdminRole ? 'cursor-not-allowed opacity-75' : 'hover:bg-gray-50 dark:hover:bg-slate-800/70 cursor-pointer'
                                   }`}
                                 >
                                   <input
@@ -382,7 +382,7 @@ export default function RolesPage() {
           )}
 
           {!selectedRole && (
-            <Card className="lg:col-span-2">
+            <Card className="min-w-0 xl:col-span-2">
               <div className="text-center py-12">
                 <Shield className="w-12 h-12 text-text-muted mx-auto mb-4" />
                 <p className="text-text-secondary">Select a role to manage permissions</p>
@@ -393,8 +393,8 @@ export default function RolesPage() {
 
         {/* Create Role Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto">
               <h2 className="text-xl font-semibold text-text-primary mb-4">Create New Role</h2>
               <form onSubmit={handleCreateRole}>
                 <div className="space-y-4">
@@ -419,12 +419,12 @@ export default function RolesPage() {
                       value={newRoleDescription}
                       onChange={(e) => setNewRoleDescription(e.target.value)}
                       placeholder="Brief description of this role's responsibilities"
-                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                      className="input w-full resize-none"
                       rows={3}
                     />
                   </div>
-                  <div className="bg-slate-50 border border-primary-200 rounded-lg p-3">
-                    <p className="text-xs text-primary-800">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3">
+                    <p className="text-xs text-primary-800 dark:text-primary-200">
                       <strong>Note:</strong> After creating the role, you can assign permissions by selecting it from the list.
                     </p>
                   </div>

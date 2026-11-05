@@ -18,7 +18,7 @@ import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 function BranchSection({
   title,
@@ -158,28 +158,19 @@ export default function NewBranchPage() {
   if (!hasAccess) {
     return (
       
-        <div className={`${SETTINGS_CONTENT_WIDTH} py-8 flex justify-center`}>
-          <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
-            <h2 className="settings-section-title mb-2">
-              Multi-Branch Feature is Locked
-            </h2>
-            <p className="text-text-secondary mb-6">
-              Upgrade to Enterprise plan to unlock multi-branch support.
-            </p>
-            <button
-              onClick={() => router.push('/settings/subscription')}
-              className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium"
-            >
-              Upgrade to Enterprise
-            </button>
-          </div>
+        <div className="w-full min-w-0 max-w-5xl">
+          <PlanFeatureDeniedCallout
+            featureKey="multi_branch"
+            title="Branches need a higher plan"
+            description="Upgrade to unlock multi-branch support."
+          />
         </div>
       
     );
   }
 
   return (
-    <div className="w-full min-w-0 max-w-5xl space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-stack-page">
         <MobileDuplicatePageChrome
           title="Create branch"
           description="Add a branch office for accounting, GST, and invoicing."
@@ -196,14 +187,14 @@ export default function NewBranchPage() {
                 placeholder="e.g., Mumbai Branch"
                 required
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label="Branch Code"
                   value={formData.branch_code}
                   onChange={(e) => handleChange('branch_code', e.target.value)}
                   placeholder="e.g., MUM-001"
                 />
-                <div className="flex items-center space-x-2 pt-6">
+                <div className="flex min-h-11 items-center gap-2 sm:self-end">
                   <input
                     type="checkbox"
                     id="is_primary"
@@ -233,7 +224,7 @@ export default function NewBranchPage() {
                 error={gstinError}
                 helperText="The first two digits must match the state below. The last character is a check digit."
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1">
                     State Code *
@@ -280,7 +271,7 @@ export default function NewBranchPage() {
                 onChange={(e) => handleChange('address_line2', e.target.value)}
                 placeholder="Area, Landmark"
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label="City"
                   value={formData.city}

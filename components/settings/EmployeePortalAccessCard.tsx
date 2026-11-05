@@ -98,7 +98,7 @@ export function EmployeePortalAccessCard() {
           Portal address
         </label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-          <div className="flex min-w-0 flex-1 items-center rounded-lg border border-border bg-gray-50 px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 px-3 py-2">
             <span className="shrink-0 text-sm text-text-muted">{origin.replace(/^https?:\/\//, '')}/</span>
             <input
               id="portal-slug"
@@ -128,7 +128,7 @@ export function EmployeePortalAccessCard() {
           <span className="font-mono">acme-corp-mumbai</span> or <span className="font-mono">acme-corp-2</span>.
         </p>
         {slugChanged ? (
-          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+          <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-md px-2 py-1.5">
             Changing the address will break old portal links. Update bookmarks and re-share invites
             after saving.
           </p>
@@ -136,7 +136,7 @@ export function EmployeePortalAccessCard() {
       </div>
 
       {data?.employee_portal_enabled && data.employee_portal_url ? (
-        <div className="rounded-md border border-border bg-gray-50 p-3">
+        <div className="rounded-md border border-border bg-gray-50 dark:bg-slate-800/50 p-3">
           <p className="text-xs font-medium text-text-secondary">Employee portal</p>
           <p className="mt-1 break-all text-sm text-text-primary">{data.employee_portal_url}</p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -170,7 +170,7 @@ export function EmployeePortalAccessCard() {
       )}
 
       {data?.portal_url ? (
-        <div className="rounded-md border border-border bg-gray-50 p-3">
+        <div className="rounded-md border border-border bg-gray-50 dark:bg-slate-800/50 p-3">
           <p className="text-xs font-medium text-text-secondary">Customer portal</p>
           <p className="mt-1 break-all text-sm text-text-primary">{data.portal_url}</p>
           <div className="mt-2 flex flex-wrap gap-2">

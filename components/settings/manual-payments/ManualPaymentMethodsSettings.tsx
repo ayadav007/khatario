@@ -252,12 +252,12 @@ export function ManualPaymentMethodsSettings(props: {
                     )}
                     <h4 className="font-medium text-text-primary">{method.method_name}</h4>
                     {method.is_default && (
-                      <span className="px-2 py-0.5 text-xs bg-slate-100 text-primary-700 rounded-full">
+                      <span className="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-primary-700 dark:text-primary-200 rounded-full">
                         Default
                       </span>
                     )}
                     {method.is_active && !method.is_default && (
-                      <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
+                      <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-full">
                         Active
                       </span>
                     )}

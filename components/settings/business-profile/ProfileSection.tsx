@@ -5,6 +5,21 @@ import { clsx } from 'clsx';
 import { Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
+/**
+ * Viewport breakpoint at which ProfileSection puts its explanation beside the card.
+ * The main column loses 256px to the sidebar and 200px to the Schedule panel, so `lg`
+ * leaves only about 520px. Pages that add their own side column (WhatsApp settings nav)
+ * wrap their content in a `2xl` provider.
+ */
+export type ProfileSectionSplitAt = 'xl' | '2xl';
+const ProfileSectionSplitContext = React.createContext<ProfileSectionSplitAt>('xl');
+export const ProfileSectionSplitProvider = ProfileSectionSplitContext.Provider;
+
+const SPLIT_CLASS: Record<ProfileSectionSplitAt, string> = {
+  xl: 'xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] xl:gap-10',
+  '2xl': '2xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] 2xl:gap-10',
+};
+
 /** Shopify-style annotated row: explanation on the left, settings card on the right. */
 export function ProfileSection({
   id,
@@ -19,11 +34,15 @@ export function ProfileSection({
   description: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const splitAt = React.useContext(ProfileSectionSplitContext);
   return (
     <section
       id={id}
       data-tour={tour}
-      className="scroll-mt-24 grid grid-cols-1 gap-3 border-t border-border pt-6 first:border-t-0 first:pt-0 dark:border-border-dark lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:gap-10"
+      className={clsx(
+        'scroll-mt-24 grid grid-cols-1 gap-3 border-t border-border pt-6 first:border-t-0 first:pt-0 dark:border-border-dark',
+        SPLIT_CLASS[splitAt],
+      )}
     >
       <div className="min-w-0">
         <h3 className="text-base font-semibold text-text-primary">{title}</h3>

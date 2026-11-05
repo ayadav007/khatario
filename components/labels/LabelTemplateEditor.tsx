@@ -16,9 +16,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
-  ArrowLeft,
+  FileText,
   Save,
   Trash2,
   Plus,
@@ -32,6 +31,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { LabelPreview } from '@/components/labels/LabelPreview';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 // ---------------------------------------------------------------------------
 
@@ -399,24 +399,11 @@ export function LabelTemplateEditor({
   );
 
   return (
-    <div className="max-w-[1400px] mx-auto py-6 px-4">
-      <div className="flex items-start justify-between mb-6 gap-4">
-        <div className="flex items-center gap-3">
-          <Link href="/settings/label-templates">
-            <button className="p-2 hover:bg-gray-100 rounded" title="Back">
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">
-              {mode === 'edit' ? 'Edit Template' : 'New Template'}
-            </h1>
-            <p className="text-xs text-text-secondary">
-              Drag fields on the canvas, resize from the corner, configure in
-              the panel on the right.
-            </p>
-          </div>
-        </div>
+    <SettingsPageShell
+      title={mode === 'edit' ? 'Edit label template' : 'New label template'}
+      description="Drag fields on the canvas, resize from the corner, and set each field in the panel beside it."
+      icon={FileText}
+      actions={
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => router.back()}>
             Cancel
@@ -430,10 +417,10 @@ export function LabelTemplateEditor({
             Save
           </Button>
         </div>
-      </div>
-
+      }
+    >
       {/* Top bar: general config */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 bg-white border rounded-lg p-4">
+      <div className="grid grid-cols-1 gap-4 bg-surface border border-border rounded-lg p-4 sm:grid-cols-2 2xl:grid-cols-3">
         <Input
           label="Name"
           value={tpl.name}
@@ -446,7 +433,7 @@ export function LabelTemplateEditor({
             Format
           </label>
           <select
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-full"
             value={tpl.format}
             onChange={(e) =>
               setTpl({ ...tpl, format: e.target.value as any })
@@ -461,7 +448,7 @@ export function LabelTemplateEditor({
             Default Symbology
           </label>
           <select
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-full"
             value={tpl.symbology}
             onChange={(e) => setTpl({ ...tpl, symbology: e.target.value })}
           >
@@ -567,9 +554,9 @@ export function LabelTemplateEditor({
       </div>
 
       {/* Designer grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_300px] gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[200px_minmax(0,1fr)] 2xl:grid-cols-[220px_minmax(0,1fr)_300px]">
         {/* Palette */}
-        <div className="bg-white border rounded-lg p-3 h-fit sticky top-4">
+        <div className="bg-surface border border-border rounded-lg p-3 h-fit xl:sticky xl:top-4">
           <h3 className="font-semibold text-sm text-text-primary mb-2">
             Add Field
           </h3>
@@ -583,7 +570,7 @@ export function LabelTemplateEditor({
                 <button
                   key={k}
                   onClick={() => addField(k)}
-                  className="w-full text-left text-sm px-2 py-1.5 hover:bg-slate-50 rounded flex items-center justify-between"
+                  className="w-full text-left text-sm px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded flex items-center justify-between"
                 >
                   <span>{FIELD_LABELS[k]}</span>
                   <Plus className="w-3.5 h-3.5 text-text-secondary" />
@@ -604,8 +591,8 @@ export function LabelTemplateEditor({
                   key={idx}
                   className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer text-xs ${
                     selectedIdx === idx
-                      ? 'bg-slate-100 text-primary-800'
-                      : 'hover:bg-gray-100'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-primary-800 dark:text-primary-200'
+                      : 'hover:bg-gray-100 dark:hover:bg-slate-800/60'
                   }`}
                   onClick={() => setSelectedIdx(idx)}
                 >
@@ -627,7 +614,7 @@ export function LabelTemplateEditor({
         </div>
 
         {/* Canvas */}
-        <div className="bg-white border rounded-lg p-4 overflow-auto">
+        <div className="min-w-0 bg-surface border border-border rounded-lg p-4 overflow-auto">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-text-secondary">
               Label: {tpl.width_mm}×{tpl.height_mm} mm · Zoom: {zoom}×
@@ -635,13 +622,13 @@ export function LabelTemplateEditor({
             <div className="flex gap-1">
               <button
                 onClick={() => setZoom((z) => Math.max(1, z - 1))}
-                className="p-1.5 border rounded hover:bg-gray-50"
+                className="p-1.5 border rounded hover:bg-gray-50 dark:hover:bg-slate-800/60"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setZoom((z) => Math.min(15, z + 1))}
-                className="p-1.5 border rounded hover:bg-gray-50"
+                className="p-1.5 border rounded hover:bg-gray-50 dark:hover:bg-slate-800/60"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
@@ -730,7 +717,7 @@ export function LabelTemplateEditor({
         </div>
 
         {/* Properties */}
-        <div className="bg-white border rounded-lg p-4 h-fit sticky top-4">
+        <div className="bg-surface border border-border rounded-lg p-4 h-fit xl:col-span-2 2xl:sticky 2xl:top-4 2xl:col-span-1">
           <h3 className="font-semibold text-sm text-text-primary mb-3">
             Field Properties
           </h3>
@@ -812,8 +799,8 @@ export function LabelTemplateEditor({
                           }
                           className={`py-1.5 text-xs rounded border ${
                             selected.align === a
-                              ? 'bg-slate-100 border-primary-400 text-primary-800'
-                              : 'bg-white hover:bg-gray-50'
+                              ? 'bg-slate-100 dark:bg-slate-800 border-primary-400 text-primary-800 dark:text-primary-200'
+                              : 'bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/60'
                           }`}
                         >
                           {a}
@@ -864,7 +851,7 @@ export function LabelTemplateEditor({
 
               <button
                 onClick={() => removeField(selectedIdx)}
-                className="w-full text-red-600 border border-red-200 hover:bg-red-50 py-1.5 rounded text-sm flex items-center justify-center gap-1"
+                className="w-full text-red-600 border border-red-200 dark:border-red-800/60 hover:bg-red-50 dark:hover:bg-red-950/30 py-1.5 rounded text-sm flex items-center justify-center gap-1"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Remove field
@@ -873,7 +860,7 @@ export function LabelTemplateEditor({
           )}
         </div>
       </div>
-    </div>
+    </SettingsPageShell>
   );
 }
 

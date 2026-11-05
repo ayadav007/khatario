@@ -31,12 +31,12 @@ export function WhatsAppSettingsNav() {
     const Icon = ICONS[t.href] ?? Smartphone;
     const locked = t.connect && !loading && !hasConnect;
     return (
-      <li key={t.href} className="shrink-0 lg:w-full">
+      <li key={t.href} className="shrink-0 xl:w-full">
         <Link
           href={t.href}
           aria-current={active ? 'page' : undefined}
           className={clsx(
-            'inline-flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+            'inline-flex min-h-11 w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors',
             active
               ? 'bg-primary-50 text-primary-800 dark:bg-primary-950/40 dark:text-primary-200'
               : 'text-text-secondary hover:bg-slate-50 hover:text-text-primary dark:hover:bg-slate-800',
@@ -53,13 +53,13 @@ export function WhatsAppSettingsNav() {
   return (
     <nav
       aria-label="WhatsApp settings"
-      className="shrink-0 border-b border-border dark:border-border-dark lg:w-52 lg:border-b-0 lg:border-r lg:pr-4"
+      className="shrink-0 border-b border-border dark:border-border-dark xl:w-52 xl:border-b-0 xl:border-r xl:pr-4"
     >
-      <ul className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
+      <ul className="flex gap-1 overflow-x-auto pb-2 xl:flex-col xl:overflow-visible xl:pb-0">
         {BASIC_PAGES.map(tab)}
         <li
           aria-hidden
-          className="hidden px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-text-muted lg:block"
+          className="hidden px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-text-muted xl:block"
         >
           Connect
         </li>

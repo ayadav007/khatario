@@ -223,7 +223,7 @@ export default function HolidaysPage() {
                   {holidays
                     .sort((a, b) => new Date(a.holiday_date).getTime() - new Date(b.holiday_date).getTime())
                     .map((holiday) => (
-                      <tr key={holiday.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                      <tr key={holiday.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                         <td className="py-4 px-4">
                           {format(new Date(holiday.holiday_date), 'dd MMM yyyy')}
                         </td>
@@ -242,7 +242,7 @@ export default function HolidaysPage() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center justify-center gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => handleDelete(holiday.id)}>
+                            <Button size="sm" variant="ghost" aria-label="Delete" onClick={() => handleDelete(holiday.id)}>
                               <Trash2 className="w-4 h-4 text-red-600" />
                             </Button>
                           </div>

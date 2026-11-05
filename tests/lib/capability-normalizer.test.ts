@@ -299,4 +299,71 @@ describe('capability-normalizer', () => {
       expect(feature).toBe('tools_todo');
     });
   });
+
+  describe('registry ids used by the plan matrix', () => {
+    // The capability snapshot holds platform_features ids verbatim, so a registry id
+    // must always normalise to itself and a canonical key to its registry id.
+    const REGISTRY_IDS_WITH_A_CANONICAL_TWIN: Array<[string, string]> = [
+      ['settings_template_customization', 'template_customization'],
+      ['integration_whatsapp_manual', 'whatsapp_manual'],
+      ['integration_whatsapp_manual', 'whatsapp_send_message'],
+      ['advanced_ledger', 'ledger_accounting'],
+      ['advanced_online_store', 'online_store'],
+      ['advanced_barcode', 'barcode_scanning'],
+      ['advanced_multi_currency', 'multi_currency'],
+      ['advanced_custom_branding', 'custom_branding'],
+      ['sales_recurring_invoices', 'recurring_invoices'],
+      ['integration_payment_gateway', 'payment_gateway'],
+      ['integration_email', 'email_invoicing'],
+      ['integration_api', 'api_access'],
+    ];
+
+    it.each(REGISTRY_IDS_WITH_A_CANONICAL_TWIN)(
+      'keeps registry id %s as itself',
+      (registryId) => {
+        expect(normalizeFeature(registryId)).toBe(registryId);
+        expect(FEATURE_ALIAS_MAP[registryId] ?? registryId).toBe(registryId);
+      },
+    );
+
+    it.each(REGISTRY_IDS_WITH_A_CANONICAL_TWIN)(
+      'maps canonical key for %s from %s',
+      (registryId, canonicalKey) => {
+        expect(normalizeFeature(canonicalKey)).toBe(registryId);
+      },
+    );
+
+    const PLAN_MATRIX_IDS_WITHOUT_ALIAS = [
+      'accessibility',
+      'advanced_filters',
+      'bulk_actions',
+      'customizable_dashboard',
+      'integration_api',
+      'integration_email',
+      'integration_payment_gateway',
+      'mobile_enhancements',
+      'profit_invoice',
+      'profit_reports_advanced',
+      'profit_reports_basic',
+      'settings_whatsapp',
+      'soft_delete',
+      'web_access',
+    ];
+
+    it.each(PLAN_MATRIX_IDS_WITHOUT_ALIAS)('recognises plan matrix id %s', (registryId) => {
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      expect(normalizeFeature(registryId)).toBe(registryId);
+      expect(isValidFeature(registryId)).toBe(true);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('never aliases one registry id to a different key', () => {
+      Object.entries(FEATURE_ALIAS_MAP).forEach(([alias, registryId]) => {
+        if ((FEATURE_REGISTRY_IDS as readonly string[]).includes(alias)) {
+          expect(registryId).toBe(alias);
+        }
+      });
+    });
+  });
 });

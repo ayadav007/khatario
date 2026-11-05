@@ -350,7 +350,7 @@ function NumberSeriesPage() {
             </thead>
             <tbody>
               {documentConfigs.map((config) => (
-                <tr key={config.type} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 transition-colors">
+                <tr key={config.type} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70 transition-colors">
                   <td className="py-3 px-4 text-sm text-text-primary font-medium">
                     {config.label}
                   </td>

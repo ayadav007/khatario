@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type {
   CreateShipmentInput,
   CreateShipmentResult,
@@ -40,6 +41,15 @@ export class ShiprocketError extends Error {
 const tokens = new Map<string, { token: string; exp: number }>();
 const pickupLocations = new Map<string, { location: Record<string, unknown>; exp: number }>();
 
+/**
+ * Cache key for one set of credentials. Two businesses may configure the same Shiprocket email,
+ * so the key covers the password too: a wrong password never reuses a token (or pickup address)
+ * obtained with the right one. The password itself is not kept in the key.
+ */
+function credentialKey(creds: ShiprocketCreds): string {
+  return createHash('sha256').update(`${creds.email.trim().toLowerCase()}\n${creds.password}`).digest('hex');
+}
+
 /** Test hook: tokens and pickup locations are cached per account for the process lifetime. */
 export function clearShiprocketCache(): void {
   tokens.clear();
@@ -47,7 +57,7 @@ export function clearShiprocketCache(): void {
 }
 
 async function login(creds: ShiprocketCreds): Promise<string> {
-  const cached = tokens.get(creds.email);
+  const cached = tokens.get(credentialKey(creds));
   if (cached && cached.exp > Date.now()) return cached.token;
   const res = await fetch(`${BASE}/auth/login`, {
     method: 'POST',
@@ -59,7 +69,7 @@ async function login(creds: ShiprocketCreds): Promise<string> {
     throw new ShiprocketError('Shiprocket login failed. Check the API user email and password.', 'login');
   }
   // Shiprocket tokens last 10 days; refresh well before that.
-  tokens.set(creds.email, { token: data.token, exp: Date.now() + 8 * 60 * 60 * 1000 });
+  tokens.set(credentialKey(creds), { token: data.token, exp: Date.now() + 8 * 60 * 60 * 1000 });
   return data.token;
 }
 
@@ -93,7 +103,7 @@ async function call(
     });
   let res = await send(await login(creds));
   if (res.status === 401) {
-    tokens.delete(creds.email);
+    tokens.delete(credentialKey(creds));
     res = await send(await login(creds));
   }
   const data = (await res.json().catch(() => ({}))) as Json;
@@ -195,7 +205,7 @@ export function cityStateFromAddress(address: string): { city: string | null; st
 export function createShiprocketClient(creds: ShiprocketCreds) {
   /** The account's primary pickup address (the first one when none is primary), cached for an hour. */
   async function primaryLocation(): Promise<Json> {
-    const cached = pickupLocations.get(creds.email);
+    const cached = pickupLocations.get(credentialKey(creds));
     if (cached && cached.exp > Date.now()) return cached.location;
     const { ok, data } = await call(creds, '/settings/company/pickup');
     const list = (((data.data as Json | undefined)?.shipping_address ?? []) as Json[]).filter(
@@ -208,7 +218,7 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
       );
     }
     const primary = list.find((a) => Number(a.is_primary_location) === 1) ?? list[0];
-    pickupLocations.set(creds.email, { location: primary, exp: Date.now() + 60 * 60 * 1000 });
+    pickupLocations.set(credentialKey(creds), { location: primary, exp: Date.now() + 60 * 60 * 1000 });
     return primary;
   }
 

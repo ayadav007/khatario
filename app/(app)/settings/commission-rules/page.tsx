@@ -365,7 +365,7 @@ export default function CommissionRulesPage() {
                 </thead>
                 <tbody>
                   {rules.map((rule) => (
-                    <tr key={rule.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                    <tr key={rule.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                       <td className="py-4 px-4">
                         {rule.employee_id ? (
                           <span className="text-sm">Employee: {(rule as any).employee_code || rule.employee_id}</span>
@@ -397,7 +397,7 @@ export default function CommissionRulesPage() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(rule.id)}>
+                          <Button size="sm" variant="ghost" aria-label="Delete" onClick={() => handleDelete(rule.id)}>
                             <Trash2 className="w-4 h-4 text-red-600" />
                           </Button>
                         </div>

@@ -242,7 +242,7 @@ export function HrExitSettingsPanel() {
           {settings.exit_approval_chain.map((row, index) => (
             <div
               key={row.level}
-              className="space-y-2 rounded-lg border border-border bg-gray-50 p-3"
+              className="space-y-2 rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 p-3"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-text-primary">Level {row.level}</p>

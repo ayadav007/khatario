@@ -115,14 +115,14 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
 
       {/* New / edit form */}
       {editingId !== null && (
-        <Card className="p-5 space-y-4 border border-primary-200 bg-slate-50/30">
-          <h3 className="text-sm font-semibold text-gray-900">
+        <Card className="p-5 space-y-4 border border-primary-200 dark:border-slate-600 bg-slate-50/30">
+          <h3 className="text-sm font-semibold text-text-primary">
             {editingId === 'new' ? 'Create New Reply' : 'Edit Reply'}
           </h3>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Title *</label>
               <Input
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -130,7 +130,7 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Shortcut (optional)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Shortcut (optional)</label>
               <Input
                 value={form.shortcut}
                 onChange={(e) => setForm({ ...form, shortcut: e.target.value })}
@@ -139,11 +139,11 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Category</label>
             <select
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              className="input w-full"
             >
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -151,7 +151,7 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Message *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Message *</label>
             <Textarea
               value={form.message}
               onChange={(e) => setForm({ ...form, message: e.target.value })}
@@ -172,20 +172,20 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
       )}
 
       {/* Search + filter */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="flex flex-wrap gap-3">
+        <div className="relative min-w-0 flex-1 basis-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search replies…"
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+            className="input w-full pl-9"
           />
         </div>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+          className="input w-full sm:w-44"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map((c) => (
@@ -196,38 +196,38 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
 
       {/* Replies list */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400">
+        <div className="flex items-center justify-center py-16 text-text-muted">
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : replies.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-text-muted">
           <BookOpen className="w-10 h-10 mx-auto mb-3 text-gray-300" />
           <p className="text-sm">{search ? 'No results.' : 'No saved replies yet. Create your first one above.'}</p>
         </div>
       ) : (
         Object.entries(grouped).map(([cat, items]) => (
           <div key={cat}>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+            <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
               {cat} ({items.length})
             </h3>
             <div className="space-y-2">
               {items.map((reply) => (
-                <Card key={reply.id} className="p-4 flex items-start gap-4 hover:bg-gray-50 transition-colors">
+                <Card key={reply.id} className="p-4 flex items-start gap-4 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-semibold text-gray-900">{reply.title}</span>
+                      <span className="text-sm font-semibold text-text-primary">{reply.title}</span>
                       {reply.shortcut && (
-                        <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">
+                        <span className="text-xs bg-gray-100 dark:bg-slate-800 text-text-secondary px-1.5 py-0.5 rounded font-mono">
                           /{reply.shortcut}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap line-clamp-3">{reply.message}</p>
+                    <p className="text-sm text-text-secondary whitespace-pre-wrap line-clamp-3">{reply.message}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => startEdit(reply)}
-                      className="p-2 text-gray-400 hover:text-primary-600 hover:bg-slate-50 rounded-lg transition-colors"
+                      className="p-2 text-text-muted hover:text-primary-600 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded-lg transition-colors"
                       title="Edit"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -235,7 +235,7 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
                     <button
                       onClick={() => handleDelete(reply.id)}
                       disabled={deletingId === reply.id}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 text-text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
                       title="Delete"
                     >
                       {deletingId === reply.id

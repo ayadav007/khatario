@@ -222,7 +222,7 @@ export default function NewLocationPage() {
   };
 
   return (
-      <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <div className="w-full min-w-0 max-w-5xl space-y-stack-page">
         <MobileDuplicatePageChrome
           title="Add new warehouse"
           description="Name, address, and type for stock tracking and transfers."
@@ -364,7 +364,7 @@ export default function NewLocationPage() {
         {/* Migration Prompt Modal */}
         {showMigrationPrompt && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-surface dark:bg-slate-900/70 rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="bg-surface rounded-lg p-6 max-w-md w-full mx-4">
               <h3 className="text-lg font-semibold text-text-primary mb-2">Migrate Existing Stock?</h3>
               <p className="text-sm text-text-secondary mb-4">
                 You've created your first warehouse. Would you like to migrate all existing items' stock to this warehouse?

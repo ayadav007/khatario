@@ -504,7 +504,7 @@ export default function HolidayListsSettingsPage() {
 
       {loading ? (
 
-        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
+        <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-text-muted" aria-label="Loading" /></div>
 
       ) : (
 
@@ -776,13 +776,13 @@ export default function HolidayListsSettingsPage() {
 
                           <div className="flex justify-end gap-1">
 
-                            <Button type="button" size="sm" variant="ghost" onClick={() => openEditForm(h)}>
+                            <Button type="button" size="sm" variant="ghost" aria-label={`Edit ${h.holiday_name}`} onClick={() => openEditForm(h)}>
 
                               <Edit className="h-4 w-4" />
 
                             </Button>
 
-                            <Button type="button" size="sm" variant="ghost" onClick={() => void handleDelete(h.id)}>
+                            <Button type="button" size="sm" variant="ghost" aria-label={`Delete ${h.holiday_name}`} onClick={() => void handleDelete(h.id)}>
 
                               <Trash2 className="h-4 w-4 text-red-600" />
 

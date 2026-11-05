@@ -349,8 +349,8 @@ export function TenantTemplatesPanel() {
         </div>
 
         {tab === 'explore' ? (
-          <div className="flex flex-col gap-4 lg:flex-row">
-            <nav className="flex shrink-0 flex-row flex-wrap gap-1 lg:w-40 lg:flex-col">
+          <div className="flex flex-col gap-4 2xl:flex-row">
+            <nav className="flex shrink-0 flex-row flex-wrap gap-1 2xl:w-40 2xl:flex-col">
               {(
                 [
                   ['all', 'General'],

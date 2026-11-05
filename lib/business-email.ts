@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { query, queryOne } from '@/lib/db';
 import { decryptSecret, encryptSecret } from '@/lib/secret-encryption';
+import { friendlySmtpError } from '@/lib/smtp-presets';
 
 export interface BusinessEmailConfigRow {
   business_id: string;
@@ -219,7 +220,7 @@ export async function sendBusinessEmail(
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error('[business-email] Send failed:', error);
-    return { success: false, error: msg || 'Failed to send email' };
+    return { success: false, error: msg ? friendlySmtpError(msg, row.smtp_host) : 'Failed to send email' };
   }
 }
 
@@ -268,6 +269,6 @@ export async function verifyBusinessEmailConfig(
     return { success: true, message: 'SMTP connection verified successfully.' };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    return { success: false, message: msg || 'SMTP verification failed' };
+    return { success: false, message: msg ? friendlySmtpError(msg, row.smtp_host) : 'SMTP verification failed' };
   }
 }

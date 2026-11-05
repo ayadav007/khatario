@@ -94,7 +94,7 @@ export function ProviderSelector({
                   </p>
                   <div className="mt-2">
                     {configured ? (
-                      <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-caption font-semibold text-green-800">
+                      <span className="inline-flex items-center rounded-full border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-2 py-0.5 text-caption font-semibold text-green-800 dark:text-green-300">
                         Connected
                       </span>
                     ) : (

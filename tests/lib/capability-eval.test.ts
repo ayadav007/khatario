@@ -228,4 +228,68 @@ describe('evaluateCapabilityAccess', () => {
     expect(result.allowed).toBe(true);
     expect(result.indeterminate).toBeUndefined();
   });
+
+  describe('plan features the snapshot stores under their registry id', () => {
+    const ownerOn = (enabledFeatures: string[], resource: string) => {
+      loadSnapshot.mockReturnValue({
+        permissions: {},
+        isPrimaryAdmin: true,
+        enabledFeatures,
+      } as any);
+      return evaluateCapabilityAccess({
+        resource,
+        action: 'view',
+        businessId: 'b1',
+        userId: 'u1',
+        sessionIsPrimaryAdmin: true,
+        sessionPermissions: null,
+      });
+    };
+
+    const memberOn = (enabledFeatures: string[], resource: string) => {
+      loadSnapshot.mockReturnValue({
+        permissions: { settings: { can_view: true } },
+        isPrimaryAdmin: false,
+        enabledFeatures,
+      } as any);
+      return evaluateCapabilityAccess({
+        resource,
+        action: 'view',
+        businessId: 'b1',
+        userId: 'u1',
+        sessionIsPrimaryAdmin: false,
+        sessionPermissions: null,
+      });
+    };
+
+    it('lets the account owner open template customisation when the plan has it', () => {
+      expect(ownerOn(['settings_template_customization'], 'settings_template_customization')).toEqual({ allowed: true });
+      expect(ownerOn(['settings_template_customization'], 'template_customization')).toEqual({ allowed: true });
+    });
+
+    it('lets a team member open template customisation when the plan has it', () => {
+      expect(memberOn(['settings_template_customization'], 'settings_template_customization')).toEqual({ allowed: true });
+    });
+
+    it('still locks template customisation when the plan lacks it', () => {
+      expect(ownerOn(['sales_invoices'], 'settings_template_customization').denialReason).toBe('FEATURE_NOT_IN_PLAN');
+    });
+
+    it('lets the account owner send WhatsApp messages on a Connect plan', () => {
+      expect(ownerOn(['integration_whatsapp_manual'], 'integration_whatsapp_manual')).toEqual({ allowed: true });
+      expect(ownerOn(['integration_whatsapp_manual'], 'whatsapp_send_message')).toEqual({ allowed: true });
+    });
+
+    it('resolves canonical keys to the registry id the snapshot holds', () => {
+      expect(ownerOn(['advanced_ledger'], 'ledger_accounting')).toEqual({ allowed: true });
+      expect(memberOn(['advanced_online_store'], 'online_store')).toEqual({ allowed: true });
+      expect(ownerOn(['integration_payment_gateway'], 'payment_gateway')).toEqual({ allowed: true });
+    });
+
+    it('locks the account owner out of plan matrix features the plan lacks', () => {
+      expect(ownerOn(['sales_invoices'], 'settings_whatsapp').denialReason).toBe('FEATURE_NOT_IN_PLAN');
+      expect(ownerOn(['sales_invoices'], 'profit_reports_basic').denialReason).toBe('FEATURE_NOT_IN_PLAN');
+      expect(ownerOn(['profit_reports_basic'], 'profit_reports_basic')).toEqual({ allowed: true });
+    });
+  });
 });

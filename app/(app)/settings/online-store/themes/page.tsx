@@ -42,10 +42,10 @@ export default function ThemeLibraryPage() {
   if (mayView === false) {
     return (
       <SettingsPageShell title="Themes" icon={Palette}>
-        <div role="note" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <div role="note" className="rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 px-4 py-3 text-sm text-text-secondary">
           {NO_EDIT_NOTICE}
         </div>
-        <Link href="/settings" className="text-sm text-gray-700 underline">
+        <Link href="/settings" className="text-sm text-text-secondary underline">
           Back to Settings
         </Link>
       </SettingsPageShell>
@@ -56,7 +56,7 @@ export default function ThemeLibraryPage() {
     return (
       <SettingsPageShell title="Themes" icon={Palette}>
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       </SettingsPageShell>
     );

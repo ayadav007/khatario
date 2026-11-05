@@ -121,7 +121,7 @@ export function PaymentProviderCard({
   const webhook = definition.webhookUrl;
 
   return (
-    <Card className="border border-border bg-white p-6 shadow-sm">
+    <Card className="border border-border bg-surface p-6 shadow-sm">
       <div className="mb-6 flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-text-primary">
@@ -133,11 +133,11 @@ export function PaymentProviderCard({
         </div>
         <div className="shrink-0">
           {configured ? (
-            <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-800">
+            <span className="inline-flex items-center rounded-full border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-3 py-1 text-xs font-semibold text-green-800 dark:text-green-300">
               Connected
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
+            <span className="inline-flex items-center rounded-full border border-border bg-gray-50 dark:bg-slate-800/50 px-3 py-1 text-xs font-semibold text-text-secondary">
               Not configured
             </span>
           )}

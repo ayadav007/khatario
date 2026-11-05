@@ -53,11 +53,11 @@ const ACTIVE_QUEUE_STATUSES: OfflineActionStatus[] = [
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'completed':
-      return 'text-green-700';
+      return 'text-green-700 dark:text-green-300';
     case 'manual_review':
       return 'text-amber-700';
     case 'failed':
-      return 'text-red-700';
+      return 'text-red-700 dark:text-red-300';
     case 'syncing':
     case 'processing':
       return 'text-blue-700';
@@ -261,8 +261,8 @@ export default function OfflineSyncDebugPage() {
       </div>
 
       {manualReviewQueue > 0 && (
-        <section className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <h2 className="font-semibold text-amber-900">Manual review required</h2>
+        <section className="mt-6 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-4">
+          <h2 className="font-semibold text-amber-900 dark:text-amber-300">Manual review required</h2>
           <p className="mt-1 text-sm text-amber-800">
             {manualReviewQueue} action(s) need accountant review before books can
             be updated. GST conflicts are never auto-merged.
@@ -362,7 +362,7 @@ export default function OfflineSyncDebugPage() {
                       {row.entity_id ? ` · entity ${row.entity_id}` : ''}
                     </div>
                     {row.error_message && (
-                      <div className="mt-1 text-amber-700">{row.error_message}</div>
+                      <div className="mt-1 text-amber-700 dark:text-amber-300">{row.error_message}</div>
                     )}
                   </li>
                 ))}
@@ -394,8 +394,8 @@ export default function OfflineSyncDebugPage() {
       </section>
 
       {conflicts.length > 0 && (
-        <section className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
-          <h2 className="font-semibold text-red-900">Pending conflicts</h2>
+        <section className="mt-6 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-4">
+          <h2 className="font-semibold text-red-900 dark:text-red-300">Pending conflicts</h2>
           <pre className="mt-2 overflow-auto text-xs">
             {JSON.stringify(conflicts, null, 2)}
           </pre>

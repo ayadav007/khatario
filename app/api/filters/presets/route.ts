@@ -4,7 +4,7 @@ import { assertFeatureAccess } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 // GET - List filter presets
 export async function GET(request: NextRequest) {
@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
     // Check feature access
     await assertFeatureAccess(businessId, 'advanced_filters');
 
-    // Get user from session (simplified - implement proper auth)
-    const userId = request.headers.get('x-user-id');
+    // Private presets belong to the session user; `x-user-id` is client-supplied and ignored.
+    const userId = getAuthenticatedUserId(request);
 
     // Query presets
     const query = `
@@ -83,8 +83,11 @@ export async function POST(request: NextRequest) {
     // Check feature access
     await assertFeatureAccess(business_id, 'advanced_filters');
 
-    // Get user from session (simplified - implement proper auth)
-    const userId = request.headers.get('x-user-id') || 'system';
+    // The preset's owner is the session user; `x-user-id` is client-supplied and ignored.
+    const userId = getAuthenticatedUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
 
     // If setting as default, unset other defaults
     if (is_default) {

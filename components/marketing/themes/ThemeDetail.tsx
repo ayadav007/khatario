@@ -56,7 +56,13 @@ export function ThemeDetail({
       </div>
       <p className="-mt-3 mb-6 max-w-3xl text-slate-600">{theme.summary}</p>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div
+        className={clsx(
+          'grid gap-8',
+          // In the app the sidebar and Schedule panel take ~456px, so split later than on the website.
+          inApp ? '2xl:grid-cols-[minmax(0,1fr)_320px]' : 'lg:grid-cols-[minmax(0,1fr)_320px]',
+        )}
+      >
         <div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex gap-1" role="group" aria-label="Device">

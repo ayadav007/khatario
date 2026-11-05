@@ -950,6 +950,136 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Shipped:** nothing committed yet. New `knowledge/how-to/`: `supplier-hub.md`, `items-advanced.md`, `party-pricing.md`, `multi-gstin.md`, `stock-audit-reports.md`, `connect-leads.md`, `store-khata.md`. Extended: `how-to/invoices.md` (Amend, post-sale discount credit note, customer credit and advance), `how-to/invoice-setup.md` (designer, Distributor template, print language), `how-to/gst-reports.md` (GSTR-2B Excel, supplier credit and debit notes), `how-to/purchases.md` (expense bills with lines). A paragraph per feature in `prospect/modules/{purchases-suppliers,inventory-warehouses,billing-invoicing,whatsapp-crm,gst-returns,payments-receivables}.md`. 31 questions added to `tests/rag/eval-set.yml`. `npm run test:rag` 10 suites / 149 pass.
 - **Open:** `kb:eval` not run (no `.env.local` on this machine; it needs an indexed database), so retrieval hit rate for the new questions is unmeasured; run it on staging after the deploy re-index. Still without a guide: My Accounts, Explore themes in detail, store reviews and abandoned carts beyond a mention. The shop customer bot (`lib/rag/ingest/tenant-sources.ts`) still knows nothing of store khata or the return window.
 
+## 2026-11-05: Items filter bar no longer spills out of its card
+- **Asked:** "there are places where boxes or texts are not properly alligned, for example you will see that import box is going out of the bigger box" (screenshot of the Items page filter bar). Later: which branches are not merged with main.
+- **Decided:** the desktop filter row in `app/(app)/items/page.tsx` was one non-wrapping flex row (search, five selects, Columns, Template, Import), so at laptop widths with the Schedule rail open the search box collapsed to its icon and Import overflowed the card. The row now wraps (`flex-wrap`), the search keeps a 12rem minimum, Columns / Template / Import stay together on the right (`ml-auto`) and wrap as a group, and Template / Import use `min-h-11` to match the select height. Branch audit: `fix/branch-gst-safety` (10 commits, inter-branch settlements, note series per GSTIN, GST returns per GSTIN; its migrations 449–451 collide with main's numbers and need renumbering) and `email-settings-simplify` (1 commit, clean fast-forward) are not on main; `claude/todo-session-scoping`, `fix/gst-multi-gstin-compliance` and `production` have nothing main lacks.
+- **Shipped:** the filter bar fix on branch `fix/items-filter-bar-overflow`. Checked with a static mock of the same classes at 1300px and 900px; not run in the app (no database here), `tsc` not run (no node_modules).
+- **Open:** other misaligned places the owner mentioned are not yet named. Merge decisions for the two unmerged branches.
+
+## 2026-11-05: Simpler business email (SMTP) setup screen
+- **Asked:** tenants find setting up their sending email hard; owner asked how users add it today, then "yes please" to five fixes on Settings > Email.
+- **Decided:** keep per-business SMTP (no platform sending domain for now). Added a provider picker (Gmail / Google Workspace, Zoho personal `smtp.zoho.in`, Zoho own-domain `smtppro.zoho.in`, Hostinger, Outlook, Other) that fills host, port and SSL/TLS; step-by-step Gmail App Password help with links; From email follows the SMTP username until the user types a different one, with a warning when they differ; port and SSL/TLS stay in sync (465 ⇄ ticked, 587 ⇄ unticked); raw nodemailer errors become plain-language messages in Test connection and in sends. Outlook / Microsoft 365 is listed but flagged as usually not working, since Microsoft switched off password-based SMTP. No database or API change: the provider is derived from the saved host.
+- **Shipped:** nothing committed. New `lib/smtp-presets.ts` (presets, `detectSmtpProvider`, `friendlySmtpError`) and `tests/lib/smtp-presets.test.ts`; `components/settings/EmailSettingsTab.tsx`; `lib/business-email.ts` (friendly errors in `sendBusinessEmail` and `verifyBusinessEmailConfig`); assistant guide `knowledge/how-to/integrations-settings.md`. `tests/lib/smtp-presets.test.ts` + `business-email-limit.test.ts` 19 pass; `tsc -p tsconfig.build.json` no errors.
+- **Open:** screen not checked in a browser. Error-message patterns are matched from known Gmail / Microsoft / Node error texts, not from live failures; unknown errors still show as before. Re-index picks up the guide change on deploy. Later options discussed, not built: Khatario-hosted sending (shared `mail.khatario.com`, Reply-To the business) so email works with no setup.
+
+## 2026-11-05: Settings area layout and alignment audit (audit only)
+- **Asked:** "a complete layout and alignment audit of the Khatario Settings area on staging: the settings hub, every settings page, and the settings sidebar. Audit only for now; propose fixes but don't change code until I approve." Screenshots at 1440, at 1280 with the Schedule panel open, and on iPhone 13, in light and dark mode.
+- **Decided:** `QA_STAGING_PASSWORD` was not set in this cloud session, so the run could not log in to staging and took no screenshots. The audit was done from the code instead: the hub, sidebar and mobile settings nav, and all 84 `page.tsx` files under `app/(app)/settings/` plus the components they render. Sizes were worked out from the Tailwind classes. At lg the content column is about 520px (256px sidebar + 200px Schedule panel), and about 776px at 1280; that explains most of the collapsed side-by-side layouts. Findings are ranked as shared-code problems first (S1–S15), then the settings navigation (N1–N11), then single pages (P1–P16), with a fix plan in six batches. Highest-priority items:
+  - `SettingsFloatingSaveBar` is full viewport width and sits under the sidebar, so its "unsaved changes" text is hidden on desktop.
+  - Side-by-side layouts switch on at `lg` (viewport width) while the content column is narrow; proposed `@container` breakpoints on main.
+  - About 95 light-only colour lines in the online store pages.
+  - A wrong `hover:… dark:bg-slate-800/40` class in 11 files.
+  - Tables cut off on phone in user-branches, user-warehouses and period-locks.
+  - The mobile settings nav highlights all `?category=` links at once.
+  `settings-ui-scale` only remaps text-size tokens inside `<main>`: body 14px, page title 20px, inputs 16px.
+- **Shipped:** nothing committed. Report published as a private artifact: https://claude.ai/artifact/Nxps1XFwbeGDd3GhqcWZY9
+- **Open:** screenshots, and checking each finding in the browser, once `QA_STAGING_PASSWORD` is available (one finding, N5 stale hash highlight, is marked "confirm in a browser"). Fix batches 1–6 wait for approval. Merge email-settings-simplify before batch 2, because both touch `EmailSettingsTab`.
+
+## 2026-11-05: Settings layout fixes, batches 1–6
+- **Asked:** "commit it and start fixing all in batches what you have already noted down" (the settings layout audit above).
+- **Decided:**
+  - **Save bar:** measures `<main>` instead of using sticky, because the shell's `overflow-x-hidden` wrappers stop sticky from working.
+  - **Two-column layouts:** move to xl/2xl breakpoints (ProfileSection gets a context so WhatsApp settings split at 2xl). Container queries were rejected because `container-type` can contain fixed-position dialogs and save bars.
+  - **Dark mode:**
+    - Paper and logo previews stay white.
+    - Changes to the shared website theme store components (`components/marketing/themes`) were reverted, because the dark class is site-wide and would change khatario.com/themes.
+    - The marketing theme components and `InvoiceDesignTab` keep their light-only colours and still need their own pass.
+  - **Not done, flagged for you:**
+    - **S9 save placement rule:** changes behaviour (offer letter has two saves, long HR forms save at the bottom), so it needs your sign-off.
+    - **P15 `/settings/holidays` redirect:** the page uses a different table than holiday lists, so redirecting it could hide data.
+    - **N10 links leaving settings:** not changed.
+    - **Settings group headers:** still `<Link href="#">`, not `<button>`.
+    - **Dark-mode lint rule:** not added; the repo has no ESLint config.
+  - **Hub role rule:** the blanket warehouse role bypass was removed so the hub follows the sidebar's rule.
+- **Shipped:** on branch `fix/settings-layout-audit` (pushed, not merged):
+  - 60192a7 save bar and breakpoints
+  - ce5e2a8 dark mode
+  - ac61f6c shared callout, empty state and input styles
+  - 10935fe shell, widths, padding, dialogs
+  - f39590d settings navigation
+  - 25a1bf6 page fixes
+
+  New files: `components/ui/InfoCallout.tsx`, `components/ui/EmptyState.tsx`, `lib/settings-link-lock.ts`, `tests/lib/settings-link-lock.test.ts`. `tsc` is clean after each batch. Settings nav and lock tests pass (3 suites, 11 tests).
+- **Open:**
+  - Nothing has been seen in a browser: no staging login, because `QA_STAGING_PASSWORD` was not set.
+  - Before merge, screenshot at 1440, at 1280 with the Schedule panel open, and on iPhone 13 in light and dark mode. Check especially:
+    - the save bar position with the sidebar collapsed;
+    - the WhatsApp settings and templates layouts;
+    - the hub focus trap;
+    - the mobile settings sheet.
+  - `graphify` is not installed here, so `graphify update .` was not run.
+
+## 2026-11-05: RLS audit script for staging and production
+- **Asked:** check whether Row Level Security is applied on the staging and production databases.
+- **Decided:** the cloud session cannot reach the VPS (outbound proxy is HTTPS-only, no SSH or Postgres tunnelling), so the check is a read-only SQL script the user runs on the VPS. Code-level finding: none of the 490 migrations enables RLS or creates a policy; tenant isolation is entirely in application code (PBAC + `business_id` filtering), and the app role holds full table privileges. Live state is expected to match (zero tables with RLS) unless it was enabled by hand on the server.
+- **Shipped:** `database/scripts/check-rls.sql` (lists tables with RLS enabled/forced, policies, and whether the app role bypasses RLS). No migrations written.
+- **Open:** run the script on both `khatario` and `khatario_prod` and paste the output back to confirm the live state. `graphify update .` not run (tool not installed here).
+
+## 2026-11-05: RLS audit result confirmed
+- **Asked:** confirm the live RLS state from the script output.
+- **Decided:** nothing new; result recorded.
+- **Shipped:** nothing committed (log entry only).
+- **Open:** RLS is OFF on both databases. `check-rls.sql` run on the VPS as postgres: 0 of 477 tables have RLS, no policies, `khatario_user` is not superuser and does not bypass RLS. Staging (`khatario`) and production (`khatario_prod`) identical. Tenant isolation is app-code only. Decide whether to add RLS as a defence-in-depth layer (session variable + per-table `business_id` policies, FORCE RLS).
+
+## 2026-11-05: Row Level Security design and implementation plan
+- **Asked:** a complete RLS implementation plan from the actual repository and schema: tenant tables and ownership, tables that stay global, policy definitions, API and background-job changes, pool and transaction handling, cross-tenant tests, staging rollout and rollback.
+- **Decided:**
+  - Tenant travels in session settings `khatario.business_id` / `khatario.user_id` set on every pool checkout in `lib/db.ts` from an `AsyncLocalStorage` context with a fallback to the middleware's trusted headers via `next/headers`. Chosen over per-route wrappers because 1,072 route files and 226 own-client call sites would otherwise each need a change.
+  - Bypass is a second role `khatario_system` (`BYPASSRLS`) behind a second pool, used for pre-auth, platform admin (auto from `x-platform-admin-id`), cron enumeration, store resolution, webhooks and platform-private tables. Rejected: a bypass setting (flippable by injected SQL).
+  - Child tables get `EXISTS` policies against the parent (no data migration, instant rollback); denormalising `business_id` is a later optimisation.
+  - Policies carry no `TO` clause so tests can use `SET ROLE` on `kh_phase2_test`.
+  - Migration 465 ships inert policies; enabling and disabling are scripts (`scripts/rls/enable.js --confirm <db>`), so rollback is seconds and no migration is reverted. Migration 466 makes it permanent only after production is stable.
+  - App-level `RLS_CONTEXT_MODE` (`warn` → `enforce`) proves context coverage on staging before the database flag flips.
+  - Inventory from the SQL: 473 tables parsed (live has 477; Task 1 reconciles): 319 with `business_id` (221 NOT NULL, 98 nullable to audit), about 90 child tables, 14 multi-party supplier-hub tables, 3 identity tables, 27 global catalog tables, 30 platform-private tables, 4 views needing `security_invoker`.
+- **Shipped:** nothing committed in this session beyond the two documents: `docs/superpowers/specs/2026-11-05-row-level-security-design.md`, `docs/superpowers/plans/2026-11-05-row-level-security.md`; roadmap card under Next. No migrations written.
+- **Open:** owner review of the spec's decisions (role split, `EXISTS` child policies, the `businesses` read policy for the supplier hub). Confirm Postgres major version on the VPS is 15 or later (`SHOW server_version`). Nullable `business_id` audit on staging decides which of the 98 tables become strict. `graphify` not installed here.
+
+## 2026-11-05: Security P1 remediation and independent review fixes
+- **Asked:** fix P1-1 to P1-6 and client-controlled actor fields from the security assessment on a dedicated branch, with regression tests; then an independent review of that branch; then fix the review's pre-merge findings (R1, R2, R3, R4, R6) on a new branch with real-database tests, keeping R5 and R7 separate. No deploy, no merge.
+- **Decided:**
+  - Branch `security/p1-remediation` (7 commits, `7bd2bb9`..`fd51a08`): expense voucher/PDF/attachments need a session and tenant scope; warehouse branch links check ownership; tax-provision payments scoped, locked and permission-checked; supplier aliases scoped; Shiprocket cache keyed by credentials; business switch grants admin only to `is_primary_admin` users (migration 466 demotes backfilled staff memberships); six actor fields from the session.
+  - Independent review: DO NOT MERGE as is. R1 (`emp.user_id` does not exist, every expense voucher request 500s), R2 (expense and leave POST forgeable with a fake portal cookie), R3 (warehouse create and the warehouse-mode default picker still cross-business), R4 (permission changes lock out staff/Accountant), R6 (465/466 collide with the RLS plan).
+  - R4: staff may open their own expense voucher and attachments (employees.id is the user id), matching the portal rule. Tax-provision payments keep the `journal` permission with no role-template change (owner's decision): the route has no UI caller, owners are unaffected, Accountants need journal granted per business.
+  - R6: RLS migrations move to 467 (policies) and 468 (enforce) (owner's decision), so forced RLS can never run before the 466 membership data fix. Correction to the RLS entry above: its "Migration 465/466" are now 467/468.
+  - Migration 465 now orders each step by `created_at, id`; it had not been applied anywhere shared.
+  - Real-database tests use a harness (`tests/db/helpers/security-db.ts`) that refuses anything but a local `kh_phase2_test`; authorize, RBAC and SQL run for real, only plan/subscription gates are stubbed.
+- **Shipped:** branch `security/p1-remediation-fixes` from `fd51a08`: `db64994` (R1 + staff own-expense), `28085d2` (R2), `2dffb5c` (R3, migration 465 edited), `0b976d4` (R6 docs), plus this log and roadmap. Migrations 465 and 466 applied to a disposable local test database only.
+- **Open:**
+  - R7 urgent: middleware skips identity-header stripping for paths ending in static-file suffixes, including `/api/...` (roadmap Now). Needs approval for its own branch.
+  - R5: seven remaining client-supplied actor fields (roadmap Next).
+  - The repo cannot rebuild `kh_phase2_test` from source: `database/schema.sql` is partial and 16 of 490 migrations fail on top of it (001, 005, 008, 049, 075, 076, 111, 125, 130, 143, 204–206, 237, 238, 255, 338). The tests ran on that partial build after checking every table they touch exists.
+  - Before applying 466 anywhere shared, run the two read-only membership count queries (review report).
+  - Playwright not run (needs a running app and seeded database). `tests/lib` has six suites failing identically on `main`. `graphify` not installed here.
+
+## 2026-11-05: R7 middleware identity-header bypass fixed
+- **Asked:** investigate and fix R7 on a separate branch from `security/p1-remediation-fixes` (`a473f2e`), regression tests first, no merge or deploy, R5 left separate.
+- **Decided:**
+  - Root cause: `middleware.ts` returned `NextResponse.next()` for any path ending in `.png/.jpg/.webp/.svg/.ico/.css/.js/.woff/.woff2` before stripping client copies of the trusted headers, and the check matched `/api/` too. Demonstrated on a throwaway local `next dev` server with a temporary probe route: forged `x-authenticated-*` and `x-platform-admin-id` gave 401 on a plain path and 200 with the forged user and business on a `.png` path, no session.
+  - Fix: `/api/` paths are never static assets; the static branch forwards without client identity; store-subdomain rewrites forward without client identity; `x-khatario-pathname` (authorize()'s plan gate) is stripped like the identity headers. Sanitising rather than only reclassifying means a misclassified path still carries no identity.
+  - API routes serving file-like names (WhatsApp inbox media, admin videos, sales-flow media) now receive the verified session; before, the shortcut skipped it and their handlers returned 401 to signed-in users.
+  - `/_next/image` (excluded by the matcher) checked: its internal fetch of a local `/api/` URL goes through middleware and is refused without a session (tested on `next dev` only).
+- **Shipped:** branch `security/r7-middleware-header-fix`: `06cea03` (middleware fix + `tests/security/middleware-static-suffix-identity.test.ts`, 44 cases), plus this log and the roadmap card. No migrations.
+- **Open:** owner review; merge order relative to `security/p1-remediation-fixes`; staging probe after deploy (owner approval); Playwright auth specs not run (need a seeded database and E2E credentials); production exposure through Cloudflare unverified (nginx passes the headers through); R5 still open.
+
+## 2026-11-05: Templates locked on Business Classic — client feature-key mismatch
+- **Asked:** a Business Classic customer sees an Upgrade badge on Settings → Templates and cannot edit templates; find which feature matrix entry to toggle, then "check all and fix them all" for the same class of bug, and push to main.
+- **Decided:**
+  - The matrix was not the cause: `settings_template_customization` is enabled for plan `business` (seeded by migrations 360/387 and confirmed in Admin → Plans). The lock came from `lib/capability-normalizer.ts`, which aliased the registry id `settings_template_customization` to the canonical key `template_customization`; the capability snapshot stores `platform_features` ids verbatim, so the sidebar and mobile settings sheet could never find it. Same defect for `integration_whatsapp_manual` → `whatsapp_manual`.
+  - Audit against all 82 `platform_features` ids from the migrations found two more classes: canonical keys listed in `FEATURE_REGISTRY_IDS` so their aliases were dead (ledger_accounting, online_store, barcode_scanning, multi_currency, custom_branding, recurring_invoices, payment_gateway, email_invoicing, api_access, whatsapp_send_message), and 14 real ids unknown to the normaliser (settings_whatsapp, profit_*, integration_*, web_access, UX ids), which let the account owner past the sidebar lock while the page guard still blocked.
+  - Fix: registry ids always normalise to themselves; canonical keys map to their real registry id (same mapping as `resolveRegistryFeatureId` on the server); unknown ids registered; WhatsApp special case in `lib/capability-eval.ts` removed. Canonical-only keys with no registry row (template_basic, pdf_generation, alert_*) left as they were; nothing checks them.
+- **Shipped:** `b9e1d1d` Fix client plan-feature keys that never matched the capability snapshot (`lib/capability-normalizer.ts`, `lib/capability-eval.ts`, 45 new tests in `tests/lib/capability-normalizer.test.ts` and `tests/lib/capability-eval.test.ts`). Pushed to `main` on request. No migrations.
+- **Open:** full jest run has 13 pre-existing failures unrelated to this change (DB-backed suites, `invoice-golden` benchmark, and `normalizeModule('debit_notes')` expecting `invoices`). Customer needs a page reload after deploy. `graphify` not installed here.
+
+## 2026-11-05: Security remediation pushed to main
+- **Asked:** push all the security changes to main.
+- **Decided:** bring the R7 branch tip `9a51227` (which contains `security/p1-remediation`, `security/p1-remediation-fixes` and `security/r7-middleware-header-fix` in a straight line) into `main`. `main` moved during the push (`b9e1d1d`, `c0d4367`, the Business Classic templates fix), so `origin/main` was merged in with a merge commit rather than rebased, keeping the reviewed hashes; the only conflict was this log. No force push.
+- **Shipped:** `main` now includes the 14 security commits (`7bd2bb9`..`9a51227`), the merge of `origin/main`, and this entry. Nothing deployed. Migrations 465 and 466 are not applied to staging or production.
+- **Open:**
+  - Before the next staging deploy (which runs `db:migrate:pending`): run the two read-only membership count queries for migration 466, and the multi-primary warehouse query for 465 (review reports 09 and the remediation summary).
+  - The R7 review's requested change is still open: one runtime-level suffix-path case in `e2e/identity-boundary.spec.ts`.
+  - Infrastructure: nginx stripping of trusted headers on every vhost, origin locked to Cloudflare, Node listeners confirmed loopback-only on the VPS (staging `next start` has no `-H`).
+  - `app/api/invoices/extract` GET fails open; R5 actor fields still open.
+
 ## 2026-11-05: searchable invoice pickers, scoped to the customer
 - **Asked:** "wherever we have list of invoices to select, we need to have an option where they can type and search. If there is a combination of customer and invoice selection then we should show only the invoices from that customer and not all."
 - **Decided:** One shared picker, `components/invoices/InvoiceSearchSelect.tsx`: a button plus a popover with a search box (invoice number, customer name or amount), arrow keys and Enter, and a server search (`/api/invoices?search=`, with `customer_id` when a customer is set) so invoices beyond the preloaded page are found. The popover is portalled and flips upward near the bottom of the screen. The four web invoice dropdowns use it: delivery challan "Link to Invoice", credit note and debit note "Original Invoice", recurring invoice "Copy lines from invoice". Credit, debit and recurring already listed only the customer's invoices; the delivery challan listed the latest 100 for everyone, so it now reloads invoices (and sales orders) for the chosen customer, and choosing a different customer clears a linked invoice or sales order from the old one. Debit notes now clear the invoice when the customer changes instead of whenever the invoice is missing from the preloaded list, so an invoice found by search stays picked. The Flutter app has no invoice dropdown (payment-in uses a checklist), so nothing changed there.

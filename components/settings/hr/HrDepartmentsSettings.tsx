@@ -141,7 +141,7 @@ export function HrDepartmentsSettings() {
                 <span className="text-text-primary">{item}</span>
                 <button
                   type="button"
-                  className="rounded p-1 text-text-muted hover:bg-red-50 hover:text-red-600"
+                  className="rounded p-1 text-text-muted hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600"
                   onClick={() => removeItem(kind, item)}
                   disabled={saving}
                   aria-label={`Remove ${item}`}
