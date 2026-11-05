@@ -129,8 +129,8 @@ export function ThemeStore({
       {inApp ? <div className="mb-6">{search}</div> : null}
       <section
         className={clsx(
-          'grid gap-8 lg:grid-cols-[220px_1fr]',
-          inApp ? '' : 'mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8',
+          'grid gap-8',
+          inApp ? 'xl:grid-cols-[220px_1fr]' : 'mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:grid-cols-[220px_1fr] lg:px-8',
         )}
       >
         <nav aria-label="Theme categories">

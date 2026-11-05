@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor';
@@ -534,7 +535,7 @@ export default function OnlineStoreSettingsPage() {
         </div>
       ) : null}
 
-      <div className={clsx('gap-6', previewOn && 'xl:grid xl:grid-cols-[minmax(0,1fr)_440px]')}>
+      <div className={clsx('gap-6', previewOn && '2xl:grid 2xl:grid-cols-[minmax(0,1fr)_440px]')}>
         <div className={clsx(!designTab && 'mx-auto max-w-3xl')}>
           <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1" role="tablist">
             {TABS.map((t) => (
@@ -1100,7 +1101,7 @@ export default function OnlineStoreSettingsPage() {
         </div>
 
         {previewOn ? (
-          <aside className="mt-6 hidden xl:block">
+          <aside className="mt-6 hidden 2xl:block">
             <div className="sticky top-24">
               <StoreLivePreview iframeSrc={previewSrc} />
             </div>
@@ -1108,26 +1109,27 @@ export default function OnlineStoreSettingsPage() {
         ) : null}
       </div>
 
-      <div className="mt-6 xl:hidden">
+      <div className="mt-6 2xl:hidden">
         {previewOn ? (
           <StoreLivePreview iframeSrc={previewSrc} />
         ) : null}
       </div>
 
       {dirty || saving ? (
-        <div
-          className="sticky bottom-4 z-20 mx-auto mt-6 flex max-w-3xl items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-lg"
-          data-testid="store-save-bar"
-        >
-          <CircleDot className="h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden />
-          <span className="flex-1 text-sm text-gray-700">{saving ? 'Saving your changes' : 'You have unsaved changes'}</span>
-          <Button type="button" variant="outline" onClick={discardChanges} disabled={saving}>
-            Discard
-          </Button>
-          <Button type="button" onClick={() => void handleSave()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save changes'}
-          </Button>
-        </div>
+        <SettingsFloatingSaveBar align="between">
+          <span className="flex min-w-0 items-center gap-2 text-sm text-text-secondary" data-testid="store-save-bar">
+            <CircleDot className="h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden />
+            {saving ? 'Saving your changes' : 'You have unsaved changes'}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={discardChanges} disabled={saving}>
+              Discard
+            </Button>
+            <Button type="button" onClick={() => void handleSave()} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save changes'}
+            </Button>
+          </div>
+        </SettingsFloatingSaveBar>
       ) : null}
     </SettingsPageShell>
   );

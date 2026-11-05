@@ -382,9 +382,9 @@ export default function OfferLetterSettingsPage() {
 
 
 
-          <div className="flex min-h-[calc(100vh-14rem)] flex-col gap-4 lg:flex-row">
+          <div className="flex min-h-[calc(100vh-14rem)] flex-col gap-4 2xl:flex-row">
 
-            <Card className="w-full shrink-0 space-y-4 p-5 lg:max-w-md xl:max-w-lg">
+            <Card className="w-full shrink-0 space-y-4 p-5 2xl:max-w-md">
 
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
 
@@ -506,7 +506,7 @@ export default function OfferLetterSettingsPage() {
 
 
 
-            <div className="min-h-[480px] flex-1 rounded-xl border border-border bg-gray-100 p-4 lg:min-h-0">
+            <div className="min-h-[480px] min-w-0 flex-1 rounded-xl border border-border bg-gray-100 p-4 dark:bg-slate-900 2xl:min-h-0">
 
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 
