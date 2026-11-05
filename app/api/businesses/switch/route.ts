@@ -80,11 +80,15 @@ export async function POST(request: NextRequest) {
     }
     const sessionVersion = Number(svRow.auth_session_version);
 
+    // Only a user the platform recognises as a business owner (is_primary_admin) may take the
+    // primary_admin role of the business they switch to. Membership rows alone are not proof:
+    // migration 208 recorded every pre-existing user, staff included, as an 'owner' member.
+    // Everyone else keeps the role they already hold.
     await query(
       `UPDATE users u
        SET business_id = $1,
            role_id = CASE
-             WHEN ub.role = 'owner' THEN COALESCE(
+             WHEN u.is_primary_admin = true AND ub.role = 'owner' THEN COALESCE(
                (SELECT id FROM user_roles WHERE business_id = $1 AND role_key = 'primary_admin' LIMIT 1),
                u.role_id
              )
