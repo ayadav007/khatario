@@ -51,7 +51,10 @@ export const mainProduct: SectionSchema = {
       type: 'price',
       name: 'Price',
       limit: 1,
-      settings: [{ id: 'show_tax_note', type: 'checkbox', label: 'Show GST note', default: true }],
+      settings: [
+        { id: 'show_tax_note', type: 'checkbox', label: 'Show GST note', default: true },
+        { id: 'show_you_save', type: 'checkbox', label: 'Show “You save ₹N”', default: false },
+      ],
     },
     {
       type: 'variant_picker',

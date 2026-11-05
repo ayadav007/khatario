@@ -63,6 +63,16 @@ describe('main-product schema', () => {
     });
   });
 
+  it('offers a "You save" line on the Price block, off by default', () => {
+    const block = (getSectionSchema('main-product')!.blocks ?? []).find((b) => b.type === 'price')!;
+    expect(block.settings.find((s) => s.id === 'show_tax_note')).toMatchObject({ type: 'checkbox', default: true });
+    expect(block.settings.find((s) => s.id === 'show_you_save')).toMatchObject({
+      type: 'checkbox',
+      label: 'Show “You save ₹N”',
+      default: false,
+    });
+  });
+
   it('presets title, price, options, buy buttons and description in that order', () => {
     const preset = getSectionSchema('main-product')!.presets[0];
     expect((preset.blocks ?? []).map((b) => b.type)).toEqual(['title', 'price', 'variant_picker', 'buy_buttons', 'description']);

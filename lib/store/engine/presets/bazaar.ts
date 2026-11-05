@@ -137,7 +137,7 @@ export function bazaarPreset(ctx: PresetContext): ThemeData {
       product: template([
         section('main-product', { thumbs: 'bottom', sticky_info: true, sticky_buy_bar: true }, [
           block('title', {}),
-          block('price', {}),
+          block('price', { show_you_save: true }),
           block('variant_picker', { style: 'tiles', low_stock_at: 3 }),
           block('buy_buttons', {}),
           block('delivery_check', {}),

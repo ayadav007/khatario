@@ -79,7 +79,7 @@ function PriceBlock({ id, settings }: ProductBlockProps) {
           </>
         ) : null}
       </p>
-      {saved != null ? (
+      {settings.show_you_save === true && saved != null ? (
         <p className="mt-1 text-sm font-semibold" style={{ color: 'var(--c-accent, var(--primary))' }}>
           You save {inr(saved)}
         </p>

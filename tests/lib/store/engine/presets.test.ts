@@ -572,6 +572,7 @@ describe('existing presets keep the Bazaar pieces off', () => {
     const mains = sections.filter((x) => x.type === 'main-product');
     expect(mains.length).toBeGreaterThan(0);
     for (const m of mains) for (const v of blocksOf(m, 'variant_picker')) expect(v.style).toBe('buttons');
+    for (const m of mains) for (const pr of blocksOf(m, 'price')) expect(pr.show_you_save).toBe(false);
     expect(sections.map((s) => s.type)).not.toContain('buy-again');
     expect(sections.map((s) => s.type)).not.toContain('store-info');
   });
@@ -656,6 +657,7 @@ describe('bazaar preset', () => {
     const main = p.templates.product.sections[p.templates.product.order[0]];
     expect(main.type).toBe('main-product');
     expect(blocksOf(main, 'variant_picker')).toEqual([expect.objectContaining({ style: 'tiles', low_stock_at: 3 })]);
+    expect(blocksOf(main, 'price')).toEqual([expect.objectContaining({ show_you_save: true })]);
     expect(sectionTypes(p.templates.home)).toEqual(expect.arrayContaining(['buy-again', 'store-info']));
     const grid = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
     expect(grid.settings.layout).toBe('rail');
