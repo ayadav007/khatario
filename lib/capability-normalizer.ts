@@ -89,28 +89,26 @@ export const FEATURE_REGISTRY_IDS = [
   'template_basic',
   'template_all',
   'template_thermal',
-  'template_customization',
+  'settings_template_customization',
   'pdf_generation',
   
   // Accounting (Registry IDs)
   'payment_tracking',
-  'ledger_accounting',
-  'payment_gateway',
+  'integration_payment_gateway',
   
   // Alerts & Automation (Registry IDs)
   'alert_low_stock',
   'alert_credit_limit',
-  'recurring_invoices',
   
   // Integrations (Registry IDs)
-  'whatsapp_manual',
+  'integration_whatsapp_manual',
   'whatsapp_auto_reminders',
   'whatsapp_credit_alerts',
   'integration_whatsapp_bot',
-  'whatsapp_send_message',
+  'settings_whatsapp',
   'email_reminders',
-  'email_invoicing',
-  'api_access',
+  'integration_email',
+  'integration_api',
   
   // Settings (Registry IDs)
   'settings_multi_user',
@@ -120,19 +118,25 @@ export const FEATURE_REGISTRY_IDS = [
   'settings_backup',
   'settings_pos_mode',
   'settings_document_language',
-  
-  // Advanced (Registry IDs)
-  'online_store',
-  'barcode_scanning',
-  'multi_currency',
-  'custom_branding',
+  'web_access',
   
   // Core (Registry IDs)
   'dashboard_analytics',
   'customer_management',
 
-  // Dashboard widgets (Registry IDs)
+  // Dashboard widgets & UX (Registry IDs)
   'dead_stock_widget',
+  'customizable_dashboard',
+  'advanced_filters',
+  'bulk_actions',
+  'mobile_enhancements',
+  'accessibility',
+  'soft_delete',
+
+  // Profit (Registry IDs)
+  'profit_invoice',
+  'profit_reports_basic',
+  'profit_reports_advanced',
 
   // Tools (Registry IDs)
   'tools_todo',
@@ -309,9 +313,13 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'multi_business': 'settings_multi_business',
   'backup_restore': 'settings_backup',
   'pos_mode': 'settings_pos_mode',
-  'template_customization': 'template_customization',
+  'template_customization': 'settings_template_customization',
   'whatsapp_bot': 'integration_whatsapp_bot',
-  'whatsapp_manual': 'whatsapp_manual',
+  'whatsapp_manual': 'integration_whatsapp_manual',
+  'whatsapp_send_message': 'integration_whatsapp_manual',
+  'payment_gateway': 'integration_payment_gateway',
+  'email_invoicing': 'integration_email',
+  'api_access': 'integration_api',
   'todo': 'tools_todo',
   
   // Legacy aliases
@@ -329,11 +337,13 @@ export const FEATURE_ALIAS_MAP: Record<string, FeatureRegistryId> = {
   'settings_multi_warehouse': 'settings_multi_warehouse',
   'settings_multi_business': 'settings_multi_business',
   'settings_backup': 'settings_backup',
-  'settings_template_customization': 'template_customization',
+  'settings_template_customization': 'settings_template_customization',
   'integration_whatsapp_bot': 'integration_whatsapp_bot',
-  'integration_whatsapp_manual': 'whatsapp_manual',
+  'integration_whatsapp_manual': 'integration_whatsapp_manual',
+  'integration_payment_gateway': 'integration_payment_gateway',
+  'integration_email': 'integration_email',
+  'integration_api': 'integration_api',
   'tools_todo': 'tools_todo',
-  'whatsapp_send_message': 'whatsapp_send_message',
 
   'hr_employees': 'hr_employees',
   'hr_attendance': 'hr_attendance',

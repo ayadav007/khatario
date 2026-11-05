@@ -135,11 +135,8 @@ export function evaluateCapabilityWithSnapshot(
     return { allowed: true };
   }
 
-  const normalized = normalizeFeature(res);
-  const featureRegistryId =
-    normalized === 'whatsapp_send_message' || normalized === 'whatsapp_manual'
-      ? 'integration_whatsapp_manual'
-      : normalized;
+  // Canonical and legacy keys (e.g. whatsapp_send_message) resolve to the registry id here.
+  const featureRegistryId = normalizeFeature(res);
 
   if (snapshot?.enabledFeatures?.includes(featureRegistryId)) {
     return { allowed: true };
