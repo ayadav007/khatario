@@ -419,7 +419,7 @@ export default function RolesPage() {
                       value={newRoleDescription}
                       onChange={(e) => setNewRoleDescription(e.target.value)}
                       placeholder="Brief description of this role's responsibilities"
-                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                      className="input w-full resize-none"
                       rows={3}
                     />
                   </div>

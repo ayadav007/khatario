@@ -116,7 +116,7 @@ export function HrPayrollSettingsPanel() {
             onChange={(e) =>
               patch('monthly_pay_day', e.target.value === '' ? null : Number(e.target.value))
             }
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+            className="input w-full"
           >
             <option value="">Not set</option>
             {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
@@ -256,7 +256,7 @@ export function HrPayrollSettingsPanel() {
                 )
               }
               disabled={!settings.pt_enabled}
-              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm disabled:opacity-50"
+              className="input w-full"
             >
               <option value="">Select state</option>
               <option value="MH">Maharashtra</option>

@@ -446,7 +446,7 @@ export function LabelTemplateEditor({
             Format
           </label>
           <select
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-full"
             value={tpl.format}
             onChange={(e) =>
               setTpl({ ...tpl, format: e.target.value as any })
@@ -461,7 +461,7 @@ export function LabelTemplateEditor({
             Default Symbology
           </label>
           <select
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-full"
             value={tpl.symbology}
             onChange={(e) => setTpl({ ...tpl, symbology: e.target.value })}
           >

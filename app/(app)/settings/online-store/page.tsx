@@ -586,7 +586,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary sm:col-span-2">
                   Title
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.title}
                     maxLength={80}
                     onChange={(e) => setPromo((p) => ({ ...p, title: e.target.value }))}
@@ -595,7 +595,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary sm:col-span-2">
                   Message
                   <textarea
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     rows={3}
                     maxLength={400}
                     value={promo.body}
@@ -612,7 +612,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary">
                   Button text
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.cta_label}
                     onChange={(e) => setPromo((p) => ({ ...p, cta_label: e.target.value }))}
                     placeholder="Shop now"
@@ -621,7 +621,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary">
                   When they tap it
                   <select
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={
                       promo.cta_action === 'shop' ||
                       promo.cta_action === 'whatsapp' ||
@@ -656,7 +656,7 @@ export default function OnlineStoreSettingsPage() {
                   <label className="block text-xs text-text-secondary sm:col-span-2">
                     Custom link
                     <input
-                      className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                      className="input mt-1 w-full"
                       value={promo.cta_url}
                       onChange={(e) => setPromo((p) => ({ ...p, cta_url: e.target.value }))}
                       placeholder="/products/… or https://"
@@ -666,7 +666,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary">
                   Coupon to apply at checkout
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm uppercase"
+                    className="input mt-1 w-full uppercase"
                     value={promo.coupon_code}
                     onChange={(e) =>
                       setPromo((p) => ({ ...p, coupon_code: e.target.value.toUpperCase() }))
@@ -680,7 +680,7 @@ export default function OnlineStoreSettingsPage() {
                 <label className="block text-xs text-text-secondary">
                   How often
                   <select
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.frequency}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -702,7 +702,7 @@ export default function OnlineStoreSettingsPage() {
                     min={0}
                     max={8}
                     step={0.1}
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={Math.round((promo.delay_ms / 1000) * 10) / 10}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -760,7 +760,7 @@ export default function OnlineStoreSettingsPage() {
                   Show from
                   <input
                     type="datetime-local"
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.start_at ? promo.start_at.slice(0, 16) : ''}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -774,7 +774,7 @@ export default function OnlineStoreSettingsPage() {
                   Show until
                   <input
                     type="datetime-local"
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.end_at ? promo.end_at.slice(0, 16) : ''}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -975,7 +975,7 @@ export default function OnlineStoreSettingsPage() {
                       <label className="block text-xs text-text-secondary">
                         Shiprocket email
                         <input
-                          className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text-primary"
+                          className="input mt-1 w-full"
                           value={shipEmail}
                           onChange={(e) => setShipEmail(e.target.value)}
                         />
@@ -984,7 +984,7 @@ export default function OnlineStoreSettingsPage() {
                         API password
                         <input
                           type="password"
-                          className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text-primary"
+                          className="input mt-1 w-full"
                           placeholder="Leave blank to keep"
                           value={shipPassword}
                           onChange={(e) => setShipPassword(e.target.value)}
@@ -1002,7 +1002,7 @@ export default function OnlineStoreSettingsPage() {
                         <input
                           readOnly
                           data-testid="shiprocket-webhook-token"
-                          className="h-10 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs"
+                          className="input w-full font-mono"
                           placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
                           value={shipWebhookToken}
                         />
@@ -1069,7 +1069,7 @@ export default function OnlineStoreSettingsPage() {
               <label className="block text-xs text-text-secondary">
                 About page
                 <textarea
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={5}
                   value={aboutMd}
                   onChange={(e) => setAboutMd(e.target.value)}
@@ -1078,7 +1078,7 @@ export default function OnlineStoreSettingsPage() {
               <label className="block text-xs text-text-secondary">
                 Contact page
                 <textarea
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={5}
                   value={contactMd}
                   onChange={(e) => setContactMd(e.target.value)}
@@ -1086,15 +1086,15 @@ export default function OnlineStoreSettingsPage() {
               </label>
               <label className="block text-xs text-text-secondary">
                 Privacy policy
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
               </label>
               <label className="block text-xs text-text-secondary">
                 Refund policy
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
               </label>
               <label className="block text-xs text-text-secondary">
                 Terms and conditions
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
               </label>
             </Card>
           ) : null}

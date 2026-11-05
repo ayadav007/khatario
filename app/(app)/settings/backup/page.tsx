@@ -450,7 +450,7 @@ export default function BackupRestorePage() {
                   value={googleCredentials.client_id}
                   onChange={(e) => setGoogleCredentials({...googleCredentials, client_id: e.target.value})}
                   placeholder="xxxxx.apps.googleusercontent.com"
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
 
@@ -461,7 +461,7 @@ export default function BackupRestorePage() {
                   value={googleCredentials.client_secret}
                   onChange={(e) => setGoogleCredentials({...googleCredentials, client_secret: e.target.value})}
                   placeholder="Your client secret"
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
 
@@ -471,7 +471,7 @@ export default function BackupRestorePage() {
                   type="text"
                   value={googleCredentials.redirect_uri}
                   readOnly
-                  className="w-full px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-800/40"
+                  className="input w-full bg-gray-50 dark:bg-slate-800/40"
                 />
                 <p className="text-xs text-text-secondary mt-1">Copy this URL and add it to your Google Cloud Console</p>
               </div>
@@ -535,7 +535,7 @@ export default function BackupRestorePage() {
                 <select
                   value={restoreMode}
                   onChange={(e) => setRestoreMode(e.target.value as any)}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value="replace_all">Replace All (Delete existing, insert from backup)</option>
                   <option value="merge_smart">Merge Smart (Update existing, insert new)</option>
@@ -683,7 +683,7 @@ export default function BackupRestorePage() {
                 <select
                   value={scheduleForm.frequency}
                   onChange={(e) => setScheduleForm({...scheduleForm, frequency: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
@@ -696,7 +696,7 @@ export default function BackupRestorePage() {
                   type="time"
                   value={scheduleForm.time_of_day}
                   onChange={(e) => setScheduleForm({...scheduleForm, time_of_day: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
             </div>
@@ -707,7 +707,7 @@ export default function BackupRestorePage() {
                 <select
                   value={scheduleForm.day_of_week}
                   onChange={(e) => setScheduleForm({...scheduleForm, day_of_week: parseInt(e.target.value)})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value={0}>Sunday</option>
                   <option value={1}>Monday</option>
@@ -725,7 +725,7 @@ export default function BackupRestorePage() {
               <select
                 value={scheduleForm.storage_destination}
                 onChange={(e) => setScheduleForm({...scheduleForm, storage_destination: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="input w-full"
               >
                 <option value="local">Local Download</option>
                 <option value="google_drive" disabled={!googleConnected}>Google Drive</option>
@@ -738,7 +738,7 @@ export default function BackupRestorePage() {
                 type="number"
                 value={scheduleForm.retention_days}
                 onChange={(e) => setScheduleForm({...scheduleForm, retention_days: parseInt(e.target.value)})}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="input w-full"
                 min="1"
                 max="365"
               />

@@ -124,7 +124,7 @@ export default function StoreEnquiriesPage() {
           value={queryText}
           onChange={(e) => { setQueryText(e.target.value); setPage(1); }}
           placeholder="Search name, phone, email or message"
-          className="min-w-[200px] flex-1 rounded-lg border border-border px-3 py-2 text-sm"
+          className="input min-w-[200px] flex-1"
         />
         {unread > 0 ? (
           <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-300">

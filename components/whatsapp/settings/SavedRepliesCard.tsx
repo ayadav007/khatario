@@ -143,7 +143,7 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
             <select
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              className="input w-full"
             >
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -172,20 +172,20 @@ export function SavedRepliesCard({ businessId }: { businessId: string }) {
       )}
 
       {/* Search + filter */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap gap-3">
+        <div className="relative min-w-0 flex-1 basis-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search replies…"
-            className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+            className="input w-full pl-9"
           />
         </div>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="border border-border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+          className="input w-full sm:w-44"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map((c) => (

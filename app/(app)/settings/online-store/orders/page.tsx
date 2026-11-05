@@ -316,7 +316,7 @@ export default function StoreOrdersPage() {
           value={queryText}
           onChange={(e) => { setQueryText(e.target.value); setPage(1); }}
           placeholder="Search order, phone, AWB"
-          className="min-w-[180px] flex-1 rounded-lg border border-border px-3 py-2 text-sm"
+          className="input min-w-[180px] flex-1"
         />
         <Button type="button" size="sm" variant="secondary" onClick={() => setShowCamera(true)}>
           <Camera className="mr-1 h-3.5 w-3.5" />

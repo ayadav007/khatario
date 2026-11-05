@@ -195,7 +195,7 @@ export function SalaryComponentsSettingsPanel() {
             <label className="block text-sm">
               <span className="text-text-secondary">Type</span>
               <select
-                className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                className="input mt-1 w-full"
                 value={form.component_type}
                 onChange={(e) =>
                   setForm({
@@ -211,7 +211,7 @@ export function SalaryComponentsSettingsPanel() {
             <label className="block text-sm">
               <span className="text-text-secondary">Calculation</span>
               <select
-                className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                className="input mt-1 w-full"
                 value={form.calculation_type}
                 onChange={(e) =>
                   setForm({
@@ -337,7 +337,7 @@ function ComponentTable({
                 <td className="px-3 py-2">
                   {editId === row.id ? (
                     <input
-                      className="w-full rounded border border-border px-2 py-1"
+                      className="input w-full"
                       value={editName}
                       onChange={(e) => onEditName(e.target.value)}
                     />
@@ -348,7 +348,7 @@ function ComponentTable({
                 <td className="px-3 py-2 text-text-secondary">
                   {editId === row.id ? (
                     <select
-                      className="rounded border border-border px-2 py-1"
+                      className="input"
                       value={editCalc}
                       onChange={(e) =>
                         onEditCalc(e.target.value as ComponentRow['calculation_type'])

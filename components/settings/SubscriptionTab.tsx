@@ -849,7 +849,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                 setCouponResult(null);
               }}
               placeholder="Enter coupon code"
-              className="flex-1 px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              className="input flex-1"
             />
             <button
               onClick={handleApplyCoupon}

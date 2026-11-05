@@ -7,6 +7,8 @@ import { Plus, User, Building2, X, Loader2, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { InfoCallout } from '@/components/ui/InfoCallout';
+import { Button } from '@/components/ui/Button';
 
 interface UserBranch {
   id: string;
@@ -195,40 +197,31 @@ export default function UserBranchesPage() {
         description="Assign users to branches and manage permissions"
         icon={Building2}
         actions={
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Assign User</span>
-          </button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Assign User
+          </Button>
         }
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 dark:border-slate-600 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <User className="w-5 h-5 text-primary-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-primary-900 dark:text-primary-200">About User-Branch Assignments</p>
-              <p className="text-sm text-primary-700 mt-1">
-                Assign users to specific branches to control access. Users can only create transactions and view reports for branches they are assigned to.
-              </p>
-            </div>
-          </div>
-        </div>
+        <InfoCallout tone="neutral" icon={User} title="About User-Branch Assignments">
+          Assign users to specific branches to control access. Users can only create transactions and view reports for branches they are assigned to.
+        </InfoCallout>
 
         {/* Create Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-surface rounded-xl max-w-2xl w-full p-6">
+            <div role="dialog" aria-modal="true" className="bg-surface rounded-xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-text-primary">Assign User to Branch</h2>
                 <button
+                  type="button"
                   onClick={() => setShowForm(false)}
-                  className="text-text-muted hover:text-text-secondary"
-                >
-                  ×
+                  aria-label="Close"
+                  className="-mr-2 -mt-2 flex h-11 w-11 items-center justify-center rounded-lg text-2xl leading-none text-text-muted hover:bg-gray-100 hover:text-text-secondary dark:hover:bg-slate-800"
+                  >
+                    ×
                 </button>
               </div>
 
@@ -240,7 +233,7 @@ export default function UserBranchesPage() {
                   <select
                     value={formData.user_id}
                     onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="input"
                     required
                   >
                     <option value="">Select User</option>
@@ -259,7 +252,7 @@ export default function UserBranchesPage() {
                   <select
                     value={formData.branch_id}
                     onChange={(e) => setFormData({ ...formData, branch_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="input"
                     required
                   >
                     <option value="">Select Branch</option>
@@ -290,22 +283,13 @@ export default function UserBranchesPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end space-x-3 pt-4 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80"
-                    disabled={saving}
-                  >
+                <div className="flex flex-wrap justify-end gap-2 pt-4 border-t border-border">
+                  <Button type="button" variant="secondary" onClick={() => setShowForm(false)} disabled={saving}>
                     Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                    disabled={saving}
-                  >
+                  </Button>
+                  <Button type="submit" disabled={saving}>
                     {saving ? 'Assigning...' : 'Assign User'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -314,7 +298,8 @@ export default function UserBranchesPage() {
 
         {/* Assignments Table */}
         <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50 dark:bg-slate-800/40 border-b border-border">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-text-secondary">User</th>
@@ -377,7 +362,7 @@ export default function UserBranchesPage() {
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => handleDelete(assignment.id)}
-                        className="text-sm text-red-600 hover:text-red-700 font-medium"
+                        className="min-h-11 rounded-lg px-3 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
                       >
                         Remove
                       </button>
@@ -387,6 +372,7 @@ export default function UserBranchesPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </SettingsPageShell>
   );

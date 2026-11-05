@@ -233,7 +233,7 @@ export default function OnboardingTemplatesPage() {
               <div>
                 <label className="text-sm text-text-secondary">Instructions shown to candidate</label>
                 <textarea
-                  className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={3}
                   value={editing.instruction_text}
                   onChange={(e) => setEditing({ ...editing, instruction_text: e.target.value })}

@@ -9,6 +9,8 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { format } from 'date-fns';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { InfoCallout } from '@/components/ui/InfoCallout';
+import { Button } from '@/components/ui/Button';
 
 interface PeriodLock {
   id: string;
@@ -174,41 +176,31 @@ export default function PeriodLocksPage() {
         description="Lock accounting periods to prevent backdated entries"
         icon={Lock}
         actions={
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Lock Period</span>
-          </button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Lock Period
+          </Button>
         }
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 dark:border-amber-800/60 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-300">About Period Locks</p>
-              <p className="text-sm text-amber-700 mt-1">
-                Locked periods prevent creating or modifying transactions. This ensures data integrity after closing a period. 
-                Only past periods can be locked. Unlocking requires careful consideration.
-              </p>
-            </div>
-          </div>
-        </div>
+        <InfoCallout tone="warning" icon={AlertCircle} title="About Period Locks">
+          Locked periods prevent creating or modifying transactions. This ensures data integrity after closing a period. Only past periods can be locked. Unlocking requires careful consideration.
+        </InfoCallout>
 
         {/* Create Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-surface rounded-xl max-w-2xl w-full p-6">
+            <div role="dialog" aria-modal="true" className="bg-surface rounded-xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-text-primary">Lock Period</h2>
                 <button
+                  type="button"
                   onClick={() => setShowForm(false)}
-                  className="text-text-muted hover:text-text-secondary"
-                >
-                  ×
+                  aria-label="Close"
+                  className="-mr-2 -mt-2 flex h-11 w-11 items-center justify-center rounded-lg text-2xl leading-none text-text-muted hover:bg-gray-100 hover:text-text-secondary dark:hover:bg-slate-800"
+                  >
+                    ×
                 </button>
               </div>
 
@@ -220,7 +212,7 @@ export default function PeriodLocksPage() {
                   <select
                     value={formData.branch_id}
                     onChange={(e) => setFormData({ ...formData, branch_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="input"
                   >
                     <option value="">All Branches (Business-wide)</option>
                     {branches.map((branch) => (
@@ -241,13 +233,13 @@ export default function PeriodLocksPage() {
                     value={formData.financial_year}
                     onChange={(e) => setFormData({ ...formData, financial_year: e.target.value })}
                     placeholder={getCurrentFinancialYear()}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="input"
                     required
                   />
                   <p className="text-xs text-text-muted mt-1">Format: YYYY-YY (e.g., 2024-25)</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">
                       Period Start *
@@ -256,7 +248,7 @@ export default function PeriodLocksPage() {
                       type="date"
                       value={formData.period_start}
                       onChange={(e) => setFormData({ ...formData, period_start: e.target.value })}
-                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="input"
                       required
                     />
                   </div>
@@ -268,7 +260,7 @@ export default function PeriodLocksPage() {
                       type="date"
                       value={formData.period_end}
                       onChange={(e) => setFormData({ ...formData, period_end: e.target.value })}
-                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="input"
                       required
                     />
                   </div>
@@ -281,28 +273,19 @@ export default function PeriodLocksPage() {
                   <textarea
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text-primary focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="input"
                     rows={3}
                     placeholder="Reason for locking this period..."
                   />
                 </div>
 
-                <div className="flex justify-end space-x-3 pt-4 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80"
-                    disabled={saving}
-                  >
+                <div className="flex flex-wrap justify-end gap-2 pt-4 border-t border-border">
+                  <Button type="button" variant="secondary" onClick={() => setShowForm(false)} disabled={saving}>
                     Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                    disabled={saving}
-                  >
+                  </Button>
+                  <Button type="submit" disabled={saving}>
                     {saving ? 'Locking...' : 'Lock Period'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -311,7 +294,8 @@ export default function PeriodLocksPage() {
 
         {/* Locks Table */}
         <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50 dark:bg-slate-800/40 border-b border-border">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-text-secondary">Branch</th>
@@ -370,7 +354,7 @@ export default function PeriodLocksPage() {
                       {lock.is_locked && (
                         <button
                           onClick={() => handleUnlock(lock.id)}
-                          className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                          className="min-h-11 rounded-lg px-3 text-sm font-medium text-primary-600 hover:bg-gray-100 hover:text-primary-700 dark:text-primary-200 dark:hover:bg-slate-800"
                         >
                           Unlock
                         </button>
@@ -381,6 +365,7 @@ export default function PeriodLocksPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </SettingsPageShell>
   );

@@ -124,7 +124,7 @@ export default function AttendancePolicySettingsPage() {
           <label className="block text-sm">
             <span className="text-text-secondary">How to detect late</span>
             <select
-              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
+              className="input mt-1 w-full"
               value={policy.late_detection_mode}
               onChange={(e) =>
                 setPolicy({ ...policy, late_detection_mode: e.target.value as LateDetectionMode })
@@ -167,7 +167,7 @@ export default function AttendancePolicySettingsPage() {
               <label className="block text-sm">
                 <span className="text-text-secondary">Deduction style</span>
                 <select
-                  className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   value={policy.late_deduction_mode}
                   onChange={(e) =>
                     setPolicy({
@@ -255,7 +255,7 @@ export default function AttendancePolicySettingsPage() {
           <label className="block text-sm">
             <span className="text-text-secondary">Daily rate basis</span>
             <select
-              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
+              className="input mt-1 w-full"
               value={policy.daily_rate_basis}
               onChange={(e) =>
                 setPolicy({ ...policy, daily_rate_basis: e.target.value as DailyRateBasis })

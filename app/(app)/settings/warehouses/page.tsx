@@ -10,6 +10,9 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
+import { Button } from '@/components/ui/Button';
+import { InfoCallout } from '@/components/ui/InfoCallout';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface Location {
@@ -251,68 +254,53 @@ export default function LocationsPage() {
         description="Manage multiple warehouses and godowns"
         icon={MapPin}
         actions={
-          <button
-            onClick={() => router.push('/settings/warehouses/new')}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add Warehouse</span>
-          </button>
+          <Button onClick={() => router.push('/settings/warehouses/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add warehouse
+          </Button>
         }
       >
 
         {/* Enterprise Feature Banner */}
-        <div className="bg-gradient-to-r from-purple-50 to-slate-50 border border-purple-200 dark:border-purple-800/60 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <MapPin className="w-5 h-5 text-purple-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-purple-900 dark:text-purple-300">Enterprise Feature</p>
-              <p className="text-sm text-purple-700 mt-1">
-                Multi-warehouse support allows you to manage inventory and sales across multiple warehouses, 
-                godowns, or storage locations.
-              </p>
-            </div>
-          </div>
-        </div>
+        <InfoCallout tone="neutral" icon={MapPin} title="About warehouses">
+          Multi-warehouse support lets you manage inventory and sales across multiple warehouses, godowns or storage locations.
+        </InfoCallout>
 
         {/* Locations Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {loading ? (
             <div className="col-span-full p-12 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             </div>
           ) : locations.length === 0 ? (
-            <div className="col-span-full p-12 text-center bg-surface rounded-xl shadow-sm border border-border">
-              <MapPin className="w-12 h-12 text-text-muted mx-auto mb-4" />
-              <p className="text-text-secondary">No warehouses found</p>
-              <button
-                onClick={() => router.push('/settings/warehouses/new')}
-                className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-              >
-                Add Your First Warehouse
-              </button>
-            </div>
+            <EmptyState
+              className="card col-span-full"
+              icon={MapPin}
+              title="No warehouses yet"
+              description="Add a warehouse or godown to track stock by location."
+              action={<Button onClick={() => router.push('/settings/warehouses/new')}>Add your first warehouse</Button>}
+            />
           ) : (
             locations.map((location) => (
               <div
                 key={location.id}
-                className="bg-surface rounded-xl shadow-sm border border-border p-6 hover:shadow-md transition"
+                className="card min-w-0 p-4 transition hover:shadow-md md:p-5"
               >
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-3">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
                       <MapPin className="w-5 h-5 text-primary-600" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-text-primary">{location.name}</h3>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-text-primary" title={location.name}>{location.name}</h3>
                       {location.location_code && (
                         <p className="text-xs text-text-muted">{location.location_code}</p>
                       )}
                     </div>
                   </div>
                   {location.is_primary && (
-                    <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
+                    <div className="flex shrink-0 items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                       <CheckCircle className="w-3 h-3" />
                       <span>Primary</span>
                     </div>
@@ -342,13 +330,13 @@ export default function LocationsPage() {
                     <p className="text-xs font-semibold text-primary-900 dark:text-primary-200 uppercase mb-2">Linked to Branches:</p>
                     <div className="space-y-1">
                       {location.linked_branches.map((branch) => (
-                        <div key={branch.branch_id} className="flex items-center justify-between text-sm">
-                          <span className="text-primary-800 dark:text-primary-200">
+                        <div key={branch.branch_id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="min-w-0 truncate text-primary-800 dark:text-primary-200">
                             {branch.branch_name}
                             {branch.branch_code && ` (${branch.branch_code})`}
                           </span>
                           {branch.is_primary && (
-                            <span className="text-xs bg-primary-200 text-primary-900 dark:text-primary-200 px-2 py-0.5 rounded-full font-medium">
+                            <span className="shrink-0 rounded-full bg-primary-200 px-2 py-0.5 text-xs font-medium text-primary-900 dark:bg-slate-700 dark:text-primary-200">
                               ⭐ Primary
                             </span>
                           )}
@@ -375,36 +363,36 @@ export default function LocationsPage() {
                   )}
                   {location.email && (
                     <div className="flex items-center space-x-2 text-sm text-text-secondary">
-                      <Mail className="w-4 h-4" />
-                      <span>{location.email}</span>
+                      <Mail className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 break-all">{location.email}</span>
                     </div>
                   )}
                 </div>
 
                 {/* Actions */}
                 <div className="mt-4 pt-4 border-t border-border space-y-2">
-                  <div className="flex justify-between">
-                    <button 
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => router.push(`/reports/stock/valuation?warehouse_id=${location.id}`)}
-                      className="text-sm text-primary-600 hover:text-primary-700 font-medium cursor-pointer transition"
                     >
-                      View Stock
-                    </button>
-                    <div className="flex items-center space-x-3">
-                      <button 
-                        onClick={() => router.push(`/settings/warehouses/${location.id}/edit`)}
-                        className="text-sm text-text-secondary hover:text-text-secondary cursor-pointer transition"
-                      >
+                      View stock
+                    </Button>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => router.push(`/settings/warehouses/${location.id}/edit`)}>
                         Edit
-                      </button>
-                      <button 
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleDeleteWarehouse(location.id, location.name)}
                         disabled={deletingWarehouseId === location.id}
-                        className="text-sm text-red-600 hover:text-red-700 cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                        className="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                       >
-                        <Trash2 className="w-4 h-4" />
-                        <span>{deletingWarehouseId === location.id ? 'Deleting...' : 'Delete'}</span>
-                      </button>
+                        <Trash2 className="mr-1.5 h-4 w-4" />
+                        {deletingWarehouseId === location.id ? 'Deleting...' : 'Delete'}
+                      </Button>
                     </div>
                   </div>
                   <button
@@ -414,7 +402,7 @@ export default function LocationsPage() {
                       }
                     }}
                     disabled={migratingWarehouseId === location.id}
-                    className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/30 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full min-h-11 flex items-center justify-center space-x-2 px-3 py-2 text-sm bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/30 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Package className="w-4 h-4" />
                     <span>

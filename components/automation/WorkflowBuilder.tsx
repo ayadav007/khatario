@@ -98,7 +98,7 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
                   type="text"
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-gray-200"
+                  className="input w-full"
                   placeholder="e.g., Send payment reminder"
                 />
               </div>
@@ -108,7 +108,7 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
                 <select
                   value={editing.triggerType}
                   onChange={(e) => setEditing({ ...editing, triggerType: e.target.value })}
-                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-gray-200"
+                  className="input w-full"
                 >
                   <option value="">Select trigger...</option>
                   {TRIGGERS.map((t) => (
@@ -119,7 +119,7 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
 
               <div>
                 <label className="block text-sm font-medium mb-1 dark:text-gray-300">Actions</label>
-                <select className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-gray-200">
+                <select className="input w-full">
                   <option value="">Select action...</option>
                   {ACTIONS.map((a) => (
                     <option key={a.id} value={a.id}>{a.label}</option>
