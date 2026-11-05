@@ -1,4 +1,4 @@
-import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress, freeShipText } from '@/lib/store/quick';
+import { cartSavings, couponLabel, couponOutlook, DEMO_FREE_DELIVERY_ABOVE, demoFreeAbove, freeDeliveryProgress, freeShipText } from '@/lib/store/quick';
 import { applyStorePreset, sanitizeStoreTheme, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
 import { resolveStudioSections, toQuickLayout, type StudioContext } from '@/lib/store/studio-layout';
 import { sanitizeStudioSections } from '@/lib/store/studio-sections';
@@ -86,6 +86,20 @@ describe('freeDeliveryProgress', () => {
   it('promises nothing without a single threshold', () => {
     expect(freeDeliveryProgress(300, null)).toBeNull();
     expect(freeDeliveryProgress(300, 0)).toBeNull();
+  });
+});
+
+describe('demoFreeAbove', () => {
+  it('gives a demo store without a branch amount the 299 its Bazaar announcement promises', () => {
+    expect(DEMO_FREE_DELIVERY_ABOVE).toBe(299);
+    expect(demoFreeAbove(true, null)).toBe(299);
+    expect(demoFreeAbove(true, undefined)).toBe(299);
+  });
+  it('keeps a branch amount when there is one, and leaves real stores alone', () => {
+    expect(demoFreeAbove(true, 499)).toBe(499);
+    expect(demoFreeAbove(false, null)).toBeNull();
+    expect(demoFreeAbove(false, undefined)).toBeNull();
+    expect(demoFreeAbove(false, 499)).toBe(499);
   });
 });
 

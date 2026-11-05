@@ -36,6 +36,14 @@ export function indianMobile(raw: string): string | null {
   return null;
 }
 
+/**
+ * Whether the cart shows "Order on WhatsApp instead": the theme turned it on and the store's WhatsApp link holds an
+ * Indian mobile number. A demo store needs no number (its click only shows a notice), so the button still appears there.
+ */
+export function whatsappButtonShown(cart: { whatsappOrder: boolean; isDemo: boolean; whatsappLink: string }): boolean {
+  return cart.whatsappOrder && (cart.isDemo || whatsappNumber(cart.whatsappLink) != null);
+}
+
 export interface WhatsappOrderLine {
   name: string;
   /** The pack the shopper chose ("1 L"), when the product has packs. */

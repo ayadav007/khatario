@@ -15,6 +15,15 @@ export function freeDeliveryProgress(subtotal: number, freeAbove: number | null 
   return { remaining, ratio: Math.min(1, Math.max(0, subtotal / freeAbove)) };
 }
 
+/** The free-delivery amount a demo store promises (its Bazaar Bright announcement says "above ₹299"). */
+export const DEMO_FREE_DELIVERY_ABOVE = 299;
+
+/** A demo store has no branches, so it borrows the demo amount; a branch amount wins, and real stores are untouched. */
+export function demoFreeAbove(isDemo: boolean, branchAmount: number | null | undefined): number | null {
+  if (branchAmount != null) return branchAmount;
+  return isDemo ? DEMO_FREE_DELIVERY_ABOVE : null;
+}
+
 /** The cart drawer's free-delivery line (theme setting `cart_free_ship_bar`). */
 export function freeShipText(progress: FreeDeliveryProgress): string {
   return progress.remaining > 0

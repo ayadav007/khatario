@@ -33,6 +33,7 @@ import '../studio-theme/studio-theme.css';
 import { EngineCardContext } from './EngineCardContext';
 import { ENGINE_BASE_RULES } from './base-rules';
 import { STYLE_RULES } from './style-rules';
+import { demoFreeAbove } from '@/lib/store/quick';
 import { CONTENT_BLOCK_RULES } from './content-block-rules';
 import { PREMIUM_SECTION_RULES } from './premium-section-rules';
 import './presets/quick.css';
@@ -371,11 +372,13 @@ export function EngineShell({
   const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
   const freeAbove = branch?.free_delivery_above ?? null;
   const isDemo = !!store?.is_demo;
+  // A demo store has no branch, so the cart's free-delivery bar borrows the demo amount (real stores are unchanged).
+  const cartFreeAbove = demoFreeAbove(isDemo, freeAbove);
   // The theme's Cart settings for the drawer (and the phone cart sheet). `=== true` / `||`: an unsaved editor value
   // may not be sanitised yet.
   const engineCart = useMemo<EngineCart>(
     () => ({
-      freeAbove,
+      freeAbove: cartFreeAbove,
       freeShipBar: settings.cart_free_ship_bar === true,
       suggestions: settings.cart_suggestions === true,
       suggestionsHeading: settings.cart_suggestions_heading || 'Pair it with',
@@ -384,7 +387,7 @@ export function EngineShell({
       isDemo,
     }),
     [
-      freeAbove,
+      cartFreeAbove,
       settings.cart_free_ship_bar,
       settings.cart_suggestions,
       settings.cart_suggestions_heading,

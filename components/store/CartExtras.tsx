@@ -9,7 +9,7 @@ import { freeDeliveryProgress, freeShipText } from '@/lib/store/quick';
 import { cartCategoryIds, cartLookupParams, pickSuggestions, suggestionsParams } from '@/lib/store/cart-suggestions';
 import { engineProductHref } from '@/lib/store/engine/links';
 import { storePinKey } from '@/lib/store/store-pincode';
-import { whatsappNumber, whatsappOrderText, whatsappOrderUrl } from '@/lib/store/whatsapp-order';
+import { whatsappButtonShown, whatsappNumber, whatsappOrderText, whatsappOrderUrl } from '@/lib/store/whatsapp-order';
 import type { StoreProduct } from './StoreProductCard';
 
 /**
@@ -192,20 +192,21 @@ export function CartSuggestionsRow({
 
 /**
  * "Order on WhatsApp instead", shown under Checkout when the theme turns it on and the store's WhatsApp link holds an
- * Indian mobile number. It opens a chat with the cart as the message (and the shopper's saved pincode) in a new tab
+ * Indian mobile number (a demo store needs no number). It opens a chat with the cart as the message (and the shopper's saved pincode) in a new tab
  * and leaves the cart as it is. A demo store shows a notice instead, so no real chat opens.
  */
 export function WhatsappOrderButton({ engineCart, className }: { engineCart?: EngineCart; className?: string }) {
   const { store, cart } = useStore();
   const [demoNotice, setDemoNotice] = useState(false);
-  const number = engineCart?.whatsappOrder ? whatsappNumber(engineCart.whatsappLink) : null;
-  if (!engineCart || !number || !store || !cart.length) return null;
+  if (!engineCart || !whatsappButtonShown(engineCart) || !store || !cart.length) return null;
+  const number = whatsappNumber(engineCart.whatsappLink);
 
   const open = () => {
     if (engineCart.isDemo) {
       setDemoNotice(true);
       return;
     }
+    if (!number) return;
     let pincode = '';
     try {
       pincode = localStorage.getItem(storePinKey(store.store_subdomain)) ?? '';

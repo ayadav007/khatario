@@ -1,4 +1,4 @@
-import { whatsappNumber, whatsappOrderText, whatsappOrderUrl } from '@/lib/store/whatsapp-order';
+import { whatsappButtonShown, whatsappNumber, whatsappOrderText, whatsappOrderUrl } from '@/lib/store/whatsapp-order';
 
 describe('whatsappNumber', () => {
   it.each([
@@ -98,5 +98,23 @@ describe('whatsappOrderUrl', () => {
     expect(query.split('&')).toHaveLength(1);
     expect(decodeURIComponent(query.slice('text='.length))).toBe(text);
     expect(new URL(url).searchParams.get('text')).toBe(text);
+  });
+});
+
+describe('whatsappButtonShown', () => {
+  const on = { whatsappOrder: true, isDemo: false, whatsappLink: 'https://wa.me/9845012345' };
+  it('shows for a store with the setting on and an Indian mobile in its WhatsApp link', () => {
+    expect(whatsappButtonShown(on)).toBe(true);
+  });
+  it('hides when the theme setting is off', () => {
+    expect(whatsappButtonShown({ ...on, whatsappOrder: false })).toBe(false);
+    expect(whatsappButtonShown({ ...on, whatsappOrder: false, isDemo: true })).toBe(false);
+  });
+  it('hides for a real store without a usable number', () => {
+    expect(whatsappButtonShown({ ...on, whatsappLink: '' })).toBe(false);
+    expect(whatsappButtonShown({ ...on, whatsappLink: 'https://example.com/chat' })).toBe(false);
+  });
+  it('shows in a demo store even with no number, since the click only shows the demo notice', () => {
+    expect(whatsappButtonShown({ whatsappOrder: true, isDemo: true, whatsappLink: '' })).toBe(true);
   });
 });
