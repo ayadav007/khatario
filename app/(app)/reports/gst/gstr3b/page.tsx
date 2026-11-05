@@ -392,8 +392,14 @@ export default function GSTR3BPage() {
                     : []),
                   { label: '(A)(3) Inward supplies liable to reverse charge (other than 1 & 2)', data: data.itc_details.inward_reverse_charge },
                   { label: '(A)(5) All other ITC', data: data.itc_details.other_itc },
-                  { label: '(B)(1) ITC reversed — Rule 38/42/43 & s.17(5) blocked credit', data: data.itc_details.itc_reversed },
-                  { label: '(C) Net ITC Available (A) - (B)', data: data.itc_details.net_itc }
+                  { label: '(B)(1) ITC reversed — Rule 38/42/43 & s.17(5)', data: data.itc_details.itc_reversed_rules ?? data.itc_details.itc_reversed },
+                  ...(data.itc_details.itc_reversed_others
+                    ? [{ label: '(B)(2) ITC reversed — Others (Rule 37, re-claimable)', data: data.itc_details.itc_reversed_others }]
+                    : []),
+                  { label: '(C) Net ITC Available (A) - (B)', data: data.itc_details.net_itc },
+                  ...(data.itc_details.itc_reclaimed
+                    ? [{ label: '(D)(1) ITC reclaimed which was reversed under (B)(2) earlier', data: data.itc_details.itc_reclaimed }]
+                    : []),
                 ]}
               />
             </Section>

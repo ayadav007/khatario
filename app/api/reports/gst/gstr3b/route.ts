@@ -181,15 +181,22 @@ export async function GET(request: NextRequest) {
               csamt: data.itc_details.other_itc.cess
             },
           ],
+          // 4B(1) Rule 38/42/43 and s.17(5); 4B(2) others (Rule 37).
           itc_rev: [
             {
               ty: "RUL",
-              iamt: data.itc_details.itc_reversed.igst,
-              camt: data.itc_details.itc_reversed.cgst,
-              samt: data.itc_details.itc_reversed.sgst,
-              csamt: data.itc_details.itc_reversed.cess
+              iamt: data.itc_details.itc_reversed_rules.igst,
+              camt: data.itc_details.itc_reversed_rules.cgst,
+              samt: data.itc_details.itc_reversed_rules.sgst,
+              csamt: data.itc_details.itc_reversed_rules.cess
             },
-            { ty: "OTH", iamt: 0, camt: 0, samt: 0, csamt: 0 },
+            {
+              ty: "OTH",
+              iamt: data.itc_details.itc_reversed_others.igst,
+              camt: data.itc_details.itc_reversed_others.cgst,
+              samt: data.itc_details.itc_reversed_others.sgst,
+              csamt: data.itc_details.itc_reversed_others.cess
+            },
           ],
           itc_net: {
             iamt: data.itc_details.net_itc.igst,
@@ -197,6 +204,17 @@ export async function GET(request: NextRequest) {
             samt: data.itc_details.net_itc.sgst,
             csamt: data.itc_details.net_itc.cess
           },
+          // 4D(1) credit reversed under 4B(2) earlier and re-claimed this period; 4D(2) not tracked.
+          itc_inelg: [
+            {
+              ty: "RUL",
+              iamt: data.itc_details.itc_reclaimed.igst,
+              camt: data.itc_details.itc_reclaimed.cgst,
+              samt: data.itc_details.itc_reclaimed.sgst,
+              csamt: data.itc_details.itc_reclaimed.cess
+            },
+            { ty: "OTH", iamt: 0, camt: 0, samt: 0, csamt: 0 },
+          ],
         },
         intr_ltfee: {
           intr_details: {
