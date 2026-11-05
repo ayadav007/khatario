@@ -1027,3 +1027,32 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** the inter-branch invoice and the same-GSTIN challan are raised at dispatch (s.31(1)(a): when goods are removed), dated at dispatch, from quantity_dispatched; dispatch takes optional per-item quantities (API only; the screens still dispatch everything). Old-flow transfers that already have an invoice get a credit note for what was not dispatched (reusing the short credit note). E-way bill number moves from create/approve to dispatch (no screen sent it). Settlement: own table plus voucher type `inter_branch_settlement`; payment mode needs a cash/bank account per branch; netting mode only up to the smaller of the two directions; open balance counts only invoices the receiver has booked (so 2111 never goes negative); guarded per branch with guardLedgerRoute (journal rights, ledger feature, period lock); page gated on multi_branch in Sidebar and More.
 - **Shipped:** branch `fix/branch-gst-safety`: "Inter-branch invoice and transfer challan raised at dispatch…", "Settle inter-branch balances". Migration `451_inter_branch_settlements.sql` (local test DB only). Tests: `tests/db/inter-branch-settlement.db.test.ts` (3 pass), stock-transfer-challan test updated. 13 transfer DB suites: 60 failures on both main and branch, none new. Unit: same 6 pre-existing failing suites. `tsc` clean.
 - **Open:** partial-dispatch inputs on the transfer screen; settlement page not exercised in a browser; ISD/cross-charge (network); remaining audit items (ITC-04 per GSTIN, 3B portal marks per GSTIN, consolidation eliminations, downgrade gate, challan branch access, branch delete pre-check).
+
+## 2026-11-05: Branch GST safety brought onto main (not pushed)
+- **Asked:** after the settings merge, "yes": copy `fix/branch-gst-safety` onto main, renumber its migrations, run the typecheck and tests, and stop before pushing (the push deploys staging and runs pending migrations there).
+- **Decided:**
+  - **Branch history:** `fix/branch-gst-safety`, `fix/gst-multi-gstin-compliance` and `claude/todo-session-scoping` share no history with main, so none can be merged as is.
+  - **Already in main:**
+    - `gst-multi-gstin-compliance`: its migrations 446–448 are main's 455–457.
+    - `todo-session-scoping`: all the files it added are in main.
+  - **Missing, ported:** gst-safety's 10 commits, cherry-picked with `-x` on `fix/branch-gst-safety-on-main`.
+  - **Conflicts resolved toward main's design:**
+    - The branch route keeps main's `checkBranchPlace` (not `branchOutsideRegistrationState`). It adds the registration lock once documents exist, the settings.update rule for GSTIN, state, flag and prefix changes, the default-branch deactivate block and the branch-limit check on reactivation.
+    - Dispatch keeps main's `issueTransferChallan`. It now also raises the inter-branch invoice at dispatch, for the quantity sent and dated at dispatch, and passes that invoice id to the challan check.
+    - Approval and create no longer raise the invoice.
+    - Transfers approved under the old flow get a credit note for what was not sent.
+    - The challan query now takes only `quantity_dispatched`, so an item dispatched as 0 is not put on the challan at its requested quantity.
+  - **Migration renumbering:** 449/450/451 became 465/466/467 (main ends at 464), with their headers and the DB tests' file paths updated. Earlier log entries keep the old numbers.
+- **Shipped:** branch `fix/branch-gst-safety-on-main`, not pushed and not merged to main.
+  - **Typecheck:** `tsc` clean.
+  - **Non-DB jest:** 4745 pass. The 13 failures in 12 suites fail the same on main.
+  - **DB tests:** on a disposable local `kh_phase2_test` (schema.sql plus all migrations; 16 pre-400 files fail on plan seed data), these pass:
+    - branch-gst-safety, gst-returns-per-gstin, inter-branch-settlement and inter-branch-shortfall: 17 tests;
+    - stock-transfer-challan: 6 tests;
+    - gst-multi-gstin-series.
+  - **Full DB folder:** the branch and main fail the same 31 suites and 189 tests (missing seed data).
+  - The branch-update route tests pass, 12 of 12.
+- **Open:**
+  - Pushing to main runs migrations 465–467 on staging, so the owner should approve that push.
+  - Not tried in a browser.
+  - The invoice DB suites could not run locally (plan seed data), so the invoice path through the new note rules is covered only by branch-gst-safety.
