@@ -142,8 +142,17 @@ export const Sidebar = React.memo(function Sidebar() {
   useEffect(() => {
     const read = () => setLocationHash(window.location.hash.replace(/^#/, ''));
     read();
+    // Next's <Link> changes the hash with pushState, which fires no hashchange event, so also
+    // re-read after any click and on back/forward.
+    const readAfterClick = () => window.setTimeout(read, 0);
     window.addEventListener('hashchange', read);
-    return () => window.removeEventListener('hashchange', read);
+    window.addEventListener('popstate', read);
+    document.addEventListener('click', readAfterClick, true);
+    return () => {
+      window.removeEventListener('hashchange', read);
+      window.removeEventListener('popstate', read);
+      document.removeEventListener('click', readAfterClick, true);
+    };
   }, [pathname]);
   const { business, user, isPrimaryAdmin, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
@@ -1020,18 +1029,19 @@ export const Sidebar = React.memo(function Sidebar() {
       }),
     }));
 
+    // Exit links first, so they are reachable without scrolling past every group.
     return [
-      ...items,
-      {
-        href: '/settings',
-        label: 'All settings',
-        icon: SlidersHorizontal,
-      },
       {
         href: homeHref,
         label: 'Back to Dashboard',
         icon: ArrowLeft,
       },
+      {
+        href: '/settings',
+        label: 'All settings',
+        icon: SlidersHorizontal,
+      },
+      ...items,
     ];
   }, [isSettingsPage, enabledModules, hasFeature, homeHref, supplierHubVisible]);
 
@@ -1155,6 +1165,24 @@ export const Sidebar = React.memo(function Sidebar() {
       });
     }
   }, [openSections]);
+
+  // Bring the active row into view when it changes (the settings list is taller than most laptop
+  // screens). Runs after the scroll restore above, and only moves the list when the row is hidden.
+  useEffect(() => {
+    if (!activeNavHref) return;
+    const timer = window.setTimeout(() => {
+      const nav = navRef.current;
+      const row = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!nav || !row) return;
+      const navRect = nav.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      if (rowRect.top < navRect.top || rowRect.bottom > navRect.bottom) {
+        row.scrollIntoView({ block: 'nearest' });
+        scrollPositionRef.current = nav.scrollTop;
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [activeNavHref]);
 
   const toggleSection = (label: string, e?: React.MouseEvent) => {
     if (e) {
@@ -1337,7 +1365,7 @@ export const Sidebar = React.memo(function Sidebar() {
                             rowClass(isSubItem),
                             sidebarCollapsed && 'justify-center'
                           )}
-                          title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
+                          title={`${item.label}: upgrade to unlock`}
                         >
                           {item.icon && (
                             <span className="relative flex-shrink-0">
