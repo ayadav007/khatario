@@ -37,9 +37,10 @@ function forwardSetCookies(from: Response, to: NextResponse): void {
 }
 
 /**
- * Headers that route handlers treat as proof of authentication. Only this
- * middleware may set them; any client-supplied copy must be dropped before the
- * request reaches a handler (store subdomains, public paths, offline shells).
+ * Headers that route handlers treat as proof of authentication, or as middleware-verified request
+ * context. Only this middleware may set them; any client-supplied copy is dropped on every path
+ * that forwards the request (static files, store subdomains, public paths, offline shells), and
+ * only verified values are set afterwards. `x-khatario-pathname` drives authorize()'s plan gate.
  */
 const TRUSTED_IDENTITY_HEADERS = [
   'x-authenticated-user-id',
@@ -48,6 +49,7 @@ const TRUSTED_IDENTITY_HEADERS = [
   'x-platform-admin-id',
   'x-platform-admin-session-version',
   'x-offline-catalog-session',
+  'x-khatario-pathname',
   EMPLOYEE_PORTAL_SESSION_HEADER,
 ];
 
@@ -64,6 +66,11 @@ function hasSpoofedIdentityHeader(request: NextRequest): boolean {
 function nextWithoutSpoofedIdentity(request: NextRequest): NextResponse {
   if (!hasSpoofedIdentityHeader(request)) return NextResponse.next();
   return NextResponse.next({ request: { headers: sanitizedRequestHeaders(request) } });
+}
+
+function rewriteWithoutSpoofedIdentity(request: NextRequest, url: URL): NextResponse {
+  if (!hasSpoofedIdentityHeader(request)) return NextResponse.rewrite(url);
+  return NextResponse.rewrite(url, { request: { headers: sanitizedRequestHeaders(request) } });
 }
 
 const PUBLIC_PATHS = new Set([
@@ -222,7 +229,13 @@ function isPartnerProtectedPath(pathname: string): boolean {
   return false;
 }
 
+/**
+ * Files served as-is, skipping authentication. An /api/ path is never a static asset, whatever its
+ * last segment looks like: route handlers such as /api/whatsapp/media/[name] take file-like names
+ * and must go through the session checks below.
+ */
 function isStaticAsset(pathname: string): boolean {
+  if (pathname === '/api' || pathname.startsWith('/api/')) return false;
   return (
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/images/') ||
@@ -265,7 +278,8 @@ function allowOfflineAppShellNavigation(request: NextRequest): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isStaticAsset(pathname)) return NextResponse.next();
+  // Static files skip authentication but never carry client-supplied identity.
+  if (isStaticAsset(pathname)) return nextWithoutSpoofedIdentity(request);
 
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
@@ -294,12 +308,12 @@ export async function middleware(request: NextRequest) {
           : '/';
       url.pathname = safe === '/' ? '/store' : `/store${safe}`;
       url.search = '';
-      const response = NextResponse.rewrite(url);
+      const response = rewriteWithoutSpoofedIdentity(request, url);
       response.headers.set('x-store-subdomain', storeSubdomain);
       return response;
     }
     url.pathname = pathname === '/' ? '/store' : `/store${pathname}`;
-    const response = NextResponse.rewrite(url);
+    const response = rewriteWithoutSpoofedIdentity(request, url);
     response.headers.set('x-store-subdomain', storeSubdomain);
     return response;
   }
