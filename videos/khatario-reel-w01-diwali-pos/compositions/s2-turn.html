@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+#root{position:absolute;inset:0;background:#F7F4EE;overflow:hidden;font-family:Inter,sans-serif;color:#063F35}
+.k-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(6,63,53,.10) 2px,transparent 2.5px);background-size:36px 36px}
+.k-stage{position:absolute;inset:0}
+.k-burst{position:absolute;left:140px;top:300px;width:800px;height:800px;border-radius:50%;background:#F58220}
+.k-center{position:absolute;left:0;top:300px;width:1080px;height:800px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.k-big{font:900 190px/1 Montserrat,sans-serif;letter-spacing:-.03em;color:#063F35}
+.k-pill{margin-top:44px;padding:16px 40px;border-radius:999px;background:#063F35;color:#F7F4EE;font:700 44px/1.2 Inter,sans-serif}
+</style>
+      <div data-hf-id="hf-6yee" id="root" data-composition-id="s2-turn" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-5n5k" class="k-dots"></div>
+        <div data-hf-id="hf-fhca" class="k-stage" id="s2-stage">
+          <div data-hf-id="hf-bnyq" class="k-burst" id="s2-burst"></div>
+          <div data-hf-id="hf-dlc7" class="k-center">
+            <div data-hf-id="hf-uazd" class="k-big" id="s2-big">Ab nahi.</div>
+            <div data-hf-id="hf-war3" class="k-pill" id="s2-pill">Khatario POS</div>
+          </div>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s2-burst", { scale: 0.2, opacity: 0 }, { scale: 1, opacity: 1, transformOrigin: "50% 50%", duration: 0.45, ease: "power4.out" }, 0);
+        tl.fromTo("#s2-big", { scale: 1.35, opacity: 0 }, { scale: 1, opacity: 1, transformOrigin: "50% 50%", duration: 0.4, ease: "power4.out" }, 0.08);
+        tl.fromTo("#s2-pill", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 0.6);
+        tl.to("#s2-stage", { opacity: 0, duration: 0.25, ease: "power1.in" }, 1.75);
+        window.__timelines["s2-turn"] = tl;
+      </script>
+    </template>
+  </body>
+</html>
