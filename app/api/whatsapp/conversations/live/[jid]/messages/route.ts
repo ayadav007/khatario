@@ -19,7 +19,8 @@ import {
   liveOwnerId,
   loadOwnership,
 } from '@/lib/whatsapp/inbox-ownership';
-import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { proto } from '@whiskeysockets/baileys';
+import { waMediaRefUrlFromMessage } from '@/lib/whatsapp/media-ref-server';
 import { extractWebMessageInfoTimestampSec, orderResolveMessageTimestamps, normalizeMessage } from '@/lib/baileys-store-helpers';
 import { loadOutboundMedia, OutboundMediaError } from '@/lib/http/outbound-media';
 
@@ -178,30 +179,8 @@ async function transformOneProtoToFrontend(
   const fromNumber = key?.fromMe ? null : (key?.participant || key?.remoteJid || '').split('@')[0];
   const toNumber = key?.fromMe ? (key?.remoteJid || '').split('@')[0] : null;
 
-  let mediaUrl: string | null = null;
-  try {
-    if (message?.imageMessage || message?.videoMessage || message?.audioMessage || message?.documentMessage || message?.stickerMessage) {
-      const buffer = await downloadMediaMessage(msg as any, 'buffer', {});
-      if (buffer && buffer.length > 0) {
-        const base64 = buffer.toString('base64');
-        let mimeType = 'application/octet-stream';
-        if (message?.imageMessage) {
-          mimeType = message.imageMessage.mimetype || 'image/jpeg';
-        } else if (message?.videoMessage) {
-          mimeType = message.videoMessage.mimetype || 'video/mp4';
-        } else if (message?.audioMessage) {
-          mimeType = message.audioMessage.mimetype || 'audio/ogg';
-        } else if (message?.documentMessage) {
-          mimeType = message.documentMessage.mimetype || 'application/pdf';
-        } else if (message?.stickerMessage) {
-          mimeType = message.stickerMessage.mimetype || 'image/webp';
-        }
-        mediaUrl = `data:${mimeType};base64,${base64}`;
-      }
-    }
-  } catch (mediaError) {
-    console.error(`[Live Messages] ⚠️ Failed to download media for message ${key?.id}:`, mediaError);
-  }
+  // A signed link to WhatsApp's encrypted copy; the browser fetches and decrypts it.
+  const mediaUrl: string | null = waMediaRefUrlFromMessage(message) ?? null;
 
   return {
     id: key?.id || '',

@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, X, Bot, Megaphone, User, Loader2, RefreshCw } from 'lucide-react';
+import { Check, CheckCheck, X, Bot, Megaphone, User, Loader2, RefreshCw, Download } from 'lucide-react';
 import { clsx } from 'clsx';
 import { MediaLightbox } from './MediaLightbox';
 import { AudioPlayer } from './AudioPlayer';
 import { DocumentViewer } from './DocumentViewer';
+import { useWaMedia, formatMediaSize } from './useWaMedia';
 import { waChat } from '@/lib/whatsapp-chat-typography';
 
 export interface MessageReaction {
@@ -115,10 +116,15 @@ export function MessageBubble({
   const [imageLoadState, setImageLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [mediaRetrying, setMediaRetrying] = useState(false);
   const [imageRetryNonce, setImageRetryNonce] = useState(0);
+  // WhatsApp media is fetched from WhatsApp and decrypted in this browser (see useWaMedia).
+  const media = useWaMedia(message.media_url);
+  const mediaSrc = media.src;
+  // A media message with no link after a couple of minutes will not get one (old media cleared, or none sent).
+  const mediaStillArriving = Date.now() - new Date(message.created_at).getTime() < 2 * 60_000;
 
   useEffect(() => {
     setImageLoadState('loading');
-  }, [message.id, message.media_url]);
+  }, [message.id, mediaSrc]);
 
   const handleMediaRetry = () => {
     if (!onMediaRefresh) return;
@@ -242,20 +248,23 @@ export function MessageBubble({
                 className={clsx(waChat.msgSecondary, 'mb-2 p-3 bg-[#f0f2f5] rounded border border-dashed border-gray-300 flex flex-col gap-2')}
               >
                 <div className="flex items-center gap-2">
-                  <Loader2
-                    className="w-6 h-6 shrink-0 text-primary-500 animate-spin"
-                    aria-hidden
-                  />
+                  {mediaStillArriving && (
+                    <Loader2
+                      className="w-6 h-6 shrink-0 text-primary-500 animate-spin"
+                      aria-hidden
+                    />
+                  )}
                   <span>
                     {message.message_type === 'image' && '📷 '}
                     {message.message_type === 'video' && '🎥 '}
                     {message.message_type === 'audio' && '🎵 '}
                     {message.message_type === 'document' && '📄 '}
                     {message.message_type === 'sticker' && '🎭 '}
-                    Preparing media…{message.message_text ? ` — ${message.message_text}` : ''}
+                    {mediaStillArriving ? 'Preparing media…' : 'Not kept here — open WhatsApp on the phone'}
+                    {message.message_text ? ` — ${message.message_text}` : ''}
                   </span>
                 </div>
-                {onMediaRefresh && (
+                {onMediaRefresh && mediaStillArriving && (
                   <button
                     type="button"
                     onClick={handleMediaRetry}
@@ -269,11 +278,33 @@ export function MessageBubble({
               </div>
             )}
 
+          {/* WhatsApp media not loaded yet: a spinner, or a button for big videos and files */}
+          {message.media_url && !mediaSrc && (
+            <div className={clsx(waChat.msgSecondary, 'mb-2 flex min-h-[64px] items-center gap-2 rounded bg-[#f0f2f5] p-3 text-[#667781]')}>
+              {media.state === 'loading' ? (
+                <>
+                  <Loader2 className="h-6 w-6 shrink-0 animate-spin text-primary-500" aria-hidden />
+                  <span>Loading…</span>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={media.load}
+                  className={clsx(waChat.msgTime, 'inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-[#111b21] hover:bg-gray-50')}
+                >
+                  <Download className="h-4 w-4" aria-hidden />
+                  {message.message_type === 'video' ? 'Load video' : message.message_type === 'document' ? 'Load file' : 'Load'}
+                  {media.ref?.n ? ` · ${formatMediaSize(media.ref.n)}` : ''}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Media (Image, Video, Document, Audio) */}
-          {message.media_url && (
+          {message.media_url && mediaSrc && (
             <div className="mb-2 rounded overflow-hidden">
               {message.message_type === 'sticker' && (
-                <img src={message.media_url} alt="Sticker" className="h-32 w-32 object-contain" />
+                <img src={mediaSrc} alt="Sticker" className="h-32 w-32 object-contain" />
               )}
               {(message.message_type === 'image' || !message.message_type) && (
                 <div 
@@ -308,8 +339,8 @@ export function MessageBubble({
                     </div>
                   )}
                   <img 
-                    key={`${message.id}-${message.media_url}-${imageRetryNonce}`}
-                    src={message.media_url} 
+                    key={`${message.id}-${mediaSrc}-${imageRetryNonce}`}
+                    src={mediaSrc}
                     alt={message.message_text || 'Message attachment'}
                     className={`max-w-full h-auto max-h-[300px] object-contain group-hover:opacity-90 transition ${
                       imageLoadState === 'ready' ? 'block' : 'sr-only'
@@ -334,7 +365,7 @@ export function MessageBubble({
                   onClick={() => setIsLightboxOpen(true)}
                 >
                   <video 
-                    src={message.media_url} 
+                    src={mediaSrc}
                     className="max-w-full h-auto max-h-[300px] object-contain"
                   >
                     Your browser does not support video playback.
@@ -347,14 +378,14 @@ export function MessageBubble({
               
               {message.message_type === 'document' && (
                 <DocumentViewer
-                  documentUrl={message.media_url}
+                  documentUrl={mediaSrc}
                   fileName={message.message_text || 'Document'}
                 />
               )}
               
               {message.message_type === 'audio' && (
                 <AudioPlayer
-                  audioUrl={message.media_url}
+                  audioUrl={mediaSrc}
                   fileName={message.message_text || 'Audio'}
                 />
               )}
@@ -365,7 +396,7 @@ export function MessageBubble({
                     {message.message_type === 'sticker' ? '🎭' : '📎'}
                   </span>
                   <a 
-                    href={message.media_url} 
+                    href={mediaSrc}
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-primary-600 hover:underline"
@@ -488,10 +519,10 @@ export function MessageBubble({
       )}
 
       {/* Media Lightbox */}
-      {isLightboxOpen && message.media_url && (message.message_type === 'image' || message.message_type === 'video' || !message.message_type) && (
+      {isLightboxOpen && mediaSrc && (message.message_type === 'image' || message.message_type === 'video' || !message.message_type) && (
         <MediaLightbox
           media={{
-            url: message.media_url,
+            url: mediaSrc,
             type: message.message_type === 'video' ? 'video' : 'image',
             caption: message.message_text,
             timestamp: message.created_at,
