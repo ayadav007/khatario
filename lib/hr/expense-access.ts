@@ -21,7 +21,9 @@ export type ExpenseAccess =
  * employee-portal session. The ESS allowlist lets portal cookies through middleware unverified,
  * so a request with neither is refused here. The expense is looked up through `employees`, which
  * carries the tenant, so a row from another business is never loaded. A portal employee may only
- * reach their own expense; a business user needs the `expenses` permission for `action`.
+ * reach their own expense. A business user may reach their own expense (employees.id is the user
+ * id, as the expense-claim routes already assume) and needs the `expenses` permission for
+ * `action` on anyone else's.
  */
 export async function loadAccessibleExpense(
   request: NextRequest,
@@ -47,7 +49,7 @@ export async function loadAccessibleExpense(
        FROM employee_expenses e
        INNER JOIN employees emp ON emp.id = e.employee_id
        INNER JOIN businesses b ON b.id = emp.business_id
-       LEFT JOIN users u ON u.id = emp.user_id
+       LEFT JOIN users u ON u.id = emp.id
       WHERE e.id = $1 AND emp.business_id = $2`,
     [expenseId, actor.businessId],
   );
@@ -55,11 +57,12 @@ export async function loadAccessibleExpense(
     return { ok: false, response: NextResponse.json({ error: 'Expense not found' }, { status: 404 }) };
   }
 
-  if (actor.isPortal) {
-    if (expense.employee_id !== actor.userId) {
-      return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
-    }
+  // employees.id is the user id, so this is the caller's own expense (portal or console).
+  if (expense.employee_id === actor.userId) {
     return { ok: true, actor, expense };
+  }
+  if (actor.isPortal) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }
 
   try {
