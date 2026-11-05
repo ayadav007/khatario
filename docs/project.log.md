@@ -1044,3 +1044,13 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The repo cannot rebuild `kh_phase2_test` from source: `database/schema.sql` is partial and 16 of 490 migrations fail on top of it (001, 005, 008, 049, 075, 076, 111, 125, 130, 143, 204–206, 237, 238, 255, 338). The tests ran on that partial build after checking every table they touch exists.
   - Before applying 466 anywhere shared, run the two read-only membership count queries (review report).
   - Playwright not run (needs a running app and seeded database). `tests/lib` has six suites failing identically on `main`. `graphify` not installed here.
+
+## 2026-11-05: R7 middleware identity-header bypass fixed
+- **Asked:** investigate and fix R7 on a separate branch from `security/p1-remediation-fixes` (`a473f2e`), regression tests first, no merge or deploy, R5 left separate.
+- **Decided:**
+  - Root cause: `middleware.ts` returned `NextResponse.next()` for any path ending in `.png/.jpg/.webp/.svg/.ico/.css/.js/.woff/.woff2` before stripping client copies of the trusted headers, and the check matched `/api/` too. Demonstrated on a throwaway local `next dev` server with a temporary probe route: forged `x-authenticated-*` and `x-platform-admin-id` gave 401 on a plain path and 200 with the forged user and business on a `.png` path, no session.
+  - Fix: `/api/` paths are never static assets; the static branch forwards without client identity; store-subdomain rewrites forward without client identity; `x-khatario-pathname` (authorize()'s plan gate) is stripped like the identity headers. Sanitising rather than only reclassifying means a misclassified path still carries no identity.
+  - API routes serving file-like names (WhatsApp inbox media, admin videos, sales-flow media) now receive the verified session; before, the shortcut skipped it and their handlers returned 401 to signed-in users.
+  - `/_next/image` (excluded by the matcher) checked: its internal fetch of a local `/api/` URL goes through middleware and is refused without a session (tested on `next dev` only).
+- **Shipped:** branch `security/r7-middleware-header-fix`: `06cea03` (middleware fix + `tests/security/middleware-static-suffix-identity.test.ts`, 44 cases), plus this log and the roadmap card. No migrations.
+- **Open:** owner review; merge order relative to `security/p1-remediation-fixes`; staging probe after deploy (owner approval); Playwright auth specs not run (need a seeded database and E2E credentials); production exposure through Cloudflare unverified (nginx passes the headers through); R5 still open.
