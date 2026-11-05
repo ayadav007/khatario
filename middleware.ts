@@ -132,6 +132,8 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
   if (pathname.startsWith('/solution/')) return true;
+  /** Design-only marketing / UI previews (noindex pages under app/preview). */
+  if (pathname.startsWith('/preview/')) return true;
   if (pathname === '/themes' || pathname.startsWith('/themes/')) return true;
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return true;
   if (pathname.startsWith('/pay/upi/')) return true;
