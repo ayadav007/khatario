@@ -38,7 +38,7 @@ export async function GET(
     const warehouse = await db.queryOne(`
       SELECT w.*, b.name as branch_name, b.branch_code
       FROM warehouses w
-      LEFT JOIN branches b ON w.branch_id = b.id
+      LEFT JOIN branches b ON w.branch_id = b.id AND b.business_id = w.business_id
       WHERE w.id = $1 AND w.business_id = $2
     `, [params.id, businessId]);
 

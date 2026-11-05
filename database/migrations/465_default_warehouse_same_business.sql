@@ -2,7 +2,9 @@
 -- Description: The function joined branch_warehouses to warehouses without checking that the linked
 -- warehouse and the branch share a business. A cross-tenant link row (now refused by the API) would
 -- have routed one business's stock postings into another business's warehouse. Every lookup now
--- requires w.business_id = b.business_id.
+-- requires w.business_id = b.business_id, and each step picks the oldest matching warehouse
+-- (created_at, then id), so a branch with several primary warehouses always gets the same one;
+-- this matches the warehouse-mode switch's picker.
 -- Created: 2026-11-05
 
 CREATE OR REPLACE FUNCTION get_default_warehouse_for_branch(
@@ -21,6 +23,7 @@ BEGIN
     AND w.business_id = b.business_id
     AND bw.is_primary = true
     AND w.is_active = true
+  ORDER BY w.created_at ASC, w.id ASC
   LIMIT 1;
 
   -- 2) Any active warehouse linked to the branch, in the same business
@@ -32,6 +35,7 @@ BEGIN
     WHERE bw.branch_id = p_branch_id
       AND w.business_id = b.business_id
       AND w.is_active = true
+    ORDER BY w.created_at ASC, w.id ASC
     LIMIT 1;
   END IF;
 
@@ -43,6 +47,7 @@ BEGIN
     WHERE b.id = p_branch_id
       AND w.branch_id IS NULL
       AND w.is_active = true
+    ORDER BY w.created_at ASC, w.id ASC
     LIMIT 1;
   END IF;
 
