@@ -1,5 +1,5 @@
 /** Pure helpers for the Quick theme's cart bar and cart sheet. */
-import { applyCouponDiscount } from './pricing';
+import { applyCouponDiscount, cartLineTotal } from './pricing';
 
 export interface FreeDeliveryProgress {
   /** Rupees still to add; 0 once delivery is free. */
@@ -32,9 +32,11 @@ export function freeShipText(progress: FreeDeliveryProgress): string {
 }
 
 /** What the shopper saves against MRP across the cart. Lines without an MRP add nothing. */
-export function cartSavings(lines: Array<{ price: number; mrp?: number | null; quantity: number }>): number {
+export function cartSavings(
+  lines: Array<{ price: number; mrp?: number | null; quantity: number; taxRate?: number; gstIncluded?: boolean }>,
+): number {
   return Math.round(
-    lines.reduce((sum, l) => (l.mrp != null && l.mrp > l.price ? sum + (l.mrp - l.price) * l.quantity : sum), 0),
+    lines.reduce((sum, l) => (l.mrp != null ? sum + Math.max(0, l.mrp * l.quantity - cartLineTotal(l)) : sum), 0),
   );
 }
 

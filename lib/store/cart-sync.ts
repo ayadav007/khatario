@@ -17,6 +17,8 @@ export type ServerCartLine = CartLine & {
   variant_name?: string | null;
   unit?: string;
   stock?: number;
+  tax_rate?: number;
+  gst_included?: boolean;
 };
 
 const keyOf = (itemId: string, variantId: string | null | undefined) => `${itemId}:${variantId ?? ''}`;
@@ -44,6 +46,8 @@ function fromServer(l: ServerCartLine): StoreCartItem {
     unit: l.unit || 'PCS',
     // Never below what is already in the cart; checkout re-checks stock anyway.
     maxStock: Math.max(Number.isFinite(stock) ? stock : 0, qty),
+    taxRate: l.tax_rate,
+    gstIncluded: l.gst_included,
   };
 }
 

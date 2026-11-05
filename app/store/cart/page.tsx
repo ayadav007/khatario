@@ -2,6 +2,7 @@
 
 import { StoreShell } from '@/components/store/StoreShell';
 import { ClosedNotice } from '@/components/store/engine/OpenStatusBadge';
+import { cartLineAddsGst } from '@/lib/store/pricing';
 import { useStore } from '@/lib/store/store-context';
 import Link from 'next/link';
 
@@ -25,6 +26,7 @@ export default function StoreCartPage() {
                 <p className="font-medium">{c.name}</p>
                 <p className="text-sm text-gray-500">
                   ₹{c.price.toLocaleString('en-IN')} × {c.quantity}
+                  {cartLineAddsGst(c) ? ` + ${c.taxRate}% GST` : ''}
                 </p>
               </div>
               <div className="flex items-center gap-2">

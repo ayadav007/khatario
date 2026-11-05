@@ -285,6 +285,7 @@ function ProductCard({
         unit: product.unit,
         maxStock: product.current_stock,
         taxRate: product.tax_rate,
+        gstIncluded: !!product.gst_included,
         mrp: product.mrp != null && product.mrp > product.selling_price ? product.mrp : undefined,
       });
     },

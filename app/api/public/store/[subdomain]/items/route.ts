@@ -3,6 +3,7 @@ import { queryRows, queryOne } from '@/lib/db';
 import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { isUuid } from '@/lib/store/review-http';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 import { parseCatalogQuery } from '@/lib/store/query-params';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
 
@@ -125,8 +126,9 @@ export async function GET(
     });
 
     const rows = await queryRows<Record<string, unknown>>(q.listSql, q.listParams);
+    const collectsGst = await storeCollectsGst({ businessId: store.business_id, branchId });
 
-    const items: StoreItem[] = rows.map((r) => ({
+    const items: StoreItem[] = rows.map((r) => withStoreGst({
       id: r.id as string,
       name: r.name as string,
       code: (r.code as string) ?? null,
@@ -148,7 +150,7 @@ export async function GET(
       created_at: r.created_at ? new Date(r.created_at as string).toISOString() : null,
       sold_count: parseFloat(r.sold_count as string) || 0,
       variants: Array.isArray(r.variants) ? r.variants : [],
-    }));
+    }, collectsGst));
 
     if (parsed.ids?.length) return NextResponse.json({ items });
 
