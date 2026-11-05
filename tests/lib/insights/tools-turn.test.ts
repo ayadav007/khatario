@@ -121,7 +121,43 @@ describe('tools read the right business and dates', () => {
     expect(fetchPartyLedgerDocs).toHaveBeenCalledWith({ businessId: BIZ, partyType: 'customer', asOfDate: '2026-10-02' });
     expect(res.cards[0].rows.map((r) => r.label)).toEqual(['Bharat Stores', 'Asha Traders']);
     expect(res.cards[0].rows[0].hint).toBe('not due yet');
-    expect(res.cards[0].rows[1].hint).toBe('₹5,000 overdue');
+    expect(res.cards[0].rows[1].hint).toBe('₹5,000 overdue, oldest 48 days');
+  });
+
+  it('top_creditors lists suppliers the owner has to pay, with how long it has been due', async () => {
+    (fetchPartyLedgerDocs as jest.Mock).mockResolvedValue([
+      { voucherType: 'purchase', voucherId: 'p1', partyId: 's1', partyName: 'Gupta Wholesale', partyPhone: null, reference: 'B-11', docDate: '2026-07-01', dueDate: '2026-07-31', amount: 12000, linkedVoucherId: null },
+      { voucherType: 'purchase', voucherId: 'p2', partyId: 's1', partyName: 'Gupta Wholesale', partyPhone: null, reference: 'B-19', docDate: '2026-09-20', dueDate: '2026-10-10', amount: 3000, linkedVoucherId: null },
+      { voucherType: 'purchase', voucherId: 'p3', partyId: 's2', partyName: 'Mehta Dairy', partyPhone: null, reference: 'M-2', docDate: '2026-09-25', dueDate: '2026-10-25', amount: 800, linkedVoucherId: null },
+    ]);
+    const res = await runInsightTool(ctx, { name: 'top_creditors', args: {} });
+    expect(fetchPartyLedgerDocs).toHaveBeenCalledWith({ businessId: BIZ, partyType: 'supplier', asOfDate: '2026-10-02' });
+    expect(res.cards[0].title).toBe('Suppliers you have to pay');
+    expect(res.cards[0].rows).toEqual([
+      expect.objectContaining({ label: 'Gupta Wholesale', value: '₹15,000', hint: '₹12,000 overdue, oldest 63 days' }),
+      expect.objectContaining({ label: 'Mehta Dairy', value: '₹800', hint: 'not due yet' }),
+    ]);
+    expect(res.cards[0].link?.url).toBe('/reports/aging/payables');
+  });
+
+  it('overdue_invoices shows days overdue and can keep only bills older than N days', async () => {
+    mQueryRows.mockResolvedValueOnce([
+      { invoice_number: 'INV-7', due: '2026-03-20', balance: '600', name: 'Shalini Yadav', total_count: '1', total_amount: '600' },
+    ]);
+    const res = await runInsightTool(ctx, { name: 'overdue_invoices', args: { min_days_overdue: 180 } });
+    expect(mQueryRows.mock.calls[0][1]).toEqual([BIZ, '2026-04-05', 5]);
+    expect(res.cards[0].title).toBe('Invoices overdue more than 180 days');
+    expect(res.cards[0].rows[0].hint).toBe('due 20 Mar, 196 days overdue');
+  });
+
+  it('payables_due shows days overdue and can keep only bills older than N days', async () => {
+    mQueryRows.mockResolvedValueOnce([
+      { bill_number: 'B-11', due: '2026-07-31', balance: '12000', name: 'Gupta Wholesale', total_count: '1', total_amount: '12000' },
+    ]);
+    const res = await runInsightTool(ctx, { name: 'payables_due', args: { min_days_overdue: 30 } });
+    expect(mQueryRows.mock.calls[0][1]).toEqual([BIZ, '2026-09-01']);
+    expect(res.cards[0].title).toBe('Supplier bills overdue more than 30 days');
+    expect(res.cards[0].rows[0].hint).toBe('due 31 Jul, 63 days overdue');
   });
 
   it('top_customers defaults to this month', async () => {
@@ -230,6 +266,35 @@ describe('model tool choice', () => {
     expect(res.kind).toBe('data');
     expect(res.calls).toEqual([{ name: 'low_stock', args: {} }]);
     expect(res.text.startsWith('*Low stock*')).toBe(true);
+  });
+
+  it('runInsights keeps the keyword answer when the model mixes up paying and receiving', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { tool_calls: [{ function: { name: 'top_debtors', arguments: '{}' } }] } }],
+        usage: { prompt_tokens: 100, completion_tokens: 10 },
+      }),
+    })) as unknown as typeof fetch;
+    const res = await runInsights(
+      { businessId: BIZ, userId: USER, today: '2026-10-02' },
+      'main kisko kitna dena hai aur kitne dino se pending hai',
+    );
+    expect(res.calls).toEqual([{ name: 'top_creditors', args: {} }]);
+  });
+
+  it('runInsights keeps the "more than N days" filter the model left out', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { tool_calls: [{ function: { name: 'overdue_invoices', arguments: '{}' } }] } }],
+        usage: { prompt_tokens: 100, completion_tokens: 10 },
+      }),
+    })) as unknown as typeof fetch;
+    const res = await runInsights({ businessId: BIZ, userId: USER, today: '2026-10-02' }, 'kiska 180 days se zyada pending hai');
+    expect(res.calls).toEqual([{ name: 'overdue_invoices', args: { min_days_overdue: 180 } }]);
   });
 
   it('runInsights lists what the owner can ask when nothing matches', async () => {

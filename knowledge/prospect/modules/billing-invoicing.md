@@ -51,3 +51,15 @@ Yes. When the customer pays at the counter you record the amount and mode (cash,
 ## Is there a POS or counter billing mode?
 
 Yes. POS mode gives a fast counter layout with parked bills and automatic printing to a Bluetooth thermal printer, which suits retail counters.
+
+## Can I give different customers different prices?
+
+Yes, from the Starter plan upwards. Set a customer's own price per item (or per size and colour), put customers on price levels such as Wholesale or Dealer with quantity slabs, add customer and category discounts, and run schemes like "buy 10, get 1 free". Bills pick the right price automatically, never above MRP, and show the last rate charged and a warning when you sell below cost.
+
+## Can I correct a final invoice or give a discount after the sale?
+
+Yes. A final invoice can be amended in the full editor until the GSTR-1 that includes it is filed. A discount given after the sale (a turnover or year-end discount) is a post-sale discount credit note covering a supply period.
+
+## Can I print bills in Hindi or other Indian languages?
+
+Yes. Invoice headings print in English, Hindi, Hinglish, Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Odia or Urdu. There is also a Distributor (FMCG / Pharma) template with cases and pieces, MRP and retailer margin columns.

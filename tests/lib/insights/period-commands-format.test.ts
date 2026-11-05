@@ -61,8 +61,18 @@ describe('keyword commands', () => {
     ['summary', 'daily_summary'],
     ['aaj ka hisaab', 'daily_summary'],
     ['how is the business', 'daily_summary'],
+    ['main kisko kitna dena hai aur kitne dino se pending hai', 'top_creditors'],
+    ['which suppliers do I owe', 'top_creditors'],
+    ['kitna dena hai', 'top_creditors'],
   ])('%s -> %s', (text, expected) => {
     expect(tool(text)).toBe(expected);
+  });
+
+  it('reads "more than N days" and keeps the direction of the money', () => {
+    expect(matchCommand('kiska 180 days se zyada pending hai')?.calls[0]).toEqual({ name: 'overdue_invoices', args: { min_days_overdue: 180 } });
+    expect(matchCommand('invoices overdue more than 60 days')?.calls[0]).toEqual({ name: 'overdue_invoices', args: { min_days_overdue: 60 } });
+    expect(matchCommand('90 din se zyada kisko dena hai')?.calls[0]).toEqual({ name: 'payables_due', args: { min_days_overdue: 90 } });
+    expect(matchCommand('supplier bills older than 45 days')?.calls[0]).toEqual({ name: 'payables_due', args: { min_days_overdue: 45 } });
   });
 
   it('reads periods and limits', () => {

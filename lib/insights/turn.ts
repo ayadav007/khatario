@@ -1,7 +1,7 @@
 import { queryOne } from '@/lib/db';
 import { todayIst } from '@/lib/gst/time-limits';
 import { chooseTools, type LlmMessage, type LlmUsage } from '@/lib/rag/llm';
-import { matchCommand, OWNER_HELP_TEXT } from './commands';
+import { matchCommand, moneyDirection, OWNER_HELP_TEXT } from './commands';
 import { appBaseUrl, renderCards, type InsightCard, type TextFormat } from './format';
 import { INSIGHT_TOOLS, runInsightTool, type InsightContext, type ToolCall } from './tools';
 
@@ -36,6 +36,9 @@ function systemPrompt(today: string): string {
     `Today is ${today} (Indian time). Financial year runs April to March. Weeks start on Monday.`,
     'Pick the tool(s) that answer the question. Use daily_summary for general "how is business" questions.',
     'Map Hindi/Hinglish words: aaj = today, kal = yesterday, hafta = week, mahina = month, saal = year, udhaar/baaki = pending dues.',
+    'Mind the direction of money. lena / milna / "who owes me" = customers owe the owner: top_debtors, overdue_invoices. ' +
+      'dena / chukana / "kisko dena hai" / "I owe" = the owner pays suppliers: top_creditors, payables_due.',
+    '"N days se zyada", "N din se purane", "more than N days" = set min_days_overdue to N.',
     'Never invent numbers. If no tool fits, call no tool.',
   ].join('\n');
 }
@@ -47,6 +50,23 @@ function respond(ctxCards: InsightCard[], calls: ToolCall[], format: TextFormat,
 function helpResult(format: TextFormat, lead?: string): InsightsResult {
   const body = format === 'whatsapp' ? OWNER_HELP_TEXT.replace(/^- /gm, '• ') : OWNER_HELP_TEXT;
   return { kind: 'help', text: lead ? `${lead}\n\n${body}` : body, cards: [], calls: [], usage: null };
+}
+
+/**
+ * The model's choice wins, except where the keyword match is unambiguous and the model lost it:
+ * it picked money coming in for a "dena hai" question (or the reverse), or dropped "more than N days".
+ */
+function keepKeywordWhenPrecise(modelCalls: ToolCall[], keywordCalls: ToolCall[] | undefined): ToolCall[] {
+  const keyword = keywordCalls?.[0];
+  if (!keyword) return modelCalls;
+  const wanted = moneyDirection(keyword.name);
+  if (wanted && modelCalls.some((c) => { const d = moneyDirection(c.name); return d !== null && d !== wanted; })) {
+    return keywordCalls;
+  }
+  if (Number(keyword.args.min_days_overdue) > 0 && !modelCalls.some((c) => Number(c.args?.min_days_overdue) > 0)) {
+    return keywordCalls;
+  }
+  return modelCalls;
 }
 
 /**
@@ -79,7 +99,7 @@ export async function runInsights(
       INSIGHT_TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
     );
     usage = chosen.usage;
-    calls = chosen.calls.length ? chosen.calls : command?.calls ?? [];
+    calls = chosen.calls.length ? keepKeywordWhenPrecise(chosen.calls, command?.calls) : command?.calls ?? [];
   }
 
   if (!calls.length) {

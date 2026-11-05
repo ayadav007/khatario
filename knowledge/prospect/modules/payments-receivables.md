@@ -27,3 +27,7 @@ Yes. Credit-limit alerts warn you when a customer's balance goes above the limit
 ## Does Khatario do bank reconciliation?
 
 Yes. Import your bank statement (CSV or PDF) and match it with the payments recorded in Khatario.
+
+## Can regular customers order from my online store on khata?
+
+Yes. With store khata, customers you trust order from your online store on credit and pay on their monthly settlement day. You set a credit limit and rules (block, allow and tell you, or ask you to approve), statements and reminders go on WhatsApp, and customers see their balance and pay in My khata in the store.

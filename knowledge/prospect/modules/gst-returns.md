@@ -39,3 +39,7 @@ Yes. GSTIN format is validated when you add customers and suppliers, and there i
 ## Does Khatario support e-invoicing (IRN) or e-way bill generation?
 
 No. Khatario does not generate e-invoices (IRN) or e-way bills with the government portals. It does make the e-way bill JSON for the portal's bulk upload from a delivery challan, records e-way bill numbers on invoices and challans so they print, and imports the e-way bills suppliers generated against your GSTIN (see "What Khatario does not do yet").
+
+## Does Khatario support more than one GSTIN?
+
+Yes. Each branch in another state carries that state's GSTIN, and Khatario refuses a branch or godown that doesn't sit in its GSTIN's state. GSTR-1 is prepared and marked filed per GSTIN, each GSTIN keeps its own invoice series, and stock moved between godowns under the same GSTIN gets a delivery challan and e-way bill JSON. Branches are on the Business plan.

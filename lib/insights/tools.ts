@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { queryOne, queryRows } from '@/lib/db';
 import { listActiveComplianceAlerts } from '@/lib/gst/compliance/engine';
-import { buildAgeing } from '@/lib/reports/ageing';
+import { buildAgeing, daysBetween, type AgeingPartySummary } from '@/lib/reports/ageing';
 import { fetchPartyLedgerDocs } from '@/lib/reports/party-ledger-docs';
 import { purchaseSummary } from '@/lib/reports/purchase-reports';
 import type { ReportContext } from '@/lib/reports/report-context';
@@ -46,8 +46,19 @@ const periodArg = periodOr('today');
 const limitArg = z.coerce.number().int().min(1).max(10).catch(5);
 const periodParam = { type: 'string', enum: [...PERIODS], description: 'Time window, in Indian time. Default today.' };
 const limitParam = { type: 'integer', minimum: 1, maximum: 10, description: 'How many rows. Default 5.' };
+const minDaysArg = z.coerce.number().int().min(0).max(3650).catch(0);
+const minDaysParam = {
+  type: 'integer', minimum: 0, maximum: 3650,
+  description: 'Only bills overdue by more than this many days ("180 days se zyada" = 180). Default 0, every overdue bill.',
+};
 
 const num = (v: unknown) => Number(v) || 0;
+
+/** "due 25 Apr, 194 days overdue", or "due 8 Nov" when the date has not passed. */
+function dueHint(due: string, today: string): string {
+  const late = daysBetween(due, today);
+  return late > 0 ? `due ${formatDay(due)}, ${count(late, 'day')} overdue` : `due ${formatDay(due)}`;
+}
 
 function reportCtx(ctx: InsightContext, from: string, to: string): ReportContext {
   return { businessId: ctx.businessId, userId: ctx.userId, fromDate: from, toDate: to, branchId: null };
@@ -153,50 +164,92 @@ const purchasesExpensesTool: InsightTool<{ period: (typeof PERIODS)[number] }> =
   },
 };
 
-async function receivableAgeing(ctx: InsightContext) {
-  const docs = await fetchPartyLedgerDocs({ businessId: ctx.businessId, partyType: 'customer', asOfDate: ctx.today });
+const overdueOf = (s: { age_0_30: number; age_30_60: number; age_60_90: number; age_90_plus: number }) =>
+  s.age_0_30 + s.age_30_60 + s.age_60_90 + s.age_90_plus;
+
+/** Days the party's oldest unpaid bill is past its due date (0 when nothing is overdue). */
+const oldestOverdueDays = (s: AgeingPartySummary) =>
+  s.transactions.reduce((max, t) => (t.outstanding > 0.5 && t.days_overdue > max ? t.days_overdue : max), 0);
+
+async function partyAgeing(ctx: InsightContext, partyType: 'customer' | 'supplier') {
+  const docs = await fetchPartyLedgerDocs({ businessId: ctx.businessId, partyType, asOfDate: ctx.today });
   return buildAgeing(docs, ctx.today);
+}
+
+const receivableAgeing = (ctx: InsightContext) => partyAgeing(ctx, 'customer');
+
+/** Who owes the owner (customers) or whom the owner owes (suppliers), largest first, from the ageing reports. */
+async function partyBalancesCard(
+  ctx: InsightContext,
+  partyType: 'customer' | 'supplier',
+  limit: number,
+  text: { title: string; subtitle: (total: string, parties: string, overdue: string) => string; empty: string; link: InsightCard['link'] },
+) {
+  const { summary, totals } = await partyAgeing(ctx, partyType);
+  const owing = summary.filter((s) => s.total > 0.5).sort((a, b) => b.total - a.total);
+  const card: InsightCard = {
+    title: text.title,
+    subtitle: owing.length ? text.subtitle(inr(totals.total), count(owing.length, partyType), inr(overdueOf(totals))) : undefined,
+    rows: owing.slice(0, limit).map((s) => {
+      const overdue = overdueOf(s);
+      return {
+        label: shorten(s.party_name),
+        value: inr(s.total),
+        hint: overdue > 0.5 ? `${inr(overdue)} overdue, oldest ${count(oldestOverdueDays(s), 'day')}` : 'not due yet',
+      };
+    }),
+    empty: text.empty,
+    link: text.link,
+  };
+  const top = owing.slice(0, limit).map(({ transactions, ...rest }) => ({ ...rest, oldest_days_overdue: oldestOverdueDays({ transactions, ...rest }) }));
+  return { cards: [card], data: { totals, top } };
 }
 
 const topDebtorsTool: InsightTool<{ limit: number }> = {
   name: 'top_debtors',
-  description: 'Customers who owe the most money (highest pending / outstanding / udhaar), with how much is overdue.',
+  description:
+    'Customers who owe YOU money (money to receive: lena, udhaar given, baaki, pending from customers), largest first, ' +
+    'with how much is overdue and how many days the oldest invoice is overdue.',
   schema: z.object({ limit: limitArg }),
   parameters: { type: 'object', properties: { limit: limitParam } },
   feature: 'reports_advanced',
-  async run(ctx, { limit }) {
-    const { summary, totals } = await receivableAgeing(ctx);
-    const owing = summary.filter((s) => s.total > 0.5).sort((a, b) => b.total - a.total);
-    const overdueOf = (s: { age_0_30: number; age_30_60: number; age_60_90: number; age_90_plus: number }) =>
-      s.age_0_30 + s.age_30_60 + s.age_60_90 + s.age_90_plus;
-    const totalOverdue = overdueOf(totals);
-    const card: InsightCard = {
+  run: (ctx, { limit }) =>
+    partyBalancesCard(ctx, 'customer', limit, {
       title: 'Who owes you the most',
-      subtitle: owing.length
-        ? `${inr(totals.total)} to collect from ${count(owing.length, 'customer')}; ${inr(totalOverdue)} is overdue`
-        : undefined,
-      rows: owing.slice(0, limit).map((s) => {
-        const overdue = overdueOf(s);
-        return {
-          label: shorten(s.party_name),
-          value: inr(s.total),
-          hint: overdue > 0.5 ? `${inr(overdue)} overdue` : 'not due yet',
-        };
-      }),
+      subtitle: (total, parties, overdue) => `${total} to collect from ${parties}; ${overdue} is overdue`,
       empty: 'No customer owes you money right now.',
       link: { label: 'Receivables ageing', url: '/reports/aging/receivables' },
-    };
-    return { cards: [card], data: { totals, top: owing.slice(0, limit).map(({ transactions, ...rest }) => rest) } };
-  },
+    }),
 };
 
-const overdueInvoicesTool: InsightTool<{ limit: number }> = {
-  name: 'overdue_invoices',
-  description: 'Unpaid invoices whose due date has passed, oldest first.',
+const topCreditorsTool: InsightTool<{ limit: number }> = {
+  name: 'top_creditors',
+  description:
+    'Suppliers YOU have to pay (money you owe: dena, chukana, kisko dena hai, payables), largest first, ' +
+    'with how much is overdue and how many days the oldest bill is overdue.',
   schema: z.object({ limit: limitArg }),
   parameters: { type: 'object', properties: { limit: limitParam } },
+  feature: 'reports_advanced',
+  run: (ctx, { limit }) =>
+    partyBalancesCard(ctx, 'supplier', limit, {
+      title: 'Suppliers you have to pay',
+      subtitle: (total, parties, overdue) => `${total} to pay ${parties}; ${overdue} is overdue`,
+      empty: "You don't owe any supplier right now.",
+      link: { label: 'Payables ageing', url: '/reports/aging/payables' },
+    }),
+};
+
+const overdueInvoicesTool: InsightTool<{ limit: number; min_days_overdue: number }> = {
+  name: 'overdue_invoices',
+  description:
+    'Customer invoices still unpaid after their due date (money to receive), oldest first, with how many days each is overdue. ' +
+    'Set min_days_overdue for "more than N days".',
+  schema: z.object({ limit: limitArg, min_days_overdue: minDaysArg }),
+  parameters: { type: 'object', properties: { limit: limitParam, min_days_overdue: minDaysParam } },
   feature: 'reports_basic',
-  async run(ctx, { limit }) {
+  async run(ctx, { limit, min_days_overdue }) {
+    // Due before this day means overdue by more than min_days_overdue days.
+    const cutoff = addDays(ctx.today, -min_days_overdue);
     const rows = await queryRows<{ invoice_number: string; due: string; balance: string; name: string | null; total_count: string; total_amount: string }>(
       `SELECT i.invoice_number, to_char(COALESCE(i.due_date, i.invoice_date), 'YYYY-MM-DD') AS due, i.balance_amount AS balance,
               c.name, COUNT(*) OVER () AS total_count, SUM(i.balance_amount) OVER () AS total_amount
@@ -207,18 +260,18 @@ const overdueInvoicesTool: InsightTool<{ limit: number }> = {
           AND i.balance_amount > 0 AND COALESCE(i.due_date, i.invoice_date) < $2::date
         ORDER BY COALESCE(i.due_date, i.invoice_date), i.invoice_number
         LIMIT $3`,
-      [ctx.businessId, ctx.today, limit],
+      [ctx.businessId, cutoff, limit],
     );
     const totalCount = num(rows[0]?.total_count);
     const card: InsightCard = {
-      title: 'Overdue invoices',
+      title: min_days_overdue ? `Invoices overdue more than ${count(min_days_overdue, 'day')}` : 'Overdue invoices',
       subtitle: totalCount ? `${count(totalCount, 'invoice')}, ${inr(num(rows[0]?.total_amount))} overdue` : undefined,
       rows: rows.map((r) => ({
         label: `${r.invoice_number} · ${shorten(r.name || 'Walk-in', 20)}`,
         value: inr(num(r.balance)),
-        hint: `due ${formatDay(r.due)}`,
+        hint: dueHint(r.due, ctx.today),
       })),
-      empty: 'No overdue invoices. Well done!',
+      empty: min_days_overdue ? `No invoice is overdue by more than ${count(min_days_overdue, 'day')}.` : 'No overdue invoices. Well done!',
       link: { label: 'Receivables ageing', url: '/reports/aging/receivables' },
     };
     return { cards: [card], data: { totalCount, rows } };
@@ -269,14 +322,23 @@ const topProductsTool: InsightTool<{ period: (typeof PERIODS)[number]; limit: nu
   },
 };
 
-const payablesDueTool: InsightTool<{ within_days: number }> = {
+const payablesDueTool: InsightTool<{ within_days: number; min_days_overdue: number }> = {
   name: 'payables_due',
-  description: 'Supplier bills you still have to pay that are overdue or due within the next N days.',
-  schema: z.object({ within_days: z.coerce.number().int().min(0).max(90).catch(7) }),
-  parameters: { type: 'object', properties: { within_days: { type: 'integer', minimum: 0, maximum: 90, description: 'Days ahead. Default 7.' } } },
+  description:
+    'Supplier bills YOU still have to pay (dena), one row per bill, that are overdue or due within the next N days, ' +
+    'with how many days each is overdue. Set min_days_overdue for "more than N days".',
+  schema: z.object({ within_days: z.coerce.number().int().min(0).max(90).catch(7), min_days_overdue: minDaysArg }),
+  parameters: {
+    type: 'object',
+    properties: {
+      within_days: { type: 'integer', minimum: 0, maximum: 90, description: 'Days ahead. Default 7.' },
+      min_days_overdue: minDaysParam,
+    },
+  },
   feature: 'reports_basic',
-  async run(ctx, { within_days }) {
-    const until = addDays(ctx.today, within_days);
+  async run(ctx, { within_days, min_days_overdue }) {
+    // With min_days_overdue, due on or before this day means overdue by more than that many days.
+    const until = min_days_overdue ? addDays(ctx.today, -min_days_overdue - 1) : addDays(ctx.today, within_days);
     const rows = await queryRows<{ bill_number: string | null; due: string; balance: string; name: string | null; total_count: string; total_amount: string }>(
       `SELECT p.bill_number, to_char(COALESCE(p.due_date, p.bill_date), 'YYYY-MM-DD') AS due, p.balance_amount AS balance,
               s.name, COUNT(*) OVER () AS total_count, SUM(p.balance_amount) OVER () AS total_amount
@@ -290,14 +352,16 @@ const payablesDueTool: InsightTool<{ within_days: number }> = {
     );
     const totalCount = num(rows[0]?.total_count);
     const card: InsightCard = {
-      title: within_days ? `Supplier bills due by ${formatDay(until)}` : 'Supplier bills overdue',
+      title: min_days_overdue
+        ? `Supplier bills overdue more than ${count(min_days_overdue, 'day')}`
+        : within_days ? `Supplier bills due by ${formatDay(until)}` : 'Supplier bills overdue',
       subtitle: totalCount ? `${count(totalCount, 'bill')}, ${inr(num(rows[0]?.total_amount))} to pay` : undefined,
       rows: rows.map((r) => ({
         label: shorten(r.name || 'Supplier', 22),
         value: inr(num(r.balance)),
-        hint: `${r.due < ctx.today ? 'overdue since' : 'due'} ${formatDay(r.due)}`,
+        hint: dueHint(r.due, ctx.today),
       })),
-      empty: 'Nothing to pay in this window.',
+      empty: min_days_overdue ? `No supplier bill is overdue by more than ${count(min_days_overdue, 'day')}.` : 'Nothing to pay in this window.',
       link: { label: 'Payables ageing', url: '/reports/aging/payables' },
     };
     return { cards: [card], data: { until, totalCount, rows } };
@@ -429,6 +493,7 @@ export const INSIGHT_TOOLS: InsightTool[] = [
   overdueInvoicesTool,
   topCustomersTool,
   topProductsTool,
+  topCreditorsTool,
   payablesDueTool,
   lowStockTool,
   gstAlertsTool,
