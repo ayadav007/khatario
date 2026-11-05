@@ -393,8 +393,8 @@ export default function RolesPage() {
 
         {/* Create Role Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto">
               <h2 className="text-xl font-semibold text-text-primary mb-4">Create New Role</h2>
               <form onSubmit={handleCreateRole}>
                 <div className="space-y-4">

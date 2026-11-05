@@ -114,8 +114,10 @@ export default function AttendancePolicySettingsPage() {
     <SettingsPageShell
       title="Attendance policy"
       description="Configure how late arrivals, half-days, and absences affect payroll"
+      icon={Clock}
+      width="form"
     >
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="space-y-stack-section">
         <Card padding="md" className="space-y-4">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-text-secondary" />

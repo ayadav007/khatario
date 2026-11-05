@@ -208,7 +208,7 @@ export default function EditWarehousePage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-5xl space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-stack-page">
       <MobileDuplicatePageChrome
         title="Edit warehouse"
         description="Update name, address, type, and branch links."

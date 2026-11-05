@@ -12,6 +12,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { LabelPreview } from '@/components/labels/LabelPreview';
 import { Button } from '@/components/ui/Button';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 interface LabelTemplate {
   id: string;
@@ -142,16 +143,13 @@ export default function LabelTemplatesPage() {
 
   if (!hasAccess) {
     return (
-      <div className="max-w-2xl mx-auto py-12 text-center">
-        <FileText className="w-12 h-12 mx-auto text-text-secondary mb-4" />
-        <h2 className="text-xl font-semibold text-text-primary">
-          Label Template Designer not available
-        </h2>
-        <p className="text-text-secondary mt-2">
-          Your current plan does not include the Label Template Designer.
-          Upgrade to customise barcode labels.
-        </p>
-      </div>
+      <SettingsPageShell title="Label templates" description="Design barcode and price labels for your items." icon={FileText}>
+        <PlanFeatureDeniedCallout
+          featureKey="barcode_label_templates"
+          title="Label designer isn't in your plan"
+          description="Upgrade to design your own barcode and price labels."
+        />
+      </SettingsPageShell>
     );
   }
 

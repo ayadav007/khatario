@@ -13,8 +13,9 @@ function CustomFieldsSettingsPage() {
       title="Custom fields"
       description="Define extra fields for items and invoices. Choose which appear on each invoice template under Templates & printing → Customize."
       icon={SlidersHorizontal}
+      width="form"
     >
-      <div className="max-w-2xl space-y-6">
+      <div className="space-y-stack-section">
         <CustomFieldsManager
           entityType="item"
           title="Item fields"

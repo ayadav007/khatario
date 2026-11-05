@@ -371,7 +371,6 @@ export default function BackupRestorePage() {
       title="Backup & restore"
       description="Keep your data safe with automated backups and cloud storage"
       icon={DatabaseIcon}
-      className="p-4 sm:p-6"
     >
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

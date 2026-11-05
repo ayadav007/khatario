@@ -129,13 +129,14 @@ export default function HrApprovalSettingsPage() {
       title="HR approvals"
       description="Configure who can approve leave and expense requests"
       icon={Users}
+      width="form"
     >
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
         </div>
       ) : settings ? (
-        <Card className="max-w-xl space-y-6 p-6">
+        <Card padding="md" className="space-y-6">
           <ModeSelect
             id="leave_mode"
             label="Leave approval"

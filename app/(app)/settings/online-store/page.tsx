@@ -536,7 +536,7 @@ export default function OnlineStoreSettingsPage() {
       ) : null}
 
       <div className={clsx('gap-6', previewOn && '2xl:grid 2xl:grid-cols-[minmax(0,1fr)_440px]')}>
-        <div className={clsx(!designTab && 'mx-auto max-w-3xl')}>
+        <div className={clsx(!designTab && 'max-w-3xl')}>
           <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1" role="tablist">
             {TABS.map((t) => (
               <button

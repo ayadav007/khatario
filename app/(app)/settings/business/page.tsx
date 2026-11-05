@@ -43,6 +43,7 @@ function BusinessSettingsPage() {
         description={description}
         icon={Building}
         tourAnchor="bp-intro"
+        className="max-w-5xl"
       >
         <DocumentLanguageCard />
         <BusinessProfileTab />

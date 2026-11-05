@@ -4,6 +4,12 @@
  */
 export const WIDE_PAGE_CONTENT_CLASS = 'w-full min-w-0 max-w-full';
 
+/** Single-column settings forms: left-aligned, readable line length. Use with WIDE_PAGE_CONTENT_CLASS. */
+export const FORM_PAGE_CONTENT_CLASS = 'max-w-3xl';
+
+/** Annotated forms (explanation beside each card, see ProfileSection). */
+export const ANNOTATED_FORM_CONTENT_CLASS = 'max-w-5xl';
+
 /** Standard main column padding (responsive spacing tokens in globals.css). */
 export const APP_MAIN_PADDING_CLASS = 'px-page-x pt-page-y pb-20 md:pb-page-y';
 

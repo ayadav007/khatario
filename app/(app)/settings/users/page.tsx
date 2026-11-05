@@ -552,8 +552,8 @@ export default function ManageUsersPage() {
       {/* Add User Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md">
-            <div className="p-6">
+          <Card padding="none" className="w-full max-w-md max-h-[90dvh] overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <h2 className="text-xl font-bold text-text-primary mb-4">Add New User</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
@@ -671,8 +671,8 @@ export default function ManageUsersPage() {
       {/* Edit User Modal */}
       {showEditModal && editingUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md">
-            <div className="p-6">
+          <Card padding="none" className="w-full max-w-md max-h-[90dvh] overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <h2 className="text-xl font-bold text-text-primary mb-4">Edit User</h2>
               <form onSubmit={handleUpdate} className="space-y-4">
                 <Input
@@ -805,8 +805,8 @@ export default function ManageUsersPage() {
       {/* Warehouse Access Modal */}
       {showWarehouseAccessModal && editingUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+          <Card padding="none" className="w-full max-w-4xl max-h-[90dvh] overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <UserWarehouseAccess
                 userId={editingUser.id}
                 onClose={() => setShowWarehouseAccessModal(false)}

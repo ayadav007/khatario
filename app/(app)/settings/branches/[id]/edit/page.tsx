@@ -204,7 +204,7 @@ export default function EditBranchPage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-5xl space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-stack-page">
         <MobileDuplicatePageChrome
           title="Edit branch"
           description="Update branch information and settings."
@@ -221,14 +221,14 @@ export default function EditBranchPage() {
                 placeholder="e.g., Mumbai Branch"
                 required
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label="Branch Code"
                   value={formData.branch_code || ''}
                   onChange={(e) => handleChange('branch_code', e.target.value)}
                   placeholder="e.g., MUM-001"
                 />
-                <div className="flex items-center space-x-2 pt-6">
+                <div className="flex min-h-11 items-center gap-2 sm:self-end">
                   <input
                     type="checkbox"
                     id="is_primary"
@@ -258,7 +258,7 @@ export default function EditBranchPage() {
                 error={gstinError}
                 helperText="The first two digits must match the state below. The last character is a check digit."
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1">
                     State Code *
@@ -305,7 +305,7 @@ export default function EditBranchPage() {
                 onChange={(e) => handleChange('address_line2', e.target.value)}
                 placeholder="Area, Landmark"
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label="City"
                   value={formData.city || ''}

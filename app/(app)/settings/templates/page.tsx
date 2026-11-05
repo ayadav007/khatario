@@ -4,9 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
-import Link from 'next/link';
 import {
-  ArrowLeft, Check, Copy, Eye, FileMinus, FilePlus, FileSignature, FileText, Loader2, Palette,
+  Check, Copy, Eye, FileMinus, FilePlus, FileSignature, FileText, Loader2, Palette,
   Receipt, ShoppingBag, ShoppingCart, Truck, Wallet, type LucideIcon,
 } from 'lucide-react';
 import { TemplatePreviewPlaceholder } from '@/components/templates/TemplatePreviewPlaceholder';
@@ -17,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { getTemplatesForDocType, getTemplateCountByDocType } from '@/lib/template-registry-real';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 type DocumentType =
   | 'tax_invoice'
@@ -239,19 +238,15 @@ export default function TemplatesPage() {
   const activeTemplate = currentTemplates.find((t) => t.active);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950">
-      <div className={`${WIDE_PAGE_CONTENT_CLASS} mx-auto px-4 py-5 sm:px-6 lg:py-8`}>
-        <header className="mb-6 min-w-0">
-          <Link href="/settings" className="mb-2 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Settings
-          </Link>
-          <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Templates and printing</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Pick a design for each document, then customise it to match your brand.</p>
-        </header>
-
-        {/* Phone: document types as a scrolling row */}
-        <nav aria-label="Document types" className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:hidden [scrollbar-width:none]">
+    <>
+      <SettingsPageShell
+        title="Templates and printing"
+        description="Pick a design for each document, then customise it to match your brand."
+        icon={Palette}
+      >
+        <div>
+        {/* Below xl: document types as a scrolling row (the side list needs room the sidebar and Schedule panel take) */}
+        <nav aria-label="Document types" className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1 xl:hidden [scrollbar-width:none]">
           {documentTypes.map((d) => {
             const on = d.id === activeDocType;
             return (
@@ -260,7 +255,7 @@ export default function TemplatesPage() {
                 type="button"
                 onClick={() => chooseDocType(d.id)}
                 aria-current={on ? 'page' : undefined}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm md:min-h-9 ${
                   on
                     ? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-slate-900'
                     : 'border-gray-200 bg-white text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
@@ -273,9 +268,9 @@ export default function TemplatesPage() {
           })}
         </nav>
 
-        <div className="flex gap-8">
-          {/* Desktop: document types */}
-          <nav aria-label="Document types" className="sticky top-6 hidden w-56 shrink-0 self-start lg:block">
+        <div className="flex gap-6">
+          {/* Wide screens: document types */}
+          <nav aria-label="Document types" className="sticky top-6 hidden w-56 shrink-0 self-start xl:block">
             <ul className="space-y-0.5">
               {documentTypes.map((d) => {
                 const on = d.id === activeDocType;
@@ -301,7 +296,7 @@ export default function TemplatesPage() {
             </ul>
           </nav>
 
-          <main className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">{currentDocType?.label} templates</h2>
@@ -318,7 +313,7 @@ export default function TemplatesPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-2 2xl:grid-cols-3">
               {currentTemplates.map((template) => (
                 <article
                   key={template.id}
@@ -433,9 +428,10 @@ export default function TemplatesPage() {
                 </article>
               ))}
             </div>
-          </main>
+          </div>
         </div>
-      </div>
+        </div>
+      </SettingsPageShell>
 
       {/* Preview Modal */}
       {previewModal.template && (
@@ -475,7 +471,7 @@ export default function TemplatesPage() {
         />
       )}
 
-    </div>
+    </>
   );
 }
 

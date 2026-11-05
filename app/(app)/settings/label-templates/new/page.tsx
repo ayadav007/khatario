@@ -4,8 +4,9 @@ export const dynamic = 'force-dynamic';
 
 import { LabelTemplateEditor } from '@/components/labels/LabelTemplateEditor';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
-import { Loader2 } from 'lucide-react';
-import Link from 'next/link';
+import { FileText, Loader2 } from 'lucide-react';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 export default function NewLabelTemplatePage() {
   const { hasFeature, loading } = useFeatureRegistry();
@@ -20,18 +21,13 @@ export default function NewLabelTemplatePage() {
 
   if (!hasFeature('barcode_label_templates')) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center">
-        <h2 className="text-xl font-semibold">Feature not available</h2>
-        <p className="text-text-secondary mt-2">
-          The Label Template Designer isn't on your plan.
-        </p>
-        <Link
-          href="/settings/label-templates"
-          className="inline-block mt-4 text-primary-600 hover:underline"
-        >
-          Back to templates
-        </Link>
-      </div>
+      <SettingsPageShell title="Label templates" description="Design barcode and price labels for your items." icon={FileText}>
+        <PlanFeatureDeniedCallout
+          featureKey="barcode_label_templates"
+          title="Label designer isn't in your plan"
+          description="Upgrade to design your own barcode and price labels."
+        />
+      </SettingsPageShell>
     );
   }
 

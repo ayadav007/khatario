@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Zap, Plus, X, Play } from 'lucide-react';
+import { Zap, Plus, X, Pencil } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 
 interface Workflow {
@@ -50,23 +51,29 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
 
   return (
     <div className="space-y-6">
-      <Card className="dark:bg-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Zap className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-            <h2 className="text-xl font-bold dark:text-gray-100">Workflow Automation</h2>
-          </div>
+      <Card>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary">
+            {workflows.length === 1 ? '1 workflow' : `${workflows.length} workflows`}
+          </p>
           <Button onClick={() => setEditing({ name: '', triggerType: '', conditions: [], actions: [], isActive: true })} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             New Workflow
           </Button>
         </div>
 
+        {workflows.length === 0 ? (
+          <EmptyState
+            icon={Zap}
+            title="No workflows yet"
+            description="A workflow runs actions for you when something happens, like sending a message when an invoice is overdue."
+          />
+        ) : null}
         {workflows.map((workflow) => (
-          <div key={workflow.id} className="p-4 border dark:border-gray-700 rounded-lg mb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold dark:text-gray-100">{workflow.name}</h3>
+          <div key={workflow.id} className="mb-3 rounded-lg border border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate font-semibold text-text-primary">{workflow.name}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   When {workflow.triggerType} → {workflow.actions.length} action(s)
                 </p>
@@ -75,9 +82,9 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
                 <span className={`px-3 py-1 rounded-full text-xs ${workflow.isActive ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                   {workflow.isActive ? 'Active' : 'Inactive'}
                 </span>
-                <button onClick={() => setEditing(workflow)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                  <Play className="w-4 h-4 dark:text-gray-400" />
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(workflow)} aria-label={`Edit ${workflow.name}`}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>
@@ -85,8 +92,8 @@ export const WorkflowBuilder: React.FC<{ businessId: string }> = ({ businessId }
       </Card>
 
       {editing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-[600px] max-h-[80vh] overflow-y-auto dark:bg-gray-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <Card role="dialog" aria-modal="true" className="max-h-[90dvh] w-full max-w-xl overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">
               {editing.id ? 'Edit Workflow' : 'Create Workflow'}
             </h3>

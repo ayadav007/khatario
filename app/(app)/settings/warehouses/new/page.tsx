@@ -222,7 +222,7 @@ export default function NewLocationPage() {
   };
 
   return (
-      <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <div className="w-full min-w-0 max-w-5xl space-y-stack-page">
         <MobileDuplicatePageChrome
           title="Add new warehouse"
           description="Name, address, and type for stock tracking and transfers."

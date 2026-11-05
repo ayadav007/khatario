@@ -237,7 +237,7 @@ function UIFeaturesSettingsPage() {
       description="Personal color scheme (this device) and organization-wide portal branding for everyone in your business."
       icon={Layout}
     >
-      <Card className="p-6">
+      <Card padding="lg">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
@@ -254,7 +254,7 @@ function UIFeaturesSettingsPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card padding="lg">
         <div className="flex gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-800/35">
             <Palette className="h-5 w-5 text-primary-600 dark:text-primary-300" />
