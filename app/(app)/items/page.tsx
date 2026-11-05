@@ -257,8 +257,8 @@ function ItemsPage() {
     <>
       {/* Filters - Desktop */}
       <Card padding="md" className="hidden md:block mb-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[12rem] flex-1 basis-56">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
               type="text"
@@ -269,11 +269,11 @@ function ItemsPage() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="contents">
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as any)}
-              className="input w-auto text-sm"
+              className="input w-auto shrink-0 text-sm"
             >
               <option value="all">All Types</option>
               <option value="goods">Goods</option>
@@ -283,7 +283,7 @@ function ItemsPage() {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="input w-auto text-sm max-w-[10rem]"
+              className="input w-auto shrink-0 text-sm max-w-[10rem]"
             >
               <option value="all">All Categories</option>
               {categories.map((cat) => (
@@ -296,7 +296,7 @@ function ItemsPage() {
             <select
               value={stockFilter}
               onChange={(e) => setStockFilter(e.target.value as 'all' | 'low' | 'out')}
-              className="input w-auto text-sm"
+              className="input w-auto shrink-0 text-sm"
               disabled={typeFilter === 'service'}
             >
               <option value="all">All Stock</option>
@@ -307,7 +307,7 @@ function ItemsPage() {
             <select
               value={storeFilter}
               onChange={(e) => setStoreFilter(e.target.value as 'all' | 'in' | 'out')}
-              className="input w-auto text-sm"
+              className="input w-auto shrink-0 text-sm"
             >
               <option value="all">All store</option>
               <option value="in">In store</option>
@@ -317,39 +317,43 @@ function ItemsPage() {
             <select
               value={featuredFilter}
               onChange={(e) => setFeaturedFilter(e.target.value as 'all' | 'featured')}
-              className="input w-auto text-sm"
+              className="input w-auto shrink-0 text-sm"
             >
               <option value="all">All featured</option>
               <option value="featured">Featured only</option>
             </select>
 
-            <ColumnSelector
-              columns={ITEM_TABLE_COLUMNS}
-              visibleColumns={visibleColumns}
-              onColumnsChange={setVisibleColumns}
-              storageKey="items-list"
-            />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <ColumnSelector
+                columns={ITEM_TABLE_COLUMNS}
+                visibleColumns={visibleColumns}
+                onColumnsChange={setVisibleColumns}
+                storageKey="items-list"
+              />
 
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                const link = document.createElement('a');
-                link.href = '/item-import-template.csv';
-                link.download = 'item-import-template.csv';
-                link.click();
-              }}
-            >
-              Template
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => document.getElementById('item-import-input')?.click()}
-              isLoading={importing}
-            >
-              Import
-            </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="min-h-11"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = '/item-import-template.csv';
+                  link.download = 'item-import-template.csv';
+                  link.click();
+                }}
+              >
+                Template
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="min-h-11"
+                onClick={() => document.getElementById('item-import-input')?.click()}
+                isLoading={importing}
+              >
+                Import
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
