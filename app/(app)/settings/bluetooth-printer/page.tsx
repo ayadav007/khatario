@@ -339,7 +339,7 @@ function DefaultChip({ on, label, onClick }: { on: boolean; label: string; onCli
 
 function FeatureLockedMessage() {
   return (
-    <SettingsPageShell title="Print & devices" description="Bill and barcode label printers on this device." icon={Printer} className="py-10">
+    <SettingsPageShell title="Print & devices" description="Bill and barcode label printers on this device." icon={Printer}>
       <Card padding="lg" className="space-y-4">
         <PlanFeatureDeniedCallout
           featureKey={FeatureKeys.BARCODE_THERMAL_PRINTER}

@@ -97,8 +97,10 @@ export default function AttendanceRegularizationSettingsPage() {
 
   if (loading || !settings) {
     return (
-      <SettingsPageShell title="Attendance regularization" description="Loading…" icon={ClipboardCheck}>
-        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
+      <SettingsPageShell title="Attendance regularization" icon={ClipboardCheck}>
+        <div className="flex h-48 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" aria-label="Loading" />
+        </div>
       </SettingsPageShell>
     );
   }

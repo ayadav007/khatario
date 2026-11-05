@@ -397,7 +397,7 @@ export default function CommissionRulesPage() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(rule.id)}>
+                          <Button size="sm" variant="ghost" aria-label="Delete" onClick={() => handleDelete(rule.id)}>
                             <Trash2 className="w-4 h-4 text-red-600" />
                           </Button>
                         </div>

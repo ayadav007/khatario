@@ -140,7 +140,7 @@ export default function StoreEnquiriesPage() {
             type="button"
             onClick={() => { setFilter(f.key); setPage(1); }}
             className={clsx(
-              'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+              'inline-flex min-h-11 flex-shrink-0 items-center rounded-full px-4 py-1.5 text-sm font-medium md:min-h-9 transition-colors',
               filter === f.key ? 'bg-gray-900 text-white' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
             )}
           >
@@ -155,10 +155,10 @@ export default function StoreEnquiriesPage() {
         </div>
       ) : enquiries.length === 0 ? (
         <div className="py-12 text-center">
-          <Inbox className="mx-auto h-12 w-12 text-gray-300" />
+          <Inbox className="mx-auto h-12 w-12 text-gray-300 dark:text-slate-600" />
           <p className="mt-3 text-sm text-text-secondary">No enquiries here yet</p>
           <p className="mt-1 text-xs text-text-muted">
-            Turn on the contact form in Online Store → Studio → Contact page → Contact form.
+            Turn on the contact form on your store&apos;s Contact page: Online Store → Themes → Customise → Contact page.
           </p>
         </div>
       ) : (
@@ -170,7 +170,7 @@ export default function StoreEnquiriesPage() {
                 <button type="button" className="block w-full text-left" onClick={() => toggle(e)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className={clsx('text-sm text-text-primary', e.status === 'new' ? 'font-bold' : 'font-medium')}>
                           {e.name}
                         </span>
@@ -198,13 +198,13 @@ export default function StoreEnquiriesPage() {
                   <div className="mt-3 space-y-3 border-t border-border pt-3">
                     <div className="flex flex-wrap gap-4 text-sm">
                       {e.phone ? (
-                        <a href={`tel:${e.phone}`} className="flex items-center gap-1 text-blue-600 hover:underline">
+                        <a href={`tel:${e.phone}`} className="flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-300">
                           <Phone className="h-3.5 w-3.5" />
                           {e.phone}
                         </a>
                       ) : null}
                       {e.email ? (
-                        <a href={`mailto:${e.email}`} className="flex items-center gap-1 text-blue-600 hover:underline">
+                        <a href={`mailto:${e.email}`} className="flex min-w-0 items-center gap-1 break-all text-blue-600 hover:underline dark:text-blue-300">
                           <Mail className="h-3.5 w-3.5" />
                           {e.email}
                         </a>
@@ -217,7 +217,7 @@ export default function StoreEnquiriesPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => void setStatus(e, 'replied', true)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-950/30"
+                          className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-sm font-medium md:text-xs text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-950/30"
                         >
                           <MessageCircle className="h-3.5 w-3.5" />
                           Reply on WhatsApp

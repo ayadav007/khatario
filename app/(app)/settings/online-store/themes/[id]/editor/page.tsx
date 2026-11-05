@@ -101,8 +101,11 @@ export default function Studio2EditorPage() {
   if (narrow === null) return null;
   if (narrow) {
     return (
-      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-surface p-6 text-center text-sm text-text-secondary">
-        Open the editor on a laptop or desktop
+      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-surface p-6 text-center text-sm text-text-secondary">
+        <p>Open the editor on a laptop or desktop.</p>
+        <Link href={LIBRARY_PATH} className="inline-flex min-h-11 items-center rounded-lg px-4 font-medium text-primary-700 underline dark:text-primary-200">
+          Back to themes
+        </Link>
       </div>
     );
   }

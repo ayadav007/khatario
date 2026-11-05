@@ -242,7 +242,7 @@ export default function HolidaysPage() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center justify-center gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => handleDelete(holiday.id)}>
+                            <Button size="sm" variant="ghost" aria-label="Delete" onClick={() => handleDelete(holiday.id)}>
                               <Trash2 className="w-4 h-4 text-red-600" />
                             </Button>
                           </div>

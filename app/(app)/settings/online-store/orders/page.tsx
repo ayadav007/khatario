@@ -328,7 +328,7 @@ export default function StoreOrdersPage() {
         <button
           onClick={() => { setStatusFilter(null); setKhataFilter(false); setPage(1); }}
           className={clsx(
-            'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+            'inline-flex min-h-11 flex-shrink-0 items-center rounded-full px-4 py-1.5 text-sm font-medium md:min-h-9 transition-colors',
             !statusFilter && !khataFilter
               ? 'bg-gray-900 text-white'
               : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
@@ -339,7 +339,7 @@ export default function StoreOrdersPage() {
         <button
           onClick={() => { setStatusFilter(null); setKhataFilter(true); setPage(1); }}
           className={clsx(
-            'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
+            'inline-flex min-h-11 flex-shrink-0 items-center rounded-full px-4 py-1.5 text-sm font-medium md:min-h-9 whitespace-nowrap transition-colors',
             khataFilter
               ? 'bg-gray-900 text-white'
               : 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/30',
@@ -352,7 +352,7 @@ export default function StoreOrdersPage() {
             key={key}
             onClick={() => { setStatusFilter(key); setKhataFilter(false); setPage(1); }}
             className={clsx(
-              'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
+              'inline-flex min-h-11 flex-shrink-0 items-center rounded-full px-4 py-1.5 text-sm font-medium md:min-h-9 whitespace-nowrap transition-colors',
               statusFilter === key
                 ? 'bg-gray-900 text-white'
                 : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
@@ -377,12 +377,21 @@ export default function StoreOrdersPage() {
           {orders.map((order) => (
             <Card
               key={order.id}
-              className="cursor-pointer p-4 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open order ${order.order_number}`}
+              className="cursor-pointer p-4 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               onClick={() => void openOrder(order)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void openOrder(order);
+                }
+              }}
             >
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-sm font-bold text-text-primary">
                       {order.order_number}
                     </span>
@@ -405,8 +414,8 @@ export default function StoreOrdersPage() {
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-text-secondary">{order.customer_name}</p>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-text-muted">
+                  <p className="mt-1 truncate text-sm text-text-secondary">{order.customer_name}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {formatDate(order.created_at)}

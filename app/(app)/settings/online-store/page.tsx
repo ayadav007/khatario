@@ -480,7 +480,7 @@ export default function OnlineStoreSettingsPage() {
           {storeEngine ? (
             <Link
               href="/settings/online-store/themes"
-              className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
             >
               <Palette className="h-3.5 w-3.5" />
               Themes
@@ -488,14 +488,14 @@ export default function OnlineStoreSettingsPage() {
           ) : null}
           <Link
             href="/settings/online-store/enquiries"
-            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Inbox className="h-3.5 w-3.5" />
             Enquiries
           </Link>
           <Link
             href="/settings/online-store/reviews"
-            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Star className="h-3.5 w-3.5" />
             Reviews
@@ -507,7 +507,7 @@ export default function OnlineStoreSettingsPage() {
           </Link>
           <Link
             href="/settings/online-store/abandoned-carts"
-            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <ShoppingCart className="h-3.5 w-3.5" />
             Abandoned carts

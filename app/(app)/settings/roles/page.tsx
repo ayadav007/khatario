@@ -247,7 +247,7 @@ export default function RolesPage() {
         description="Manage role-based access control"
         icon={Shield}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           {/* Roles List */}
           <Card>
             <div className="flex items-center justify-between mb-4">
@@ -302,8 +302,8 @@ export default function RolesPage() {
 
           {/* Permissions */}
           {selectedRole && (
-            <Card className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-4">
+            <Card className="min-w-0 xl:col-span-2">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-text-primary">Permissions</h2>
                 {(() => {
                   const role = roles.find((r) => r.id === selectedRole);
@@ -335,7 +335,7 @@ export default function RolesPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-6 max-h-[600px] overflow-y-auto">
+                <div className="space-y-6">
                   {(() => {
                     const selectedRoleData = roles.find(r => r.id === selectedRole);
                     const isPrimaryAdminRole = selectedRoleData?.role_key === 'primary_admin';
@@ -352,7 +352,7 @@ export default function RolesPage() {
                         {sortedModuleEntries.map(([moduleKey, moduleData]) => (
                           <div key={moduleKey} className="border-b border-border pb-4 last:border-b-0">
                             <h3 className="font-semibold text-text-primary mb-3">{moduleData.module_name}</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                               {moduleData.permissions.map((perm) => (
                                 <label
                                   key={perm.id}
@@ -382,7 +382,7 @@ export default function RolesPage() {
           )}
 
           {!selectedRole && (
-            <Card className="lg:col-span-2">
+            <Card className="min-w-0 xl:col-span-2">
               <div className="text-center py-12">
                 <Shield className="w-12 h-12 text-text-muted mx-auto mb-4" />
                 <p className="text-text-secondary">Select a role to manage permissions</p>

@@ -201,7 +201,7 @@ export function StoreReviewsManager() {
             type="button"
             onClick={() => setTab(t.key)}
             className={clsx(
-              'flex flex-shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+              'flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium md:min-h-9 transition-colors',
               tab === t.key ? 'bg-gray-900 text-white' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
             )}
           >

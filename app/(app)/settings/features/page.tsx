@@ -101,7 +101,7 @@ function ColorField({
               disabled={disabled}
               title={p.label}
               onClick={() => onPickerChange(p.hex)}
-              className="h-7 w-7 rounded-full border-2 border-border shadow-sm transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:pointer-events-none disabled:opacity-50"
+              className="h-10 w-10 rounded-full border-2 border-border shadow-sm md:h-8 md:w-8 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:pointer-events-none disabled:opacity-50"
               style={{ backgroundColor: p.hex }}
             />
           ))}

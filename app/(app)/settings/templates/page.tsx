@@ -402,7 +402,7 @@ export default function TemplatesPage() {
                         type="button"
                         onClick={() => handlePreview(template)}
                         aria-label={`Preview ${template.name}`}
-                        className="rounded-lg p-1.5 text-text-secondary hover:bg-gray-100 hover:text-text-primary lg:hidden dark:hover:bg-slate-800"
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-text-secondary hover:bg-gray-100 hover:text-text-primary sm:h-9 sm:w-9 lg:hidden dark:hover:bg-slate-800"
                       >
                         <Eye className="h-4 w-4" />
                       </button>
@@ -410,7 +410,7 @@ export default function TemplatesPage() {
                         type="button"
                         onClick={() => openDesigner(template)}
                         aria-label={`Customise ${template.name}`}
-                        className="rounded-lg p-1.5 text-text-secondary hover:bg-gray-100 hover:text-text-primary lg:hidden dark:hover:bg-slate-800"
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-text-secondary hover:bg-gray-100 hover:text-text-primary sm:h-9 sm:w-9 lg:hidden dark:hover:bg-slate-800"
                       >
                         <Palette className="h-4 w-4" />
                       </button>
@@ -419,7 +419,7 @@ export default function TemplatesPage() {
                         onClick={() => handleCopyTemplate(template)}
                         title="Use these settings for other documents"
                         aria-label={`Copy ${template.name} settings to other documents`}
-                        className="hidden rounded-lg p-1.5 text-text-secondary hover:bg-gray-100 hover:text-text-primary sm:inline-flex dark:hover:bg-slate-800"
+                        className="hidden h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-gray-100 hover:text-text-primary sm:inline-flex dark:hover:bg-slate-800"
                       >
                         <Copy className="h-4 w-4" />
                       </button>

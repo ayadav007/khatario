@@ -283,7 +283,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
     <div className="flex items-center gap-2">
       <Link
         href="/settings/online-store"
-        className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+        className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
         Online store
@@ -295,7 +295,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
             onClick={() => void copyCurrentDesign()}
             disabled={busy !== null || !canAddTheme(count)}
             title={canAddTheme(count) ? MIGRATED_CHOICE.description : LIMIT_NOTICE}
-            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60 disabled:opacity-60"
           >
             <Copy className="h-3.5 w-3.5" aria-hidden />
             Copy current store design

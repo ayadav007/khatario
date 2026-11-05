@@ -559,25 +559,25 @@ export default function BackupRestorePage() {
       {/* Restore File Selected */}
       {restoreFile && !showPreview && (
         <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <FileText className="w-8 h-8 text-purple-600" />
-              <div>
-                <p className="font-semibold">{restoreFile.name}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center space-x-3">
+              <FileText className="w-8 h-8 shrink-0 text-purple-600" />
+              <div className="min-w-0">
+                <p className="truncate font-semibold" title={restoreFile.name}>{restoreFile.name}</p>
                 <p className="text-sm text-text-secondary">{formatBytes(restoreFile.size)}</p>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handlePreviewRestore}
-                className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
+                className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
               >
                 <Eye className="w-4 h-4" />
                 <span>Preview</span>
               </button>
               <button
                 onClick={() => setRestoreFile(null)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
+                className="min-h-11 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
               >
                 <X className="w-4 h-4" />
                 <span>Cancel</span>
@@ -597,25 +597,25 @@ export default function BackupRestorePage() {
         </div>
         
         <div className="space-y-3">
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 border border-border rounded-lg">
+            <div className="flex min-w-0 items-center space-x-3">
+              <div className="w-10 h-10 shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center">
                 <Cloud className="w-6 h-6 text-primary-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="font-medium">Google Drive</p>
                 <p className="text-sm text-text-secondary">
                   {googleConnected ? 'Connected' : googleConfigured ? 'Configured (not connected)' : 'Not configured'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               {!googleConnected ? (
                 <>
                   <button
                     onClick={handleConnectGoogleDrive}
                     disabled={connectingGoogle}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center space-x-2"
+                    className="min-h-11 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center space-x-2"
                   >
                     <LinkIcon className="w-4 h-4" />
                     <span>{connectingGoogle ? 'Connecting...' : googleConfigured ? 'Connect' : 'Setup'}</span>
@@ -623,7 +623,7 @@ export default function BackupRestorePage() {
                   {googleConfigured && (
                     <button
                       onClick={() => setShowGoogleCredentialsModal(true)}
-                      className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 text-sm"
+                      className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 text-sm"
                     >
                       Edit Credentials
                     </button>
@@ -632,7 +632,7 @@ export default function BackupRestorePage() {
               ) : (
                 <button 
                   onClick={handleDisconnectGoogleDrive}
-                  className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
+                  className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
                 >
                   <X className="w-4 h-4" />
                   <span>Disconnect</span>
@@ -816,7 +816,8 @@ export default function BackupRestorePage() {
                   </span>
                   <button
                     onClick={() => handleDeleteBackup(backup.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg"
+                    aria-label="Delete backup"
+                    className="flex h-11 w-11 items-center justify-center text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

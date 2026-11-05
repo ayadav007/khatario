@@ -173,8 +173,8 @@ export default function ActivityLogPage() {
                         <Activity className="w-5 h-5 text-primary-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-text-primary">
+                        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="min-w-0 truncate font-medium text-text-primary">
                             {log.current_user_name || log.user_name}
                           </span>
                           <span

@@ -340,8 +340,9 @@ function TemplateCard({
           <button
             onClick={() => onDelete(template)}
             disabled={busy}
-            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-950/30 md:h-9 md:w-9"
             title="Delete"
+            aria-label={`Delete ${template.name}`}
           >
             <Trash2 className="w-4 h-4" />
           </button>

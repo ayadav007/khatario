@@ -102,15 +102,15 @@ export default function PaymentProvidersSettingsPage() {
 
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="min-w-[240px]">
+            <div className="min-w-0 flex-1 basis-60">
               <div className="text-sm font-semibold text-text-primary">Preferred provider</div>
               <div className="text-xs text-text-muted mt-0.5">
                 Used by WhatsApp payment links when multiple providers are configured.
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <select
-                className="input min-w-[240px]"
+                className="input w-full sm:w-60"
                 value={defaultProvider}
                 disabled={providersLoading || prefLoading || configuredProviders.length === 0}
                 onChange={(e) => setDefaultProvider(e.target.value)}
