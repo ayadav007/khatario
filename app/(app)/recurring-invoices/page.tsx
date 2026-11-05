@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { InvoiceSearchSelect } from '@/components/invoices/InvoiceSearchSelect';
 
 interface Recurring {
   id: string;
@@ -200,20 +201,17 @@ export default function RecurringInvoicesPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1">Copy lines from invoice</label>
-            <select
-              className="w-full rounded-md border border-border px-3 py-2 text-sm"
+            <InvoiceSearchSelect
+              invoices={customerInvoices}
+              customerId={form.customer_id || null}
               value={form.template_invoice_id}
-              onChange={(e) => setForm({ ...form, template_invoice_id: e.target.value })}
+              onChange={(id) => setForm((f) => ({ ...f, template_invoice_id: id }))}
               required
               disabled={!form.customer_id}
-            >
-              <option value="">{form.customer_id && !customerInvoices.length ? 'No final invoices' : 'Select'}</option>
-              {customerInvoices.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.invoice_number} · {String(i.invoice_date).slice(0, 10)}
-                </option>
-              ))}
-            </select>
+              placeholder={!form.customer_id ? 'Select a customer first' : 'Select'}
+              ariaLabel="Copy lines from invoice"
+              buttonClassName="flex w-full items-center justify-between rounded-md border border-border bg-white px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

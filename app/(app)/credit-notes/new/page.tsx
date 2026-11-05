@@ -14,6 +14,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { round2 } from '@/lib/invoices/line-gst';
+import { InvoiceSearchSelect } from '@/components/invoices/InvoiceSearchSelect';
 
 interface Customer {
   id: string;
@@ -570,19 +571,15 @@ export default function NewCreditNotePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Original Invoice {selectedCustomer?.gstin ? '(required for GSTIN customer)' : '(optional)'}
                 </label>
-                <select
+                <InvoiceSearchSelect
+                  invoices={invoices}
+                  customerId={formData.customer_id || null}
                   value={formData.invoice_id}
-                  onChange={(e) => setFormData({ ...formData, invoice_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  onChange={(id) => setFormData((prev) => ({ ...prev, invoice_id: id }))}
                   disabled={!formData.customer_id}
-                >
-                  <option value="">Select Invoice (Optional)</option>
-                  {invoices.map((invoice) => (
-                    <option key={invoice.id} value={invoice.id}>
-                      {invoice.invoice_number} - ₹{Number(invoice.grand_total).toLocaleString('en-IN')}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={formData.customer_id ? 'Select Invoice (Optional)' : 'Select a customer first'}
+                  ariaLabel="Original invoice"
+                />
               </div>
             )}
 

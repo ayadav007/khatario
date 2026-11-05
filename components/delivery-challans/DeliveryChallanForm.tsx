@@ -14,6 +14,7 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { CustomerSearchSelect } from '@/components/customers/CustomerSearchSelect';
+import { InvoiceSearchSelect, type InvoiceOption } from '@/components/invoices/InvoiceSearchSelect';
 import { Customer } from '@/types/database';
 import { useToastContext } from '@/contexts/ToastContext';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
@@ -130,7 +131,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const [loadingExisting, setLoadingExisting] = useState(!!editId);
   const [existingStatus, setExistingStatus] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceOption[]>([]);
   const [salesOrders, setSalesOrders] = useState<any[]>([]);
   const [suggestedNumber, setSuggestedNumber] = useState('');
   const [supplierStateCode, setSupplierStateCode] = useState<string>('');
@@ -150,8 +151,6 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   useEffect(() => {
     if (!business?.id) return;
     fetchCustomers();
-    fetchInvoices();
-    fetchSalesOrders();
     fetchNumberingAndTax();
     fetchHolders();
   }, [business?.id, branchId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -169,6 +168,13 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
       console.error('Error loading suppliers and godowns:', error);
     }
   }
+
+  // Invoices and sales orders follow the chosen customer, so the pickers list only that customer's documents.
+  useEffect(() => {
+    if (!business?.id) return;
+    fetchInvoices(formData.customer_id);
+    fetchSalesOrders(formData.customer_id);
+  }, [business?.id, branchId, formData.customer_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (business?.id && editId) loadExisting(editId);
@@ -188,9 +194,12 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     }
   }
 
-  async function fetchInvoices() {
+  async function fetchInvoices(customerId: string) {
     try {
-      const res = await fetch(`/api/invoices?business_id=${business!.id}&status=final&limit=100&user_id=${user?.id}`);
+      const qs = new URLSearchParams({ business_id: business!.id, status: 'final', limit: customerId ? '500' : '100' });
+      if (user?.id) qs.set('user_id', user.id);
+      if (customerId) qs.set('customer_id', customerId);
+      const res = await fetch(`/api/invoices?${qs}`);
       const data = await res.json();
       setInvoices(data.invoices || []);
     } catch (error) {
@@ -198,9 +207,11 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     }
   }
 
-  async function fetchSalesOrders() {
+  async function fetchSalesOrders(customerId: string) {
     try {
-      const res = await fetch(`/api/sales-orders?business_id=${business!.id}`);
+      const qs = new URLSearchParams({ business_id: business!.id });
+      if (customerId) qs.set('customer_id', customerId);
+      const res = await fetch(`/api/sales-orders?${qs}`);
       const data = await res.json();
       setSalesOrders(data.salesOrders || []);
     } catch (error) {
@@ -305,6 +316,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     setFormData((prev) => ({
       ...prev,
       customer_id: customer.id,
+      // A document linked for another customer no longer fits this challan.
+      invoice_id: prev.customer_id && prev.customer_id !== customer.id ? '' : prev.invoice_id,
+      sales_order_id: prev.customer_id && prev.customer_id !== customer.id ? '' : prev.sales_order_id,
       shipping_address: customer.shipping_address || customer.address || prev.shipping_address,
       billing_address: customer.billing_address || customer.address || prev.billing_address,
       place_of_supply_state_code:
@@ -717,18 +731,15 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Link to Invoice (Optional)</label>
-              <select
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              <InvoiceSearchSelect
+                invoices={invoices}
+                customerId={formData.customer_id || null}
                 value={formData.invoice_id}
-                onChange={(e) => linkSource('invoice', e.target.value)}
-              >
-                <option value="">Select Invoice</option>
-                {invoices.map((inv) => (
-                  <option key={inv.id} value={inv.id}>
-                    {inv.invoice_number} - {inv.customer_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => linkSource('invoice', id)}
+                placeholder="Select Invoice"
+                ariaLabel="Link to invoice"
+                buttonClassName="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Link to Sales Order (Optional)</label>
@@ -737,7 +748,9 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                 value={formData.sales_order_id}
                 onChange={(e) => linkSource('sales_order', e.target.value)}
               >
-                <option value="">Select Sales Order</option>
+                <option value="">
+                  {formData.customer_id && salesOrders.length === 0 ? 'No sales orders for this customer' : 'Select Sales Order'}
+                </option>
                 {salesOrders.map((so) => (
                   <option key={so.id} value={so.id}>
                     {so.order_number} - {so.customer_name}
