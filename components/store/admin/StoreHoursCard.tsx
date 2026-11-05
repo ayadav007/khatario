@@ -3,6 +3,7 @@
 import { Clock } from 'lucide-react';
 import { SetupBlock, SetupGroup, SetupSwitch } from '@/components/store/admin/StoreSetupLayout';
 import {
+  copyMondayTimes,
   sanitizeStoreHours,
   STORE_DAYS,
   type StoreDay,
@@ -54,11 +55,7 @@ export function StoreHoursCard({
   const setDay = (d: StoreDay, patch: Partial<StoreHoursDraft[StoreDay]>) =>
     onChange({ ...value, [d]: { ...value[d], ...patch } });
 
-  const copyMonday = () => {
-    const next = {} as StoreHoursDraft;
-    for (const d of STORE_DAYS) next[d] = { ...value.mon };
-    onChange(next);
-  };
+  const copyMonday = () => onChange(copyMondayTimes(value));
 
   return (
     <SetupGroup

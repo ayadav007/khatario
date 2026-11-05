@@ -1,5 +1,6 @@
 import {
   closedNotice,
+  copyMondayTimes,
   openStatusLabel,
   sanitizeStoreHours,
   storeOpenState,
@@ -124,5 +125,39 @@ describe('sanitizeStoreHours', () => {
     expect(sanitizeStoreHours(42)).toBeNull();
     expect(sanitizeStoreHours([day])).toBeNull();
     expect(sanitizeStoreHours({ mon: null, tue: { open: 'x', close: 'y' } })).toBeNull();
+  });
+});
+
+describe('copyMondayTimes', () => {
+  const t = (on: boolean, open: string, close: string) => ({ on, open, close });
+  const draft = {
+    mon: t(true, '07:00', '22:00'),
+    tue: t(true, '09:00', '21:00'),
+    wed: t(false, '10:00', '18:00'),
+    thu: t(true, '09:00', '21:00'),
+    fri: t(true, '09:00', '21:00'),
+    sat: t(true, '09:00', '21:00'),
+    sun: t(false, '09:00', '21:00'),
+  };
+
+  it("copies Monday's times to every day and keeps each day's own on/off switch", () => {
+    const next = copyMondayTimes(draft);
+    for (const d of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const) {
+      expect({ d, open: next[d].open, close: next[d].close }).toEqual({ d, open: '07:00', close: '22:00' });
+      expect({ d, on: next[d].on }).toEqual({ d, on: draft[d].on });
+    }
+  });
+
+  it('does not close the week when Monday is switched off', () => {
+    const next = copyMondayTimes({ ...draft, mon: t(false, '08:00', '20:00') });
+    expect(next.tue).toEqual(t(true, '08:00', '20:00'));
+    expect(next.wed).toEqual(t(false, '08:00', '20:00'));
+    expect(next.mon.on).toBe(false);
+  });
+
+  it('leaves the draft it was given untouched', () => {
+    const before = JSON.stringify(draft);
+    copyMondayTimes(draft);
+    expect(JSON.stringify(draft)).toBe(before);
   });
 });

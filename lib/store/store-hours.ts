@@ -114,3 +114,16 @@ export function closedNotice(state: StoreOpenState): string | null {
     state.opensOn === 'today' ? '' : state.opensOn === 'tomorrow' ? 'tomorrow ' : `on ${STORE_DAY_LABELS[state.opensOn]} `;
   return `We're closed now. Orders placed now are delivered after we open ${when}at ${formatStoreTime(state.opensAt)}.`;
 }
+
+/**
+ * "Copy Monday to all days": every day gets Monday's opening and closing times, and keeps its own on/off switch, so
+ * one click can never close (or open) a day. Works on the store hours editor's draft.
+ */
+export function copyMondayTimes<T extends { on: boolean; open: string; close: string }>(
+  draft: Record<StoreDay, T>,
+): Record<StoreDay, T> {
+  const { open, close } = draft.mon;
+  const out = {} as Record<StoreDay, T>;
+  for (const d of STORE_DAYS) out[d] = { ...draft[d], open, close };
+  return out;
+}
