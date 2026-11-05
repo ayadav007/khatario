@@ -869,3 +869,27 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** removed the always-on `useRenderLoopProbe` (deleted `lib/debug/render-loop-detector.ts`, calls in 15 providers/pages); the other `lib/debug` probes are opt-in via localStorage and silent, so kept. `GET /api/public/store/[subdomain]/account` now answers 200 `{ customer: null, orders: [] }` for a signed-out shopper (both callers already handled `customer: null`). Removed 298 `console.log`/`console.debug` statements in 60 files with an AST script (`tmp-qa/strip-console-log.cjs`), then 35 blocks it left empty and 21 values that only fed a log. Kept: everything imported by the PM2 workers `todo-reminder-worker` and `kb-index-worker` (their logs are not stripped by `removeConsole`, list from `tmp-qa/worker-closure.cjs`), dev-only OTP printouts, the opt-in Gemini timing diagnostic, and the `aggregate:invoice-learning` structured logger. Debug-only DB queries removed with their logs: 4 barcode lookups on every empty item search, 4 counts on an empty dashboard chart, 2 supplier counts on every supplier list, 1 template-assignment query in invoice preview.
 - **Shipped:** uncommitted, 76 files. tsc: one error, in `lib/store/engine/migrate.ts`, from other in-progress store work (not these files). Jest (no DB suites): 469 suites pass, 14 fail; none of the 14 import a changed file except `tests/invoice-golden.benchmark.test.ts`, which fails the same way with the original `lib/indian-gst-invoice-extract.ts`.
 - **Open:** on staging after deploy, open the theme editor and check the console has no `[RENDER-LOOP]` lines or `/account` 401; search an unknown barcode and check it still says not found. `notifyAdminsOfNewBooking` (`lib/demo-booking-notifications.ts`) never sent anything; its only output was the removed log. The 14 failing suites were failing before this change.
+
+## 2026-11-03: Typography audit (IBM Plex direction)
+- **Asked:** comprehensive typography audit vs IBM Plex Sans / Noto Devanagari / Fraunces (marketing sparingly); document first; implement only approved corrections.
+- **Decided:** no font swap yet — product is Inter-first today; wait for owner approval of P1–P3. Storefront multi-font stays separate from accounting UI. Existing `lib/typography.ts` / `type-*` tokens should be grown into, not redesigned.
+- **Shipped:** audit canvas only (`typography-audit.canvas.tsx`). Nothing committed; no app font code changed.
+- **Open:** owner chooses phases and: default to IBM Plex; keep/drop DM Sans & Source Sans presets; load Noto Devanagari; PDF Arial?Plex same PR or later; Flutter fonts same change or follow-up.
+
+## 2026-11-04: Maglo-style marketing preview page
+- **Asked:** take Khatario data and create a separate marketing page designed like Maglo; show how it looks.
+- **Decided:** preview only at `/preview/maglo-marketing` (noindex); do not replace the live landing. Maglo visual language (lime + charcoal KPI cards + dashboard mock) with existing Khatario billing copy. Made `/preview/` public in middleware and `isPublicMarketingSurface`.
+- **Shipped:** `app/preview/maglo-marketing/page.tsx`, `components/marketing/preview/MagloMarketingPreview.tsx` + CSS, middleware + public-surfaces + test. Nothing committed.
+- **Open:** owner review of look; decide keep/iterate/discard before any live landing change.
+
+## 2026-11-05: SEO daily run (Job 1), covering the missed 11-03 and 11-04 runs
+- **Asked:** scheduled task "Khatario SEO 1: daily rank & optimise".
+- **Decided:** no page optimised (no playbook trigger: no visible query, `/guides` at 61 impressions, none from India, 0 new impressions since 10-30). Committed the orphaned `2026-11-03.json` from the run that failed on the weekly usage limit. Production now serves `main` (themes pages live, sitemap 14 URLs) but the home page body is still the old Site Builder document, so the owner action narrows to Reset + Publish in the Site Builder.
+- **Shipped:** `docs/seo/reports/2026-11-03.json`, `docs/seo/reports/2026-11-05.{json,md}`, `docs/seo/STATE.md` (committed by name). No code change, nothing pushed. This log entry is left uncommitted because the file already holds another session's uncommitted entry.
+- **Open:** blog still has 0 posts; a writer run started alongside this one at 07:25 IST and should be checked.
+
+## 2026-11-05: SEO writer run (Job 2): first blog draft
+- **Asked:** scheduled task "khatario-seo-writer".
+- **Decided:** topic = top backlog item "GST bill kaise banaye mobile se" (Hinglish), since Search Console still shows no queries. Competing results (Vyapar, myBillBook, Swipe help pages, Winvesta) are English, desktop-first, with no rupee examples, no â‚¹200 rule, no HSN-digit guidance and no walk-in-customer handling; the article covers those with a Rule 46 checklist, a â‚¹500 charger CGST/SGST vs IGST table, MRP back-calculation, Section 31(3)(b), Rules 49, 5(1)(f), 46A, 47, 53 and Notification 78/2020, all checked against `knowledge/gst-law/`. Product steps come from `knowledge/how-to/` only (internet required, no IRN, no UPI QR on print).
+- **Shipped:** draft `gst-bill-kaise-banaye-mobile-se` (id c89704d8-86a2-48f5-b0ae-40ff401fbf4a, 1,894 words) created via `POST /api/seo-agent/blog` (201), not published. `docs/seo/STATE.md` updated and committed by name. This log entry is left uncommitted because the file already holds other sessions' uncommitted entries.
+- **Open:** owner reviews and publishes in `/admin/blog`. Next writer topic: "How to send a GST invoice on WhatsApp".
