@@ -159,7 +159,7 @@ export default function NewBranchPage() {
     return (
       
         <div className={`${SETTINGS_CONTENT_WIDTH} py-8 flex justify-center`}>
-          <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
+          <div className="max-w-2xl w-full bg-surface rounded-xl shadow-sm border border-border p-8 text-center">
             <h2 className="settings-section-title mb-2">
               Multi-Branch Feature is Locked
             </h2>

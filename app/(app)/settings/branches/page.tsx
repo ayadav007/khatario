@@ -142,7 +142,7 @@ export default function BranchesPage() {
     return (
       
         <div className={`${WIDE_PAGE_CONTENT_CLASS} py-8 flex justify-center`}>
-          <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
+          <div className="max-w-2xl w-full bg-surface rounded-xl shadow-sm border border-border p-8 text-center">
             <Building2 className="w-16 h-16 text-text-muted mx-auto mb-4" />
             <h2 className="settings-section-title mb-2">
               Multi-Branch Feature is Locked
@@ -179,11 +179,11 @@ export default function BranchesPage() {
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 rounded-lg p-4">
+        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 dark:border-slate-600 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <Building2 className="w-5 h-5 text-primary-600 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-primary-900">About Branches</p>
+              <p className="text-sm font-medium text-primary-900 dark:text-primary-200">About Branches</p>
               <p className="text-sm text-primary-700 mt-1">
                 Branches are accounting and compliance units. Each branch can have its own GSTIN, invoice numbering, and financial statements. 
                 Warehouses are physical storage locations that can be linked to branches.
@@ -195,7 +195,7 @@ export default function BranchesPage() {
         {/* Branches Grid */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {branches.length === 0 ? (
-            <div className="col-span-full p-12 text-center bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border">
+            <div className="col-span-full p-12 text-center bg-surface rounded-xl shadow-sm border border-border">
               <Building2 className="w-12 h-12 text-text-muted mx-auto mb-4" />
               <p className="text-text-secondary mb-2">No branches found</p>
               <p className="text-sm text-text-muted mb-4">Create your first branch to get started</p>
@@ -210,12 +210,12 @@ export default function BranchesPage() {
             branches.map((branch) => (
               <div
                 key={branch.id}
-                className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6 hover:shadow-md transition"
+                className="bg-surface rounded-xl shadow-sm border border-border p-6 hover:shadow-md transition"
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <div className="bg-slate-100 p-2 rounded-lg">
+                    <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
                       <Building2 className="w-5 h-5 text-primary-600" />
                     </div>
                     <div>
@@ -227,13 +227,13 @@ export default function BranchesPage() {
                   </div>
                   <div className="flex items-center space-x-2">
                     {branch.is_primary && (
-                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                         <CheckCircle className="w-3 h-3" />
                         <span>Primary</span>
                       </div>
                     )}
                     {!branch.is_active && (
-                      <div className="flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded-full text-xs font-medium">
                         <XCircle className="w-3 h-3" />
                         <span>Inactive</span>
                       </div>
@@ -242,7 +242,7 @@ export default function BranchesPage() {
                 </div>
 
 {branch.gst_place_issue && (
-                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-2 text-xs text-red-800 dark:text-red-300">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>{branch.gst_place_issue}</span>
                   </div>

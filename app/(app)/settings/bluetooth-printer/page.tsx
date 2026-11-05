@@ -273,7 +273,7 @@ function PrinterRow({
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-            isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-muted dark:bg-slate-800'
+            isActive ? 'bg-green-100 text-green-700 dark:text-green-300' : 'bg-gray-100 text-text-muted dark:bg-slate-800'
           }`}
         >
           <Icon className="h-5 w-5" />
@@ -310,7 +310,7 @@ function PrinterRow({
         <Button variant="secondary" size="sm" onClick={onEdit} title="Printer settings">
           <Settings2 className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="sm" onClick={onRemove} className="text-red-600 hover:bg-red-50" title="Remove">
+        <Button variant="ghost" size="sm" onClick={onRemove} className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" title="Remove">
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>

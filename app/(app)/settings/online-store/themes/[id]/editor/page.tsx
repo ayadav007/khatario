@@ -101,17 +101,17 @@ export default function Studio2EditorPage() {
   if (narrow === null) return null;
   if (narrow) {
     return (
-      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-white p-6 text-center text-sm text-gray-700">
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-surface p-6 text-center text-sm text-text-secondary">
         Open the editor on a laptop or desktop
       </div>
     );
   }
   if (canEdit === false) {
     return (
-      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-white p-6 text-center text-sm">
-        <p className="text-gray-700">You can&apos;t edit the store design: changing it needs permission to update settings.</p>
-        <p className="text-gray-500">Ask an admin for that permission.</p>
-        <Link href={LIBRARY_PATH} className="text-gray-700 underline">
+      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-surface p-6 text-center text-sm">
+        <p className="text-text-secondary">You can&apos;t edit the store design: changing it needs permission to update settings.</p>
+        <p className="text-text-secondary">Ask an admin for that permission.</p>
+        <Link href={LIBRARY_PATH} className="text-text-secondary underline">
           Back to themes
         </Link>
       </div>
@@ -119,9 +119,9 @@ export default function Studio2EditorPage() {
   }
   if (error) {
     return (
-      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-white p-6 text-sm">
+      <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-3 bg-surface p-6 text-sm">
         <p className="text-red-600">{error}</p>
-        <Link href={LIBRARY_PATH} className="text-gray-700 underline">
+        <Link href={LIBRARY_PATH} className="text-text-secondary underline">
           Back to themes
         </Link>
       </div>
@@ -129,8 +129,8 @@ export default function Studio2EditorPage() {
   }
   if (!loaded || !business?.id || !user?.id) {
     return (
-      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-white">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-surface">
+        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
       </div>
     );
   }

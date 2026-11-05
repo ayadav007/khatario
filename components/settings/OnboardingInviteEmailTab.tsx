@@ -193,7 +193,7 @@ export function OnboardingInviteEmailTab() {
         <h2 className="mb-1 font-semibold text-text-primary">Preview</h2>
         <p className="mb-4 text-sm text-text-secondary">Subject: {previewSubject}</p>
         <div
-          className="rounded-lg border border-border bg-white p-4 text-sm"
+          className="rounded-lg border border-border bg-surface p-4 text-sm"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
       </Card>

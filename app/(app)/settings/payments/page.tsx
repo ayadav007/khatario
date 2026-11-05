@@ -110,7 +110,7 @@ export default function PaymentProvidersSettingsPage() {
             </div>
             <div className="flex items-center gap-2">
               <select
-                className="h-10 rounded-md border border-border bg-white px-3 text-sm min-w-[240px]"
+                className="h-10 rounded-md border border-border bg-surface px-3 text-sm min-w-[240px]"
                 value={defaultProvider}
                 disabled={providersLoading || prefLoading || configuredProviders.length === 0}
                 onChange={(e) => setDefaultProvider(e.target.value)}

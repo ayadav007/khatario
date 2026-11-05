@@ -174,11 +174,11 @@ export default function UserWarehousesPage() {
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 rounded-lg p-4">
+        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 dark:border-slate-600 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <Warehouse className="w-5 h-5 text-primary-600 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-primary-900">About User-Warehouse Assignments</p>
+              <p className="text-sm font-medium text-primary-900 dark:text-primary-200">About User-Warehouse Assignments</p>
               <p className="text-sm text-primary-700 mt-1">
                 Assign users to specific warehouses to control which warehouses they can access when creating invoices, purchases, and inventory adjustments.
               </p>
@@ -189,7 +189,7 @@ export default function UserWarehousesPage() {
         {/* Create Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-surface dark:bg-slate-900/70 rounded-xl max-w-2xl w-full p-6">
+            <div className="bg-surface rounded-xl max-w-2xl w-full p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-text-primary">Assign User to Warehouse</h2>
                 <button
@@ -262,7 +262,7 @@ export default function UserWarehousesPage() {
         )}
 
         {/* Assignments Table */}
-        <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-slate-800/40 border-b border-border">
               <tr>
@@ -272,7 +272,7 @@ export default function UserWarehousesPage() {
                 <th className="px-4 py-3 text-right text-sm font-medium text-text-secondary">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-border">
               {assignments.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
@@ -281,7 +281,7 @@ export default function UserWarehousesPage() {
                 </tr>
               ) : (
                 assignments.map((assignment) => (
-                  <tr key={assignment.id} className="hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                  <tr key={assignment.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/70">
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-2">
                         <User className="w-4 h-4 text-text-muted" />
@@ -299,12 +299,12 @@ export default function UserWarehousesPage() {
                     </td>
                     <td className="px-4 py-3">
                       {assignment.is_active ? (
-                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                           <CheckCircle className="w-3 h-3" />
                           <span>Active</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded-full text-xs font-medium">
                           <X className="w-3 h-3" />
                           <span>Inactive</span>
                         </span>

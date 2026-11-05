@@ -365,7 +365,7 @@ export default function CommissionRulesPage() {
                 </thead>
                 <tbody>
                   {rules.map((rule) => (
-                    <tr key={rule.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                    <tr key={rule.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                       <td className="py-4 px-4">
                         {rule.employee_id ? (
                           <span className="text-sm">Employee: {(rule as any).employee_code || rule.employee_id}</span>

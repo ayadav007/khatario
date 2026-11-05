@@ -164,12 +164,12 @@ export default function ActivityLogPage() {
               <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
             </div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-border">
               {logs.length > 0 ? (
                 logs.map((log) => (
-                  <div key={log.id} className="p-4 hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 transition">
+                  <div key={log.id} className="p-4 hover:bg-gray-50 dark:hover:bg-slate-800/70 transition">
                     <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center flex-shrink-0">
                         <Activity className="w-5 h-5 text-primary-600" />
                       </div>
                       <div className="flex-1 min-w-0">

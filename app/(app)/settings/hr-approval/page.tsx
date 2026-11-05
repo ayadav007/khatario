@@ -50,7 +50,7 @@ function ModeSelect({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as HrApprovalMode)}
-        className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
       >
         {MODE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>

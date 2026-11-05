@@ -27,7 +27,7 @@ function CheckboxRow({
 }) {
   return (
     <label
-      className={`flex items-start gap-3 rounded-lg border border-border bg-white p-3 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}
+      className={`flex items-start gap-3 rounded-lg border border-border bg-surface p-3 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}
     >
       <input
         type="checkbox"

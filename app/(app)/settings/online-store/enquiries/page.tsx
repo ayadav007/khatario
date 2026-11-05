@@ -29,7 +29,7 @@ const FILTERS: Array<{ key: string | null; label: string }> = [
 ];
 
 const STATUS_STYLE: Record<Enquiry['status'], string> = {
-  new: 'bg-amber-100 text-amber-800',
+  new: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300',
   read: 'bg-gray-100 text-gray-700',
   replied: 'bg-green-100 text-green-800',
   archived: 'bg-gray-100 text-gray-500',
@@ -124,10 +124,10 @@ export default function StoreEnquiriesPage() {
           value={queryText}
           onChange={(e) => { setQueryText(e.target.value); setPage(1); }}
           placeholder="Search name, phone, email or message"
-          className="min-w-[200px] flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          className="min-w-[200px] flex-1 rounded-lg border border-border px-3 py-2 text-sm"
         />
         {unread > 0 ? (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+          <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-300">
             {unread} new
           </span>
         ) : null}
@@ -141,7 +141,7 @@ export default function StoreEnquiriesPage() {
             onClick={() => { setFilter(f.key); setPage(1); }}
             className={clsx(
               'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              filter === f.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              filter === f.key ? 'bg-gray-900 text-white' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
             )}
           >
             {f.label}
@@ -151,13 +151,13 @@ export default function StoreEnquiriesPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       ) : enquiries.length === 0 ? (
         <div className="py-12 text-center">
           <Inbox className="mx-auto h-12 w-12 text-gray-300" />
-          <p className="mt-3 text-sm text-gray-500">No enquiries here yet</p>
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-3 text-sm text-text-secondary">No enquiries here yet</p>
+          <p className="mt-1 text-xs text-text-muted">
             Turn on the contact form in Online Store → Studio → Contact page → Contact form.
           </p>
         </div>
@@ -166,28 +166,28 @@ export default function StoreEnquiriesPage() {
           {enquiries.map((e) => {
             const open = openId === e.id;
             return (
-              <Card key={e.id} className={clsx('p-4', e.status === 'new' && 'border-amber-200')}>
+              <Card key={e.id} className={clsx('p-4', e.status === 'new' && 'border-amber-200 dark:border-amber-800/60')}>
                 <button type="button" className="block w-full text-left" onClick={() => toggle(e)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={clsx('text-sm text-gray-900', e.status === 'new' ? 'font-bold' : 'font-medium')}>
+                        <span className={clsx('text-sm text-text-primary', e.status === 'new' ? 'font-bold' : 'font-medium')}>
                           {e.name}
                         </span>
                         <span className={clsx('rounded-full px-2 py-0.5 text-xs font-medium capitalize', STATUS_STYLE[e.status])}>
                           {e.status}
                         </span>
                         {e.topic ? (
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          <span className="rounded-full bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
                             {e.topic}
                           </span>
                         ) : null}
                       </div>
-                      <p className={clsx('mt-1 text-sm text-gray-600', !open && 'line-clamp-2')}>
+                      <p className={clsx('mt-1 text-sm text-text-secondary', !open && 'line-clamp-2')}>
                         {e.message}
                       </p>
                     </div>
-                    <span className="flex flex-shrink-0 items-center gap-1 text-xs text-gray-400">
+                    <span className="flex flex-shrink-0 items-center gap-1 text-xs text-text-muted">
                       <Clock className="h-3 w-3" />
                       {formatDate(e.created_at)}
                     </span>
@@ -195,7 +195,7 @@ export default function StoreEnquiriesPage() {
                 </button>
 
                 {open ? (
-                  <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
+                  <div className="mt-3 space-y-3 border-t border-border pt-3">
                     <div className="flex flex-wrap gap-4 text-sm">
                       {e.phone ? (
                         <a href={`tel:${e.phone}`} className="flex items-center gap-1 text-blue-600 hover:underline">
@@ -217,7 +217,7 @@ export default function StoreEnquiriesPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => void setStatus(e, 'replied', true)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+                          className="inline-flex items-center gap-1 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-950/30"
                         >
                           <MessageCircle className="h-3.5 w-3.5" />
                           Reply on WhatsApp
@@ -250,7 +250,7 @@ export default function StoreEnquiriesPage() {
               <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                 Previous
               </Button>
-              <span className="flex items-center px-3 text-sm text-gray-500">
+              <span className="flex items-center px-3 text-sm text-text-secondary">
                 Page {page} of {Math.ceil(total / 20)}
               </span>
               <Button variant="ghost" size="sm" disabled={page * 20 >= total} onClick={() => setPage(page + 1)}>

@@ -347,7 +347,7 @@ export default function SuppliersDirectorySettingsPage() {
                   ))}
                 </div>
                 {listingHeld && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <p className="rounded-lg bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
                     {listingHeld === 'waiting'
                       ? 'Your listing is waiting for a quick review by Khatario before it shows in Find suppliers.'
                       : 'Khatario hid your listing from Find suppliers. Contact support to have it reviewed again.'}
@@ -402,7 +402,7 @@ export default function SuppliersDirectorySettingsPage() {
                   checked={hubWhatsApp}
                   disabled={savingWhatsApp}
                   onChange={(e) => saveHubWhatsApp(e.target.checked)}
-                  className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-border text-primary-600 focus:ring-primary-500 disabled:opacity-50"
                 />
                 <span className="min-w-0">
                   <span className="block font-medium text-text-primary">Send Supplier Hub updates on WhatsApp</span>
@@ -443,7 +443,7 @@ export default function SuppliersDirectorySettingsPage() {
                       checked={shortfallMode === o.value}
                       disabled={savingShortfall}
                       onChange={() => saveShortfallMode(o.value)}
-                      className="mt-1 h-4 w-4 shrink-0 border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                      className="mt-1 h-4 w-4 shrink-0 border-border text-primary-600 focus:ring-primary-500 disabled:opacity-50"
                     />
                     <span className="min-w-0">
                       <span className="block font-medium text-text-primary">{o.label}</span>

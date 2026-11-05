@@ -137,7 +137,7 @@ function ProductsSettingsPanel({ businessId }: { businessId: string }) {
   return (
     <div className="space-y-6">
       {upsellModule ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
           <p className="font-medium">That area needs {upsellModule.label}</p>
           <p className="mt-1 text-amber-800">{upsellModule.description}</p>
           <Button
@@ -173,12 +173,12 @@ function ProductsSettingsPanel({ businessId }: { businessId: string }) {
         {modules.map((mod) => (
           <article
             key={mod.module_key}
-            className="flex flex-col rounded-xl border border-border bg-white p-5 shadow-sm"
+            className="flex flex-col rounded-xl border border-border bg-surface p-5 shadow-sm"
           >
             <div className="flex items-start justify-between gap-2">
               <h3 className="text-lg font-semibold text-text-primary">{mod.label}</h3>
               {mod.enabled ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-800">
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-50 dark:bg-green-950/30 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-300">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Active
                 </span>
@@ -225,7 +225,7 @@ function ProductsSettingsPanel({ businessId }: { businessId: string }) {
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="w-full text-red-600 hover:bg-red-50"
+                      className="w-full text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                       onClick={() => void handleDisable(mod.module_key)}
                       disabled={disabling === mod.module_key}
                     >

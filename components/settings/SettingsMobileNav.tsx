@@ -164,7 +164,7 @@ export function SettingsMobileNav({ open, onClose }: Props) {
           <Link
             href="/settings"
             onClick={onClose}
-            className="mt-1 block rounded-lg px-3 py-3 text-sm font-medium text-primary-700 hover:bg-slate-50 dark:text-primary-300"
+            className="mt-1 block rounded-lg px-3 py-3 text-sm font-medium text-primary-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 dark:text-primary-300"
           >
             All settings
           </Link>

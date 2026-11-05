@@ -14,7 +14,7 @@ export function ExploreThemesShell({ title, back, children }: { title: string; b
       actions={
         <Link
           href={back.href}
-          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800/60"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           {back.label}

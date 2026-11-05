@@ -44,7 +44,7 @@ const EMPTY: Record<TabKey, string> = {
 };
 
 const STATUS_STYLE: Record<ReviewStatus, string> = {
-  pending: 'bg-amber-100 text-amber-800',
+  pending: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300',
   published: 'bg-green-100 text-green-800',
   hidden: 'bg-gray-100 text-gray-600',
 };
@@ -202,7 +202,7 @@ export function StoreReviewsManager() {
             onClick={() => setTab(t.key)}
             className={clsx(
               'flex flex-shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              tab === t.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              tab === t.key ? 'bg-gray-900 text-white' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
             )}
           >
             {t.label}
@@ -215,14 +215,14 @@ export function StoreReviewsManager() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       ) : loadError && reviews.length === 0 ? (
         <p className="py-12 text-center text-sm text-red-600">{loadError}</p>
       ) : reviews.length === 0 ? (
         <div className="py-12 text-center">
           <Star className="mx-auto h-12 w-12 text-gray-300" />
-          <p className="mt-3 text-sm text-gray-500">{EMPTY[tab]}</p>
+          <p className="mt-3 text-sm text-text-secondary">{EMPTY[tab]}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -233,11 +233,11 @@ export function StoreReviewsManager() {
             const busy = busyId === r.id;
             const drafting = replyDraft?.id === r.id ? replyDraft : null;
             return (
-              <Card key={r.id} className={clsx('p-4', r.status === 'pending' && 'border-amber-200')}>
+              <Card key={r.id} className={clsx('p-4', r.status === 'pending' && 'border-amber-200 dark:border-amber-800/60')}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900">{r.item_name}</p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                    <p className="truncate text-sm font-semibold text-text-primary">{r.item_name}</p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
                       <span>{r.customer_name}</span>
                       {r.phone ? (
                         <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1 text-blue-600 hover:underline">
@@ -250,7 +250,7 @@ export function StoreReviewsManager() {
                           href={wa}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-green-700 hover:underline"
+                          className="inline-flex items-center gap-1 text-green-700 dark:text-green-300 hover:underline"
                         >
                           <MessageCircle className="h-3 w-3" />
                           WhatsApp
@@ -262,7 +262,7 @@ export function StoreReviewsManager() {
                     <span className={clsx('rounded-full px-2 py-0.5 text-xs font-medium capitalize', STATUS_STYLE[r.status])}>
                       {r.status}
                     </span>
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <span className="flex items-center gap-1 text-xs text-text-muted">
                       <Clock className="h-3 w-3" />
                       {formatDate(r.created_at)}
                     </span>
@@ -271,8 +271,8 @@ export function StoreReviewsManager() {
 
                 <div className="mt-2">
                   <Stars rating={r.rating} />
-                  {r.title ? <p className="mt-1 text-sm font-medium text-gray-900">{r.title}</p> : null}
-                  <p className="mt-1 whitespace-pre-line break-words text-sm text-gray-700">{isOpen ? r.body : ex.text}</p>
+                  {r.title ? <p className="mt-1 text-sm font-medium text-text-primary">{r.title}</p> : null}
+                  <p className="mt-1 whitespace-pre-line break-words text-sm text-text-secondary">{isOpen ? r.body : ex.text}</p>
                   {ex.truncated ? (
                     <button type="button" className="mt-1 text-xs text-blue-600 hover:underline" onClick={() => toggleExpanded(r.id)}>
                       {isOpen ? 'Show less' : 'Read more'}
@@ -283,7 +283,7 @@ export function StoreReviewsManager() {
                 {r.photos.length > 0 ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {r.photos.map((src) => (
-                      <button key={src} type="button" onClick={() => setZoom(src)} className="overflow-hidden rounded-lg border border-gray-200">
+                      <button key={src} type="button" onClick={() => setZoom(src)} className="overflow-hidden rounded-lg border border-border">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={src} alt="Review photo" className="h-16 w-16 object-cover" loading="lazy" />
                       </button>
@@ -292,8 +292,8 @@ export function StoreReviewsManager() {
                 ) : null}
 
                 {r.merchant_reply && !drafting ? (
-                  <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
-                    <p className="mb-0.5 text-xs font-medium text-gray-500">Your reply</p>
+                  <div className="mt-3 rounded-lg bg-gray-50 dark:bg-slate-800/50 p-3 text-sm text-text-secondary">
+                    <p className="mb-0.5 text-xs font-medium text-text-secondary">Your reply</p>
                     <p className="whitespace-pre-line break-words">{r.merchant_reply}</p>
                   </div>
                 ) : null}
@@ -306,10 +306,10 @@ export function StoreReviewsManager() {
                       maxLength={REPLY_MAX}
                       rows={3}
                       placeholder="Write a reply shoppers will see under this review"
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-text-muted">
                         {drafting.text.length}/{REPLY_MAX}
                       </span>
                       <div className="flex gap-2">
@@ -361,7 +361,7 @@ export function StoreReviewsManager() {
                         Delete reply
                       </Button>
                     ) : null}
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin self-center text-gray-400" /> : null}
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin self-center text-text-muted" /> : null}
                   </div>
                 )}
 
@@ -391,7 +391,7 @@ export function StoreReviewsManager() {
           <button
             type="button"
             aria-label="Close photo"
-            className="absolute right-4 top-4 rounded-full bg-white/90 p-2 text-gray-900"
+            className="absolute right-4 top-4 rounded-full bg-white/90 p-2 text-text-primary"
             onClick={() => setZoom(null)}
           >
             <X className="h-5 w-5" />

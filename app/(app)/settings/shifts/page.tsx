@@ -271,7 +271,7 @@ export default function ShiftsPage() {
                 </thead>
                 <tbody>
                   {shifts.map((shift) => (
-                    <tr key={shift.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                    <tr key={shift.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                       <td className="py-4 px-4">
                         <div className="font-medium">{shift.shift_name}</div>
                         {!shift.is_active && (

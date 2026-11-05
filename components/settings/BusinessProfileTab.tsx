@@ -594,7 +594,7 @@ export const BusinessProfileTab: React.FC = () => {
         <button
           type="button"
           onClick={() => setMobilePane(null)}
-          className="mb-2 text-sm font-medium text-primary-700 lg:hidden"
+          className="mb-2 text-sm font-medium text-primary-700 dark:text-primary-200 lg:hidden"
         >
           All business settings
         </button>

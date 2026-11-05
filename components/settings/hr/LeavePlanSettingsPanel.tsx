@@ -250,7 +250,7 @@ export function LeavePlanSettingsPanel() {
         </select>
 
         {selectedRule && (
-          <div className="grid gap-4 rounded-lg border border-border bg-white p-4 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium">Annual quota</label>
               <Input

@@ -300,7 +300,7 @@ export default function LeaveTypesPage() {
                 </thead>
                 <tbody>
                   {leaveTypes.map((type) => (
-                    <tr key={type.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                    <tr key={type.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                       <td className="py-4 px-4">
                         <div className="font-medium">{type.leave_name}</div>
                         {type.description && (

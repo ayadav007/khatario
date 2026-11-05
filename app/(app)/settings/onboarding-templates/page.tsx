@@ -174,7 +174,7 @@ export default function OnboardingTemplatesPage() {
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="border-b border-border bg-gray-50 text-left text-text-secondary">
+                <thead className="border-b border-border bg-gray-50 dark:bg-slate-800/50 text-left text-text-secondary">
                   <tr>
                     <th className="px-4 py-3 font-medium">Task</th>
                     <th className="px-4 py-3 font-medium">Type</th>

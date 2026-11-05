@@ -122,18 +122,18 @@ export function AbandonedCartList() {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
       </div>
     );
   }
   if (loadError) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
+      <div className="rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">{loadError}</div>
     );
   }
   if (carts.length === 0) {
     return (
-      <Card className="p-8 text-center text-sm text-gray-500">
+      <Card className="p-8 text-center text-sm text-text-secondary">
         No abandoned carts. Carts that signed-in shoppers leave behind will show here.
       </Card>
     );
@@ -154,9 +154,9 @@ export function AbandonedCartList() {
           <Card key={cart.id} className="p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-gray-900">{cart.customer_name || cart.phone}</p>
+                <p className="truncate text-sm font-semibold text-text-primary">{cart.customer_name || cart.phone}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                  <a href={`tel:${cart.phone}`} className="inline-flex items-center gap-1 text-gray-600 hover:underline">
+                  <a href={`tel:${cart.phone}`} className="inline-flex items-center gap-1 text-text-secondary hover:underline">
                     <Phone className="h-3 w-3" />
                     {cart.phone}
                   </a>
@@ -165,7 +165,7 @@ export function AbandonedCartList() {
                       href={wa}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-green-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-green-700 dark:text-green-300 hover:underline"
                     >
                       <MessageCircle className="h-3 w-3" />
                       WhatsApp
@@ -174,8 +174,8 @@ export function AbandonedCartList() {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm font-semibold text-gray-900">{rupees(cart.subtotal)}</p>
-                <p className="text-xs text-gray-500">left {agoText(cart.updated_at, now)}</p>
+                <p className="text-sm font-semibold text-text-primary">{rupees(cart.subtotal)}</p>
+                <p className="text-xs text-text-secondary">left {agoText(cart.updated_at, now)}</p>
               </div>
             </div>
 
@@ -184,16 +184,16 @@ export function AbandonedCartList() {
                 type="button"
                 onClick={() => toggle(cart.id)}
                 aria-expanded={open}
-                className="inline-flex items-center gap-1 text-xs font-medium text-gray-700"
+                className="inline-flex items-center gap-1 text-xs font-medium text-text-secondary"
               >
                 {cart.item_count} {cart.item_count === 1 ? 'item' : 'items'}
                 {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               </button>
-              <span className="text-xs text-gray-500">{reminderStatusText(cart.reminded_at, cart.reminder_via, now)}</span>
+              <span className="text-xs text-text-secondary">{reminderStatusText(cart.reminded_at, cart.reminder_via, now)}</span>
             </div>
 
             {open ? (
-              <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 text-xs text-gray-700">
+              <ul className="mt-2 divide-y divide-border rounded-lg border border-border text-xs text-text-secondary">
                 {cart.lines.map((l, i) => (
                   <li key={`${l.item_id}:${l.variant_id ?? ''}:${i}`} className="flex justify-between gap-3 px-3 py-2">
                     <span className="min-w-0 break-words">

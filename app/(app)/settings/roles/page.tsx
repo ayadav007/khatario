@@ -273,8 +273,8 @@ export default function RolesPage() {
                     onClick={() => setSelectedRole(role.id)}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
                       selectedRole === role.id
-                        ? 'bg-slate-50 text-primary-600 font-medium'
-                        : 'hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 text-text-primary'
+                        ? 'bg-slate-50 dark:bg-slate-800/50 text-primary-600 font-medium'
+                        : 'hover:bg-gray-50 dark:hover:bg-slate-800/70 text-text-primary'
                     }`}
                   >
                     <div className="font-medium">{role.role_name}</div>
@@ -288,8 +288,8 @@ export default function RolesPage() {
                     <p className="text-sm text-text-secondary mb-3">
                       No roles found. Create your first role.
                     </p>
-                    <div className="bg-slate-50 border border-primary-200 rounded-lg p-3 text-left">
-                      <p className="text-xs text-primary-800">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3 text-left">
+                      <p className="text-xs text-primary-800 dark:text-primary-200">
                         <strong>First-time setup:</strong> You can create your first role without specific permissions. 
                         After creating your first role, normal permission checks will apply.
                       </p>
@@ -343,8 +343,8 @@ export default function RolesPage() {
                     return (
                       <>
                         {isPrimaryAdminRole && (
-                          <div className="bg-slate-50 border border-primary-200 rounded-lg p-3 mb-4">
-                            <p className="text-sm text-primary-800">
+                          <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3 mb-4">
+                            <p className="text-sm text-primary-800 dark:text-primary-200">
                               <strong>Primary Admin:</strong> This role has all permissions enabled by default and cannot be modified.
                             </p>
                           </div>
@@ -357,7 +357,7 @@ export default function RolesPage() {
                                 <label
                                   key={perm.id}
                                   className={`flex items-center gap-2 p-2 rounded-lg ${
-                                    isPrimaryAdminRole ? 'cursor-not-allowed opacity-75' : 'hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 cursor-pointer'
+                                    isPrimaryAdminRole ? 'cursor-not-allowed opacity-75' : 'hover:bg-gray-50 dark:hover:bg-slate-800/70 cursor-pointer'
                                   }`}
                                 >
                                   <input
@@ -423,8 +423,8 @@ export default function RolesPage() {
                       rows={3}
                     />
                   </div>
-                  <div className="bg-slate-50 border border-primary-200 rounded-lg p-3">
-                    <p className="text-xs text-primary-800">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-3">
+                    <p className="text-xs text-primary-800 dark:text-primary-200">
                       <strong>Note:</strong> After creating the role, you can assign permissions by selecting it from the list.
                     </p>
                   </div>

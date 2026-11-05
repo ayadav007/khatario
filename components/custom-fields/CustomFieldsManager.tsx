@@ -135,7 +135,7 @@ export function CustomFieldsManager({ entityType, title, description }: CustomFi
             {definitions.map((def) => (
               <li
                 key={def.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-gray-50 px-3 py-2"
+                className="flex items-center gap-3 rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 px-3 py-2"
               >
                 <GripVertical className="w-4 h-4 text-text-muted shrink-0" aria-hidden />
                 <div className="flex-1 min-w-0">
@@ -163,7 +163,7 @@ export function CustomFieldsManager({ entityType, title, description }: CustomFi
           </ul>
 
           {showAdd ? (
-            <div className="mt-4 space-y-3 rounded-lg border border-border p-4 bg-white">
+            <div className="mt-4 space-y-3 rounded-lg border border-border p-4 bg-surface">
               <div>
                 <label className="block text-xs font-semibold uppercase text-text-secondary mb-1">
                   Field label

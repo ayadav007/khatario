@@ -544,10 +544,10 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   return (
     <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
       {isExpiredOrInactive && subscription && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-4 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold text-amber-800">
+            <p className="font-semibold text-amber-800 dark:text-amber-300">
               Subscription {subscription.status === 'expired' ? 'expired' : 'inactive'}
             </p>
             <p className="text-sm text-amber-700 mt-1">
@@ -639,12 +639,12 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       {!useModulePlans && subscription && (isGracePeriod || isCancelled) && (
         <div className="rounded-xl border border-border bg-surface p-4">
           {isCancelled && (
-            <p className="text-sm text-orange-700">
+            <p className="text-sm text-orange-700 dark:text-orange-300">
               Cancels on {formatDate(subscription.end_date)}
             </p>
           )}
           {isGracePeriod && (
-            <p className="text-sm text-red-700">
+            <p className="text-sm text-red-700 dark:text-red-300">
               Payment grace period — renew to avoid downgrade.
             </p>
           )}
@@ -810,11 +810,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                             record.status === 'paid' || record.status === 'success'
-                              ? 'bg-green-100 text-green-700'
+                              ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
                               : record.status === 'pending'
                               ? 'bg-yellow-100 text-yellow-700'
                               : record.status === 'failed'
-                              ? 'bg-red-100 text-red-700'
+                              ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
                               : 'bg-gray-100 text-text-secondary'
                           }`}
                         >
@@ -881,7 +881,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
             </div>
             <button
               onClick={() => setShowCancelDialog(true)}
-              className="px-5 py-2.5 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition"
+              className="px-5 py-2.5 border border-red-300 dark:border-red-800/60 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition"
             >
               Cancel Subscription
             </button>

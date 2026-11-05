@@ -77,11 +77,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-amber-100 text-amber-800',
+  pending: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300',
   confirmed: 'bg-blue-100 text-blue-800',
   ready: 'bg-green-100 text-green-800',
   delivered: 'bg-gray-100 text-gray-700',
-  cancelled: 'bg-red-100 text-red-700',
+  cancelled: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
 };
 
 const STATUS_FLOW: Record<string, readonly string[]> = STORE_ORDER_TRANSITIONS;
@@ -278,7 +278,7 @@ export default function StoreOrdersPage() {
       <a href="/orders?channel=online_store" className="mb-3 inline-block text-sm text-primary hover:underline">
         See store, WhatsApp and counter orders together, with delivery tracking, in Orders &amp; delivery →
       </a>
-      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
             <ScanLine className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -316,7 +316,7 @@ export default function StoreOrdersPage() {
           value={queryText}
           onChange={(e) => { setQueryText(e.target.value); setPage(1); }}
           placeholder="Search order, phone, AWB"
-          className="min-w-[180px] flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          className="min-w-[180px] flex-1 rounded-lg border border-border px-3 py-2 text-sm"
         />
         <Button type="button" size="sm" variant="secondary" onClick={() => setShowCamera(true)}>
           <Camera className="mr-1 h-3.5 w-3.5" />
@@ -331,7 +331,7 @@ export default function StoreOrdersPage() {
             'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
             !statusFilter && !khataFilter
               ? 'bg-gray-900 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
           )}
         >
           All
@@ -342,7 +342,7 @@ export default function StoreOrdersPage() {
             'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
             khataFilter
               ? 'bg-gray-900 text-white'
-              : 'bg-amber-50 text-amber-800 hover:bg-amber-100',
+              : 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/30',
           )}
         >
           Khata to approve
@@ -355,7 +355,7 @@ export default function StoreOrdersPage() {
               'flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
               statusFilter === key
                 ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                : 'bg-gray-100 dark:bg-slate-800 text-text-secondary hover:bg-gray-200',
             )}
           >
             {label}
@@ -365,48 +365,48 @@ export default function StoreOrdersPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       ) : orders.length === 0 ? (
         <div className="py-12 text-center">
           <ShoppingBag className="mx-auto h-12 w-12 text-gray-300" />
-          <p className="mt-3 text-sm text-gray-500">No orders yet</p>
+          <p className="mt-3 text-sm text-text-secondary">No orders yet</p>
         </div>
       ) : (
         <div className="space-y-3">
           {orders.map((order) => (
             <Card
               key={order.id}
-              className="cursor-pointer p-4 hover:bg-gray-50 transition-colors"
+              className="cursor-pointer p-4 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
               onClick={() => void openOrder(order)}
             >
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900">
+                    <span className="text-sm font-bold text-text-primary">
                       {order.order_number}
                     </span>
                     <span
                       className={clsx(
                         'rounded-full px-2 py-0.5 text-xs font-medium',
-                        STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-700',
+                        STATUS_COLORS[order.status] ?? 'bg-gray-100 dark:bg-slate-800 text-text-secondary',
                       )}
                     >
                       {STATUS_LABELS[order.status] ?? order.status}
                     </span>
                     {order.awb ? (
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">
+                      <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 text-xs text-violet-800 dark:text-violet-300">
                         AWB
                       </span>
                     ) : null}
                     {khataPending(order) ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
                         Khata · approve
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-gray-700">{order.customer_name}</p>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-gray-400">
+                  <p className="mt-1 text-sm text-text-secondary">{order.customer_name}</p>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-text-muted">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {formatDate(order.created_at)}
@@ -431,10 +431,10 @@ export default function StoreOrdersPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-base font-bold text-gray-900">
+                  <span className="text-base font-bold text-text-primary">
                     &#x20B9;{order.grand_total.toLocaleString('en-IN')}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                  <ChevronRight className="h-4 w-4 text-text-muted" />
                 </div>
               </div>
             </Card>
@@ -450,7 +450,7 @@ export default function StoreOrdersPage() {
               >
                 Previous
               </Button>
-              <span className="flex items-center px-3 text-sm text-gray-500">
+              <span className="flex items-center px-3 text-sm text-text-secondary">
                 Page {page} of {Math.ceil(total / 20)}
               </span>
               <Button
@@ -472,10 +472,10 @@ export default function StoreOrdersPage() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setSelectedOrder(null)}
           />
-          <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+          <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-surface p-5 shadow-xl">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-lg font-bold text-gray-900">
+                <h3 className="text-lg font-bold text-text-primary">
                   {selectedOrder.order_number}
                 </h3>
                 <span
@@ -489,7 +489,7 @@ export default function StoreOrdersPage() {
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                className="text-text-muted hover:text-gray-600 text-xl leading-none"
               >
                 &times;
               </button>
@@ -497,8 +497,8 @@ export default function StoreOrdersPage() {
 
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-medium text-gray-400 mb-1">Customer</p>
-                <p className="text-sm font-medium text-gray-900">
+                <p className="text-xs font-medium text-text-muted mb-1">Customer</p>
+                <p className="text-sm font-medium text-text-primary">
                   {selectedOrder.customer_name}
                 </p>
                 <a
@@ -512,15 +512,15 @@ export default function StoreOrdersPage() {
 
               {selectedOrder.delivery_mode === 'delivery' && selectedOrder.customer_address ? (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 mb-1">Delivery Address</p>
+                  <p className="text-xs font-medium text-text-muted mb-1">Delivery Address</p>
                   <div className="flex items-start gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <MapPin className="h-3.5 w-3.5 text-text-muted mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm text-gray-700">
+                      <p className="text-sm text-text-secondary">
                         {selectedOrder.customer_address}
                       </p>
                       {selectedOrder.customer_pincode ? (
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-text-muted">
                           PIN: {selectedOrder.customer_pincode}
                         </p>
                       ) : null}
@@ -529,27 +529,27 @@ export default function StoreOrdersPage() {
                 </div>
               ) : (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 mb-1">Delivery</p>
-                  <p className="text-sm text-gray-700">Self Pickup</p>
+                  <p className="text-xs font-medium text-text-muted mb-1">Delivery</p>
+                  <p className="text-sm text-text-secondary">Self Pickup</p>
                 </div>
               )}
 
               {items.length > 0 ? (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 mb-1">Items to pack</p>
-                  <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+                  <p className="text-xs font-medium text-text-muted mb-1">Items to pack</p>
+                  <ul className="divide-y divide-border rounded-lg border border-border">
                     {items.map((line) => {
                       const done = line.packed_qty >= line.quantity;
                       return (
                         <li key={line.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                          <span className={done ? 'text-gray-400 line-through' : 'text-gray-800'}>
+                          <span className={done ? 'text-text-muted line-through' : 'text-text-primary'}>
                             {line.item_name}
                             {line.variant_name ? ` · ${line.variant_name}` : ''}
-                            <span className="ml-1 text-xs text-gray-400">
+                            <span className="ml-1 text-xs text-text-muted">
                               {line.barcode || line.code || 'no barcode'}
                             </span>
                           </span>
-                          <span className={done ? 'text-green-700 text-xs font-medium' : 'text-gray-500 text-xs'}>
+                          <span className={done ? 'text-green-700 dark:text-green-300 text-xs font-medium' : 'text-text-secondary text-xs'}>
                             {line.packed_qty}/{line.quantity} {line.unit}
                           </span>
                         </li>
@@ -572,7 +572,7 @@ export default function StoreOrdersPage() {
                 {selectedOrder.invoice_id ? (
                   <a
                     href={`/invoices/${selectedOrder.invoice_id}`}
-                    className="inline-flex items-center rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium"
+                    className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
                   >
                     Invoice / thermal print
                   </a>
@@ -593,37 +593,37 @@ export default function StoreOrdersPage() {
 
               {selectedOrder.notes ? (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 mb-1">Notes</p>
-                  <p className="text-sm text-gray-600">{selectedOrder.notes}</p>
+                  <p className="text-xs font-medium text-text-muted mb-1">Notes</p>
+                  <p className="text-sm text-text-secondary">{selectedOrder.notes}</p>
                 </div>
               ) : null}
 
-              <div className="border-t border-gray-100 pt-3">
+              <div className="border-t border-border pt-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Subtotal</span>
-                  <span className="text-gray-900">
+                  <span className="text-text-secondary">Subtotal</span>
+                  <span className="text-text-primary">
                     &#x20B9;{selectedOrder.subtotal.toLocaleString('en-IN')}
                   </span>
                 </div>
                 {selectedOrder.delivery_charge > 0 ? (
                   <div className="flex justify-between text-sm mt-1">
-                    <span className="text-gray-500">Delivery</span>
-                    <span className="text-gray-900">
+                    <span className="text-text-secondary">Delivery</span>
+                    <span className="text-text-primary">
                       &#x20B9;{selectedOrder.delivery_charge.toLocaleString('en-IN')}
                     </span>
                   </div>
                 ) : null}
-                <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-gray-100">
-                  <span className="text-gray-900">Total</span>
-                  <span className="text-gray-900">
+                <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-border">
+                  <span className="text-text-primary">Total</span>
+                  <span className="text-text-primary">
                     &#x20B9;{selectedOrder.grand_total.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
 
               {khataPending(selectedOrder) ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-sm font-medium text-amber-900">Khata order waiting for your approval</p>
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-300">Khata order waiting for your approval</p>
                   <p className="mt-1 text-xs text-amber-800">
                     {khataReasonLabel(selectedOrder.khata_approval_reason) || 'A khata rule sent this order to you.'}. Approve
                     to bill it on the customer&apos;s khata, or reject to cancel it and ask them to pay another way.
@@ -654,7 +654,7 @@ export default function StoreOrdersPage() {
                     {selectedOrder.khata_customer_id ? (
                       <a
                         href={`/customers/${selectedOrder.khata_customer_id}`}
-                        className="inline-flex items-center px-2 text-xs font-medium text-amber-900 underline"
+                        className="inline-flex items-center px-2 text-xs font-medium text-amber-900 dark:text-amber-300 underline"
                       >
                         See their khata
                       </a>
@@ -690,7 +690,7 @@ export default function StoreOrdersPage() {
               ) : null}
 
               {selectedOrder.payment_status ? (
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-text-secondary">
                   Payment:{' '}
                   {isKhata(selectedOrder) ? (
                     <>
@@ -716,10 +716,10 @@ export default function StoreOrdersPage() {
                 </p>
               ) : null}
               {selectedOrder.awb || selectedOrder.tracking_url ? (
-                <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">
+                <div className="mt-3 rounded-lg bg-gray-50 dark:bg-slate-800/50 p-3 text-sm">
                   {selectedOrder.awb ? <p>AWB: {selectedOrder.awb}</p> : null}
                   {selectedOrder.courier_scanned_at ? (
-                    <p className="text-xs text-gray-500">Courier barcode scanned</p>
+                    <p className="text-xs text-text-secondary">Courier barcode scanned</p>
                   ) : null}
                   {selectedOrder.tracking_url ? (
                     <a
@@ -733,7 +733,7 @@ export default function StoreOrdersPage() {
                   ) : null}
                 </div>
               ) : (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-text-muted">
                   No courier AWB yet. After the partner prints the sticker, scan it with the gun.
                 </p>
               )}
@@ -744,7 +744,7 @@ export default function StoreOrdersPage() {
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-green-200 bg-green-50 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 py-2.5 text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-950/30"
               >
                 Message on WhatsApp
               </a>
@@ -756,12 +756,12 @@ export default function StoreOrdersPage() {
       {showDispatch && selectedOrder ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowDispatch(false)} />
-          <div className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
-            <h4 className="flex items-center gap-2 font-semibold text-gray-900">
+          <div className="relative w-full max-w-sm rounded-2xl bg-surface p-5 shadow-xl">
+            <h4 className="flex items-center gap-2 font-semibold text-text-primary">
               <Truck className="h-4 w-4" />
               How is this going out?
             </h4>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-text-secondary">
               Shiprocket only books if you pick courier. Own rider / pickup skips booking — still scan the partner AWB if they collect from the shop.
             </p>
             <div className="mt-4 space-y-2">

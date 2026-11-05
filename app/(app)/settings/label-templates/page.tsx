@@ -276,7 +276,7 @@ function TemplateCard({
   );
 
   return (
-    <div className="border rounded-lg p-4 bg-surface dark:bg-slate-900/70 hover:shadow-sm transition-shadow">
+    <div className="border rounded-lg p-4 bg-surface hover:shadow-sm transition-shadow">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="font-semibold text-text-primary truncate">
@@ -342,7 +342,7 @@ function TemplateCard({
           <button
             onClick={() => onDelete(template)}
             disabled={busy}
-            className="p-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded disabled:opacity-50"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />

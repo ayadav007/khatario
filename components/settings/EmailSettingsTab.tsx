@@ -159,7 +159,7 @@ export function EmailSettingsTab({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div className="rounded-xl border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-950/30 p-4 text-sm text-blue-900 dark:text-blue-300">
         <p className="font-medium">Your business sends email through your own mail server</p>
         <p className="mt-1 text-blue-800/90">
           Use Gmail, Outlook, Zoho Mail, or any SMTP provider. Credentials are stored encrypted and
@@ -172,9 +172,9 @@ export function EmailSettingsTab({
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
-          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          className="rounded border-border text-primary-600 focus:ring-primary-500"
         />
-        <span className="text-sm font-medium text-gray-900">Enable outbound email for this business</span>
+        <span className="text-sm font-medium text-text-primary">Enable outbound email for this business</span>
       </label>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -191,12 +191,12 @@ export function EmailSettingsTab({
           onChange={(e) => setSmtpPort(parseInt(e.target.value, 10) || 587)}
         />
         <div className="md:col-span-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
             <input
               type="checkbox"
               checked={smtpSecure}
               onChange={(e) => setSmtpSecure(e.target.checked)}
-              className="rounded border-gray-300"
+              className="rounded border-border"
             />
             Use SSL/TLS (typically for port 465)
           </label>
@@ -208,7 +208,7 @@ export function EmailSettingsTab({
           placeholder="your-email@gmail.com"
         />
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
+          <label className="mb-1 block text-sm font-medium text-text-secondary">
             SMTP password {hasPassword && !smtpPassword ? '(saved — leave blank to keep)' : ''}
           </label>
           <div className="relative">
@@ -222,7 +222,7 @@ export function EmailSettingsTab({
             />
             <button
               type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary"
               onClick={() => setShowPassword((v) => !v)}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -263,8 +263,8 @@ export function EmailSettingsTab({
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border bg-gray-50 p-4 space-y-3">
-        <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+      <div className="rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 p-4 space-y-3">
+        <p className="text-sm font-medium text-text-primary flex items-center gap-2">
           <Mail className="h-4 w-4" />
           Send test email (optional)
         </p>

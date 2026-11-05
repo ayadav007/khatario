@@ -30,7 +30,7 @@ function CheckboxRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-white p-3">
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface p-3">
       <input
         type="checkbox"
         className="mt-1"

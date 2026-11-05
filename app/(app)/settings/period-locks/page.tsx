@@ -185,11 +185,11 @@ export default function PeriodLocksPage() {
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 dark:border-amber-800/60 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-amber-900">About Period Locks</p>
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-300">About Period Locks</p>
               <p className="text-sm text-amber-700 mt-1">
                 Locked periods prevent creating or modifying transactions. This ensures data integrity after closing a period. 
                 Only past periods can be locked. Unlocking requires careful consideration.
@@ -201,7 +201,7 @@ export default function PeriodLocksPage() {
         {/* Create Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-surface dark:bg-slate-900/70 rounded-xl max-w-2xl w-full p-6">
+            <div className="bg-surface rounded-xl max-w-2xl w-full p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-text-primary">Lock Period</h2>
                 <button
@@ -310,7 +310,7 @@ export default function PeriodLocksPage() {
         )}
 
         {/* Locks Table */}
-        <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-slate-800/40 border-b border-border">
               <tr>
@@ -323,7 +323,7 @@ export default function PeriodLocksPage() {
                 <th className="px-4 py-3 text-right text-sm font-medium text-text-secondary">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-border">
               {locks.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-text-muted">
@@ -332,7 +332,7 @@ export default function PeriodLocksPage() {
                 </tr>
               ) : (
                 locks.map((lock) => (
-                  <tr key={lock.id} className="hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                  <tr key={lock.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/70">
                     <td className="px-4 py-3 text-sm text-text-primary">
                       {lock.branch_name || (
                         <span className="text-text-muted italic">All Branches</span>
@@ -344,12 +344,12 @@ export default function PeriodLocksPage() {
                     </td>
                     <td className="px-4 py-3">
                       {lock.is_locked ? (
-                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded-full text-xs font-medium">
                           <Lock className="w-3 h-3" />
                           <span>Locked</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                        <span className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                           <Unlock className="w-3 h-3" />
                           <span>Unlocked</span>
                         </span>

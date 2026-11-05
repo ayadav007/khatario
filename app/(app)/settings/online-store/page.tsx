@@ -453,7 +453,7 @@ export default function OnlineStoreSettingsPage() {
     return (
       <SettingsPageShell title="Online Store" icon={Store}>
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       </SettingsPageShell>
     );
@@ -480,7 +480,7 @@ export default function OnlineStoreSettingsPage() {
           {storeEngine ? (
             <Link
               href="/settings/online-store/themes"
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
             >
               <Palette className="h-3.5 w-3.5" />
               Themes
@@ -488,14 +488,14 @@ export default function OnlineStoreSettingsPage() {
           ) : null}
           <Link
             href="/settings/online-store/enquiries"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Inbox className="h-3.5 w-3.5" />
             Enquiries
           </Link>
           <Link
             href="/settings/online-store/reviews"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Star className="h-3.5 w-3.5" />
             Reviews
@@ -507,7 +507,7 @@ export default function OnlineStoreSettingsPage() {
           </Link>
           <Link
             href="/settings/online-store/abandoned-carts"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <ShoppingCart className="h-3.5 w-3.5" />
             Abandoned carts
@@ -515,7 +515,7 @@ export default function OnlineStoreSettingsPage() {
           {designTab ? (
             <button
               type="button"
-              className="text-xs text-gray-500"
+              className="text-xs text-text-secondary"
               onClick={() => setShowPreview((v) => !v)}
             >
               {showPreview ? 'Hide preview' : 'Show preview'}
@@ -525,19 +525,19 @@ export default function OnlineStoreSettingsPage() {
       }
     >
       {error ? (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       ) : null}
       {success ? (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="mb-4 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-4 py-3 text-sm text-green-700 dark:text-green-300">
           Store saved
         </div>
       ) : null}
 
       <div className={clsx('gap-6', previewOn && '2xl:grid 2xl:grid-cols-[minmax(0,1fr)_440px]')}>
         <div className={clsx(!designTab && 'mx-auto max-w-3xl')}>
-          <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1" role="tablist">
+          <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1" role="tablist">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -547,7 +547,7 @@ export default function OnlineStoreSettingsPage() {
                 onClick={() => setTab(t.id)}
                 className={clsx(
                   'inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium',
-                  tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50',
+                  tab === t.id ? 'bg-gray-900 text-white' : 'text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60',
                 )}
               >
                 <t.icon className="h-4 w-4" aria-hidden />
@@ -571,8 +571,8 @@ export default function OnlineStoreSettingsPage() {
             <Card className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Opening promo sheet</h3>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <h3 className="text-sm font-semibold text-text-primary">Opening promo sheet</h3>
+                  <p className="mt-1 text-xs text-text-secondary">
                     Slides up as a large poster (about half to three-quarters of the screen). A full-bleed photo works best.
                   </p>
                 </div>
@@ -583,7 +583,7 @@ export default function OnlineStoreSettingsPage() {
                 />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs text-gray-500 sm:col-span-2">
+                <label className="block text-xs text-text-secondary sm:col-span-2">
                   Title
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -592,7 +592,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, title: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500 sm:col-span-2">
+                <label className="block text-xs text-text-secondary sm:col-span-2">
                   Message
                   <textarea
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -609,7 +609,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(url) => setPromo((p) => ({ ...p, image_url: url }))}
                   />
                 </div>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button text
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -618,7 +618,7 @@ export default function OnlineStoreSettingsPage() {
                     placeholder="Shop now"
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   When they tap it
                   <select
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -642,7 +642,7 @@ export default function OnlineStoreSettingsPage() {
                     <option value="url">Open a product or page</option>
                     <option value="none">No button</option>
                   </select>
-                  <span className="mt-1 block text-[11px] text-gray-400">
+                  <span className="mt-1 block text-[11px] text-text-muted">
                     {promo.cta_action === 'shop'
                       ? 'Closes the promo and scrolls to products. A coupon code is saved for checkout.'
                       : promo.cta_action === 'whatsapp'
@@ -653,7 +653,7 @@ export default function OnlineStoreSettingsPage() {
                   </span>
                 </label>
                 {promo.cta_action === 'url' ? (
-                  <label className="block text-xs text-gray-500 sm:col-span-2">
+                  <label className="block text-xs text-text-secondary sm:col-span-2">
                     Custom link
                     <input
                       className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -663,7 +663,7 @@ export default function OnlineStoreSettingsPage() {
                     />
                   </label>
                 ) : null}
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Coupon to apply at checkout
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm uppercase"
@@ -673,11 +673,11 @@ export default function OnlineStoreSettingsPage() {
                     }
                     placeholder="Optional"
                   />
-                  <span className="mt-1 block text-[11px] text-gray-400">
+                  <span className="mt-1 block text-[11px] text-text-muted">
                     Saved when they tap the button. It is applied when they actually check out — not by opening an empty cart.
                   </span>
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   How often
                   <select
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -695,7 +695,7 @@ export default function OnlineStoreSettingsPage() {
                     <option value="until_dismissed">Until they dismiss it</option>
                   </select>
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Wait before showing (seconds)
                   <input
                     type="number"
@@ -712,7 +712,7 @@ export default function OnlineStoreSettingsPage() {
                     }
                   />
                 </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-text-secondary sm:col-span-2">
                   <input
                     type="checkbox"
                     checked={promo.dismissible}
@@ -720,7 +720,7 @@ export default function OnlineStoreSettingsPage() {
                   />
                   Customer can dismiss it
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Background
                   <input
                     type="color"
@@ -729,7 +729,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, background_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Text
                   <input
                     type="color"
@@ -738,7 +738,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, text_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button
                   <input
                     type="color"
@@ -747,7 +747,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, button_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button text
                   <input
                     type="color"
@@ -756,7 +756,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, button_text_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Show from
                   <input
                     type="datetime-local"
@@ -770,7 +770,7 @@ export default function OnlineStoreSettingsPage() {
                     }
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Show until
                   <input
                     type="datetime-local"
@@ -791,45 +791,45 @@ export default function OnlineStoreSettingsPage() {
           {tab === 'setup' ? (
             <div className="space-y-4">
               <section
-                className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                className="overflow-hidden rounded-xl border border-border bg-surface"
                 data-testid="store-setup-status"
               >
                 <div className="flex items-center gap-3 px-5 py-4">
                   <div
                     className={clsx(
                       'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg',
-                      enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500',
+                      enabled ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary',
                     )}
                   >
                     <Store className="h-5 w-5" aria-hidden />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-gray-900">
+                      <h3 className="text-base font-semibold text-text-primary">
                         {enabled ? 'Your store is live' : 'Your store is offline'}
                       </h3>
                       <span
                         className={clsx(
                           'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                          enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600',
+                          enabled ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary',
                         )}
                       >
                         <span className={clsx('h-1.5 w-1.5 rounded-full', enabled ? 'bg-green-500' : 'bg-gray-400')} />
                         {enabled ? 'Taking orders' : 'Not taking orders'}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-xs text-gray-500">
+                    <p className="mt-0.5 text-xs text-text-secondary">
                       {enabled ? 'Customers can visit and order.' : 'Customers see that the store is closed.'}
                     </p>
                   </div>
                   <SetupSwitch label="Store is live" on={enabled} onToggle={() => setEnabled((v) => !v)} />
                 </div>
-                <div className="border-t border-gray-100 px-5 py-4">
-                  <label htmlFor="store-subdomain" className="block text-sm font-medium text-gray-900">
+                <div className="border-t border-border px-5 py-4">
+                  <label htmlFor="store-subdomain" className="block text-sm font-medium text-text-primary">
                     Web address
                   </label>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <div className="flex h-10 flex-1 items-stretch overflow-hidden rounded-lg border border-gray-200 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
+                    <div className="flex h-10 flex-1 items-stretch overflow-hidden rounded-lg border border-border focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
                       <input
                         id="store-subdomain"
                         type="text"
@@ -838,9 +838,9 @@ export default function OnlineStoreSettingsPage() {
                           setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
                         }
                         placeholder="my-store"
-                        className="min-w-0 flex-1 border-0 bg-white px-3 text-sm text-gray-900 focus:outline-none focus:ring-0"
+                        className="min-w-0 flex-1 border-0 bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-0"
                       />
-                      <span className="flex flex-shrink-0 items-center border-l border-gray-200 bg-gray-50 px-3 text-sm text-gray-500">
+                      <span className="flex flex-shrink-0 items-center border-l border-border bg-gray-50 dark:bg-slate-800/50 px-3 text-sm text-text-secondary">
                         {hostSuffix}
                       </span>
                     </div>
@@ -849,7 +849,7 @@ export default function OnlineStoreSettingsPage() {
                         <button
                           type="button"
                           onClick={handleCopy}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 hover:bg-gray-50"
+                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
                         >
                           {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                           {copied ? 'Copied' : 'Copy'}
@@ -858,7 +858,7 @@ export default function OnlineStoreSettingsPage() {
                           href={`https://${storeUrl}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 hover:bg-gray-50"
+                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
                         >
                           <ExternalLink className="h-4 w-4" />
                           Visit
@@ -867,7 +867,7 @@ export default function OnlineStoreSettingsPage() {
                     ) : null}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 border-t border-gray-100 px-5 py-3" data-testid="store-setup-checklist">
+                <div className="flex flex-wrap gap-2 border-t border-border px-5 py-3" data-testid="store-setup-checklist">
                   {[
                     {
                       key: 'address',
@@ -897,7 +897,7 @@ export default function OnlineStoreSettingsPage() {
                     c.ok ? (
                       <span
                         key={c.key}
-                        className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs text-green-700"
+                        className="inline-flex items-center gap-1 rounded-full border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-2.5 py-1 text-xs text-green-700 dark:text-green-300"
                       >
                         <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
                         {c.okText}
@@ -906,7 +906,7 @@ export default function OnlineStoreSettingsPage() {
                       <Link
                         key={c.key}
                         href={c.href}
-                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-100"
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/30"
                       >
                         <AlertCircle className="h-3.5 w-3.5" aria-hidden />
                         {c.todo}
@@ -914,7 +914,7 @@ export default function OnlineStoreSettingsPage() {
                     ) : (
                       <span
                         key={c.key}
-                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800"
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300"
                       >
                         <AlertCircle className="h-3.5 w-3.5" aria-hidden />
                         {c.todo}
@@ -972,27 +972,27 @@ export default function OnlineStoreSettingsPage() {
                 {deliveryProvider === 'shiprocket' ? (
                   <SetupBlock muted>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block text-xs text-gray-500">
+                      <label className="block text-xs text-text-secondary">
                         Shiprocket email
                         <input
-                          className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900"
+                          className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text-primary"
                           value={shipEmail}
                           onChange={(e) => setShipEmail(e.target.value)}
                         />
                       </label>
-                      <label className="block text-xs text-gray-500">
+                      <label className="block text-xs text-text-secondary">
                         API password
                         <input
                           type="password"
-                          className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900"
+                          className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text-primary"
                           placeholder="Leave blank to keep"
                           value={shipPassword}
                           onChange={(e) => setShipPassword(e.target.value)}
                         />
                       </label>
                     </div>
-                    <div className="mt-3 text-xs text-gray-600">
-                      <p className="font-medium text-gray-800">Tracking webhook token</p>
+                    <div className="mt-3 text-xs text-text-secondary">
+                      <p className="font-medium text-text-primary">Tracking webhook token</p>
                       <p className="mt-1">
                         {shipWebhookConfigured
                           ? 'A token is saved. Generate a new one only if you are replacing it in Shiprocket.'
@@ -1002,7 +1002,7 @@ export default function OnlineStoreSettingsPage() {
                         <input
                           readOnly
                           data-testid="shiprocket-webhook-token"
-                          className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 font-mono text-xs"
+                          className="h-10 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs"
                           placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
                           value={shipWebhookToken}
                         />
@@ -1015,7 +1015,7 @@ export default function OnlineStoreSettingsPage() {
                         </Button>
                       </div>
                       {shipWebhookToken ? (
-                        <p className="mt-2 text-amber-700">
+                        <p className="mt-2 text-amber-700 dark:text-amber-300">
                           Copy this token into Shiprocket, then save. It is not shown again.
                         </p>
                       ) : null}
@@ -1038,8 +1038,8 @@ export default function OnlineStoreSettingsPage() {
                 </SetupRow>
                 <div id="store-delivery-areas" className="scroll-mt-24">
                   <SetupBlock>
-                    <p className="text-sm font-medium text-gray-900">Delivery areas</p>
-                    <p className="mt-0.5 mb-3 text-xs text-gray-500">
+                    <p className="text-sm font-medium text-text-primary">Delivery areas</p>
+                    <p className="mt-0.5 mb-3 text-xs text-text-secondary">
                       Area and charges for each branch. Each branch saves with its own Save.
                     </p>
                     {business?.id ? (
@@ -1066,7 +1066,7 @@ export default function OnlineStoreSettingsPage() {
           ) : null}
           {tab === 'pages' ? (
             <Card className="p-5 space-y-4">
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 About page
                 <textarea
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -1075,7 +1075,7 @@ export default function OnlineStoreSettingsPage() {
                   onChange={(e) => setAboutMd(e.target.value)}
                 />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Contact page
                 <textarea
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -1084,15 +1084,15 @@ export default function OnlineStoreSettingsPage() {
                   onChange={(e) => setContactMd(e.target.value)}
                 />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Privacy policy
                 <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Refund policy
                 <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Terms and conditions
                 <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
               </label>

@@ -220,7 +220,7 @@ export function RegistrationDetails() {
                       href={`/api/business/registration-documents/${field.kind}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm font-medium text-primary-700"
+                      className="text-sm font-medium text-primary-700 dark:text-primary-200"
                     >
                       View
                     </a>
@@ -315,7 +315,7 @@ function CertificateActions({
               href={`/api/business/registration-documents/${kind}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-9 items-center px-2 text-sm font-medium text-primary-700"
+              className="inline-flex h-9 items-center px-2 text-sm font-medium text-primary-700 dark:text-primary-200"
             >
               View
             </a>
