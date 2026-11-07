@@ -71,7 +71,25 @@ const issue = (severity, url, code, detail = '') => issues.push({ severity, url,
 const robots = await get(`${BASE}/robots.txt`, 'follow');
 if (robots.status !== 200) issue('high', '/robots.txt', 'robots_missing', `status ${robots.status}`);
 else {
-  if (/^\s*disallow:\s*\/\s*$/im.test(robots.body)) issue('high', '/robots.txt', 'robots_blocks_all');
+  // Only groups that apply to search crawlers count: Cloudflare's managed block legitimately has
+  // "Disallow: /" for AI-training bots such as GPTBot.
+  const blocked = [];
+  let agents = [];
+  let inRules = false;
+  for (const raw of robots.body.split(/\r?\n/)) {
+    const line = raw.replace(/#.*/, '').trim();
+    const [, field, value] = line.match(/^([a-z-]+)\s*:\s*(.*)$/i) ?? [];
+    if (!field) continue;
+    if (field.toLowerCase() === 'user-agent') {
+      if (inRules) agents = [];
+      inRules = false;
+      agents.push(value.toLowerCase());
+    } else {
+      inRules = true;
+      if (field.toLowerCase() === 'disallow' && value === '/') blocked.push(...agents);
+    }
+  }
+  if (blocked.some((a) => a === '*' || a === 'googlebot' || a === 'bingbot')) issue('high', '/robots.txt', 'robots_blocks_all');
   if (!/^\s*sitemap:/im.test(robots.body)) issue('medium', '/robots.txt', 'robots_no_sitemap');
 }
 const sitemap = await get(`${BASE}/sitemap.xml`, 'follow');
