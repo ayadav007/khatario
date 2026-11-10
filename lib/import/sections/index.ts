@@ -135,6 +135,14 @@ export function buildRow(
   }
 
   for (const f of def.fields) {
+    const value = values[f.key];
+    if (f.maxLength && typeof value === 'string' && value.length > f.maxLength) {
+      issues.push({
+        field: f.key,
+        level: 'error',
+        message: `"${headerOf.get(f.key) ?? f.label}" is longer than ${f.maxLength} characters`,
+      });
+    }
     if (f.required && values[f.key] === null && !issues.some((i) => i.field === f.key)) {
       issues.push({ field: f.key, level: 'error', message: `"${headerOf.get(f.key) ?? f.label}" is empty` });
     }

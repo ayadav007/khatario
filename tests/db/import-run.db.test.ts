@@ -119,6 +119,7 @@ d('import runs (real DB)', () => {
         await c.query(`DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE business_id = $1)`, [id]);
         await c.query(`DELETE FROM invoices WHERE business_id = $1`, [id]);
         await c.query(`DELETE FROM customers WHERE business_id = $1`, [id]);
+        await c.query(`DELETE FROM items WHERE business_id = $1`, [id]);
         await c.query(`DELETE FROM activity_logs WHERE business_id = $1`, [id]);
         await c.query(`DELETE FROM user_branches WHERE user_id IN (SELECT id FROM users WHERE business_id = $1)`, [id]);
         await c.query(`DELETE FROM branches WHERE business_id = $1`, [id]);
@@ -322,6 +323,73 @@ d('import runs (real DB)', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  test('a connection error from saveRow still marks the run failed', async () => {
+    const spy = jest
+      .spyOn(SECTIONS.customers, 'saveRow')
+      .mockRejectedValue(Object.assign(new Error('terminating connection'), { code: '08006' }));
+    try {
+      const { draft } = await draftAndPreview(A, ['Name,City', 'Conn One,Pune', 'Conn Two,Pune']);
+      await expect(commitNextBatch(A.ctx, draft.runId)).rejects.toThrow('terminating connection');
+      expect(await runRow(draft.runId)).toMatchObject({ status: 'failed', cursor: 0 });
+      expect(await problemRows(draft.runId)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('an item HSN longer than its column needs attention at preview', async () => {
+    const draft = await createDraftRun(A.ctx, {
+      section: 'items',
+      sourceApp: 'other',
+      fileName: 'i.csv',
+      buffer: csv(['Item name,HSN', 'Long Hsn Item,12345678901', 'Short Hsn Item,0902']),
+    });
+    const p = await previewRun(A.ctx, draft.runId, { columnMatches: draft.guesses, valueMatches: {}, dateOrder: 'dmy' });
+    expect(p).toMatchObject({ ready: 1, needsAttention: 1 });
+    expect(p.problems).toEqual([
+      { rowNumber: 2, status: 'needs_attention', reasons: ['"HSN" is longer than 10 characters'] },
+    ]);
+    await pool.query(`DELETE FROM import_runs WHERE id = $1`, [draft.runId]);
+  });
+
+  test('a row that breaks a unique index at commit fails with a reason and the next rows are saved', async () => {
+    const barcode = `89${Date.now()}`;
+    await pool.query(
+      `INSERT INTO items (business_id, name, barcode, deleted_at) VALUES ($1, 'Deleted Barcode Item', $2, now())`,
+      [A.id, barcode]
+    );
+    const draft = await createDraftRun(A.ctx, {
+      section: 'items',
+      sourceApp: 'other',
+      fileName: 'b.csv',
+      buffer: csv(['Item name,Barcode', `Barcode Clash,${barcode}`, 'After Clash One,', 'After Clash Two,']),
+    });
+    const p = await previewRun(A.ctx, draft.runId, { columnMatches: draft.guesses, valueMatches: {}, dateOrder: 'dmy' });
+    expect(p.ready).toBe(3);
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let r;
+    try {
+      r = await commitAll(A, draft.runId);
+    } finally {
+      quiet.mockRestore();
+    }
+    expect(r).toMatchObject({ done: true, saved: 2, failed: 1, skipped: 0 });
+    expect((await runRow(draft.runId)).status).toBe('done');
+    expect(await problemRows(draft.runId)).toEqual([
+      {
+        row_number: 2,
+        status: 'failed',
+        reasons: ['Barcode is already used by another item (it may be deleted).'],
+        cells: [`Barcode Clash`, barcode],
+      },
+    ]);
+    const saved = await pool.query(
+      `SELECT name FROM items WHERE business_id = $1 AND name LIKE 'After Clash%' AND deleted_at IS NULL ORDER BY name`,
+      [A.id]
+    );
+    expect(saved.rows.map((x) => x.name)).toEqual(['After Clash One', 'After Clash Two']);
   });
 
   test('a crash after a save but before its bookkeeping is caught by findExisting on resume', async () => {

@@ -122,6 +122,26 @@ describe('buildRow (items)', () => {
     expect(r.issues).toEqual([{ field: 'opening_stock', level: 'error', message: '"Opening" is not a valid number: ten' }]);
   });
 
+  test('an HSN longer than its 10-character column is an error naming the header', () => {
+    const r = buildRow(SECTIONS.items, ['Tea', '12345678901'], ['Item', 'HSN Code'], { 0: 'name', 1: 'hsn_sac' }, opts);
+    expect(r.issues).toEqual([{ field: 'hsn_sac', level: 'error', message: '"HSN Code" is longer than 10 characters' }]);
+    const ok = buildRow(SECTIONS.items, ['Tea', '0902'], ['Item', 'HSN Code'], { 0: 'name', 1: 'hsn_sac' }, opts);
+    expect(ok.issues).toEqual([]);
+  });
+
+  test('every text field has a maximum length taken from its column', () => {
+    const lengthOf = (section: keyof typeof SECTIONS, key: string) =>
+      SECTIONS[section].fields.find((f) => f.key === key)?.maxLength;
+    expect(lengthOf('items', 'hsn_sac')).toBe(10);
+    expect(lengthOf('items', 'name')).toBe(255);
+    expect(lengthOf('items', 'code')).toBe(100);
+    expect(lengthOf('items', 'barcode')).toBe(100);
+    expect(lengthOf('customers', 'city')).toBe(100);
+    expect(lengthOf('customers', 'pincode')).toBe(10);
+    expect(lengthOf('suppliers', 'pan')).toBe(10);
+    expect(lengthOf('suppliers', 'email')).toBe(255);
+  });
+
   test('duplicateKeys uses code, barcode and name', () => {
     expect(SECTIONS.items.duplicateKeys({ code: 'T-01', barcode: '890123', name: 'Green  Tea' })).toEqual([
       'code:t-01',

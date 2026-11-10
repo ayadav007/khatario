@@ -6,6 +6,7 @@ import { checkLimit } from '@/lib/subscription';
 import { guessColumns } from '@/lib/import/match-columns';
 import { isAmbiguousDate, normaliseKey } from '@/lib/import/parse-values';
 import { readImportFile } from '@/lib/import/read-file';
+import { rowFailureReason } from '@/lib/import/row-errors';
 import { buildRow, SECTIONS } from '@/lib/import/sections';
 import type {
   BuiltRow,
@@ -567,7 +568,15 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
         problem(i, 'failed', [limitMessage]);
         continue;
       }
-      const saved = await def.saveRow(ctx, built[i].values);
+      let saved: Awaited<ReturnType<SectionDefinition['saveRow']>>;
+      try {
+        saved = await def.saveRow(ctx, built[i].values);
+      } catch (e) {
+        // A data or integrity error fails the same way on every retry: it is this row's problem.
+        const reason = rowFailureReason(e);
+        if (reason === null) throw e;
+        saved = { ok: false, error: reason };
+      }
       if (!saved.ok) {
         counts.failed += 1;
         problem(i, 'failed', [saved.error]);

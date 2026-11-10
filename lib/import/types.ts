@@ -22,6 +22,8 @@ export interface ImportField {
   type: FieldType;
   required?: boolean;
   aliases: string[];
+  /** The database column's size: a longer value needs attention instead of failing at save. */
+  maxLength?: number;
 }
 /** Column index to field key; null means "Don't import". */
 export type ColumnMatches = Record<number, string | null>;
