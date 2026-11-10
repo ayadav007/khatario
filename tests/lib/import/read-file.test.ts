@@ -177,3 +177,33 @@ describe('fix round 1', () => {
     expect(r.rows).toEqual([['Pipe 5" long', '10']]);
   });
 });
+
+describe('scan bound', () => {
+  test('a sheet formatted down to row 30,000 with 5 data rows is refused as too many rows', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Name', 'City']);
+      for (let i = 0; i < 5; i++) ws.addRow([`Party ${i}`, 'Pune']);
+      // Formatting alone (no value) still makes the rows part of the sheet.
+      for (let r = 7; r <= 30000; r++) ws.getRow(r).getCell(1).style = { font: { bold: true } };
+    });
+    await expect(readImportFile(buf, 'x.xlsx')).rejects.toMatchObject({
+      code: 'TOO_MANY_ROWS',
+      message: expect.stringMatching(/Delete the empty rows/),
+    });
+  }, 60000);
+
+  test('blank rows within 20,000 rows of the header are skipped as before', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Name', 'City']);
+      ws.addRow(['First', 'Pune']);
+      for (let r = 3; r <= 19000; r++) ws.getRow(r).getCell(1).style = { font: { bold: true } };
+      ws.getRow(19001).values = ['Last', 'Pune'];
+    });
+    const r = await readImportFile(buf, 'x.xlsx');
+    expect(r.rows).toEqual([
+      ['First', 'Pune'],
+      ['Last', 'Pune'],
+    ]);
+    expect(r.rowNumbers).toEqual([2, 19001]);
+  }, 60000);
+});

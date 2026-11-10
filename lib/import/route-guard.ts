@@ -13,10 +13,10 @@ export type ImportGuard =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** TOO_MANY_ROWS is left out: the reader's own message says which limit (data rows or empty rows). */
 const FILE_MESSAGES: Record<string, string> = {
   UNSUPPORTED_TYPE: 'Upload an Excel (.xlsx) or CSV file.',
   TOO_LARGE: 'This file is larger than 10 MB.',
-  TOO_MANY_ROWS: 'This file has more than 10,000 rows. Split it into smaller files.',
   NO_HEADER: 'No column headings were found in this file.',
   UNREADABLE: 'This file could not be read. Save it again as Excel or CSV and retry.',
 };

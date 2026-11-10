@@ -29,6 +29,8 @@ export class ImportFileError extends Error {
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_DATA_ROWS = 10000;
+/** Rows after the header looked at, blank or not: formatting can stretch a sheet to a million rows. */
+const MAX_SCANNED_ROWS = 20000;
 const MAX_COLUMNS = 200;
 
 function pad2(n: number): string {
@@ -200,12 +202,18 @@ export async function readImportFile(buffer: Buffer, fileName: string): Promise<
   const rows: string[][] = [];
   const rowNumbers: number[] = [];
   for (let i = headerIdx + 1; i < src.length; i++) {
+    if (i - headerIdx > MAX_SCANNED_ROWS) {
+      throw new ImportFileError(
+        'TOO_MANY_ROWS',
+        'The sheet runs past 20,000 rows below the header (empty rows count). Delete the empty rows below your data and upload again.'
+      );
+    }
     const raw = src.get(i);
     if (!hasValue(raw)) continue;
     const first = normaliseKey(raw.find((c) => c !== '') ?? '');
     if (first === 'total' || first === 'grandtotal') continue;
     if (rows.length >= MAX_DATA_ROWS) {
-      throw new ImportFileError('TOO_MANY_ROWS', 'The file has more than 10,000 data rows.');
+      throw new ImportFileError('TOO_MANY_ROWS', 'This file has more than 10,000 rows. Split it into smaller files.');
     }
     rows.push(headers.map((_, j) => (raw[j] ?? '').trim()));
     rowNumbers.push(src.numberOf(i));
