@@ -26,6 +26,9 @@ import '../reports/financial_statements_screens.dart';
 import '../settings/settings_hub_screen.dart';
 import '../stock/item_cleanup_screen.dart';
 import '../stock/price_list_screen.dart';
+import '../tools/calculators_screen.dart';
+import '../tools/lookup_tools_screens.dart';
+import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
 import 'page_catalog.dart';
@@ -67,6 +70,32 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return ExpenseFormScreen(session: session);
     case '/expenses/categories':
       return ExpenseCategoriesScreen(session: session);
+    case '/tools':
+      return ToolsHubScreen(session: session);
+    case '/tools/hsn-finder':
+      return HsnFinderScreen(session: session);
+    case '/tools/google-lead-extractor':
+      return LeadExtractorScreen(session: session);
+    case '/tools/gst-calculator':
+      return const GstCalculatorScreen();
+    case '/tools/gstin-validator':
+      return const GstinValidatorScreen();
+    case '/tools/pan-validator':
+      return const PanValidatorScreen();
+    case '/tools/tds-calculator':
+      return const TdsCalculatorScreen();
+    case '/tools/discount-calculator':
+      return const DiscountCalculatorScreen();
+    case '/tools/price-margin-calculator':
+      return const PriceMarginCalculatorScreen();
+    case '/tools/invoice-number-generator':
+      return const InvoiceNumberScreen();
+    case '/tools/interest-calculator':
+      return const InterestCalculatorScreen();
+    case '/tools/emi-calculator':
+      return const EmiCalculatorScreen();
+    case '/tools/currency-converter':
+      return const CurrencyConverterScreen();
     case '/reports/aging/receivables':
     case '/reports/aging/payables':
       return AgingReportScreen(session: session, payables: href.endsWith('payables'));

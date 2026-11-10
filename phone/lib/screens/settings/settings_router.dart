@@ -5,8 +5,6 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
-import '../pages/page_catalog.dart';
-import '../pages/record_page.dart';
 import 'map_form_screen.dart';
 import 'plan_billing_screen.dart';
 import 'printers_screen.dart';
@@ -285,7 +283,6 @@ Widget? phoneSettingPage(AppSession session, String href) {
     '/settings/label-templates' => _LabelsScreen(session: session),
     '/settings/online-store' || '/settings/online-store/studio' => _StoreExtrasScreen(session: session),
     '/pricing/party-item' => _PartyPriceScreen(session: session),
-    '/tools' => _ToolsScreen(session: session),
     '/whatsapp/send-message' => _SendMessageScreen(session: session),
     '/hr/leaves/year-end' => _YearEndScreen(session: session),
     '/hr/leaves/import-balances' => _LeaveImportScreen(session: session),
@@ -1879,34 +1876,6 @@ class _PartyPriceScreenState extends State<_PartyPriceScreen> {
             if (_overrides.isEmpty) const SettingRow(label: 'No special prices'),
             AddSetting(label: 'Set a price', onTap: _set),
           ]),
-      ],
-    );
-  }
-}
-
-class _ToolsScreen extends StatelessWidget {
-  const _ToolsScreen({required this.session});
-  final AppSession session;
-
-  @override
-  Widget build(BuildContext context) {
-    return SettingsPage(
-      title: 'Tools',
-      blurb: 'Calculators and checkers. They stay on this phone.',
-      icon: LucideIcons.wrench,
-      loading: false,
-      children: [
-        SettingsSection(title: 'All tools', children: [
-          for (final (href, label) in toolLinks)
-            NavSetting(
-              label: label,
-              onTap: () {
-                final page = pageForHref(href);
-                if (page == null) return;
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: session, page: page)));
-              },
-            ),
-        ]),
       ],
     );
   }

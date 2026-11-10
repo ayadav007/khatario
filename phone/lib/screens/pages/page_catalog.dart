@@ -4,7 +4,7 @@ import 'record_format.dart';
 enum PageQuery { none, range, month, financialYear }
 
 class AppPage {
-  const AppPage(this.href, this.title, this.path, {this.listKey, this.query = PageQuery.none, this.estimate = false, this.tool});
+  const AppPage(this.href, this.title, this.path, {this.listKey, this.query = PageQuery.none, this.estimate = false});
 
   final String href;
   final String title;
@@ -13,13 +13,10 @@ class AppPage {
   final PageQuery query;
   final bool estimate;
 
-  /// `gst`, `hsn`, or `leads`.
-  final String? tool;
-
   /// Same page under the menu's own wording ("GSTR-9", not "Gstr9").
   AppPage withTitle(String label) => label.trim().isEmpty || label.startsWith('/')
       ? this
-      : AppPage(href, label, path, listKey: listKey, query: query, estimate: estimate, tool: tool);
+      : AppPage(href, label, path, listKey: listKey, query: query, estimate: estimate);
 }
 
 /// Same groups as the website settings hub (`lib/settings-module-registry.ts`).
@@ -255,18 +252,6 @@ const stillGeneric = <String>{
   '/whatsapp/contacts/groups',
   '/whatsapp/unsubscribes',
   '/tools/todo',
-  '/tools/hsn-finder',
-  '/tools/gst-calculator',
-  '/tools/google-lead-extractor',
-  '/tools/tds-calculator',
-  '/tools/discount-calculator',
-  '/tools/price-margin-calculator',
-  '/tools/pan-validator',
-  '/tools/gstin-validator',
-  '/tools/interest-calculator',
-  '/tools/emi-calculator',
-  '/tools/currency-converter',
-  '/tools/invoice-number-generator',
 };
 
 /// Website pages with no GET the phone can list (forms, wizards, device setup). Their path is the
@@ -285,22 +270,6 @@ const _webOnly = {
 
 /// A page with no phone screen and no data to list: it opens on the website inside the app.
 bool isWebsiteOnlyHref(String href) => _webOnly.contains(normalizeHref(href));
-
-const toolLinks = <(String, String)>[
-  ('/tools/todo', 'To Do List'),
-  ('/tools/hsn-finder', 'HSN/SAC Finder'),
-  ('/tools/gst-calculator', 'GST Calculator'),
-  ('/tools/gstin-validator', 'GSTIN validator'),
-  ('/tools/pan-validator', 'PAN validator'),
-  ('/tools/discount-calculator', 'Discount calculator'),
-  ('/tools/emi-calculator', 'EMI calculator'),
-  ('/tools/interest-calculator', 'Interest calculator'),
-  ('/tools/price-margin-calculator', 'Price margin'),
-  ('/tools/tds-calculator', 'TDS calculator'),
-  ('/tools/currency-converter', 'Currency converter'),
-  ('/tools/invoice-number-generator', 'Invoice number'),
-  ('/tools/google-lead-extractor', 'Lead Extractor'),
-];
 
 const appPages = <AppPage>[
   AppPage('/estimates', 'Quotations', '/api/estimates', listKey: 'estimates', estimate: true),
@@ -405,11 +374,7 @@ const appPages = <AppPage>[
   AppPage('/settings/online-store', 'Online store', '/api/settings/online-store'),
   AppPage('/settings/online-store/enquiries', 'Store enquiries', '/api/settings/online-store/enquiries', listKey: 'enquiries'),
   AppPage('/settings/online-store/orders', 'Store orders', '/api/settings/online-store/orders', listKey: 'orders'),
-  AppPage('/tools', 'All Tools', '/tools'),
   AppPage('/tools/todo', 'To Do List', '/api/todos', listKey: 'todos'),
-  AppPage('/tools/hsn-finder', 'HSN/SAC Finder', '/api/hsn/lookup', tool: 'hsn'),
-  AppPage('/tools/gst-calculator', 'GST Calculator', '/tools/gst-calculator', tool: 'gst'),
-  AppPage('/tools/google-lead-extractor', 'Lead Extractor', '/api/tools/google-leads/search', tool: 'leads'),
   AppPage('/settings', 'Settings', '/settings'),
 ];
 
@@ -494,7 +459,7 @@ AppPage? pageForHref(String href) {
   }
   final parts = clean.split('/').where((s) => s.isNotEmpty).toList();
   if (parts.isEmpty || !_roots.contains(parts.first)) return null;
-  return AppPage(clean, _settingsTitle(clean) ?? _titleFromPath(clean), _apiFor(clean), query: _queryFor(clean), tool: _toolFor(clean), estimate: clean == '/estimates');
+  return AppPage(clean, _settingsTitle(clean) ?? _titleFromPath(clean), _apiFor(clean), query: _queryFor(clean), estimate: clean == '/estimates');
 }
 
 String? _settingsTitle(String href) {
@@ -521,7 +486,7 @@ String _apiFor(String href) {
   path = path.replaceAll('[reportType]', 'summary');
   path = path.replaceAll(RegExp(r'/\[[^/]+\]'), '');
   if (path.isEmpty) path = href;
-  if (path == '/settings' || path == '/tools' || path == '/upgrade' || _webOnly.contains(path)) return path;
+  if (path == '/settings' || path == '/upgrade' || _webOnly.contains(path)) return path;
   final settingsApi = _settingsApi(path);
   if (settingsApi != null) return settingsApi;
   if (path.startsWith('/settings/whatsapp')) return '/api/whatsapp/inbox-settings';
@@ -598,22 +563,6 @@ PageQuery _queryFor(String href) {
   if (_rangeReports.contains(base) || base.startsWith('/reports/sales/') || base.startsWith('/reports/purchase/')) return PageQuery.range;
   return PageQuery.none;
 }
-
-String? _toolFor(String href) => switch (href) {
-      '/tools/hsn-finder' => 'hsn',
-      '/tools/gst-calculator' => 'gst',
-      '/tools/google-lead-extractor' => 'leads',
-      '/tools/gstin-validator' => 'gstin',
-      '/tools/pan-validator' => 'pan',
-      '/tools/discount-calculator' => 'discount',
-      '/tools/emi-calculator' => 'emi',
-      '/tools/interest-calculator' => 'interest',
-      '/tools/price-margin-calculator' => 'margin',
-      '/tools/tds-calculator' => 'tds',
-      '/tools/currency-converter' => 'currency',
-      '/tools/invoice-number-generator' => 'invoice-number',
-      _ => null,
-    };
 
 const _titleKeys = [
   'credit_note_number',
