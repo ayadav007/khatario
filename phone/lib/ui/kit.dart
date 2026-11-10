@@ -595,6 +595,11 @@ extension KToneColors on KTone {
     'confirmed' => (KTone.brand, 'Open'),
     'partially_fulfilled' => (KTone.due, 'Partial open'),
     'fulfilled' => (KTone.positive, 'Completed'),
+    // Delivery challan and work order badges.
+    'delivered' => (KTone.positive, 'Delivered'),
+    'completed' => (KTone.positive, 'Completed'),
+    'scheduled' => (KTone.brand, 'Scheduled'),
+    'in_progress' => (KTone.due, 'In progress'),
     _ => (KTone.neutral, s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' ')),
   };
 }

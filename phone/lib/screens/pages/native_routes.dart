@@ -23,8 +23,10 @@ import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../sales/delivery_challans_screen.dart';
 import '../sales/estimates_screen.dart';
 import '../sales/sales_orders_screen.dart';
+import '../sales/work_orders_screen.dart';
 import '../settings/settings_hub_screen.dart';
 import '../stock/item_cleanup_screen.dart';
 import '../stock/price_list_screen.dart';
@@ -129,6 +131,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
   return switch (href) {
     '/estimates' => EstimatesScreen(session: session),
     '/sales-orders' => SalesOrdersScreen(session: session),
+    '/delivery-challans' => DeliveryChallansScreen(session: session),
+    '/work-orders' => WorkOrdersScreen(session: session),
     '/employees' => EmployeesScreen(session: session),
     '/employees/attendance' => AttendanceScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),

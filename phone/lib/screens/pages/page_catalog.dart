@@ -166,8 +166,6 @@ const websiteForNow = <String>{
 const stillGeneric = <String>{
   '/suppliers/dashboard',
   '/payments/reminders',
-  '/delivery-challans',
-  '/work-orders',
   '/credit-notes',
   '/debit-notes',
   '/pricing/levels',

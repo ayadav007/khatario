@@ -52,7 +52,7 @@ List<Map<String, dynamic>> filterDocs(List<Map<String, dynamic>> rows, String qu
 
 /// First parseable date among the usual date fields, or null.
 DateTime? docRowDate(Map<String, dynamic> row) {
-  for (final k in const ['invoice_date', 'order_date', 'bill_date', 'expense_date', 'date', 'entry_date', 'payment_date', 'created_at']) {
+  for (final k in const ['invoice_date', 'order_date', 'bill_date', 'expense_date', 'date', 'entry_date', 'payment_date', 'challan_date', 'work_order_date', 'created_at']) {
     final d = docDate(row[k]);
     if (d != null) return d;
   }
