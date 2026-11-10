@@ -1,0 +1,311 @@
+'use client';
+
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { clsx } from 'clsx';
+import { Card } from '@/components/ui/Card';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { AccessDenied } from '@/components/common/AccessDenied';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToastContext } from '@/contexts/ToastContext';
+import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { ImportHistory } from '@/components/import/ImportHistory';
+import { ImportingStep } from '@/components/import/ImportingStep';
+import { MatchColumnsStep } from '@/components/import/MatchColumnsStep';
+import { PreviewStep } from '@/components/import/PreviewStep';
+import { UploadStep } from '@/components/import/UploadStep';
+import {
+  IMPORT_SECTIONS,
+  initialWizardState,
+  missingRequiredFields,
+  wizardReducer,
+  type BatchResult,
+  type UndoResult,
+  type UploadResult,
+  type WizardState,
+} from '@/components/import/wizard-state';
+import type { PreviewResult, RunSummary } from '@/lib/import/run';
+import type { SectionKey } from '@/lib/import/types';
+
+const TOO_LARGE = 'This file is larger than 10 MB.';
+const OFFLINE = 'Could not reach the server. Check your connection and try again.';
+
+type ApiResult<T> = { ok: true; data: T } | { ok: false; code?: string; message: string };
+
+async function readJson(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const data = await res.json();
+    return data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function callApi<T>(url: string, body?: unknown): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(url, {
+      method: body === undefined ? 'GET' : 'POST',
+      credentials: 'include',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await readJson(res);
+    if (res.ok && data) return { ok: true, data: data as T };
+    return {
+      ok: false,
+      code: typeof data?.code === 'string' ? data.code : undefined,
+      message: typeof data?.error === 'string' ? data.error : 'Something went wrong. Try again.',
+    };
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+}
+
+const STEPS: { key: WizardState['step'][]; label: string }[] = [
+  { key: ['upload'], label: 'Upload' },
+  { key: ['match'], label: 'Match columns' },
+  { key: ['preview'], label: 'Preview' },
+  { key: ['importing', 'done'], label: 'Import' },
+];
+
+/** The four-step import screen for one section: Upload, Match columns, Preview, Importing / Done. */
+export function ImportWizard({ section }: { section: SectionKey }) {
+  const meta = IMPORT_SECTIONS[section];
+  const { user, business } = useAuth();
+  const toast = useToastContext();
+  const { status: authStatus } = useAuthorizationGuard({
+    resource: meta.module,
+    action: 'create',
+    skipCheck: !user?.id || !business?.id,
+  });
+  const [state, dispatch] = useReducer(wizardReducer, undefined, () => initialWizardState());
+  const [busyRunId, setBusyRunId] = useState<string | null>(null);
+  const alive = useRef(true);
+  const committing = useRef(false);
+  const previewSeq = useRef(0);
+  const base = `/api/import/${section}`;
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    const r = await callApi<{ runs: RunSummary[] }>(`/api/import/history?section=${section}`);
+    if (alive.current && r.ok) dispatch({ type: 'history_loaded', runs: r.data.runs });
+  }, [section]);
+
+  useEffect(() => {
+    if (authStatus === 'allowed') void loadHistory();
+  }, [authStatus, loadHistory]);
+
+  const upload = async (file: File) => {
+    dispatch({ type: 'upload_started' });
+    const form = new FormData();
+    form.append('file', file);
+    form.append('source_app', state.sourceApp);
+    try {
+      const res = await fetch(`${base}/upload`, { method: 'POST', credentials: 'include', body: form });
+      // A file over the proxy limit is refused with an HTML 413 before it reaches the app.
+      const data = res.status === 413 ? null : await readJson(res);
+      if (!alive.current) return;
+      if (!data) {
+        dispatch({ type: 'upload_failed', code: 'TOO_LARGE', message: TOO_LARGE });
+      } else if (!res.ok) {
+        dispatch({
+          type: 'upload_failed',
+          code: typeof data.code === 'string' ? data.code : undefined,
+          message: typeof data.error === 'string' ? data.error : 'This file could not be uploaded.',
+        });
+      } else {
+        dispatch({ type: 'upload_succeeded', result: data as unknown as UploadResult });
+      }
+    } catch {
+      if (alive.current) dispatch({ type: 'upload_failed', message: OFFLINE });
+    }
+  };
+
+  const runPreview = async (input: Pick<WizardState, 'runId' | 'headers' | 'columnMatches' | 'valueMatches' | 'dateOrder'>) => {
+    const seq = ++previewSeq.current;
+    const r = await callApi<PreviewResult>(`${base}/preview`, {
+      run_id: input.runId,
+      column_matches: Object.fromEntries(input.headers.map((_, i) => [i, input.columnMatches[i] ?? null])),
+      value_matches: input.valueMatches,
+      date_order: input.dateOrder,
+    });
+    // Only the latest request's answer counts.
+    if (!alive.current || seq !== previewSeq.current) return;
+    if (r.ok) dispatch({ type: 'preview_loaded', result: r.data });
+    else dispatch({ type: 'preview_failed', message: r.message });
+  };
+
+  const goToPreview = () => {
+    if (missingRequiredFields(state).length > 0) return;
+    dispatch({ type: 'go_to_preview' });
+    void runPreview(state);
+  };
+
+  const setValueMatch = (field: string, value: string, choice: string) => {
+    if (!choice) return;
+    dispatch({ type: 'set_value_match', field, value, choice });
+    const valueMatches = { ...state.valueMatches, [field]: { ...state.valueMatches[field], [value]: choice } };
+    void runPreview({ ...state, valueMatches });
+  };
+
+  /** Calls commit until the run is done or a call fails. */
+  const commit = async (runId: string) => {
+    if (committing.current) return;
+    committing.current = true;
+    try {
+      for (;;) {
+        const r = await callApi<BatchResult>(`${base}/commit`, { run_id: runId });
+        if (!alive.current) return;
+        if (!r.ok) {
+          dispatch({ type: 'batch_failed', message: r.message });
+          return;
+        }
+        dispatch({ type: 'batch_succeeded', result: r.data });
+        if (r.data.done) break;
+      }
+      void loadHistory();
+    } finally {
+      committing.current = false;
+    }
+  };
+
+  const startImport = () => {
+    if (!state.runId) return;
+    dispatch({ type: 'commit_started' });
+    void commit(state.runId);
+  };
+
+  const resume = () => {
+    if (!state.runId) return;
+    dispatch({ type: 'resume' });
+    void commit(state.runId);
+  };
+
+  const resumeRun = (run: RunSummary) => {
+    dispatch({ type: 'resume_run', run });
+    void commit(run.id);
+  };
+
+  const undo = async (runId: string) => {
+    setBusyRunId(runId);
+    const r = await callApi<UndoResult>(`${base}/undo`, { run_id: runId });
+    if (!alive.current) return;
+    setBusyRunId(null);
+    if (!r.ok) {
+      toast.error(r.message);
+      return;
+    }
+    dispatch({ type: 'run_undone', runId, result: r.data });
+    if (r.data.kept.length > 0) {
+      toast.warning(`Removed ${r.data.removed} records. ${r.data.kept.length} kept because they are already used.`);
+    } else {
+      toast.success(`Removed ${r.data.removed} records.`);
+    }
+    void loadHistory();
+  };
+
+  if (authStatus === 'loading') {
+    return (
+      <div className="flex h-[calc(100vh-100px)] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
+  if (authStatus === 'denied') return <AccessDenied module={meta.module} action="create" />;
+
+  const stepIndex = STEPS.findIndex((s) => s.key.includes(state.step));
+
+  return (
+    <div className="space-y-3 md:space-y-6">
+      <Link href={meta.listHref} className="inline-flex min-h-11 items-center gap-1 text-sm text-text-secondary hover:text-text-primary">
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Back to {meta.label}
+      </Link>
+      <PageHeader title={meta.title} />
+
+      <ol className="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Import steps">
+        {STEPS.map((s, i) => (
+          <li
+            key={s.label}
+            aria-current={i === stepIndex ? 'step' : undefined}
+            className={clsx(i === stepIndex ? 'font-semibold text-text-primary' : 'text-text-secondary')}
+          >
+            {i + 1}. {s.label}
+          </li>
+        ))}
+      </ol>
+
+      <Card>
+        {state.step === 'upload' ? (
+          <UploadStep
+            section={section}
+            sourceApp={state.sourceApp}
+            uploading={state.uploading}
+            error={state.error}
+            onSourceApp={(sourceApp) => dispatch({ type: 'set_source_app', sourceApp })}
+            onFile={(file) => void upload(file)}
+          />
+        ) : null}
+        {state.step === 'match' ? (
+          <MatchColumnsStep
+            headers={state.headers}
+            samples={state.samples}
+            fields={state.fields}
+            rowCount={state.rowCount}
+            columnMatches={state.columnMatches}
+            needsDateOrder={state.needsDateOrder}
+            dateOrder={state.dateOrder}
+            missingRequired={missingRequiredFields(state)}
+            onMatch={(column, field) => dispatch({ type: 'match_column', column, field })}
+            onDateOrder={(dateOrder) => dispatch({ type: 'set_date_order', dateOrder })}
+            onBack={() => dispatch({ type: 'start_over' })}
+            onNext={goToPreview}
+          />
+        ) : null}
+        {state.step === 'preview' ? (
+          <PreviewStep
+            sectionLabel={meta.label}
+            fields={state.fields}
+            preview={state.preview}
+            loading={state.previewLoading}
+            error={state.error}
+            valueMatches={state.valueMatches}
+            onValueMatch={setValueMatch}
+            onBack={() => dispatch({ type: 'back_to_match' })}
+            onImport={startImport}
+          />
+        ) : null}
+        {state.step === 'importing' || state.step === 'done' ? (
+          <ImportingStep
+            done={state.step === 'done'}
+            progress={state.progress}
+            paused={state.paused}
+            undone={state.undone}
+            undoing={busyRunId !== null && busyRunId === state.runId}
+            problemRowsHref={state.runId ? `${base}/problem-rows?run_id=${encodeURIComponent(state.runId)}` : null}
+            listHref={meta.listHref}
+            listLabel={meta.label}
+            onResume={resume}
+            onUndo={() => state.runId && void undo(state.runId)}
+          />
+        ) : null}
+      </Card>
+
+      {state.step === 'upload' ? (
+        <ImportHistory
+          runs={state.history}
+          busyRunId={busyRunId}
+          onUndo={(run) => void undo(run.id)}
+          onResume={resumeRun}
+        />
+      ) : null}
+    </div>
+  );
+}

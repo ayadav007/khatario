@@ -6,13 +6,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Loader2, Edit, Eye, Filter, X, MessageCircle } from 'lucide-react';
+import { Search, Plus, Loader2, Edit, Eye, Filter, X, MessageCircle, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Customer } from '@/types/database';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useEntityList } from '@/hooks/useEntityList';
 import {
@@ -86,6 +87,8 @@ export default function CustomersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const partyTab: PartyKind = searchParams.get('tab') === 'suppliers' ? 'suppliers' : 'customers';
+  const { canAdd, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const canImport = !permissionsLoading && (canAdd(partyTab) || isPrimaryAdmin);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance' | 'khata' | 'khata-requests'>(
     () => (searchParams.get('filter') === 'khata-requests' ? 'khata-requests' : searchParams.get('filter') === 'khata' ? 'khata' : 'all'),
@@ -833,6 +836,14 @@ export default function CustomersPage() {
               >
                 <Filter className="w-5 h-5" />
               </button>
+              {canImport ? (
+                <Link href={partyTab === 'suppliers' ? '/import/suppliers' : '/import/customers'}>
+                  <Button variant="secondary" className="h-10 px-4" aria-label="Import">
+                    <Upload className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">Import</span>
+                  </Button>
+                </Link>
+              ) : null}
               <Link href={partyTab === 'suppliers' ? '/suppliers/new' : '/customers/new'}>
                 <Button className="h-10 px-4">
                   <Plus className="w-4 h-4 md:mr-2" />

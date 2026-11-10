@@ -3,11 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, Search, User, Phone, Mail, MapPin, Filter, X, Eye, Edit, Loader2 } from 'lucide-react';
+import { Plus, Search, User, Phone, Mail, MapPin, Filter, X, Eye, Edit, Loader2, Upload } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useEntityQuery } from '@/hooks/useEntityQuery';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -39,6 +40,8 @@ const PAGE_SIZE = 50;
 export default function SuppliersPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const { canAdd, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const canImport = !permissionsLoading && (canAdd('suppliers') || isPrimaryAdmin);
   const toast = useToastContext();
   const [search, setSearch] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -428,6 +431,14 @@ export default function SuppliersPage() {
             >
               <Filter className="w-5 h-5" />
             </button>
+            {canImport ? (
+              <Link href="/import/suppliers">
+                <Button variant="secondary" className="h-10 px-4" aria-label="Import">
+                  <Upload className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Import</span>
+                </Button>
+              </Link>
+            ) : null}
             <Link href="/suppliers/new">
               <Button className="h-10 px-4">
                 <Plus className="w-4 h-4 md:mr-2" />
