@@ -35,7 +35,8 @@ test('UTF-8 BOM, UTF-16 LE and Hindi text', async () => {
 test('xlsx formula cell is text, date cell is ISO, number is plain', async () => {
   const buf = await xlsxBuffer((ws) => {
     ws.addRow(['Name', 'Value', 'When', 'Amount']);
-    // Date.UTC: exceljs stores and reads dates as UTC instants, so this is
+    // An Excel date is a serial with no time zone and exceljs reads it as a UTC instant,
+    // hence Date.UTC: exceljs stores and reads dates as UTC instants, so this is
     // 1 April on every machine time zone.
     ws.addRow(['A', { formula: '1+1' }, new Date(Date.UTC(2026, 3, 1)), 1250.5]);
   });
@@ -82,4 +83,97 @@ test('limits and types', async () => {
   await expect(readImportFile(Buffer.from('only one cell\n'), 'x.csv')).rejects.toMatchObject({ code: 'NO_HEADER' });
   const big = 'Name,City\n' + 'A,B\n'.repeat(10001);
   await expect(readImportFile(Buffer.from(big), 'x.csv')).rejects.toMatchObject({ code: 'TOO_MANY_ROWS' });
+});
+
+describe('fix round 1', () => {
+  test('merged title across A1:D1 is not mistaken for the header', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Sharma Traders']);
+      ws.mergeCells('A1:D1');
+      ws.addRow([]);
+      ws.addRow(['Name', 'City', 'Mobile', 'GST']);
+      ws.addRow(['A', 'Pune', '98', 'x']);
+    });
+    const r = await readImportFile(buf, 'x.xlsx');
+    expect(r.headerRowNumber).toBe(3);
+    expect(r.headers).toEqual(['Name', 'City', 'Mobile', 'GST']);
+    expect(r.rows).toEqual([['A', 'Pune', '98', 'x']]);
+  });
+
+  test('csv row numbers survive blank, total and multi-line rows', async () => {
+    const r = await readImportFile(Buffer.from('Name,Amount\nA,10\n\nB,20\nGrand Total,30\nC,5\n'), 'x.csv');
+    expect(r.rows.map((x) => x[0])).toEqual(['A', 'B', 'C']);
+    expect(r.rowNumbers).toEqual([2, 4, 6]);
+    expect(r.firstDataRowNumber).toBe(2);
+
+    const m = await readImportFile(Buffer.from('Name,Note\nA,"line1\nline2"\nB,x\r\nC,y\n'), 'x.csv');
+    expect(m.rowNumbers).toEqual([2, 4, 5]);
+    expect(m.rows[0]).toEqual(['A', 'line1\nline2']);
+  });
+
+  test('xlsx row numbers with a blank row between data rows', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Name', 'City']);
+      ws.addRow(['A', 'Pune']);
+      ws.addRow([]);
+      ws.addRow(['B', 'Delhi']);
+    });
+    const r = await readImportFile(buf, 'x.xlsx');
+    expect(r.rowNumbers).toEqual([2, 4]);
+    expect(r.firstDataRowNumber).toBe(2);
+  });
+
+  test('shared formula cell yields its own formula text', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Name', 'Double']);
+      ws.addRow([1, { formula: 'A2*2', result: 2, shareType: 'shared', ref: 'B2:B3' }]);
+      ws.addRow([5, { sharedFormula: 'B2', result: 10 }]);
+    });
+    const r = await readImportFile(buf, 'x.xlsx');
+    expect(r.rows).toEqual([['1', '=A2*2'], ['5', '=A3*2']]);
+  });
+
+  test('xlsx row limit: 10,000 accepted, 10,001 rejected', async () => {
+    const make = (n: number) =>
+      xlsxBuffer((ws) => {
+        ws.addRow(['Name', 'City']);
+        for (let i = 0; i < n; i++) ws.addRow(['A', 'B']);
+      });
+    expect((await readImportFile(await make(10000), 'x.xlsx')).rows).toHaveLength(10000);
+    await expect(readImportFile(await make(10001), 'x.xlsx')).rejects.toMatchObject({ code: 'TOO_MANY_ROWS' });
+  }, 60000);
+
+  test('csv with exactly 10,000 data rows is accepted', async () => {
+    const r = await readImportFile(Buffer.from('Name,City\n' + 'A,B\n'.repeat(10000)), 'x.csv');
+    expect(r.rows).toHaveLength(10000);
+  });
+
+  test('columns beyond 200 are ignored', async () => {
+    const buf = await xlsxBuffer((ws) => {
+      ws.addRow(['Name', 'City']);
+      ws.getCell(2, 250).value = 'far';
+      ws.getCell(2, 1).value = 'A';
+    });
+    const r = await readImportFile(buf, 'x.xlsx');
+    expect(r.rows).toEqual([['A', '']]);
+    expect(r.headers).toEqual(['Name', 'City']);
+  });
+
+  test('delimiter detection over the first lines, outside quotes', async () => {
+    const semi = await readImportFile(Buffer.from('Sharma Traders, Pune\nList of Ledgers\nName;City;Mobile\nA;Pune;98\n'), 'x.csv');
+    expect(semi.headers).toEqual(['Name', 'City', 'Mobile']);
+    const tab = await readImportFile(Buffer.from('Title line\nAnother\nName\tCity\tMobile\nA\tPune\t98\n'), 'x.csv');
+    expect(tab.headers).toEqual(['Name', 'City', 'Mobile']);
+    const comma = await readImportFile(Buffer.from('"Name, Full",City\nA,Pune\n'), 'x.csv');
+    expect(comma.headers).toEqual(['Name, Full', 'City']);
+  });
+
+  test('unreadable files', async () => {
+    await expect(readImportFile(Buffer.from('not a zip'), 'x.xlsx')).rejects.toMatchObject({ code: 'UNREADABLE' });
+  });
+
+  test('stray quote inside an unquoted field is tolerated', async () => {
+    const r = await readImportFile(Buffer.from('Name,Size\nPipe 5" long,10\n'), 'x.csv');
+    expect(r.rows).toEqual([['Pipe 5" long', '10']]);
+  });
 });
