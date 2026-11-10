@@ -22,6 +22,8 @@ import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
 import '../settings/settings_hub_screen.dart';
+import '../stock/item_cleanup_screen.dart';
+import '../stock/price_list_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
 import 'page_catalog.dart';
@@ -92,6 +94,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/employees/attendance' => AttendanceScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),
     '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
+    '/pricing/price-list' => PriceListScreen(session: session),
+    '/items/cleanup' => ItemCleanupScreen(session: session),
     '/whatsapp/orders' => OrderVerificationScreen(session: session),
     '/reports/cash-flow' => CashFlowScreen(session: session),
     '/reports/profit-loss' => ProfitLossScreen(session: session),
