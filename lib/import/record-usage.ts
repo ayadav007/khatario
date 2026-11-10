@@ -168,9 +168,10 @@ export async function removeUnused(
       const unused = live.filter((id) => !used.has(id));
       if (unused.length > 0) {
         // Customers' phone and email unique indexes (migration 157) are partial on is_active, so
-        // an undone party must also be inactive or it keeps holding them. Items' barcode index is
-        // not partial on is_active, so clearing it would free nothing: items keep is_active.
-        const inactive = table === 'items' ? '' : ', is_active = false';
+        // an undone customer must also be inactive or it keeps holding them. Suppliers and items
+        // have no index partial on is_active, and supplier Restore clears only deleted_at, so they
+        // keep is_active.
+        const inactive = table === 'customers' ? ', is_active = false' : '';
         await client.query(
           `UPDATE ${table} SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP${inactive}
             WHERE id = ANY($1::uuid[]) AND business_id = $2 AND deleted_at IS NULL`,
