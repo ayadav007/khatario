@@ -144,6 +144,8 @@ const UNIT_ALIASES: Record<string, string[]> = {
   SET: ['set', 'sets'],
   PRS: ['pair', 'pairs', 'pr'],
 };
+/** The units resolveUnit can answer, offered when a unit needs a match. */
+export const UNIT_CODES = Object.keys(UNIT_ALIASES);
 const UNIT_BY_ALIAS = new Map<string, string>();
 for (const [unit, aliases] of Object.entries(UNIT_ALIASES)) for (const a of aliases) UNIT_BY_ALIAS.set(a, unit);
 

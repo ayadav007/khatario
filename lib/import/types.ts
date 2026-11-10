@@ -31,3 +31,37 @@ export type ServiceCtx = { businessId: string; userId: string };
 export type CreateResult<T> =
   | { ok: true; record: T }
   | { ok: false; status: number; code: string; error: string; existing?: T; details?: string };
+
+/** One row's values by field key, after parsing. */
+export type RowValues = Record<string, string | number | boolean | null>;
+export interface RowIssue {
+  field: string | null;
+  message: string;
+  level: 'error' | 'warning';
+}
+export interface BuiltRow {
+  values: RowValues;
+  issues: RowIssue[];
+  /** Values the user must match to a choice (state, unit, tax rate) before the row is ready. */
+  unmatched: { field: string; value: string }[];
+}
+export interface ExistingMatch {
+  id: string;
+  label: string;
+  matchedOn: string;
+}
+export interface SectionDefinition {
+  key: SectionKey;
+  label: string;
+  module: 'customers' | 'suppliers' | 'items';
+  limitType: 'customers' | 'suppliers' | 'items';
+  fields: ImportField[];
+  /** Keys that identify the same record within one file, e.g. 'gstin:27AAAPA1234A1ZT'. */
+  duplicateKeys(values: RowValues): string[];
+  findExisting(ctx: ServiceCtx, values: RowValues): Promise<ExistingMatch | null>;
+  saveRow(
+    ctx: ServiceCtx,
+    values: RowValues
+  ): Promise<{ ok: true; table: string; id: string } | { ok: false; error: string }>;
+  undoRecord(ctx: ServiceCtx, id: string): Promise<{ ok: true } | { ok: false; reason: string }>;
+}
