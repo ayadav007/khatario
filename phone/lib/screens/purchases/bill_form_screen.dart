@@ -14,6 +14,7 @@ import 'bill_camera.dart';
 import 'bill_scan_flow.dart';
 import 'bill_scan_logic.dart';
 import '../pages/website_page_screen.dart';
+import 'bill_form_numbers.dart';
 import '../sales/challan_logic.dart';
 import '../sales/sales_order_logic.dart';
 import '../sales/work_order_logic.dart';
@@ -225,6 +226,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
       }
       // A new challan or work order starts from the server's next number, and learns whether GST is charged.
       if (!_editingOrder && (widget.kind == BillKind.deliveryChallan || _isWorkOrder)) await _fillNumbering();
+      // Credit and debit notes and sales and purchase orders start from the next number (see bill_form_numbers.dart).
+      if (!_editingOrder && widget.purchaseId == null && _number.text.isEmpty) {
+        final next = await suggestedDocumentNumber(widget.session.api, widget.kind);
+        if (next != null && mounted && _number.text.isEmpty) _number.text = next;
+      }
       if (!mounted) return;
       setState(() {
         _parties = _rows(parties, _supplier ? const ['suppliers'] : const ['customers']);

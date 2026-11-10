@@ -23,6 +23,7 @@ import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../sales/credit_debit_notes_screen.dart';
 import '../sales/delivery_challans_screen.dart';
 import '../sales/estimates_screen.dart';
 import '../sales/sales_orders_screen.dart';
@@ -131,6 +132,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
   return switch (href) {
     '/estimates' => EstimatesScreen(session: session),
     '/sales-orders' => SalesOrdersScreen(session: session),
+    '/credit-notes' => CreditDebitNotesScreen(session: session),
+    '/debit-notes' => CreditDebitNotesScreen(session: session, debit: true),
     '/delivery-challans' => DeliveryChallansScreen(session: session),
     '/work-orders' => WorkOrdersScreen(session: session),
     '/employees' => EmployeesScreen(session: session),
