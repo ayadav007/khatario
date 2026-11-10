@@ -598,6 +598,7 @@ class KFormScaffold extends StatefulWidget {
     required this.onSave,
     required this.children,
     this.dirty = false,
+    this.canSave = true,
   });
 
   final String title;
@@ -607,6 +608,9 @@ class KFormScaffold extends StatefulWidget {
 
   /// Unsaved edits: going back asks "Discard changes?" first.
   final bool dirty;
+
+  /// False greys the save button out (a form that cannot be posted yet).
+  final bool canSave;
 
   @override
   State<KFormScaffold> createState() => _KFormScaffoldState();
@@ -679,7 +683,7 @@ class _KFormScaffoldState extends State<KFormScaffold> {
         ),
         bottomNavigationBar: KBottomBar(
           children: [
-            Expanded(child: KButton(label: widget.saveLabel, loading: _saving, onPressed: _saving ? null : _save)),
+            Expanded(child: KButton(label: widget.saveLabel, loading: _saving, onPressed: _saving || !widget.canSave ? null : _save)),
           ],
         ),
       ),
