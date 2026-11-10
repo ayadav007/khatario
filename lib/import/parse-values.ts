@@ -91,8 +91,14 @@ export function parsePhone(text: string): string | null {
   return null;
 }
 
+/** Strict check for column detection: one Indian mobile number and nothing else. */
 export function looksLikePhone(text: string): boolean {
-  return parsePhone(text) !== null;
+  const s = String(text ?? '').trim();
+  if (!/^[\d\s+\-()]+$/.test(s)) return false;
+  let digits = s.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits);
 }
 
 export function looksLikeGstin(text: string): boolean {
@@ -110,7 +116,7 @@ export function looksLikePincode(text: string): boolean {
 export function parseTaxRate(text: string): number | null {
   const s = String(text ?? '').trim().toLowerCase();
   if (!s) return null;
-  if (/^(exempt(ed)?|nil|nil rated|zero|0)\b/.test(s) || s === '-') return 0;
+  if (/^(exempt(ed)?|nil|nil rated|zero)\b/.test(s) || s === '-') return 0;
   const m = s.match(/(\d+(?:\.\d+)?)\s*%?/);
   if (!m) return null;
   const n = Number(m[1]);

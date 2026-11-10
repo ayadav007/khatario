@@ -1,4 +1,4 @@
-import { parseAmount, parseDate, isAmbiguousDate, parsePhone, looksLikeGstin, parseTaxRate, resolveUnit, normaliseKey } from '@/lib/import/parse-values';
+import { looksLikePhone, parseAmount, parseDate, isAmbiguousDate, parsePhone, looksLikeGstin, parseTaxRate, resolveUnit, normaliseKey } from '@/lib/import/parse-values';
 import { resolveState } from '@/lib/tax/state-names';
 
 test('amounts', () => {
@@ -22,7 +22,8 @@ test('dates', () => {
   expect(isAmbiguousDate('1-Apr-2026')).toBe(false);
 });
 test('phone, gstin, tax, unit, state', () => {
-  expect(parsePhone('+91 98765 43210')).toBe(parsePhone('9876543210'));
+  expect(parsePhone('9876543210')).toBe('9876543210');
+  expect(parsePhone('+91 98765 43210')).toBe('9876543210');
   expect(parsePhone('9876543210, 9123456780')).toBe(parsePhone('9876543210'));
   expect(parsePhone('n/a')).toBeNull();
   expect(looksLikeGstin('27AAAPA1234A1Z5')).toBe(true);
@@ -37,4 +38,35 @@ test('phone, gstin, tax, unit, state', () => {
   expect(resolveState('MH')).toEqual({ state: 'Maharashtra', state_code: '27' });
   expect(resolveState('27')).toEqual({ state: 'Maharashtra', state_code: '27' });
   expect(resolveState('Atlantis')).toBeNull();
+});
+
+test('tax rates keep fractions', () => {
+  expect(parseTaxRate('0.25%')).toBe(0.25);
+  expect(parseTaxRate('0.1')).toBe(0.1);
+  expect(parseTaxRate('1.5 %')).toBe(1.5);
+  expect(parseTaxRate('0')).toBe(0);
+  expect(parseTaxRate('0%')).toBe(0);
+  expect(parseTaxRate('nil')).toBe(0);
+  expect(parseTaxRate('exempt')).toBe(0);
+});
+test('state spellings and aliases', () => {
+  const code = (t: string) => resolveState(t)?.state_code;
+  expect(resolveState('Jammu & Kashmir')).toEqual({ state: 'Jammu and Kashmir', state_code: '01' });
+  expect(code('Andaman & Nicobar Islands')).toBe('35');
+  expect(code('Dadra & Nagar Haveli & Daman & Diu')).toBe('26');
+  expect(resolveState('Orissa')).toEqual({ state: 'Odisha', state_code: '21' });
+  expect(resolveState('Pondicherry')).toEqual({ state: 'Puducherry', state_code: '34' });
+  expect(resolveState('New Delhi')).toEqual({ state: 'Delhi', state_code: '07' });
+  expect(resolveState('Uttaranchal')).toEqual({ state: 'Uttarakhand', state_code: '05' });
+  expect(code('7')).toBe('07');
+  expect(resolveState('25')).toBeNull();
+  expect(resolveState('97')).toBeNull();
+});
+test('looksLikePhone is strict', () => {
+  expect(looksLikePhone('27AAAPA1234A1Z5')).toBe(false);
+  expect(looksLikePhone('01/04/2026')).toBe(false);
+  expect(looksLikePhone('1,25,00,000')).toBe(false);
+  expect(looksLikePhone('9876543210')).toBe(true);
+  expect(looksLikePhone('+91 98765 43210')).toBe(true);
+  expect(looksLikePhone('098765 43210')).toBe(true);
 });

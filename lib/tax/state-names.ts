@@ -13,8 +13,16 @@ const POSTAL_CODES: Record<string, string> = {
 };
 
 function squash(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return text.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]/g, '');
 }
+
+/** Common older or alternative names, keyed by squashed text. */
+const ALIASES: Record<string, string> = {
+  orissa: '21',
+  pondicherry: '34',
+  newdelhi: '07',
+  uttaranchal: '05',
+};
 
 const BY_NAME = new Map<string, string>();
 for (const [code, name] of Object.entries(GST_STATE_NAMES)) {
@@ -30,7 +38,7 @@ export function resolveState(text: string): { state: string; state_code: string 
   if (!key) return null;
   let code: string | undefined;
   if (/^\d{1,2}$/.test(key)) code = key.padStart(2, '0');
-  else code = BY_NAME.get(key) ?? POSTAL_CODES[key.toUpperCase()];
+  else code = BY_NAME.get(key) ?? ALIASES[key] ?? POSTAL_CODES[key.toUpperCase()];
   if (!code || EXCLUDED_CODES.has(code) || !GST_STATE_NAMES[code]) return null;
   return { state: GST_STATE_NAMES[code], state_code: code };
 }
