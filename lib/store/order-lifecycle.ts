@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import {
   InvoiceCancelError,
@@ -197,6 +198,7 @@ export async function syncStoreFulfilment(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: actorUserId ?? null, action: 'store_order' });
     const change = await syncStoreOrderFulfilment(client, {
       businessId,
       storeOrderId: orderId,
@@ -219,6 +221,10 @@ export async function transitionStoreOrder(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, {
+      actorUserId: input.systemActor ? null : input.actorUserId ?? null,
+      action: 'store_order',
+    });
     const result = await transitionStoreOrderInTransaction(client, input);
     await client.query(result.ok ? 'COMMIT' : 'ROLLBACK');
     return result;
@@ -257,6 +263,7 @@ export async function applyShiprocketTrackingUpdate(input: {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'store_order' });
     const found = await client.query<{ id: string; status: StoreOrderStatus }>(
       `SELECT id, status
          FROM store_orders

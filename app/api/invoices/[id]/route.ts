@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { runWithInvoiceAudit } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getBusinessIdFromRequest, getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
@@ -372,9 +373,11 @@ export async function PATCH(
 
     // Update estimate_status
     if (estimate_status) {
-      await pool.query(
-        'UPDATE invoices SET estimate_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND business_id = $3',
-        [estimate_status, invoiceId, businessScope]
+      await runWithInvoiceAudit({ actorUserId: userId, action: 'proforma_status' }, (client) =>
+        client.query(
+          'UPDATE invoices SET estimate_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND business_id = $3',
+          [estimate_status, invoiceId, businessScope]
+        )
       );
     }
 

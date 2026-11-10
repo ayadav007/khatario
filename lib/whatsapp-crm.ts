@@ -4,6 +4,7 @@
  */
 
 import * as db from '@/lib/db';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { sendWhatsAppMessage } from './whatsapp';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { keepInboxMediaCopy } from '@/lib/whatsapp/media-ref-server';
@@ -1231,6 +1232,7 @@ async function createCashSaleInvoice(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
     const defaultBranchRes = await client.query(
       `SELECT id FROM branches WHERE business_id = $1 AND is_default = true LIMIT 1`,
       [businessId]
@@ -1295,6 +1297,7 @@ export async function createSalesOrderFromWhatsApp(
 
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
 
     // Get business settings for order number
     const business = await queryOne<{ next_sales_order_number: number; invoice_prefix: string }>(
@@ -1431,6 +1434,7 @@ async function updateDraftSalesOrderFromWhatsApp(params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
 
     const order = await client.query(
       `SELECT order_number

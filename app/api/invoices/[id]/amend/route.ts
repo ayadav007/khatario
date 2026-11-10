@@ -7,6 +7,7 @@ import { activeLedgerLineSql } from '@/lib/ledger-reversal';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { isInvoiceInFiledGstr1 } from '@/lib/invoices/gstr1-filed';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { parseChangeReason, setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,7 @@ const AMEND_DATE_FIELDS: Array<{ column: string; label: string }> = [
  * After finalization, change the invoice date, due date, billing address, the name printed
  * on this bill, the ship-to address, notes, and the PO / e-way bill / dispatch references.
  * Place of supply, items, amounts, and the customer master stay put.
+ * An optional `reason` (up to 500 characters) is kept in the invoice's history.
  * A date change reverses the invoice voucher and posts it again on the new date.
  */
 export async function PATCH(
@@ -110,6 +112,11 @@ export async function PATCH(
       return NextResponse.json({ error: `Enter a valid ${f.label}, or leave it blank.`, code: 'INVALID_DATE' }, { status: 400 });
     }
     extras.push({ column: f.column, value });
+  }
+
+  const reason = parseChangeReason(body.reason);
+  if (reason === 'too_long') {
+    return NextResponse.json({ error: 'Reason for change is too long.', code: 'REASON_TOO_LONG' }, { status: 400 });
   }
 
   const pool = getPool();
@@ -225,6 +232,7 @@ export async function PATCH(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'amended', reason });
     const locked = await client.query<{ status: string; document_type: string | null }>(
       `SELECT status, document_type FROM invoices
         WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL

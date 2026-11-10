@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { parseEwayBillInput } from '@/lib/gst/eway-bills';
 import { createEwayBill, listEwayBills } from '@/lib/gst/eway-bill-records';
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
   try {
     const parsed = parseEwayBillInput(await request.json().catch(() => ({})));
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: auth.userId, action: 'eway_updated' });
     const eway_bill = await createEwayBill(client, auth.businessId, parsed, auth.userId);
     await client.query('COMMIT');
     return NextResponse.json({ eway_bill }, { status: 201 });

@@ -411,6 +411,7 @@ function NewInvoiceContent() {
   const [ewayBillNumber, setEwayBillNumber] = useState('');
   const [ewayBillDate, setEwayBillDate] = useState('');
   const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+  const [amendReason, setAmendReason] = useState('');
   const [purchaseOrderDate, setPurchaseOrderDate] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
@@ -2020,6 +2021,7 @@ function NewInvoiceContent() {
           terms_of_delivery: termsOfDelivery,
           eway_bill_number: ewayBillNumber,
           eway_bill_date: ewayBillDate || null,
+          reason: amendReason.trim() || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2027,6 +2029,7 @@ function NewInvoiceContent() {
         throw new Error(data.error || 'Failed to amend the invoice');
       }
       toastCtx.success('Invoice amended');
+      setAmendReason('');
       setIsDirty(false);
       router.push(`/invoices/${savedInvoiceId}`);
     } catch (err: any) {
@@ -3156,6 +3159,17 @@ function NewInvoiceContent() {
       {isAmendMode && !isInvoiceLocked && (
         <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 text-sm text-primary-900">
           Amend this invoice: you can change the date, due date, bill-to name and address, ship-to address, notes, and the PO, e-way bill and dispatch details. Place of supply, items and amounts stay as posted.
+          <label className="mt-3 block text-xs font-medium">
+            Reason for change (optional, kept in the invoice history)
+            <input
+              type="text"
+              maxLength={500}
+              value={amendReason}
+              onChange={(e) => setAmendReason(e.target.value)}
+              placeholder="For example: customer asked for a new PO number"
+              className="mt-1 w-full rounded-lg border border-primary-200 bg-white px-2 py-1.5 text-sm text-text-primary dark:border-primary-800 dark:bg-background"
+            />
+          </label>
         </div>
       )}
       {!posMode && (
@@ -3552,6 +3566,17 @@ function NewInvoiceContent() {
         {isAmendMode && !isInvoiceLocked && (
           <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-100">
             Amend this invoice: you can change the date, due date, bill-to name and address, ship-to address, notes, and the PO, e-way bill and dispatch details. Place of supply, items and amounts stay as posted.
+            <label className="mt-3 block text-xs font-medium">
+              Reason for change (optional, kept in the invoice history)
+              <input
+                type="text"
+                maxLength={500}
+                value={amendReason}
+                onChange={(e) => setAmendReason(e.target.value)}
+                placeholder="For example: customer asked for a new PO number"
+                className="mt-1 w-full rounded-lg border border-primary-200 bg-white px-2 py-1.5 text-sm text-text-primary dark:border-primary-800 dark:bg-background"
+              />
+            </label>
           </div>
         )}
         {isInvoiceLocked && (

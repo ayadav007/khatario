@@ -153,6 +153,17 @@ From the invoice detail or view page, you can usually:
 - Cancel if allowed
 - Convert proforma to tax invoice when applicable
 
+### Invoice history
+
+The **History** tab on an invoice lists every saved change, newest first: creating it, editing the draft, finalizing, amending, payments, credit and debit notes, the e-way bill number, cancelling, and the GSTR-1 lock.
+
+- Each entry shows who made the change, when, and what changed (for example "Invoice date: 01 Oct 2026 → 03 Oct 2026" or "Rice: Qty 2 → 3").
+- When you amend a final invoice you can type a reason for the change. It is shown on that entry.
+- **View this version** opens the invoice as it was at that point: number, date, status, total and items.
+- Entries marked **System** were made by Khatario itself, such as online store orders, recurring invoices and paid WhatsApp orders.
+- History cannot be edited or turned off. It is kept when you restore a backup: the invoice's history carries on with a "Restored" entry showing what the restore changed.
+- Invoices that existed before history started have one entry, "Recorded when history started".
+
 ### Common invoice blockers
 
 - **Branch required**: select a specific branch, not "All".

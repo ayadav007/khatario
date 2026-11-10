@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -264,6 +265,7 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: created_by, action: 'credit_note_applied' });
     const creditNote = await createCreditNoteInTransaction(client, {
       businessId: business_id,
       branchId: finalBranchId,

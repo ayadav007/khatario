@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
@@ -79,6 +80,7 @@ export async function POST(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'converted' });
 
     const estimateRes = await client.query(
       `SELECT e.*, c.state_code AS customer_state_code, c.billing_address AS customer_billing_address

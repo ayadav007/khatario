@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { getFirstBundleStockPreflightFailure } from '@/lib/invoice-bundle-stock';
 import { allocateStockOnSale } from '@/lib/stock-valuation';
@@ -186,6 +187,7 @@ export async function PATCH(
 
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'finalized' });
 
     const historicalPayment = await historicalDraftPaymentBlock(client, {
       businessId: inv.business_id,

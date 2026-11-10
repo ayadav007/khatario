@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { runWithInvoiceAudit } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -81,13 +82,14 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
-  const pool = getPool();
-  const upd = await pool.query(
-    `UPDATE invoices
-     SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND business_id = $2 AND deleted_at IS NOT NULL
-     RETURNING id`,
-    [id, businessScope]
+  const upd = await runWithInvoiceAudit({ actorUserId: userId, action: 'restored' }, (client) =>
+    client.query(
+      `UPDATE invoices
+       SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND deleted_at IS NOT NULL
+       RETURNING id`,
+      [id, businessScope]
+    )
   );
 
   if (upd.rowCount === 0) {

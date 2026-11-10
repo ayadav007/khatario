@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -98,6 +99,7 @@ export async function POST(
     if (guard) return guard;
 
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'created' });
 
     const locked = await client.query(
       `SELECT status FROM stock_transfers WHERE id = $1 AND business_id = $2 FOR UPDATE`,

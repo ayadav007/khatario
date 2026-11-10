@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
@@ -65,6 +66,7 @@ export async function prepareStoreRefund(input: {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: input.actorUserId, action: 'payment_reversed' });
     const user = await client.query(
       `SELECT id FROM users WHERE id = $1 AND business_id = $2`,
       [input.actorUserId, input.businessId],
@@ -100,6 +102,7 @@ export async function applyStoreRefundResult(input: {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'payment_reversed' });
     const locked = await client.query<{
       id: string;
       order_id: string;
@@ -440,6 +443,7 @@ async function openWebhookRefund(input: {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'payment_reversed' });
     const order = await client.query<{
       id: string;
       business_id: string;

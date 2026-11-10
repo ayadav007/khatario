@@ -4,6 +4,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { parseEwayBillDate, parseEwayBillNumber } from '@/lib/gst/eway';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
+import { runWithInvoiceAudit } from '@/lib/invoices/invoice-audit-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,14 +62,16 @@ export async function PATCH(
       throw error;
     }
 
-    const updated = await pool.query(
-      `UPDATE invoices
-          SET eway_bill_number = $3,
-              eway_bill_date = $4,
-              updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-        RETURNING id, eway_bill_number, eway_bill_date`,
-      [params.id, businessId, number.number, date.date],
+    const updated = await runWithInvoiceAudit({ actorUserId: userId, action: 'eway_updated' }, (client) =>
+      client.query(
+        `UPDATE invoices
+            SET eway_bill_number = $3,
+                eway_bill_date = $4,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+          RETURNING id, eway_bill_number, eway_bill_date`,
+        [params.id, businessId, number.number, date.date],
+      ),
     );
 
     return NextResponse.json({ invoice: updated.rows[0] });

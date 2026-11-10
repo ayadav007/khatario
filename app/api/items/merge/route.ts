@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: auth.userId, action: 'item_merged' });
     const result = await mergeItems(client, auth.businessId, String(body.source_item_id || ''), String(body.target_item_id || ''), auth.userId);
     await client.query('COMMIT');
     return NextResponse.json(result);

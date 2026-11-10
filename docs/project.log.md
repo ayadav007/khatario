@@ -1111,3 +1111,41 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Old data: on the VPS, `npx tsx scripts/whatsapp-media-out-of-db.ts` (report), then `--apply --vacuum` to free about 7.5 GB. Not run.
   - Media older than about 30 days that nobody opened cannot be fetched; asking the phone to re-upload (Baileys `updateMediaMessage`) is not built.
   - Campaign images and the media library still store base64 (one copy per campaign/file, small).
+
+## 2026-11-10: Invoice history plan (Tally-style edit log)
+- **Asked:** "does tally allow the editing of created invoice? please do thorough checks", then "i want khatario to have all the fields editable which tally allows and it should be captured in the history of that invoice. do you think it is the right approach?", then "Yes, plan history".
+- **Decided:**
+  - Research: TallyPrime lets any saved voucher be altered; its Edit Log (MCA audit-trail rule from 1 April 2023) keeps every version with user and time and cannot be switched off. Limits come from user roles (days allowed for back-dated vouchers, cut-off date), the 24-hour IRN cancel window, and GSTR-1 amendments after a return is signed.
+  - Today Khatario writes invoice history only on create (`logActivity` in `app/api/invoices/route.ts`); amend, draft edit, finalize, cancel and payments leave no record. History ships first; editing items and amounts on final invoices waits until it does.
+  - History is captured by commit-time triggers on `invoices`, `invoice_items` and `invoice_charges` into an append-only `invoice_revisions` table (one full snapshot per transaction, skipped when nothing meaningful changed). Rejected: one call per route, because 26 files write invoices and the next new path would be missed. Routes only add actor, action and reason via `set_config`; context keys are separate from `khatario.actor_id`, which `withLedgerDelete` clears.
+  - Diffs are computed in TypeScript when History is read. Customer link views and the public token are excluded from snapshots. Keep the GSTR-1 lock (credit/debit notes after filing) rather than Tally's amendment route.
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/plans/2026-11-10-invoice-revision-history.md` (new).
+- **Open:** owner review of the plan, then implementation. Migration 469 backfills a baseline revision for every invoice; time it on a staging copy. Flutter History screen and the "edit amounts on final invoices" work are later plans.
+
+## 2026-11-10: Invoice history built (edit log)
+- **Asked:** "Native" (build the invoice history plan in this session).
+- **Decided:**
+  - Built as planned: migration 469 (`invoice_revisions`, commit-time triggers on `invoices`, `invoice_items`, `invoice_charges`, baseline backfill), `lib/invoices/invoice-audit-context.ts`, `lib/invoices/invoice-revision-diff.ts`, `lib/invoices/invoice-history.ts`, `GET /api/invoices/[id]/history` (new shape, still carries `action_type`, `user_email`, `description` for the Flutter app) and `GET /api/invoices/[id]/history/[revision]`, `components/invoices/InvoiceHistoryTimeline.tsx`, optional reason on amend.
+  - History rows cannot be updated, deleted or truncated on their own; they go only with their invoice row (FK cascade) or under a purge reason. Rejected purge-reason-only: backup restore (`app/api/backup/restore/route.ts`) and eight DB test cleanups hard-delete invoices.
+  - Context is set by whoever opens the transaction (about 40 files, including credit and debit notes, returns, khata, advances, conversions, store, WhatsApp, recurring), not passed into lib helpers. `tests/lib/invoices/invoice-audit-coverage.test.ts` fails when a new invoice writer, or a transaction calling an invoice-writing helper, sets no context.
+  - New actions beyond the plan: `credit_note_cancelled`, `debit_note_applied`, `debit_note_cancelled`. `POST /api/invoices` takes an optional `change_reason`; amend takes `reason` (max 500, else 400 `REASON_TOO_LONG`).
+- **Shipped:** nothing committed. Migration 469 written and applied only to `kh_phase2_test`. Tests: `tests/db/invoice-revisions.db.test.ts` (15), `tests/db/invoice-history-api.db.test.ts` (6), `tests/lib/invoices/invoice-revision-diff.test.ts` (18), `tests/lib/invoices/invoice-audit-coverage.test.ts` (3); `tsc` clean. 500 invoices locked in one statement made 500 revisions well under 10 s.
+- **Open:**
+  - `tests/db/phase2a-invoice-s01-s08.db.test.ts` and `tests/db/post-sale-discount-credit-note.db.test.ts` fail on hard-coded October dates (back-date rules), not on this change.
+  - Not checked in a browser. Staging steps after deploying 469: create an invoice, edit the draft, finalize, amend with a reason, record a payment, cancel; History shows six entries with the right changes, reason and user; "View this version" on version 1 shows the original lines; opening the customer link adds no entry; the phone app's History still lists entries.
+  - Time the baseline backfill on a staging copy before production. Writes made after the first COMMIT in `POST /api/invoices` (none known) would show as System.
+
+## 2026-11-10: Invoice history review fixes
+- **Asked:** (continuation) final whole-change review of the invoice history build.
+- **Decided:**
+  - Fixed: migration 469 now creates `idx_invoice_items_invoice_id` before the backfill (`invoice_items` had no `invoice_id` index, so every snapshot scanned the table); a column added later, or a NULL, no longer counts as a change (`invoice_snapshot_like` + `jsonb_strip_nulls`); text such as PO "2026-11-001" → "2026-11-002" is compared exactly; lines are paired by item and name, so deleting the first line shows one removed line; e-way bill creation and item merge (new action "Item merged") set context; store order, refund and fulfilment record the staff user instead of System.
+  - Left for the owner: backup restore hard-deletes invoices, which removes their history, and backups do not carry `invoice_revisions`. Options: include history in backup and restore, or keep history rows whose invoice is gone.
+  - Deferred minors: revision number clash when two transactions change only the lines of one invoice at once (advisory lock); label/money maps name some columns that do not exist (`total_tax`, `amount_paid`) and miss `tax_total`, `paid_amount`; guard exception for deletes from inside triggers could be tightened; run 469 off-hours so the baseline does not miss edits made during it.
+- **Shipped:** nothing committed. 105 tests across 13 suites pass; `tsc` clean.
+- **Open:** owner decision on backup restore; commit; staging deploy steps as in the previous entry.
+
+## 2026-11-10: Invoice history survives backup restore
+- **Asked:** "Yes, keep history" (should a backup restore keep invoice history instead of wiping it).
+- **Decided:** `invoice_revisions.invoice_id` has no foreign key, so history outlives a hard delete of the invoice row. Backup restore re-inserts invoices under their original ids, so each invoice's history continues with a "Restored" revision (actor and reason "Restored from backup") that shows what the restore changed. Rejected: copying `invoice_revisions` into backups, because restoring old history would roll the log back to the backup's point and lose the entries made since. Revisions still go with their business (tenant purge) or under a purge reason; an admin invoice purge leaves them in place.
+- **Shipped:** nothing committed. Migration 469 changed (drops `invoice_revisions_invoice_id_fkey` where an earlier draft created it). 110 tests across 14 suites pass; `tsc` clean.
+- **Open:** history of an invoice that no longer exists is kept in the table but not shown anywhere (the History tab needs the invoice). Commit and staging deploy as before.

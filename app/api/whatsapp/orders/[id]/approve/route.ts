@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { InvoiceCreateServiceError, createInvoiceInTransaction } from '@/lib/invoices/invoice-create-service';
@@ -40,6 +41,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'converted' });
 
     const orderRes = await client.query(
       `SELECT so.*, c.state_code AS customer_state_code

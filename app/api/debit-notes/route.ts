@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { getStateCode } from '@/lib/gst-utils';
 import { createDebitNoteLedgerEntries } from '@/lib/ledger-utils';
@@ -239,6 +240,7 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: created_by, action: 'debit_note_applied' });
 
     // Get business state code for GST calculations
     const businessRes = await client.query(

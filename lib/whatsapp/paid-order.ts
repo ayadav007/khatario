@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, query, queryOne, queryRows } from '@/lib/db';
 import { storeReceiptPaymentMode } from '@/lib/store/store-receipt';
 import { loadSavedAgentSettings } from '@/lib/ai-agent/settings';
@@ -127,6 +128,7 @@ export async function invoicePaidWhatsAppOrder(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order paid' });
     const res = await client.query(
       `SELECT so.*, c.state_code AS customer_state_code,
               wc.conversation_id AS wa_phone, wc.whatsapp_display_name AS wa_name,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { queryOne, getPool } from '@/lib/db';
 import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
@@ -101,6 +102,7 @@ export async function PATCH(
     let updated: any = null;
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: userId, action: 'payment_recorded' });
 
       const locked = await client.query<{ status: string; customer_id: string | null }>(
         `SELECT status, customer_id FROM invoices WHERE id = $1 AND business_id = $2 FOR UPDATE`,
