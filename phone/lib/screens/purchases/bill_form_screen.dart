@@ -13,6 +13,8 @@ import '../parties/customer_form_logic.dart';
 import 'bill_camera.dart';
 import 'bill_scan_flow.dart';
 import 'bill_scan_logic.dart';
+import '../pages/website_page_screen.dart';
+import '../sales/sales_order_logic.dart';
 
 /// A supplier or customer bill whose tax is either calculated by the server
 /// (purchases, credit notes, debit notes) or by the same line-GST function the
@@ -20,10 +22,13 @@ import 'bill_scan_logic.dart';
 enum BillKind { purchase, purchaseOrder, creditNote, debitNote, salesOrder, deliveryChallan }
 
 class BillFormScreen extends StatefulWidget {
-  const BillFormScreen({super.key, required this.session, required this.kind, this.purchaseId});
+  const BillFormScreen({super.key, required this.session, required this.kind, this.purchaseId, this.salesOrderId});
 
   final AppSession session;
   final BillKind kind;
+
+  /// A saved sales order to edit (only with [BillKind.salesOrder]). Saving sends `PUT /api/sales-orders/[id]`.
+  final String? salesOrderId;
 
   /// A saved draft to load. Saving writes a new bill, then deletes this draft.
   final String? purchaseId;
@@ -51,6 +56,9 @@ class _BillLine {
   String name = '';
   String hsn = '';
   String unit = '';
+
+  /// From an order being edited: kept, because the form has no field for it and `PUT` replaces every line.
+  String description = '';
   String? taxMode;
   double? inclusiveTotal;
   double? printedRate;
@@ -107,6 +115,23 @@ class _BillFormScreenState extends State<BillFormScreen> {
   /// Payable printed on the scanned bill; the form total is checked against it.
   double? _scanPrintedTotal;
 
+  /// An order being edited: its status (kept on save) and the header fields the form has no input for
+  /// (`PUT` replaces them all, so they go back as loaded).
+  String _orderStatus = 'draft';
+  Map<String, dynamic> _orderKept = const {};
+
+  /// Why this order cannot be saved from the phone (see [salesOrderPhoneEditBlock]); null when it can.
+  String? _editBlock;
+
+  /// An order being edited was read from the server. Until then there is no form and no Save: `PUT`
+  /// replaces every line, so saving a blank form would empty the order.
+  bool _orderLoaded = false;
+
+  /// [_editBlock] is a phone limit (totals the form cannot show), so the website can still edit it.
+  bool _blockOnWebsite = false;
+
+  bool get _editingOrder => widget.kind == BillKind.salesOrder && widget.salesOrderId != null;
+
   bool get _supplier => widget.kind == BillKind.purchase || widget.kind == BillKind.purchaseOrder;
   bool get _serverTax =>
       widget.kind == BillKind.purchase || widget.kind == BillKind.creditNote || widget.kind == BillKind.debitNote || widget.kind == BillKind.deliveryChallan;
@@ -117,7 +142,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         BillKind.purchaseOrder => 'New purchase order',
         BillKind.creditNote => 'New credit note',
         BillKind.debitNote => 'New debit note',
-        BillKind.salesOrder => 'New sales order',
+        BillKind.salesOrder => _editingOrder ? 'Edit sales order' : 'New sales order',
         BillKind.deliveryChallan => 'New delivery challan',
       };
 
@@ -142,6 +167,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
   }
 
   Future<void> _load() async {
+    if (_editingOrder && (_error != null || !_loading)) setState(() { _error = null; _loading = true; });
     try {
       final partyPath = _supplier ? '/api/suppliers' : '/api/customers';
       final parties = await widget.session.api.getData(partyPath);
@@ -160,11 +186,15 @@ class _BillFormScreenState extends State<BillFormScreen> {
         _warehouses = warehouses;
         final primary = warehouses.cast<Map<String, dynamic>?>().where((row) => row?['is_primary'] == true).firstOrNull;
         _warehouseId ??= primary?['id']?.toString() ?? warehouses.firstOrNull?['id']?.toString();
-        _loading = false;
+        // An order being edited keeps the spinner until its own lines are in.
+        _loading = _editingOrder;
       });
       if (widget.purchaseId != null) await _fillDraft(widget.purchaseId!);
+      if (_editingOrder) await _fillSalesOrder(widget.salesOrderId!);
     } on ApiException catch (e) {
       if (mounted) setState(() { _error = e.message; _loading = false; });
+    } catch (_) {
+      if (mounted && _editingOrder) setState(() { _error = 'Could not reach the server.'; _loading = false; });
     }
   }
 
@@ -206,6 +236,58 @@ class _BillFormScreenState extends State<BillFormScreen> {
     });
   }
 
+  /// `GET /api/sales-orders/[id]` replies `{ salesOrder }` with `items`.
+  Future<void> _fillSalesOrder(String id) async {
+    final body = await widget.session.api.getJson('/api/sales-orders/$id');
+    final doc = body['salesOrder'];
+    if (!mounted) return;
+    if (doc is! Map) {
+      setState(() { _error = 'Could not load this sales order.'; _loading = false; });
+      return;
+    }
+    final order = Map<String, dynamic>.from(doc);
+    final status = order['status']?.toString().toLowerCase() ?? '';
+    if (order['editable'] == false || (status != 'draft' && status != 'confirmed')) {
+      setState(() {
+        _editBlock = 'This sales order can no longer be edited.';
+        _loading = false;
+      });
+      return;
+    }
+    setState(() {
+      _editBlock = salesOrderPhoneEditBlock(order);
+      _blockOnWebsite = _editBlock != null;
+      _orderLoaded = _editBlock == null;
+      _loading = false;
+      _orderStatus = status;
+      _partyId = order['customer_id']?.toString();
+      _number.text = order['order_number']?.toString() ?? '';
+      _notes.text = order['notes']?.toString() ?? '';
+      final parsed = DateTime.tryParse(order['order_date']?.toString() ?? '')?.toLocal();
+      if (parsed != null) _date = parsed;
+      _orderKept = {
+        for (final key in const [
+          'expected_delivery_date',
+          'shipping_address',
+          'billing_address',
+          'place_of_supply_state_code',
+          'terms',
+        ])
+          key: order[key],
+      };
+      // A date goes back as the day the phone shows, whatever zone the server wrote it in.
+      final delivery = DateTime.tryParse(order['expected_delivery_date']?.toString() ?? '')?.toLocal();
+      _orderKept = {..._orderKept, 'expected_delivery_date': delivery == null ? null : _iso(delivery)};
+      for (final line in _lines) {
+        line.dispose();
+      }
+      _lines
+        ..clear()
+        ..addAll(_linesFrom(order['items']));
+      if (_lines.isEmpty) _lines.add(_BillLine());
+    });
+  }
+
   List<_BillLine> _linesFrom(dynamic raw) {
     if (raw is! List) return [];
     return [
@@ -227,6 +309,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
           line.serials.text = serials is List ? serials.map((s) => s.toString()).join(', ') : (serials?.toString() ?? '');
           line.capitalGoods = entry['itc_type']?.toString() == 'capital_goods';
           line.taxRate = double.tryParse(entry['tax_rate']?.toString() ?? '') ?? 0;
+          if (_editingOrder) {
+            line.unit = entry['unit']?.toString() ?? '';
+            line.hsn = entry['hsn_sac']?.toString() ?? '';
+            line.description = entry['description']?.toString() ?? '';
+          }
           final location = entry['location_id']?.toString();
           if (location != null && location.isNotEmpty) _warehouseId = location;
           return line;
@@ -516,6 +603,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
   }
 
   Future<void> _save({String purchaseStatus = 'final'}) async {
+    if (_editingOrder && (!_orderLoaded || _editBlock != null)) return;
     if (_partyId == null) {
       setState(() => _error = _supplier ? 'Choose a supplier.' : 'Choose a customer.');
       return;
@@ -569,6 +657,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'unit': line.unit.isNotEmpty ? line.unit : (item?['unit'] ?? 'PCS'),
         'unit_price': price,
         'tax_rate': line.taxRate,
+        if (_editingOrder && line.description.isNotEmpty) 'description': line.description,
         'discount_percent': widget.kind == BillKind.purchase && discountAmount > 0 ? 0 : (double.tryParse(line.discount.text) ?? 0),
         if (widget.kind == BillKind.purchase) ...{
           'discount_amount': discountAmount,
@@ -612,7 +701,6 @@ class _BillFormScreenState extends State<BillFormScreen> {
     }
     final date = '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}';
     final businessId = widget.session.businessId;
-    final userId = widget.session.user['id']?.toString();
     final body = switch (widget.kind) {
       BillKind.purchase => {
           'supplier_id': _partyId,
@@ -670,13 +758,12 @@ class _BillFormScreenState extends State<BillFormScreen> {
           'items': items,
         },
       BillKind.salesOrder => {
-          'business_id': businessId,
-          'created_by': userId,
+          // The session names the business and the user; `PUT` keeps the order's own branch.
           'customer_id': _partyId,
           'order_number': _number.text.trim(),
           'order_date': date,
-          'branch_id': widget.session.defaultBranchId,
-          'status': 'draft',
+          if (_editingOrder) ..._orderKept else 'branch_id': widget.session.defaultBranchId,
+          'status': _editingOrder ? _orderStatus : 'draft',
           'subtotal': invoiceRound2(subtotal),
           'tax_total': invoiceRound2(taxTotal),
           'grand_total': invoiceRound2(grand),
@@ -703,7 +790,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
         BillKind.salesOrder => '/api/sales-orders',
         BillKind.deliveryChallan => '/api/delivery-challans',
       };
-      final saved = await widget.session.api.postJson(path, body);
+      final saved = _editingOrder
+          ? await widget.session.api.putJson('$path/${widget.salesOrderId}', body)
+          : await widget.session.api.postJson(path, body);
       if (widget.kind == BillKind.purchase && _scanJobId != null) {
         final preview = _purchasePreview();
         final rows = [
@@ -1497,9 +1586,52 @@ class _BillFormScreenState extends State<BillFormScreen> {
     );
   }
 
+  /// An order that did not load, or that the phone cannot save: the reason, and no form.
+  Widget _orderUnavailable() {
+    final blocked = _editBlock;
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(_title),
+            Expanded(
+              child: ListView(
+                children: [
+                  if (blocked != null)
+                    KEmptyState(
+                      icon: LucideIcons.lock,
+                      title: 'Cannot edit this order here',
+                      body: blocked,
+                      action: _blockOnWebsite
+                          ? KButton.secondary(
+                              label: 'Open on website',
+                              expand: false,
+                              onPressed: () => openWebsiteInApp(context, widget.session, '/sales-orders/new?edit=${widget.salesOrderId}', 'Edit sales order'),
+                            )
+                          : null,
+                    )
+                  else
+                    KEmptyState(
+                      icon: LucideIcons.cloudOff,
+                      title: 'Could not load this sales order',
+                      body: _error,
+                      action: KButton.secondary(label: 'Try again', expand: false, onPressed: _load),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Scaffold(body: KSpinner(padding: EdgeInsets.symmetric(vertical: 64)));
+    if (_editingOrder && !_orderLoaded) return _orderUnavailable();
     if (widget.kind == BillKind.purchase) return _purchaseScaffold();
     return Scaffold(
       backgroundColor: AppColors.bg,

@@ -35,7 +35,7 @@ Future<QuotationConvertResult?> convertQuotation(
     final ok = await showKSheet<bool>(
       context,
       title: 'Convert to invoice?',
-      builder: (ctx) => _ConfirmSheet(text: quotationConfirmText(number, amount)),
+      builder: (ctx) => ConvertConfirmSheet(text: quotationConfirmText(number, amount)),
     );
     if (ok != true || !context.mounted) return null;
     showKToast(context, 'Converting $number...');
@@ -62,16 +62,17 @@ Future<QuotationConvertResult?> convertQuotation(
   }
 }
 
-class _ConfirmSheet extends StatefulWidget {
-  const _ConfirmSheet({required this.text});
+class ConvertConfirmSheet extends StatefulWidget {
+  const ConvertConfirmSheet({super.key, required this.text});
 
+  /// What the conversion will do. A double tap answers once.
   final String text;
 
   @override
-  State<_ConfirmSheet> createState() => _ConfirmSheetState();
+  State<ConvertConfirmSheet> createState() => _ConvertConfirmSheetState();
 }
 
-class _ConfirmSheetState extends State<_ConfirmSheet> {
+class _ConvertConfirmSheetState extends State<ConvertConfirmSheet> {
   bool _tapped = false;
 
   void _done(bool value) {

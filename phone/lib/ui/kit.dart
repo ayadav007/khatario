@@ -591,6 +591,10 @@ extension KToneColors on KTone {
     'converted' => (KTone.positive, 'Converted'),
     'rejected' => (KTone.negative, 'Rejected'),
     'expired' => (KTone.due, 'Expired'),
+    // Sales and purchase order statuses (the website's order badges).
+    'confirmed' => (KTone.brand, 'Open'),
+    'partially_fulfilled' => (KTone.due, 'Partial open'),
+    'fulfilled' => (KTone.positive, 'Completed'),
     _ => (KTone.neutral, s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' ')),
   };
 }

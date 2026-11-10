@@ -236,10 +236,16 @@ class _PaymentInScreenState extends State<PaymentInScreen> {
 }
 
 class PaymentInFormScreen extends StatefulWidget {
-  const PaymentInFormScreen({super.key, required this.session, this.payable = false});
+  const PaymentInFormScreen({super.key, required this.session, this.payable = false, this.initialParty, this.initialNotes});
 
   final AppSession session;
   final bool payable;
+
+  /// A party (`id`, `name`) chosen before the form opens, for example a sales order's customer.
+  final Map<String, dynamic>? initialParty;
+
+  /// Text the notes field starts with.
+  final String? initialNotes;
 
   @override
   State<PaymentInFormScreen> createState() => _PaymentInFormScreenState();
@@ -263,6 +269,12 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
   @override
   void initState() {
     super.initState();
+    final party = widget.initialParty;
+    if (party != null && party['id'] != null) {
+      _customerId = party['id'].toString();
+      _customers = [party];
+    }
+    _notes.text = widget.initialNotes ?? '';
     _loadCustomers();
   }
 
@@ -278,7 +290,11 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
     try {
       final body = await widget.session.api.getJson(widget.payable ? '/api/suppliers?limit=100' : '/api/customers?limit=100');
       final rows = (body[widget.payable ? 'suppliers' : 'customers'] as List?) ?? const [];
-      if (mounted) setState(() => _customers = rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList());
+      final loaded = rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      // A party chosen before opening stays even when it is not in the first page.
+      final seed = widget.initialParty;
+      if (seed != null && loaded.every((c) => c['id'].toString() != seed['id'].toString())) loaded.add(seed);
+      if (mounted) setState(() => _customers = loaded);
     } catch (_) {}
   }
 
