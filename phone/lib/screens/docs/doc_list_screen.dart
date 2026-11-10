@@ -35,6 +35,7 @@ class DocListSpec {
     this.searchKeys = const [],
     this.filters = const [],
     this.filterParam = 'status',
+    this.filterRow,
     this.icon = LucideIcons.fileText,
     this.emptyTitle,
     this.emptyBody,
@@ -54,6 +55,10 @@ class DocListSpec {
   /// First entry is the default; '' means all.
   final List<(String value, String label)> filters;
   final String filterParam;
+
+  /// For a route that does not filter by itself: when set, the chip is not sent to the server and the rows it
+  /// returns are filtered here (a blank chip keeps every row).
+  final bool Function(Map<String, dynamic> row, String filter)? filterRow;
   final IconData icon;
   final String? emptyTitle, emptyBody, createLabel;
 
@@ -108,7 +113,7 @@ class _DocListScreenState extends State<DocListScreen> {
     final uri = Uri.parse(_spec.path);
     final query = {
       ...uri.queryParameters,
-      if (_filter.isNotEmpty) _spec.filterParam: _filter,
+      if (_filter.isNotEmpty && _spec.filterRow == null) _spec.filterParam: _filter,
       if (page > 1) 'page': '$page',
     };
     return uri.replace(queryParameters: query.isEmpty ? null : query).toString();
@@ -190,7 +195,7 @@ class _DocListScreenState extends State<DocListScreen> {
   void _setFilter(String value) {
     if (value == _filter) return;
     setState(() => _filter = value);
-    _load();
+    if (_spec.filterRow == null) _load();
   }
 
   Future<void> _create() async {
@@ -287,7 +292,9 @@ class _DocListScreenState extends State<DocListScreen> {
       ]);
     }
 
-    final shown = filterDocs(_rows, _search.text, _spec.searchKeys);
+    final byChip = _spec.filterRow;
+    final rows = byChip == null || _filter.isEmpty ? _rows : [for (final r in _rows) if (byChip(r, _filter)) r];
+    final shown = filterDocs(rows, _search.text, _spec.searchKeys);
     final dated = <(DateTime, Map<String, dynamic>)>[];
     final undated = <Map<String, dynamic>>[];
     for (final r in shown) {

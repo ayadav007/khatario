@@ -41,6 +41,8 @@ import '../stock/price_levels_screen.dart';
 import '../stock/price_list_screen.dart';
 import '../stock/repack_form_screen.dart';
 import '../stock/schemes_screen.dart';
+import '../stock/stock_transfer_form_screen.dart';
+import '../stock/stock_transfers_screen.dart';
 import '../tools/calculators_screen.dart';
 import '../tools/lookup_tools_screens.dart';
 import '../tools/tools_hub_screen.dart';
@@ -166,6 +168,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/inventory-adjustments' => AdjustmentsScreen(session: session),
     '/inventory-adjustments/new' => AdjustmentFormScreen(session: session),
     '/inventory-adjustments/repacks/new' => RepackFormScreen(session: session),
+    '/stock-transfers' => StockTransfersScreen(session: session),
+    '/stock-transfers/new' => StockTransferFormScreen(session: session),
     '/whatsapp/orders' => OrderVerificationScreen(session: session),
     '/reports/cash-flow' => CashFlowScreen(session: session),
     '/reports/profit-loss' => ProfitLossScreen(session: session),
