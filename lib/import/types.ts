@@ -30,4 +30,4 @@ export type ColumnMatches = Record<number, string | null>;
 export type ServiceCtx = { businessId: string; userId: string };
 export type CreateResult<T> =
   | { ok: true; record: T }
-  | { ok: false; status: number; code: string; error: string; existing?: T };
+  | { ok: false; status: number; code: string; error: string; existing?: T; details?: string };
