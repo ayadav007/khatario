@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveBalance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      business_id,
+      business_id: claimedBusinessId,
       employee_id,
       leave_type_id,
       year,
@@ -130,9 +130,14 @@ export async function POST(request: NextRequest) {
     } = body;
     const createdByUserId = resolveCreatedByUserId(request, body);
 
-    if (!business_id || !employee_id || !leave_type_id || !year) {
+    // The business is the session business; a body business_id may only repeat it.
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+
+    if (!employee_id || !leave_type_id || !year) {
       return NextResponse.json(
-        { error: 'business_id, employee_id, leave_type_id, and year are required' },
+        { error: 'employee_id, leave_type_id, and year are required' },
         { status: 400 }
       );
     }
@@ -165,6 +170,14 @@ export async function POST(request: NextRequest) {
         { error: 'Employee not found' },
         { status: 404 }
       );
+    }
+
+    const leaveType = await queryOne(
+      'SELECT id FROM leave_types WHERE id = $1 AND business_id = $2',
+      [leave_type_id, business_id]
+    );
+    if (!leaveType) {
+      return NextResponse.json({ error: 'Leave type not found' }, { status: 404 });
     }
 
     // Check if balance already exists

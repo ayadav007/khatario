@@ -398,6 +398,17 @@ export async function POST(request: NextRequest) {
     // Force values for services or items with variants
     const finalOpeningStock = (item_type === 'service' || has_variants) ? 0 : opening_stock;
     const finalMinStock = (item_type === 'service' || has_variants) ? 0 : min_stock;
+
+    // Batch / serial tracking and valuation method from the item form (lib/items/item-tracking).
+    const { resolveItemTracking, currentTracking, checkNewItemTracking } = await import('@/lib/items/item-tracking');
+    const tracking = resolveItemTracking(body, currentTracking(null), { itemType: item_type, isBundle: body.is_bundle === true });
+    if (!tracking.ok) {
+      return NextResponse.json({ error: tracking.error, code: tracking.code }, { status: tracking.status });
+    }
+    const trackingError = checkNewItemTracking(tracking.value, Number(finalOpeningStock) || 0);
+    if (trackingError) {
+      return NextResponse.json({ error: trackingError.error, code: trackingError.code }, { status: trackingError.status });
+    }
     
     // Selling price is null for items with variants (prices are in variants)
     const finalSellingPrice = (item_type === 'service' || has_variants)
@@ -482,10 +493,11 @@ export async function POST(request: NextRequest) {
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
         is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock,
-        show_in_store, featured_in_store, uqc, pack_size, pack_unit
+        show_in_store, featured_in_store, uqc, pack_size, pack_unit,
+        track_batch, track_serial, valuation_method
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
       RETURNING *
     `, [
       business_id,
@@ -521,6 +533,9 @@ export async function POST(request: NextRequest) {
       finalUqc,
       pack.pack_size,
       pack.pack_unit,
+      tracking.value.track_batch,
+      tracking.value.track_serial,
+      tracking.value.valuation_method,
     ]);
 
       item = insertResult.rows[0] ?? null;
@@ -644,11 +659,13 @@ export async function POST(request: NextRequest) {
             ]
           );
           batchId = batchRow.rows[0]?.id ?? null;
+          // A method the form chose is kept; otherwise the batch is drawn down oldest first.
+          const openingMethod = body.valuation_method ? tracking.value.valuation_method : 'fifo';
           await client.query(
-            `UPDATE items SET track_batch = true, valuation_method = 'fifo' WHERE id = $1 AND business_id = $2`,
-            [item.id, business_id]
+            `UPDATE items SET track_batch = true, valuation_method = $3 WHERE id = $1 AND business_id = $2`,
+            [item.id, business_id, openingMethod]
           );
-          item = { ...item, track_batch: true, valuation_method: 'fifo' } as Item;
+          item = { ...item, track_batch: true, valuation_method: openingMethod } as Item;
         }
         await client.query(
           `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, notes, batch_id, unit_cost)
