@@ -1,7 +1,9 @@
 import { createSupplier, SupplierAccessRefused } from '@/lib/suppliers/create-supplier';
-import { removeIfUnused } from '@/lib/import/record-usage';
-import { findParty, fromService, partyKeys, text, withAccessRefusal } from '@/lib/import/sections/shared';
+import { removeUnused } from '@/lib/import/record-usage';
+import { findParty, fromService, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
+
+const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) => removeUnused('suppliers', ctx, ids);
 
 export const suppliersSection: SectionDefinition = {
   key: 'suppliers',
@@ -43,5 +45,6 @@ export const suppliersSection: SectionDefinition = {
       )
     ),
 
-  undoRecord: (ctx, id) => removeIfUnused('suppliers', ctx, id),
+  undoRecords,
+  undoRecord: undoOne(undoRecords),
 };

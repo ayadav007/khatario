@@ -63,5 +63,10 @@ export interface SectionDefinition {
     ctx: ServiceCtx,
     values: RowValues
   ): Promise<{ ok: true; table: string; id: string } | { ok: false; error: string }>;
+  /** One transaction per call, at most 500 ids; one result per input id, in input order. */
+  undoRecords(
+    ctx: ServiceCtx,
+    ids: string[]
+  ): Promise<Array<{ id: string; ok: true } | { id: string; ok: false; reason: string }>>;
   undoRecord(ctx: ServiceCtx, id: string): Promise<{ ok: true } | { ok: false; reason: string }>;
 }

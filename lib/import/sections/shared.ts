@@ -1,7 +1,7 @@
 import { queryOne } from '@/lib/db';
 import { enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { parsePhone } from '@/lib/import/parse-values';
-import type { CreateResult, ExistingMatch, RowValues } from '@/lib/import/types';
+import type { CreateResult, ExistingMatch, RowValues, SectionDefinition } from '@/lib/import/types';
 
 export type SaveResult = { ok: true; table: string; id: string } | { ok: false; error: string };
 
@@ -63,7 +63,7 @@ export function findParty(table: 'customers' | 'suppliers', values: RowValues, b
   return firstMatch(
     [
       { matchedOn: 'GSTIN', value: text(values, 'gstin')?.toUpperCase(), sql: `${scope} AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2 LIMIT 1` },
-      { matchedOn: 'phone', value: phoneKey(values), sql: `${scope} AND phone IS NOT NULL AND TRIM(phone) IN ($2, '91' || $2) LIMIT 1` },
+      { matchedOn: 'phone', value: phoneKey(values), sql: `${scope} AND phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') IN ($2, '91' || $2, '0' || $2) LIMIT 1` },
       { matchedOn: 'name', value: compactName(values.name), sql: `${scope} AND ${NAME_SQL} = $2 LIMIT 1` },
     ],
     businessId
@@ -97,4 +97,14 @@ export async function withAccessRefusal(
     const message = e.reason instanceof Error ? e.reason.message : '';
     return { ok: false, error: message || `Your plan does not allow adding more ${label.toLowerCase()}` };
   }
+}
+
+/** undoRecord for one id, answered by the section's batched undoRecords. */
+export function undoOne(
+  undoRecords: SectionDefinition['undoRecords']
+): SectionDefinition['undoRecord'] {
+  return async (ctx, id) => {
+    const [r] = await undoRecords(ctx, [id]);
+    return r.ok ? { ok: true } : { ok: false, reason: r.reason };
+  };
 }

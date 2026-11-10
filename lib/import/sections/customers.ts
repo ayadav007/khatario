@@ -1,7 +1,9 @@
 import { createCustomer, CustomerAccessRefused } from '@/lib/customers/create-customer';
-import { removeIfUnused } from '@/lib/import/record-usage';
-import { findParty, fromService, num, partyKeys, text, withAccessRefusal } from '@/lib/import/sections/shared';
+import { removeUnused } from '@/lib/import/record-usage';
+import { findParty, fromService, num, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
+
+const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) => removeUnused('customers', ctx, ids);
 
 export const customersSection: SectionDefinition = {
   key: 'customers',
@@ -48,5 +50,6 @@ export const customersSection: SectionDefinition = {
       )
     ),
 
-  undoRecord: (ctx, id) => removeIfUnused('customers', ctx, id),
+  undoRecords,
+  undoRecord: undoOne(undoRecords),
 };

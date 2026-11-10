@@ -1,11 +1,27 @@
-import { queryOne } from '@/lib/db';
 import { createImportedItem } from '@/lib/items/create-imported-item';
 import { normaliseKey } from '@/lib/import/parse-values';
-import { removeIfUnused } from '@/lib/import/record-usage';
-import { compactName, firstMatch, fromService, NAME_SQL, num, text } from '@/lib/import/sections/shared';
+import { removeUnused } from '@/lib/import/record-usage';
+import { compactName, firstMatch, fromService, NAME_SQL, num, text, undoOne } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
 
 const OPENING_STOCK_REASON = 'Has opening stock. Delete it from the Items list if it is not needed.';
+
+/**
+ * Items with opening stock are kept. Checked before the generic reference check, which the
+ * opening stock movement would otherwise answer. Reversing opening stock belongs to plan 2.
+ */
+const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) =>
+  removeUnused('items', ctx, ids, async (client, live) => {
+    const stocked = await client.query<{ id: string }>(
+      `SELECT i.id FROM items i
+        WHERE i.id = ANY($1::uuid[]) AND i.business_id = $2
+          AND (COALESCE(i.opening_stock, 0) > 0 OR EXISTS (
+            SELECT 1 FROM stock_movements m
+             WHERE m.item_id = i.id AND m.notes ILIKE 'Opening Stock%'))`,
+      [live, ctx.businessId]
+    );
+    return new Map(stocked.rows.map((r) => [r.id, OPENING_STOCK_REASON]));
+  });
 
 export const itemsSection: SectionDefinition = {
   key: 'items',
@@ -75,17 +91,6 @@ export const itemsSection: SectionDefinition = {
     );
   },
 
-  async undoRecord(ctx, id) {
-    // Checked before the generic reference check: the opening stock movement is a reference.
-    const stocked = await queryOne<{ id: string }>(
-      `SELECT i.id FROM items i
-        WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL
-          AND (COALESCE(i.opening_stock, 0) > 0 OR EXISTS (
-            SELECT 1 FROM stock_movements m
-             WHERE m.item_id = i.id AND m.notes ILIKE 'Opening Stock%'))`,
-      [id, ctx.businessId]
-    );
-    if (stocked) return { ok: false, reason: OPENING_STOCK_REASON };
-    return removeIfUnused('items', ctx, id);
-  },
+  undoRecords,
+  undoRecord: undoOne(undoRecords),
 };

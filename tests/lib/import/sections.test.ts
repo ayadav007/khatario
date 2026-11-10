@@ -216,3 +216,12 @@ describe('saveRow access refusals', () => {
     await expect(SECTIONS.customers.saveRow(ctx, { name: 'A' })).rejects.toBe(outage);
   });
 });
+
+describe('undoRecords batch size', () => {
+  test('more than 500 ids is refused before touching the database', async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    await expect(SECTIONS.customers.undoRecords({ businessId: 'b', userId: 'u' }, ids)).rejects.toThrow(
+      'Undo takes at most 500 records per call (got 501)'
+    );
+  });
+});

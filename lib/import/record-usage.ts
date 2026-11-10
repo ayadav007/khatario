@@ -1,4 +1,5 @@
-import { query, queryOne, queryRows } from '@/lib/db';
+import type { PoolClient } from 'pg';
+import { getPool, queryRows } from '@/lib/db';
 import type { ServiceCtx } from '@/lib/import/types';
 
 export type MasterTable = 'customers' | 'suppliers' | 'items';
@@ -84,43 +85,107 @@ function referencingTables(): Promise<Record<MasterTable, ReferencingTable[]>> {
 }
 
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Callers pass at most 200 ids per call; anything above this is a programming error. */
+export const MAX_UNDO_BATCH = 500;
+
+/** A pool or a transaction's client: anything with pg's query. */
+type Queryable = Pick<PoolClient, 'query'>;
 
 /**
- * Names of the tables (alphabetical) holding at least one row that points to the record.
- * Not scoped by business: any reference at all means the record is in use.
+ * For each record that something points to (keyed by lower-case id), the first referencing
+ * table (alphabetical, raw name). One query per referencing table and column. Not scoped by business: any reference at
+ * all means the record is in use.
  */
-export async function findReferences(table: MasterTable, id: string): Promise<string[]> {
-  const tables = (await referencingTables())[table];
-  if (tables.length === 0) return [];
-  const parts = tables.map((t, i) => {
-    const where = t.columns.map((c) => `${ident(c)} = $1`).join(' OR ');
-    return `SELECT ${i} AS i WHERE EXISTS (SELECT 1 FROM ${ident(t.schema)}.${ident(t.table)} WHERE ${where})`;
-  });
-  const rows = await queryRows<{ i: number }>(parts.join(' UNION ALL '), [id]);
-  return rows.map((r) => tables[r.i].table).sort();
+export async function findReferencesMany(
+  table: MasterTable,
+  ids: string[],
+  client: Queryable = getPool()
+): Promise<Map<string, string>> {
+  const used = new Map<string, string>();
+  const wanted = [...new Set(ids.filter((id) => UUID.test(id)).map((id) => id.toLowerCase()))];
+  if (wanted.length === 0) return used;
+  // Sorted by table name, so the first table to claim an id is the alphabetical first.
+  for (const t of (await referencingTables())[table]) {
+    for (const column of t.columns) {
+      const rows = await client.query<{ id: string }>(
+        `SELECT DISTINCT ${ident(column)} AS id FROM ${ident(t.schema)}.${ident(t.table)}
+          WHERE ${ident(column)} = ANY($1::uuid[])`,
+        [wanted]
+      );
+      for (const row of rows.rows) if (!used.has(row.id)) used.set(row.id, t.table);
+    }
+  }
+  return used;
 }
 
+/** The first table (alphabetical) holding a row that points to the record, or none. */
+export async function findReferences(table: MasterTable, id: string): Promise<string[]> {
+  const first = (await findReferencesMany(table, [id])).get(id.toLowerCase());
+  return first ? [first] : [];
+}
+
+export type UndoResult = { id: string; ok: true } | { id: string; ok: false; reason: string };
+
 /**
- * Undo for one imported record: kept when anything points to it, otherwise soft-deleted with
- * the statement the DELETE handlers use. A record already deleted counts as undone.
+ * Undo for a batch of imported records, in one transaction with the rows locked: an id outside
+ * the business is 'Not found', one already deleted counts as undone, one `keep` names is kept
+ * with its reason, one anything points to is kept as 'Used in ...', the rest are soft-deleted
+ * with the statement the DELETE handlers use. One result per input id, in input order.
  */
-export async function removeIfUnused(
+export async function removeUnused(
   table: MasterTable,
   ctx: ServiceCtx,
-  id: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const row = await queryOne<{ deleted_at: Date | null }>(
-    `SELECT deleted_at FROM ${table} WHERE id = $1 AND business_id = $2`,
-    [id, ctx.businessId]
-  );
-  if (!row) return { ok: false, reason: 'Not found' };
-  if (row.deleted_at) return { ok: true };
-  const used = await findReferences(table, id);
-  if (used.length > 0) return { ok: false, reason: `Used in ${used[0].replace(/_/g, ' ')}` };
-  await query(
-    `UPDATE ${table} SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
-    [id, ctx.businessId]
-  );
-  return { ok: true };
+  ids: string[],
+  keep?: (client: Queryable, ids: string[]) => Promise<Map<string, string>>
+): Promise<UndoResult[]> {
+  if (ids.length > MAX_UNDO_BATCH) {
+    throw new Error(`Undo takes at most ${MAX_UNDO_BATCH} records per call (got ${ids.length})`);
+  }
+  const reasons = new Map<string, string | null>(); // null: undone
+  const wanted = [...new Set(ids.filter((id) => UUID.test(id)))];
+  if (wanted.length > 0) {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{ id: string; deleted_at: Date | null }>(
+        `SELECT id, deleted_at FROM ${table} WHERE id = ANY($1::uuid[]) AND business_id = $2 FOR UPDATE`,
+        [wanted, ctx.businessId]
+      );
+      let live: string[] = [];
+      for (const row of locked.rows) {
+        if (row.deleted_at) reasons.set(row.id, null);
+        else live.push(row.id);
+      }
+      if (keep && live.length > 0) {
+        const kept = await keep(client, live);
+        for (const [id, reason] of kept) reasons.set(id, reason);
+        live = live.filter((id) => !kept.has(id));
+      }
+      const used = live.length > 0 ? await findReferencesMany(table, live, client) : new Map<string, string>();
+      for (const [id, t] of used) reasons.set(id, `Used in ${t.replace(/_/g, ' ')}`);
+      const unused = live.filter((id) => !used.has(id));
+      if (unused.length > 0) {
+        await client.query(
+          `UPDATE ${table} SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY($1::uuid[]) AND business_id = $2 AND deleted_at IS NULL`,
+          [unused, ctx.businessId]
+        );
+        for (const id of unused) reasons.set(id, null);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+  return ids.map((id) => {
+    const key = UUID.test(id) ? id.toLowerCase() : id;
+    if (!reasons.has(key)) return { id, ok: false, reason: 'Not found' };
+    const reason = reasons.get(key);
+    return reason ? { id, ok: false, reason } : { id, ok: true };
+  });
 }

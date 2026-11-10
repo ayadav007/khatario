@@ -33,7 +33,7 @@ jest.mock('@/lib/platform-jwt', () => ({ getPlatformSessionFromRequest: jest.fn(
 import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { SECTIONS } from '@/lib/import/sections';
-import { findReferences } from '@/lib/import/record-usage';
+import { findReferences, findReferencesMany } from '@/lib/import/record-usage';
 
 // 27AAAPA1234A1ZT and 27BBBPB5678B1ZY carry correct check characters.
 const GSTIN_A = '27AAAPA1234A1ZT';
@@ -248,6 +248,18 @@ d('import sections (real DB)', () => {
       expect(await def.findExisting(O.ctx, { name: 'Sharma Traders', gstin: GSTIN_A, phone: '919876543210' })).toBeNull();
     });
 
+    test('a stored phone with a leading 0 is found by the +91 form under another name', async () => {
+      const row = await pool.query<{ id: string }>(
+        `INSERT INTO customers (business_id, name, phone) VALUES ($1, 'Zero Prefix', '08888877777') RETURNING id`,
+        [A.id]
+      );
+      expect(await def.findExisting(A.ctx, { name: 'Different Name', phone: '+91 88888 77777' })).toEqual({
+        id: row.rows[0].id,
+        label: 'Zero Prefix',
+        matchedOn: 'phone',
+      });
+    });
+
     test('a duplicate phone is answered as Already exists', async () => {
       const r = await def.saveRow(A.ctx, { name: 'Second Sharma', phone: '9876543210' });
       expect(r).toEqual({ ok: false, error: 'Already exists: Sharma Traders' });
@@ -317,6 +329,18 @@ d('import sections (real DB)', () => {
       });
       expect(await def.findExisting(A.ctx, { name: 'PATIL wholesale' })).toMatchObject({ id: patilId, matchedOn: 'name' });
       expect(await def.findExisting(O.ctx, { name: 'Patil Wholesale', gstin: GSTIN_A })).toBeNull();
+    });
+
+    test('a stored phone with a leading 0 is found by the +91 form under another name', async () => {
+      const row = await pool.query<{ id: string }>(
+        `INSERT INTO suppliers (business_id, name, phone) VALUES ($1, 'Zero Supplier', '07777766666') RETURNING id`,
+        [A.id]
+      );
+      expect(await def.findExisting(A.ctx, { name: 'Another Supplier', phone: '+91 77777 66666' })).toEqual({
+        id: row.rows[0].id,
+        label: 'Zero Supplier',
+        matchedOn: 'phone',
+      });
     });
 
     test('a duplicate GSTIN is answered as Already exists', async () => {
@@ -411,6 +435,52 @@ d('import sections (real DB)', () => {
       expect(await def.undoRecord(A.ctx, r.id)).toEqual({ ok: true });
       expect(await deletedAt('items', r.id)).not.toBeNull();
       expect(await def.findExisting(A.ctx, { name: 'Sugar 1kg', code: 'SG-01' })).toBeNull();
+    });
+
+    test('undoRecords answers a mixed batch in input order and deletes only the unused', async () => {
+      const save = async (values: Record<string, string | number>) => {
+        const r = await def.saveRow(A.ctx, values);
+        if (!r.ok) throw new Error(r.error);
+        return r.id;
+      };
+      const unused1 = await save({ name: 'Batch Unused 1' });
+      const unused2 = await save({ name: 'Batch Unused 2' });
+      const stocked = await save({ name: 'Batch Stocked', opening_stock: 3 });
+      const gone = await save({ name: 'Batch Gone' });
+      expect(await def.undoRecord(A.ctx, gone)).toEqual({ ok: true });
+      const goneAt = await deletedAt('items', gone);
+      const foreign = (
+        await pool.query<{ id: string }>(`INSERT INTO items (business_id, name) VALUES ($1, 'Foreign') RETURNING id`, [O.id])
+      ).rows[0].id;
+
+      const ids = [unused1, teaId, gone, foreign, stocked, 'not-a-uuid', unused2];
+      expect(await def.undoRecords(A.ctx, ids)).toEqual([
+        { id: unused1, ok: true },
+        { id: teaId, ok: false, reason: 'Used in invoice items' },
+        { id: gone, ok: true },
+        { id: foreign, ok: false, reason: 'Not found' },
+        { id: stocked, ok: false, reason: 'Has opening stock. Delete it from the Items list if it is not needed.' },
+        { id: 'not-a-uuid', ok: false, reason: 'Not found' },
+        { id: unused2, ok: true },
+      ]);
+      expect(await deletedAt('items', unused1)).not.toBeNull();
+      expect(await deletedAt('items', unused2)).not.toBeNull();
+      expect(await deletedAt('items', teaId)).toBeNull();
+      expect(await deletedAt('items', stocked)).toBeNull();
+      expect(await deletedAt('items', foreign)).toBeNull();
+      expect(await deletedAt('items', gone)).toEqual(goneAt);
+    });
+
+    test('findReferencesMany gives the same answers as findReferences per id', async () => {
+      const ids = (
+        await pool.query<{ id: string }>(`SELECT id FROM items WHERE business_id = $1 ORDER BY name`, [A.id])
+      ).rows.map((r) => r.id);
+      const many = await findReferencesMany('items', ids);
+      for (const id of ids) {
+        const one = await findReferences('items', id);
+        expect([id, many.get(id) ?? null]).toEqual([id, one[0] ?? null]);
+      }
+      expect(many.get(teaId)).toBe('invoice_items');
     });
   });
 });
