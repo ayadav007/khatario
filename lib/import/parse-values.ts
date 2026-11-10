@@ -1,4 +1,5 @@
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { GST_UQC_CODES, isGstUqc, toGstUqc } from '@/lib/gst/uqc';
 import type { DateOrder } from '@/lib/import/types';
 
 export type { DateOrder };
@@ -130,25 +131,20 @@ export function parseBoolean(text: string): boolean | null {
   return null;
 }
 
-const UNIT_ALIASES: Record<string, string[]> = {
-  PCS: ['pcs', 'pc', 'piece', 'pieces', 'nos', 'no', 'number'],
-  KG: ['kg', 'kgs', 'kilogram'],
-  GM: ['g', 'gm', 'gram'],
-  LTR: ['l', 'ltr', 'litre', 'liter'],
-  ML: ['ml'],
-  MTR: ['m', 'mtr', 'meter', 'metre'],
-  BOX: ['box', 'boxes'],
-  DOZ: ['dz', 'doz', 'dozen'],
-  PKT: ['pkt', 'pack', 'packet'],
-  BAG: ['bag', 'bags'],
-  SET: ['set', 'sets'],
-  PRS: ['pair', 'pairs', 'pr'],
-};
-/** The units resolveUnit can answer, offered when a unit needs a match. */
-export const UNIT_CODES = Object.keys(UNIT_ALIASES);
-const UNIT_BY_ALIAS = new Map<string, string>();
-for (const [unit, aliases] of Object.entries(UNIT_ALIASES)) for (const a of aliases) UNIT_BY_ALIAS.set(a, unit);
+/**
+ * Short forms the import accepted before it used the GST unit list, for codes that list has.
+ * Everything else comes from lib/gst/uqc.ts, so Tally's "Nos" stays NOS, apart from PCS.
+ */
+const EXTRA_UNIT_ALIASES: Record<string, string> = { DZ: 'DOZ', BOXES: 'BOX', BAGS: 'BAG', SETS: 'SET', PR: 'PRS' };
+/** The units resolveUnit can answer (the GST unit quantity codes), offered when a unit needs a match. */
+export const UNIT_CODES: readonly string[] = GST_UQC_CODES;
 
 export function resolveUnit(text: string): string | null {
-  return UNIT_BY_ALIAS.get(normaliseKey(text)) ?? null;
+  const key = normaliseKey(text).toUpperCase();
+  if (!key) return null;
+  if (isGstUqc(key)) return key;
+  if (EXTRA_UNIT_ALIASES[key]) return EXTRA_UNIT_ALIASES[key];
+  // toGstUqc answers OTH for a unit it does not know; OTH itself was caught above.
+  const code = toGstUqc(key);
+  return code === 'OTH' ? null : code;
 }

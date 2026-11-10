@@ -1,4 +1,5 @@
-import { looksLikePhone, parseAmount, parseDate, isAmbiguousDate, parsePhone, looksLikeGstin, parseTaxRate, resolveUnit, normaliseKey } from '@/lib/import/parse-values';
+import { looksLikePhone, parseAmount, parseDate, isAmbiguousDate, parsePhone, looksLikeGstin, parseTaxRate, resolveUnit, normaliseKey, UNIT_CODES } from '@/lib/import/parse-values';
+import { GST_UQC_CODES } from '@/lib/gst/uqc';
 import { resolveState } from '@/lib/tax/state-names';
 
 test('amounts', () => {
@@ -31,7 +32,7 @@ test('phone, gstin, tax, unit, state', () => {
   expect(parseTaxRate('18%')).toBe(18);
   expect(parseTaxRate('GST 5')).toBe(5);
   expect(parseTaxRate('exempt')).toBe(0);
-  expect(resolveUnit('Nos.')).toBe('PCS');
+  expect(resolveUnit('Nos.')).toBe('NOS');
   expect(resolveUnit('Bndl')).toBeNull();
   expect(normaliseKey('GSTIN/UIN ')).toBe('gstinuin');
   expect(resolveState('maharashtra')).toEqual({ state: 'Maharashtra', state_code: '27' });
@@ -69,4 +70,45 @@ test('looksLikePhone is strict', () => {
   expect(looksLikePhone('9876543210')).toBe(true);
   expect(looksLikePhone('+91 98765 43210')).toBe(true);
   expect(looksLikePhone('098765 43210')).toBe(true);
+});
+
+describe('units follow the GST unit quantity codes', () => {
+  test('every code resolves to itself, PRS included', () => {
+    expect([...UNIT_CODES].sort()).toEqual([...GST_UQC_CODES].sort());
+    for (const code of UNIT_CODES) expect([code, resolveUnit(code)]).toEqual([code, code]);
+    expect(resolveUnit('PRS')).toBe('PRS');
+    expect(resolveUnit('prs')).toBe('PRS');
+  });
+
+  test("Tally's Nos stays NOS, apart from PCS", () => {
+    expect(resolveUnit('Nos')).toBe('NOS');
+    expect(resolveUnit('no')).toBe('NOS');
+    expect(resolveUnit('Pcs')).toBe('PCS');
+    expect(resolveUnit('piece')).toBe('PCS');
+  });
+
+  test('common short forms resolve without a choice', () => {
+    expect(resolveUnit('Btl')).toBe('BTL');
+    expect(resolveUnit('Ctn')).toBe('CTN');
+    expect(resolveUnit('kg')).toBe('KGS');
+    expect(resolveUnit('Kgs.')).toBe('KGS');
+    expect(resolveUnit('gm')).toBe('GMS');
+    expect(resolveUnit('ml')).toBe('MLT');
+    expect(resolveUnit('Litre')).toBe('LTR');
+    expect(resolveUnit('pkt')).toBe('PAC');
+    expect(resolveUnit('dz')).toBe('DOZ');
+    expect(resolveUnit('dozen')).toBe('DOZ');
+    expect(resolveUnit('boxes')).toBe('BOX');
+    expect(resolveUnit('bags')).toBe('BAG');
+    expect(resolveUnit('sets')).toBe('SET');
+    expect(resolveUnit('pair')).toBe('PRS');
+    expect(resolveUnit('pr')).toBe('PRS');
+    expect(resolveUnit('Sq. ft')).toBe('SQF');
+  });
+
+  test('an unknown unit still needs a choice', () => {
+    expect(resolveUnit('Bndl')).toBeNull();
+    expect(resolveUnit('')).toBeNull();
+    expect(resolveUnit('furlong')).toBeNull();
+  });
 });
