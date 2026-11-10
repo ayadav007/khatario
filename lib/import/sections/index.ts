@@ -1,4 +1,4 @@
-import { checkGstin, GST_STATE_NAMES } from '@/lib/tax/gstin';
+import { checkGstin } from '@/lib/tax/gstin';
 import { resolveState } from '@/lib/tax/state-names';
 import {
   looksLikeEmail,
@@ -10,8 +10,8 @@ import {
   parsePhone,
   parseTaxRate,
   resolveUnit,
-  UNIT_CODES,
 } from '@/lib/import/parse-values';
+import { VALUE_CHOICES, type ChoiceType } from '@/lib/import/value-choices';
 import { customersSection } from '@/lib/import/sections/customers';
 import { suppliersSection } from '@/lib/import/sections/suppliers';
 import { itemsSection } from '@/lib/import/sections/items';
@@ -32,16 +32,7 @@ export const SECTIONS: Record<SectionKey, SectionDefinition> = {
   items: itemsSection,
 };
 
-type ChoiceType = 'state' | 'unit' | 'tax_rate';
-
-/** What the user picks from when a state, unit or tax rate in the file needs a match. */
-export const VALUE_CHOICES: Record<ChoiceType, string[]> = {
-  state: Object.keys(GST_STATE_NAMES)
-    .map((code) => resolveState(code)?.state)
-    .filter((s): s is string => Boolean(s)),
-  unit: [...UNIT_CODES],
-  tax_rate: ['0', '0.25', '3', '5', '12', '18', '28'],
-};
+export { VALUE_CHOICES };
 
 const RESOLVERS: Record<ChoiceType, (text: string) => string | number | null> = {
   state: (t) => resolveState(t)?.state ?? null,

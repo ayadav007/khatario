@@ -4,26 +4,15 @@ import React from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { UNIT_CODES } from '@/lib/import/parse-values';
-import { GST_STATE_NAMES } from '@/lib/tax/gstin';
-import { resolveState } from '@/lib/tax/state-names';
+import { VALUE_CHOICES } from '@/lib/import/value-choices';
 import type { PreviewResult } from '@/lib/import/run';
 import type { ImportField } from '@/lib/import/types';
 
-const STATE_CHOICES = Array.from(
-  new Set(
-    Object.keys(GST_STATE_NAMES)
-      .map((code) => resolveState(code)?.state)
-      .filter((s): s is string => Boolean(s))
-  )
-);
-const TAX_RATE_CHOICES = ['0', '0.25', '3', '5', '12', '18', '28'];
-
-/** What the user picks from for a value the file uses that the app does not recognise. */
+/** What the user picks from for a value the file uses that the app does not recognise (same list as the server). */
 function choicesFor(type: ImportField['type'] | undefined): { value: string; label: string }[] {
-  if (type === 'state') return STATE_CHOICES.map((s) => ({ value: s, label: s }));
-  if (type === 'unit') return UNIT_CODES.map((u) => ({ value: u, label: u }));
-  if (type === 'tax_rate') return TAX_RATE_CHOICES.map((r) => ({ value: r, label: `${r}%` }));
+  if (type === 'state') return VALUE_CHOICES.state.map((s) => ({ value: s, label: s }));
+  if (type === 'unit') return VALUE_CHOICES.unit.map((u) => ({ value: u, label: u }));
+  if (type === 'tax_rate') return VALUE_CHOICES.tax_rate.map((r) => ({ value: r, label: `${r}%` }));
   return [];
 }
 

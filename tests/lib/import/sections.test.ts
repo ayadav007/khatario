@@ -9,6 +9,7 @@ jest.mock('@/lib/customers/create-customer', () => ({
 import { SECTIONS, buildRow, VALUE_CHOICES } from '@/lib/import/sections';
 import { referenceColumnsFrom } from '@/lib/import/record-usage';
 import { guessColumns } from '@/lib/import/match-columns';
+import { VALUE_CHOICES as clientChoices } from '@/lib/import/value-choices';
 import type { ColumnMatches } from '@/lib/import/types';
 import { createCustomer, CustomerAccessRefused } from '@/lib/customers/create-customer';
 import { EnforceAccessError } from '@/lib/enforce-access';
@@ -156,6 +157,11 @@ describe('buildRow (items)', () => {
     expect(VALUE_CHOICES.unit).toContain('BOX');
     expect(VALUE_CHOICES.state).toContain('Maharashtra');
     expect(VALUE_CHOICES.state).not.toContain('Other Territory');
+    expect(new Set(VALUE_CHOICES.state).size).toBe(VALUE_CHOICES.state.length);
+  });
+
+  test('the wizard reads the same choice lists as the server', () => {
+    expect(clientChoices).toBe(VALUE_CHOICES);
   });
 });
 
