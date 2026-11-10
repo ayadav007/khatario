@@ -53,7 +53,55 @@ Install the owner app built from `phone/` (it points at `https://staging.khatari
 34. Settings › Users › add user → the Password field does not capitalise the first letter.
 35. A deal in Chats › tap Done on a follow-up twice quickly → only one follow-up is closed; the buttons dim while saving.
 
+## Stage 2: sales documents (commits 4212e474 to f974ead5)
+
+Credit approvals now need the website build that includes f974ead5 on staging (the approve and reject routes take the business from the login). Deploy before testing items 66 and 67.
+
+### Quotations (Task 14)
+36. More › Sales › Quotations → a list with chips All, Draft, Sent, Accepted, Rejected, Expired, Converted. + opens a new quotation.
+37. Open a draft quotation → its status shows as a pill; no Payments tab, no Collect. "Convert to invoice" asks first, naming the number and amount; confirm → the new invoice opens.
+38. Back → the quotation list shows it as Converted with "Open invoice" (not Convert).
+
+### Sales orders (Task 15)
+39. More › Sales › Sales Orders → list; + opens a new sales order and its number is already filled in (SO-…).
+40. Open an order → lines and the payment summary (advance, invoiced, balance) as the server gives them.
+41. Edit an order without discount or charges → change a quantity, save → the list shows the new total. An order with a discount or extra charge shows why it can't be edited here and "Open on website".
+42. Convert to invoice → asks, then opens the invoice; back on the list the order no longer offers Convert.
+43. Record advance → the payment form opens for that customer with a note naming the order.
+
+### Delivery challans and work orders (Task 16)
+44. More › Sales › Delivery Challans → list; open one → status changes the website offers (e.g. dispatch, deliver) each ask once and update the status.
+45. A returnable challan → "Record return" → enter returned quantities → saved; a closed challan no longer offers it.
+46. Edit a challan, change one quantity, save → the e-way bill number, vehicle and addresses are unchanged afterwards.
+47. More › Sales › Work Orders → list; + creates a work order with its number filled in.
+48. Mark a work order completed (enter actual hours) → "Create invoice" warns that it creates a final invoice; confirm → the invoice opens.
+49. Edit a work order, change the description, save → scheduled dates and hours are unchanged.
+
+### Credit and debit notes (Task 17)
+50. More › Sales › Credit Notes → list with Show more; + opens a new credit note with the number already filled in.
+51. Open a note → lines and totals; there is no Edit (the server refuses edits).
+52. Cancel → asks for a reason; blank reason shows an error; with a reason → the note shows Cancelled and offers only Share.
+53. Cancel a note in a GST-filed month → the server's message is shown and the note is unchanged.
+54. Debit Notes → the same list, detail and cancel; + opens with the next number filled in.
+
+### Credit approvals, recurring, reminders, reconciliation (Task 18)
+55. More › Sales › Credit approvals → pending requests as cards with Approve and Reject.
+56. Reject without a reason → error; with a reason → the card leaves the list.
+57. Approve → the card leaves the list; the invoice it was holding goes through.
+58. More › Accounting › Recurring invoices → list; open one → Pause, then Resume; Run now asks first, then raises today's invoices.
+59. New recurring invoice → pick a customer and items, frequency, start date → saved and listed.
+60. More › Sales › Payment Reminders with WhatsApp not linked → a banner and "Connect WhatsApp"; no Send button.
+61. With WhatsApp linked → tick two overdue invoices → Send → the sheet lists both customers, invoices and balances and says 2; confirm → sent once; the customers get one message each.
+62. Untick everything → Send is not available.
+63. More › Accounting › Payments › Reconciliation → each action asks first, naming the amount; confirm → the row updates.
+64. Tap an action twice quickly → only one is recorded.
+65. Payments Out from More still opens the payments list.
+66. On staging after deploy: approve from the website still works (it sends the business id, which must match).
+67. On staging after deploy: approve and reject from the phone work.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
 - Several phone settings screens send `business_id` in request bodies (`phone/lib/screens/settings/settings_router.dart`), which the project rules forbid.
+- The website's credit-note Edit link leads to a page that does not edit, and its payment reminders History tab calls a route that does not exist.
+- Converting a work order on the phone creates the final invoice straight away; the website opens a pre-filled invoice form first.
