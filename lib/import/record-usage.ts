@@ -132,7 +132,7 @@ export type UndoResult = { id: string; ok: true } | { id: string; ok: false; rea
  * Undo for a batch of imported records, in one transaction with the rows locked: an id outside
  * the business is 'Not found', one already deleted counts as undone, one `keep` names is kept
  * with its reason, one anything points to is kept as 'Used in ...', the rest are soft-deleted
- * with the statement the DELETE handlers use. One result per input id, in input order.
+ * (customers and suppliers are also made inactive, see below). One result per input id, in input order.
  */
 export async function removeUnused(
   table: MasterTable,
@@ -167,8 +167,12 @@ export async function removeUnused(
       for (const [id, t] of used) reasons.set(id, `Used in ${t.replace(/_/g, ' ')}`);
       const unused = live.filter((id) => !used.has(id));
       if (unused.length > 0) {
+        // Customers' phone and email unique indexes (migration 157) are partial on is_active, so
+        // an undone party must also be inactive or it keeps holding them. Items' barcode index is
+        // not partial on is_active, so clearing it would free nothing: items keep is_active.
+        const inactive = table === 'items' ? '' : ', is_active = false';
         await client.query(
-          `UPDATE ${table} SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          `UPDATE ${table} SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP${inactive}
             WHERE id = ANY($1::uuid[]) AND business_id = $2 AND deleted_at IS NULL`,
           [unused, ctx.businessId]
         );

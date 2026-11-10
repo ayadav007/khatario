@@ -36,6 +36,7 @@ import { POST as commitRoute } from '@/app/api/import/[section]/commit/route';
 import { POST as undoRoute } from '@/app/api/import/[section]/undo/route';
 import { GET as problemRowsRoute } from '@/app/api/import/[section]/problem-rows/route';
 import { GET as historyRoute } from '@/app/api/import/history/route';
+import { POST as createCustomerRoute } from '@/app/api/customers/route';
 
 const PREFIX = 'Imp routes ';
 const csvFile = (lines: string[], name = 'c.csv') =>
@@ -489,6 +490,45 @@ d('import routes (real DB)', () => {
       'Draft Bad,27BAD,2,"""GSTIN"" is not a valid GSTIN: 27BAD"',
     ]);
     await pool.query(`DELETE FROM import_runs WHERE id = $1`, [up.json.runId]);
+  });
+
+  test('after undo the same customer file imports again, and the phone is free for a new customer', async () => {
+    const lines = [
+      'Name,Phone,Email',
+      'Reimport One,9811100001,reimport.one@example.com',
+      'Reimport Two,9811100002,reimport.two@example.com',
+    ];
+    const first = await importAll(lines);
+    expect((await undo(first)).status).toBe(200);
+    const flags = await pool.query(
+      `SELECT is_active, deleted_at IS NOT NULL AS deleted FROM customers WHERE business_id = $1 AND name LIKE 'Reimport %'`,
+      [A.id]
+    );
+    expect(flags.rows).toEqual([
+      { is_active: false, deleted: true },
+      { is_active: false, deleted: true },
+    ]);
+
+    const second = await importAll(lines);
+    const run = await pool.query(`SELECT counts FROM import_runs WHERE id = $1`, [second]);
+    expect(run.rows[0].counts).toMatchObject({ total: 2, saved: 2, failed: 0, skipped: 0 });
+    expect((await undo(second)).status).toBe(200);
+
+    headerBag.current = sessionFor('admin');
+    const res = await createCustomerRoute(
+      new NextRequest('http://localhost/api/customers', {
+        method: 'POST',
+        headers: { ...headerBag.current, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Hand Added', phone: '9811100001', email: 'reimport.one@example.com' }),
+      })
+    );
+    expect(res.status).toBeLessThan(300);
+    const live = await pool.query(
+      `SELECT name FROM customers WHERE business_id = $1 AND phone = '9811100001' AND deleted_at IS NULL`,
+      [A.id]
+    );
+    expect(live.rows.map((r) => r.name)).toEqual(['Hand Added']);
+    await pool.query(`DELETE FROM customers WHERE business_id = $1 AND name = 'Hand Added'`, [A.id]);
   });
 
   test('history without a section lists only modules the user can read', async () => {
