@@ -1,4 +1,10 @@
-import { initialWizardState, missingRequiredFields, wizardReducer, type WizardState } from '@/components/import/wizard-state';
+import {
+  initialWizardState,
+  missingRequiredFields,
+  STALLED_MESSAGE,
+  wizardReducer,
+  type WizardState,
+} from '@/components/import/wizard-state';
 import type { ImportField } from '@/lib/import/types';
 import type { RunSummary } from '@/lib/import/run';
 
@@ -94,15 +100,29 @@ test('a batch with done true moves to done', () => {
   expect(s.progress?.saved).toBe(430);
 });
 
-test('a failed batch pauses at the next row, and resume clears it', () => {
+test('a failed batch pauses after the rows processed so far, and resume clears it', () => {
   const mid = wizardReducer(importing(), {
     type: 'batch_succeeded',
     result: { done: false, processed: 200, total: 450, saved: 200, skipped: 0, failed: 0 },
   });
   const s = wizardReducer(mid, { type: 'batch_failed', message: 'Import failed' });
   expect(s.step).toBe('importing');
-  expect(s.paused).toEqual({ rowNumber: 201, message: 'Import failed' });
+  expect(s.paused).toEqual({ processed: 200, total: 450, message: 'Import failed' });
   expect(wizardReducer(s, { type: 'resume' }).paused).toBeNull();
+});
+
+test('a batch that is not done and did not advance pauses with the stalled message', () => {
+  const mid = wizardReducer(importing(), {
+    type: 'batch_succeeded',
+    result: { done: false, processed: 200, total: 450, saved: 200, skipped: 0, failed: 0 },
+  });
+  expect(mid.paused).toBeNull();
+  const s = wizardReducer(mid, {
+    type: 'batch_succeeded',
+    result: { done: false, processed: 200, total: 450, saved: 200, skipped: 0, failed: 0 },
+  });
+  expect(s.step).toBe('importing');
+  expect(s.paused).toEqual({ processed: 200, total: 450, message: STALLED_MESSAGE });
 });
 
 test('resuming an unfinished run from history goes to importing with its progress', () => {

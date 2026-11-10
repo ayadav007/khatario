@@ -478,6 +478,19 @@ d('import routes (real DB)', () => {
     expect((await call(problemRowsRoute as Handler, { who: 'nobody', method: 'GET', query: `?run_id=${id}` })).status).toBe(401);
   });
 
+  test('problem rows of a previewed draft come from the preview', async () => {
+    const up = await upload(['Name,GSTIN', 'Draft Bad,27BAD', 'Draft Fine,']);
+    expect(up.status).toBe(200);
+    expect((await preview(up.json.runId, up.json.guesses)).json).toMatchObject({ ready: 1, needsAttention: 1 });
+    const res = await call(problemRowsRoute as Handler, { method: 'GET', query: `?run_id=${up.json.runId}` });
+    expect(res.status).toBe(200);
+    expect(res.text.trim().split(/\r?\n/)).toEqual([
+      'Name,GSTIN,Row,Reason',
+      'Draft Bad,27BAD,2,"""GSTIN"" is not a valid GSTIN: 27BAD"',
+    ]);
+    await pool.query(`DELETE FROM import_runs WHERE id = $1`, [up.json.runId]);
+  });
+
   test('history without a section lists only modules the user can read', async () => {
     const suppliersRun = await importAll(['Name,City', 'History Supplier,Pune'], 'suppliers');
     const adminAll = await history();

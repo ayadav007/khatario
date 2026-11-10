@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { undoConfirmText } from '@/components/import/ImportHistory';
-import type { Progress, UndoResult } from '@/components/import/wizard-state';
+import type { Paused, Progress, UndoResult } from '@/components/import/wizard-state';
 
 interface ImportingStepProps {
   done: boolean;
   progress: Progress | null;
-  paused: { rowNumber: number; message: string } | null;
+  paused: Paused | null;
   undone: UndoResult | null;
   undoing: boolean;
   problemRowsHref: string | null;
@@ -41,7 +41,9 @@ export function ImportingStep({
       <div className="space-y-4">
         {paused ? (
           <div className="space-y-3">
-            <p className="font-medium text-text-primary">Import paused at row {paused.rowNumber}</p>
+            <p className="font-medium text-text-primary">
+              Import paused after {paused.processed} of {paused.total} rows.
+            </p>
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {paused.message}
             </p>

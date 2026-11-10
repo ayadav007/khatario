@@ -71,11 +71,12 @@ interface RunRow {
   cursor: number;
   counts: Partial<Counts>;
   preview_ready: number | null;
+  preview_problems: PreviewProblem[] | null;
   created_at: Date;
 }
 
 const RUN_COLUMNS = `id, business_id, section, source_app, file_name, status, headers, draft_rows, row_numbers,
-  column_matches, value_matches, date_order, cursor, counts, preview_ready, created_at`;
+  column_matches, value_matches, date_order, cursor, counts, preview_ready, preview_problems, created_at`;
 
 async function loadRun(ctx: ServiceCtx, runId: string): Promise<RunRow> {
   const row = UUID.test(String(runId ?? ''))
@@ -268,6 +269,8 @@ export async function createDraftRun(
   };
 }
 
+type PreviewProblem = { rowNumber: number; status: 'needs_attention' | 'already_exists'; reasons: string[] };
+
 export interface PreviewResult {
   ready: number;
   needsAttention: number;
@@ -275,7 +278,7 @@ export interface PreviewResult {
   warnings: number;
   unmatched: { field: string; label: string; values: string[] }[];
   /** First 50. */
-  problems: { rowNumber: number; status: 'needs_attention' | 'already_exists'; reasons: string[] }[];
+  problems: PreviewProblem[];
   /** Labels of required fields with no column. */
   missingRequired: string[];
   limit: { allowed: boolean; message?: string };
@@ -303,8 +306,15 @@ function cleanMatches(def: SectionDefinition, headers: string[], p: { columnMatc
   return { columnMatches, valueMatches };
 }
 
-/** Every row built and classified; calls findExisting row by row for rows without errors. */
-async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Promise<PreviewResult> {
+/**
+ * Every row built and classified; calls findExisting row by row for rows without errors.
+ * `allProblems` holds every row that will not be imported; the result shows the first 50.
+ */
+async function analyse(
+  ctx: ServiceCtx,
+  def: SectionDefinition,
+  run: RunRow
+): Promise<{ preview: PreviewResult; allProblems: PreviewProblem[] }> {
   const built = buildAll(def, run);
   const rowNumbers = run.row_numbers ?? [];
   const dupOf = duplicateOf(def, built);
@@ -315,7 +325,7 @@ async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Pr
   let needsAttention = 0;
   let alreadyExists = 0;
   let warnings = 0;
-  const problems: PreviewResult['problems'] = [];
+  const allProblems: PreviewProblem[] = [];
   classified.forEach((c, i) => {
     if (c.status === 'ready') {
       ready += 1;
@@ -324,19 +334,20 @@ async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Pr
     }
     if (c.status === 'needs_attention') needsAttention += 1;
     else alreadyExists += 1;
-    if (problems.length < PROBLEM_PREVIEW_LIMIT) problems.push({ rowNumber: rowNumbers[i], status: c.status, reasons: c.reasons });
+    allProblems.push({ rowNumber: rowNumbers[i], status: c.status, reasons: c.reasons });
   });
 
-  return {
+  const preview: PreviewResult = {
     ready,
     needsAttention,
     alreadyExists,
     warnings,
     unmatched: unmatchedOf(def, built),
-    problems,
+    problems: allProblems.slice(0, PROBLEM_PREVIEW_LIMIT),
     missingRequired: missingRequiredOf(def, run.column_matches ?? {}),
     limit: await limitFor(ctx, def, ready),
   };
+  return { preview, allProblems };
 }
 
 export async function previewRun(
@@ -359,11 +370,13 @@ export async function previewRun(
   run.column_matches = columnMatches;
   run.value_matches = valueMatches;
   run.date_order = dateOrder;
-  const preview = await analyse(ctx, def, run);
-  await query(`UPDATE import_runs SET preview_ready = $3 WHERE id = $1 AND business_id = $2`, [
+  const { preview, allProblems } = await analyse(ctx, def, run);
+  // Replaced on every preview: the problem-rows file of a draft is built from it.
+  await query(`UPDATE import_runs SET preview_ready = $3, preview_problems = $4 WHERE id = $1 AND business_id = $2`, [
     run.id,
     ctx.businessId,
     preview.ready,
+    JSON.stringify(allProblems),
   ]);
   return preview;
 }
@@ -464,7 +477,7 @@ async function finishRun(ctx: ServiceCtx, def: SectionDefinition, run: RunRow, c
   try {
     await client.query('BEGIN');
     await client.query(
-      `UPDATE import_runs SET status = 'done', draft_rows = NULL, row_numbers = NULL, counts = $3, updated_at = now()
+      `UPDATE import_runs SET status = 'done', draft_rows = NULL, row_numbers = NULL, preview_problems = NULL, counts = $3, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [run.id, ctx.businessId, JSON.stringify(counts)]
     );
@@ -638,7 +651,7 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
     // can be undone again later (retrying them). An undone run is never resumed: rows are cleared.
     await query(
       `UPDATE import_runs
-          SET status = $3, draft_rows = NULL, row_numbers = NULL, updated_at = now()
+          SET status = $3, draft_rows = NULL, row_numbers = NULL, preview_problems = NULL, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [run.id, ctx.businessId, kept.length === 0 ? 'undone' : 'done']
     );
@@ -704,14 +717,31 @@ function csvCell(value: string): string {
   return /[",\r\n]|^\s|\s$/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-/** The user's headers plus Row and Reason, one line per row that was not imported. */
+/** A draft's rows the last preview will not import, with the user's cells from draft_rows. */
+function draftProblemRows(run: RunRow): Pick<ProblemRow, 'row_number' | 'reasons' | 'cells'>[] {
+  const cellsByRow = new Map<number, string[]>();
+  (run.row_numbers ?? []).forEach((n, i) => cellsByRow.set(n, run.draft_rows?.[i] ?? []));
+  return (run.preview_problems ?? []).map((p) => ({
+    row_number: p.rowNumber,
+    reasons: p.reasons,
+    cells: cellsByRow.get(p.rowNumber) ?? [],
+  }));
+}
+
+/**
+ * The user's headers plus Row and Reason, one line per row that was not imported. For a draft,
+ * the rows the last preview will not import; otherwise the rows the commit recorded.
+ */
 export async function problemRowsCsv(ctx: ServiceCtx, runId: string): Promise<string> {
   const run = await loadRun(ctx, runId);
-  const problems = await queryRows<ProblemRow>(
-    `SELECT row_number, status, reasons, cells FROM import_run_problems
-      WHERE run_id = $1 AND business_id = $2 ORDER BY row_number`,
-    [run.id, ctx.businessId]
-  );
+  const problems =
+    run.status === 'draft'
+      ? draftProblemRows(run)
+      : await queryRows<ProblemRow>(
+          `SELECT row_number, status, reasons, cells FROM import_run_problems
+            WHERE run_id = $1 AND business_id = $2 ORDER BY row_number`,
+          [run.id, ctx.businessId]
+        );
   const lines = [[...run.headers, 'Row', 'Reason']];
   for (const p of problems) {
     lines.push([

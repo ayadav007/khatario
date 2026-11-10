@@ -44,6 +44,15 @@ export interface UndoResult {
 
 export type Progress = Omit<BatchResult, 'done'>;
 
+export type Paused = { processed: number; total: number; message: string };
+
+export const STALLED_MESSAGE = 'The import stopped making progress. Try Resume.';
+
+/** A batch that is not done yet but moved no further than `before`: calling again would loop. */
+export function isStalled(before: number, result: BatchResult): boolean {
+  return !result.done && result.processed <= before;
+}
+
 export interface WizardState {
   step: WizardStep;
   sourceApp: SourceApp;
@@ -62,8 +71,8 @@ export interface WizardState {
   preview: PreviewResult | null;
   previewLoading: boolean;
   progress: Progress | null;
-  /** Set when a batch call failed; `rowNumber` is the position of the next data row to import. */
-  paused: { rowNumber: number; message: string } | null;
+  /** Set when a batch call failed or stopped advancing; counts are data rows, not file row numbers. */
+  paused: Paused | null;
   /** Result of undoing the current run from the Done step. */
   undone: UndoResult | null;
   history: RunSummary[];
@@ -202,16 +211,26 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
         progress: { processed: 0, total: state.rowCount, saved: 0, skipped: 0, failed: 0 },
       };
 
-    case 'batch_succeeded':
+    case 'batch_succeeded': {
+      const r = action.result;
+      const stalled = isStalled(state.progress?.processed ?? 0, r);
       return {
         ...state,
-        step: action.result.done ? 'done' : 'importing',
-        progress: progressOf(action.result),
-        paused: null,
+        step: r.done ? 'done' : 'importing',
+        progress: progressOf(r),
+        paused: stalled ? { processed: r.processed, total: r.total, message: STALLED_MESSAGE } : null,
       };
+    }
 
     case 'batch_failed':
-      return { ...state, paused: { rowNumber: (state.progress?.processed ?? 0) + 1, message: action.message } };
+      return {
+        ...state,
+        paused: {
+          processed: state.progress?.processed ?? 0,
+          total: state.progress?.total ?? state.rowCount,
+          message: action.message,
+        },
+      };
 
     case 'resume':
       return { ...state, paused: null };

@@ -18,6 +18,7 @@ import { UploadStep } from '@/components/import/UploadStep';
 import {
   IMPORT_SECTIONS,
   initialWizardState,
+  isStalled,
   missingRequiredFields,
   wizardReducer,
   type BatchResult,
@@ -155,10 +156,11 @@ export function ImportWizard({ section }: { section: SectionKey }) {
     void runPreview({ ...state, valueMatches });
   };
 
-  /** Calls commit until the run is done or a call fails. */
-  const commit = async (runId: string) => {
+  /** Calls commit until the run is done, a call fails, or a batch stops advancing. */
+  const commit = async (runId: string, startProcessed: number) => {
     if (committing.current) return;
     committing.current = true;
+    let processed = startProcessed;
     try {
       for (;;) {
         const r = await callApi<BatchResult>(`${base}/commit`, { run_id: runId });
@@ -167,7 +169,10 @@ export function ImportWizard({ section }: { section: SectionKey }) {
           dispatch({ type: 'batch_failed', message: r.message });
           return;
         }
+        // The reducer pauses a stalled batch with its message; the loop stops here too.
         dispatch({ type: 'batch_succeeded', result: r.data });
+        if (isStalled(processed, r.data)) return;
+        processed = r.data.processed;
         if (r.data.done) break;
       }
       void loadHistory();
@@ -179,18 +184,18 @@ export function ImportWizard({ section }: { section: SectionKey }) {
   const startImport = () => {
     if (!state.runId) return;
     dispatch({ type: 'commit_started' });
-    void commit(state.runId);
+    void commit(state.runId, 0);
   };
 
   const resume = () => {
     if (!state.runId) return;
     dispatch({ type: 'resume' });
-    void commit(state.runId);
+    void commit(state.runId, state.progress?.processed ?? 0);
   };
 
   const resumeRun = (run: RunSummary) => {
     dispatch({ type: 'resume_run', run });
-    void commit(run.id);
+    void commit(run.id, run.processed);
   };
 
   const undo = async (runId: string) => {
@@ -221,6 +226,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
   if (authStatus === 'denied') return <AccessDenied module={meta.module} action="create" />;
 
   const stepIndex = STEPS.findIndex((s) => s.key.includes(state.step));
+  const problemRowsHref = state.runId ? `${base}/problem-rows?run_id=${encodeURIComponent(state.runId)}` : null;
 
   return (
     <div className="space-y-3 md:space-y-6">
@@ -277,6 +283,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
             loading={state.previewLoading}
             error={state.error}
             valueMatches={state.valueMatches}
+            problemRowsHref={problemRowsHref}
             onValueMatch={setValueMatch}
             onBack={() => dispatch({ type: 'back_to_match' })}
             onImport={startImport}
@@ -289,7 +296,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
             paused={state.paused}
             undone={state.undone}
             undoing={busyRunId !== null && busyRunId === state.runId}
-            problemRowsHref={state.runId ? `${base}/problem-rows?run_id=${encodeURIComponent(state.runId)}` : null}
+            problemRowsHref={problemRowsHref}
             listHref={meta.listHref}
             listLabel={meta.label}
             onResume={resume}

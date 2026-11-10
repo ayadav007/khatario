@@ -13,9 +13,10 @@ const STATUS: Record<RunSummary['status'], { label: string; variant: 'success' |
   failed: { label: 'Stopped', variant: 'danger' },
 };
 
-/** The confirm shown before an undo. */
-export function undoConfirmText(saved: number): string {
-  return `This removes the ${saved} records this import created. Records already used in a transaction are kept.`;
+/** The confirm shown before an undo; history passes no count (a partial undo does not lower `saved`). */
+export function undoConfirmText(count?: number): string {
+  const records = count === undefined ? 'records' : `${count} records`;
+  return `This removes the ${records} this import created. Records already used in a transaction are kept.`;
 }
 
 function formatWhen(iso: string): string {
@@ -72,7 +73,7 @@ export function ImportHistory({ runs, busyRunId, onUndo, onResume }: ImportHisto
                     isLoading={busyRunId === run.id}
                     disabled={busyRunId !== null}
                     onClick={() => {
-                      if (window.confirm(undoConfirmText(run.saved))) onUndo(run);
+                      if (window.confirm(undoConfirmText())) onUndo(run);
                     }}
                   >
                     Undo import

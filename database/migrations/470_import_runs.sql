@@ -3,7 +3,8 @@
 -- file's rows (draft_rows) and the user's own row numbers (row_numbers); the preview stores the
 -- column and value matches on it; commit saves rows in batches, advancing `cursor` one row at a
 -- time, and records every created master in import_run_records so the run can be undone.
--- draft_rows and row_numbers are cleared when the run is done. Rows that were not imported are
+-- draft_rows and row_numbers are cleared when the run is done. The last preview's full list of
+-- rows that will not be imported is kept in preview_problems while the run is a draft. Rows that were not imported are
 -- kept in import_run_problems (cells, row number, reasons) for the "download problem rows" file.
 -- import_column_matches remembers which field each header was matched to, per business and
 -- section, so the next upload of the same layout is matched automatically.
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS import_runs (
   counts JSONB NOT NULL DEFAULT '{}',
   -- Rows the last preview found ready; the first commit call checks the plan limit against it.
   preview_ready INT,
+  -- Every row the last preview will not import: [{ rowNumber, status, reasons }]. Cleared with draft_rows.
+  preview_problems JSONB,
   -- No foreign key: removing a user must not touch import history.
   created_by UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -41,6 +44,7 @@ CREATE TABLE IF NOT EXISTS import_runs (
 
 -- Converge databases that ran an earlier draft of this migration.
 ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS preview_ready INT;
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS preview_problems JSONB;
 ALTER TABLE import_runs DROP COLUMN IF EXISTS problem_rows;
 
 CREATE INDEX IF NOT EXISTS idx_import_runs_business_section_created

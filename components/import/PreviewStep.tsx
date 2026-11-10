@@ -39,6 +39,8 @@ interface PreviewStepProps {
   loading: boolean;
   error: string | null;
   valueMatches: Record<string, Record<string, string>>;
+  /** Every row the preview will not import, as a CSV download. */
+  problemRowsHref: string | null;
   onValueMatch(field: string, value: string, choice: string): void;
   onBack(): void;
   onImport(): void;
@@ -52,6 +54,7 @@ export function PreviewStep({
   loading,
   error,
   valueMatches,
+  problemRowsHref,
   onValueMatch,
   onBack,
   onImport,
@@ -157,6 +160,11 @@ export function PreviewStep({
               </li>
             ))}
           </ul>
+          {problemRowsHref ? (
+            <a href={problemRowsHref} download>
+              <Button variant="secondary">Download problem rows</Button>
+            </a>
+          ) : null}
         </section>
       ) : null}
 

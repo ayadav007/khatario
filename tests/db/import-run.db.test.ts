@@ -549,6 +549,25 @@ d('import runs (real DB)', () => {
     expect(lines).toHaveLength(2);
   });
 
+  test('a previewed draft gives every problem row in the csv, rebuilt on each preview', async () => {
+    const lines = ['Name,GSTIN'];
+    for (let i = 0; i < 60; i++) lines.push(`Preview Bad ${i},27BAD${i}`);
+    lines.push('Preview Fine,');
+    const { draft, preview } = await draftAndPreview(A, lines, 'pv.csv');
+    expect(preview).toMatchObject({ ready: 1, needsAttention: 60 });
+    expect(preview.problems).toHaveLength(50);
+    const out = (await problemRowsCsv(A.ctx, draft.runId)).trim().split(/\r?\n/);
+    expect(out).toHaveLength(61);
+    expect(out[0]).toBe('Name,GSTIN,Row,Reason');
+    expect(out[1]).toBe('Preview Bad 0,27BAD0,2,"""GSTIN"" is not a valid GSTIN: 27BAD0"');
+    expect(out[60]).toMatch(/^Preview Bad 59,27BAD59,61,/);
+
+    // A later preview replaces the list: without the GSTIN column every row is ready.
+    await previewRun(A.ctx, draft.runId, { columnMatches: { 0: 'name', 1: null }, valueMatches: {}, dateOrder: 'dmy' });
+    expect((await problemRowsCsv(A.ctx, draft.runId)).trim().split(/\r?\n/)).toEqual(['Name,GSTIN,Row,Reason']);
+    await pool.query(`DELETE FROM import_runs WHERE id = $1`, [draft.runId]);
+  });
+
   test('history lists committed runs newest first, without drafts', async () => {
     const runs = await listRuns(A.ctx, 'customers');
     expect(runs.length).toBeGreaterThan(3);
