@@ -207,3 +207,12 @@ describe('scan bound', () => {
     expect(r.rowNumbers).toEqual([2, 19001]);
   }, 60000);
 });
+
+test("a problem-rows file uploaded again loses the apostrophe that guarded formulas", async () => {
+  const csv = "Name,Phone,Note\n\"'=HYPERLINK(\"\"x\"\")\",'+919876543210,'it's fine\n'@home,'-5,'plain\n";
+  const r = await readImportFile(Buffer.from(csv), 'problems.csv');
+  expect(r.rows).toEqual([
+    ['=HYPERLINK("x")', '+919876543210', "'it's fine"],
+    ['@home', '-5', "'plain"],
+  ]);
+});

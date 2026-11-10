@@ -170,6 +170,9 @@ function csvSource(buffer: Buffer): RowSource {
 
 const hasValue = (row: string[]) => row.some((c) => c !== '');
 
+/** Undoes csvSafeText: a downloaded problem-rows file, fixed and uploaded again, reads as typed. */
+const withoutFormulaGuard = (cell: string) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell);
+
 export async function readImportFile(buffer: Buffer, fileName: string): Promise<ReadFileResult> {
   const dot = fileName.lastIndexOf('.');
   const ext = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
@@ -215,7 +218,7 @@ export async function readImportFile(buffer: Buffer, fileName: string): Promise<
     if (rows.length >= MAX_DATA_ROWS) {
       throw new ImportFileError('TOO_MANY_ROWS', 'This file has more than 10,000 rows. Split it into smaller files.');
     }
-    rows.push(headers.map((_, j) => (raw[j] ?? '').trim()));
+    rows.push(headers.map((_, j) => withoutFormulaGuard((raw[j] ?? '').trim())));
     rowNumbers.push(src.numberOf(i));
   }
 
