@@ -100,6 +100,11 @@ describe('buildRow (customers)', () => {
     expect(keys).toContain('phone:9876543210');
     expect(keys).toContain('name:sharmatraders');
   });
+
+  test('customer duplicateKeys include the email, lower-cased; suppliers do not', () => {
+    expect(SECTIONS.customers.duplicateKeys({ name: 'A', email: ' Ravi@Example.com ' })).toContain('email:ravi@example.com');
+    expect(SECTIONS.suppliers.duplicateKeys({ name: 'A', email: 'ravi@example.com' }).some((k) => k.startsWith('email:'))).toBe(false);
+  });
 });
 
 describe('buildRow (items)', () => {

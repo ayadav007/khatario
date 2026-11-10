@@ -25,7 +25,10 @@ export const customersSection: SectionDefinition = {
     { key: 'credit_days', label: 'Credit days', type: 'number', aliases: ['Credit days', 'Credit period', 'Payment terms'] },
   ],
 
-  duplicateKeys: partyKeys,
+  duplicateKeys: (values) => {
+    const email = text(values, 'email');
+    return email ? [...partyKeys(values), `email:${email.trim().toLowerCase()}`] : partyKeys(values);
+  },
 
   checkRow: checkGstinState,
 
