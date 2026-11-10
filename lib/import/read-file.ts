@@ -154,7 +154,7 @@ function csvSource(buffer: Buffer): RowSource {
       relax_quotes: true,
       skip_empty_lines: false,
       info: true,
-    });
+    }) as unknown as typeof records;
   } catch {
     throw new ImportFileError('UNREADABLE', 'The file could not be read as CSV.');
   }
