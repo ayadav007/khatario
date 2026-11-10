@@ -107,9 +107,9 @@ export async function refundCreditNote(
     throw new CreditNoteRefundError(400, 'NOT_CASH_OR_BANK', 'Choose a cash or bank account the refund was paid from');
   }
 
-  const { getMappedAccountId } = await import('@/lib/account-mappings');
-  const receivable = await getMappedAccountId(p.businessId, 'accounts_receivable_account_id', '1103', 'Accounts Receivable');
-  if (!receivable) throw new Error('Accounts Receivable (1103) account not found; initialise the chart of accounts');
+  // The customer's own receivable account when they have one, else the control account.
+  const { resolveCustomerReceivableAccountId } = await import('@/lib/accounting/receivable-accounts');
+  const receivable = await resolveCustomerReceivableAccountId(p.businessId, room!.customerId, client);
 
   const stem = `CNR/${financialYearLabel(p.date)}/`;
   await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`fy-voucher:${p.businessId}:${stem}`]);

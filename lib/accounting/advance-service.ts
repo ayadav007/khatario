@@ -326,7 +326,7 @@ export async function adjustAdvance(
         })
       : { taxable: amount, cgst: 0, sgst: 0, igst: 0, cess: 0 };
 
-  const accounts = await loadAdvanceAccounts(client, p.businessId);
+  const accounts = await loadAdvanceAccounts(client, p.businessId, adv.type === 'received' ? adv.customer_id : null);
   const voucherNumber = await allocateFyVoucherNumber(client, {
     businessId: p.businessId,
     prefix: 'ADJ',

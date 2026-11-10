@@ -19,6 +19,7 @@ import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { useEntityMutation } from '@/hooks/useEntityMutation';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ReceivableAccountPicker } from '@/components/customers/ReceivableAccountPicker';
 
 function NewCustomerContent() {
   const router = useRouter();
@@ -64,6 +65,7 @@ function NewCustomerContent() {
     opening_balance_type: 'debit',
     credit_limit: '',
     credit_days: '',
+    receivable_account_id: '', // '' = Accounts Receivable
   });
 
   const [sameAsBilling, setSameAsBilling] = useState(false);
@@ -326,6 +328,7 @@ function NewCustomerContent() {
         formData.credit_days === '' || formData.credit_days === undefined
           ? undefined
           : Math.max(0, parseInt(String(formData.credit_days), 10) || 0),
+      receivable_account_id: formData.receivable_account_id || null,
       business_id: business.id,
       created_by: user.id,
     };
@@ -621,6 +624,12 @@ function NewCustomerContent() {
                   value={formData.credit_days}
                   onChange={handleChange}
                   placeholder="e.g. 30 — optional"
+                />
+                <ReceivableAccountPicker
+                  value={formData.receivable_account_id || null}
+                  onChange={(accountId) =>
+                    setFormData((prev) => ({ ...prev, receivable_account_id: accountId ?? '' }))
+                  }
                 />
               </div>
             </AnnotatedFormSection>

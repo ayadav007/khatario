@@ -74,6 +74,8 @@ export type BsAccountRow = {
   is_active: boolean;
   debit: number;
   credit: number;
+  /** Set by the loader for Accounts Receivable and every account under it. */
+  is_receivable?: boolean;
 };
 
 export type BsAccountLine = {
@@ -153,6 +155,7 @@ export function assembleBalanceSheet(
     current_asset: [], fixed_asset: [], investment: [], other_asset: [],
     current_liability: [], long_term_liability: [], other_liability: [], equity: [],
   };
+  const receivableIds = new Set(rows.filter((r) => r.is_receivable).map((r) => r.id));
   for (const r of rows) {
     const cls = classifyBsAccount(r.account_type, r.account_group_id, groups);
     if (!cls) continue;
@@ -182,7 +185,10 @@ export function assembleBalanceSheet(
     ...section(ca),
     inventory: r2(inventoryLedger + invAdj),
     inventory_adjustment: invAdj,
-    receivables: byCode(ca, '1103'),
+    // Customers can be split over accounts under Accounts Receivable; the figure is all of them.
+    // Rows built without the flag (older callers) keep the single 1103 line.
+    receivables:
+      receivableIds.size > 0 ? sum(ca.filter((l) => receivableIds.has(l.id))) : byCode(ca, '1103'),
     prepaid_expenses: byCode(ca, '1105'),
     accrued_income: byCode(ca, '1106'),
     advances_to_suppliers: byCode(ca, '1107'),

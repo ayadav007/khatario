@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = await queryRows<{
+      account_id: string;
       account_code: string;
       account_name: string;
       account_type: string;
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest) {
           ${branchClause}
       )
       SELECT
+        a.id AS account_id,
         a.account_code,
         a.account_name,
         a.account_type,
@@ -147,7 +149,10 @@ export async function GET(request: NextRequest) {
     );
 
     const groups = await loadGroupMap(businessId);
+    const { receivableAccountIds } = await import('@/lib/accounting/receivable-accounts');
+    const receivableIds = new Set(await receivableAccountIds(businessId));
     const accounts: CfAccount[] = rows.map((r) => ({
+      receivable: receivableIds.has(r.account_id),
       code: r.account_code,
       name: r.account_name,
       type: r.account_type,

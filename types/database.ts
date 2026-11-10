@@ -709,6 +709,8 @@ export interface Customer {
   credit_limit: number;
   /** Net days from invoice date used to suggest due date (null = no automatic default) */
   credit_days?: number | null;
+  /** Ledger account under Accounts Receivable this customer posts to (null = the control account) */
+  receivable_account_id?: string | null;
   current_balance?: number; // Running balance: opening + invoices - payments
   tags?: string[];
   notes?: string;

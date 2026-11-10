@@ -3,6 +3,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import * as db from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { receivableAccountIds } from '@/lib/accounting/receivable-accounts';
 import { fetchPartyLedgerDocs, type PartyType } from '@/lib/reports/party-ledger-docs';
 
 export const dynamic = 'force-dynamic';
@@ -145,10 +146,10 @@ export async function GET(request: NextRequest) {
             AND i.invoice_date <= $3::date
             AND ($4::uuid IS NULL OR i.branch_id = $4::uuid)
             AND NOT EXISTS (
-              SELECT 1 FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
-               WHERE l.voucher_type = 'invoice' AND l.voucher_id = i.id AND a.account_code LIKE '1103%'
+              SELECT 1 FROM ledger_entry_lines l
+               WHERE l.voucher_type = 'invoice' AND l.voucher_id = i.id AND l.account_id = ANY($5::uuid[])
             )`,
-        [businessId, partyId, toDate, branchFilter]
+        [businessId, partyId, toDate, branchFilter, await receivableAccountIds(businessId)]
       );
       for (const inv of cashSales) {
         const amount = Number(inv.grand_total) || 0;

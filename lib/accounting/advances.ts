@@ -192,7 +192,12 @@ export async function allocateFyVoucherNumber(
   return `${stem}${String(Number(res.rows[0]?.max_seq || 0) + 1).padStart(5, '0')}`;
 }
 
-export async function loadAdvanceAccounts(client: PoolClient, businessId: string): Promise<AdvanceAccounts> {
+/** `customerId`: the receivable account is that customer's own account when they have one. */
+export async function loadAdvanceAccounts(
+  client: PoolClient,
+  businessId: string,
+  customerId?: string | null
+): Promise<AdvanceAccounts> {
   const res = await client.query<{ account_code: string; id: string }>(
     `SELECT DISTINCT ON (account_code) account_code, id FROM accounts
       WHERE business_id = $1 AND is_active = true
@@ -202,7 +207,10 @@ export async function loadAdvanceAccounts(client: PoolClient, businessId: string
   );
   const by = new Map(res.rows.map((r) => [r.account_code, r.id]));
   const { getMappedAccountId } = await import('@/lib/account-mappings');
-  const receivable = await getMappedAccountId(businessId, 'accounts_receivable_account_id', '1103', 'Accounts Receivable');
+  const { customerReceivableAccountOverride } = await import('@/lib/accounting/receivable-accounts');
+  const receivable =
+    (await customerReceivableAccountOverride(businessId, customerId, client)) ??
+    (await getMappedAccountId(businessId, 'accounts_receivable_account_id', '1103', 'Accounts Receivable'));
   const payable = await getMappedAccountId(businessId, 'accounts_payable_account_id', '2101', 'Accounts Payable');
   const need = (code: string, name: string) => {
     const id = by.get(code);

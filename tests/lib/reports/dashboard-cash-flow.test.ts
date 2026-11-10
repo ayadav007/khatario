@@ -112,3 +112,11 @@ describe('buildDashboardCashFlow', () => {
     expect(out.summary.closing_balance).toBe(0);
   });
 });
+
+describe('receivable category accounts', () => {
+  it('treats a counter account flagged as receivable as a customer account', () => {
+    expect(classifyCashMovement('in', counter('DOM-DEBTORS', 'asset', { receivable: true })).key).toBe('sales');
+    expect(classifyCashMovement('out', counter('DOM-DEBTORS', 'asset', { receivable: true })).key).toBe('refunds');
+    expect(classifyCashMovement('in', counter('DOM-DEBTORS', 'asset')).key).toBe('other');
+  });
+});

@@ -324,6 +324,18 @@ Use expenses for business costs that are not stock purchases.
 2. Review default accounts.
 3. Add bank, cash, loan, income, expense, asset, or liability accounts as needed.
 
+### Customer categories (Domestic, Foreign and so on)
+
+To see what different kinds of customers owe on separate lines of the balance sheet:
+
+1. In **Chart of Accounts**, add an account for each category as a sub-account of **Accounts Receivable**, for example Domestic Debtors and Foreign Debtors. A category can have its own sub-accounts (Foreign Debtors → USA).
+2. On each customer, choose the category in **Receivable account**. To set many customers at once, tick them in the customers list and use **Set receivable account**.
+3. From then on that customer's invoices, receipts and notes are recorded in the chosen account.
+
+When a customer who already owes money is moved to another category, one entry dated that day transfers the balance. Earlier entries are not changed. Customers with no category stay in Accounts Receivable.
+
+The receivables aging report can be filtered by category and shows a subtotal for each.
+
 ### Ledger
 
 1. Go to **Ledger**.

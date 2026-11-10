@@ -13,6 +13,7 @@ import {
 import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS } from '@/lib/accounting/pl-sections';
 import { hasPlSectionColumn } from '@/lib/accounting/pl-section-column';
 import { getClientIP, getUserAgent, logActivity } from '@/lib/activity-logger';
+import { ReceivableAccountError, assertReceivableAccountChangeAllowed } from '@/lib/accounting/receivable-accounts';
 
 const plSectionLabel = (v: unknown) => (isPlSection(v) ? PL_SECTION_LABELS[v] : 'default');
 
@@ -271,6 +272,31 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         }
       }
 
+      // Customers can be assigned an account under Accounts Receivable; such an account must
+      // stay active and stay under it while customers post to it.
+      try {
+        if (updates.is_active === false && existing.is_active !== false) {
+          await assertReceivableAccountChangeAllowed({
+            businessId: business_id,
+            accountId,
+            change: { kind: 'deactivate' },
+          });
+        }
+        const nextParent = (updates.parent_account_id as string | null | undefined) ?? null;
+        if (updates.parent_account_id !== undefined && nextParent !== ((existing.parent_account_id as string | null) ?? null)) {
+          await assertReceivableAccountChangeAllowed({
+            businessId: business_id,
+            accountId,
+            change: { kind: 'reparent', newParentId: nextParent },
+          });
+        }
+      } catch (e) {
+        if (e instanceof ReceivableAccountError) {
+          return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        }
+        throw e;
+      }
+
       if (updates.opening_balance !== undefined || updates.opening_balance_type !== undefined) {
         const opening = parseOpeningBalance(
           updates.opening_balance !== undefined ? updates.opening_balance : existing.opening_balance,
@@ -410,6 +436,16 @@ export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
           { error: 'Cannot delete system account' },
           { status: 400 }
         );
+      }
+
+      // Deleting or deactivating would leave customers posting to an account that is gone.
+      try {
+        await assertReceivableAccountChangeAllowed({ businessId, accountId, change: { kind: 'deactivate' } });
+      } catch (e) {
+        if (e instanceof ReceivableAccountError) {
+          return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        }
+        throw e;
       }
 
       const childCount = await queryOne<{ count: string }>(

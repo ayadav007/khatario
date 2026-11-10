@@ -334,6 +334,37 @@ export function CustomerDetailPanel({
                 label="Opening Balance"
                 value={`${formatINR(customer.opening_balance)} (${customer.opening_balance_type})`}
               />
+              {customer.receivable_account &&
+                (customer.receivable_account_id || (customer.receivable_account_moves?.length ?? 0) > 0) && (
+                  <FieldRow
+                    label="Receivable account"
+                    value={`${customer.receivable_account.account_code} ${customer.receivable_account.account_name}`}
+                  />
+                )}
+              {customer.receivable_account_id &&
+                customer.receivable_account &&
+                customer.receivable_account.id !== customer.receivable_account_id && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    The saved receivable account is no longer available. New entries go to Accounts Receivable.
+                  </p>
+                )}
+              {(customer.receivable_account_moves?.length ?? 0) > 0 && (
+                <div className="text-xs text-text-secondary">
+                  <p className="font-medium">Receivable account changes</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {customer.receivable_account_moves.map(
+                      (move: { id: string; transfer_date: string; to_account_name: string; transferred_amount: number }) => (
+                        <li key={move.id}>
+                          {move.transfer_date}: moved to {move.to_account_name}
+                          {Math.abs(move.transferred_amount) >= 0.005
+                            ? `, ${formatINR(move.transferred_amount)} transferred`
+                            : ''}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
           </section>
 

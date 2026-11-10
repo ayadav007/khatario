@@ -18,6 +18,13 @@ export function activeLedgerLineSql(alias: string): string {
  * and reversal lines, are skipped, so repeated calls never compound; a voucher re-posted after
  * a reversal is reversed again for the new lines only. Reversal lines keep the original line's
  * date unless `entryDate` is given.
+ *
+ * A customer can be moved from one receivable account to another (Domestic Debtors to Foreign
+ * Debtors); the balance is transferred once and the old account is then settled for that
+ * customer. A reversal must mirror its original on the same account (migration 324 enforces it),
+ * which would reopen the old account. So when an original was carried away by such a move, the
+ * mirror's amount is carried to the customer's current account by a correction transfer dated
+ * like the mirror (lib/accounting/receivable-account-move.ts).
  */
 export async function reverseVoucherLedgerEntries(
   client: PoolClient,
@@ -39,6 +46,21 @@ export async function reverseVoucherLedgerEntries(
       FOR UPDATE OF l`,
     [opts.businessId, opts.voucherType, opts.voucherId]
   );
+
+  const { customerSweptLines, postReceivableCorrection } = await import('@/lib/accounting/receivable-account-move');
+  const receivable = await customerSweptLines(client, {
+    businessId: opts.businessId,
+    voucherType: opts.voucherType,
+    voucherId: opts.voucherId,
+    lines: lines.rows.map((l) => ({ id: l.id as string, account_id: l.account_id as string })),
+  });
+  const strays: Array<{
+    accountId: string;
+    branchId: string | null;
+    entryDate: string | Date;
+    debit: number;
+    credit: number;
+  }> = [];
 
   for (const l of lines.rows) {
     const ins = await client.query<{ id: string }>(
@@ -66,6 +88,27 @@ export async function reverseVoucherLedgerEntries(
        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [l.id, ins.rows[0].id, opts.businessId, opts.voucherType, opts.voucherId, opts.reason.slice(0, 500), opts.actorId ?? null]
     );
+    if (receivable?.sweptLineIds.has(l.id)) {
+      strays.push({
+        accountId: l.account_id,
+        branchId: l.branch_id ?? null,
+        entryDate: opts.entryDate ?? l.entry_date,
+        debit: Number(l.debit) || 0,
+        credit: Number(l.credit) || 0,
+      });
+    }
+  }
+
+  if (receivable && strays.length > 0) {
+    await postReceivableCorrection(client, {
+      businessId: opts.businessId,
+      customerId: receivable.customerId,
+      toAccountId: receivable.currentAccountId,
+      sourceVoucherType: opts.voucherType,
+      sourceVoucherId: opts.voucherId,
+      actorId: opts.actorId ?? null,
+      reversedLines: strays,
+    });
   }
   return lines.rows.length;
 }

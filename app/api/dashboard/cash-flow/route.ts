@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     const rows = await queryRows<{
       month: string | null;
       direction: 'in' | 'out' | null;
+      account_id: string | null;
       account_code: string | null;
       account_name: string | null;
       account_type: string | null;
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
       SELECT
         CASE WHEN v.is_opening THEN NULL ELSE TO_CHAR(v.entry_date, 'YYYY-MM') END AS month,
         CASE WHEN v.is_opening THEN NULL WHEN v.net > 0 THEN 'in' ELSE 'out' END AS direction,
-        a.account_code, a.account_name, a.account_type, a.account_group_id,
+        a.id AS account_id, a.account_code, a.account_name, a.account_type, a.account_group_id,
         SUM(v.net) AS net
       FROM vouchers v
       LEFT JOIN counter k
@@ -108,12 +109,14 @@ export async function GET(request: NextRequest) {
        AND k.entry_date = v.entry_date
       LEFT JOIN accounts a ON a.id = k.account_id
       WHERE v.is_opening OR v.net <> 0
-      GROUP BY 1, 2, a.account_code, a.account_name, a.account_type, a.account_group_id
+      GROUP BY 1, 2, a.id, a.account_code, a.account_name, a.account_type, a.account_group_id
       `,
       [businessId, fyStart, fyEnd, OPENING_VOUCHERS]
     );
 
     const groups = await loadGroupMap(businessId);
+    const { receivableAccountIds } = await import('@/lib/accounting/receivable-accounts');
+    const receivableIds = new Set(await receivableAccountIds(businessId));
     let opening = 0;
     const movements: CashMovement[] = [];
     for (const r of rows) {
@@ -133,6 +136,7 @@ export async function GET(request: NextRequest) {
                 name: r.account_name || '',
                 type: r.account_type,
                 bsClass: classifyBsAccount(r.account_type, r.account_group_id, groups),
+                receivable: !!r.account_id && receivableIds.has(r.account_id),
               }
             : null,
       });

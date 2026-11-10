@@ -6,7 +6,14 @@
 
 import type { BsClass } from '@/lib/reports/balance-sheet';
 
-export type CashCounterAccount = { code: string; name: string; type: string; bsClass: BsClass | null };
+export type CashCounterAccount = {
+  code: string;
+  name: string;
+  type: string;
+  bsClass: BsClass | null;
+  /** Accounts Receivable or an account under it (set by the loader); such accounts have free codes. */
+  receivable?: boolean;
+};
 
 export type CashMovement = {
   /** YYYY-MM */
@@ -57,6 +64,7 @@ const TAX = /^(111[0-7]|113[0-3]|2102|2103|2109|2117|215)/;
 const SALARY = /^(5212|5214|211[3-6]|1119)/;
 /** Receivables, advances from customers, unearned revenue. */
 const CUSTOMER = /^(1103|2106|2107)/;
+const isCustomerAccount = (a: CashCounterAccount) => a.receivable === true || CUSTOMER.test(a.code);
 /** Payables and advances to suppliers. */
 const SUPPLIER = /^(2101|1107)/;
 const INVENTORY = /^(1104|116[0-2])/;
@@ -76,7 +84,7 @@ function inKey(a: CashCounterAccount | null): InKey {
   if (a.type === 'capital') return 'capital';
   if (isLongTermLiability(a)) return 'loans';
   if (a.type === 'income') return a.code.startsWith('42') ? 'other' : 'sales';
-  if (CUSTOMER.test(a.code) || INVENTORY.test(a.code)) return 'sales';
+  if (isCustomerAccount(a) || INVENTORY.test(a.code)) return 'sales';
   return 'other';
 }
 
@@ -89,7 +97,7 @@ function outKey(a: CashCounterAccount | null): OutKey {
   if (SUPPLIER.test(a.code) || INVENTORY.test(a.code)) return 'purchases';
   if (a.type === 'expense') return a.code.startsWith('51') ? 'purchases' : 'expenses';
   if (isLongTermAsset(a)) return 'assets';
-  if (CUSTOMER.test(a.code)) return 'refunds';
+  if (isCustomerAccount(a)) return 'refunds';
   return 'other';
 }
 

@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { resolveCustomerReceivableAccountId } from '@/lib/accounting/receivable-accounts';
+import { hasCustomerReceivableAccounts } from '@/lib/accounting/receivable-accounts-schema';
 
 export const dynamic = 'force-dynamic';
 
@@ -159,8 +161,38 @@ export async function GET(
     // Use current_balance which already includes opening balance + invoices - payments
     const totalReceivable = Number(customer.current_balance) || 0;
 
+    // The ledger account this customer's sales are recorded in, and the times it was changed.
+    let receivableAccount: { id: string; account_code: string; account_name: string } | null = null;
+    let receivableAccountMoves: Array<Record<string, unknown>> = [];
+    if (await hasCustomerReceivableAccounts()) {
+      try {
+        const accountId = await resolveCustomerReceivableAccountId(customer.business_id, customerId);
+        receivableAccount = await queryOne<{ id: string; account_code: string; account_name: string }>(
+          `SELECT id, account_code, account_name FROM accounts WHERE id = $1 AND business_id = $2`,
+          [accountId, customer.business_id]
+        );
+        // Rows of kind 'correction' are bookkeeping for reversed documents, not changes of account.
+        receivableAccountMoves = await queryRows(
+          `SELECT m.id, m.to_account_id, a.account_code AS to_account_code, a.account_name AS to_account_name,
+                  m.transfer_date::text AS transfer_date, m.transferred_amount::float AS transferred_amount, m.created_at
+             FROM customer_receivable_account_moves m
+             JOIN accounts a ON a.id = m.to_account_id
+            WHERE m.business_id = $1 AND m.customer_id = $2 AND m.kind = 'move'
+            ORDER BY m.created_at DESC
+            LIMIT 50`,
+          [customer.business_id, customerId]
+        );
+      } catch (error) {
+        console.error('Error reading customer receivable account:', error);
+      }
+    }
+
     return NextResponse.json({
-      customer,
+      customer: {
+        ...customer,
+        receivable_account: receivableAccount,
+        receivable_account_moves: receivableAccountMoves,
+      },
       transactions,
       totalReceivable,
     });
@@ -291,6 +323,39 @@ export async function PUT(
         );
       }
       updateData.phone = normalized;
+    }
+
+    // The ledger follows the opening balance. It is changed first, so a refusal (for example a
+    // locked period) leaves the customer as it was.
+    if (openingBalanceChanged || openingBalanceTypeChanged) {
+      const amount = Number(newOb !== undefined ? newOb : existingCustomer.opening_balance);
+      if (!Number.isFinite(amount) || amount < 0) {
+        return NextResponse.json(
+          { error: 'Opening balance must be zero or a positive amount.', code: 'INVALID_OPENING_BALANCE' },
+          { status: 400 }
+        );
+      }
+      const type = (newObt !== undefined ? String(newObt) : existingObt) === 'credit' ? 'credit' : 'debit';
+      try {
+        const { setPartyOpeningBalance } = await import('@/lib/accounting/account-rules');
+        await setPartyOpeningBalance({
+          businessId: existingCustomer.business_id,
+          entityType: 'customer',
+          entityId: customerId,
+          entityName: String(updateData.name ?? existingCustomer.name),
+          amount,
+          type,
+        });
+      } catch (ledgerError: any) {
+        console.error('Error re-posting opening balance for customer:', ledgerError);
+        return NextResponse.json(
+          {
+            error: `The opening balance could not be updated in the books: ${ledgerError?.message || 'unknown error'}`,
+            code: 'OPENING_BALANCE_LEDGER_FAILED',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const updates: string[] = [];

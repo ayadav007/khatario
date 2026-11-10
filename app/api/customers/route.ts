@@ -15,6 +15,13 @@ import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
+import {
+  assertReceivableTarget,
+  receivableAccountFilter,
+  receivableControlAccountId,
+} from '@/lib/accounting/receivable-accounts';
+import { hasCustomerReceivableAccounts } from '@/lib/accounting/receivable-accounts-schema';
+import { parseReceivableAccountId, receivableAccountErrorResponse } from '@/lib/customers/receivable-account-request';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,6 +119,27 @@ export async function GET(request: NextRequest) {
       sql += ` AND current_balance = 0`;
     }
 
+    // Customers recorded in one receivable account (Domestic Debtors, Foreign Debtors, ...).
+    const receivableAccountParam = searchParams.get('receivable_account_id');
+    if (receivableAccountParam && (await hasCustomerReceivableAccounts())) {
+      try {
+        const accountId = parseReceivableAccountId(receivableAccountParam);
+        if (accountId) {
+          const keep = await receivableAccountFilter(businessId, accountId);
+          if (keep.includesUnassigned) {
+            sql += ` AND receivable_account_id IS NULL`;
+          } else {
+            sql += ` AND receivable_account_id = ANY($${params.length + 1}::uuid[])`;
+            params.push(keep.accountIds);
+          }
+        }
+      } catch (error) {
+        const refused = receivableAccountErrorResponse(error);
+        if (refused) return refused;
+        throw error;
+      }
+    }
+
     // Delta sync: only records updated after this timestamp
     if (updatedAfter) {
       sql += ` AND customers.updated_at >= $${params.length + 1}::timestamptz`;
@@ -172,6 +200,7 @@ export async function POST(request: NextRequest) {
       opening_balance_type = 'debit',
       credit_limit = 0,
       credit_days: bodyCreditDays,
+      receivable_account_id: bodyReceivableAccountId,
     } = body;
 
     if (!name) {
@@ -296,6 +325,19 @@ export async function POST(request: NextRequest) {
     const finalState = gstinCheck.state;
     const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
 
+    // The ledger account this customer's sales are recorded in; null keeps Accounts Receivable.
+    let receivableAccountId: string | null = null;
+    if (bodyReceivableAccountId != null && bodyReceivableAccountId !== '' && (await hasCustomerReceivableAccounts())) {
+      try {
+        const chosen = await assertReceivableTarget(business_id, parseReceivableAccountId(bodyReceivableAccountId));
+        receivableAccountId = chosen === (await receivableControlAccountId(business_id)) ? null : chosen;
+      } catch (error) {
+        const refused = receivableAccountErrorResponse(error);
+        if (refused) return refused;
+        throw error;
+      }
+    }
+
     const sql = `
       INSERT INTO customers (
         business_id, name, company_name, phone, email, address, billing_address, shipping_address,
@@ -359,6 +401,13 @@ export async function POST(request: NextRequest) {
             { error: 'Failed to create customer' },
             { status: 500 }
           );
+        }
+        if (receivableAccountId) {
+          const withAccount = await client.query<Customer>(
+            `UPDATE customers SET receivable_account_id = $1 WHERE id = $2 AND business_id = $3 RETURNING *`,
+            [receivableAccountId, customer.id, business_id]
+          );
+          customer = withAccount.rows[0] ?? customer;
         }
 
       await client.query('COMMIT');
