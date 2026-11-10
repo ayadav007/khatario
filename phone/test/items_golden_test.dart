@@ -10,6 +10,7 @@ import 'package:khatario_phone/screens/items/item_csv.dart';
 import 'package:khatario_phone/screens/items/item_detail_screen.dart';
 import 'package:khatario_phone/screens/items/items_screen.dart';
 import 'package:khatario_phone/screens/more/more_screen.dart';
+import 'package:khatario_phone/screens/stock/adjustment_form_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/shell/app_shell.dart';
 import 'package:khatario_phone/theme.dart';
@@ -436,10 +437,11 @@ void main() {
     expect(api.patches.single.$1, startsWith('/api/items/9f29782e'));
     expect(api.patches.single.$2, {'show_in_store': true});
 
-    // Bundle -> the inventory adjustments page.
+    // Bundle -> the phone's multi-item adjustment form (not the website).
     await tester.tap(find.byIcon(LucideIcons.arrowUpDown).first);
     await tester.pumpAndSettle();
     expect(find.text('New inventory adjustment'), findsWidgets);
+    expect(find.byType(AdjustmentFormScreen), findsOneWidget);
     Navigator.of(tester.element(find.text('New inventory adjustment').first)).pop();
     await tester.pumpAndSettle();
 

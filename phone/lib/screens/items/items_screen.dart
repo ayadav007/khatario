@@ -219,7 +219,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
     }
   }
 
-  /// `handleAdjustStock`: variants and bundles go to the full adjustment form on the website.
+  /// `handleAdjustStock`: variants and bundles go to the full adjustment form (the phone's multi-item form).
   Future<void> _adjustStock(Map<String, dynamic> item) async {
     if (_truthy(item['has_variants']) || _truthy(item['is_bundle'])) {
       widget.onOpen('New inventory adjustment');

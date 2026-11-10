@@ -34,6 +34,7 @@ import '../screens/parties/supplier_detail_screen.dart';
 import '../screens/parties/supplier_form_screen.dart';
 import '../screens/purchases/bill_form_screen.dart';
 import '../screens/search/search_screen.dart';
+import '../screens/stock/adjustment_form_screen.dart';
 import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
@@ -536,7 +537,7 @@ class _AppShellState extends State<AppShell> {
       case 'Reports':
         return page('/reports');
       case 'New inventory adjustment':
-        return page('/inventory-adjustments');
+        return push(AdjustmentFormScreen(session: widget.session));
       case 'Scan & add items':
         _openScanAdd();
         return;

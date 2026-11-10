@@ -167,7 +167,6 @@ const stillGeneric = <String>{
   '/suppliers/dashboard',
   '/items/barcodes',
   '/stock-transfers',
-  '/inventory-adjustments',
   '/reports/stock/third-party',
   '/reports/stock/summary',
   '/reports/stock/closing-stock',

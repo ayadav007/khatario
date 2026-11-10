@@ -33,10 +33,13 @@ import '../sales/recurring_invoices_screen.dart';
 import '../sales/sales_orders_screen.dart';
 import '../sales/work_orders_screen.dart';
 import '../settings/settings_hub_screen.dart';
+import '../stock/adjustment_form_screen.dart';
+import '../stock/adjustments_screen.dart';
 import '../stock/item_cleanup_screen.dart';
 import '../stock/party_pricing_screen.dart';
 import '../stock/price_levels_screen.dart';
 import '../stock/price_list_screen.dart';
+import '../stock/repack_form_screen.dart';
 import '../stock/schemes_screen.dart';
 import '../tools/calculators_screen.dart';
 import '../tools/lookup_tools_screens.dart';
@@ -160,6 +163,9 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
     '/pricing/price-list' => PriceListScreen(session: session),
     '/items/cleanup' => ItemCleanupScreen(session: session),
+    '/inventory-adjustments' => AdjustmentsScreen(session: session),
+    '/inventory-adjustments/new' => AdjustmentFormScreen(session: session),
+    '/inventory-adjustments/repacks/new' => RepackFormScreen(session: session),
     '/whatsapp/orders' => OrderVerificationScreen(session: session),
     '/reports/cash-flow' => CashFlowScreen(session: session),
     '/reports/profit-loss' => ProfitLossScreen(session: session),
