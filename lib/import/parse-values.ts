@@ -76,16 +76,26 @@ export function isAmbiguousDate(text: string): boolean {
   return a >= 1 && a <= 12 && b >= 1 && b <= 12 && a !== b;
 }
 
+const MOBILE = /^[6-9]\d{9}$/;
+
 /**
- * First valid number in the cell. Indian numbers with a +91 / 91 / 0 prefix come back as
- * the bare 10-digit number, so they match the same number written without the prefix.
+ * Drops a 91 (12 digits) or 0 (11 digits) prefix only when an Indian mobile number remains;
+ * anything else, such as the landline 022-12345678, keeps its digits as entered.
+ */
+function withoutMobilePrefix(digits: string): string {
+  if (digits.length === 12 && digits.startsWith('91') && MOBILE.test(digits.slice(2))) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0') && MOBILE.test(digits.slice(1))) return digits.slice(1);
+  return digits;
+}
+
+/**
+ * First valid number in the cell. Indian mobile numbers with a +91 / 91 / 0 prefix come back
+ * as the bare 10-digit number, so they match the same number written without the prefix.
  */
 export function parsePhone(text: string): string | null {
   const parts = String(text ?? '').split(/[,;/\n]+/);
   for (const part of parts) {
-    let digits = part.replace(/\D/g, '');
-    if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
-    else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+    const digits = withoutMobilePrefix(part.replace(/\D/g, ''));
     const n = normalizePhoneOrNull(digits);
     if (n) return n;
   }
@@ -96,10 +106,7 @@ export function parsePhone(text: string): string | null {
 export function looksLikePhone(text: string): boolean {
   const s = String(text ?? '').trim();
   if (!/^[\d\s+\-()]+$/.test(s)) return false;
-  let digits = s.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
-  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
-  return /^[6-9]\d{9}$/.test(digits);
+  return MOBILE.test(withoutMobilePrefix(s.replace(/\D/g, '')));
 }
 
 export function looksLikeGstin(text: string): boolean {

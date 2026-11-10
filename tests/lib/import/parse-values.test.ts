@@ -112,3 +112,19 @@ describe('units follow the GST unit quantity codes', () => {
     expect(resolveUnit('furlong')).toBeNull();
   });
 });
+
+describe('phone prefixes', () => {
+  test('a landline keeps its leading 0; a mobile loses it', () => {
+    expect(parsePhone('022-12345678')).toBe('02212345678');
+    expect(parsePhone('09876543210')).toBe('9876543210');
+    expect(looksLikePhone('09876543210')).toBe(true);
+    expect(looksLikePhone('022-12345678')).toBe(false);
+  });
+
+  test('91 is dropped from 12 digits only when a mobile number remains', () => {
+    expect(parsePhone('919876543210')).toBe('9876543210');
+    expect(parsePhone('+91 98765 43210')).toBe('9876543210');
+    expect(parsePhone('911234567890')).toBe('911234567890');
+    expect(looksLikePhone('911234567890')).toBe(false);
+  });
+});
