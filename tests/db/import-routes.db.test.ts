@@ -284,7 +284,7 @@ d('import routes (real DB)', () => {
 
     const u = await undo(flowRunId);
     expect(u.status).toBe(200);
-    expect(u.json).toEqual({ removed: 3, kept: [] });
+    expect(u.json).toEqual({ removed: 3, kept: [], done: true });
     expect(await customerCount(A.id)).toBe(0);
   });
 

@@ -1,6 +1,6 @@
 import { createCustomer, CustomerAccessRefused } from '@/lib/customers/create-customer';
 import { removeUnused } from '@/lib/import/record-usage';
-import { checkGstinState, findParty, fromService, num, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
+import { checkGstinState, addKeys, findParty, fromService, loadPartyIndex, matchIndex, partyLookups, num, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
 
 const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) => removeUnused('customers', ctx, ids);
@@ -30,6 +30,12 @@ export const customersSection: SectionDefinition = {
   checkRow: checkGstinState,
 
   findExisting: (ctx, values) => findParty('customers', values, ctx.businessId),
+
+  loadExistingIndex: (ctx) => loadPartyIndex('customers', ctx.businessId),
+
+  matchExisting: (index, values) => matchIndex(index, partyLookups('customers', values)),
+
+  addToIndex: (index, record, values) => addKeys(index, record, partyLookups('customers', values)),
 
   saveRow: (ctx, values) =>
     withAccessRefusal(CustomerAccessRefused, 'customers', async () =>

@@ -1,5 +1,8 @@
 import {
+  addUndo,
   initialWizardState,
+  isResumable,
+  isUndoStalled,
   missingRequiredFields,
   STALLED_MESSAGE,
   wizardReducer,
@@ -107,7 +110,7 @@ test('a failed batch pauses after the rows processed so far, and resume clears i
   });
   const s = wizardReducer(mid, { type: 'batch_failed', message: 'Import failed' });
   expect(s.step).toBe('importing');
-  expect(s.paused).toEqual({ processed: 200, total: 450, message: 'Import failed' });
+  expect(s.paused).toEqual({ processed: 200, total: 450, message: 'Import failed', canResume: true });
   expect(wizardReducer(s, { type: 'resume' }).paused).toBeNull();
 });
 
@@ -122,7 +125,7 @@ test('a batch that is not done and did not advance pauses with the stalled messa
     result: { done: false, processed: 200, total: 450, saved: 200, skipped: 0, failed: 0 },
   });
   expect(s.step).toBe('importing');
-  expect(s.paused).toEqual({ processed: 200, total: 450, message: STALLED_MESSAGE });
+  expect(s.paused).toEqual({ processed: 200, total: 450, message: STALLED_MESSAGE, canResume: true });
 });
 
 test('resuming an unfinished run from history goes to importing with its progress', () => {
@@ -136,13 +139,47 @@ test('resuming an unfinished run from history goes to importing with its progres
 test('undo from history updates that run status in state', () => {
   const other = run({ id: '33333333-3333-4333-8333-333333333333' });
   const loaded = wizardReducer(initialWizardState(), { type: 'history_loaded', runs: [run({}), other] });
-  const s = wizardReducer(loaded, { type: 'run_undone', runId: run({}).id, result: { removed: 10, kept: [] } });
+  const s = wizardReducer(loaded, { type: 'run_undone', runId: run({}).id, result: { removed: 10, kept: [], done: true } });
   expect(s.history.map((r) => r.status)).toEqual(['undone', 'done']);
 
   const partly = wizardReducer(loaded, {
     type: 'run_undone',
     runId: run({}).id,
-    result: { removed: 9, kept: [{ label: 'Asha Traders', reason: 'Used in an invoice' }] },
+    result: { removed: 9, kept: [{ label: 'Asha Traders', reason: 'Used in an invoice' }], done: true },
   });
   expect(partly.history[0].status).toBe('done');
+});
+
+test('a batch refused because the plan limit is reached pauses without Resume', () => {
+  const s = wizardReducer(importing(), {
+    type: 'batch_failed',
+    code: 'LIMIT_REACHED',
+    message: 'Your items limit is reached.',
+  });
+  expect(s.paused).toEqual({ processed: 0, total: 450, message: 'Your items limit is reached.', canResume: false });
+});
+
+test('a run that stopped after its last row is resumable, so the server can finish it', () => {
+  expect(isResumable(run({ status: 'failed', processed: 10, total: 10 }))).toBe(true);
+  expect(isResumable(run({ status: 'failed', processed: 4, total: 10 }))).toBe(true);
+  expect(isResumable(run({ status: 'committing', processed: 4, total: 10 }))).toBe(true);
+  expect(isResumable(run({ status: 'committing', processed: 10, total: 10 }))).toBe(false);
+  expect(isResumable(run({ status: 'done', processed: 10, total: 10 }))).toBe(false);
+});
+
+test('undo calls add up until the server says done', () => {
+  const first = addUndo(null, { removed: 2000, kept: [{ label: 'A', reason: 'Used in invoices' }], done: false });
+  expect(first).toEqual({ removed: 2000, kept: [{ label: 'A', reason: 'Used in invoices' }], done: false });
+  expect(addUndo(first, { removed: 500, kept: [], done: true })).toEqual({
+    removed: 2500,
+    kept: [{ label: 'A', reason: 'Used in invoices' }],
+    done: true,
+  });
+});
+
+test('an undo call that is not done and handled no record has stalled', () => {
+  expect(isUndoStalled({ removed: 0, kept: [], done: false })).toBe(true);
+  expect(isUndoStalled({ removed: 0, kept: [{ label: 'A', reason: 'x' }], done: false })).toBe(false);
+  expect(isUndoStalled({ removed: 3, kept: [], done: false })).toBe(false);
+  expect(isUndoStalled({ removed: 0, kept: [], done: true })).toBe(false);
 });

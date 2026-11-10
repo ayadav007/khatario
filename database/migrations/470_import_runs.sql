@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS import_runs (
   preview_ready INT,
   -- Every row the last preview will not import: [{ rowNumber, status, reasons }]. Cleared with draft_rows.
   preview_problems JSONB,
+  -- An undo goes in calls of 2,000 records, newest row first: the row_number the last call
+  -- stopped at, so the next call continues below it. NULL when no undo is under way.
+  undo_cursor INT,
   -- No foreign key: removing a user must not touch import history.
   created_by UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -45,6 +48,7 @@ CREATE TABLE IF NOT EXISTS import_runs (
 -- Converge databases that ran an earlier draft of this migration.
 ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS preview_ready INT;
 ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS preview_problems JSONB;
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS undo_cursor INT;
 ALTER TABLE import_runs DROP COLUMN IF EXISTS problem_rows;
 
 CREATE INDEX IF NOT EXISTS idx_import_runs_business_section_created

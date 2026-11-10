@@ -406,6 +406,24 @@ d('import runs (real DB)', () => {
     expect(saved.rows.map((x) => x.name)).toEqual(['After Clash One', 'After Clash Two']);
   });
 
+  test('a run that failed while finishing (every row processed) is finished by the next call', async () => {
+    const { draft } = await draftAndPreview(A, ['Name,City', 'Finish Fail,Pune']);
+    // As if the last batch processed every row and the finishing transaction then failed.
+    await pool.query(`UPDATE import_runs SET status = 'failed', cursor = 1, counts = $2 WHERE id = $1`, [
+      draft.runId,
+      JSON.stringify({ total: 1, saved: 0, skipped: 0, failed: 1 }),
+    ]);
+    expect(await commitNextBatch(A.ctx, draft.runId)).toEqual({
+      done: true,
+      processed: 1,
+      total: 1,
+      saved: 0,
+      skipped: 0,
+      failed: 1,
+    });
+    expect(await runRow(draft.runId)).toMatchObject({ status: 'done', draft_rows: null });
+  });
+
   test('a crash after a save but before its bookkeeping is caught by findExisting on resume', async () => {
     const before = await customerCount(A);
     const { draft } = await draftAndPreview(A, ['Name,City', 'Ghost One,Pune', 'Ghost Two,Pune']);
@@ -458,7 +476,7 @@ d('import runs (real DB)', () => {
       [randomUUID(), A.id, used.rows[0].id, `IMP-${randomUUID().slice(0, 8)}`, A.branch]
     );
     const r = await undoRun(A.ctx, draft.runId);
-    expect(r).toEqual({ removed: 2, kept: [{ label: 'Undo Two', reason: 'Used in invoices' }] });
+    expect(r).toEqual({ removed: 2, kept: [{ label: 'Undo Two', reason: 'Used in invoices' }], done: true });
     expect((await runRow(draft.runId)).status).toBe('done');
     const live = await pool.query(
       `SELECT name FROM customers WHERE business_id = $1 AND name LIKE 'Undo %' AND deleted_at IS NULL`,
@@ -475,9 +493,67 @@ d('import runs (real DB)', () => {
   test('undo of a run whose records are all unused marks it undone', async () => {
     const { draft } = await draftAndPreview(A, ['Name,City', 'Gone One,Pune', 'Gone Two,Pune']);
     await commitAll(A, draft.runId);
-    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 2, kept: [] });
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 2, kept: [], done: true });
     expect((await runRow(draft.runId)).status).toBe('undone');
     await expect(undoRun(A.ctx, draft.runId)).rejects.toEqual(runCode('NOT_UNDOABLE'));
+  });
+
+  test('an undo of 2,500 records takes two calls and ends undone', async () => {
+    const { draft } = await draftAndPreview(A, ['Name,City', 'Big Undo Seed,Pune'], 'bigundo.csv');
+    await commitAll(A, draft.runId);
+    // 2,500 more records on the same run, written directly: the commit path is tested elsewhere.
+    await pool.query(
+      `WITH c AS (
+         INSERT INTO customers (business_id, name) SELECT $1, 'Big Undo ' || g FROM generate_series(1, 2500) g RETURNING id, name
+       )
+       INSERT INTO import_run_records (run_id, business_id, record_table, record_id, row_number)
+       SELECT $2, $1, 'customers', id, 2 + substring(name FROM 10)::int FROM c`,
+      [A.id, draft.runId]
+    );
+    const first = await undoRun(A.ctx, draft.runId);
+    expect(first).toEqual({ removed: 2000, kept: [], done: false });
+    expect((await runRow(draft.runId)).status).toBe('done');
+    const second = await undoRun(A.ctx, draft.runId);
+    expect(second).toEqual({ removed: 501, kept: [], done: true });
+    expect((await runRow(draft.runId)).status).toBe('undone');
+    const left = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM customers WHERE business_id = $1 AND name LIKE 'Big Undo%' AND deleted_at IS NULL`,
+      [A.id]
+    );
+    expect(left.rows[0].n).toBe(0);
+  });
+
+  test('a kept record does not stop a long undo from finishing', async () => {
+    const { draft } = await draftAndPreview(A, ['Name,City', 'Kept Long Seed,Pune'], 'keptlong.csv');
+    await commitAll(A, draft.runId);
+    await pool.query(
+      `WITH c AS (
+         INSERT INTO customers (business_id, name) SELECT $1, 'Kept Long ' || g FROM generate_series(1, 2100) g RETURNING id, name
+       )
+       INSERT INTO import_run_records (run_id, business_id, record_table, record_id, row_number)
+       SELECT $2, $1, 'customers', id, 2 + substring(name FROM 11)::int FROM c`,
+      [A.id, draft.runId]
+    );
+    // The newest row is used, so the first call keeps it; the second call must not see it again.
+    const newest = await pool.query<{ id: string }>(`SELECT id FROM customers WHERE business_id = $1 AND name = 'Kept Long 2100'`, [A.id]);
+    await pool.query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'draft', 'tax_invoice', $5)`,
+      [randomUUID(), A.id, newest.rows[0].id, `IMP-${randomUUID().slice(0, 8)}`, A.branch]
+    );
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({
+      removed: 1999,
+      kept: [{ label: 'Kept Long 2100', reason: 'Used in invoices' }],
+      done: false,
+    });
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 101, kept: [], done: true });
+    expect((await runRow(draft.runId)).status).toBe('done');
+    // A new undo starts from the top again and retries the kept record.
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({
+      removed: 0,
+      kept: [{ label: 'Kept Long 2100', reason: 'Used in invoices' }],
+      done: true,
+    });
   });
 
   test('another business cannot read, commit or undo the run', async () => {
@@ -538,7 +614,7 @@ d('import runs (real DB)', () => {
     await commitAll(A, draft.runId);
     // As if the process died mid-run and the run was never marked failed.
     await pool.query(`UPDATE import_runs SET status = 'committing' WHERE id = $1`, [draft.runId]);
-    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 2, kept: [] });
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 2, kept: [], done: true });
     const run = await runRow(draft.runId);
     expect(run).toMatchObject({ status: 'undone', draft_rows: null, row_numbers: null });
   });
@@ -568,11 +644,11 @@ d('import runs (real DB)', () => {
        VALUES ($1, $2, $3, $4, CURRENT_DATE, 'draft', 'tax_invoice', $5)`,
       [invoiceId, A.id, used.rows[0].id, `IMP-${randomUUID().slice(0, 8)}`, A.branch]
     );
-    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [{ label: 'Partial One', reason: 'Used in invoices' }] });
+    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [{ label: 'Partial One', reason: 'Used in invoices' }], done: true });
     expect(await runRow(runId)).toMatchObject({ status: 'done', draft_rows: null, row_numbers: null });
 
     await pool.query(`DELETE FROM invoices WHERE id = $1`, [invoiceId]);
-    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [] });
+    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [], done: true });
     expect((await runRow(runId)).status).toBe('undone');
   });
 

@@ -1,8 +1,18 @@
 import { createImportedItem } from '@/lib/items/create-imported-item';
 import { normaliseKey } from '@/lib/import/parse-values';
 import { removeUnused } from '@/lib/import/record-usage';
-import { compactName, firstMatch, fromService, NAME_SQL, num, text, undoOne } from '@/lib/import/sections/shared';
-import type { SectionDefinition } from '@/lib/import/types';
+import { queryRows } from '@/lib/db';
+import { addKeys, compactName, firstMatch, fromService, matchIndex, NAME_SQL, num, text, undoOne } from '@/lib/import/sections/shared';
+import type { Lookup } from '@/lib/import/sections/shared';
+import type { ExistingIndex, RowValues, SectionDefinition } from '@/lib/import/types';
+
+/** A row's lookups: item code, then barcode, then name. */
+const itemLookups = (values: RowValues): Lookup[] => [
+  { matchedOn: 'item code', value: text(values, 'code')?.toLowerCase() },
+  { matchedOn: 'barcode', value: text(values, 'barcode') },
+  { matchedOn: 'name', value: compactName(values.name) },
+];
+const ITEM_SCOPE = `FROM items WHERE business_id = $1 AND deleted_at IS NULL`;
 
 const OPENING_STOCK_REASON = 'Has opening stock. Delete it from the Items list if it is not needed.';
 
@@ -57,16 +67,38 @@ export const itemsSection: SectionDefinition = {
   },
 
   findExisting(ctx, values) {
-    const scope = `SELECT id, name FROM items WHERE business_id = $1 AND deleted_at IS NULL`;
+    const scope = `SELECT id, name ${ITEM_SCOPE}`;
+    const sql: Record<string, string> = {
+      'item code': `${scope} AND LOWER(TRIM(code)) = $2 LIMIT 1`,
+      barcode: `${scope} AND TRIM(barcode) = $2 LIMIT 1`,
+      name: `${scope} AND ${NAME_SQL} = $2 LIMIT 1`,
+    };
     return firstMatch(
-      [
-        { matchedOn: 'item code', value: text(values, 'code')?.toLowerCase(), sql: `${scope} AND LOWER(TRIM(code)) = $2 LIMIT 1` },
-        { matchedOn: 'barcode', value: text(values, 'barcode'), sql: `${scope} AND TRIM(barcode) = $2 LIMIT 1` },
-        { matchedOn: 'name', value: compactName(values.name), sql: `${scope} AND ${NAME_SQL} = $2 LIMIT 1` },
-      ],
+      itemLookups(values).map((l) => ({ ...l, sql: sql[l.matchedOn] })),
       ctx.businessId
     );
   },
+
+  /** Keys computed by the same SQL expressions findExisting compares. */
+  async loadExistingIndex(ctx) {
+    const rows = await queryRows<{ id: string; name: string; code: string | null; barcode: string | null; name_key: string }>(
+      `SELECT id, name, LOWER(TRIM(code)) AS code, TRIM(barcode) AS barcode, ${NAME_SQL} AS name_key ${ITEM_SCOPE}`,
+      [ctx.businessId]
+    );
+    const index: ExistingIndex = new Map();
+    for (const r of rows) {
+      addKeys(index, { id: r.id, label: r.name }, [
+        { matchedOn: 'item code', value: r.code },
+        { matchedOn: 'barcode', value: r.barcode },
+        { matchedOn: 'name', value: r.name_key },
+      ]);
+    }
+    return index;
+  },
+
+  matchExisting: (index, values) => matchIndex(index, itemLookups(values)),
+
+  addToIndex: (index, record, values) => addKeys(index, record, itemLookups(values)),
 
   async saveRow(ctx, values) {
     const type = text(values, 'item_type');

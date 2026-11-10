@@ -13,6 +13,7 @@ import type {
   BuiltRow,
   ColumnMatches,
   DateOrder,
+  ExistingIndex,
   ImportField,
   SectionDefinition,
   SectionKey,
@@ -22,6 +23,8 @@ import type {
 
 const BATCH_SIZE = 200;
 const UNDO_BATCH = 200;
+/** Records one undo call handles; a larger run is undone over several calls. */
+const UNDO_PER_CALL = 2000;
 const PROBLEM_PREVIEW_LIMIT = 50;
 const HISTORY_LIMIT = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -74,11 +77,12 @@ interface RunRow {
   counts: Partial<Counts>;
   preview_ready: number | null;
   preview_problems: PreviewProblem[] | null;
+  undo_cursor: number | null;
   created_at: Date;
 }
 
 const RUN_COLUMNS = `id, business_id, section, source_app, file_name, status, headers, draft_rows, row_numbers,
-  column_matches, value_matches, date_order, cursor, counts, preview_ready, preview_problems, created_at`;
+  column_matches, value_matches, date_order, cursor, counts, preview_ready, preview_problems, undo_cursor, created_at`;
 
 async function loadRun(ctx: ServiceCtx, runId: string): Promise<RunRow> {
   const row = UUID.test(String(runId ?? ''))
@@ -143,20 +147,23 @@ function duplicateOf(def: SectionDefinition, built: BuiltRow[]): number[] {
 
 type Classified = { status: 'ready' | 'needs_attention' | 'already_exists'; reasons: string[] };
 
-/** Errors first, then a record already in the business, then an earlier row of this file. */
-async function classifyRow(
-  ctx: ServiceCtx,
+/**
+ * Errors first, then a record already in the business (from the index loaded for this call),
+ * then an earlier row of this file.
+ */
+function classifyRow(
   def: SectionDefinition,
+  index: ExistingIndex,
   built: BuiltRow[],
   dupOf: number[],
   rowNumbers: number[],
   i: number
-): Promise<Classified> {
+): Classified {
   const b = built[i];
   if (hasError(b)) {
     return { status: 'needs_attention', reasons: b.issues.filter((x) => x.level === 'error').map((x) => x.message) };
   }
-  const existing = await def.findExisting(ctx, b.values);
+  const existing = def.matchExisting(index, b.values);
   if (existing) {
     return { status: 'already_exists', reasons: [`Already exists: ${existing.label}, matched on ${existing.matchedOn}`] };
   }
@@ -327,7 +334,7 @@ function cleanMatches(def: SectionDefinition, headers: string[], p: { columnMatc
 }
 
 /**
- * Every row built and classified; calls findExisting row by row for rows without errors.
+ * Every row built and classified against the business's records, loaded once.
  * `allProblems` holds every row that will not be imported; the result shows the first 50.
  */
 async function analyse(
@@ -338,8 +345,8 @@ async function analyse(
   const built = buildAll(def, run);
   const rowNumbers = run.row_numbers ?? [];
   const dupOf = duplicateOf(def, built);
-  const classified: Classified[] = [];
-  for (let i = 0; i < built.length; i++) classified.push(await classifyRow(ctx, def, built, dupOf, rowNumbers, i));
+  const index = await def.loadExistingIndex(ctx);
+  const classified = built.map((_, i) => classifyRow(def, index, built, dupOf, rowNumbers, i));
 
   let ready = 0;
   let needsAttention = 0;
@@ -570,6 +577,8 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
     const dupOf = duplicateOf(def, built);
     const end = Math.min(cursor + BATCH_SIZE, total);
     const lc = cursor < end ? await checkLimit(ctx.businessId, def.limitType) : null;
+    // Loaded once per batch; each row saved below is added, so later rows of the batch find it.
+    const index: ExistingIndex = cursor < end ? await def.loadExistingIndex(ctx) : new Map();
     let room = !lc || lc.limit < 0 ? Infinity : Math.max(0, lc.limit - lc.current);
     const limitMessage =
       lc?.message || `Your plan's ${def.label.toLowerCase()} limit is reached. Upgrade your plan to import this row.`;
@@ -578,7 +587,7 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
       pending.push({ row_number: rowNumbers[i], status, reasons, cells: rows[i] });
 
     for (let i = cursor; i < end; i++) {
-      const c = await classifyRow(ctx, def, built, dupOf, rowNumbers, i);
+      const c = classifyRow(def, index, built, dupOf, rowNumbers, i);
       if (c.status === 'needs_attention') {
         counts.failed += 1;
         problem(i, 'needs_attention', c.reasons);
@@ -608,6 +617,7 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
         problem(i, 'failed', [saved.error]);
         continue;
       }
+      def.addToIndex(index, { id: saved.id, label: String(built[i].values.name ?? '') }, built[i].values);
       room -= 1;
       counts.saved += 1;
       await recordProgress(ctx, run.id, i + 1, counts, pending, {
@@ -644,7 +654,21 @@ export async function commitNextBatch(
   return withRunLock(ctx, def, () => runBatch(ctx, runId, def));
 }
 
-export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed: number; kept: { label: string; reason: string }[] }> {
+export interface UndoResult {
+  removed: number;
+  /** Records this call kept, with the reason. */
+  kept: { label: string; reason: string }[];
+  /** False while records remain: call again to continue. */
+  done: boolean;
+}
+
+/**
+ * Undoes up to 2,000 records per call, newest row first. A run with more is continued by the
+ * next call from `undo_cursor` (the last row number handled), so records kept by this pass are
+ * not looked at again until it ends; the status changes only when the pass is done. The run's
+ * rows are cleared on the first call, so a commit cannot resume it while the undo is under way.
+ */
+export async function undoRun(ctx: ServiceCtx, runId: string): Promise<UndoResult> {
   const def = SECTIONS[(await loadRun(ctx, runId)).section];
   return withRunLock(ctx, def, async () => {
     const run = await loadRun(ctx, runId);
@@ -652,12 +676,16 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
     if (run.status !== 'done' && run.status !== 'failed' && run.status !== 'committing') {
       throw new ImportRunError('NOT_UNDOABLE', 'Only a finished or stopped import can be undone');
     }
-    const records = await queryRows<{ record_table: string; record_id: string }>(
-      `SELECT record_table, record_id FROM import_run_records
+    const found = await queryRows<{ record_id: string; row_number: number }>(
+      `SELECT record_id, row_number FROM import_run_records
         WHERE run_id = $1 AND business_id = $2 AND undone_at IS NULL
-        ORDER BY row_number DESC`,
-      [run.id, ctx.businessId]
+          AND ($3::int IS NULL OR row_number < $3)
+        ORDER BY row_number DESC
+        LIMIT ${UNDO_PER_CALL + 1}`,
+      [run.id, ctx.businessId, run.undo_cursor]
     );
+    const done = found.length <= UNDO_PER_CALL;
+    const records = found.slice(0, UNDO_PER_CALL);
     let removed = 0;
     const kept: { label: string; reason: string }[] = [];
     for (let start = 0; start < records.length; start += UNDO_BATCH) {
@@ -682,15 +710,29 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
         for (const r of refused) kept.push({ label: nameOf.get(r.id) ?? r.id, reason: r.reason });
       }
     }
-    // Status by outcome, whatever it was before: records kept are real, so the run is 'done' and
-    // can be undone again later (retrying them). An undone run is never resumed: rows are cleared.
+
+    if (!done) {
+      await query(
+        `UPDATE import_runs
+            SET undo_cursor = $3, draft_rows = NULL, row_numbers = NULL, preview_problems = NULL, updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [run.id, ctx.businessId, records[records.length - 1].row_number]
+      );
+      return { removed, kept, done };
+    }
+    // Status by outcome of the whole pass, whatever it was before: records kept are real, so the
+    // run is 'done' and can be undone again later (retrying them). An undone run is never resumed.
+    const left = await queryOne<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM import_run_records WHERE run_id = $1 AND business_id = $2 AND undone_at IS NULL`,
+      [run.id, ctx.businessId]
+    );
     await query(
       `UPDATE import_runs
-          SET status = $3, draft_rows = NULL, row_numbers = NULL, preview_problems = NULL, updated_at = now()
+          SET status = $3, undo_cursor = NULL, draft_rows = NULL, row_numbers = NULL, preview_problems = NULL, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
-      [run.id, ctx.businessId, kept.length === 0 ? 'undone' : 'done']
+      [run.id, ctx.businessId, (left?.n ?? 0) === 0 ? 'undone' : 'done']
     );
-    return { removed, kept };
+    return { removed, kept, done };
   });
 }
 

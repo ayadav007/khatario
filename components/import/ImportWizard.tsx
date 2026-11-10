@@ -16,15 +16,18 @@ import { MatchColumnsStep } from '@/components/import/MatchColumnsStep';
 import { PreviewStep } from '@/components/import/PreviewStep';
 import { UploadStep } from '@/components/import/UploadStep';
 import {
+  addUndo,
   IMPORT_SECTIONS,
   initialWizardState,
   isStalled,
+  isUndoStalled,
   missingRequiredFields,
   wizardReducer,
   type BatchResult,
   type UndoResult,
   type UploadResult,
   type WizardState,
+  UNDO_STALLED_MESSAGE,
 } from '@/components/import/wizard-state';
 import type { PreviewResult, RunSummary } from '@/lib/import/run';
 import type { SectionKey } from '@/lib/import/types';
@@ -82,6 +85,8 @@ export function ImportWizard({ section }: { section: SectionKey }) {
   });
   const [state, dispatch] = useReducer(wizardReducer, undefined, () => initialWizardState());
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
+  /** Records removed so far by the undo under way (it runs in calls of up to 2,000). */
+  const [undoRemoved, setUndoRemoved] = useState(0);
   const alive = useRef(true);
   const committing = useRef(false);
   const previewSeq = useRef(0);
@@ -166,7 +171,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
         const r = await callApi<BatchResult>(`${base}/commit`, { run_id: runId });
         if (!alive.current) return;
         if (!r.ok) {
-          dispatch({ type: 'batch_failed', message: r.message });
+          dispatch({ type: 'batch_failed', code: r.code, message: r.message });
           return;
         }
         // The reducer pauses a stalled batch with its message; the loop stops here too.
@@ -198,20 +203,39 @@ export function ImportWizard({ section }: { section: SectionKey }) {
     void commit(run.id, run.processed);
   };
 
+  /** Calls undo until the server says done, a call fails, or a call handles no record. */
   const undo = async (runId: string) => {
     setBusyRunId(runId);
-    const r = await callApi<UndoResult>(`${base}/undo`, { run_id: runId });
-    if (!alive.current) return;
+    setUndoRemoved(0);
+    let total: UndoResult | null = null;
+    let stopped: string | null = null;
+    for (;;) {
+      const r = await callApi<UndoResult>(`${base}/undo`, { run_id: runId });
+      if (!alive.current) return;
+      if (!r.ok) {
+        stopped = r.message;
+        break;
+      }
+      total = addUndo(total, r.data);
+      setUndoRemoved(total.removed);
+      if (r.data.done) break;
+      if (isUndoStalled(r.data)) {
+        stopped = UNDO_STALLED_MESSAGE;
+        break;
+      }
+    }
     setBusyRunId(null);
-    if (!r.ok) {
-      toast.error(r.message);
+    if (stopped !== null || !total) {
+      const message = stopped ?? UNDO_STALLED_MESSAGE;
+      toast.error(total && total.removed > 0 ? `Removed ${total.removed} records, then stopped. ${message}` : message);
+      void loadHistory();
       return;
     }
-    dispatch({ type: 'run_undone', runId, result: r.data });
-    if (r.data.kept.length > 0) {
-      toast.warning(`Removed ${r.data.removed} records. ${r.data.kept.length} kept because they are already used.`);
+    dispatch({ type: 'run_undone', runId, result: total });
+    if (total.kept.length > 0) {
+      toast.warning(`Removed ${total.removed} records. ${total.kept.length} kept because they are already used.`);
     } else {
-      toast.success(`Removed ${r.data.removed} records.`);
+      toast.success(`Removed ${total.removed} records.`);
     }
     void loadHistory();
   };
@@ -296,6 +320,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
             paused={state.paused}
             undone={state.undone}
             undoing={busyRunId !== null && busyRunId === state.runId}
+            undoRemoved={undoRemoved}
             problemRowsHref={problemRowsHref}
             listHref={meta.listHref}
             listLabel={meta.label}
@@ -309,6 +334,7 @@ export function ImportWizard({ section }: { section: SectionKey }) {
         <ImportHistory
           runs={state.history}
           busyRunId={busyRunId}
+          undoRemoved={undoRemoved}
           onUndo={(run) => void undo(run.id)}
           onResume={resumeRun}
         />

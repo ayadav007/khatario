@@ -40,11 +40,30 @@ export interface BatchResult {
 export interface UndoResult {
   removed: number;
   kept: { label: string; reason: string }[];
+  /** False while records remain: the wizard calls undo again. */
+  done: boolean;
+}
+
+export const UNDO_STALLED_MESSAGE = 'The undo stopped making progress. Try Undo import again.';
+
+/** The undo so far plus one more call's answer (kept lists are joined). */
+export function addUndo(total: UndoResult | null, next: UndoResult): UndoResult {
+  return {
+    removed: (total?.removed ?? 0) + next.removed,
+    kept: [...(total?.kept ?? []), ...next.kept],
+    done: next.done,
+  };
+}
+
+/** An undo call that is not done yet but handled no record: calling again would loop. */
+export function isUndoStalled(result: UndoResult): boolean {
+  return !result.done && result.removed === 0 && result.kept.length === 0;
 }
 
 export type Progress = Omit<BatchResult, 'done'>;
 
-export type Paused = { processed: number; total: number; message: string };
+/** canResume is false when calling again cannot help (the plan limit is reached). */
+export type Paused = { processed: number; total: number; message: string; canResume: boolean };
 
 export const STALLED_MESSAGE = 'The import stopped making progress. Try Resume.';
 
@@ -92,7 +111,7 @@ export type WizardAction =
   | { type: 'preview_failed'; message: string }
   | { type: 'commit_started' }
   | { type: 'batch_succeeded'; result: BatchResult }
-  | { type: 'batch_failed'; message: string }
+  | { type: 'batch_failed'; code?: string; message: string }
   | { type: 'resume' }
   | { type: 'resume_run'; run: RunSummary }
   | { type: 'history_loaded'; runs: RunSummary[] }
@@ -129,9 +148,13 @@ export function missingRequiredFields(state: Pick<WizardState, 'fields' | 'colum
   return state.fields.filter((f) => f.required && !chosen.has(f.key)).map((f) => f.label);
 }
 
-/** A run left mid-import that commit can continue. */
+/**
+ * A run left mid-import that commit can continue. A run that stopped after its last row (while
+ * finishing) is resumable too: the next commit call finishes it.
+ */
 export function isResumable(run: RunSummary): boolean {
-  return (run.status === 'committing' || run.status === 'failed') && run.processed < run.total;
+  if (run.status === 'failed') return true;
+  return run.status === 'committing' && run.processed < run.total;
 }
 
 function progressOf(r: Progress): Progress {
@@ -218,7 +241,7 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
         ...state,
         step: r.done ? 'done' : 'importing',
         progress: progressOf(r),
-        paused: stalled ? { processed: r.processed, total: r.total, message: STALLED_MESSAGE } : null,
+        paused: stalled ? { processed: r.processed, total: r.total, message: STALLED_MESSAGE, canResume: true } : null,
       };
     }
 
@@ -229,6 +252,7 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
           processed: state.progress?.processed ?? 0,
           total: state.progress?.total ?? state.rowCount,
           message: action.message,
+          canResume: action.code !== 'LIMIT_REACHED',
         },
       };
 

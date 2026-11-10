@@ -52,6 +52,12 @@ export interface ExistingMatch {
   label: string;
   matchedOn: string;
 }
+/**
+ * A business's existing records keyed the way findExisting compares them: per `matchedOn`,
+ * normalised key to record. Loaded once per preview or commit batch.
+ */
+export type ExistingIndex = Map<string, Map<string, { id: string; label: string }>>;
+
 export interface SectionDefinition {
   key: SectionKey;
   label: string;
@@ -63,6 +69,12 @@ export interface SectionDefinition {
   /** The service's own refusals that can be known from the row alone (pure, no database). */
   checkRow?(values: RowValues): RowIssue[];
   findExisting(ctx: ServiceCtx, values: RowValues): Promise<ExistingMatch | null>;
+  /** Every record findExisting could answer, in one query. */
+  loadExistingIndex(ctx: ServiceCtx): Promise<ExistingIndex>;
+  /** findExisting's answer from the index, with the same rules and order. */
+  matchExisting(index: ExistingIndex, values: RowValues): ExistingMatch | null;
+  /** Adds a record saved from `values`, so later rows of the same batch find it. */
+  addToIndex(index: ExistingIndex, record: { id: string; label: string }, values: RowValues): void;
   saveRow(
     ctx: ServiceCtx,
     values: RowValues

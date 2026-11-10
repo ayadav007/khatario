@@ -13,6 +13,8 @@ interface ImportingStepProps {
   paused: Paused | null;
   undone: UndoResult | null;
   undoing: boolean;
+  /** Records removed so far while undoing. */
+  undoRemoved: number;
   problemRowsHref: string | null;
   listHref: string;
   listLabel: string;
@@ -27,6 +29,7 @@ export function ImportingStep({
   paused,
   undone,
   undoing,
+  undoRemoved,
   problemRowsHref,
   listHref,
   listLabel,
@@ -47,7 +50,7 @@ export function ImportingStep({
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {paused.message}
             </p>
-            <Button onClick={onResume}>Resume</Button>
+            {paused.canResume ? <Button onClick={onResume}>Resume</Button> : null}
           </div>
         ) : (
           <div className="flex items-center gap-2 text-sm text-text-secondary">
@@ -86,6 +89,13 @@ export function ImportingStep({
           </div>
         ))}
       </div>
+
+      {undoing ? (
+        <p className="flex items-center gap-2 text-sm text-text-secondary" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Undoing… {undoRemoved} removed
+        </p>
+      ) : null}
 
       {undone ? (
         <div className="space-y-2 text-sm">

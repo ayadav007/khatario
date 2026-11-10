@@ -499,4 +499,75 @@ d('import sections (real DB)', () => {
       expect(many.get(teaId)).toBe('invoice_items');
     });
   });
+
+  describe('in-memory matching', () => {
+    // Fixtures live in business O, which no other test writes to.
+    const insert = (sql: string, params: unknown[]) => pool.query<{ id: string }>(sql, params);
+
+    test('customers and suppliers: the index answers as findExisting does', async () => {
+      for (const table of ['customers', 'suppliers'] as const) {
+        const def = SECTIONS[table];
+        const email = table === 'customers' ? ', email' : '';
+        const emailValue = (v: string) => (table === 'customers' ? `, '${v}'` : '');
+        await insert(`INSERT INTO ${table} (business_id, name, gstin) VALUES ($1, 'Index Gstin Co', $2)`, [O.id, GSTIN_B.toLowerCase()]);
+        await insert(`INSERT INTO ${table} (business_id, name, phone${email}) VALUES ($1, 'Index  Spaced   Name', '+91 99999 11111'${emailValue('Mixed@Case.IN ')})`, [O.id]);
+        await insert(`INSERT INTO ${table} (business_id, name, phone) VALUES ($1, 'Index Zero', '09999922222')`, [O.id]);
+        await insert(`INSERT INTO ${table} (business_id, name, phone) VALUES ($1, 'Index NinetyOne', '919999933333')`, [O.id]);
+        await insert(`INSERT INTO ${table} (business_id, name, phone, is_active) VALUES ($1, 'Index Inactive', '9999944444', false)`, [O.id]);
+        await insert(`INSERT INTO ${table} (business_id, name, phone, deleted_at) VALUES ($1, 'Index Deleted', '9999955555', now())`, [O.id]);
+
+        const queries = [
+          { name: 'x', gstin: GSTIN_B },
+          { name: 'x', phone: '9999911111' },
+          { name: 'x', phone: '9999922222' },
+          { name: 'x', phone: '9999933333' },
+          { name: 'x', phone: '9999944444' },
+          { name: 'x', phone: '9999955555' },
+          { name: 'x', email: 'mixed@case.in' },
+          { name: ' index spaced name ' },
+          { name: 'INDEX ZERO', gstin: GSTIN_A },
+          { name: 'Index Deleted' },
+          { name: 'Nobody At All', phone: '9000000000', email: 'nobody@x.in' },
+        ];
+        const index = await def.loadExistingIndex(O.ctx);
+        for (const values of queries) {
+          expect([table, values, def.matchExisting(index, values)]).toEqual([table, values, await def.findExisting(O.ctx, values)]);
+        }
+        expect(def.matchExisting(index, { name: 'x', email: 'mixed@case.in' })?.matchedOn).toBe(
+          table === 'customers' ? 'email' : undefined
+        );
+
+        // A row saved during the batch is found once added to the index.
+        expect(def.matchExisting(index, { name: 'Added Later', phone: '9888800000' })).toBeNull();
+        def.addToIndex(index, { id: '00000000-0000-0000-0000-000000000001', label: 'Added Later' }, { name: 'Added Later', phone: '9888800000' });
+        expect(def.matchExisting(index, { name: 'Other', phone: '+91 98888 00000' })).toEqual({
+          id: '00000000-0000-0000-0000-000000000001',
+          label: 'Added Later',
+          matchedOn: 'phone',
+        });
+        expect(def.matchExisting(index, { name: 'added  later' })?.matchedOn).toBe('name');
+      }
+    });
+
+    test('items: the index answers as findExisting does', async () => {
+      const def = SECTIONS.items;
+      await insert(`INSERT INTO items (business_id, name, code, barcode) VALUES ($1, 'Index  Item', ' AB-1 ', ' 890000111 ')`, [O.id]);
+      await insert(`INSERT INTO items (business_id, name, code) VALUES ($1, 'Index Gone', 'GONE-1')`, [O.id]);
+      await pool.query(`UPDATE items SET deleted_at = now() WHERE business_id = $1 AND code = 'GONE-1'`, [O.id]);
+      const queries = [
+        { name: 'x', code: 'ab-1' },
+        { name: 'x', barcode: '890000111' },
+        { name: 'index item' },
+        { name: 'x', code: 'GONE-1' },
+        { name: 'Index Gone' },
+        { name: 'Nobody', code: 'NONE', barcode: '1' },
+      ];
+      const index = await def.loadExistingIndex(O.ctx);
+      for (const values of queries) {
+        expect([values, def.matchExisting(index, values)]).toEqual([values, await def.findExisting(O.ctx, values)]);
+      }
+      def.addToIndex(index, { id: '00000000-0000-0000-0000-000000000002', label: 'Fresh' }, { name: 'Fresh', code: 'FR-1' });
+      expect(def.matchExisting(index, { name: 'x', code: 'fr-1' })).toMatchObject({ label: 'Fresh', matchedOn: 'item code' });
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { checkSupplierInput, createSupplier, NAME_REQUIRED, SupplierAccessRefused } from '@/lib/suppliers/create-supplier';
 import { removeUnused } from '@/lib/import/record-usage';
-import { findParty, fromService, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
+import { addKeys, findParty, fromService, loadPartyIndex, matchIndex, partyLookups, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
 
 const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) => removeUnused('suppliers', ctx, ids);
@@ -37,6 +37,12 @@ export const suppliersSection: SectionDefinition = {
   },
 
   findExisting: (ctx, values) => findParty('suppliers', values, ctx.businessId),
+
+  loadExistingIndex: (ctx) => loadPartyIndex('suppliers', ctx.businessId),
+
+  matchExisting: (index, values) => matchIndex(index, partyLookups('suppliers', values)),
+
+  addToIndex: (index, record, values) => addKeys(index, record, partyLookups('suppliers', values)),
 
   // No audit argument: the import writes one activity-log entry per run.
   saveRow: (ctx, values) =>

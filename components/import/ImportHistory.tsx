@@ -27,12 +27,14 @@ function formatWhen(iso: string): string {
 interface ImportHistoryProps {
   runs: RunSummary[];
   busyRunId: string | null;
+  /** Records removed so far by the undo under way (for the run in busyRunId). */
+  undoRemoved: number;
   onUndo(run: RunSummary): void;
   onResume(run: RunSummary): void;
 }
 
 /** Earlier imports of this section, with Resume for unfinished ones and Undo import. */
-export function ImportHistory({ runs, busyRunId, onUndo, onResume }: ImportHistoryProps) {
+export function ImportHistory({ runs, busyRunId, undoRemoved, onUndo, onResume }: ImportHistoryProps) {
   if (runs.length === 0) return null;
   return (
     <section className="space-y-3" aria-labelledby="import-history-heading">
@@ -59,6 +61,11 @@ export function ImportHistory({ runs, busyRunId, onUndo, onResume }: ImportHisto
                   {resumable ? `${run.processed} / ${run.total} rows done · ` : ''}
                   {run.saved} saved · {run.skipped} skipped · {run.failed} failed
                 </p>
+                {busyRunId === run.id ? (
+                  <p className="text-xs text-text-secondary" role="status">
+                    Undoing… {undoRemoved} removed
+                  </p>
+                ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
                 {resumable ? (

@@ -1,8 +1,8 @@
-import { queryOne } from '@/lib/db';
+import { queryOne, queryRows } from '@/lib/db';
 import { enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { parsePhone } from '@/lib/import/parse-values';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
-import type { CreateResult, ExistingMatch, RowIssue, RowValues, SectionDefinition } from '@/lib/import/types';
+import type { CreateResult, ExistingIndex, ExistingMatch, RowIssue, RowValues, SectionDefinition } from '@/lib/import/types';
 
 export type SaveResult = { ok: true; table: string; id: string } | { ok: false; error: string };
 
@@ -50,9 +50,12 @@ export function checkGstinState(values: RowValues): RowIssue[] {
   return r.ok ? [] : [{ field: 'gstin', level: 'error', message: r.error }];
 }
 
-/** Runs each lookup in order; the first row found is the match. */
+/** One value to look a row up by, named as the match is reported ('GSTIN', 'phone', ...). */
+export type Lookup = { matchedOn: string; value: string | null | undefined };
+
+/** Runs each lookup in order with its SQL; the first row found is the match. */
 export async function firstMatch(
-  lookups: Array<{ matchedOn: string; value: string | null | undefined; sql: string }>,
+  lookups: Array<Lookup & { sql: string }>,
   businessId: string
 ): Promise<ExistingMatch | null> {
   for (const l of lookups) {
@@ -63,28 +66,87 @@ export async function firstMatch(
   return null;
 }
 
+/** firstMatch against an index: the same lookups in the same order. */
+export function matchIndex(index: ExistingIndex, lookups: Lookup[]): ExistingMatch | null {
+  for (const l of lookups) {
+    if (!l.value) continue;
+    const hit = index.get(l.matchedOn)?.get(l.value);
+    if (hit) return { id: hit.id, label: hit.label, matchedOn: l.matchedOn };
+  }
+  return null;
+}
+
+/** Files a record under each key; the first record filed under a key keeps it. */
+export function addKeys(index: ExistingIndex, record: { id: string; label: string }, lookups: Lookup[]): void {
+  for (const l of lookups) {
+    if (!l.value) continue;
+    let byKey = index.get(l.matchedOn);
+    if (!byKey) index.set(l.matchedOn, (byKey = new Map()));
+    if (!byKey.has(l.value)) byKey.set(l.value, record);
+  }
+}
+
 export function emailKey(values: RowValues): string | null {
   return text(values, 'email')?.toLowerCase() ?? null;
 }
 
 /**
- * Lookups for customers and suppliers, matching the services' own duplicate filter. Customers
- * are also matched on email, as createCustomer refuses a second active customer with it.
+ * A row's lookups for customers and suppliers: GSTIN, phone, email (customers only, as
+ * createCustomer refuses a second active customer with it), then name.
  */
+export function partyLookups(table: 'customers' | 'suppliers', values: RowValues): Lookup[] {
+  return [
+    { matchedOn: 'GSTIN', value: text(values, 'gstin')?.toUpperCase() },
+    { matchedOn: 'phone', value: phoneKey(values) },
+    ...(table === 'customers' ? [{ matchedOn: 'email', value: emailKey(values) }] : []),
+    { matchedOn: 'name', value: compactName(values.name) },
+  ];
+}
+
+const partyScope = (table: 'customers' | 'suppliers') =>
+  `FROM ${table} WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true`;
+
+/** Lookups for customers and suppliers, matching the services' own duplicate filter. */
 export function findParty(table: 'customers' | 'suppliers', values: RowValues, businessId: string) {
-  const scope = `SELECT id, name FROM ${table}
-    WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true`;
+  const scope = `SELECT id, name ${partyScope(table)}`;
+  const sql: Record<string, string> = {
+    GSTIN: `${scope} AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2 LIMIT 1`,
+    phone: `${scope} AND phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') IN ($2, '91' || $2, '0' || $2) LIMIT 1`,
+    email: `${scope} AND email IS NOT NULL AND lower(trim(email)) = $2 LIMIT 1`,
+    name: `${scope} AND ${NAME_SQL} = $2 LIMIT 1`,
+  };
   return firstMatch(
-    [
-      { matchedOn: 'GSTIN', value: text(values, 'gstin')?.toUpperCase(), sql: `${scope} AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2 LIMIT 1` },
-      { matchedOn: 'phone', value: phoneKey(values), sql: `${scope} AND phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') IN ($2, '91' || $2, '0' || $2) LIMIT 1` },
-      ...(table === 'customers'
-        ? [{ matchedOn: 'email', value: emailKey(values), sql: `${scope} AND email IS NOT NULL AND lower(trim(email)) = $2 LIMIT 1` }]
-        : []),
-      { matchedOn: 'name', value: compactName(values.name), sql: `${scope} AND ${NAME_SQL} = $2 LIMIT 1` },
-    ],
+    partyLookups(table, values).map((l) => ({ ...l, sql: sql[l.matchedOn] })),
     businessId
   );
+}
+
+/**
+ * Every active party with its keys computed by the same SQL expressions findParty compares.
+ * A stored phone is filed under its digits and, when they start with 91 or 0, under the rest,
+ * so a row's bare number finds it exactly when findParty's IN ($2, '91' || $2, '0' || $2) would.
+ */
+export async function loadPartyIndex(table: 'customers' | 'suppliers', businessId: string): Promise<ExistingIndex> {
+  const rows = await queryRows<{ id: string; name: string; gstin: string | null; phone: string | null; email: string | null; name_key: string }>(
+    `SELECT id, name, UPPER(TRIM(gstin)) AS gstin, regexp_replace(phone, '\\D', '', 'g') AS phone,
+            ${table === 'customers' ? 'lower(trim(email))' : 'NULL'} AS email, ${NAME_SQL} AS name_key
+       ${partyScope(table)}`,
+    [businessId]
+  );
+  const index: ExistingIndex = new Map();
+  for (const r of rows) {
+    const record = { id: r.id, label: r.name };
+    const d = r.phone ?? '';
+    addKeys(index, record, [
+      { matchedOn: 'GSTIN', value: r.gstin },
+      { matchedOn: 'phone', value: d },
+      { matchedOn: 'phone', value: d.startsWith('91') ? d.slice(2) : null },
+      { matchedOn: 'phone', value: d.startsWith('0') ? d.slice(1) : null },
+      { matchedOn: 'email', value: r.email },
+      { matchedOn: 'name', value: r.name_key },
+    ]);
+  }
+  return index;
 }
 
 /** A service result as a row result; a duplicate the service found reads "Already exists". */
