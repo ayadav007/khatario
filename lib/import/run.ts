@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { getPool, query, queryOne, queryRows } from '@/lib/db';
 import { logActivity } from '@/lib/activity-logger';
 import { csvSafeText } from '@/lib/csv-safe';
+import { enforceAccess, EnforceAccessError, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { checkLimit } from '@/lib/subscription';
 import { guessColumns } from '@/lib/import/match-columns';
 import { isAmbiguousDate, normaliseKey } from '@/lib/import/parse-values';
@@ -165,9 +166,27 @@ async function classifyRow(
   return { status: 'ready', reasons: b.issues.map((x) => x.message) };
 }
 
+/**
+ * The access check app/api/items/import made (module, live subscription, items limit), as a
+ * refusal or null. Customers and suppliers need none here: their services run it per row.
+ * Errors that are not refusals (an outage) are thrown.
+ */
+async function itemsAccessRefusal(ctx: ServiceCtx, def: SectionDefinition): Promise<EnforceAccessError | Error | null> {
+  if (def.key !== 'items') return null;
+  try {
+    await enforceAccess({ businessId: ctx.businessId, userId: ctx.userId, limitType: 'items' });
+    return null;
+  } catch (e) {
+    if (!enforceAccessErrorResponse(e)) throw e;
+    return e instanceof Error ? e : new Error(`${def.label} cannot be added on your plan`);
+  }
+}
+
 /** Whether `ready` more records fit the plan, as app/api/items/import does. */
 async function limitFor(ctx: ServiceCtx, def: SectionDefinition, ready: number): Promise<PreviewResult['limit']> {
   if (ready === 0) return { allowed: true };
+  const refusal = await itemsAccessRefusal(ctx, def);
+  if (refusal) return { allowed: false, message: refusal.message || `${def.label} cannot be added on your plan` };
   const lc = await checkLimit(ctx.businessId, def.limitType);
   if (!lc.allowed || (lc.limit >= 0 && lc.current + ready > lc.limit)) {
     return {
@@ -527,6 +546,13 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
   if (run.status === 'draft') {
     const limit = await limitFor(ctx, def, run.preview_ready);
     if (!limit.allowed) throw new ImportRunError('LIMIT_REACHED', limit.message ?? `${def.label} limit reached`);
+  } else {
+    // Every later batch checks access again. A limit used up mid-run is left to the per-row
+    // room check below, which fails the remaining rows instead of stopping the run.
+    const refusal = await itemsAccessRefusal(ctx, def);
+    if (refusal && !(refusal instanceof EnforceAccessError && refusal.code === 'SUBSCRIPTION_LIMIT_EXCEEDED')) {
+      throw new ImportRunError('LIMIT_REACHED', refusal.message || `${def.label} cannot be added on your plan`);
+    }
   }
 
   await query(`UPDATE import_runs SET status = 'committing', updated_at = now() WHERE id = $1 AND business_id = $2`, [

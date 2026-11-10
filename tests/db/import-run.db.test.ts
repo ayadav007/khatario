@@ -69,6 +69,8 @@ d('import runs (real DB)', () => {
   const O = newBiz(); // another business
   const L = newBiz(); // business on a plan with a customer limit of 2
   const M = newBiz(); // business on a plan with a customer limit of 300
+  const N = newBiz(); // business whose subscription has ended
+  const D = newBiz(); // business with an active subscription but the billing module switched off
 
   const useSession = (b: Biz) => {
     headerBag.current = {
@@ -211,12 +213,24 @@ d('import runs (real DB)', () => {
     await seedBusiness(A, BIG_PLAN, '81');
     await seedBusiness(L, SMALL_PLAN, '82');
     await seedBusiness(M, MID_PLAN, '83');
+    await seedBusiness(N, BIG_PLAN, '84');
+    await seedBusiness(D, BIG_PLAN, '85');
+    // Billing switched off with another module on (with no module on, billing is derived again).
+    await pool.query(`UPDATE business_modules SET enabled = false WHERE business_id = $1`, [D.id]);
+    await pool.query(
+      `INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'hr', true, 'test')`,
+      [D.id]
+    );
+    await pool.query(
+      `UPDATE business_module_subscriptions SET status = 'cancelled', end_date = CURRENT_DATE - 1 WHERE business_id = $1`,
+      [N.id]
+    );
     useSession(A);
   });
 
   afterAll(async () => {
     try {
-      if (pool) await purge([A.id, L.id, M.id], [BIG_PLAN, SMALL_PLAN, MID_PLAN]);
+      if (pool) await purge([A.id, L.id, M.id, N.id, D.id], [BIG_PLAN, SMALL_PLAN, MID_PLAN]);
     } finally {
       await closePool();
     }
@@ -664,6 +678,71 @@ d('import runs (real DB)', () => {
     await pool.query(`UPDATE import_runs SET created_at = now() - interval '25 hours' WHERE id = $1`, [old.runId]);
     await createDraftRun(A.ctx, { section: 'customers', sourceApp: 'other', fileName: 'new.csv', buffer: csv(['Name,City', 'New,Pune']) });
     expect(await runRow(old.runId)).toBeUndefined();
+  });
+
+  describe('items access', () => {
+    afterAll(() => useSession(A));
+
+    test('a business without an active subscription is refused items at preview and at commit', async () => {
+      useSession(N);
+      const draft = await createDraftRun(N.ctx, {
+        section: 'items',
+        sourceApp: 'other',
+        fileName: 'n.csv',
+        buffer: csv(['Item name,Unit', 'No Plan Item,PCS']),
+      });
+      const p = await previewRun(N.ctx, draft.runId, { columnMatches: draft.guesses, valueMatches: {}, dateOrder: 'dmy' });
+      expect(p.ready).toBe(1);
+      expect(p.limit.allowed).toBe(false);
+      expect(p.limit.message).toBeTruthy();
+      await expect(commitNextBatch(N.ctx, draft.runId)).rejects.toEqual(
+        expect.objectContaining({ code: 'LIMIT_REACHED', message: p.limit.message })
+      );
+      expect((await runRow(draft.runId)).status).toBe('draft');
+      const items = await pool.query(`SELECT COUNT(*)::int AS n FROM items WHERE business_id = $1`, [N.id]);
+      expect(items.rows[0].n).toBe(0);
+    });
+
+    test('the module check the items route made (enforceAccess) refuses at preview and at commit', async () => {
+      useSession(D);
+      const draft = await createDraftRun(D.ctx, {
+        section: 'items',
+        sourceApp: 'other',
+        fileName: 'd.csv',
+        buffer: csv(['Item name,Unit', 'Module Off Item,PCS']),
+      });
+      const p = await previewRun(D.ctx, draft.runId, { columnMatches: draft.guesses, valueMatches: {}, dateOrder: 'dmy' });
+      expect(p.limit.allowed).toBe(false);
+      expect(p.limit.message).toBeTruthy();
+      await expect(commitNextBatch(D.ctx, draft.runId)).rejects.toEqual(
+        expect.objectContaining({ code: 'LIMIT_REACHED', message: p.limit.message })
+      );
+      const items = await pool.query(`SELECT COUNT(*)::int AS n FROM items WHERE business_id = $1`, [D.id]);
+      expect(items.rows[0].n).toBe(0);
+    });
+  });
+
+  describe('items access check', () => {
+    test('a session revoked after preview is refused at commit for items, as the items route did', async () => {
+      useSession(A);
+      const draft = await createDraftRun(A.ctx, {
+        section: 'items',
+        sourceApp: 'other',
+        fileName: 'r.csv',
+        buffer: csv(['Item name,Unit', 'Revoked Session Item,PCS']),
+      });
+      const p = await previewRun(A.ctx, draft.runId, { columnMatches: draft.guesses, valueMatches: {}, dateOrder: 'dmy' });
+      expect(p.limit.allowed).toBe(true);
+      await pool.query(`UPDATE users SET auth_session_version = 2 WHERE id = $1`, [A.user]);
+      try {
+        await expect(commitNextBatch(A.ctx, draft.runId)).rejects.toEqual(runCode('LIMIT_REACHED'));
+      } finally {
+        await pool.query(`UPDATE users SET auth_session_version = 1 WHERE id = $1`, [A.user]);
+      }
+      const items = await pool.query(`SELECT COUNT(*)::int AS n FROM items WHERE business_id = $1 AND name = 'Revoked Session Item'`, [A.id]);
+      expect(items.rows[0].n).toBe(0);
+      await pool.query(`DELETE FROM import_runs WHERE id = $1`, [draft.runId]);
+    });
   });
 
   describe('plan limit', () => {
