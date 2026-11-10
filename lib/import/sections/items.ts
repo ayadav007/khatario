@@ -44,7 +44,7 @@ export const itemsSection: SectionDefinition = {
     { key: 'barcode', label: 'Barcode', type: 'text', aliases: ['Barcode', 'EAN', 'UPC'], maxLength: 100 },
     { key: 'unit', label: 'Unit', type: 'unit', aliases: ['Unit', 'Units', 'UOM', 'Unit of measure'], maxLength: 50 },
     { key: 'item_type', label: 'Type', type: 'text', aliases: ['Type', 'Item type', 'Product type'] },
-    { key: 'category_name', label: 'Category', type: 'text', aliases: ['Category', 'Group', 'Item group'] },
+    { key: 'category_name', label: 'Category', type: 'text', aliases: ['Category', 'Category name', 'Group', 'Item group'] },
     { key: 'selling_price', label: 'Selling price', type: 'amount', aliases: ['Selling price', 'Sale price', 'Sales price', 'Price'] },
     { key: 'purchase_price', label: 'Purchase price', type: 'amount', aliases: ['Purchase price', 'Cost price', 'Cost'] },
     { key: 'mrp', label: 'MRP', type: 'amount', aliases: ['MRP'] },

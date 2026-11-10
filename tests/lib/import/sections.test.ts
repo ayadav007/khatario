@@ -8,6 +8,7 @@ jest.mock('@/lib/customers/create-customer', () => ({
 
 import { SECTIONS, buildRow, VALUE_CHOICES } from '@/lib/import/sections';
 import { referenceColumnsFrom } from '@/lib/import/record-usage';
+import { guessColumns } from '@/lib/import/match-columns';
 import type { ColumnMatches } from '@/lib/import/types';
 import { createCustomer, CustomerAccessRefused } from '@/lib/customers/create-customer';
 import { EnforceAccessError } from '@/lib/enforce-access';
@@ -195,6 +196,14 @@ describe('checkRow (service rules at preview)', () => {
 
   test('suppliers: an empty name is reported once, by the required check', () => {
     expect(supplier(['', '', '', '']).issues).toEqual([{ field: 'name', level: 'error', message: '"Name" is empty' }]);
+  });
+});
+
+describe('items template', () => {
+  test("every column of the app's own items template is matched", () => {
+    const headers = 'name,code,barcode,unit,item_type,category_name,selling_price,purchase_price,mrp,tax_rate,hsn_sac,opening_stock,min_stock,description'.split(',');
+    const guesses = guessColumns({ fields: SECTIONS.items.fields, headers, sampleRows: [], sourceApp: 'other', section: 'items', saved: {} });
+    expect(headers.map((_, i) => guesses[i])).toEqual(headers);
   });
 });
 
