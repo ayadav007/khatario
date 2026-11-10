@@ -7,6 +7,7 @@ import { buildCashFlow, type CfAccount, type CfLine } from '@/lib/reports/cash-f
 import { buildProfitAndLoss, type BranchScope } from '@/lib/reports/profit-loss';
 import { classifyBsAccount } from '@/lib/reports/balance-sheet';
 import { loadGroupMap } from '@/lib/reports/account-groups';
+import { cashAccountSql } from '@/lib/accounting/cash-accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,20 +134,14 @@ export async function GET(request: NextRequest) {
         a.account_type,
         a.account_group_id,
         ag.group_code,
-        (
-          a.account_code LIKE '1101%' OR a.account_code LIKE '1102%' OR a.account_code LIKE '2112%'
-          OR EXISTS (SELECT 1 FROM bank_accounts ba WHERE ba.business_id = a.business_id AND ba.ledger_account_id = a.id)
-          OR (a.account_type = 'asset' AND COALESCE(ag.group_code, '1100') LIKE '1100%'
-              AND (a.account_name ILIKE '%cash%' OR a.account_name ILIKE '%bank%')
-              AND a.account_name NOT ILIKE '%receivable%')
-        ) AS is_cash,
+        ${cashAccountSql('a', 'ag')} AS is_cash,
         COALESCE(SUM(CASE WHEN l.is_opening THEN l.debit - l.credit ELSE 0 END), 0) AS opening,
         COALESCE(SUM(CASE WHEN NOT l.is_opening AND l.voucher_type <> 'year_close' THEN l.debit ELSE 0 END), 0) AS period_debit,
         COALESCE(SUM(CASE WHEN NOT l.is_opening AND l.voucher_type <> 'year_close' THEN l.credit ELSE 0 END), 0) AS period_credit
       FROM lines l
       JOIN accounts a ON a.id = l.account_id
       LEFT JOIN account_groups ag ON ag.id = a.account_group_id
-      GROUP BY a.id, a.account_code, a.account_name, a.account_type, a.account_group_id, ag.group_code
+      GROUP BY a.id, a.account_code, a.account_name, a.account_type, a.account_group_id, ag.group_code, ag.group_name
       `,
       params
     );
