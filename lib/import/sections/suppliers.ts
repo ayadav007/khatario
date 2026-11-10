@@ -1,4 +1,4 @@
-import { createSupplier, SupplierAccessRefused } from '@/lib/suppliers/create-supplier';
+import { checkSupplierInput, createSupplier, NAME_REQUIRED, SupplierAccessRefused } from '@/lib/suppliers/create-supplier';
 import { removeUnused } from '@/lib/import/record-usage';
 import { findParty, fromService, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
@@ -23,6 +23,18 @@ export const suppliersSection: SectionDefinition = {
   ],
 
   duplicateKeys: partyKeys,
+
+  // The service's own check; an empty name is left to buildRow's required check.
+  checkRow(values) {
+    const r = checkSupplierInput({
+      name: text(values, 'name') ?? '',
+      gstin: text(values, 'gstin') ?? null,
+      state: text(values, 'state') ?? null,
+      pan: text(values, 'pan') ?? null,
+    });
+    if (r.ok || r.code === NAME_REQUIRED) return [];
+    return [{ field: /PAN/.test(r.code) ? 'pan' : 'gstin', level: 'error', message: r.error }];
+  },
 
   findExisting: (ctx, values) => findParty('suppliers', values, ctx.businessId),
 

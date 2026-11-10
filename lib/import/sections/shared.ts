@@ -1,7 +1,8 @@
 import { queryOne } from '@/lib/db';
 import { enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { parsePhone } from '@/lib/import/parse-values';
-import type { CreateResult, ExistingMatch, RowValues, SectionDefinition } from '@/lib/import/types';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
+import type { CreateResult, ExistingMatch, RowIssue, RowValues, SectionDefinition } from '@/lib/import/types';
 
 export type SaveResult = { ok: true; table: string; id: string } | { ok: false; error: string };
 
@@ -43,6 +44,12 @@ export function partyKeys(values: RowValues): string[] {
   return keys;
 }
 
+/** The GSTIN and State must agree, as createCustomer and createSupplier require. */
+export function checkGstinState(values: RowValues): RowIssue[] {
+  const r = resolveGstinAndState({ gstin: text(values, 'gstin') ?? null, state: text(values, 'state') ?? null });
+  return r.ok ? [] : [{ field: 'gstin', level: 'error', message: r.error }];
+}
+
 /** Runs each lookup in order; the first row found is the match. */
 export async function firstMatch(
   lookups: Array<{ matchedOn: string; value: string | null | undefined; sql: string }>,
@@ -56,7 +63,14 @@ export async function firstMatch(
   return null;
 }
 
-/** Lookups for customers and suppliers, matching the services' own duplicate filter. */
+export function emailKey(values: RowValues): string | null {
+  return text(values, 'email')?.toLowerCase() ?? null;
+}
+
+/**
+ * Lookups for customers and suppliers, matching the services' own duplicate filter. Customers
+ * are also matched on email, as createCustomer refuses a second active customer with it.
+ */
 export function findParty(table: 'customers' | 'suppliers', values: RowValues, businessId: string) {
   const scope = `SELECT id, name FROM ${table}
     WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true`;
@@ -64,6 +78,9 @@ export function findParty(table: 'customers' | 'suppliers', values: RowValues, b
     [
       { matchedOn: 'GSTIN', value: text(values, 'gstin')?.toUpperCase(), sql: `${scope} AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2 LIMIT 1` },
       { matchedOn: 'phone', value: phoneKey(values), sql: `${scope} AND phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') IN ($2, '91' || $2, '0' || $2) LIMIT 1` },
+      ...(table === 'customers'
+        ? [{ matchedOn: 'email', value: emailKey(values), sql: `${scope} AND email IS NOT NULL AND lower(trim(email)) = $2 LIMIT 1` }]
+        : []),
       { matchedOn: 'name', value: compactName(values.name), sql: `${scope} AND ${NAME_SQL} = $2 LIMIT 1` },
     ],
     businessId

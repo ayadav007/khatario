@@ -244,6 +244,22 @@ d('import sections (real DB)', () => {
       expect(await def.findExisting(A.ctx, { name: 'Nobody', gstin: GSTIN_B })).toBeNull();
     });
 
+    test('findExisting matches by email, trimmed and lower-cased, after phone and before name', async () => {
+      const row = await pool.query<{ id: string }>(
+        `INSERT INTO customers (business_id, name, email) VALUES ($1, 'Mail Match', 'Accounts@MailMatch.in') RETURNING id`,
+        [A.id]
+      );
+      expect(await def.findExisting(A.ctx, { name: 'Another Name', email: '  accounts@mailmatch.IN ' })).toEqual({
+        id: row.rows[0].id,
+        label: 'Mail Match',
+        matchedOn: 'email',
+      });
+      // An inactive or deleted customer is not a match, as in the service's duplicate-email check.
+      await pool.query(`UPDATE customers SET is_active = false WHERE id = $1`, [row.rows[0].id]);
+      expect(await def.findExisting(A.ctx, { name: 'Another Name', email: 'accounts@mailmatch.in' })).toBeNull();
+      await pool.query(`DELETE FROM customers WHERE id = $1`, [row.rows[0].id]);
+    });
+
     test("another business's customer with the same GSTIN is not a match", async () => {
       expect(await def.findExisting(O.ctx, { name: 'Sharma Traders', gstin: GSTIN_A, phone: '919876543210' })).toBeNull();
     });

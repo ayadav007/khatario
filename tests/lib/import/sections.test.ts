@@ -158,6 +158,46 @@ describe('buildRow (items)', () => {
   });
 });
 
+describe('checkRow (service rules at preview)', () => {
+  test('customers: a GSTIN registered in another state than the State column is an error', () => {
+    const r = buildRow(SECTIONS.customers, ['Sharma Traders', '27AAAPA1234A1ZT', 'Karnataka'], ['Name', 'GSTIN', 'State'], { 0: 'name', 1: 'gstin', 2: 'state' }, opts);
+    expect(r.issues).toEqual([
+      {
+        field: 'gstin',
+        level: 'error',
+        message: 'This GSTIN is registered in Maharashtra (27). Change the GSTIN or the state so the first two digits match the address.',
+      },
+    ]);
+    const same = buildRow(SECTIONS.customers, ['Sharma Traders', '27AAAPA1234A1ZT', 'MH'], ['Name', 'GSTIN', 'State'], { 0: 'name', 1: 'gstin', 2: 'state' }, opts);
+    expect(same.issues).toEqual([]);
+  });
+
+  const supplierHeaders = ['Name', 'GSTIN', 'State', 'PAN'];
+  const supplierMatches: ColumnMatches = { 0: 'name', 1: 'gstin', 2: 'state', 3: 'pan' };
+  const supplier = (cells: string[]) => buildRow(SECTIONS.suppliers, cells, supplierHeaders, supplierMatches, opts);
+
+  test('suppliers: the GSTIN and State must agree', () => {
+    expect(supplier(['Patil', '27AAAPA1234A1ZT', 'Goa', '']).issues.map((i) => [i.field, i.level])).toEqual([['gstin', 'error']]);
+  });
+
+  test('suppliers: a malformed PAN is an error with the service message', () => {
+    expect(supplier(['Patil', '', '', 'ABC12']).issues).toEqual([
+      { field: 'pan', level: 'error', message: 'Invalid PAN "ABC12". Expected format: ABCDE1234F' },
+    ]);
+  });
+
+  test('suppliers: a PAN that differs from the PAN inside the GSTIN is an error', () => {
+    expect(supplier(['Patil', '27AAAPA1234A1ZT', '', 'BBBPB5678B']).issues).toEqual([
+      { field: 'pan', level: 'error', message: 'PAN BBBPB5678B does not match the PAN inside GSTIN (AAAPA1234A).' },
+    ]);
+    expect(supplier(['Patil', '27AAAPA1234A1ZT', '', 'aaapa1234a']).issues).toEqual([]);
+  });
+
+  test('suppliers: an empty name is reported once, by the required check', () => {
+    expect(supplier(['', '', '', '']).issues).toEqual([{ field: 'name', level: 'error', message: '"Name" is empty' }]);
+  });
+});
+
 describe('section fields', () => {
   test('name is required in all three sections', () => {
     for (const def of Object.values(SECTIONS)) {

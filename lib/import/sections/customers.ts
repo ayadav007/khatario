@@ -1,6 +1,6 @@
 import { createCustomer, CustomerAccessRefused } from '@/lib/customers/create-customer';
 import { removeUnused } from '@/lib/import/record-usage';
-import { findParty, fromService, num, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
+import { checkGstinState, findParty, fromService, num, partyKeys, text, undoOne, withAccessRefusal } from '@/lib/import/sections/shared';
 import type { SectionDefinition } from '@/lib/import/types';
 
 const undoRecords: SectionDefinition['undoRecords'] = (ctx, ids) => removeUnused('customers', ctx, ids);
@@ -26,6 +26,8 @@ export const customersSection: SectionDefinition = {
   ],
 
   duplicateKeys: partyKeys,
+
+  checkRow: checkGstinState,
 
   findExisting: (ctx, values) => findParty('customers', values, ctx.businessId),
 

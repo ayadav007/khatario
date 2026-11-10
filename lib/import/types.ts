@@ -60,6 +60,8 @@ export interface SectionDefinition {
   fields: ImportField[];
   /** Keys that identify the same record within one file, e.g. 'gstin:27AAAPA1234A1ZT'. */
   duplicateKeys(values: RowValues): string[];
+  /** The service's own refusals that can be known from the row alone (pure, no database). */
+  checkRow?(values: RowValues): RowIssue[];
   findExisting(ctx: ServiceCtx, values: RowValues): Promise<ExistingMatch | null>;
   saveRow(
     ctx: ServiceCtx,

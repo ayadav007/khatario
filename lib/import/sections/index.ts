@@ -148,5 +148,7 @@ export function buildRow(
     }
   }
 
+  if (def.checkRow) issues.push(...def.checkRow(values));
+
   return { values, issues, unmatched };
 }
