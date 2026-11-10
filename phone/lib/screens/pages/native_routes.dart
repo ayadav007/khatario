@@ -34,7 +34,10 @@ import '../sales/sales_orders_screen.dart';
 import '../sales/work_orders_screen.dart';
 import '../settings/settings_hub_screen.dart';
 import '../stock/item_cleanup_screen.dart';
+import '../stock/party_pricing_screen.dart';
+import '../stock/price_levels_screen.dart';
 import '../stock/price_list_screen.dart';
+import '../stock/schemes_screen.dart';
 import '../tools/calculators_screen.dart';
 import '../tools/lookup_tools_screens.dart';
 import '../tools/tools_hub_screen.dart';
@@ -105,6 +108,13 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return const EmiCalculatorScreen();
     case '/tools/currency-converter':
       return const CurrencyConverterScreen();
+    case '/pricing/party-item':
+      // Before the settings fall-through: this screen replaces the small settings one.
+      return PartyPricingScreen(session: session);
+    case '/pricing/levels':
+      return PriceLevelsScreen(session: session);
+    case '/pricing/schemes':
+      return SchemesScreen(session: session);
     case '/reports/aging/receivables':
     case '/reports/aging/payables':
       return AgingReportScreen(session: session, payables: href.endsWith('payables'));

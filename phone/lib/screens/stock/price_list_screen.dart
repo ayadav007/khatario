@@ -10,15 +10,19 @@ import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../../ui/toast.dart';
 import '../docs/doc_logic.dart';
-import '../pages/website_page_screen.dart';
+import 'party_pricing_screen.dart';
 import 'pricing_logic.dart';
 
 /// Website `/pricing/price-list`: what a customer pays per item on a date. The prices are the
 /// server's answer from `POST /api/pricing/resolve`; the phone never works one out.
 class PriceListScreen extends StatefulWidget {
-  const PriceListScreen({super.key, required this.session});
+  const PriceListScreen({super.key, required this.session, this.customerId, this.customerName});
 
   final AppSession session;
+
+  /// Opens priced for this customer (from Party pricing).
+  final String? customerId;
+  final String? customerName;
 
   @override
   State<PriceListScreen> createState() => _PriceListScreenState();
@@ -54,6 +58,8 @@ class _PriceListScreenState extends State<PriceListScreen> {
   @override
   void initState() {
     super.initState();
+    _customerId = widget.customerId;
+    _customerName = widget.customerName;
     _load();
   }
 
@@ -210,7 +216,9 @@ class _PriceListScreenState extends State<PriceListScreen> {
                       const Spacer(),
                       KTextButton(
                         label: 'Edit party prices',
-                        onTap: () => openWebsiteInApp(context, widget.session, '/pricing/party-item', 'Party Pricing'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                          builder: (_) => PartyPricingScreen(session: widget.session, customerId: _customerId, customerName: _customerName),
+                        )),
                       ),
                     ]),
                     const SizedBox(height: AppSpace.sm),
