@@ -585,6 +585,12 @@ extension KToneColors on KTone {
     'requires_review' => (KTone.due, 'Review'),
     'pending' => (KTone.due, 'Pending'),
     'draft' => (KTone.neutral, 'Draft'),
+    // Quotation statuses (the website's estimate badges).
+    'sent' => (KTone.brand, 'Sent'),
+    'accepted' => (KTone.positive, 'Accepted'),
+    'converted' => (KTone.positive, 'Converted'),
+    'rejected' => (KTone.negative, 'Rejected'),
+    'expired' => (KTone.due, 'Expired'),
     _ => (KTone.neutral, s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' ')),
   };
 }

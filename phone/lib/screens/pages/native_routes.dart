@@ -23,6 +23,7 @@ import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../sales/estimates_screen.dart';
 import '../settings/settings_hub_screen.dart';
 import '../stock/item_cleanup_screen.dart';
 import '../stock/price_list_screen.dart';
@@ -125,6 +126,7 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
   final group = settingsGroupForHref(href);
   if (group != null) return group.isEmpty ? SettingsHubScreen(session: session) : settingsGroupScreen(group, session);
   return switch (href) {
+    '/estimates' => EstimatesScreen(session: session),
     '/employees' => EmployeesScreen(session: session),
     '/employees/attendance' => AttendanceScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),
