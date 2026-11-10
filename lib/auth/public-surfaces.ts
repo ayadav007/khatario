@@ -18,6 +18,7 @@ export function isPublicMarketingSurface(
   if (p === '/store' || p.startsWith('/store/')) return true;
   if (p.startsWith('/signup')) return true;
   if (p.startsWith('/book-demo')) return true;
+  if (p === '/about') return true;
   if (p.startsWith('/terms')) return true;
   if (p.startsWith('/privacy')) return true;
   if (p.startsWith('/guides')) return true;

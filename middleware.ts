@@ -78,6 +78,7 @@ const PUBLIC_PATHS = new Set([
   '/signup',
   '/guides',
   '/book-demo',
+  '/about',
   '/terms',
   '/privacy',
   '/admin/login',

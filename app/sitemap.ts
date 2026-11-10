@@ -7,7 +7,7 @@ import { THEME_CATALOG } from '@/lib/store/engine/theme-catalog';
 
 export const dynamic = 'force-dynamic';
 
-const STATIC_PATHS = ['/', '/blog', '/guides', '/themes', '/privacy', '/terms', '/book-demo', '/solution/accounting', '/solution/inventory'];
+const STATIC_PATHS = ['/', '/about', '/blog', '/guides', '/themes', '/privacy', '/terms', '/book-demo', '/solution/accounting', '/solution/inventory'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = publicSiteUrl();

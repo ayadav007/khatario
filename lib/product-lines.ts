@@ -26,7 +26,7 @@ export const LANDING_HERO_COPY: Record<
     badges: ['Free plan: unlimited GST bills', 'Made in India'],
     headline: 'GST billing software for small shops. Close the day the calmer way.',
     subhead:
-      'Make a GST bill in seconds, send it on WhatsApp and collect by UPI. Then run your online store, WhatsApp offers and staff attendance from the same app.',
+      'With the Khatario billing app, make a GST bill in seconds, send it on WhatsApp and collect by UPI. Then run your online store, WhatsApp offers and staff attendance from the same app.',
     cta: 'Start Billing trial',
     footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
   },

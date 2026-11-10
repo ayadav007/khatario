@@ -34,6 +34,7 @@ const FOOTER_COLUMNS: { title: string; links: { label: string; href: string }[] 
   {
     title: 'Company',
     links: [
+      { label: 'About Khatario', href: '/about' },
       { label: 'Book a demo', href: '/book-demo' },
       { label: 'Partners', href: '/partners' },
       { label: 'Log in', href: '/login' },

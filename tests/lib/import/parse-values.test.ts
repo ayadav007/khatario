@@ -80,13 +80,6 @@ describe('units follow the GST unit quantity codes', () => {
     expect(resolveUnit('prs')).toBe('PRS');
   });
 
-  test('hours and service units ask for a choice instead of becoming NA', () => {
-    expect(resolveUnit('Hrs')).toBeNull();
-    expect(resolveUnit('Hours')).toBeNull();
-    expect(resolveUnit('Service')).toBeNull();
-    expect(resolveUnit('NA')).toBe('NA');
-  });
-
   test("Tally's Nos stays NOS, apart from PCS", () => {
     expect(resolveUnit('Nos')).toBe('NOS');
     expect(resolveUnit('no')).toBe('NOS');

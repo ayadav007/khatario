@@ -151,8 +151,7 @@ export function resolveUnit(text: string): string | null {
   if (!key) return null;
   if (isGstUqc(key)) return key;
   if (EXTRA_UNIT_ALIASES[key]) return EXTRA_UNIT_ALIASES[key];
-  // toGstUqc answers OTH for a unit it does not know and NA for hours or service; both were
-  // caught above when typed as such, so here they mean the user should choose.
+  // toGstUqc answers OTH for a unit it does not know; OTH itself was caught above.
   const code = toGstUqc(key);
-  return code === 'OTH' || code === 'NA' ? null : code;
+  return code === 'OTH' ? null : code;
 }

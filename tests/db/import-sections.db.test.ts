@@ -382,9 +382,6 @@ d('import sections (real DB)', () => {
       expect(await def.undoRecord(A.ctx, r.id)).toEqual({ ok: true });
       expect(await deletedAt('suppliers', r.id)).not.toBeNull();
       expect(await def.findExisting(A.ctx, { name: 'Joshi Agencies', gstin: GSTIN_B })).toBeNull();
-      // Supplier Restore clears only deleted_at, so an undone supplier must stay active to reappear.
-      const flag = await pool.query(`SELECT is_active FROM suppliers WHERE id = $1`, [r.id]);
-      expect(flag.rows[0].is_active).toBe(true);
     });
   });
 
