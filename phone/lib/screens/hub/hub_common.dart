@@ -109,20 +109,27 @@ class HubQtyField extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        textAlign: TextAlign.end,
-        style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular),
-        decoration: InputDecoration(
-          isDense: true,
-          labelText: label,
-          filled: true,
-          fillColor: AppColors.sunken,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (label != null)
+            Padding(padding: const EdgeInsets.only(bottom: 4, left: 2), child: Text(label!, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption)),
+          TextField(
+            controller: controller,
+            onChanged: onChanged,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textAlign: TextAlign.end,
+            style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: AppColors.sunken,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            ),
+          ),
+        ],
       ),
     );
   }

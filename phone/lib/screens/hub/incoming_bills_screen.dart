@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import '../purchases/purchase_section.dart';
 import 'hub_common.dart';
 
@@ -227,19 +228,11 @@ class _ReceiveBillScreenState extends State<ReceiveBillScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+            KTextField(label: 'Name', controller: name),
             const SizedBox(height: AppSpace.sm),
-            TextField(
-              controller: factor,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(labelText: 'Your units in 1 ${s.line['unit'] ?? 'supplier unit'}'),
-            ),
+            KTextField(label: 'Your units in 1 ${s.line['unit'] ?? 'supplier unit'}', controller: factor, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             const SizedBox(height: AppSpace.sm),
-            TextField(
-              controller: selling,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Your selling price (optional)'),
-            ),
+            KTextField(label: 'Your selling price (optional)', controller: selling, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             const SizedBox(height: AppSpace.sm),
             Text('HSN, GST rate and cost come from the bill.', style: AppText.caption),
             const SizedBox(height: AppSpace.md),
@@ -475,7 +468,7 @@ class _ReceiveBillScreenState extends State<ReceiveBillScreen> {
           ]),
           if ((double.tryParse(s.short.text) ?? 0) > 0 || (double.tryParse(s.damaged.text) ?? 0) > 0) ...[
             const SizedBox(height: AppSpace.sm),
-            TextField(controller: s.note, decoration: const InputDecoration(labelText: 'Note', isDense: true)),
+            KTextField(label: 'Note', controller: s.note),
           ],
         ],
       ],

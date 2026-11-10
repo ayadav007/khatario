@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import 'scan_add_logic.dart';
 
@@ -138,17 +139,12 @@ class _ScanAddExistingScreenState extends State<ScanAddExistingScreen> {
 
   Widget _f(TextEditingController c, String label, {String? field, bool number = false, String? hint}) => Padding(
     padding: const EdgeInsets.only(bottom: AppSpace.md),
-    child: TextField(
+    child: KTextField(
+      label: label,
       controller: c,
-      keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-      style: AppText.body,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        errorText: field == null ? null : _errors[field],
-        filled: true,
-        fillColor: AppColors.surface,
-      ),
+      hint: hint,
+      keyboard: number ? const TextInputType.numberWithOptions(decimal: true) : null,
+      error: field == null ? null : _errors[field],
     ),
   );
 

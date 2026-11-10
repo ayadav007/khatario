@@ -9,6 +9,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../../ui/web_ui.dart';
+import '../../ui/form_kit.dart';
 import '../parties/customer_form_logic.dart';
 import '../parties/customer_form_screen.dart';
 import 'bill_saved_screen.dart';
@@ -594,13 +595,14 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(controller: purpose, onChanged: (_) => set(() {}), decoration: const InputDecoration(labelText: 'What for')),
+              KTextField(label: 'What for', controller: purpose, onChanged: (_) => set(() {})),
               const SizedBox(height: 12),
-              TextField(
+              KTextField(
+                label: 'Amount',
                 controller: amount,
                 autofocus: existing == null,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Amount', prefixText: '$rupeeSign '),
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
+                prefixText: '$rupeeSign ',
               ),
               const SizedBox(height: 6),
               Text('Added to the total after GST, as on the website.', style: AppText.caption),

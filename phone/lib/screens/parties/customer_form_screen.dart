@@ -5,6 +5,7 @@ import '../../api.dart';
 import '../../capability.dart';
 import '../../session.dart';
 import '../../format.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../../theme.dart';
 import 'customer_form_logic.dart';
@@ -551,36 +552,19 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
     bool autofocus = false,
     ValueChanged<String>? onChanged,
   }) {
-    OutlineInputBorder border(Color c, [double w = 1.5]) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      borderSide: BorderSide(color: c, width: w),
-    );
-    return TextField(
+    // Caps are typed as capitals but not forced (textCapitalization), as before.
+    return KTextField(
+      label: label,
       controller: controller,
-      keyboardType: keyboard,
+      keyboard: keyboard,
       maxLines: lines,
       minLines: lines,
       maxLength: maxLength,
       autofocus: autofocus,
       textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.sentences,
       onChanged: onChanged,
-      style: AppText.body,
-      cursorColor: AppColors.brand,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-        floatingLabelStyle: AppText.label.copyWith(color: AppColors.brand),
-        prefixIcon: icon == null ? null : Icon(icon, size: 18, color: AppColors.ink3),
-        errorText: error,
-        counterText: '',
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        enabledBorder: border(AppColors.hairline),
-        focusedBorder: border(AppColors.brand, 2),
-        errorBorder: border(AppColors.negative),
-        focusedErrorBorder: border(AppColors.negative, 2),
-      ),
+      icon: icon,
+      error: error,
     );
   }
 }

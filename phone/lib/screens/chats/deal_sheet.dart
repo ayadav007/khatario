@@ -1,24 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
+import '../../theme.dart';
+import '../../ui/form_kit.dart';
+import '../../ui/kit.dart';
 import 'pipeline_logic.dart';
-
-const _waGreen = Color(0xFF008069);
-const _waMeta = Color(0xFF667781);
 
 /// Stage, deal value and "remind me" for one chat (the website contact panel's Lead section).
 Future<void> showDealSheet(BuildContext context, {required AppSession session, required String conversationId}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    useSafeArea: true,
-    builder: (_) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: _DealSheet(session: session, conversationId: conversationId),
-    ),
+  return showKSheet<void>(
+    context,
+    title: 'Deal & follow-ups',
+    builder: (_) => _DealSheet(session: session, conversationId: conversationId),
   );
 }
 
@@ -92,21 +88,20 @@ class _DealSheetState extends State<_DealSheet> {
   }
 
   Future<void> _pickStage() async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
+    final picked = await showKSheet<String>(
+      context,
+      title: 'Pipeline stage',
       builder: (ctx) => ListView(
         shrinkWrap: true,
         children: [
-          const ListTile(title: Text('Pipeline stage', style: TextStyle(fontWeight: FontWeight.w600))),
           for (final s in _stages)
-            ListTile(
-              title: Text(s.name),
-              trailing: s.id == _deal?.stageId ? const Icon(Icons.check, color: _waGreen) : null,
+            KListRow(
+              title: s.name,
+              trailing: s.id == _deal?.stageId ? Icon(LucideIcons.check, color: AppColors.brand) : null,
               onTap: () => Navigator.of(ctx).pop(s.id),
             ),
-          ListTile(
-            title: const Text('Take off the pipeline', style: TextStyle(color: _waMeta)),
+          KListRow(
+            title: 'Take off the pipeline',
             onTap: () => Navigator.of(ctx).pop(''),
           ),
         ],
@@ -143,7 +138,7 @@ class _DealSheetState extends State<_DealSheet> {
   Widget build(BuildContext context) {
     final deal = _deal;
     if (deal == null && _error == null) {
-      return const SizedBox(height: 160, child: Center(child: CircularProgressIndicator(color: _waGreen)));
+      return const SizedBox(height: 160, child: KSpinner());
     }
     final stage = _stages.where((s) => s.id == deal?.stageId).firstOrNull;
     final now = DateTime.now();
@@ -151,89 +146,83 @@ class _DealSheetState extends State<_DealSheet> {
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        const Text('Deal & follow-ups', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Text('Lead source: ${describeSource(deal?.source, deal?.sourceDetail)}', style: const TextStyle(fontSize: 13, color: _waMeta)),
+        Text('Lead source: ${describeSource(deal?.source, deal?.sourceDetail)}', style: AppText.caption),
         const SizedBox(height: 12),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Pipeline stage'),
-          subtitle: Text(stage?.name ?? 'Not on the pipeline'),
-          trailing: const Icon(Icons.chevron_right),
+        KListRow(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          title: 'Pipeline stage',
+          subtitle: stage?.name ?? 'Not on the pipeline',
+          trailing: Icon(LucideIcons.chevronRight, color: AppColors.ink3),
           onTap: _busy ? null : _pickStage,
         ),
         if (deal?.stageId != null)
-          TextField(
+          KTextField(
+            label: 'Deal value (₹)',
             controller: _value,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Deal value (₹)', isDense: true),
+            keyboard: const TextInputType.numberWithOptions(decimal: true),
             onSubmitted: (_) => _saveValue(),
             onTapOutside: (_) => _saveValue(),
           ),
         if (stage?.kind == 'lost' && (deal?.lostReason ?? '').isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text('Lost: ${deal!.lostReason}', style: const TextStyle(color: Color(0xFFB91C1C))),
+            child: Text('Lost: ${deal!.lostReason}', style: AppText.body.copyWith(color: AppColors.negative)),
           ),
-        const Divider(height: 28),
-        const Text('Follow-ups', style: TextStyle(fontWeight: FontWeight.w600)),
+        const Divider(height: 28, color: AppColors.hairline),
+        Text('Follow-ups', style: AppText.bodyStrong),
         if (_followups.isEmpty)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('No reminders on this chat.', style: TextStyle(color: _waMeta))),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text('No reminders on this chat.', style: AppText.caption)),
         for (final f in _followups)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.alarm, color: f.dueAt.isBefore(now) ? const Color(0xFFB91C1C) : _waMeta),
-            title: Text('${ddMMMyyyyHm(f.dueAt)}${f.assignedName == null ? '' : ' · ${f.assignedName}'}'),
-            subtitle: f.note == null || f.note!.isEmpty ? null : Text(f.note!),
-            trailing: Wrap(
-              children: [
-                IconButton(
-                  tooltip: 'Done',
-                  icon: const Icon(Icons.check_circle_outline, color: _waGreen),
-                  onPressed: _busy ? null : () => _run(() => widget.session.api.patchJson('/api/whatsapp/followups/${f.id}', {'status': 'done'})),
-                ),
-                IconButton(
-                  tooltip: 'Tomorrow',
-                  icon: const Icon(Icons.snooze),
-                  onPressed: _busy
-                      ? null
-                      : () => _run(() => widget.session.api.patchJson('/api/whatsapp/followups/${f.id}', {
+          KListRow(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            leading: Icon(LucideIcons.alarmClock, color: f.dueAt.isBefore(now) ? AppColors.negative : AppColors.ink3),
+            title: '${ddMMMyyyyHm(f.dueAt)}${f.assignedName == null ? '' : ' · ${f.assignedName}'}',
+            subtitle: f.note == null || f.note!.isEmpty ? null : f.note!,
+            trailing: IgnorePointer(
+              ignoring: _busy,
+              child: Opacity(
+                opacity: _busy ? 0.4 : 1,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KIconButton(
+                      tooltip: 'Done',
+                      icon: LucideIcons.circleCheck,
+                      color: AppColors.brand,
+                      onTap: () => _run(() => widget.session.api.patchJson('/api/whatsapp/followups/${f.id}', {'status': 'done'})),
+                    ),
+                    KIconButton(
+                      tooltip: 'Tomorrow',
+                      icon: LucideIcons.alarmClockPlus,
+                      onTap: () => _run(() => widget.session.api.patchJson('/api/whatsapp/followups/${f.id}', {
                             'due_at': remindAt(RemindPreset.tomorrow, DateTime.now()).toUtc().toIso8601String(),
                           })),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            for (final p in RemindPreset.values)
-              ChoiceChip(
-                label: Text(remindPresetLabels[p]!),
-                selected: _preset == p,
-                selectedColor: const Color(0xFFD9FDD3),
-                onSelected: (_) => setState(() => _preset = p),
-              ),
-          ],
-        ),
-        TextField(
-          controller: _note,
-          maxLength: 500,
-          decoration: const InputDecoration(hintText: 'Note (optional), e.g. send revised quote', isDense: true, counterText: ''),
+        KChipBar<RemindPreset>(
+          padding: EdgeInsets.zero,
+          value: _preset,
+          options: [for (final p in RemindPreset.values) (p, remindPresetLabels[p]!)],
+          onChanged: (p) => setState(() => _preset = p),
         ),
         const SizedBox(height: 8),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: _waGreen),
-          onPressed: _busy ? null : _remind,
-          icon: const Icon(Icons.alarm_add),
-          label: const Text('Remind me'),
+        KTextField(
+          label: 'Note',
+          controller: _note,
+          maxLength: 500,
+          hint: 'Note (optional), e.g. send revised quote',
         ),
+        const SizedBox(height: 8),
+        KButton(label: 'Remind me', icon: LucideIcons.alarmClockPlus, onPressed: _busy ? null : _remind),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+            child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative)),
           ),
       ],
     );

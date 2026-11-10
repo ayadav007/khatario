@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'settings_kit.dart';
 import 'settings_router.dart';
 
@@ -84,9 +85,9 @@ class _PaymentsSettingsScreenState extends State<PaymentsSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(controller: upi, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'UPI ID', hintText: 'yourshop@okhdfcbank')),
+              KTextField(label: 'UPI ID', controller: upi, hint: 'yourshop@okhdfcbank', keyboard: TextInputType.emailAddress),
               const SizedBox(height: 12),
-              TextField(controller: name, decoration: const InputDecoration(labelText: 'Name shown to customers')),
+              KTextField(label: 'Name shown to customers', controller: name),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Use for QR and payment links'),

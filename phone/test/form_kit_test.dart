@@ -201,6 +201,20 @@ void main() {
     expect(find.text('05 Mar 2026'), findsOneWidget);
   });
 
+  testWidgets('an empty KDateField opens its picker on [initial], a filled one on its own value', (t) async {
+    DateTime? pickerStart() => t.widget<CalendarDatePicker>(find.byType(CalendarDatePicker)).initialDate;
+    await _pump(t, Scaffold(body: KDateField(label: 'Due date', value: null, initial: DateTime(2026, 3, 5), onChanged: (_) {})));
+    await t.tap(find.text('Select date'));
+    await t.pumpAndSettle();
+    expect(pickerStart(), DateTime(2026, 3, 5));
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    await _pump(t, Scaffold(body: KDateField(label: 'Due date', value: DateTime(2026, 4, 9), initial: DateTime(2026, 3, 5), onChanged: (_) {})));
+    await t.tap(find.text('09 Apr 2026'));
+    await t.pumpAndSettle();
+    expect(pickerStart(), DateTime(2026, 4, 9));
+  });
+
   testWidgets('KAsyncPickField searches and returns the pick', (t) async {
     final queries = <String>[];
     String? id;
@@ -359,6 +373,21 @@ void main() {
     for (final k in [TextInputType.emailAddress, TextInputType.url, TextInputType.number, TextInputType.phone, TextInputType.visiblePassword]) {
       expect(await hint(keyboard: k), TextCapitalization.none, reason: '$k');
     }
+  });
+
+  testWidgets('an obscure (password) field has no capitals, no autocorrect and no suggestions', (t) async {
+    final c = TextEditingController();
+    addTearDown(c.dispose);
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: KTextField(label: 'Password', controller: c, obscure: true))));
+    final field = t.widget<TextField>(find.byType(TextField));
+    expect(field.obscureText, isTrue);
+    expect(field.textCapitalization, TextCapitalization.none);
+    expect(field.autocorrect, isFalse);
+    expect(field.enableSuggestions, isFalse);
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: KTextField(label: 'Name', controller: c))));
+    final plain = t.widget<TextField>(find.byType(TextField));
+    expect(plain.autocorrect, isTrue);
+    expect(plain.enableSuggestions, isTrue);
   });
 
   testWidgets('back is ignored while a save is running', (t) async {

@@ -8,6 +8,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'hub_common.dart';
 import 'new_arrivals_screen.dart';
 import 'supply_orders_screen.dart';
@@ -178,7 +179,7 @@ class _HubProfileScreenState extends State<HubProfileScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('Once they accept, their bills come straight into your purchases and you can order from them here.', style: AppText.caption),
             const SizedBox(height: AppSpace.sm),
-            TextField(controller: message, maxLines: 3, decoration: const InputDecoration(labelText: 'Message (optional)')),
+            KTextField(label: 'Message (optional)', controller: message, maxLines: 3),
             const SizedBox(height: AppSpace.sm),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,

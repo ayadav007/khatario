@@ -92,6 +92,18 @@ class KTextField extends StatelessWidget {
     this.keyboard,
     this.caps = false,
     this.onChanged,
+    this.onSubmitted,
+    this.onTapOutside,
+    this.autofocus = false,
+    this.maxLength,
+    this.obscure = false,
+    this.enabled = true,
+    this.textCapitalization,
+    this.mono = false,
+    this.minLines = 1,
+    this.icon,
+    this.prefixText,
+    this.style,
   });
 
   final String label;
@@ -104,6 +116,30 @@ class KTextField extends StatelessWidget {
   /// Capital letters only (GSTIN, PAN, codes).
   final bool caps;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final TapRegionCallback? onTapOutside;
+  final bool autofocus;
+
+  /// Limits the length; the counter stays hidden.
+  final int? maxLength;
+  final bool obscure;
+  final bool enabled;
+
+  /// Overrides the default (sentences, or none for number / email keyboards); [caps] wins over it.
+  final TextCapitalization? textCapitalization;
+
+  /// Tabular figures with a little letter spacing (codes, ids).
+  final bool mono;
+  final int minLines;
+
+  /// Small icon inside the box, before the text.
+  final IconData? icon;
+
+  /// Text inside the box, before the typed value (a rupee sign).
+  final String? prefixText;
+
+  /// Replaces the body text style (a larger amount, say).
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -113,14 +149,35 @@ class KTextField extends StatelessWidget {
       child: TextField(
         controller: controller,
         onChanged: onChanged,
-        maxLines: maxLines,
-        minLines: 1,
+        onSubmitted: onSubmitted,
+        onTapOutside: onTapOutside,
+        autofocus: autofocus,
+        enabled: enabled,
+        obscureText: obscure,
+        autocorrect: !obscure,
+        enableSuggestions: !obscure,
+        maxLength: maxLength,
+        maxLines: obscure ? 1 : maxLines,
+        minLines: minLines,
         keyboardType: keyboard ?? (maxLines > 1 ? TextInputType.multiline : null),
-        textCapitalization: caps ? TextCapitalization.characters : (_noCapsFor(keyboard) ? TextCapitalization.none : TextCapitalization.sentences),
+        textCapitalization: caps
+            ? TextCapitalization.characters
+            : (textCapitalization ?? (obscure || _noCapsFor(keyboard) ? TextCapitalization.none : TextCapitalization.sentences)),
         inputFormatters: caps ? [_upperCase] : null,
-        style: AppText.body,
+        style: style ?? (mono ? AppText.body.copyWith(fontFeatures: AppText.tabular, letterSpacing: 0.6) : AppText.body),
         cursorColor: AppColors.ink,
-        decoration: _decoration(hint: hint, error: error),
+        decoration: _decoration(
+          hint: hint,
+          error: error,
+          prefix: icon != null
+              ? Padding(padding: const EdgeInsets.only(left: 14, right: 8), child: Icon(icon, size: 18, color: AppColors.ink3))
+              : prefixText != null
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 14, right: 6),
+                      child: Text(prefixText!, style: (style ?? AppText.body).copyWith(color: AppColors.ink3)),
+                    )
+                  : null,
+        ).copyWith(counterText: maxLength == null ? null : ''),
       ),
     );
   }
@@ -225,7 +282,7 @@ class _TapBox extends StatelessWidget {
 
 /// A date chosen in the system calendar.
 class KDateField extends StatelessWidget {
-  const KDateField({super.key, required this.label, required this.value, required this.onChanged, this.first, this.last});
+  const KDateField({super.key, required this.label, required this.value, required this.onChanged, this.first, this.last, this.initial});
 
   final String label;
   final DateTime? value;
@@ -233,14 +290,17 @@ class KDateField extends StatelessWidget {
   final DateTime? first;
   final DateTime? last;
 
+  /// Where the calendar opens while [value] is empty (today when null). It is not a minimum.
+  final DateTime? initial;
+
   Future<void> _pick(BuildContext context) async {
     final now = DateTime.now();
     final lo = first ?? DateTime(now.year - 10);
     final hi = last ?? DateTime(now.year + 10, 12, 31);
-    var initial = value ?? now;
-    if (initial.isBefore(lo)) initial = lo;
-    if (initial.isAfter(hi)) initial = hi;
-    final picked = await showDatePicker(context: context, initialDate: initial, firstDate: lo, lastDate: hi);
+    var start = value ?? initial ?? now;
+    if (start.isBefore(lo)) start = lo;
+    if (start.isAfter(hi)) start = hi;
+    final picked = await showDatePicker(context: context, initialDate: start, firstDate: lo, lastDate: hi);
     if (picked != null) onChanged(picked);
   }
 

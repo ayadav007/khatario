@@ -9,6 +9,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'hub_common.dart';
 
 /// Photos larger than this are refused here; the web catalogue scales them down instead.
@@ -74,14 +75,15 @@ class _MyCatalogScreenState extends State<MyCatalogScreen> {
         builder: (ctx, setSheet) => Padding(
           padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.md),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Price for connected shops (₹)')),
+            KTextField(label: 'Price for connected shops (₹)', controller: price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             Row(children: [
-              Expanded(child: TextField(controller: moq, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Min order'))),
+              Expanded(child: KTextField(label: 'Min order', controller: moq, keyboard: TextInputType.number)),
               const SizedBox(width: AppSpace.sm),
-              Expanded(child: TextField(controller: multiple, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'In multiples of'))),
+              Expanded(child: KTextField(label: 'In multiples of', controller: multiple, keyboard: TextInputType.number)),
             ]),
-            TextField(controller: pack, decoration: const InputDecoration(labelText: 'Pack, e.g. Set of 4: S, M, L, XL')),
-            TextField(controller: options, decoration: const InputDecoration(labelText: 'Sizes / colours with price', hintText: 'S:450, M:450, L:480')),
+            KTextField(label: 'Pack, e.g. Set of 4: S, M, L, XL', controller: pack),
+            const SizedBox(height: AppSpace.md),
+            KTextField(label: 'Sizes / colours with price', controller: options, hint: 'S:450, M:450, L:480'),
             const SizedBox(height: AppSpace.sm),
             Row(children: [
               Expanded(

@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'custom_fields_screen.dart';
 import 'settings_kit.dart';
 import 'settings_router.dart';
@@ -181,10 +182,10 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(controller: prefix, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Prefix')),
+            KTextField(label: 'Prefix', controller: prefix, caps: true),
             if (counted) ...[
               const SizedBox(height: 12),
-              TextField(controller: start, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Next number')),
+              KTextField(label: 'Next number', controller: start, keyboard: TextInputType.number),
             ],
             const SizedBox(height: 8),
             Text(

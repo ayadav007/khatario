@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import '../../whatsapp_compose.dart';
 import 'orders_logic.dart';
 import 'return_detail_screen.dart';
@@ -130,25 +131,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ),
               const SizedBox(height: 14),
               if (method == 'courier' || method == 'local_app') ...[
-                TextField(controller: partner, decoration: InputDecoration(labelText: method == 'courier' ? 'Courier name' : 'App (Porter, Dunzo…)')),
+                KTextField(label: method == 'courier' ? 'Courier name' : 'App (Porter, Dunzo…)', controller: partner),
                 const SizedBox(height: 10),
               ],
               if (method == 'courier') ...[
-                TextField(controller: awb, decoration: const InputDecoration(labelText: 'Tracking number (AWB)')),
+                KTextField(label: 'Tracking number (AWB)', controller: awb),
                 const SizedBox(height: 10),
               ],
               if (method == 'own_rider' || method == 'local_app') ...[
-                TextField(controller: rider, decoration: const InputDecoration(labelText: 'Rider name')),
+                KTextField(label: 'Rider name', controller: rider),
                 const SizedBox(height: 10),
-                TextField(controller: riderPhone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Rider phone')),
+                KTextField(label: 'Rider phone', controller: riderPhone, keyboard: TextInputType.phone),
                 const SizedBox(height: 10),
               ],
               if (!_paid && method != 'pickup')
-                TextField(
-                  controller: cod,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Cash to collect on delivery (₹)'),
-                ),
+                KTextField(label: 'Cash to collect on delivery (₹)', controller: cod, keyboard: const TextInputType.numberWithOptions(decimal: true)),
               const SizedBox(height: 16),
               KButton(label: method == 'pickup' ? 'Ready for pickup' : 'Dispatch', icon: LucideIcons.send, onPressed: () => Navigator.pop(ctx, true)),
             ],
@@ -202,10 +199,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ),
               const SizedBox(height: 14),
               if (action != 'return_to_origin')
-                TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Buyer phone (if changed)')),
+                KTextField(label: 'Buyer phone (if changed)', controller: phone, keyboard: TextInputType.phone),
               if (action == 'change_address') ...[
                 const SizedBox(height: 10),
-                TextField(controller: address, maxLines: 2, decoration: const InputDecoration(labelText: 'Corrected address')),
+                KTextField(label: 'Corrected address', controller: address, maxLines: 2),
               ],
               const SizedBox(height: 16),
               KButton(
@@ -302,11 +299,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final step = primaryStep(status);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        title: Text(o['order_number']?.toString() ?? 'Order'),
-        actions: [if (_data != null) KIconButton(icon: LucideIcons.ellipsisVertical, tooltip: 'More', onTap: _more)],
-      ),
-      body: _data == null
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(
+              o['order_number']?.toString() ?? 'Order',
+              trailing: _data == null ? null : KIconButton(icon: LucideIcons.ellipsisVertical, tooltip: 'More', onTap: _more),
+            ),
+            Expanded(
+              child: _data == null
           ? (_error != null ? KEmptyState(icon: LucideIcons.circleAlert, title: _error!) : const KSpinner())
           : RefreshIndicator(
               onRefresh: _load,
@@ -356,6 +359,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ],
               ),
             ),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: _data == null
           ? null
           : KBottomBar(children: [

@@ -7,6 +7,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import '../invoices/invoice_form_logic.dart';
 import '../parties/customer_form_logic.dart';
 import 'bill_camera.dart';
@@ -910,9 +911,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
                   child: ListView(
                     children: [
                       for (final row in shown)
-                        ListTile(
-                          title: Text(nameOf(row)),
-                          subtitle: detailOf(row).isEmpty ? null : Text(detailOf(row)),
+                        KListRow(
+                          title: nameOf(row),
+                          subtitle: detailOf(row).isEmpty ? null : detailOf(row),
                           onTap: () => Navigator.pop(ctx, row),
                         ),
                     ],
@@ -939,25 +940,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: number, decoration: const InputDecoration(labelText: 'Bill number')),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Bill date'),
-                subtitle: Text(ddMMMyyyy(date)),
-                onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                  if (picked != null) setSheet(() => date = picked);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Due date'),
-                subtitle: Text(due == null ? 'None' : ddMMMyyyy(due!)),
-                onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: due ?? date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                  if (picked != null) setSheet(() => due = picked);
-                },
-              ),
+              KTextField(label: 'Bill number', controller: number),
+              const SizedBox(height: 12),
+              KDateField(label: 'Bill date', value: date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setSheet(() => date = picked)),
+              const SizedBox(height: 12),
+              KDateField(label: 'Due date', value: due, initial: date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setSheet(() => due = picked)),
               const SizedBox(height: 8),
               KButton(
                 label: 'Done',
@@ -1030,17 +1017,27 @@ class _BillFormScreenState extends State<BillFormScreen> {
                     },
                   ),
                 ),
-              TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Rate')),
-              TextField(controller: discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount %')),
-              TextField(controller: discountAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount ₹ (overrides %)')),
-              TextField(controller: cess, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Cess ₹')),
+              KTextField(label: 'Quantity', controller: qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Rate', controller: price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Discount %', controller: discount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Discount ₹ (overrides %)', controller: discountAmount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Cess ₹', controller: cess, keyboard: const TextInputType.numberWithOptions(decimal: true)),
               if (trackBatch) ...[
-                TextField(controller: batch, decoration: const InputDecoration(labelText: 'Batch number')),
-                TextField(controller: manufactured, decoration: const InputDecoration(labelText: 'Manufactured (YYYY-MM-DD)')),
-                TextField(controller: expiry, decoration: const InputDecoration(labelText: 'Expiry (YYYY-MM-DD)')),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Batch number', controller: batch),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Manufactured (YYYY-MM-DD)', controller: manufactured),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Expiry (YYYY-MM-DD)', controller: expiry),
               ],
-              if (trackSerial) TextField(controller: serials, maxLines: 2, decoration: const InputDecoration(labelText: 'Serial numbers')),
+              if (trackSerial) ...[
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Serial numbers', controller: serials, maxLines: 2),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Capital goods'),
@@ -1254,11 +1251,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
                   const SizedBox(height: 8),
                   KCard(
                     padding: const EdgeInsets.all(14),
-                    child: TextField(
-                      controller: _paid,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Amount paid now', border: InputBorder.none),
-                    ),
+                    child: KTextField(label: 'Amount paid now', controller: _paid, keyboard: const TextInputType.numberWithOptions(decimal: true)),
                   ),
                   const SizedBox(height: 8),
                   InkWell(
@@ -1450,7 +1443,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: TextField(controller: _gstin, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Supplier GSTIN')),
+            child: KTextField(label: 'Supplier GSTIN', controller: _gstin, caps: true),
           ),
           KListRow(
             title: 'Supplier state',
@@ -1491,13 +1484,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
           if (_docType == 'bill_of_entry')
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: TextField(controller: _port, decoration: const InputDecoration(labelText: 'Port code')),
+              child: KTextField(label: 'Port code', controller: _port),
             ),
           SwitchListTile(title: const Text('GST credit (ITC) allowed'), value: _itc, onChanged: (v) => setState(() => _itc = v)),
           SwitchListTile(title: const Text('Reverse charge'), value: _reverseCharge, onChanged: (v) => setState(() => _reverseCharge = v)),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-            child: TextField(controller: _notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes')),
+            child: KTextField(label: 'Notes', controller: _notes, maxLines: 2),
           ),
         ],
       ),
@@ -1530,31 +1523,22 @@ class _BillFormScreenState extends State<BillFormScreen> {
             subtitle: _partyName ?? 'Choose',
             trailing: const Icon(LucideIcons.chevronRight, size: 18),
           ),
-          ListTile(
-            title: const Text('Date'),
-            subtitle: Text(ddMMMyyyy(_date)),
-            trailing: const Icon(LucideIcons.calendar, size: 18),
-            onTap: () async {
-              final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-              if (picked != null) setState(() => _date = picked);
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+            child: KDateField(label: 'Date', value: _date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setState(() => _date = picked)),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _number, decoration: InputDecoration(labelText: _needsNumber ? 'Number' : 'Bill number (optional)')),
+            child: KTextField(label: _needsNumber ? 'Number' : 'Bill number (optional)', controller: _number),
           ),
           if (widget.kind == BillKind.purchase) ...[
-            ListTile(
-              title: const Text('Due date'),
-              subtitle: Text(_due == null ? 'None' : ddMMMyyyy(_due!)),
-              onTap: () async {
-                final picked = await showDatePicker(context: context, initialDate: _due ?? _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                if (picked != null) setState(() => _due = picked);
-              },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+              child: KDateField(label: 'Due date', value: _due, initial: _date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setState(() => _due = picked)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _paid, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount paid now')),
+              child: KTextField(label: 'Amount paid now', controller: _paid, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             ),
             KListRow(
               onTap: () => showKPicker<String>(
@@ -1584,15 +1568,15 @@ class _BillFormScreenState extends State<BillFormScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _gstin, decoration: const InputDecoration(labelText: 'Supplier GSTIN')),
+              child: KTextField(label: 'Supplier GSTIN', controller: _gstin),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _place, decoration: const InputDecoration(labelText: 'Place of supply (state code)')),
+              child: KTextField(label: 'Place of supply (state code)', controller: _place),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _port, decoration: const InputDecoration(labelText: 'Port code')),
+              child: KTextField(label: 'Port code', controller: _port),
             ),
             SwitchListTile(title: const Text('GST credit (ITC) allowed'), value: _itc, onChanged: (v) => setState(() => _itc = v)),
             SwitchListTile(title: const Text('Reverse charge'), value: _reverseCharge, onChanged: (v) => setState(() => _reverseCharge = v)),
@@ -1608,7 +1592,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
-            child: TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Notes'), maxLines: 2),
+            child: KTextField(label: 'Notes', controller: _notes, maxLines: 2),
           ),
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
           Padding(padding: const EdgeInsets.all(16), child: KButton(label: _saving ? 'Saving…' : 'Save', onPressed: _saving ? null : _save)),
@@ -1634,9 +1618,12 @@ class _BillFormScreenState extends State<BillFormScreen> {
                 subtitle: 'Choose from your catalogue',
                 trailing: const Icon(LucideIcons.chevronRight, size: 18),
               ),
-              TextField(controller: line.qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-              TextField(controller: line.price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Unit price')),
-              TextField(controller: line.discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount %')),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Quantity', controller: line.qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Unit price', controller: line.price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Discount %', controller: line.discount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
               KListRow(
                 onTap: () => showKPicker<double>(
                   context,

@@ -7,6 +7,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'orders_logic.dart';
 
 /// Pick what is coming back on a bill and why. Pops with the new return id.
@@ -107,8 +108,14 @@ class _StartReturnScreenState extends State<StartReturnScreen> {
     final any = _qty.values.any((v) => v > 0);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text(widget.invoiceNumber == null ? 'Start a return' : 'Return on ${widget.invoiceNumber}')),
-      body: _lines == null
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(widget.invoiceNumber == null ? 'Start a return' : 'Return on ${widget.invoiceNumber}'),
+            Expanded(
+              child: _lines == null
           ? const KSpinner()
           : ListView(
               padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 120),
@@ -166,13 +173,17 @@ class _StartReturnScreenState extends State<StartReturnScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpace.md),
-                TextField(controller: _note, maxLines: 2, decoration: const InputDecoration(labelText: 'Note (optional)')),
+                KTextField(label: 'Note (optional)', controller: _note, maxLines: 2),
                 if (_error != null) ...[
                   const SizedBox(height: AppSpace.md),
                   Text(_error!, style: AppText.body.copyWith(color: AppColors.negative)),
                 ],
               ],
             ),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: KBottomBar(children: [
         Expanded(
           child: KButton(
@@ -290,15 +301,10 @@ class _ReturnWayFieldsState extends State<ReturnWayFields> {
         ],
         if (form.method == 'customer_sends') ...[
           const SizedBox(height: 4),
-          TextField(
-            controller: _instructions,
-            maxLines: 3,
-            decoration: InputDecoration(labelText: 'What the customer is told', hintText: widget.blankHint),
-            onChanged: (v) {
+          KTextField(label: 'What the customer is told', controller: _instructions, hint: widget.blankHint, maxLines: 3, onChanged: (v) {
               form.instructions = v;
               widget.onChanged();
-            },
-          ),
+            }),
         ],
       ],
     );
@@ -343,42 +349,28 @@ class _PickupFieldsState extends State<_PickupFields> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
-          controller: _address,
-          maxLines: 2,
-          decoration: InputDecoration(labelText: "Pick up from (the customer's address)", hintText: hint),
-          onChanged: (v) => edit(() => form.address = v),
-        ),
+        KTextField(label: "Pick up from (the customer's address)", controller: _address, hint: hint, maxLines: 2, onChanged: (v) => edit(() => form.address = v)),
         const SizedBox(height: AppSpace.md),
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: KTextField(
+                label: 'PIN code',
                 controller: _pin,
-                keyboardType: TextInputType.number,
+                keyboard: TextInputType.number,
                 maxLength: 6,
-                decoration: InputDecoration(labelText: 'PIN code', hintText: hint, counterText: ''),
+                hint: hint,
                 onChanged: (v) => edit(() => form.pincode = v.replaceAll(RegExp(r'\D'), '')),
               ),
             ),
             const SizedBox(width: AppSpace.md),
             Expanded(
-              child: TextField(
-                controller: _weight,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(labelText: 'Weight (kg)', hintText: hint),
-                onChanged: (v) => edit(() => form.weightKg = v),
-              ),
+              child: KTextField(label: 'Weight (kg)', controller: _weight, hint: hint, keyboard: const TextInputType.numberWithOptions(decimal: true), onChanged: (v) => edit(() => form.weightKg = v)),
             ),
           ],
         ),
         const SizedBox(height: AppSpace.md),
-        TextField(
-          controller: _phone,
-          keyboardType: TextInputType.phone,
-          decoration: InputDecoration(labelText: 'Phone', hintText: hint),
-          onChanged: (v) => edit(() => form.phone = v),
-        ),
+        KTextField(label: 'Phone', controller: _phone, hint: hint, keyboard: TextInputType.phone, onChanged: (v) => edit(() => form.phone = v)),
       ],
     );
   }
@@ -749,7 +741,7 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(controller: reason, maxLines: 2, decoration: const InputDecoration(labelText: 'Why? The customer sees this.')),
+            KTextField(label: 'Why? The customer sees this.', controller: reason, maxLines: 2),
             const SizedBox(height: 16),
             KButton(label: 'Reject', kind: KButtonKind.danger, onPressed: () => Navigator.pop(ctx, true)),
           ],
@@ -791,8 +783,14 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
     final pending = gateway?['status'] == 'pending';
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text(r?['return_number']?.toString() ?? 'Return')),
-      body: r == null
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(r?['return_number']?.toString() ?? 'Return'),
+            Expanded(
+              child: r == null
           ? (_error != null ? KEmptyState(icon: LucideIcons.circleAlert, title: _error!) : const KSpinner())
           : ListView(
               padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 140),
@@ -944,6 +942,10 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
                 _Timeline(_events),
               ],
             ),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: r == null ? null : _bar(status, pending),
     );
   }
@@ -995,7 +997,7 @@ class _ReturnDetailScreenState extends State<ReturnDetailScreen> {
           Text('Goes back to the UPI or card the customer paid with$upTo. It reaches them in 5 to 7 working days.', style: AppText.caption),
           if (status == 'received') ...[
             const SizedBox(height: AppSpace.md),
-            TextField(controller: _amount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount')),
+            KTextField(label: 'Amount', controller: _amount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
           ],
         ] else
           Text(

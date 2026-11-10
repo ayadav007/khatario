@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../purchases/bill_camera.dart';
 import 'scan_add_draft.dart';
@@ -262,14 +263,18 @@ class _ScanAddScreenState extends State<ScanAddScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(_entries.isEmpty ? 'Scan & add items' : '${_entries.length} scanned'),
-        actions: [IconButton(tooltip: 'Torch', icon: const Icon(LucideIcons.flashlight), onPressed: () => _controller.toggleTorch())],
-      ),
       body: Column(
         children: [
+          ColoredBox(
+            color: AppColors.bg,
+            child: SafeArea(
+              bottom: false,
+              child: KBackBar(
+                _entries.isEmpty ? 'Scan & add items' : '${_entries.length} scanned',
+                trailing: KIconButton(icon: LucideIcons.flashlight, tooltip: 'Torch', onTap: () => _controller.toggleTorch()),
+              ),
+            ),
+          ),
           Expanded(
             child: Stack(
               fit: StackFit.expand,
@@ -788,29 +793,13 @@ class _ScanAddFormScreenState extends State<ScanAddFormScreen> {
     );
   }
 
-  Widget _f(TextEditingController c, String label, {String? field, bool number = false, String? hint}) => TextField(
+  Widget _f(TextEditingController c, String label, {String? field, bool number = false, String? hint}) => KTextField(
+    label: label,
     controller: c,
-    keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-    style: AppText.body,
-    cursorColor: AppColors.brand,
+    hint: hint,
+    keyboard: number ? const TextInputType.numberWithOptions(decimal: true) : null,
+    error: field == null ? null : _errors[field],
     onChanged: field == null || !_errors.containsKey(field) ? null : (_) => setState(() => _errors = {..._errors}..remove(field)),
-    decoration: InputDecoration(
-      labelText: label,
-      hintText: hint,
-      errorText: field == null ? null : _errors[field],
-      labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-      filled: true,
-      fillColor: AppColors.surface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.hairline, width: 1.5),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(color: AppColors.brand, width: 2),
-      ),
-    ),
   );
 
   @override

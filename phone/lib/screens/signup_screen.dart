@@ -156,8 +156,8 @@ class _SignupScreenState extends State<SignupScreen> {
         children: [
           for (final (value, label) in options)
             if (value.isNotEmpty)
-              ListTile(
-                title: Text(label),
+              KListRow(
+                title: label,
                 trailing: value == current ? const Icon(LucideIcons.check, size: 18) : null,
                 onTap: () => Navigator.pop(ctx, value),
               ),
@@ -178,8 +178,14 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surface,
-      appBar: AppBar(title: const Text('Create an account')),
-      body: ListView(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('Create an account'),
+            Expanded(
+              child: ListView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
         children: [
           Text(
@@ -230,6 +236,10 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ],
         ],
+      ),
+            ),
+          ],
+        ),
       ),
     );
   }

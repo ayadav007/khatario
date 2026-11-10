@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:printing/printing.dart';
 
 import '../../api.dart';
 import '../../theme.dart';
+import '../../ui/kit.dart';
 import 'invoice_share.dart';
 
 /// "View invoice": the server-rendered invoice PDF (`/api/invoices/[id]/pdf`) with print and share.
@@ -29,22 +29,14 @@ class _InvoicePdfScreenState extends State<InvoicePdfScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: KhatarioColors.background,
-      appBar: AppBar(
-        backgroundColor: KhatarioColors.surface,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shape: const Border(bottom: BorderSide(color: KhatarioColors.line)),
-        leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, size: 20, color: KhatarioColors.inkSecondary),
-          tooltip: 'Back',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        titleSpacing: 0,
-        title: Text(widget.invoiceNumber,
-            style: const TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w600, color: KhatarioColors.ink)),
-      ),
-      body: FutureBuilder<Uint8List>(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(widget.invoiceNumber),
+            Expanded(
+              child: FutureBuilder<Uint8List>(
         future: _pdf,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
@@ -83,6 +75,10 @@ class _InvoicePdfScreenState extends State<InvoicePdfScreen> {
             actionBarTheme: PdfActionBarTheme(backgroundColor: KhatarioColors.primary600, iconColor: Colors.white),
           );
         },
+      ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -283,34 +283,14 @@ class _BillCropScreenState extends State<BillCropScreen> {
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
                 child: Row(
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: widget.onRetake,
-                      icon: const Icon(LucideIcons.rotateCcw, size: 16),
-                      label: const Text('Retake'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                        minimumSize: const Size(0, 48),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
+                    KButton.secondary(label: 'Retake', icon: LucideIcons.rotateCcw, expand: false, onPressed: widget.onRetake),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: FilledButton.icon(
+                      child: KButton(
+                        label: 'Use Photo',
+                        icon: LucideIcons.check,
+                        loading: _applying,
                         onPressed: photo == null || _applying ? null : _crop,
-                        icon: _applying
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Tw.gray900))
-                            : const Icon(LucideIcons.check, size: 16),
-                        label: const Text('Use Photo', style: TextStyle(fontWeight: FontWeight.w600)),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Tw.gray900,
-                          disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
-                          disabledForegroundColor: Tw.gray900,
-                          minimumSize: const Size(0, 48),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
                       ),
                     ),
                   ],

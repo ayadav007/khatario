@@ -114,9 +114,11 @@ class _AgingReportScreenState extends State<AgingReportScreen> {
     final title = widget.payables ? 'Payables aging' : 'Receivables aging';
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text(title)),
-      body: Column(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
         children: [
+          KBackBar(title),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: KCard(
@@ -134,6 +136,7 @@ class _AgingReportScreenState extends State<AgingReportScreen> {
           ),
           Expanded(child: _body()),
         ],
+        ),
       ),
     );
   }

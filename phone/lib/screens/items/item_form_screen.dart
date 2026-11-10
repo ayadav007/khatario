@@ -404,27 +404,11 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
     ];
   }
 
-  Widget _f(TextEditingController c, String label, {bool number = false, int lines = 1}) => TextField(
+  Widget _f(TextEditingController c, String label, {bool number = false, int lines = 1}) => KTextField(
+        label: label,
         controller: c,
         maxLines: lines,
-        keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-        style: AppText.body,
-        cursorColor: AppColors.brand,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-          filled: true,
-          fillColor: AppColors.surface,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            borderSide: const BorderSide(color: AppColors.hairline, width: 1.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            borderSide: BorderSide(color: AppColors.brand, width: 2),
-          ),
-        ),
+        keyboard: number ? const TextInputType.numberWithOptions(decimal: true) : null,
       );
 
   @override

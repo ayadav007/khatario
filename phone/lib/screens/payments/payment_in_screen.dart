@@ -11,6 +11,7 @@ import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../../ui/web_ui.dart';
 import 'payment_in_logic.dart';
@@ -391,25 +392,13 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
   }
 
   Widget _field(TextEditingController c, String label, {bool number = false, bool big = false, int lines = 1}) {
-    OutlineInputBorder border(Color color, [double w = 1.5]) =>
-        OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: color, width: w));
-    return TextField(
+    return KTextField(
+      label: label,
       controller: c,
       maxLines: lines,
-      keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-      style: big ? AppText.amount.copyWith(fontSize: 24) : AppText.body,
-      cursorColor: AppColors.brand,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-        prefixText: big ? '$rupeeSign ' : null,
-        prefixStyle: big ? AppText.amount.copyWith(fontSize: 22, color: AppColors.ink3) : null,
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        enabledBorder: border(AppColors.hairline),
-        focusedBorder: border(AppColors.brand, 2),
-      ),
+      keyboard: number ? const TextInputType.numberWithOptions(decimal: true) : null,
+      style: big ? AppText.amount.copyWith(fontSize: 24) : null,
+      prefixText: big ? '$rupeeSign ' : null,
     );
   }
 

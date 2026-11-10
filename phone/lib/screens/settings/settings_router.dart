@@ -5,6 +5,7 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'map_form_screen.dart';
 import 'plan_billing_screen.dart';
 import 'printers_screen.dart';
@@ -861,18 +862,18 @@ class _UsersScreenState extends State<_UsersScreen> {
       return StatefulBuilder(builder: (ctx, set) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+          KTextField(label: 'Name', controller: name),
           const SizedBox(height: 12),
-          TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
+          KTextField(label: 'Phone', controller: phone, keyboard: TextInputType.phone),
           const SizedBox(height: 12),
-          TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
+          KTextField(label: 'Password', controller: password, obscure: true),
           if (!widget.agents && _roles.isNotEmpty) ...[
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: roleId,
-              decoration: const InputDecoration(labelText: 'Role'),
-              items: [for (final r in _roles) DropdownMenuItem(value: r['id'].toString(), child: Text(r['role_name']?.toString() ?? r['name']?.toString() ?? 'Role'))],
-              onChanged: (v) => set(() => roleId = v ?? roleId),
+            KPickField<String>(
+              label: 'Role',
+              value: roleId,
+              options: [for (final r in _roles) (r['id'].toString(), r['role_name']?.toString() ?? r['name']?.toString() ?? 'Role')],
+              onChanged: (v) => set(() => roleId = v),
             ),
           ],
           const SizedBox(height: 16),
@@ -1314,14 +1315,14 @@ class _CommissionScreenState extends State<_CommissionScreen> {
     final ok = await showKSheet<bool>(context, title: 'Add a commission', builder: (ctx) => StatefulBuilder(builder: (ctx, set) => Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        DropdownButtonFormField<String>(
-          initialValue: roleId,
-          decoration: const InputDecoration(labelText: 'Role'),
-          items: [for (final r in _roles) DropdownMenuItem(value: r['id'].toString(), child: Text(r['role_name']?.toString() ?? 'Role'))],
-          onChanged: (v) => set(() => roleId = v ?? roleId),
+        KPickField<String>(
+          label: 'Role',
+          value: roleId,
+          options: [for (final r in _roles) (r['id'].toString(), r['role_name']?.toString() ?? 'Role')],
+          onChanged: (v) => set(() => roleId = v),
         ),
         const SizedBox(height: 12),
-        TextField(controller: value, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Percent of the sale')),
+        KTextField(label: 'Percent of the sale', controller: value, keyboard: TextInputType.number),
         const SizedBox(height: 16),
         KButton(label: 'Save', onPressed: () => Navigator.pop(ctx, true)),
       ]),

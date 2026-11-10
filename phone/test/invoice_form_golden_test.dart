@@ -6,6 +6,7 @@ import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/invoices/invoice_form_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/theme.dart';
+import 'support/finders.dart';
 
 class _FakeApi extends KhatarioApi {
   _FakeApi() : super(Dio());
@@ -102,7 +103,7 @@ void main() {
     await tester.tap(find.text('Add delivery, packing or other charges'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delivery'));
-    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '40');
+    await tester.enterText(textFieldLabelled('Amount'), '40');
     await tester.tap(find.text('Add charge'));
     await tester.pumpAndSettle();
     expect(find.text('Delivery'), findsOneWidget);

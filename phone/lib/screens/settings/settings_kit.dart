@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 
 /// Building blocks for the redesigned settings (docs/audits/SETTINGS_AUDIT.md §5):
@@ -79,8 +80,16 @@ class SettingsPage extends StatelessWidget {
     );
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(),
-      body: onRefresh == null ? list : RefreshIndicator(onRefresh: onRefresh!, child: list),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar(''),
+            Expanded(child: onRefresh == null ? list : RefreshIndicator(onRefresh: onRefresh!, child: list)),
+          ],
+        ),
+      ),
       bottomNavigationBar: dirtyCount == 0
           ? null
           : SafeArea(
@@ -102,13 +111,7 @@ class SettingsPage extends StatelessWidget {
                       child: Text('Discard', style: AppText.bodyStrong.copyWith(color: AppColors.surface)),
                     ),
                     const SizedBox(width: 4),
-                    FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: KhatarioColors.accent500, foregroundColor: AppColors.ink),
-                      onPressed: saving ? null : onSave,
-                      child: saving
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Save'),
-                    ),
+                    KButton(label: 'Save', expand: false, height: 40, loading: saving, onPressed: saving ? null : onSave),
                   ],
                 ),
               ),
@@ -428,22 +431,32 @@ class TextSetting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final field = TextField(
-      controller: controller,
-      keyboardType: keyboardType ?? (multiline ? TextInputType.multiline : null),
-      maxLines: multiline ? 4 : 1,
-      minLines: multiline ? 2 : 1,
-      textAlign: short ? TextAlign.right : TextAlign.start,
-      textCapitalization: textCapitalization,
-      onChanged: onChanged,
-      style: mono ? AppText.body.copyWith(fontFeatures: AppText.tabular, letterSpacing: 0.6) : AppText.body,
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: hint,
-        labelText: short ? null : label,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      ),
-    );
+    // The short box sits inside a row that already shows the label; the others use the kit field.
+    final field = short
+        ? TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            textAlign: TextAlign.right,
+            textCapitalization: textCapitalization,
+            onChanged: onChanged,
+            style: mono ? AppText.body.copyWith(fontFeatures: AppText.tabular, letterSpacing: 0.6) : AppText.body,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: hint,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          )
+        : KTextField(
+            label: label,
+            controller: controller,
+            hint: hint,
+            keyboard: keyboardType ?? (multiline ? TextInputType.multiline : null),
+            maxLines: multiline ? 4 : 1,
+            minLines: multiline ? 2 : 1,
+            textCapitalization: textCapitalization,
+            mono: mono,
+            onChanged: onChanged,
+          );
     if (short) {
       return SettingRow(label: label, help: help, todo: todo, trailing: SizedBox(width: 96, child: field));
     }
@@ -577,8 +590,11 @@ class _DangerSettingState extends State<DangerSetting> {
             ),
           ),
           const SizedBox(width: 10),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+          KButton(
+            label: widget.label,
+            kind: KButtonKind.danger,
+            expand: false,
+            height: 44,
             onPressed: ok && !_busy
                 ? () async {
                     setState(() => _busy = true);
@@ -590,7 +606,6 @@ class _DangerSettingState extends State<DangerSetting> {
                     }
                   }
                 : null,
-            child: Text(widget.label),
           ),
         ],
       ),

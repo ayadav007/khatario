@@ -12,6 +12,7 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 
 /// Barcode lines from a purchase (`GET /api/purchases/:id/labels`) and a printable sheet.
 Future<void> openPurchaseLabels(BuildContext context, AppSession session, String purchaseId) async {
@@ -131,9 +132,11 @@ Future<void> emailPurchaseOrder(BuildContext context, AppSession session, String
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: to, decoration: const InputDecoration(labelText: 'To')),
-          TextField(controller: subject, decoration: const InputDecoration(labelText: 'Subject')),
-          TextField(controller: body, decoration: const InputDecoration(labelText: 'Message'), maxLines: 3),
+          KTextField(label: 'To', controller: to),
+          const SizedBox(height: AppSpace.md),
+          KTextField(label: 'Subject', controller: subject),
+          const SizedBox(height: AppSpace.md),
+          KTextField(label: 'Message', controller: body, maxLines: 3),
         ],
       ),
       actions: [
@@ -304,7 +307,7 @@ class _CommentsState extends State<_Comments> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(children: [
-            TextField(controller: _text, decoration: const InputDecoration(labelText: 'Comment')),
+            KTextField(label: 'Comment', controller: _text),
             const SizedBox(height: 8),
             KButton(label: 'Add comment', onPressed: _send),
           ]),
@@ -337,8 +340,9 @@ Future<void> respondToStockRequest(BuildContext context, AppSession session, Map
               ],
               onChanged: (v) => setLocal(() => status = v ?? 'confirmed'),
             ),
-            TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-            TextField(controller: notes, decoration: const InputDecoration(labelText: 'Note')),
+            KTextField(label: 'Quantity', controller: qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+            const SizedBox(height: AppSpace.md),
+            KTextField(label: 'Note', controller: notes),
           ],
         ),
         actions: [
@@ -373,9 +377,11 @@ Future<void> linkStockRequest(BuildContext context, AppSession session, String r
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: po, decoration: const InputDecoration(labelText: 'Purchase order id')),
-          TextField(controller: purchase, decoration: const InputDecoration(labelText: 'Purchase bill id')),
-          TextField(controller: invoice, decoration: const InputDecoration(labelText: 'Invoice id')),
+          KTextField(label: 'Purchase order id', controller: po),
+          const SizedBox(height: AppSpace.md),
+          KTextField(label: 'Purchase bill id', controller: purchase),
+          const SizedBox(height: AppSpace.md),
+          KTextField(label: 'Invoice id', controller: invoice),
         ],
       ),
       actions: [

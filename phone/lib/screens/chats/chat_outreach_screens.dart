@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api.dart';
 import '../../session.dart';
+import '../../theme.dart';
+import '../../ui/form_kit.dart';
+import '../../ui/kit.dart';
 import 'chat_thread_logic.dart';
 
 /// Broadcasts: the website campaign list, started from the Chats menu.
@@ -60,41 +64,50 @@ class _BroadcastsScreenState extends State<BroadcastsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Broadcasts'), backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF008069),
-        foregroundColor: Colors.white,
-        onPressed: () async {
+      backgroundColor: AppColors.bg,
+      floatingActionButton: KFab(
+        icon: LucideIcons.megaphone,
+        label: 'New',
+        onTap: () async {
           final sent = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => _NewBroadcastScreen(session: widget.session)));
           if (sent == true) _load();
         },
-        icon: const Icon(Icons.campaign_outlined),
-        label: const Text('New'),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF008069)))
-          : _error != null && _rows.isEmpty
-              ? Center(child: Text(_error!))
-              : _rows.isEmpty
-                  ? const Center(child: Text('No broadcasts yet'))
-                  : ListView.separated(
-                      itemCount: _rows.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final row = _rows[index];
-                        final status = row['status']?.toString() ?? '';
-                        final id = row['id']?.toString() ?? '';
-                        return ListTile(
-                          title: Text(row['name']?.toString() ?? 'Broadcast'),
-                          subtitle: Text('$status · ${row['sent_count'] ?? 0}/${row['total_recipients'] ?? 0} sent'),
-                          trailing: status == 'running'
-                              ? TextButton(onPressed: () => _act(id, 'pause'), child: const Text('Pause'))
-                              : status == 'draft' || status == 'paused'
-                                  ? TextButton(onPressed: () => _act(id, status == 'paused' ? 'resume' : 'start'), child: const Text('Start'))
-                                  : null,
-                        );
-                      },
-                    ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('Broadcasts'),
+            Expanded(
+              child: _loading
+                  ? const KSpinner()
+                  : _error != null && _rows.isEmpty
+                      ? Center(child: Text(_error!))
+                      : _rows.isEmpty
+                          ? const Center(child: Text('No broadcasts yet'))
+                          : ListView.separated(
+                              itemCount: _rows.length,
+                              separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.hairline),
+                              itemBuilder: (context, index) {
+                                final row = _rows[index];
+                                final status = row['status']?.toString() ?? '';
+                                final id = row['id']?.toString() ?? '';
+                                return KListRow(
+                                  title: row['name']?.toString() ?? 'Broadcast',
+                                  subtitle: '$status · ${row['sent_count'] ?? 0}/${row['total_recipients'] ?? 0} sent',
+                                  trailing: status == 'running'
+                                      ? KTextButton(label: 'Pause', onTap: () => _act(id, 'pause'))
+                                      : status == 'draft' || status == 'paused'
+                                          ? KTextButton(label: 'Start', onTap: () => _act(id, status == 'paused' ? 'resume' : 'start'))
+                                          : null,
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -202,25 +215,27 @@ class _NewBroadcastScreenState extends State<_NewBroadcastScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('New broadcast'), backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF008069)))
-          : ListView(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('New broadcast'),
+            Expanded(
+              child: _loading
+                  ? const KSpinner()
+                  : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name')),
+                KTextField(label: 'Name', controller: _name),
                 const SizedBox(height: 12),
-                TextField(controller: _message, minLines: 3, maxLines: 6, decoration: const InputDecoration(labelText: 'Message')),
+                KTextField(label: 'Message', controller: _message, maxLines: 6),
                 const SizedBox(height: 12),
                 const Text('Buttons (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
-                for (var i = 0; i < _buttons.length; i++) TextField(controller: _buttons[i], decoration: InputDecoration(labelText: 'Button ${i + 1}')),
+                for (var i = 0; i < _buttons.length; i++) KTextField(label: 'Button ${i + 1}', controller: _buttons[i]),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _extra,
-                  minLines: 2,
-                  maxLines: 4,
-                  decoration: const InputDecoration(labelText: 'Extra numbers', hintText: 'One number per line'),
-                ),
+                KTextField(label: 'Extra numbers', controller: _extra, hint: 'One number per line', maxLines: 4),
                 const SizedBox(height: 12),
                 const Text('Contacts', style: TextStyle(fontWeight: FontWeight.w600)),
                 if (_contacts.isEmpty) const Text('No saved contacts. Type numbers above.'),
@@ -244,16 +259,16 @@ class _NewBroadcastScreenState extends State<_NewBroadcastScreen> {
                   ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+                  Text(_error!, style: AppText.body.copyWith(color: AppColors.negative)),
                 ],
                 const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _saving ? null : _send,
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF008069)),
-                  child: Text(_saving ? 'Sending…' : 'Send broadcast'),
-                ),
+                KButton(label: _saving ? 'Sending…' : 'Send broadcast', onPressed: _saving ? null : _send),
               ],
             ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -316,37 +331,46 @@ class _BotRepliesScreenState extends State<BotRepliesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bot replies'), backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF008069),
-        foregroundColor: Colors.white,
-        onPressed: () async {
+      backgroundColor: AppColors.bg,
+      floatingActionButton: KFab(
+        label: 'Rule',
+        onTap: () async {
           final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => _NewBotRuleScreen(session: widget.session)));
           if (saved == true) _load();
         },
-        icon: const Icon(Icons.add),
-        label: const Text('Rule'),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF008069)))
-          : _error != null && _rules.isEmpty
-              ? Center(child: Text(_error!))
-              : _rules.isEmpty
-                  ? const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No bot replies yet. A rule answers when a customer message contains the keyword.', textAlign: TextAlign.center)))
-                  : ListView.separated(
-                      itemCount: _rules.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final rule = _rules[index];
-                        final active = rule['is_active'] == true;
-                        return SwitchListTile(
-                          title: Text(rule['name']?.toString() ?? 'Rule'),
-                          subtitle: Text('When they say “${rule['trigger_value'] ?? ''}”'),
-                          value: active,
-                          onChanged: (on) => _toggle(rule, on),
-                        );
-                      },
-                    ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('Bot replies'),
+            Expanded(
+              child: _loading
+                  ? const KSpinner()
+                  : _error != null && _rules.isEmpty
+                      ? Center(child: Text(_error!))
+                      : _rules.isEmpty
+                          ? const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No bot replies yet. A rule answers when a customer message contains the keyword.', textAlign: TextAlign.center)))
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 0, AppSpace.gutter, 96),
+                              itemCount: _rules.length,
+                              separatorBuilder: (_, _) => const SizedBox(height: AppSpace.sm),
+                              itemBuilder: (context, index) {
+                                final rule = _rules[index];
+                                final active = rule['is_active'] == true;
+                                return KToggleField(
+                                  label: rule['name']?.toString() ?? 'Rule',
+                                  help: 'When they say “${rule['trigger_value'] ?? ''}”',
+                                  value: active,
+                                  onChanged: (on) => _toggle(rule, on),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -412,31 +436,38 @@ class _NewBotRuleScreenState extends State<_NewBotRuleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('New bot reply'), backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
-      body: ListView(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('New bot reply'),
+            Expanded(
+              child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name')),
+          KTextField(label: 'Name', controller: _name),
           const SizedBox(height: 12),
-          TextField(controller: _keyword, decoration: const InputDecoration(labelText: 'Keyword', hintText: 'price')),
+          KTextField(label: 'Keyword', controller: _keyword, hint: 'price'),
           const SizedBox(height: 12),
-          TextField(controller: _message, minLines: 3, maxLines: 6, decoration: const InputDecoration(labelText: 'Reply')),
+          KTextField(label: 'Reply', controller: _message, maxLines: 6),
           const SizedBox(height: 12),
           const Text('Buttons (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          const Text('The customer sees these under the reply and can tap one.', style: TextStyle(color: Color(0xFF667781))),
-          for (var i = 0; i < _buttons.length; i++) TextField(controller: _buttons[i], decoration: InputDecoration(labelText: 'Button ${i + 1}')),
+          Text('The customer sees these under the reply and can tap one.', style: AppText.caption),
+          for (var i = 0; i < _buttons.length; i++) KTextField(label: 'Button ${i + 1}', controller: _buttons[i]),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+            Text(_error!, style: AppText.body.copyWith(color: AppColors.negative)),
           ],
           const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF008069)),
-            child: Text(_saving ? 'Saving…' : 'Save rule'),
-          ),
+          KButton(label: _saving ? 'Saving…' : 'Save rule', onPressed: _saving ? null : _save),
         ],
+      ),
+            ),
+          ],
+        ),
       ),
     );
   }
