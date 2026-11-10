@@ -634,13 +634,13 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
         for (const r of refused) kept.push({ label: nameOf.get(r.id) ?? r.id, reason: r.reason });
       }
     }
-    // An undone run (or a stopped one being undone) is never resumed: its rows are cleared.
+    // Status by outcome, whatever it was before: records kept are real, so the run is 'done' and
+    // can be undone again later (retrying them). An undone run is never resumed: rows are cleared.
     await query(
       `UPDATE import_runs
-          SET status = CASE WHEN $3 THEN 'undone' ELSE status END,
-              draft_rows = NULL, row_numbers = NULL, updated_at = now()
+          SET status = $3, draft_rows = NULL, row_numbers = NULL, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
-      [run.id, ctx.businessId, kept.length === 0]
+      [run.id, ctx.businessId, kept.length === 0 ? 'undone' : 'done']
     );
     return { removed, kept };
   });

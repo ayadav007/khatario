@@ -461,6 +461,39 @@ d('import runs (real DB)', () => {
     expect(run).toMatchObject({ status: 'undone', draft_rows: null, row_numbers: null });
   });
 
+  test('a partial undo of a failed run leaves it done; undoing again retries the kept record', async () => {
+    const def = SECTIONS.customers;
+    const original = def.saveRow.bind(def);
+    let calls = 0;
+    const spy = jest.spyOn(def, 'saveRow').mockImplementation(async (ctx, values) => {
+      calls += 1;
+      if (calls === 3) throw new Error('database went away');
+      return original(ctx, values);
+    });
+    let runId = '';
+    try {
+      const { draft } = await draftAndPreview(A, ['Name,City', 'Partial One,Pune', 'Partial Two,Pune', 'Partial Three,Pune']);
+      runId = draft.runId;
+      await expect(commitNextBatch(A.ctx, runId)).rejects.toThrow('database went away');
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await runRow(runId)).status).toBe('failed');
+    const used = await pool.query<{ id: string }>(`SELECT id FROM customers WHERE business_id = $1 AND name = 'Partial One'`, [A.id]);
+    const invoiceId = randomUUID();
+    await pool.query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'draft', 'tax_invoice', $5)`,
+      [invoiceId, A.id, used.rows[0].id, `IMP-${randomUUID().slice(0, 8)}`, A.branch]
+    );
+    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [{ label: 'Partial One', reason: 'Used in invoices' }] });
+    expect(await runRow(runId)).toMatchObject({ status: 'done', draft_rows: null, row_numbers: null });
+
+    await pool.query(`DELETE FROM invoices WHERE id = $1`, [invoiceId]);
+    expect(await undoRun(A.ctx, runId)).toEqual({ removed: 1, kept: [] });
+    expect((await runRow(runId)).status).toBe('undone');
+  });
+
   test("problem rows go to their own table with the user's row numbers", async () => {
     const lines = ['Name,City'];
     const existing: string[] = [];
