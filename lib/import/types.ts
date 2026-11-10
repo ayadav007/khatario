@@ -25,3 +25,9 @@ export interface ImportField {
 }
 /** Column index to field key; null means "Don't import". */
 export type ColumnMatches = Record<number, string | null>;
+
+/** Business and acting user, always taken from the session. */
+export type ServiceCtx = { businessId: string; userId: string };
+export type CreateResult<T> =
+  | { ok: true; record: T }
+  | { ok: false; status: number; code: string; error: string; existing?: T };

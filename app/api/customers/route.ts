@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryRows, queryOne, getPool } from '@/lib/db';
+import { query, queryRows, queryOne } from '@/lib/db';
 import { Customer } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireStrictSession } from '@/lib/auth-helpers';
 import {
-  enforceAccess,
   enforceAccessErrorResponse,
   isPrimaryAdminForBusiness,
 } from '@/lib/enforce-access';
-import { FeatureKeys } from '@/lib/featureKeys';
-import { normalizePhoneOrNull } from '@/lib/utils/phone';
-import { resolveGstinAndState } from '@/lib/tax/gstin';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
-import {
-  assertReceivableTarget,
-  receivableAccountFilter,
-  receivableControlAccountId,
-} from '@/lib/accounting/receivable-accounts';
+import { receivableAccountFilter } from '@/lib/accounting/receivable-accounts';
 import { hasCustomerReceivableAccounts } from '@/lib/accounting/receivable-accounts-schema';
 import { parseReceivableAccountId, receivableAccountErrorResponse } from '@/lib/customers/receivable-account-request';
+import {
+  createCustomer,
+  CustomerAccessRefused,
+  CREATE_FAILED,
+  type CreateCustomerInput,
+} from '@/lib/customers/create-customer';
 
 export const dynamic = 'force-dynamic';
 
@@ -179,29 +177,7 @@ export async function POST(request: NextRequest) {
     const business_id = session.businessId;
     const created_by = session.userId;
     const body = await request.json();
-    const {
-      name,
-      company_name,
-      phone,
-      email,
-      address,
-      billing_address,
-      shipping_address,
-      city, // Billing city
-      state, // Billing state
-      state_code, // GST state code (2-digit)
-      pincode, // Billing pincode
-      shipping_city,
-      shipping_state,
-      shipping_pincode,
-      country,
-      gstin,
-      opening_balance = 0,
-      opening_balance_type = 'debit',
-      credit_limit = 0,
-      credit_days: bodyCreditDays,
-      receivable_account_id: bodyReceivableAccountId,
-    } = body;
+    const { name } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -230,211 +206,30 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    const hadPhoneDigits =
-      phone != null && String(phone).replace(/\D/g, '').length > 0;
-    const phoneNorm = normalizePhoneOrNull(phone);
-    if (hadPhoneDigits && phoneNorm == null) {
-      return NextResponse.json(
-        {
-          error:
-            'Enter a valid phone number (8–15 digits including country code).',
-          code: 'INVALID_PHONE',
-        },
-        { status: 400 }
-      );
-    }
-    const emailNorm =
-      typeof email === 'string' && email.trim() !== '' ? email.trim().toLowerCase() : null;
-
-    let creditDays: number | null = null;
-    if (bodyCreditDays !== undefined && bodyCreditDays !== null && bodyCreditDays !== '') {
-      const n = parseInt(String(bodyCreditDays), 10);
-      if (Number.isFinite(n) && n >= 0) creditDays = n;
-    }
-
-    if (phoneNorm) {
-      const existingPhone = await queryOne<Customer>(
-        `SELECT * FROM customers
-         WHERE business_id = $1 AND is_active = true AND deleted_at IS NULL AND phone IS NOT NULL AND trim(phone) = $2
-         LIMIT 1`,
-        [business_id, phoneNorm]
-      );
-      if (existingPhone) {
-        const name = existingPhone.name?.trim();
-        return NextResponse.json(
-          {
-            customer: existingPhone,
-            deduplicated: true,
-            code: 'DUPLICATE_PHONE',
-            error: name
-              ? `A customer named ${name} already uses this phone number.`
-              : 'A customer with this phone number already exists.',
-          },
-          { status: 200 }
-        );
-      }
-    }
-    if (emailNorm) {
-      const existingEmail = await queryOne<Customer>(
-        `SELECT * FROM customers
-         WHERE business_id = $1 AND is_active = true AND deleted_at IS NULL AND email IS NOT NULL AND lower(trim(email)) = $2
-         LIMIT 1`,
-        [business_id, emailNorm]
-      );
-      if (existingEmail) {
-        const name = existingEmail.name?.trim();
-        return NextResponse.json(
-          {
-            customer: existingEmail,
-            deduplicated: true,
-            code: 'DUPLICATE_EMAIL',
-            error: name
-              ? `A customer named ${name} already uses this email.`
-              : 'A customer with this email already exists.',
-          },
-          { status: 200 }
-        );
-      }
-    }
-
-    const finalBillingAddress = billing_address || address || null;
-    const finalShippingAddress = shipping_address || address || null;
-
-    const getStateCode = (stateName: string): string => {
-      if (!stateName) return '';
-      const name = stateName.trim().toLowerCase();
-      const map: Record<string, string> = {
-        'andhra pradesh': '37', 'karnataka': '29', 'tamil nadu': '33', 'maharashtra': '27',
-        'gujarat': '24', 'rajasthan': '08', 'uttar pradesh': '09', 'west bengal': '19',
-        'delhi': '07', 'telangana': '36', 'haryana': '06', 'punjab': '03', 'odisha': '21',
-        'bihar': '10', 'madhya pradesh': '23', 'assam': '18', 'jharkhand': '20',
-        'kerala': '32', 'chhattisgarh': '22', 'uttarakhand': '05', 'himachal pradesh': '02',
-        'tripura': '16', 'manipur': '14', 'meghalaya': '17', 'mizoram': '15',
-        'nagaland': '13', 'arunachal pradesh': '12', 'goa': '30', 'sikkim': '11',
-        'andaman and nicobar islands': '35', 'chandigarh': '04',
-        'dadra and nagar haveli and daman and diu': '26', 'jammu and kashmir': '01',
-        'ladakh': '38', 'lakshadweep': '31', 'puducherry': '34',
-      };
-      return map[name] || '';
-    };
-
-    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
-    if (!gstinCheck.ok) {
-      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
-    }
-    const finalState = gstinCheck.state;
-    const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
-
-    // The ledger account this customer's sales are recorded in; null keeps Accounts Receivable.
-    let receivableAccountId: string | null = null;
-    if (bodyReceivableAccountId != null && bodyReceivableAccountId !== '' && (await hasCustomerReceivableAccounts())) {
-      try {
-        const chosen = await assertReceivableTarget(business_id, parseReceivableAccountId(bodyReceivableAccountId));
-        receivableAccountId = chosen === (await receivableControlAccountId(business_id)) ? null : chosen;
-      } catch (error) {
-        const refused = receivableAccountErrorResponse(error);
-        if (refused) return refused;
-        throw error;
-      }
-    }
-
-    const sql = `
-      INSERT INTO customers (
-        business_id, name, company_name, phone, email, address, billing_address, shipping_address,
-        city, state, state_code, pincode, shipping_city, shipping_state, shipping_pincode,
-        country, gstin, opening_balance, opening_balance_type, credit_limit, credit_days
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-      RETURNING *
-    `;
-
-    const pool = getPool();
-    const client = await pool.connect();
-    let customer: Customer | null = null;
-
+    let result: Awaited<ReturnType<typeof createCustomer>>;
     try {
-      await client.query('BEGIN');
-
-      try {
-        await enforceAccess({
-          businessId: business_id,
-          userId: created_by,
-          feature: FeatureKeys.CUSTOMER_MANAGEMENT,
-          limitType: 'customers',
-          poolClient: client,
-        });
-      } catch (e) {
-        await client.query('ROLLBACK');
-        const res = enforceAccessErrorResponse(e);
-        if (res) return res;
-        throw e;
-      }
-
-      const insertResult = await client.query<Customer>(sql, [
-          business_id,
-          name,
-          company_name || null,
-          phoneNorm,
-          emailNorm,
-          address || null,
-          finalBillingAddress,
-          finalShippingAddress,
-          city || null,
-          finalState,
-          finalStateCode || null,
-          pincode || null,
-          shipping_city || null,
-          shipping_state || null,
-          shipping_pincode || null,
-          country || 'India',
-          gstinCheck.gstin,
-          opening_balance,
-          opening_balance_type,
-          credit_limit,
-          creditDays,
-        ]);
-
-        customer = insertResult.rows[0] ?? null;
-        if (!customer) {
-          await client.query('ROLLBACK');
-          return NextResponse.json(
-            { error: 'Failed to create customer' },
-            { status: 500 }
-          );
-        }
-        if (receivableAccountId) {
-          const withAccount = await client.query<Customer>(
-            `UPDATE customers SET receivable_account_id = $1 WHERE id = $2 AND business_id = $3 RETURNING *`,
-            [receivableAccountId, customer.id, business_id]
-          );
-          customer = withAccount.rows[0] ?? customer;
-        }
-
-      await client.query('COMMIT');
+      result = await createCustomer({ businessId: business_id, userId: created_by }, body as CreateCustomerInput);
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw e;
-    } finally {
-      client.release();
+      if (!(e instanceof CustomerAccessRefused)) throw e;
+      const res = enforceAccessErrorResponse(e.reason);
+      if (res) return res;
+      throw e.reason;
     }
 
-    if (opening_balance > 0 && customer) {
-      try {
-        const { postOpeningBalanceLedgerEntry } = await import('@/lib/ledger-utils');
-        await postOpeningBalanceLedgerEntry({
-          businessId: business_id,
-          entityType: 'customer',
-          entityId: customer.id,
-          entityName: name,
-          openingBalance: opening_balance,
-          openingBalanceType: opening_balance_type,
-        });
-      } catch (ledgerError: any) {
-        console.error('Error posting opening balance ledger entry for customer:', ledgerError);
+    if (!result.ok) {
+      if (result.existing) {
+        return NextResponse.json(
+          { customer: result.existing, deduplicated: true, code: result.code, error: result.error },
+          { status: result.status }
+        );
       }
+      if (result.code === CREATE_FAILED) {
+        return NextResponse.json({ error: result.error }, { status: result.status });
+      }
+      return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
     }
 
-    return NextResponse.json({ customer }, { status: 201 });
+    return NextResponse.json({ customer: result.record }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating customer:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
