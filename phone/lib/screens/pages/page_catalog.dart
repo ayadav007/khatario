@@ -175,7 +175,6 @@ const stillGeneric = <String>{
   '/work-orders',
   '/credit-notes',
   '/debit-notes',
-  '/expenses',
   '/pricing/levels',
   '/pricing/schemes',
   '/items/barcodes',

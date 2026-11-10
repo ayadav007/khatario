@@ -2,7 +2,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../capability.dart';
 import '../../session.dart';
+import '../expenses/expense_categories_screen.dart';
 import '../expenses/expense_form_screen.dart';
+import '../expenses/expenses_screen.dart';
 import '../hr/attendance_screen.dart';
 import '../hr/employees_screen.dart';
 import '../hr/leaves_screen.dart';
@@ -59,8 +61,12 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return PaymentInScreen(session: session, payable: href == '/payments/out');
     case '/suppliers/new':
       return SupplierFormScreen(session: session);
+    case '/expenses':
+      return ExpensesScreen(session: session);
     case '/expenses/new':
       return ExpenseFormScreen(session: session);
+    case '/expenses/categories':
+      return ExpenseCategoriesScreen(session: session);
     case '/reports/aging/receivables':
     case '/reports/aging/payables':
       return AgingReportScreen(session: session, payables: href.endsWith('payables'));
