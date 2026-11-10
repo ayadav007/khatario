@@ -87,19 +87,13 @@ export async function guardImportRequest(
   sectionParam: string,
   action: 'create' | 'read'
 ): Promise<ImportGuard> {
-  const session = await requireStrictSession(request);
-  if (!session.ok) return { ok: false, response: session.response };
-  const ctx: ServiceCtx = { businessId: session.businessId, userId: session.userId };
+  const base = await guardImportSession(request);
+  if (!base.ok) return base;
+  const { ctx } = base;
 
   const def = Object.prototype.hasOwnProperty.call(SECTIONS, sectionParam) ? SECTIONS[sectionParam as SectionKey] : null;
   if (!def) {
     return { ok: false, response: NextResponse.json({ error: 'Unknown import section', code: 'NOT_FOUND' }, { status: 404 }) };
-  }
-
-  const { checkEmployeeAccessBoundary } = await import('@/lib/access-boundary');
-  const accessCheck = await checkEmployeeAccessBoundary(ctx.userId, 'portal');
-  if (!accessCheck.allowed) {
-    return { ok: false, response: NextResponse.json({ error: accessCheck.reason, code: 'ACCESS_DENIED' }, { status: 403 }) };
   }
 
   const denied = await permit(ctx.userId, ctx.businessId, def.module, action);

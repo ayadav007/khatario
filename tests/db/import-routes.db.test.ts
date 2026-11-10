@@ -344,6 +344,20 @@ d('import routes (real DB)', () => {
     expect(res.json).toEqual({ error: 'This file is larger than 10 MB.', code: 'TOO_LARGE' });
   });
 
+  test('a Content-Length above 11 MB is 400 TOO_LARGE without reading the body', async () => {
+    headerBag.current = sessionFor('admin');
+    const res = await (uploadRoute as Handler)(
+      new NextRequest('http://localhost/api/import/customers/upload', {
+        method: 'POST',
+        headers: { ...headerBag.current, 'content-length': String(11 * 1024 * 1024 + 1), 'content-type': 'multipart/form-data; boundary=x' },
+        body: 'x',
+      }),
+      { params: { section: 'customers' } }
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'This file is larger than 10 MB.', code: 'TOO_LARGE' });
+  });
+
   test('a missing file, a text "file" and an unknown source_app are 400 BAD_REQUEST', async () => {
     const none = new FormData();
     none.append('source_app', 'other');
@@ -380,6 +394,8 @@ d('import routes (real DB)', () => {
     expect((await call(undoRoute as Handler, { who: 'other', json: { run_id: id } })).status).toBe(404);
     expect((await call(problemRowsRoute as Handler, { who: 'other', method: 'GET', query: `?run_id=${id}` })).status).toBe(404);
     // A customers run reached through the suppliers URL.
+    expect((await call(previewRoute as Handler, { section: 'suppliers', json: { run_id: id, column_matches: up.json.guesses, value_matches: {}, date_order: 'dmy' } })).json).toEqual(expected);
+    expect((await call(undoRoute as Handler, { section: 'suppliers', json: { run_id: id } })).json).toEqual(expected);
     expect((await commit(id, {}, 'suppliers')).json).toEqual(expected);
     expect((await call(problemRowsRoute as Handler, { section: 'suppliers', method: 'GET', query: `?run_id=${id}` })).status).toBe(404);
     expect((await call(problemRowsRoute as Handler, { method: 'GET' })).status).toBe(404);
