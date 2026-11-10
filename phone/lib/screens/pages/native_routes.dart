@@ -18,14 +18,18 @@ import '../hub/supply_orders_screen.dart';
 import '../orders/orders_screen.dart';
 import '../parties/supplier_form_screen.dart';
 import '../payments/payment_in_screen.dart';
+import '../payments/payment_reconciliation_screen.dart';
 import '../purchases/order_list_screen.dart';
 import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../sales/credit_approvals_screen.dart';
 import '../sales/credit_debit_notes_screen.dart';
 import '../sales/delivery_challans_screen.dart';
 import '../sales/estimates_screen.dart';
+import '../sales/payment_reminders_screen.dart';
+import '../sales/recurring_invoices_screen.dart';
 import '../sales/sales_orders_screen.dart';
 import '../sales/work_orders_screen.dart';
 import '../settings/settings_hub_screen.dart';
@@ -136,6 +140,10 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/debit-notes' => CreditDebitNotesScreen(session: session, debit: true),
     '/delivery-challans' => DeliveryChallansScreen(session: session),
     '/work-orders' => WorkOrdersScreen(session: session),
+    '/credit-approvals' => CreditApprovalsScreen(session: session),
+    '/recurring-invoices' || '/invoices/recurring' => RecurringInvoicesScreen(session: session),
+    '/payments/reminders' || '/whatsapp/reminders' => PaymentRemindersScreen(session: session),
+    '/payments/reconciliation' => PaymentReconciliationScreen(session: session),
     '/employees' => EmployeesScreen(session: session),
     '/employees/attendance' => AttendanceScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),

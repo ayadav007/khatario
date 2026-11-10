@@ -19,24 +19,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       approval_id,
-      business_id,
+      business_id: claimedBusinessId,
       rejection_reason,
     } = body;
     // The actor is the signed-in user, never a user named in the body.
     const rejected_by = getAuthenticatedUserId(request);
 
-    if (!approval_id || !rejected_by || !business_id) {
+    if (!approval_id || !rejected_by) {
       client.release();
       return NextResponse.json(
-        { error: 'approval_id, rejected_by, and business_id are required' },
+        { error: 'approval_id and an authenticated user are required' },
         { status: 400 }
       );
     }
-    const tenant = requireTenantBusinessId(request, business_id);
+    // The business is the session's. A business_id in the body is only checked against it.
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
     if (!tenant.ok) {
       client.release();
       return tenant.response;
     }
+    const business_id = tenant.businessId;
     const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_credit_approvals');
     if (planDenied) {
       client.release();
