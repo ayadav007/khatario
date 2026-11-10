@@ -16,13 +16,7 @@ import '../purchases/bill_form_screen.dart';
 import '../invoices/invoice_form_screen.dart';
 import '../parties/customer_form_logic.dart';
 import '../parties/supplier_form_screen.dart';
-import '../hr/attendance_screen.dart';
-import '../hr/employees_screen.dart';
-import '../hr/leaves_screen.dart';
-import '../hr/salary_payments_screen.dart';
-import '../whatsapp/order_verification_screen.dart';
-import '../reports/cash_flow_screen.dart';
-import '../reports/financial_statements_screens.dart';
+import 'native_routes.dart';
 import 'page_catalog.dart';
 import 'record_format.dart';
 import 'website_page_screen.dart';
@@ -792,17 +786,6 @@ class RecordSections extends StatelessWidget {
   }
 }
 
-/// Routes in [appPages] that now have their own phone screen instead of the generic list.
-Widget? dedicatedPageScreen(AppSession session, String href) => switch (href) {
-      '/employees' => EmployeesScreen(session: session),
-      '/employees/attendance' => AttendanceScreen(session: session),
-      '/employees/leaves' => LeavesScreen(session: session),
-      '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
-      '/whatsapp/orders' => OrderVerificationScreen(session: session),
-      '/reports/cash-flow' => CashFlowScreen(session: session),
-      '/reports/profit-loss' => ProfitLossScreen(session: session),
-      '/reports/balance-sheet' => BalanceSheetScreen(session: session),
-      '/reports/trial-balance' => TrialBalanceScreen(session: session),
-      _ => null,
-    };
+/// Kept for older callers; the table is [nativeScreenFor].
+Widget? dedicatedPageScreen(AppSession session, String href) => nativeScreenFor(session, href);
 

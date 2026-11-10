@@ -15,16 +15,7 @@ import 'package:khatario_phone/screens/whatsapp/order_verification_logic.dart';
 import 'package:khatario_phone/screens/whatsapp/order_verification_screen.dart';
 import 'package:khatario_phone/session.dart';
 
-/// A session whose server answers every request with [reply] and records what was sent.
-(AppSession, List<RequestOptions>) fakeSession(Object? Function(RequestOptions o) reply) {
-  final sent = <RequestOptions>[];
-  final dio = Dio(BaseOptions(baseUrl: 'https://x.test', validateStatus: (s) => s != null && s < 500));
-  dio.interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
-    sent.add(o);
-    h.resolve(Response(requestOptions: o, statusCode: 200, data: reply(o)));
-  }));
-  return (AppSession(KhatarioApi(dio), {'user': {'id': 'u'}, 'business': {'id': 'b'}}), sent);
-}
+import 'support/fake_session.dart';
 
 void main() {
   final (session, _) = fakeSession((_) => <String, dynamic>{});
