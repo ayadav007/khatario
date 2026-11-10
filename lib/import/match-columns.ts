@@ -29,12 +29,12 @@ export interface GuessColumnsInput {
   saved: Record<string, string>;
 }
 
-function guessByValues(fields: ImportField[], values: string[]): string | null {
+function guessByValues(fields: ImportField[], values: string[], taken: Set<string>): string | null {
   const filled = values.map((v) => String(v ?? '').trim()).filter(Boolean);
   if (filled.length === 0) return null;
   for (const [type, check] of VALUE_CHECKS) {
     const field = fields.find((f) => f.type === type);
-    if (!field) continue;
+    if (!field || taken.has(field.key)) continue;
     const passing = filled.filter(check).length;
     if (passing / filled.length >= VALUE_THRESHOLD) return field.key;
   }
@@ -65,28 +65,41 @@ export function guessColumns(input: GuessColumnsInput): ColumnMatches {
     }
   }
 
+  const keys = headers.map((h) => normaliseKey(h));
   const result: ColumnMatches = {};
   const taken = new Set<string>();
 
-  headers.forEach((header, index) => {
-    const key = normaliseKey(header);
-    let guess: string | null = null;
+  // Tiers run in order. Within a tier the earliest column claims a free field;
+  // a column left without a field moves on to the next tier.
+  const tiers: Array<(index: number) => string | null> = [
+    (i) => {
+      const savedKey = keys[i] ? saved[keys[i]] : undefined;
+      return savedKey && fieldKeys.has(savedKey) ? savedKey : null;
+    },
+    (i) => (keys[i] ? presetByHeader.get(keys[i]) ?? null : null),
+    (i) => (keys[i] ? aliasByHeader.get(keys[i]) ?? null : null),
+    (i) =>
+      guessByValues(
+        fields,
+        sampleRows.slice(0, SAMPLE_LIMIT).map((row) => row[i] ?? ''),
+        taken,
+      ),
+  ];
 
-    const savedKey = saved[key];
-    if (key && savedKey && fieldKeys.has(savedKey)) guess = savedKey;
-    if (!guess && key) guess = presetByHeader.get(key) ?? null;
-    if (!guess && key) guess = aliasByHeader.get(key) ?? null;
-    if (!guess) {
-      const values = sampleRows.slice(0, SAMPLE_LIMIT).map((row) => row[index] ?? '');
-      guess = guessByValues(fields, values);
-    }
-
-    if (guess && !taken.has(guess)) {
-      taken.add(guess);
-      result[index] = guess;
-    } else {
-      result[index] = null;
-    }
+  const assigned = new Set<number>();
+  for (const tier of tiers) {
+    headers.forEach((_, index) => {
+      if (assigned.has(index)) return;
+      const guess = tier(index);
+      if (guess && !taken.has(guess)) {
+        taken.add(guess);
+        result[index] = guess;
+        assigned.add(index);
+      }
+    });
+  }
+  headers.forEach((_, index) => {
+    if (!assigned.has(index)) result[index] = null;
   });
 
   return result;

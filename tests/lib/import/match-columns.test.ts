@@ -53,13 +53,37 @@ describe('presets', () => {
   test('sourceApp other uses no preset', () => {
     expect(guessColumns({ ...base, headers: ['Particulars', 'GSTIN/UIN'], sampleRows: [] })).toEqual({ 0: null, 1: null });
   });
-  test('every app and section has two to four export steps', () => {
+  test('every app and section has two steps ending with the exact save sentence', () => {
     for (const app of ['tally', 'vyapar', 'zoho_books'] as const) {
       for (const section of ['customers', 'suppliers', 'items'] as const) {
         const steps = EXPORT_INSTRUCTIONS[app][section];
-        expect(steps.length).toBeGreaterThanOrEqual(2);
-        expect(steps.length).toBeLessThanOrEqual(4);
+        expect(steps).toHaveLength(2);
+        expect(steps[steps.length - 1]).toBe('Save as Excel or CSV, then upload the file here.');
       }
     }
+  });
+});
+
+describe('tiered assignment', () => {
+  test('a saved match on a later column beats an alias on an earlier column', () => {
+    expect(
+      guessColumns({ ...base, headers: ['Customer', 'X', 'Particulars'], sampleRows: [], saved: { particulars: 'name' } }),
+    ).toEqual({ 0: null, 1: null, 2: 'name' });
+  });
+  test('a preset on a later column beats a general alias on an earlier column', () => {
+    expect(guessColumns({ ...base, sourceApp: 'tally', headers: ['Customer', 'Particulars'], sampleRows: [] })).toEqual({ 0: null, 1: 'name' });
+  });
+  test('a column that loses its alias match falls through to a value match', () => {
+    const f: ImportField[] = [fields[0], fields[2]];
+    const rows = [['A', '9876543210'], ['B', '9123456780']];
+    expect(guessColumns({ ...base, fields: f, headers: ['Name', 'Party Name'], sampleRows: rows })).toEqual({ 0: 'name', 1: 'phone' });
+  });
+  test('a 6-digit column is guessed as pincode when the section has that field', () => {
+    const f: ImportField[] = [...fields, { key: 'pincode', label: 'PIN code', type: 'pincode', aliases: [] }];
+    const rows = [['400001'], ['560001'], ['110001']];
+    expect(guessColumns({ ...base, fields: f, headers: ['Col A'], sampleRows: rows })).toEqual({ 0: 'pincode' });
+  });
+  test('a saved entry for a field the section lacks falls through to the alias stage', () => {
+    expect(guessColumns({ ...base, headers: ['Party Name'], sampleRows: [], saved: { partyname: 'nonexistent' } })).toEqual({ 0: 'name' });
   });
 });

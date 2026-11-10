@@ -85,24 +85,23 @@ export const PRESET_ALIASES: Record<AppKey, Record<SectionKey, Record<string, st
   },
 };
 
-const EXPORT = 'Export it to Excel or CSV.';
-const SAVE = 'Save the file, then upload it here.';
+const SAVE = 'Save as Excel or CSV, then upload the file here.';
 
 /** Ordered steps shown on the Upload step. Kept generic: menu names are not confirmed. */
 export const EXPORT_INSTRUCTIONS: Record<AppKey, Record<SectionKey, string[]>> = {
   tally: {
-    customers: ['Open the customer (party / ledger) list in Tally.', EXPORT, SAVE],
-    suppliers: ['Open the supplier (party / ledger) list in Tally.', EXPORT, SAVE],
-    items: ['Open the stock items list in Tally.', EXPORT, SAVE],
+    customers: ['Open the customer (party / ledger) list in Tally.', SAVE],
+    suppliers: ['Open the supplier (party / ledger) list in Tally.', SAVE],
+    items: ['Open the stock items list in Tally.', SAVE],
   },
   vyapar: {
-    customers: ['Open the customer (party) list in Vyapar.', EXPORT, SAVE],
-    suppliers: ['Open the supplier (party) list in Vyapar.', EXPORT, SAVE],
-    items: ['Open the items list in Vyapar.', EXPORT, SAVE],
+    customers: ['Open the customer (party) list in Vyapar.', SAVE],
+    suppliers: ['Open the supplier (party) list in Vyapar.', SAVE],
+    items: ['Open the items list in Vyapar.', SAVE],
   },
   zoho_books: {
-    customers: ['Open the customers list in Zoho Books.', EXPORT, SAVE],
-    suppliers: ['Open the vendors list in Zoho Books.', EXPORT, SAVE],
-    items: ['Open the items list in Zoho Books.', EXPORT, SAVE],
+    customers: ['Open the customers list in Zoho Books.', SAVE],
+    suppliers: ['Open the vendors list in Zoho Books.', SAVE],
+    items: ['Open the items list in Zoho Books.', SAVE],
   },
 };
