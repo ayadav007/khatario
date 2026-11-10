@@ -57,6 +57,7 @@ d('import runs (real DB)', () => {
   const tag = randomUUID().slice(0, 8);
   const BIG_PLAN = `test_imprun_${tag}`;
   const SMALL_PLAN = `test_imprun_s_${tag}`;
+  const MID_PLAN = `test_imprun_m_${tag}`;
 
   type Biz = { id: string; branch: string; user: string; ctx: { businessId: string; userId: string } };
   const newBiz = (): Biz => {
@@ -67,6 +68,7 @@ d('import runs (real DB)', () => {
   const A = newBiz(); // main business
   const O = newBiz(); // another business
   const L = newBiz(); // business on a plan with a customer limit of 2
+  const M = newBiz(); // business on a plan with a customer limit of 300
 
   const useSession = (b: Biz) => {
     headerBag.current = {
@@ -165,6 +167,13 @@ d('import runs (real DB)', () => {
     (await pool.query(`SELECT COUNT(*)::int AS n FROM customers WHERE business_id = $1 AND deleted_at IS NULL`, [b.id]))
       .rows[0].n as number;
   const runRow = async (id: string) => (await pool.query(`SELECT * FROM import_runs WHERE id = $1`, [id])).rows[0];
+  const problemRows = async (id: string) =>
+    (
+      await pool.query<{ row_number: number; status: string; reasons: string[]; cells: string[] }>(
+        `SELECT row_number, status, reasons, cells FROM import_run_problems WHERE run_id = $1 ORDER BY row_number`,
+        [id]
+      )
+    ).rows;
   const recordCount = async (id: string) =>
     (await pool.query(`SELECT COUNT(*)::int AS n FROM import_run_records WHERE run_id = $1`, [id])).rows[0].n as number;
 
@@ -197,14 +206,16 @@ d('import runs (real DB)', () => {
     if (!plan.rows[0]) throw new Error('No plan grants supplier_management (or purchase_suppliers)');
     await copyPlan(plan.rows[0].plan_id, BIG_PLAN, 100000);
     await copyPlan(plan.rows[0].plan_id, SMALL_PLAN, 2);
+    await copyPlan(plan.rows[0].plan_id, MID_PLAN, 300);
     await seedBusiness(A, BIG_PLAN, '81');
     await seedBusiness(L, SMALL_PLAN, '82');
+    await seedBusiness(M, MID_PLAN, '83');
     useSession(A);
   });
 
   afterAll(async () => {
     try {
-      if (pool) await purge([A.id, L.id], [BIG_PLAN, SMALL_PLAN]);
+      if (pool) await purge([A.id, L.id, M.id], [BIG_PLAN, SMALL_PLAN, MID_PLAN]);
     } finally {
       await closePool();
     }
@@ -249,7 +260,11 @@ d('import runs (real DB)', () => {
     expect(run.status).toBe('done');
     expect(run.draft_rows).toBeNull();
     expect(run.row_numbers).toBeNull();
-    expect(run.problem_rows.map((x: { rowNumber: number }) => x.rowNumber)).toEqual([3, 4, 5]);
+    expect((await problemRows(firstRunId)).map((x) => [x.row_number, x.status])).toEqual([
+      [3, 'needs_attention'],
+      [4, 'already_exists'],
+      [5, 'already_exists'],
+    ]);
     const rec = (await pool.query(`SELECT * FROM import_run_records WHERE run_id = $1`, [firstRunId])).rows[0];
     expect(rec).toMatchObject({ record_table: 'customers', row_number: 2, business_id: A.id });
     const log = await pool.query(
@@ -416,6 +431,66 @@ d('import runs (real DB)', () => {
     await expect(commitNextBatch(A.ctx, draft.runId)).rejects.toEqual(runCode('NOT_COMMITTABLE'));
   });
 
+  test(`a header set to "Don't import" stays unmatched on the next upload`, async () => {
+    const one = await createDraftRun(A.ctx, {
+      section: 'customers',
+      sourceApp: 'other',
+      fileName: 'skip.csv',
+      buffer: csv(['Name,Address', 'Skip Header One,Some street']),
+    });
+    // Without a saved choice, 'Address' is matched by its alias.
+    expect(one.guesses).toEqual({ 0: 'name', 1: 'address' });
+    await previewRun(A.ctx, one.runId, { columnMatches: { 0: 'name', 1: null }, valueMatches: {}, dateOrder: 'dmy' });
+    await commitAll(A, one.runId);
+    const two = await createDraftRun(A.ctx, {
+      section: 'customers',
+      sourceApp: 'other',
+      fileName: 'skip2.csv',
+      buffer: csv(['Name,Address', 'Skip Header Two,Other street']),
+    });
+    expect(two.guesses).toEqual({ 0: 'name', 1: null });
+  });
+
+  test('a run left committing can be undone', async () => {
+    const { draft } = await draftAndPreview(A, ['Name,City', 'Stuck One,Pune', 'Stuck Two,Pune']);
+    await commitAll(A, draft.runId);
+    // As if the process died mid-run and the run was never marked failed.
+    await pool.query(`UPDATE import_runs SET status = 'committing' WHERE id = $1`, [draft.runId]);
+    expect(await undoRun(A.ctx, draft.runId)).toEqual({ removed: 2, kept: [] });
+    const run = await runRow(draft.runId);
+    expect(run).toMatchObject({ status: 'undone', draft_rows: null, row_numbers: null });
+  });
+
+  test("problem rows go to their own table with the user's row numbers", async () => {
+    const lines = ['Name,City'];
+    const existing: string[] = [];
+    for (let i = 0; i < 450; i++) {
+      lines.push(`Half Customer ${i},Pune`);
+      if (i % 2 === 1) existing.push(`Half Customer ${i}`);
+    }
+    await pool.query(
+      `INSERT INTO customers (business_id, name) SELECT $1, unnest($2::text[])`,
+      [A.id, existing]
+    );
+    const before = await customerCount(A);
+    const { draft, preview } = await draftAndPreview(A, lines, 'half.csv');
+    expect(preview).toMatchObject({ ready: 225, alreadyExists: 225 });
+    const r = await commitAll(A, draft.runId);
+    expect(r).toMatchObject({ done: true, processed: 450, saved: 225, skipped: 225, failed: 0 });
+    expect((await customerCount(A)) - before).toBe(225);
+    const problems = await problemRows(draft.runId);
+    // Data row i sits on file row i + 2; the odd ones already existed.
+    expect(problems.map((p) => p.row_number)).toEqual(Array.from({ length: 225 }, (_, k) => 2 * k + 3));
+    expect(problems.every((p) => p.status === 'already_exists')).toBe(true);
+    expect(problems[0]).toMatchObject({
+      cells: ['Half Customer 1', 'Pune'],
+      reasons: ['Already exists: Half Customer 1, matched on name'],
+    });
+    const csvLines = (await problemRowsCsv(A.ctx, draft.runId)).trim().split(/\r?\n/);
+    expect(csvLines).toHaveLength(226);
+    expect(csvLines[1]).toBe('Half Customer 1,Pune,3,"Already exists: Half Customer 1, matched on name"');
+  });
+
   test('saved column matches are reused on the next upload', async () => {
     const lines = ['Client,Mobile', 'Saved Match One,9876522222'];
     const one = await createDraftRun(A.ctx, { section: 'customers', sourceApp: 'other', fileName: 's.csv', buffer: csv(lines) });
@@ -502,10 +577,38 @@ d('import runs (real DB)', () => {
         spy.mockRestore();
       }
       expect(r).toMatchObject({ done: true, saved: 1, failed: 1 });
-      const run = await runRow(draft.runId);
-      expect(run.problem_rows).toHaveLength(1);
-      expect(run.problem_rows[0]).toMatchObject({ rowNumber: 3, status: 'failed' });
-      expect(run.problem_rows[0].reason).toMatch(/limit/);
+      const problems = await problemRows(draft.runId);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toMatchObject({ row_number: 3, status: 'failed' });
+      expect(problems[0].reasons[0]).toMatch(/limit/);
+    });
+
+    test('a later batch that starts with the limit used up fails its rows without saving', async () => {
+      useSession(M);
+      const lines = ['Name,City'];
+      for (let i = 0; i < 250; i++) lines.push(`Room Customer ${i},Pune`);
+      const { draft, preview } = await draftAndPreview(M, lines, 'room.csv');
+      expect(preview.limit.allowed).toBe(true);
+      expect(await commitNextBatch(M.ctx, draft.runId)).toMatchObject({ done: false, processed: 200, saved: 200 });
+      // Someone else uses the last 100 places before batch 2.
+      await pool.query(
+        `INSERT INTO customers (business_id, name) SELECT $1, 'Elsewhere ' || g FROM generate_series(1, 100) g`,
+        [M.id]
+      );
+      const spy = jest.spyOn(SECTIONS.customers, 'saveRow');
+      let r;
+      try {
+        r = await commitNextBatch(M.ctx, draft.runId);
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+        useSession(L);
+      }
+      expect(r).toMatchObject({ done: true, processed: 250, saved: 200, failed: 50 });
+      const problems = await problemRows(draft.runId);
+      expect(problems).toHaveLength(50);
+      expect(problems[0].row_number).toBe(202);
+      expect(problems.every((p) => p.status === 'failed' && /limit/.test(p.reasons[0]))).toBe(true);
     });
   });
 });

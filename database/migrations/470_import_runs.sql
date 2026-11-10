@@ -4,7 +4,7 @@
 -- column and value matches on it; commit saves rows in batches, advancing `cursor` one row at a
 -- time, and records every created master in import_run_records so the run can be undone.
 -- draft_rows and row_numbers are cleared when the run is done. Rows that were not imported are
--- kept in problem_rows (cells, row number, reason) for the "download problem rows" file.
+-- kept in import_run_problems (cells, row number, reasons) for the "download problem rows" file.
 -- import_column_matches remembers which field each header was matched to, per business and
 -- section, so the next upload of the same layout is matched automatically.
 -- Draft runs older than 24 hours are deleted by the application when the business starts a new one.
@@ -31,12 +31,17 @@ CREATE TABLE IF NOT EXISTS import_runs (
   cursor INT NOT NULL DEFAULT 0,
   -- { total, saved, skipped, failed }
   counts JSONB NOT NULL DEFAULT '{}',
-  problem_rows JSONB NOT NULL DEFAULT '[]',
+  -- Rows the last preview found ready; the first commit call checks the plan limit against it.
+  preview_ready INT,
   -- No foreign key: removing a user must not touch import history.
   created_by UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Converge databases that ran an earlier draft of this migration.
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS preview_ready INT;
+ALTER TABLE import_runs DROP COLUMN IF EXISTS problem_rows;
 
 CREATE INDEX IF NOT EXISTS idx_import_runs_business_section_created
   ON import_runs (business_id, section, created_at DESC);
@@ -49,6 +54,19 @@ CREATE TABLE IF NOT EXISTS import_run_records (
   row_number INT NOT NULL,
   undone_at TIMESTAMPTZ,
   PRIMARY KEY (run_id, record_table, record_id)
+);
+
+-- Rows of a run that were not imported, with the user's own cells, for the problem-rows file.
+-- One row each, written in the same transaction as the run's cursor move.
+CREATE TABLE IF NOT EXISTS import_run_problems (
+  run_id UUID NOT NULL REFERENCES import_runs(id) ON DELETE CASCADE,
+  business_id UUID NOT NULL,
+  row_number INT NOT NULL,
+  -- needs_attention | already_exists | failed
+  status TEXT NOT NULL,
+  reasons JSONB NOT NULL,
+  cells JSONB NOT NULL,
+  PRIMARY KEY (run_id, row_number)
 );
 
 CREATE TABLE IF NOT EXISTS import_column_matches (

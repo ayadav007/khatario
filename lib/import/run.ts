@@ -49,9 +49,9 @@ type Counts = { total: number; saved: number; skipped: number; failed: number };
 type ProblemStatus = 'needs_attention' | 'already_exists' | 'failed';
 /** A row that was not imported, with the user's own cells for the problem-rows file. */
 interface ProblemRow {
-  rowNumber: number;
+  row_number: number;
   status: ProblemStatus;
-  reason: string;
+  reasons: string[];
   cells: string[];
 }
 
@@ -70,12 +70,12 @@ interface RunRow {
   date_order: DateOrder;
   cursor: number;
   counts: Partial<Counts>;
-  problem_rows: ProblemRow[];
+  preview_ready: number | null;
   created_at: Date;
 }
 
 const RUN_COLUMNS = `id, business_id, section, source_app, file_name, status, headers, draft_rows, row_numbers,
-  column_matches, value_matches, date_order, cursor, counts, problem_rows, created_at`;
+  column_matches, value_matches, date_order, cursor, counts, preview_ready, created_at`;
 
 async function loadRun(ctx: ServiceCtx, runId: string): Promise<RunRow> {
   const row = UUID.test(String(runId ?? ''))
@@ -214,12 +214,16 @@ export async function createDraftRun(
 
   const file = await readImportFile(p.buffer, p.fileName);
 
-  const savedRows = await queryRows<{ header_key: string; field_key: string }>(
-    `SELECT header_key, field_key FROM import_column_matches
-      WHERE business_id = $1 AND section = $2 AND field_key IS NOT NULL`,
+  const savedRows = await queryRows<{ header_key: string; field_key: string | null }>(
+    `SELECT header_key, field_key FROM import_column_matches WHERE business_id = $1 AND section = $2`,
     [ctx.businessId, def.key]
   );
-  const saved = Object.fromEntries(savedRows.map((r) => [r.header_key, r.field_key]));
+  const saved: Record<string, string> = {};
+  const savedSkip = new Set<string>();
+  for (const r of savedRows) {
+    if (r.field_key === null) savedSkip.add(r.header_key);
+    else saved[r.header_key] = r.field_key;
+  }
   const guesses = guessColumns({
     fields: def.fields,
     headers: file.headers,
@@ -227,6 +231,10 @@ export async function createDraftRun(
     sourceApp,
     section: def.key,
     saved,
+  });
+  // A header the user chose "Don't import" for last time stays unmatched.
+  file.headers.forEach((h, i) => {
+    if (savedSkip.has(normaliseKey(h))) guesses[i] = null;
   });
 
   const inserted = await queryOne<{ id: string }>(
@@ -295,14 +303,8 @@ function cleanMatches(def: SectionDefinition, headers: string[], p: { columnMatc
   return { columnMatches, valueMatches };
 }
 
-interface Analysis {
-  built: BuiltRow[];
-  classified: Classified[];
-  preview: PreviewResult;
-}
-
 /** Every row built and classified; calls findExisting row by row for rows without errors. */
-async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Promise<Analysis> {
+async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Promise<PreviewResult> {
   const built = buildAll(def, run);
   const rowNumbers = run.row_numbers ?? [];
   const dupOf = duplicateOf(def, built);
@@ -326,18 +328,14 @@ async function analyse(ctx: ServiceCtx, def: SectionDefinition, run: RunRow): Pr
   });
 
   return {
-    built,
-    classified,
-    preview: {
-      ready,
-      needsAttention,
-      alreadyExists,
-      warnings,
-      unmatched: unmatchedOf(def, built),
-      problems,
-      missingRequired: missingRequiredOf(def, run.column_matches ?? {}),
-      limit: await limitFor(ctx, def, ready),
-    },
+    ready,
+    needsAttention,
+    alreadyExists,
+    warnings,
+    unmatched: unmatchedOf(def, built),
+    problems,
+    missingRequired: missingRequiredOf(def, run.column_matches ?? {}),
+    limit: await limitFor(ctx, def, ready),
   };
 }
 
@@ -361,7 +359,13 @@ export async function previewRun(
   run.column_matches = columnMatches;
   run.value_matches = valueMatches;
   run.date_order = dateOrder;
-  return (await analyse(ctx, def, run)).preview;
+  const preview = await analyse(ctx, def, run);
+  await query(`UPDATE import_runs SET preview_ready = $3 WHERE id = $1 AND business_id = $2`, [
+    run.id,
+    ctx.businessId,
+    preview.ready,
+  ]);
+  return preview;
 }
 
 /**
@@ -376,7 +380,7 @@ async function withRunLock<T>(ctx: ServiceCtx, def: SectionDefinition, work: () 
   let destroy = false;
   try {
     const r = await client.query<{ ok: boolean }>(
-      `SELECT pg_try_advisory_lock(hashtext($1::text || ':' || $2)) AS ok`,
+      `SELECT pg_try_advisory_lock(hashtext('import:' || $1::text || ':' || $2)) AS ok`,
       [ctx.businessId, def.key]
     );
     if (!r.rows[0]?.ok) {
@@ -393,7 +397,10 @@ async function withRunLock<T>(ctx: ServiceCtx, def: SectionDefinition, work: () 
   } finally {
     if (locked) {
       try {
-        await client.query(`SELECT pg_advisory_unlock(hashtext($1::text || ':' || $2))`, [ctx.businessId, def.key]);
+        await client.query(`SELECT pg_advisory_unlock(hashtext('import:' || $1::text || ':' || $2))`, [
+          ctx.businessId,
+          def.key,
+        ]);
       } catch {
         destroy = true;
       }
@@ -424,13 +431,18 @@ async function recordProgress(
         [runId, ctx.businessId, record.table, record.id, record.rowNumber]
       );
     }
+    if (pending.length > 0) {
+      await client.query(
+        `INSERT INTO import_run_problems (run_id, business_id, row_number, status, reasons, cells)
+         SELECT $1, $2, p.row_number, p.status, p.reasons, p.cells
+           FROM jsonb_to_recordset($3::jsonb) AS p(row_number int, status text, reasons jsonb, cells jsonb)
+         ON CONFLICT DO NOTHING`,
+        [runId, ctx.businessId, JSON.stringify(pending)]
+      );
+    }
     await client.query(
-      `UPDATE import_runs
-          SET cursor = $3, counts = $4,
-              problem_rows = CASE WHEN $5::jsonb = '[]'::jsonb THEN problem_rows ELSE problem_rows || $5::jsonb END,
-              updated_at = now()
-        WHERE id = $1 AND business_id = $2`,
-      [runId, ctx.businessId, cursor, JSON.stringify(counts), JSON.stringify(pending)]
+      `UPDATE import_runs SET cursor = $3, counts = $4, updated_at = now() WHERE id = $1 AND business_id = $2`,
+      [runId, ctx.businessId, cursor, JSON.stringify(counts)]
     );
     await client.query('COMMIT');
   } catch (e) {
@@ -487,25 +499,20 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
   if (!['draft', 'committing', 'failed'].includes(run.status) || !run.draft_rows || !run.row_numbers) {
     throw new ImportRunError('NOT_COMMITTABLE', 'This import cannot be continued');
   }
-  if (!run.column_matches) throw new ImportRunError('NOT_COMMITTABLE', 'Check the file before importing');
+  if (!run.column_matches || run.preview_ready === null) {
+    throw new ImportRunError('NOT_COMMITTABLE', 'Check the file before importing');
+  }
   const missing = missingRequiredOf(def, run.column_matches);
   if (missing.length > 0) throw new ImportRunError('MISSING_REQUIRED', `Match a column to: ${missing.join(', ')}`);
 
-  let built: BuiltRow[];
+  // Checked in memory: rows are not looked up again here (the preview did that).
+  const built = buildAll(def, run);
+  if (unmatchedOf(def, built).length > 0) {
+    throw new ImportRunError('UNRESOLVED_VALUES', 'Choose what each highlighted value means before importing');
+  }
   if (run.status === 'draft') {
-    const a = await analyse(ctx, def, run);
-    built = a.built;
-    if (a.preview.unmatched.length > 0) {
-      throw new ImportRunError('UNRESOLVED_VALUES', 'Choose what each highlighted value means before importing');
-    }
-    if (!a.preview.limit.allowed) {
-      throw new ImportRunError('LIMIT_REACHED', a.preview.limit.message ?? `${def.label} limit reached`);
-    }
-  } else {
-    built = buildAll(def, run);
-    if (unmatchedOf(def, built).length > 0) {
-      throw new ImportRunError('UNRESOLVED_VALUES', 'Choose what each highlighted value means before importing');
-    }
+    const limit = await limitFor(ctx, def, run.preview_ready);
+    if (!limit.allowed) throw new ImportRunError('LIMIT_REACHED', limit.message ?? `${def.label} limit reached`);
   }
 
   await query(`UPDATE import_runs SET status = 'committing', updated_at = now() WHERE id = $1 AND business_id = $2`, [
@@ -527,30 +534,30 @@ async function runBatch(ctx: ServiceCtx, runId: string, def: SectionDefinition) 
     const limitMessage =
       lc?.message || `Your plan's ${def.label.toLowerCase()} limit is reached. Upgrade your plan to import this row.`;
     let pending: ProblemRow[] = [];
-    const problem = (i: number, status: ProblemStatus, reason: string) =>
-      pending.push({ rowNumber: rowNumbers[i], status, reason, cells: rows[i] });
+    const problem = (i: number, status: ProblemStatus, reasons: string[]) =>
+      pending.push({ row_number: rowNumbers[i], status, reasons, cells: rows[i] });
 
     for (let i = cursor; i < end; i++) {
       const c = await classifyRow(ctx, def, built, dupOf, rowNumbers, i);
       if (c.status === 'needs_attention') {
         counts.failed += 1;
-        problem(i, 'needs_attention', c.reasons.join('; '));
+        problem(i, 'needs_attention', c.reasons);
         continue;
       }
       if (c.status === 'already_exists') {
         counts.skipped += 1;
-        problem(i, 'already_exists', c.reasons.join('; '));
+        problem(i, 'already_exists', c.reasons);
         continue;
       }
       if (room <= 0) {
         counts.failed += 1;
-        problem(i, 'failed', limitMessage);
+        problem(i, 'failed', [limitMessage]);
         continue;
       }
       const saved = await def.saveRow(ctx, built[i].values);
       if (!saved.ok) {
         counts.failed += 1;
-        problem(i, 'failed', saved.error);
+        problem(i, 'failed', [saved.error]);
         continue;
       }
       room -= 1;
@@ -593,7 +600,8 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
   const def = SECTIONS[(await loadRun(ctx, runId)).section];
   return withRunLock(ctx, def, async () => {
     const run = await loadRun(ctx, runId);
-    if (run.status !== 'done' && run.status !== 'failed') {
+    // Holding the lock proves no batch is running, so a run left 'committing' is stuck and may be undone.
+    if (run.status !== 'done' && run.status !== 'failed' && run.status !== 'committing') {
       throw new ImportRunError('NOT_UNDOABLE', 'Only a finished or stopped import can be undone');
     }
     const records = await queryRows<{ record_table: string; record_id: string }>(
@@ -626,12 +634,14 @@ export async function undoRun(ctx: ServiceCtx, runId: string): Promise<{ removed
         for (const r of refused) kept.push({ label: nameOf.get(r.id) ?? r.id, reason: r.reason });
       }
     }
-    if (kept.length === 0) {
-      await query(`UPDATE import_runs SET status = 'undone', updated_at = now() WHERE id = $1 AND business_id = $2`, [
-        run.id,
-        ctx.businessId,
-      ]);
-    }
+    // An undone run (or a stopped one being undone) is never resumed: its rows are cleared.
+    await query(
+      `UPDATE import_runs
+          SET status = CASE WHEN $3 THEN 'undone' ELSE status END,
+              draft_rows = NULL, row_numbers = NULL, updated_at = now()
+        WHERE id = $1 AND business_id = $2`,
+      [run.id, ctx.businessId, kept.length === 0]
+    );
     return { removed, kept };
   });
 }
@@ -697,9 +707,18 @@ function csvCell(value: string): string {
 /** The user's headers plus Row and Reason, one line per row that was not imported. */
 export async function problemRowsCsv(ctx: ServiceCtx, runId: string): Promise<string> {
   const run = await loadRun(ctx, runId);
+  const problems = await queryRows<ProblemRow>(
+    `SELECT row_number, status, reasons, cells FROM import_run_problems
+      WHERE run_id = $1 AND business_id = $2 ORDER BY row_number`,
+    [run.id, ctx.businessId]
+  );
   const lines = [[...run.headers, 'Row', 'Reason']];
-  for (const p of run.problem_rows ?? []) {
-    lines.push([...run.headers.map((_, i) => String(p.cells?.[i] ?? '')), String(p.rowNumber), p.reason]);
+  for (const p of problems) {
+    lines.push([
+      ...run.headers.map((_, i) => String(p.cells?.[i] ?? '')),
+      String(p.row_number),
+      (p.reasons ?? []).join('; '),
+    ]);
   }
   return lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
